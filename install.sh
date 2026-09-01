@@ -308,6 +308,20 @@ check_nftables() {
     warn "  minimal or container kernels often do not."
   fi
   nft delete table inet wui_probe 2>/dev/null || true
+
+  # Speed limits need a classful scheduler. Without one tc accepts the command
+  # and the kernel quietly ignores it, so the panel would show a limit that no
+  # packet ever meets.
+  modprobe sch_htb 2>/dev/null || true
+  if ip link add wui-htbprobe type dummy 2>/dev/null; then
+    if tc qdisc replace dev wui-htbprobe root handle 1: htb default ffff 2>/dev/null; then
+      ok "kernel supports HTB; speed limits are enforced"
+    else
+      warn "this kernel has no HTB scheduler"
+      warn "  per-customer speed limits will be recorded but never applied."
+    fi
+    ip link del wui-htbprobe 2>/dev/null || true
+  fi
 }
 
 # ── the panel ────────────────────────────────────────────────────────────────

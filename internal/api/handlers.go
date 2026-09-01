@@ -22,6 +22,8 @@ type metaResponse struct {
 	DefaultLocale      string           `json:"defaultLocale"`
 	EnforcementActive  bool             `json:"enforcementActive"`
 	EnforcementMessage string           `json:"enforcementMessage,omitempty"`
+	ShapingActive      bool             `json:"shapingActive"`
+	ShapingMessage     string           `json:"shapingMessage,omitempty"`
 }
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +37,13 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		resp.EnforcementMessage = err.Error()
 	} else {
 		resp.EnforcementActive = true
+	}
+	if s.shaper != nil {
+		if err := s.shaper.Health(r.Context()); err != nil {
+			resp.ShapingMessage = err.Error()
+		} else {
+			resp.ShapingActive = true
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

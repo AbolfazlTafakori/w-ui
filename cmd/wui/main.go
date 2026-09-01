@@ -30,6 +30,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/shaper"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
 	"github.com/abolfazl/w-ui/internal/web"
 )
@@ -104,6 +105,9 @@ func run() error {
 	enforcer := enforce.NewNFTables(log)
 	defer enforcer.Close()
 
+	shp := shaper.New(log)
+	defer shp.Close()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -116,10 +120,17 @@ func run() error {
 		DB:       db,
 		Enforcer: enforcer,
 		Backends: drivers,
+		Shaper:   shp,
 		Interval: cfg.CollectInterval,
 		Log:      log,
 	})
 	rec.Start(ctx)
+
+	if err := shp.Health(ctx); err != nil {
+		log.Warn("rate limiting inactive: speed limits are recorded but not applied", "reason", err)
+	} else {
+		log.Info("rate limiting active", "engine", "tc/htb")
+	}
 
 	if err := enforcer.Health(ctx); err != nil {
 		// Quota enforcement is the panel's core promise. Saying this once, at
@@ -141,7 +152,7 @@ func run() error {
 	sys := sysinfo.New(cfg.DataDir, cfg.CollectInterval, log)
 	sys.Start(ctx)
 
-	srv, err := buildServer(cfg, db, pools, catalog, enforcer, jwtSecret, sys, rec, log)
+	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, jwtSecret, sys, rec, log)
 	if err != nil {
 		return err
 	}
@@ -177,6 +188,7 @@ func buildServer(
 	pools *ipam.Pools,
 	catalog *i18n.Catalog,
 	enforcer enforce.Enforcer,
+	shp shaper.Shaper,
 	jwtSecret []byte,
 	sys *sysinfo.Collector,
 	rec *reconciler.Reconciler,
@@ -188,6 +200,7 @@ func buildServer(
 		Interfaces: service.NewInterfaces(db, pools, log),
 		Catalog:    catalog,
 		Enforcer:   enforcer,
+		Shaper:     shp,
 		JWTSecret:  jwtSecret,
 		Logger:     log,
 		Version:    version,

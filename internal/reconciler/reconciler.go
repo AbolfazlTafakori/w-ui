@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,12 +30,14 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/shaper"
 )
 
 // Options configures the loop.
 type Options struct {
 	DB       *gorm.DB
 	Enforcer enforce.Enforcer
+	Shaper   shaper.Shaper
 	Backends map[uint]backend.Backend // by interface id
 	Interval time.Duration
 	Log      *slog.Logger
@@ -56,6 +60,7 @@ type Stats struct {
 type Reconciler struct {
 	db       *gorm.DB
 	enforcer enforce.Enforcer
+	shaper   shaper.Shaper
 	backends map[uint]backend.Backend
 	interval time.Duration
 	log      *slog.Logger
@@ -63,6 +68,10 @@ type Reconciler struct {
 
 	mu    sync.RWMutex
 	stats Stats
+	// lastShapeErr is the shaping failure already reported. A server whose
+	// kernel cannot shape would otherwise log the same line every couple of
+	// seconds for as long as it runs, which buries everything else.
+	lastShapeErr string
 }
 
 // New builds a reconciler.
@@ -74,6 +83,7 @@ func New(o Options) *Reconciler {
 	return &Reconciler{
 		db:       o.DB,
 		enforcer: o.Enforcer,
+		shaper:   o.Shaper,
 		backends: o.Backends,
 		interval: interval,
 		log:      o.Log,
@@ -245,6 +255,8 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 // desired is the state the database says should exist.
 type desired struct {
 	rules    []enforce.Rule
+	shaping  []shaper.Client
+	devices  []string
 	perIface map[uint][]backend.DesiredAccount
 	clients  int
 	accounts int
@@ -262,6 +274,25 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	// after.
 	if err := r.enforcer.Apply(ctx, d.rules); err != nil {
 		return 0, 0, fmt.Errorf("enforcer: %w", err)
+	}
+
+	// Shaping comes after the ruleset, because the nftables chain is what
+	// stamps a packet with the class the hierarchy below is built from. A class
+	// that exists before anything is stamped with it is merely idle; a stamp
+	// pointing at a class that does not exist yet would fall through to the
+	// default and leave the customer briefly unshaped.
+	if r.shaper != nil && len(d.devices) > 0 {
+		err := r.shaper.Apply(ctx, d.devices, d.shaping)
+		switch {
+		case err != nil && err.Error() != r.shapeErr():
+			// A shaping failure is not a reason to stop enforcing quotas, which
+			// is the guarantee customers are actually sold.
+			r.log.Warn("rate limits are not being applied", "error", err)
+			r.setShapeErr(err.Error())
+		case err == nil && r.shapeErr() != "":
+			r.log.Info("rate limits are being applied again")
+			r.setShapeErr("")
+		}
 	}
 
 	for ifaceID, b := range r.backends {
@@ -299,6 +330,11 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		return nil, fmt.Errorf("load accounts: %w", err)
 	}
 
+	var interfaces []model.Interface
+	if err := db.Where("enabled = ?", true).Find(&interfaces).Error; err != nil {
+		return nil, fmt.Errorf("load interfaces: %w", err)
+	}
+
 	byClient := make(map[uint][]model.Account, len(clients))
 	for _, a := range accounts {
 		byClient[a.ClientID] = append(byClient[a.ClientID], a)
@@ -306,9 +342,11 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 
 	d := &desired{
 		rules:    make([]enforce.Rule, 0, len(clients)),
+		shaping:  make([]shaper.Client, 0, len(clients)),
 		perIface: map[uint][]backend.DesiredAccount{},
 		clients:  len(clients),
 		accounts: len(accounts),
+		devices:  shapedDevices(interfaces),
 	}
 
 	for _, c := range clients {
@@ -337,6 +375,15 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 			RateBitsPerSec: c.RateBitsPerSec,
 			Blocked:        !serviceable,
 		})
+
+		// A cut-off client is dropped outright, so a class for them would only
+		// shape traffic that never leaves.
+		if serviceable && c.RateBitsPerSec > 0 {
+			d.shaping = append(d.shaping, shaper.Client{
+				Key:            enforce.Key(c.ID),
+				RateBitsPerSec: c.RateBitsPerSec,
+			})
+		}
 
 		// Accounts of a non-serviceable client are simply left out of the
 		// desired set, and Sync removes whatever it finds that is not listed.
@@ -368,3 +415,46 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 }
 
 var errClosed = errors.New("reconciler: closed")
+
+// shapedDevices lists the devices a customer's traffic leaves by.
+//
+// The tunnel device carries what is sent to them, which is the direction a
+// customer experiences as their speed. The egress interface carries what they
+// send outward, already decapsulated, so the same class applies there. Both are
+// egress paths, which is the only side a queue can be scheduled on.
+//
+// Anything not stamped with a class — the panel's own traffic, unlimited
+// customers, and the encrypted tunnel packets themselves — falls into the
+// default class, which is deliberately wider than any real link.
+func shapedDevices(interfaces []model.Interface) []string {
+	seen := map[string]bool{}
+	var out []string
+
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+
+	for _, iface := range interfaces {
+		add(iface.Name)
+		add(iface.NATInterface)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (r *Reconciler) shapeErr() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.lastShapeErr
+}
+
+func (r *Reconciler) setShapeErr(msg string) {
+	r.mu.Lock()
+	r.lastShapeErr = msg
+	r.mu.Unlock()
+}

@@ -797,10 +797,26 @@ enforcement_menu() {
         echo -e "  /dev/net/tun:      ${red}missing — OpenVPN cannot start${plain}"
     fi
 
+    # A speed limit needs a classful scheduler. Without one tc takes the command
+    # and the kernel ignores it, so the panel would show a cap nothing enforces.
+    modprobe sch_htb 2> /dev/null || true
+    if ip link add wui-htbprobe type dummy 2> /dev/null; then
+        if tc qdisc replace dev wui-htbprobe root handle 1: htb default ffff 2> /dev/null; then
+            echo -e "  Speed limits:      ${green}enforced (HTB)${plain}"
+        else
+            echo -e "  Speed limits:      ${red}this kernel has no HTB scheduler${plain}"
+            echo -e "                     ${yellow}Per-customer speed caps are recorded but never applied.${plain}"
+        fi
+        ip link del wui-htbprobe 2> /dev/null || true
+    else
+        echo -e "  Speed limits:      ${yellow}could not be checked${plain}"
+    fi
+
     echo
     echo -e "${green}\t1.${plain} Show the live ruleset"
     echo -e "${green}\t2.${plain} Show per-customer counters"
     echo -e "${green}\t3.${plain} Show what the panel reports"
+    echo -e "${green}\t4.${plain} Show the shaping hierarchy"
     echo -e "${green}\t0.${plain} Back to Main Menu"
     read -rp "Choose an option: " choice
 
@@ -825,7 +841,38 @@ enforcement_menu() {
             port=$(panel_port)
             curl -fsS "http://127.0.0.1:${port}/api/health" 2> /dev/null | sed 's/^/  /'
             echo
-            journalctl -u "$SERVICE" --no-pager | grep -iE "enforcement|quota" | tail -5 | sed 's/^/  /'
+            journalctl -u "$SERVICE" --no-pager | grep -iE "enforcement|quota|rate limit" | tail -5 | sed 's/^/  /'
+            echo && read -rp "Press enter to continue: " temp
+            enforcement_menu
+            ;;
+        4)
+            echo
+            local shown=0 dev
+            for dev in $(ip -o link show 2> /dev/null | awk -F': ' '{print $2}' | cut -d@ -f1); do
+                if tc class show dev "$dev" 2> /dev/null | grep -q '^class htb'; then
+                    echo -e "  ${green}${dev}${plain}"
+                    tc -s class show dev "$dev" | grep -E '^class htb' | sed 's/^/    /'
+                    shown=1
+                fi
+            done
+            if [[ $shown == 0 ]]; then
+                echo -e "  ${yellow}No shaping classes. Either no customer has a speed limit,${plain}"
+                echo -e "  ${yellow}or this kernel cannot shape — see the summary above.${plain}"
+            fi
+            echo && read -rp "Press enter to continue: " temp
+            enforcement_menu
+            ;;
+        4)
+            echo
+            local shown=0
+            for dev in $(ip -o link show 2> /dev/null | awk -F": " "{print \$2}" | cut -d@ -f1); do
+                if tc class show dev "$dev" 2> /dev/null | grep -q "^class htb"; then
+                    echo -e "  ${green}${dev}${plain}"
+                    tc -s class show dev "$dev" | grep -E "^class htb" | sed "s/^/    /"
+                    shown=1
+                fi
+            done
+            [[ $shown == 0 ]] && echo -e "  ${yellow}No shaping classes. Either no customer has a speed limit,${plain}"                 && echo -e "  ${yellow}or this kernel cannot shape — see the summary above.${plain}"
             echo && read -rp "Press enter to continue: " temp
             enforcement_menu
             ;;

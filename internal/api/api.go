@@ -16,6 +16,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/shaper"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
 )
 
@@ -26,6 +27,7 @@ type Server struct {
 	ifaces    *service.Interfaces
 	catalog   *i18n.Catalog
 	enforcer  enforce.Enforcer
+	shaper    shaper.Shaper
 	jwtSecret []byte
 	log       *slog.Logger
 	version   string
@@ -42,6 +44,7 @@ type Options struct {
 	Interfaces *service.Interfaces
 	Catalog    *i18n.Catalog
 	Enforcer   enforce.Enforcer
+	Shaper     shaper.Shaper
 	JWTSecret  []byte
 	Logger     *slog.Logger
 	Version    string
@@ -59,6 +62,7 @@ func New(o Options) *Server {
 		ifaces:    o.Interfaces,
 		catalog:   o.Catalog,
 		enforcer:  o.Enforcer,
+		shaper:    o.Shaper,
 		jwtSecret: o.JWTSecret,
 		log:       o.Logger,
 		version:   o.Version,

@@ -265,3 +265,71 @@ func mapBody(t *testing.T, ruleset, name string) string {
 	}
 	return rest[:end]
 }
+
+// Traffic that terminates on the panel's own host never reaches the forward
+// hook. These pin the two chains that catch it, because the failure is silent:
+// the panel reports a limit that a customer is quietly walking around.
+func TestTrafficToTheServerItselfIsAccountedFor(t *testing.T) {
+	out, err := BuildRuleset([]Rule{
+		{Key: Key(1), Addrs: addrs("10.66.0.2"), QuotaBytes: 1 << 30},
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	if !strings.Contains(out, "type filter hook input priority filter") {
+		t.Error("no input chain: a customer's traffic to this host is never billed")
+	}
+	if !strings.Contains(out, "type filter hook output priority filter") {
+		t.Error("no output chain: this host's replies to a customer are never billed")
+	}
+}
+
+func TestEachHookMatchesOnlyTheCustomerSide(t *testing.T) {
+	out, err := BuildRuleset([]Rule{
+		{Key: Key(1), Addrs: addrs("10.66.0.2"), QuotaBytes: 1 << 30},
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	input := chainBody(t, out, "input")
+	output := chainBody(t, out, "output")
+
+	// On the input hook the destination is this host, which is not a customer
+	// address. Looking it up would be a wasted probe on every arriving packet.
+	if strings.Contains(input, "daddr") {
+		t.Errorf("input chain probes the destination:\n%s", input)
+	}
+	if !strings.Contains(input, "ip saddr vmap @ul") {
+		t.Errorf("input chain does not bill the sender:\n%s", input)
+	}
+	if strings.Contains(output, "saddr") {
+		t.Errorf("output chain probes the source:\n%s", output)
+	}
+	if !strings.Contains(output, "ip daddr vmap @dl") {
+		t.Errorf("output chain does not bill the recipient:\n%s", output)
+	}
+}
+
+func TestABlockedCustomerIsCutOffFromTheServerToo(t *testing.T) {
+	out, err := BuildRuleset([]Rule{
+		{Key: Key(1), Addrs: addrs("10.66.0.2"), Blocked: true},
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	// All three hooks jump to the same per-client chain, so the drop that cuts
+	// them off applies wherever their packets appear — including the panel's
+	// own port, which they would otherwise still be able to reach.
+	for _, hook := range []string{"forward", "input", "output"} {
+		body := chainBody(t, out, hook)
+		if !strings.Contains(body, "vmap @") {
+			t.Errorf("%s chain does not consult the client map:\n%s", hook, body)
+		}
+	}
+	if !strings.Contains(chainBody(t, out, chainName(Key(1))), "drop") {
+		t.Error("a blocked client's chain does not drop")
+	}
+}

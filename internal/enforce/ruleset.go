@@ -5,6 +5,8 @@ import (
 	"net/netip"
 	"sort"
 	"strings"
+
+	"github.com/abolfazl/w-ui/internal/shaper"
 )
 
 // TableName is the nftables table the panel owns entirely. Nothing else should
@@ -100,6 +102,18 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 	b.WriteString("\n")
 	for _, r := range sorted {
 		fmt.Fprintf(&b, "\tchain %s {\n", chainName(r.Key))
+
+		// Stamp the packet with its traffic class before anything else. HTB
+		// reads this stamp directly, so a rate limit needs no tc filter and the
+		// cost of classifying stays flat as customers are added — a filter list
+		// would be walked once per packet per customer. A blocked client is
+		// about to be dropped and needs no class.
+		if !r.Blocked && r.RateBitsPerSec > 0 {
+			if minor, err := shaper.Minor(r.Key); err == nil {
+				fmt.Fprintf(&b, "\t\tmeta priority set %s\n", shaper.ClassID(minor))
+			}
+		}
+
 		switch {
 		case r.Blocked:
 			// An admin switched this client off: nothing else needs evaluating.
@@ -133,13 +147,32 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 	}
 	b.WriteString("\t}\n")
 
-	// A verdict map is a hash lookup, so the cost of this chain does not grow
+	// A verdict map is a hash lookup, so the cost of these chains does not grow
 	// with the number of customers: ten thousand clients cost the same probe as
 	// three. A rule per client would be a linear scan on every packet.
 	b.WriteString("\n\tchain forward {\n")
 	b.WriteString("\t\ttype filter hook forward priority filter; policy accept;\n")
 	b.WriteString("\t\tip daddr vmap @dl\n")
 	b.WriteString("\t\tip saddr vmap @ul\n")
+	b.WriteString("\t}\n")
+
+	// Traffic that ends at this machine rather than passing through it never
+	// reaches the forward hook. Without these two chains a customer's dealings
+	// with the server itself are neither billed nor stopped: a resolver running
+	// here would carry their data for free, and a customer who has been cut off
+	// would still reach every service on the box, the panel included.
+	//
+	// A packet is seen by exactly one of the three hooks, so nothing is counted
+	// twice. Only the customer's own side of each is matched — the other address
+	// is the server's and is not in the map.
+	b.WriteString("\n\tchain input {\n")
+	b.WriteString("\t\ttype filter hook input priority filter; policy accept;\n")
+	b.WriteString("\t\tip saddr vmap @ul\n")
+	b.WriteString("\t}\n")
+
+	b.WriteString("\n\tchain output {\n")
+	b.WriteString("\t\ttype filter hook output priority filter; policy accept;\n")
+	b.WriteString("\t\tip daddr vmap @dl\n")
 	b.WriteString("\t}\n")
 
 	b.WriteString("}\n")
