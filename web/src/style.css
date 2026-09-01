@@ -159,9 +159,24 @@ th.ltr {
 }
 
 /* ══════════ shell ══════════ */
+/*
+ * A rail rather than a fixed sidebar: 72px of icons that widens to 220px when
+ * pointed at, and stays there when pinned. Unpinned it floats over the page,
+ * so the width it borrows is only borrowed while it is being read; pinned it
+ * takes a column of its own and the content reflows around it once.
+ */
+:root {
+  --rail-w: 72px;
+  --rail-open-w: 220px;
+  --rail-row-h: 48px;
+  --rail-brand-h: 58px;
+}
+
+/* Not a grid. The rail is fixed, so it leaves the flow entirely and a grid
+   column reserved for it would be filled by the content instead. The content
+   is inset by the rail's width instead, which is also what lets the unpinned
+   rail widen over the page without reflowing anything. */
 .shell {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
   min-height: 100%;
 }
 .shell > * {
@@ -169,27 +184,51 @@ th.ltr {
 }
 
 .sidebar {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 210;
+  width: var(--rail-w);
   background: var(--surface);
   border-inline-end: 1px solid var(--line);
-  padding: 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
+  transition: width 0.18s ease;
+}
+.sidebar.expanded {
+  width: var(--rail-open-w);
+}
+/* Only while it is floating. Pinned, it owns its column and a shadow would
+   read as a seam down the middle of the page. */
+.shell:not(.rail-pinned) .sidebar.expanded {
+  box-shadow: 0 0 32px rgba(0, 0, 0, 0.45);
 }
 
-.brand {
+.sider-brand {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: var(--rail-brand-h);
+  padding-inline: 16px;
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.brand-block {
+  display: inline-flex;
+  align-items: center;
   gap: 10px;
-  padding: 6px 10px 18px;
+  min-width: 0;
+  line-height: 1.1;
+  color: var(--ink);
 }
 .brand-mark {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
   background: var(--accent);
   color: var(--accent-ink);
@@ -202,52 +241,211 @@ th.ltr {
 }
 .brand-name {
   font-size: var(--t-md);
-  font-weight: 700;
-  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
-.brand-ver {
-  font-size: var(--t-xs);
+
+.brand-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.sidebar-pin {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
   color: var(--faint);
-  font-family: var(--mono);
-  direction: ltr;
-  unicode-bidi: isolate;
-  line-height: 1.25;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+}
+.sidebar-pin:hover,
+.sidebar-pin:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  transform: scale(1.08);
+  outline: none;
+}
+.sidebar-pin.on {
+  color: var(--accent-hover);
+}
+
+.sider-nav {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  padding-block: 8px;
+}
+.sider-utility {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line-soft);
+  padding-block: 8px;
+}
+.sider-footer {
+  flex: 0 0 auto;
+  padding: 8px 8px 12px;
 }
 
 .navlink {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  gap: 12px;
+  height: var(--rail-row-h);
+  /* The icon sits at the centre of the collapsed rail, so it does not shift
+     sideways when the label appears beside it. */
+  padding-inline: calc((var(--rail-w) - 16px) / 2 - 1px);
   color: var(--ink-2);
   font-size: var(--t-base);
   font-weight: 500;
-  border: 1px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  width: 100%;
+  cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 .navlink:hover {
-  background: var(--surface-2);
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
 }
 .navlink.active {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
+  background: var(--accent-soft-strong, var(--accent-soft));
   color: var(--accent-hover);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+[dir='rtl'] .navlink.active {
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 .navlink svg {
   flex-shrink: 0;
   opacity: 0.9;
 }
+.navlink .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.navlink.as-select select {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  width: 100%;
+}
+.navlink.as-button {
+  text-align: start;
+}
 
-.sidebar-foot {
-  margin-top: auto;
-  padding-top: 14px;
-  border-top: 1px solid var(--line-soft);
+.sider-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding-inline: calc((var(--rail-w) - 16px) / 2 - 9px);
+  color: var(--faint);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  font-family: var(--mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.sider-version:hover {
+  color: var(--accent-hover);
+}
+
+/* ── phone drawer ──
+   Below the breakpoint the rail is gone entirely and this replaces it. */
+.drawer-handle {
+  position: fixed;
+  top: 12px;
+  inset-inline-start: 12px;
+  z-index: 1100;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+}
+.drawer {
+  width: min(280px, 82vw);
+  height: 100%;
+  background: var(--surface);
+  border-inline-end: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  overflow: hidden;
+}
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.drawer-close:hover,
+.drawer-close:focus-visible {
+  background: var(--surface-2);
+  color: var(--ink);
+  outline: none;
+}
+.drawer-menu {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  padding-block: 8px;
+}
+.drawer-utility {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line-soft);
+  padding-block: 8px;
+}
+.drawer-footer {
+  flex: 0 0 auto;
+  padding: 8px 8px 12px;
+}
+.drawer .navlink,
+.drawer .sider-version {
+  padding-inline: 16px;
 }
 
 /* No width cap. A reading measure belongs on prose, not on a data table — a
@@ -255,7 +453,11 @@ th.ltr {
    have somewhere to go. Only the descriptive text below a heading is limited. */
 .main {
   padding: 26px 30px 72px;
-  width: 100%;
+  margin-inline-start: var(--rail-w);
+  transition: margin-inline-start 0.18s ease;
+}
+.shell.rail-pinned .main {
+  margin-inline-start: var(--rail-open-w);
 }
 
 .page-head {
@@ -805,43 +1007,20 @@ pre.config {
 /* ══════════ responsive ══════════ */
 
 /* Tablet: the sidebar becomes a top bar. */
-@media (max-width: 900px) {
-  .shell {
-    grid-template-columns: 1fr;
-  }
+/* Below this the rail is gone entirely and the drawer replaces it, which is
+   the same breakpoint the rest of the layout collapses at. */
+@media (max-width: 768px) {
   .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    height: auto;
-    overflow: visible;
-    border-inline-end: none;
-    border-bottom: 1px solid var(--line);
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 14px;
+    display: none;
   }
-  .brand {
-    padding: 0;
+  .drawer-handle {
+    display: inline-flex;
   }
-  .navlink {
-    padding: 8px 12px;
-  }
-  .sidebar-foot {
-    margin-inline-start: auto;
-    margin-top: 0;
-    border: none;
-    padding: 0;
-    flex-direction: row;
-    gap: 8px;
-  }
-  .sidebar-foot select {
-    width: auto;
-  }
-  .main {
-    padding: 20px 18px 56px;
+  /* Room for the floating handle so it never lands on a heading. */
+  .main,
+  .shell.rail-pinned .main {
+    padding: 64px 18px 56px;
+    margin-inline-start: 0;
   }
 }
 
@@ -849,12 +1028,6 @@ pre.config {
 @media (max-width: 620px) {
   :root {
     --t-xl: 1.4375rem; /* 23px */
-  }
-  .sidebar {
-    padding: 10px 12px;
-  }
-  .brand {
-    width: 100%;
   }
   .navlink {
     flex: 1;

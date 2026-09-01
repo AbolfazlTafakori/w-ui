@@ -243,5 +243,10 @@
   "client.confirmResetAll": "مصرف همه‌ی کلاینت‌های این سرور صفر شود؟",
   "client.purgeExhausted": "حذف کلاینت‌های اتمام‌حجم",
   "client.purgeExpired": "حذف کلاینت‌های منقضی",
-  "client.confirmPurge": "این کلاینت‌ها و همه‌ی دستگاه‌هایشان حذف شوند؟"
+  "client.confirmPurge": "این کلاینت‌ها و همه‌ی دستگاه‌هایشان حذف شوند؟",
+  "nav.menu": "منو",
+  "nav.pin": "سنجاق کردن منو",
+  "nav.unpin": "برداشتن سنجاق",
+  "nav.language": "زبان",
+  "common.close": "بستن"
 }
