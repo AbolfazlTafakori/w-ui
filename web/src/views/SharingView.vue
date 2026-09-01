@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
+import ErrorState from '../components/ErrorState.vue'
 
 const reports = ref([])
 const loading = ref(true)
@@ -17,10 +18,14 @@ onMounted(() => {
 })
 onBeforeUnmount(() => clearInterval(timer))
 
+const loadError = ref(null)
+
 async function load() {
   try {
     reports.value = await api.get('/api/sharing')
+    loadError.value = null
   } catch (e) {
+    loadError.value = e
     notify(e.message, 'error')
   } finally {
     loading.value = false
@@ -64,6 +69,8 @@ const total = computed(() => reports.value.length)
   </div>
 
   <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
+
+  <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
 
   <section v-else-if="!total" class="card empty-state">
     <Icon name="check" :size="22" />

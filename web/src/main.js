@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
 import App from './App.vue'
-import { store, bootstrap, signOut } from './lib/store.js'
+import { store, bootstrap, signOut, notify, t } from './lib/store.js'
 
 // Fonts are bundled rather than linked. The panel is often reached from
 // networks where a font CDN is unreachable, and falling back to a system font
@@ -26,6 +26,7 @@ import GroupsView from './views/GroupsView.vue'
 import SettingsView from './views/SettingsView.vue'
 import SharingView from './views/SharingView.vue'
 import ApiView from './views/ApiView.vue'
+import NotFoundView from './views/NotFoundView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -39,7 +40,9 @@ const router = createRouter({
     { path: '/sharing', name: 'sharing', component: SharingView },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
+    // Shown rather than redirected: silently swallowing a typo leaves the
+    // operator unsure whether they mistyped or the page moved.
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],
 })
 
@@ -57,6 +60,10 @@ router.beforeEach((to) => {
 window.addEventListener('wui:unauthorized', () => {
   signOut()
   if (router.currentRoute.value.name !== 'login') {
+    // Said out loud. Being returned to a sign-in screen with no explanation
+    // reads as the panel having lost the password, and the usual next move is
+    // to start resetting things that were never wrong.
+    notify(t('error.sessionEnded'), 'warn')
     router.replace({ name: 'login' })
   }
 })

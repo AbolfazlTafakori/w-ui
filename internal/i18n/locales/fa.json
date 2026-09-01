@@ -395,5 +395,17 @@
   "api.copy": "کپی به‌صورت curl",
   "api.copied": "کپی شد",
   "api.copyCurl": "کپی دستور curl این اندپوینت",
-  "api.copyFailed": "کپی در کلیپ‌بورد ممکن نشد."
+  "api.copyFailed": "کپی در کلیپ‌بورد ممکن نشد.",
+  "error.unknown": "مشکلی پیش آمد.",
+  "error.unreachable": "پنل در دسترس نیست",
+  "error.timeout": "پنل پاسخ نداد",
+  "error.forbidden": "مجاز نیست",
+  "error.notFound": "پیدا نشد",
+  "error.serverSide": "پنل به خطا خورد",
+  "error.failed": "انجام نشد",
+  "error.tryAgain": "دوباره تلاش کن",
+  "error.pageBroke": "این صفحه نمایش داده نشد",
+  "error.reload": "بارگذاری دوبارهٔ پنل",
+  "error.noSuchPage": "در این آدرس صفحه‌ای نیست",
+  "error.sessionEnded": "نشست شما تمام شد. دوباره وارد شوید."
 }

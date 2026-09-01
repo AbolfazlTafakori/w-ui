@@ -83,6 +83,10 @@ export function signOut() {
 let toastTimer = null
 
 export function notify(message, kind = 'info') {
+  // The expired-session error carries no message: it has already been
+  // announced once, and a second empty toast on top of it is noise.
+  if (!message) return
+
   store.toast = { message, kind }
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => (store.toast = null), 4500)

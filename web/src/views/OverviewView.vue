@@ -6,16 +6,24 @@ import { store, t, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Sparkline from '../components/Sparkline.vue'
 import Icon from '../components/Icon.vue'
+import ErrorState from '../components/ErrorState.vue'
 
 const data = ref(null)
 const loading = ref(true)
 const showIp = ref(false)
 let timer = null
 
+// loadError is only shown when there is nothing to show instead. A refresh
+// that fails while the page already holds figures should not replace them with
+// an error: stale numbers with a warning are more use than none.
+const loadError = ref(null)
+
 async function load(quiet = false) {
   try {
     data.value = await api.fullOverview()
+    loadError.value = null
   } catch (err) {
+    loadError.value = err
     if (!quiet) notify(err.message, 'error')
   } finally {
     loading.value = false
@@ -160,6 +168,8 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 
 <template>
   <div v-if="loading" class="card"><div class="empty"><span class="spin"></span></div></div>
+
+  <ErrorState v-else-if="loadError && !sys" :error="loadError" @retry="load()" />
 
   <div v-else-if="sys" class="ov-page">
     <div class="ov-actionbar">

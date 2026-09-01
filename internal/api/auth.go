@@ -169,7 +169,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if raw == "" || raw == r.Header.Get("Authorization") {
-			writeError(w, http.StatusUnauthorized, "sign in to continue")
+			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
 			return
 		}
 
@@ -189,7 +189,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		var admin model.Admin
 		if err := s.db.WithContext(r.Context()).First(&admin, claims.Subject).Error; err != nil {
-			writeError(w, http.StatusUnauthorized, "sign in to continue")
+			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
 			return
 		}
 

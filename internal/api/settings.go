@@ -134,7 +134,7 @@ type changePasswordRequest struct {
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	admin := adminFrom(r.Context())
 	if admin == nil {
-		writeError(w, http.StatusUnauthorized, "sign in to continue")
+		writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
 		return
 	}
 
@@ -175,7 +175,7 @@ type updateMeRequest struct {
 func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	admin := adminFrom(r.Context())
 	if admin == nil {
-		writeError(w, http.StatusUnauthorized, "sign in to continue")
+		writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
 		return
 	}
 

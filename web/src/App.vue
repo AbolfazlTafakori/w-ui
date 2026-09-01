@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useRouter, RouterLink, RouterView } from 'vue-router'
 import { store, t, signOut, loadMessages } from './lib/store.js'
 import Icon from './components/Icon.vue'
@@ -81,6 +81,33 @@ function handleSignOut() {
 }
 
 const version = computed(() => store.meta?.version || 'dev')
+
+// A render error anywhere below here would otherwise leave a blank page: Vue
+// unmounts the tree it could not render, and the operator is left with nothing
+// at all - no message, no navigation, no way to tell a broken panel from a
+// broken connection.
+const crash = ref(null)
+
+onErrorCaptured((err, _instance, info) => {
+  crash.value = { message: err?.message || String(err), where: info }
+  // Kept in the console too: the message on screen is for the operator, the
+  // stack is for whoever they send it to.
+  console.error('W-UI render error', err, info)
+  return false
+})
+
+// Navigating away is the most likely thing to fix a broken view, so a route
+// change clears the error rather than trapping the operator on it.
+watch(
+  () => router.currentRoute.value.fullPath,
+  () => {
+    crash.value = null
+  },
+)
+
+function reload() {
+  window.location.reload()
+}
 </script>
 
 <template>
@@ -241,7 +268,23 @@ const version = computed(() => store.meta?.version || 'dev')
         <span>{{ t('enforcement.unavailable') }}</span>
       </div>
 
-      <RouterView />
+      <!-- The navigation stays up, so this is a broken page rather than a
+           broken panel and there is somewhere to go from here. -->
+      <section v-if="crash" class="card error-state" role="alert">
+        <span class="error-mark"><Icon name="alert" :size="20" /></span>
+        <h2>{{ t('error.pageBroke') }}</h2>
+        <p class="error-detail">{{ crash.message }}</p>
+        <p class="muted small">{{ crash.where }}</p>
+        <div class="error-actions">
+          <button class="btn" @click="reload">
+            <Icon name="refresh" :size="15" />
+            <span>{{ t('error.reload') }}</span>
+          </button>
+          <RouterLink to="/" class="btn ghost">{{ t('nav.overview') }}</RouterLink>
+        </div>
+      </section>
+
+      <RouterView v-else />
     </main>
   </div>
 

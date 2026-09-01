@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
+import ErrorState from '../components/ErrorState.vue'
 
 const docs = ref(null)
 const loading = ref(true)
@@ -10,16 +11,23 @@ const query = ref('')
 const openGroup = ref(null)
 const copied = ref('')
 
-onMounted(async () => {
+const loadError = ref(null)
+
+async function load() {
+  loading.value = true
   try {
     docs.value = await api.get('/api/docs')
     openGroup.value = docs.value.groups?.[0]?.name ?? null
+    loadError.value = null
   } catch (e) {
+    loadError.value = e
     notify(e.message, 'error')
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
 
 // Searching an API reference is how it is actually used: you know roughly what
 // you want to do, not which heading it lives under. A match anywhere opens its
@@ -88,6 +96,8 @@ const methodTone = (m) =>
   </div>
 
   <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
+
+  <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
 
   <template v-else-if="docs">
     <!-- How to authenticate, first: nothing else here works without it. -->

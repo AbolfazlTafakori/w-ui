@@ -3,9 +3,11 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
 import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
+import ErrorState from '../components/ErrorState.vue'
 
 const info = ref(null)
 const loading = ref(true)
+const loadError = ref(null)
 
 // `saved` is what the server last confirmed; `form` is what is on screen. The
 // save button is enabled by the difference between them, so an operator can
@@ -56,7 +58,9 @@ async function load() {
     form.value = { ...cfg.settings, notifyKinds: [...(cfg.settings.notifyKinds || [])] }
     await loadBackups()
     await loadMe()
+    loadError.value = null
   } catch (e) {
+    loadError.value = e
     notify(e.message, 'error')
   } finally {
     loading.value = false
@@ -348,6 +352,8 @@ async function changePassword() {
   </div>
 
   <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
+
+  <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
 
   <template v-else-if="form">
     <!-- Named risks first, because they are the reason to open this page. -->

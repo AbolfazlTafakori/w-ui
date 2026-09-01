@@ -22,12 +22,27 @@ export function setToken(token) {
 }
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, kind = 'server') {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    // kind separates the three things a caller may want to do differently:
+    // 'network' — the panel could not be reached at all, so retrying may work
+    // 'timeout' — it was reached and did not answer
+    // 'server'  — it answered, and said no
+    this.kind = kind
+  }
+
+  get retryable() {
+    return this.kind !== 'server' || this.status >= 500 || this.status === 429
   }
 }
+
+// requestTimeout bounds every call. Without one a request to a server that
+// accepted the connection and then stopped answering hangs until the browser
+// gives up, which is minutes — and the page sits on a spinner the whole time
+// with no way to tell that anything is wrong.
+const requestTimeout = 30_000
 
 async function request(method, path, body) {
   const headers = {}
@@ -35,17 +50,44 @@ async function request(method, path, body) {
   if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-  const res = await fetch(path, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), requestTimeout)
 
-  if (res.status === 401) {
-    setToken(null)
-    if (!path.endsWith('/auth/login')) {
-      window.dispatchEvent(new CustomEvent('wui:unauthorized'))
+  let res
+  try {
+    res = await fetch(path, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: abort.signal,
+    })
+  } catch (err) {
+    // fetch rejects for exactly two reasons worth telling apart, and its own
+    // message ("Failed to fetch") says neither.
+    if (err?.name === 'AbortError') {
+      throw new ApiError(
+        'The server did not answer in time. It may be busy or restarting.',
+        0,
+        'timeout',
+      )
     }
+    throw new ApiError(
+      'Could not reach the panel. Check that it is running and that your connection is up.',
+      0,
+      'network',
+    )
+  } finally {
+    clearTimeout(timer)
+  }
+
+  if (res.status === 401 && !path.endsWith('/auth/login')) {
+    // The session is gone. Every request in flight is about to fail for this
+    // one reason, so it is announced once here rather than by each page that
+    // happens to catch it first — which is how the operator ended up reading
+    // whichever message won the race.
+    setToken(null)
+    window.dispatchEvent(new CustomEvent('wui:unauthorized'))
+    throw new ApiError('', 401, 'session')
   }
 
   if (res.status === 204) return null
@@ -61,6 +103,18 @@ async function request(method, path, body) {
   }
 
   if (!res.ok) {
+    // A throttled caller is told how long to wait rather than left to guess.
+    if (res.status === 429) {
+      const after = Number(res.headers.get('Retry-After'))
+      const wait = Number.isFinite(after) && after > 0 ? ` Try again in ${after} seconds.` : ''
+      throw new ApiError((payload?.error || 'Too many attempts.') + wait, 429)
+    }
+    if (res.status >= 500) {
+      throw new ApiError(
+        payload?.error || 'The panel hit an error handling that. Its log will say more.',
+        res.status,
+      )
+    }
     throw new ApiError(payload?.error || `Request failed (${res.status})`, res.status)
   }
   return payload

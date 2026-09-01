@@ -395,5 +395,17 @@
   "api.copy": "Copy as curl",
   "api.copied": "Copied",
   "api.copyCurl": "Copy a curl command for this endpoint",
-  "api.copyFailed": "Could not copy to the clipboard."
+  "api.copyFailed": "Could not copy to the clipboard.",
+  "error.unknown": "Something went wrong.",
+  "error.unreachable": "Cannot reach the panel",
+  "error.timeout": "The panel did not answer",
+  "error.forbidden": "Not allowed",
+  "error.notFound": "Not found",
+  "error.serverSide": "The panel hit an error",
+  "error.failed": "That did not work",
+  "error.tryAgain": "Try again",
+  "error.pageBroke": "This page could not be displayed",
+  "error.reload": "Reload the panel",
+  "error.noSuchPage": "There is no page at that address",
+  "error.sessionEnded": "Your session ended. Sign in again."
 }
