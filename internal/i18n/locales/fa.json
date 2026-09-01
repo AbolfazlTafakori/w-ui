@@ -384,5 +384,6 @@
   "settings.twoFactorEnabled": "ورود دومرحله‌ای روشن شد.",
   "settings.twoFactorDisabled": "ورود دومرحله‌ای خاموش شد.",
   "settings.confirmPasswordToDisable": "برای خاموش کردن، رمزتان را وارد کنید.",
-  "common.cancel": "انصراف"
+  "common.cancel": "انصراف",
+  "overview.onlineNow": "آنلاین"
 }

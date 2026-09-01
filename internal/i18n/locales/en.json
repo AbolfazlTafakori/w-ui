@@ -384,5 +384,6 @@
   "settings.twoFactorEnabled": "Two-factor authentication is on.",
   "settings.twoFactorDisabled": "Two-factor authentication is off.",
   "settings.confirmPasswordToDisable": "Enter your password to turn it off.",
-  "common.cancel": "Cancel"
+  "common.cancel": "Cancel",
+  "overview.onlineNow": "Online now"
 }

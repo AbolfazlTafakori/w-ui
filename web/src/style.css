@@ -1582,3 +1582,55 @@ td.right {
 td.right .actions {
   justify-content: flex-end;
 }
+
+/* Customer tiles on the overview. */
+.ov-customers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.ov-cust {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  transition: border-color 0.14s, background 0.14s;
+}
+.ov-cust:hover {
+  border-color: var(--accent-line);
+  background: var(--surface-2);
+}
+.ov-cust-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--t-sm);
+  color: var(--faint);
+  white-space: nowrap;
+}
+.ov-cust-value {
+  font-size: var(--t-xl);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+}
+/* A count of zero is good news on these, so it recedes rather than shouting. */
+.ov-cust.quiet .ov-cust-value {
+  color: var(--faint);
+}
+.ov-cust.urgent {
+  border-color: var(--accent-line);
+}
+.ov-cust.urgent .ov-cust-value {
+  color: var(--accent-hover);
+}
+.ov-cust-label .dot.ok {
+  background: var(--ok, #4ade80);
+}
+.ov-cust-label .dot.warn {
+  background: var(--warn, #d99e2b);
+}
+.ov-cust-label .dot.bad {
+  background: var(--accent);
+}

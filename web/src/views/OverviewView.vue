@@ -34,6 +34,24 @@ onUnmounted(() => clearInterval(timer))
 const sys = computed(() => data.value?.system)
 const panel = computed(() => data.value?.panel)
 const clients = computed(() => data.value?.clients)
+
+// The tiles an operator acts on, in the order they matter. The ones that mean
+// work sit first; the reassuring totals sit last.
+const customerTiles = computed(() => {
+  const c = clients.value
+  if (!c) return []
+  return [
+    { key: 'online', label: t('overview.onlineNow'), value: c.online, tone: 'ok', to: '/clients' },
+    { key: 'depleting', label: t('stat.depleting'), value: c.depleting, tone: 'warn',
+      urgent: true, to: '/clients?status=active' },
+    { key: 'exhausted', label: t('status.exhausted'), value: c.exhausted, tone: 'bad',
+      urgent: true, to: '/clients?status=exhausted' },
+    { key: 'expired', label: t('status.expired'), value: c.expired, tone: 'bad',
+      urgent: true, to: '/clients?status=expired' },
+    { key: 'active', label: t('status.active'), value: c.active, tone: 'ok', to: '/clients?status=active' },
+    { key: 'total', label: t('nav.clients'), value: c.clients, tone: '', to: '/clients' },
+  ]
+})
 const ifaces = computed(() => data.value?.interfaces || [])
 const hist = computed(() => sys.value?.history || {})
 
@@ -164,6 +182,23 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
     <div v-if="!panel.enforcementActive" class="ov-health">
       <Icon name="alert" :size="16" />
       <span>{{ panel.enforcementMessage }}</span>
+    </div>
+
+    <!-- Customers first. This is the page an operator lands on, and the
+         question they arrive with is whether anything needs doing today - not
+         how the machine's memory is. Each tile leads to the list already
+         filtered, so noticing a problem and acting on it is one click. -->
+    <div v-if="clients" class="ov-customers">
+      <RouterLink
+        v-for="tile in customerTiles"
+        :key="tile.key"
+        :to="tile.to"
+        class="card ov-cust"
+        :class="{ quiet: !tile.value, urgent: tile.urgent && tile.value }"
+      >
+        <span class="ov-cust-label"><i class="dot" :class="tile.tone"></i>{{ tile.label }}</span>
+        <strong class="ov-cust-value num ltr">{{ nf(tile.value) }}</strong>
+      </RouterLink>
     </div>
 
     <hr class="ov-rule" />
