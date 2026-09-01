@@ -73,6 +73,16 @@ type Client struct {
 	DownBytes uint64     `gorm:"not null;default:0" json:"downBytes"`
 	ExpiresAt *time.Time `gorm:"index" json:"expiresAt"`
 
+	// A plan that starts when the customer first connects rather than when it
+	// was sold. A reseller who hands out ten configs on Monday should not have
+	// them all expiring on the same Wednesday whether or not anyone used them.
+	//
+	// StartOnFirstUse with DurationDays set and ExpiresAt nil means the clock
+	// has not started. ActivatedAt records when it did.
+	StartOnFirstUse bool       `gorm:"not null;default:false" json:"startOnFirstUse"`
+	DurationDays    int        `gorm:"not null;default:0" json:"durationDays"`
+	ActivatedAt     *time.Time `json:"activatedAt"`
+
 	DeviceLimit int `gorm:"not null;default:1" json:"deviceLimit"`
 
 	// RateBitsPerSec of 0 means unmetered. Applied via tc by the enforcer.

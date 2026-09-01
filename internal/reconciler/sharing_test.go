@@ -231,3 +231,95 @@ func TestAnEmptyEndpointIsIgnored(t *testing.T) {
 		t.Errorf("stored %d rows for a blank endpoint, want 0", n)
 	}
 }
+
+func TestPlanDoesNotStartUntilTheCustomerConnects(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now().UTC()
+
+	c := model.Client{
+		Name: "Ali", Status: model.StatusActive, DeviceLimit: 1,
+		StartOnFirstUse: true, DurationDays: 30,
+	}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatal(err)
+	}
+	acc := model.Account{
+		ClientID: c.ID, InterfaceID: 1, NodeID: 1,
+		DeviceName: "Laptop", IP: "10.66.0.2", Enabled: true,
+	}
+	if err := db.Create(&acc).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	r := &Reconciler{db: db, log: quietLog()}
+
+	// Handed out but never used: a reseller's configs must not burn through
+	// their month sitting in someone's inbox.
+	started, err := r.activate(context.Background(), now)
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	if started != 0 {
+		t.Fatalf("started %d plans before anyone connected", started)
+	}
+
+	var check model.Client
+	db.First(&check, c.ID)
+	if check.ExpiresAt != nil {
+		t.Errorf("expiry was set before first use: %v", check.ExpiresAt)
+	}
+
+	// Now they connect.
+	db.Model(&model.Account{}).Where("id = ?", acc.ID).Update("last_handshake", now)
+	started, err = r.activate(context.Background(), now)
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	if started != 1 {
+		t.Fatalf("started %d plans on first use, want 1", started)
+	}
+
+	db.First(&check, c.ID)
+	if check.ActivatedAt == nil || check.ExpiresAt == nil {
+		t.Fatalf("plan did not start: activated=%v expires=%v", check.ActivatedAt, check.ExpiresAt)
+	}
+	if days := check.ExpiresAt.Sub(now).Hours() / 24; days < 29 || days > 31 {
+		t.Errorf("expiry is %.1f days out, want 30", days)
+	}
+}
+
+func TestAStartedPlanIsNeverRestarted(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now().UTC()
+
+	started := now.Add(-10 * 24 * time.Hour)
+	expires := started.AddDate(0, 0, 30)
+	c := model.Client{
+		Name: "Ali", Status: model.StatusActive, DeviceLimit: 1,
+		StartOnFirstUse: true, DurationDays: 30,
+		ActivatedAt: &started, ExpiresAt: &expires,
+	}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatal(err)
+	}
+	acc := model.Account{
+		ClientID: c.ID, InterfaceID: 1, NodeID: 1,
+		DeviceName: "Laptop", IP: "10.66.0.2", Enabled: true, LastHandshake: &now,
+	}
+	if err := db.Create(&acc).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	r := &Reconciler{db: db, log: quietLog()}
+	// Every later connection must not push the expiry out; that would make the
+	// plan renew itself for as long as the customer keeps using it.
+	if n, err := r.activate(context.Background(), now); err != nil || n != 0 {
+		t.Fatalf("activate = %d, %v; want it to leave a started plan alone", n, err)
+	}
+
+	var check model.Client
+	db.First(&check, c.ID)
+	if !check.ExpiresAt.Equal(expires.Truncate(time.Second)) && check.ExpiresAt.After(expires.Add(time.Second)) {
+		t.Errorf("expiry moved from %v to %v", expires, check.ExpiresAt)
+	}
+}

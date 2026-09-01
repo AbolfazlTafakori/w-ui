@@ -24,6 +24,7 @@ import ClientDetailView from './views/ClientDetailView.vue'
 import InterfacesView from './views/InterfacesView.vue'
 import GroupsView from './views/GroupsView.vue'
 import SettingsView from './views/SettingsView.vue'
+import SharingView from './views/SharingView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -34,6 +35,7 @@ const router = createRouter({
     { path: '/clients/:id', name: 'client', component: ClientDetailView, props: true },
     { path: '/groups', name: 'groups', component: GroupsView },
     { path: '/interfaces', name: 'interfaces', component: InterfacesView },
+    { path: '/sharing', name: 'sharing', component: SharingView },
     { path: '/settings', name: 'settings', component: SettingsView },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

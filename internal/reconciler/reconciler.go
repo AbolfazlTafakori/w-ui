@@ -263,6 +263,13 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	now := time.Now().UTC()
 	db := r.db.WithContext(ctx)
 
+	// Plans that start on first use are turned into real dates before expiry
+	// is evaluated, so a client cannot be expired in the same tick that starts
+	// their clock.
+	if _, err := r.activate(ctx, now); err != nil {
+		r.log.Warn("could not start pending plans", "error", err)
+	}
+
 	// Who is about to be cut off is read before the sweep. Afterwards the rows
 	// no longer match the condition, so there would be no way to say whose
 	// service just stopped — and "someone was cut off" is not a useful message.

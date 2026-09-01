@@ -41,6 +41,11 @@ type CreateInput struct {
 	RateBitsPerSec uint64           `json:"rateBitsPerSec"`
 	ResetCycle     model.ResetCycle `json:"resetCycle"`
 
+	// StartOnFirstUse defers the clock until the customer connects, with
+	// DurationDays standing in for a date until then.
+	StartOnFirstUse bool `json:"startOnFirstUse"`
+	DurationDays    int  `json:"durationDays"`
+
 	// DeviceNames seeds the first devices. When empty one device is created,
 	// because a client with no device has nothing to hand the customer.
 	DeviceNames []string `json:"deviceNames"`
@@ -72,6 +77,19 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 		RateBitsPerSec: in.RateBitsPerSec,
 		ResetCycle:     in.ResetCycle,
 		Status:         model.StatusActive,
+
+		StartOnFirstUse: in.StartOnFirstUse,
+		DurationDays:    in.DurationDays,
+	}
+
+	// A deferred plan carries a duration instead of a date. Keeping both would
+	// leave two answers to "when does this end", and the wrong one would be
+	// enforced the moment the customer connected.
+	if client.StartOnFirstUse && client.DurationDays > 0 {
+		client.ExpiresAt = nil
+	} else {
+		client.StartOnFirstUse = false
+		client.DurationDays = 0
 	}
 
 	// Addresses are reserved before the transaction opens and released if it

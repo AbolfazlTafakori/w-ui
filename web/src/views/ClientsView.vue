@@ -177,12 +177,26 @@ function remainingTag(c) {
 }
 
 function expiryTag(c) {
+  // A plan waiting for its first connection has no date yet. Showing the
+  // unlimited mark here would read as "never expires", which is the opposite
+  // of a thirty-day plan that simply has not started.
+  if (!c.expiresAt && c.startOnFirstUse && c.durationDays > 0) {
+    return { color: 'blue', label: `${c.durationDays}d`, title: t('client.notStartedHint') }
+  }
   if (!c.expiresAt) return { color: 'purple', label: '∞' }
   const ms = new Date(c.expiresAt) - Date.now()
   const label = relative(c.expiresAt, store.locale)
   if (ms <= 0) return { color: 'red', label }
   if (ms < 3 * 86400e3) return { color: 'orange', label }
   return { color: 'green', label }
+}
+
+// The tooltip has to agree with the tag: "never expires" under a badge that
+// says 30d would leave the operator with two different answers.
+function expiryTitle(c) {
+  if (c.expiresAt) return dateTime(c.expiresAt, store.locale)
+  if (c.startOnFirstUse && c.durationDays > 0) return t('client.notStartedHint')
+  return t('client.neverExpires')
 }
 
 async function guard(fn, successKey) {
@@ -540,7 +554,7 @@ async function submitForm(input) {
                 <span
                   class="tag ltr"
                   :class="expiryTag(c).color"
-                  :title="c.expiresAt ? dateTime(c.expiresAt, store.locale) : t('client.neverExpires')"
+                  :title="expiryTitle(c)"
                 >
                   {{ expiryTag(c).label }}
                 </span>

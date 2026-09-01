@@ -13,6 +13,7 @@ const nav = [
   { to: '/clients', key: 'nav.clients', icon: 'users' },
   { to: '/groups', key: 'nav.groups', icon: 'tag' },
   { to: '/interfaces', key: 'nav.interfaces', icon: 'server' },
+  { to: '/sharing', key: 'nav.sharing', icon: 'eye' },
   { to: '/settings', key: 'nav.settings', icon: 'settings' },
 ]
 

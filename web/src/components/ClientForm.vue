@@ -31,6 +31,8 @@ const form = ref(
         expiresInDays: daysLeft(props.client.expiresAt),
         deviceLimit: props.client.deviceLimit,
         rateMbit: props.client.rateBitsPerSec ? props.client.rateBitsPerSec / 1e6 : '',
+        startOnFirstUse: !!props.client.startOnFirstUse,
+        durationDays: props.client.durationDays || '',
         resetCycle: props.client.resetCycle || 'none',
       }
     : {
@@ -42,6 +44,8 @@ const form = ref(
         expiresInDays: '',
         deviceLimit: 1,
         rateMbit: '',
+        startOnFirstUse: false,
+        durationDays: '',
         resetCycle: 'none',
       },
 )
@@ -122,6 +126,8 @@ async function submit() {
       expiresAt,
       deviceLimit: Number(form.value.deviceLimit) || 1,
       rateBitsPerSec: Math.max(0, Math.round(Number(form.value.rateMbit) * 1e6)) || 0,
+      startOnFirstUse: form.value.startOnFirstUse,
+      durationDays: Number(form.value.durationDays) || 0,
       resetCycle: form.value.resetCycle,
       deviceNames: [],
     })
@@ -205,6 +211,22 @@ async function submit() {
             <label for="cf-devices"><span class="req">*</span>{{ t('client.deviceLimit') }}</label>
             <input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" required />
             <span class="hint">{{ t('client.deviceLimitHint') }}</span>
+          </div>
+
+          <div class="field span-2">
+            <label class="check">
+              <input v-model="form.startOnFirstUse" type="checkbox" />
+              <span>{{ t('client.startOnFirstUse') }}</span>
+            </label>
+            <span class="hint">{{ t('client.startOnFirstUseHint') }}</span>
+          </div>
+
+          <div v-if="form.startOnFirstUse" class="field">
+            <label for="cf-duration">{{ t('client.durationDays') }}</label>
+            <div class="unit-field">
+              <input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" />
+              <span class="unit">{{ t('settings.days') }}</span>
+            </div>
           </div>
 
           <div class="field">

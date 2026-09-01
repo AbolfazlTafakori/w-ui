@@ -402,15 +402,21 @@ func reportLocaleDrift(c *i18n.Catalog, log *slog.Logger) {
 	log.Info("locales loaded", "available", c.Locales(), "source", i18n.DefaultLocale)
 }
 
+// printFirstRunCredentials shows the generated password once.
+//
+// It goes to stdout, alongside the log. On stderr — where it used to be —
+// anyone capturing the panel's output the ordinary way, `wui > wui.log`, was
+// told an account had been created and never saw its password. It cannot be
+// recovered, so that left them locked out until they found `wui admin reset`.
 func printFirstRunCredentials(password string) {
 	const line = "────────────────────────────────────────────────────────"
-	fmt.Fprintf(os.Stderr, "\n%s\n", line)
-	fmt.Fprintf(os.Stderr, "  First run: an admin account has been created.\n\n")
-	fmt.Fprintf(os.Stderr, "    username  admin\n")
-	fmt.Fprintf(os.Stderr, "    password  %s\n\n", password)
-	fmt.Fprintf(os.Stderr, "  This password is shown once and is not recoverable.\n")
-	fmt.Fprintf(os.Stderr, "  Change it after signing in.\n")
-	fmt.Fprintf(os.Stderr, "%s\n\n", line)
+	fmt.Fprintf(os.Stdout, "\n%s\n", line)
+	fmt.Fprintf(os.Stdout, "  First run: an admin account has been created.\n\n")
+	fmt.Fprintf(os.Stdout, "    username  admin\n")
+	fmt.Fprintf(os.Stdout, "    password  %s\n\n", password)
+	fmt.Fprintf(os.Stdout, "  This password is shown once and is not recoverable.\n")
+	fmt.Fprintf(os.Stdout, "  Change it after signing in.\n")
+	fmt.Fprintf(os.Stdout, "%s\n\n", line)
 }
 
 // assert that the enforcer stand-in satisfies the contract the phase 2
