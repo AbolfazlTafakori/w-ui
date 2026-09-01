@@ -38,6 +38,16 @@ import (
 var version = "dev"
 
 func main() {
+	// A subcommand means the operator is asking the binary a question from a
+	// terminal, not starting the panel.
+	if handled, err := dispatch(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "wui: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "wui: %v\n", err)
 		os.Exit(1)

@@ -110,6 +110,96 @@ writable path (`/var/lib/wui`).
 
 ---
 
+## The `w-ui` command
+
+Installing the panel also installs a management script. Running `w-ui` with no
+arguments opens a menu:
+
+```
+╔────────────────────────────────────────────────╗
+│  W-UI · WireGuard & OpenVPN Panel              │
+│   0. Exit Script                               │
+│────────────────────────────────────────────────│
+│  📦  1. Install                                │
+│  🔃  2. Update                                 │
+│  📜  3. Update This Menu                       │
+│  🧹  4. Uninstall                              │
+│────────────────────────────────────────────────│
+│  🔑  5. Reset Admin Password                   │
+│  🔧  6. Settings                               │
+│  🔌  7. Change Panel Port                      │
+│  📋  8. View Current Settings                  │
+│────────────────────────────────────────────────│
+│  🟢  9. Start                                  │
+│  🔴 10. Stop                                   │
+│  🔄 11. Restart                                │
+│  📊 12. Check Status                           │
+│  📁 13. Logs Management                        │
+│────────────────────────────────────────────────│
+│  ✅ 14. Enable Autostart                       │
+│  ❌ 15. Disable Autostart                      │
+│────────────────────────────────────────────────│
+│  🧱 16. Enforcement Diagnostics                │
+│  🌐 17. Interface Overview                     │
+│  👥 18. Customer Summary                       │
+│  🔥 19. Firewall Management                    │
+│  🔒 20. SSL Certificate Management             │
+│────────────────────────────────────────────────│
+│  💾 21. Backup & Restore                       │
+│  🚀 22. Enable BBR                             │
+│  📡 23. Speedtest by Ookla                     │
+╚────────────────────────────────────────────────╝
+
+Panel state: Running
+Autostart:   Yes
+WireGuard:   v1.0.20210914 + amnezia
+OpenVPN:     2.6.19
+Enforcement: Exact (kernel quota)
+```
+
+The status block under the menu is the point of it. **Enforcement** is the line
+that matters commercially: it says whether data limits are being applied by the
+kernel or only on the next poll, so you find out before a customer does.
+
+Anything the script needs from the database it asks the panel binary for, rather
+than reading SQLite from a shell — the schema has one implementation.
+
+### Settings (option 6)
+
+Every value the panel reads at startup can be set from here, with the current
+value shown beside each one. Each change writes a single key to
+`/etc/wui/wui.env` and offers a restart, since none of them take effect until
+the process re-reads its configuration.
+
+Listen address · panel port · data directory · collection interval · default
+language · log level · log format · database source · show the environment
+file · reset everything to defaults.
+
+Resetting clears that file only — customers, interfaces, keys and usage are
+untouched.
+
+### Without the menu
+
+```bash
+w-ui start | stop | restart | status
+w-ui enable | disable          # start at boot, or not
+w-ui log                       # follow the panel log
+w-ui settings                  # what the panel is actually running with
+w-ui admin                     # reset the administrator account
+w-ui check                     # enforcement diagnostics
+w-ui interfaces                # what is up and how many are connected
+w-ui install | update | uninstall
+```
+
+The panel binary also answers directly, which is what the script uses:
+
+```bash
+wui setting show [--json]
+wui admin reset [--username NAME] [--password PASS]
+```
+
+---
+
 ## Configuration
 
 Everything is environment variables — there is no config file to keep in sync.

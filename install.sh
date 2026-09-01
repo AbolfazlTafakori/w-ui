@@ -21,6 +21,8 @@
 set -euo pipefail
 
 BIN_PATH=/usr/local/bin/wui
+MENU_PATH=/usr/local/bin/w-ui
+MENU_URL="${WUI_MENU_URL:-https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/w-ui.sh}"
 DATA_DIR=/var/lib/wui
 CONF_DIR=/etc/wui
 UNIT=/etc/systemd/system/wui.service
@@ -101,7 +103,7 @@ do_uninstall() {
     ok "service stopped and disabled"
   fi
   rm -f "$UNIT" && systemctl daemon-reload
-  rm -f "$BIN_PATH"
+  rm -f "$BIN_PATH" "$MENU_PATH"
   ok "binary and unit removed"
 
   if [[ "$ACTION" == purge ]]; then
@@ -341,6 +343,43 @@ install_binary() {
   ok "$BIN_PATH"
 }
 
+install_menu() {
+  step "Installing the w-ui command"
+
+  # Prefer the copy beside this installer. Someone running --from-source or
+  # --local wants the script from their checkout, not whatever is on the branch.
+  local src=""
+  if [[ -f "$(dirname "$0")/w-ui.sh" ]]; then
+    src="$(dirname "$0")/w-ui.sh"
+  elif [[ -f ./w-ui.sh ]]; then
+    src=./w-ui.sh
+  fi
+
+  if [[ -n "$src" ]]; then
+    install -m 0755 "$src" "$MENU_PATH"
+    ok "installed from $src"
+  elif curl -fsSL "$MENU_URL" -o /tmp/w-ui.sh; then
+    install -m 0755 /tmp/w-ui.sh "$MENU_PATH"
+    rm -f /tmp/w-ui.sh
+    ok "downloaded"
+  else
+    warn "could not install the w-ui command; the panel still works"
+    return 0
+  fi
+
+  # A CRLF here makes the shebang line unparseable, and the error then names
+  # the interpreter rather than the file - a confusing first impression on a
+  # repository that has been edited on Windows.
+  local clean
+  clean=$(mktemp)
+  if tr -d '\015' < "$MENU_PATH" > "$clean"; then
+    install -m 0755 "$clean" "$MENU_PATH"
+  fi
+  rm -f "$clean"
+
+  ok "$MENU_PATH - run 'w-ui' to manage the panel"
+}
+
 create_user() {
   step "Creating the service account"
   if id -u "$SERVICE_USER" >/dev/null 2>&1; then
@@ -491,6 +530,7 @@ if [[ "$WANT_OPENVPN" == 1 ]]; then install_openvpn; else info "OpenVPN skipped 
 enable_forwarding
 check_nftables
 install_binary
+install_menu
 create_user
 write_unit
 open_firewall
