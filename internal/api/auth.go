@@ -16,8 +16,17 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
-// sessionTTL is how long a sign-in lasts.
-const sessionTTL = 12 * time.Hour
+// defaultSessionTTL is how long a sign-in lasts when nothing has been chosen.
+// The effective value comes from the settings page.
+const defaultSessionTTL = 12 * time.Hour
+
+// sessionTTL is the configured session length.
+func (s *Server) sessionTTL(ctx context.Context) time.Duration {
+	if s.settings == nil {
+		return defaultSessionTTL
+	}
+	return time.Duration(s.settings.SessionTTLHours(ctx)) * time.Hour
+}
 
 type ctxKey int
 
@@ -63,7 +72,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expires := time.Now().Add(sessionTTL)
+	expires := time.Now().Add(s.sessionTTL(r.Context()))
 	token, err := s.issueToken(&admin, expires)
 	if err != nil {
 		fail(w, s.log, err)

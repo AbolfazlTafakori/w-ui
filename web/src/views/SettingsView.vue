@@ -1,24 +1,113 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
-import { store, t, notify, loadMessages } from '../lib/store.js'
+import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 
 const info = ref(null)
 const loading = ref(true)
 
+// `saved` is what the server last confirmed; `form` is what is on screen. The
+// save button is enabled by the difference between them, so an operator can
+// always tell whether there is anything outstanding.
+const saved = ref(null)
+const defaults = ref(null)
+const form = ref(null)
+const busy = ref(false)
+
 const pw = ref({ current: '', next: '', confirm: '' })
 const pwBusy = ref(false)
 const pwError = ref('')
 
-onMounted(async () => {
+const tabs = [
+  { key: 'general', icon: 'settings', label: 'settings.tab.general' },
+  { key: 'clients', icon: 'users', label: 'settings.tab.clients' },
+  { key: 'security', icon: 'lock', label: 'settings.tab.security' },
+  { key: 'engine', icon: 'shield', label: 'settings.tab.engine' },
+  { key: 'system', icon: 'server', label: 'settings.tab.system' },
+]
+const active = ref(tabFromHash())
+
+function tabFromHash() {
+  const slug = (location.hash || '').replace(/^#/, '')
+  return tabs.some((x) => x.key === slug) ? slug : 'general'
+}
+
+function selectTab(key) {
+  active.value = key
+  // Kept in the address bar so a particular section can be linked to, and so a
+  // reload does not throw the operator back to the first tab.
+  history.replaceState(null, '', `#${key}`)
+}
+
+onMounted(load)
+
+async function load() {
+  loading.value = true
   try {
-    info.value = await api.system()
-  } catch (err) {
-    notify(err.message, 'error')
+    const [sys, cfg] = await Promise.all([api.get('/api/system'), api.get('/api/settings')])
+    info.value = sys
+    saved.value = cfg.settings
+    defaults.value = cfg.defaults
+    form.value = { ...cfg.settings }
+  } catch (e) {
+    notify(e.message, 'error')
   } finally {
     loading.value = false
   }
+}
+
+const dirty = computed(() => {
+  if (!form.value || !saved.value) return false
+  return JSON.stringify(form.value) !== JSON.stringify(saved.value)
+})
+
+async function save() {
+  busy.value = true
+  try {
+    const res = await api.put('/api/settings', {
+      ...form.value,
+      sessionHours: Number(form.value.sessionHours) || 12,
+      defaultQuotaBytes: Number(form.value.defaultQuotaBytes) || 0,
+      defaultExpiryDays: Number(form.value.defaultExpiryDays) || 0,
+      defaultDeviceLimit: Number(form.value.defaultDeviceLimit) || 1,
+      defaultRateBitsPerSec: Number(form.value.defaultRateBitsPerSec) || 0,
+    })
+    saved.value = res.settings
+    defaults.value = res.defaults
+    form.value = { ...res.settings }
+    notify(t('settings.saved'), 'success')
+    if (res.settings.defaultLocale !== store.locale) await loadMessages(res.settings.defaultLocale)
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+function revert() {
+  form.value = { ...saved.value }
+}
+
+// A value equal to what the panel ships as is marked, so an operator can tell
+// what they chose from what merely came that way.
+function isDefault(key) {
+  if (!form.value || !defaults.value) return false
+  return form.value[key] === defaults.value[key]
+}
+
+// Quota and rate are stored in bytes and bits. Nobody types either.
+const quotaGB = computed({
+  get: () => (form.value?.defaultQuotaBytes ? form.value.defaultQuotaBytes / 1024 ** 3 : 0),
+  set: (v) => {
+    form.value.defaultQuotaBytes = Math.max(0, Math.round(Number(v) * 1024 ** 3)) || 0
+  },
+})
+const rateMbit = computed({
+  get: () => (form.value?.defaultRateBitsPerSec ? form.value.defaultRateBitsPerSec / 1e6 : 0),
+  set: (v) => {
+    form.value.defaultRateBitsPerSec = Math.max(0, Math.round(Number(v) * 1e6)) || 0
+  },
 })
 
 const uptime = computed(() => {
@@ -26,9 +115,20 @@ const uptime = computed(() => {
   const d = Math.floor(s / 86400)
   const h = Math.floor((s % 86400) / 3600)
   const m = Math.floor((s % 3600) / 60)
-  if (d) return `${d}d ${h}h`
-  if (h) return `${h}h ${m}m`
-  return `${m}m`
+  return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`
+})
+
+// Concrete risks, not a lecture. Each one names something an operator can act on.
+const warnings = computed(() => {
+  const out = []
+  if (!info.value) return out
+  if (location.protocol !== 'https:') out.push(t('settings.warn.http'))
+  if (info.value.listen?.startsWith('0.0.0.0') && location.protocol !== 'https:') {
+    out.push(t('settings.warn.exposed'))
+  }
+  if (!info.value.enforcementActive) out.push(t('settings.warn.enforcement'))
+  if (info.value.shapingActive === false) out.push(t('settings.warn.shaping'))
+  return out
 })
 
 async function changePassword() {
@@ -41,29 +141,18 @@ async function changePassword() {
     pwError.value = t('settings.passwordMismatch')
     return
   }
-
   pwBusy.value = true
   try {
-    await api.changePassword(pw.value.current, pw.value.next)
+    await api.post('/api/auth/password', {
+      currentPassword: pw.value.current,
+      newPassword: pw.value.next,
+    })
     pw.value = { current: '', next: '', confirm: '' }
     notify(t('settings.passwordChanged'), 'success')
-  } catch (err) {
-    pwError.value = err.message
+  } catch (e) {
+    pwError.value = e.message
   } finally {
     pwBusy.value = false
-  }
-}
-
-// Saving the language on the account rather than only in this browser means it
-// follows the operator to their phone.
-async function saveLocale(event) {
-  const locale = event.target.value
-  try {
-    store.admin = await api.updateMe({ locale })
-    await loadMessages(locale)
-    notify(t('settings.saved'), 'success')
-  } catch (err) {
-    notify(err.message, 'error')
   }
 }
 </script>
@@ -72,189 +161,325 @@ async function saveLocale(event) {
   <div class="page-head">
     <div>
       <h1>{{ t('nav.settings') }}</h1>
-      <p>{{ t('settings.subtitle') }}</p>
+      <p class="lede">{{ t('settings.lede') }}</p>
     </div>
   </div>
 
-  <div v-if="loading" class="card"><div class="empty"><span class="spin"></span></div></div>
+  <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
 
-  <template v-else-if="info">
-    <div class="cols">
-      <section class="card">
-        <div class="card-head">
-          <Icon name="info" :size="17" />
-          <h2>{{ t('settings.system') }}</h2>
-        </div>
-        <dl class="rows">
-          <div><dt>{{ t('settings.version') }}</dt><dd class="mono">{{ info.version }}</dd></div>
-          <div><dt>{{ t('settings.listen') }}</dt><dd class="mono">{{ info.listen }}</dd></div>
-          <div><dt>{{ t('settings.platform') }}</dt><dd class="mono">{{ info.platform }}</dd></div>
-          <div><dt>Go</dt><dd class="mono">{{ info.goVersion }}</dd></div>
-          <div><dt>{{ t('settings.uptime') }}</dt><dd class="mono ltr">{{ uptime }}</dd></div>
-          <div>
-            <dt>{{ t('settings.protocols') }}</dt>
-            <dd class="row" style="gap: 6px; justify-content: flex-end">
-              <span v-for="p in info.protocols" :key="p" class="tag proto">{{ p }}</span>
-            </dd>
-          </div>
-          <!-- The global banner announces that enforcement is off; this row is
-               where an operator finds out why. -->
-          <div>
-            <dt>{{ t('settings.enforcement') }}</dt>
-            <dd>
-              <span class="tag" :class="info.enforcementActive ? 'active' : 'exhausted'">
-                <i v-if="info.enforcementActive" class="dot"></i>
-                {{ info.enforcementActive ? t('enforcement.active') : t('status.disabled') }}
-              </span>
-              <div v-if="info.enforcementMessage" class="mono muted" style="font-size: var(--t-xs); margin-top: 4px">
-                {{ info.enforcementMessage }}
-              </div>
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <Icon name="database" :size="17" />
-          <h2>{{ t('settings.storage') }}</h2>
-        </div>
-        <dl class="rows">
-          <div><dt>{{ t('settings.dbDriver') }}</dt><dd class="mono">{{ info.dbDriver }}</dd></div>
-          <div>
-            <dt>{{ t('nav.interfaces') }}</dt>
-            <dd class="num">{{ info.interfaces.toLocaleString(store.locale) }}</dd>
-          </div>
-          <div>
-            <dt>{{ t('nav.clients') }}</dt>
-            <dd class="num">{{ info.clients.toLocaleString(store.locale) }}</dd>
-          </div>
-          <div>
-            <dt>{{ t('device.title') }}</dt>
-            <dd class="num">{{ info.accounts.toLocaleString(store.locale) }}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <Icon name="globe" :size="17" />
-          <h2>{{ t('settings.preferences') }}</h2>
-        </div>
-        <div class="card-body">
-          <div class="field">
-            <label for="set-locale">{{ t('settings.language') }}</label>
-            <select id="set-locale" :value="store.locale" @change="saveLocale">
-              <option v-for="l in info.locales" :key="l" :value="l">
-                {{ l === 'fa' ? 'فارسی' : 'English' }}
-              </option>
-            </select>
-            <span class="hint">{{ t('settings.languageHint') }}</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <Icon name="key" :size="17" />
-          <h2>{{ t('settings.changePassword') }}</h2>
-        </div>
-        <form class="card-body form" @submit.prevent="changePassword">
-          <div class="field">
-            <label for="pw-cur">{{ t('settings.currentPassword') }}</label>
-            <input
-              id="pw-cur"
-              v-model="pw.current"
-              type="password"
-              autocomplete="current-password"
-              required
-            />
-          </div>
-          <div class="field">
-            <label for="pw-new">{{ t('settings.newPassword') }}</label>
-            <input
-              id="pw-new"
-              v-model="pw.next"
-              type="password"
-              autocomplete="new-password"
-              minlength="8"
-              required
-            />
-            <span class="hint">{{ t('settings.passwordHint') }}</span>
-          </div>
-          <div class="field">
-            <label for="pw-conf">{{ t('settings.confirmPassword') }}</label>
-            <input
-              id="pw-conf"
-              v-model="pw.confirm"
-              type="password"
-              autocomplete="new-password"
-              required
-            />
-          </div>
-
-          <p v-if="pwError" class="error" role="alert">{{ pwError }}</p>
-
-          <div class="row" style="justify-content: flex-end">
-            <button class="btn primary" type="submit" :disabled="pwBusy">
-              <span v-if="pwBusy" class="spin"></span>
-              <template v-else>{{ t('settings.updatePassword') }}</template>
-            </button>
-          </div>
-        </form>
-      </section>
+  <template v-else-if="form">
+    <!-- Named risks first, because they are the reason to open this page. -->
+    <div v-if="warnings.length" class="banner warn stack" role="status">
+      <div class="banner-head">
+        <Icon name="alert" :size="15" />
+        <strong>{{ t('settings.warn.title') }}</strong>
+      </div>
+      <ul>
+        <li v-for="(w, i) in warnings" :key="i">{{ w }}</li>
+      </ul>
     </div>
+
+    <!-- The save bar sits above the tabs: it applies to all of them, and a
+         change made on one tab must not look lost when another is opened. -->
+    <section class="card savebar">
+      <div class="savebar-actions">
+        <button class="btn primary" :disabled="!dirty || busy" @click="save">
+          <span v-if="busy">{{ t('common.saving') }}</span>
+          <span v-else>{{ t('common.save') }}</span>
+        </button>
+        <button class="btn ghost" :disabled="!dirty || busy" @click="revert">
+          {{ t('common.revert') }}
+        </button>
+      </div>
+      <p class="savebar-note">
+        <Icon name="info" :size="14" />
+        <span>{{ dirty ? t('settings.unsaved') : t('settings.note') }}</span>
+      </p>
+    </section>
+
+    <nav class="cat-tabs" role="tablist">
+      <button
+        v-for="tab in tabs"
+        :key="tab.key"
+        class="cat-tab"
+        role="tab"
+        :class="{ active: active === tab.key }"
+        :aria-selected="active === tab.key"
+        :title="t(tab.label)"
+        @click="selectTab(tab.key)"
+      >
+        <Icon :name="tab.icon" :size="16" />
+        <span class="cat-tab-text">{{ t(tab.label) }}</span>
+      </button>
+    </nav>
+
+    <section class="card settings-list">
+      <!-- ── General ── -->
+      <template v-if="active === 'general'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.language') }}
+              <span v-if="isDefault('defaultLocale')" class="tag grey">{{ t('settings.default') }}</span>
+            </div>
+            <p class="setting-desc">{{ t('settings.languageDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <select v-model="form.defaultLocale">
+              <option value="en">English</option>
+              <option value="fa">فارسی</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.listen') }}</div>
+            <p class="setting-desc">{{ t('settings.listenDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <code class="readonly ltr">{{ info?.listen }}</code>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.dataDir') }}</div>
+            <p class="setting-desc">{{ t('settings.dataDirDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <code class="readonly ltr">{{ info?.dbSource || '—' }}</code>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── New customer defaults ── -->
+      <template v-else-if="active === 'clients'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.defQuota') }}
+              <span v-if="isDefault('defaultQuotaBytes')" class="tag grey">{{ t('settings.default') }}</span>
+            </div>
+            <p class="setting-desc">{{ t('settings.defQuotaDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="unit-field">
+              <input v-model.number="quotaGB" type="number" min="0" step="1" />
+              <span class="unit">GB</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.defExpiry') }}
+              <span v-if="isDefault('defaultExpiryDays')" class="tag grey">{{ t('settings.default') }}</span>
+            </div>
+            <p class="setting-desc">{{ t('settings.defExpiryDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="unit-field">
+              <input v-model.number="form.defaultExpiryDays" type="number" min="0" step="1" />
+              <span class="unit">{{ t('settings.days') }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.defDevices') }}
+              <span v-if="isDefault('defaultDeviceLimit')" class="tag grey">{{ t('settings.default') }}</span>
+            </div>
+            <p class="setting-desc">{{ t('settings.defDevicesDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model.number="form.defaultDeviceLimit" type="number" min="1" max="64" step="1" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.defRate') }}
+              <span v-if="isDefault('defaultRateBitsPerSec')" class="tag grey">{{ t('settings.default') }}</span>
+            </div>
+            <p class="setting-desc">{{ t('settings.defRateDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="unit-field">
+              <input v-model.number="rateMbit" type="number" min="0" step="1" />
+              <span class="unit">Mbit/s</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.defReset') }}
+              <span v-if="isDefault('defaultResetCycle')" class="tag grey">{{ t('settings.default') }}</span>
+            </div>
+            <p class="setting-desc">{{ t('settings.defResetDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <select v-model="form.defaultResetCycle">
+              <option value="none">{{ t('reset.none') }}</option>
+              <option value="daily">{{ t('reset.daily') }}</option>
+              <option value="weekly">{{ t('reset.weekly') }}</option>
+              <option value="monthly">{{ t('reset.monthly') }}</option>
+            </select>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── Security ── -->
+      <template v-else-if="active === 'security'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.session') }}
+              <span v-if="isDefault('sessionHours')" class="tag grey">{{ t('settings.default') }}</span>
+            </div>
+            <p class="setting-desc">{{ t('settings.sessionDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="unit-field">
+              <input v-model.number="form.sessionHours" type="number" min="1" max="720" step="1" />
+              <span class="unit">{{ t('settings.hours') }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row block">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.changePassword') }}</div>
+            <p class="setting-desc">{{ t('settings.changePasswordDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <form class="pw-form" @submit.prevent="changePassword">
+              <label>
+                <span>{{ t('settings.currentPassword') }}</span>
+                <input v-model="pw.current" type="password" autocomplete="current-password" required />
+              </label>
+              <label>
+                <span>{{ t('settings.newPassword') }}</span>
+                <input v-model="pw.next" type="password" autocomplete="new-password" required />
+              </label>
+              <label>
+                <span>{{ t('settings.confirmPassword') }}</span>
+                <input v-model="pw.confirm" type="password" autocomplete="new-password" required />
+              </label>
+              <p v-if="pwError" class="field-error">{{ pwError }}</p>
+              <button class="btn primary" type="submit" :disabled="pwBusy">
+                <span v-if="pwBusy">{{ t('common.saving') }}</span>
+                <span v-else>{{ t('settings.updatePassword') }}</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── Engine ── -->
+      <template v-else-if="active === 'engine'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.quotaEngine') }}</div>
+            <p class="setting-desc">
+              {{ info?.enforcementActive ? t('settings.quotaEngineOn') : info?.enforcementMessage }}
+            </p>
+          </div>
+          <div class="setting-control">
+            <span class="tag" :class="info?.enforcementActive ? 'green' : 'red'">
+              {{ info?.enforcementActive ? t('settings.active') : t('settings.inactive') }}
+            </span>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.shaping') }}</div>
+            <p class="setting-desc">
+              {{ info?.shapingActive ? t('settings.shapingOn') : info?.shapingMessage || t('settings.shapingOff') }}
+            </p>
+          </div>
+          <div class="setting-control">
+            <span class="tag" :class="info?.shapingActive ? 'green' : 'red'">
+              {{ info?.shapingActive ? t('settings.active') : t('settings.inactive') }}
+            </span>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.reconciler') }}</div>
+            <p class="setting-desc">{{ t('settings.reconcilerDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <dl class="kv">
+              <dt>{{ t('settings.ticks') }}</dt>
+              <dd class="ltr">{{ info?.reconciler?.ticks ?? 0 }}</dd>
+              <dt>{{ t('settings.lastRun') }}</dt>
+              <dd class="ltr">{{ info?.reconciler?.lastDuration || '—' }}</dd>
+              <dt>{{ t('settings.counted') }}</dt>
+              <dd class="ltr">{{ info?.reconciler?.bytesCounted ?? 0 }}</dd>
+            </dl>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── System ── -->
+      <template v-else>
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.version') }}</div>
+            <p class="setting-desc">{{ t('settings.versionDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <dl class="kv">
+              <dt>W-UI</dt>
+              <dd class="ltr">{{ info?.version }}</dd>
+              <dt>Go</dt>
+              <dd class="ltr">{{ info?.goVersion }}</dd>
+              <dt>{{ t('settings.platform') }}</dt>
+              <dd class="ltr">{{ info?.platform }}</dd>
+              <dt>{{ t('settings.uptime') }}</dt>
+              <dd class="ltr">{{ uptime }}</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.storage') }}</div>
+            <p class="setting-desc">{{ t('settings.storageDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <dl class="kv">
+              <dt>{{ t('settings.driver') }}</dt>
+              <dd class="ltr">{{ info?.dbDriver }}</dd>
+              <dt>{{ t('nav.interfaces') }}</dt>
+              <dd class="ltr">{{ info?.interfaces ?? 0 }}</dd>
+              <dt>{{ t('nav.clients') }}</dt>
+              <dd class="ltr">{{ info?.clients ?? 0 }}</dd>
+              <dt>{{ t('settings.devices') }}</dt>
+              <dd class="ltr">{{ info?.accounts ?? 0 }}</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.processConfig') }}</div>
+            <p class="setting-desc">{{ t('settings.processConfigDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <code class="readonly ltr">w-ui</code>
+          </div>
+        </div>
+      </template>
+    </section>
   </template>
 </template>
-
-<style scoped>
-.cols {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-.rows {
-  margin: 0;
-  padding: 6px 0;
-}
-.rows > div {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 11px 18px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.rows > div:last-child {
-  border-bottom: none;
-}
-.rows dt {
-  color: var(--muted);
-  font-size: var(--t-sm);
-  flex-shrink: 0;
-}
-.rows dd {
-  margin: 0 0 0 auto;
-  margin-inline-start: auto;
-  color: var(--ink);
-  text-align: end;
-  overflow-wrap: anywhere;
-}
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.error {
-  margin: 0;
-  color: var(--bad);
-  font-size: var(--t-sm);
-  background: var(--bad-soft);
-  border: 1px solid rgba(244, 101, 95, 0.32);
-  border-radius: var(--radius-sm);
-  padding: 10px 13px;
-}
-.card-head svg {
-  color: var(--muted);
-}
-</style>

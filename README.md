@@ -48,16 +48,24 @@ to remove a peer, never to enforce the byte limit.
 | 2 | nftables enforcement engine and reconciler | done |
 | 3 | WireGuard / AmneziaWG kernel driver | done |
 | 4 | OpenVPN driver | done |
-| 5 | Bandwidth rate limiting (`tc`) | not started |
+| 5 | Bandwidth rate limiting (`tc`) | done |
 | 6 | Backups, sharing detection, Telegram notifications | not started |
 
 **What works today:** WireGuard, AmneziaWG and OpenVPN, end to end. The panel
 brings up a real interface, writes accounts to it, hands out working configs,
 meters traffic, and cuts customers off when their quota or expiry is reached.
 
-**What does not:** bandwidth rate limiting is stored on the client but not
-applied. Multi-node is modelled in the schema but there is no Nodes page, so one
-panel drives one server.
+Per-customer speed limits are applied with HTB classes on the egress side of
+each device their traffic leaves by. Classification uses no tc filters: the
+nftables chain that already exists per client stamps the packet with its class
+and HTB reads that stamp, so the cost of classifying stays flat as customers are
+added. Like the data limit, this depends on the kernel — one built without the
+classful schedulers accepts the command and does nothing, so the installer, the
+`w-ui` diagnostics and the panel all check for it and say so.
+
+**What does not:** multi-node is modelled in the schema but there is no Nodes
+page, so one panel drives one server. Backups exist in the `w-ui` menu but are
+not scheduled, and there is no sharing detection or Telegram notification yet.
 
 ---
 
@@ -348,6 +356,10 @@ Two design notes worth knowing if you plan to modify it:
   tunnel then looks connected from both ends while moving no traffic at all.
   `wgdriver` sends only what changed; `TestUnchangedInterfaceIssuesNoPeerOperations`
   pins this.
+- **Limits cover traffic to the panel's own host, not just through it.** Packets
+  that end on this machine never reach the forward hook, so a resolver running
+  here would have carried customer data for free and a cut-off customer would
+  still have reached every service on the box.
 - **The quota drop comes before the counter.** Otherwise dropped bytes would be
   billed to the customer who never received them.
 - **The credential alphabet is one constant.** The generator and the shell script

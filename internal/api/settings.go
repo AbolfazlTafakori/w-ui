@@ -25,6 +25,7 @@ type systemInfo struct {
 	Version   string `json:"version"`
 	Listen    string `json:"listen"`
 	DBDriver  string `json:"dbDriver"`
+	DBSource  string `json:"dbSource"`
 	GoVersion string `json:"goVersion"`
 	Platform  string `json:"platform"`
 	UptimeSec int64  `json:"uptimeSec"`
@@ -100,6 +101,7 @@ func (s *Server) buildSystemInfo(r *http.Request) systemInfo {
 		Version:   s.version,
 		Listen:    s.listen,
 		DBDriver:  s.dbDriver,
+		DBSource:  s.dbSource,
 		GoVersion: runtime.Version(),
 		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
 		UptimeSec: int64(time.Since(startedAt).Seconds()),
@@ -204,4 +206,41 @@ func slicesContains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// panelSettingsResponse carries the current values together with the shipped
+// defaults, so the page can mark a value that has never been changed instead of
+// leaving the operator to guess which of these they chose.
+type panelSettingsResponse struct {
+	Settings service.PanelSettings `json:"settings"`
+	Defaults service.PanelSettings `json:"defaults"`
+}
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	current, err := s.settings.Get(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, panelSettingsResponse{
+		Settings: current,
+		Defaults: s.settings.Defaults(),
+	})
+}
+
+func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
+	var in service.PanelSettings
+	if !decode(w, r, &in) {
+		return
+	}
+
+	saved, err := s.settings.Save(r.Context(), in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, panelSettingsResponse{
+		Settings: saved,
+		Defaults: s.settings.Defaults(),
+	})
 }

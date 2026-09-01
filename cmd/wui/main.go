@@ -201,11 +201,13 @@ func buildServer(
 		Catalog:    catalog,
 		Enforcer:   enforcer,
 		Shaper:     shp,
+		Settings:   service.NewSettings(db, cfg.DefaultLocale),
 		JWTSecret:  jwtSecret,
 		Logger:     log,
 		Version:    version,
 		Listen:     cfg.Listen,
 		DBDriver:   string(cfg.DBDriver),
+		DBSource:   cfg.DBSource,
 		SysInfo:    sys,
 		Reconciler: rec,
 	})

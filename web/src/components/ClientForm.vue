@@ -30,6 +30,7 @@ const form = ref(
         quotaGB: bytesToGigabytes(props.client.quotaBytes),
         expiresInDays: daysLeft(props.client.expiresAt),
         deviceLimit: props.client.deviceLimit,
+        rateMbit: props.client.rateBitsPerSec ? props.client.rateBitsPerSec / 1e6 : '',
         resetCycle: props.client.resetCycle || 'none',
       }
     : {
@@ -40,10 +41,30 @@ const form = ref(
         quotaGB: '',
         expiresInDays: '',
         deviceLimit: 1,
+        rateMbit: '',
         resetCycle: 'none',
       },
 )
 const busy = ref(false)
+
+// A new customer starts from the defaults on the settings page, so a reseller
+// selling one plan does not retype it for every customer. Editing an existing
+// one leaves their values alone.
+onMounted(async () => {
+  if (editing.value) return
+  try {
+    const cfg = await api.get('/api/settings')
+    const d = cfg.settings
+    if (d.defaultQuotaBytes) form.value.quotaGB = d.defaultQuotaBytes / 1024 ** 3
+    if (d.defaultExpiryDays) form.value.expiresInDays = d.defaultExpiryDays
+    if (d.defaultDeviceLimit) form.value.deviceLimit = d.defaultDeviceLimit
+    if (d.defaultRateBitsPerSec) form.value.rateMbit = d.defaultRateBitsPerSec / 1e6
+    if (d.defaultResetCycle) form.value.resetCycle = d.defaultResetCycle
+  } catch {
+    // The form is perfectly usable without them; failing to load a convenience
+    // must not stop a customer being created.
+  }
+})
 
 // Existing names are offered as suggestions rather than a fixed list: a group
 // comes into being by being typed, so the field must stay free text.
@@ -100,7 +121,7 @@ async function submit() {
       quotaGB: form.value.quotaGB,
       expiresAt,
       deviceLimit: Number(form.value.deviceLimit) || 1,
-      rateBitsPerSec: 0,
+      rateBitsPerSec: Math.max(0, Math.round(Number(form.value.rateMbit) * 1e6)) || 0,
       resetCycle: form.value.resetCycle,
       deviceNames: [],
     })
@@ -184,6 +205,15 @@ async function submit() {
             <label for="cf-devices"><span class="req">*</span>{{ t('client.deviceLimit') }}</label>
             <input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" required />
             <span class="hint">{{ t('client.deviceLimitHint') }}</span>
+          </div>
+
+          <div class="field">
+            <label for="cf-rate">{{ t('client.rate') }}</label>
+            <div class="unit-field">
+              <input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" placeholder="0" />
+              <span class="unit">Mbit/s</span>
+            </div>
+            <span class="hint">{{ t('client.rateHint') }}</span>
           </div>
 
           <div class="field">

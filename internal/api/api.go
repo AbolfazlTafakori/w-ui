@@ -27,12 +27,14 @@ type Server struct {
 	ifaces    *service.Interfaces
 	catalog   *i18n.Catalog
 	enforcer  enforce.Enforcer
+	settings  *service.Settings
 	shaper    shaper.Shaper
 	jwtSecret []byte
 	log       *slog.Logger
 	version   string
 	listen    string
 	dbDriver  string
+	dbSource  string
 	sys       *sysinfo.Collector
 	rec       *reconciler.Reconciler
 }
@@ -44,12 +46,14 @@ type Options struct {
 	Interfaces *service.Interfaces
 	Catalog    *i18n.Catalog
 	Enforcer   enforce.Enforcer
+	Settings   *service.Settings
 	Shaper     shaper.Shaper
 	JWTSecret  []byte
 	Logger     *slog.Logger
 	Version    string
 	Listen     string
 	DBDriver   string
+	DBSource   string
 	SysInfo    *sysinfo.Collector
 	Reconciler *reconciler.Reconciler
 }
@@ -62,12 +66,14 @@ func New(o Options) *Server {
 		ifaces:    o.Interfaces,
 		catalog:   o.Catalog,
 		enforcer:  o.Enforcer,
+		settings:  o.Settings,
 		shaper:    o.Shaper,
 		jwtSecret: o.JWTSecret,
 		log:       o.Logger,
 		version:   o.Version,
 		listen:    o.Listen,
 		dbDriver:  o.DBDriver,
+		dbSource:  o.DBSource,
 		sys:       o.SysInfo,
 		rec:       o.Reconciler,
 	}
@@ -89,6 +95,8 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/auth/password", auth(s.handleChangePassword))
 	mux.HandleFunc("GET /api/overview", auth(s.handleOverview))
 	mux.HandleFunc("GET /api/system", auth(s.handleSystemInfo))
+	mux.HandleFunc("GET /api/settings", auth(s.handleGetSettings))
+	mux.HandleFunc("PUT /api/settings", auth(s.handleSaveSettings))
 	mux.HandleFunc("GET /api/overview/full", auth(s.handleFullOverview))
 
 	mux.HandleFunc("GET /api/interfaces", auth(s.handleListInterfaces))

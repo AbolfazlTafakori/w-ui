@@ -1093,3 +1093,222 @@ pre.config {
     padding: 16px 10px;
   }
 }
+
+/* ══════════ settings ══════════ */
+/*
+ * A settings row puts what the thing is on one side and the control on the
+ * other, with the explanation under the name rather than as a tooltip. On a
+ * narrow screen the two stack, so a control is never squeezed into a column
+ * too small to use.
+ */
+.savebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-bottom: 12px;
+}
+.savebar-actions {
+  display: flex;
+  gap: 8px;
+}
+.savebar-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--t-sm);
+}
+.savebar-note svg {
+  flex-shrink: 0;
+}
+
+.cat-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0;
+}
+.cat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--t-base);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.cat-tab:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+.cat-tab.active {
+  color: var(--accent-hover);
+  border-bottom-color: var(--accent);
+}
+
+.settings-list {
+  padding: 0;
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.setting-row:last-child {
+  border-bottom: 0;
+}
+.setting-row.block {
+  align-items: flex-start;
+}
+.setting-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 50%;
+  min-width: 0;
+}
+.setting-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-base);
+  font-weight: 500;
+  color: var(--ink);
+}
+.setting-desc {
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--faint);
+  line-height: 1.55;
+}
+.setting-control {
+  flex: 0 1 44%;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.setting-control > * {
+  max-width: 100%;
+}
+.setting-control select,
+.setting-control input {
+  min-width: 180px;
+}
+
+.unit-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.unit-field input {
+  min-width: 120px;
+}
+.unit {
+  color: var(--faint);
+  font-size: var(--t-sm);
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+code.readonly {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: var(--t-sm);
+  justify-content: end;
+}
+.kv dt {
+  color: var(--faint);
+}
+.kv dd {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--mono);
+  text-align: end;
+}
+
+.pw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+.pw-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.banner.stack {
+  display: block;
+}
+.banner-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.banner.stack ul {
+  margin: 0;
+  padding-inline-start: 26px;
+}
+.banner.stack li {
+  margin: 2px 0;
+}
+
+@media (max-width: 768px) {
+  /* Stacked, so the control gets the full width instead of a column it cannot
+     use. The tab strip keeps its labels — icons alone would be a guessing game
+     on the one screen where a mis-tap costs the most. */
+  .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .setting-control {
+    justify-content: flex-start;
+  }
+  .setting-control select,
+  .setting-control input {
+    width: 100%;
+    min-width: 0;
+  }
+  .kv {
+    justify-content: start;
+  }
+  .kv dd {
+    text-align: start;
+  }
+}
