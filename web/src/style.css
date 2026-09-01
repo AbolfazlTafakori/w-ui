@@ -1039,7 +1039,11 @@ pre.config {
     display: none;
   }
   .main {
-    padding: 18px 14px 48px;
+    /* The top stays clear of the floating menu button. This block comes after
+       the one that reserved room for it, so a shorthand here would put the
+       first thing on the page underneath it — on the narrowest screens, where
+       that button is the only way to navigate. */
+    padding: 64px 14px 48px;
   }
   .page-head {
     gap: 12px;
@@ -1568,4 +1572,13 @@ code.readonly {
   .enrol-confirm {
     justify-content: flex-start;
   }
+}
+
+/* The actions column ends the row, so its buttons sit against the edge. */
+th.right,
+td.right {
+  text-align: end;
+}
+td.right .actions {
+  justify-content: flex-end;
 }

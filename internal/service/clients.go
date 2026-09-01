@@ -46,6 +46,11 @@ type CreateInput struct {
 	StartOnFirstUse bool `json:"startOnFirstUse"`
 	DurationDays    int  `json:"durationDays"`
 
+	// Historical marks a record being restored rather than a plan being sold.
+	// It is not part of the API: an expiry in the past is a typo on the form
+	// and a fact in an import, and only the importer may say which.
+	Historical bool `json:"-"`
+
 	// DeviceNames seeds the first devices. When empty one device is created,
 	// because a client with no device has nothing to hand the customer.
 	DeviceNames []string `json:"deviceNames"`
@@ -217,7 +222,9 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("%w: unknown reset cycle %q", ErrInvalid, in.ResetCycle)
 	}
-	if in.ExpiresAt != nil && in.ExpiresAt.Before(time.Now()) {
+	// A date in the past is a mistake when someone is selling a plan, and a
+	// fact when a record is being restored. Import says so; the form does not.
+	if !in.Historical && in.ExpiresAt != nil && in.ExpiresAt.Before(time.Now()) {
 		return nil, fmt.Errorf("%w: expiry is in the past", ErrInvalid)
 	}
 

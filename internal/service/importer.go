@@ -144,6 +144,19 @@ func (s *Clients) Import(ctx context.Context, in ImportInput) (*ImportReport, er
 			report.Problems = append(report.Problems, fmt.Sprintf("%s: %v", name, err))
 			continue
 		}
+
+		// Carried over so a restored customer who had already run out does not
+		// come back looking active and serving traffic they had stopped paying
+		// for. The reconciler would correct it on its next tick, but between
+		// now and then they would be connected.
+		if status := restoredStatus(row); status != model.StatusActive {
+			if err := s.db.WithContext(ctx).Model(&model.Client{}).
+				Where("id = ?", created.ID).Update("status", status).Error; err != nil {
+				s.log.Warn("could not restore a client's status",
+					"client", name, "error", err)
+			}
+		}
+
 		byName[strings.ToLower(name)] = created.ID
 		report.Created++
 	}
@@ -170,6 +183,11 @@ func importToCreate(row ClientRecord, name string, ifaceID uint) CreateInput {
 	}
 
 	return CreateInput{
+		// This is a record being restored, so a date in the past is history
+		// rather than a mistake. Refusing it would quietly drop every expired
+		// customer from a migration, and with them the record of who was sold
+		// what.
+		Historical:      true,
 		Name:            name,
 		Note:            row.Note,
 		Group:           row.Group,
@@ -208,6 +226,24 @@ func (s *Clients) replaceFromImport(ctx context.Context, id uint, row ClientReco
 		return fmt.Errorf("update: %w", err)
 	}
 	return nil
+}
+
+// restoredStatus decides what an imported client should come back as.
+//
+// The status in the file is trusted only so far: a record marked active whose
+// expiry has passed is stale, and the truth is in the dates.
+func restoredStatus(row ClientRecord) model.ClientStatus {
+	switch model.ClientStatus(row.Status) {
+	case model.StatusDisabled:
+		return model.StatusDisabled
+	}
+	if row.ExpiresAt != nil && row.ExpiresAt.Before(time.Now()) {
+		return model.StatusExpired
+	}
+	if row.QuotaBytes > 0 && row.UsedBytes >= row.QuotaBytes {
+		return model.StatusExhausted
+	}
+	return model.StatusActive
 }
 
 // uniqueName finds a free name by suffixing.

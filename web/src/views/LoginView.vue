@@ -345,11 +345,15 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   display: inline-block;
   color: var(--ink);
   font-weight: 700;
-  animation: headline-in 280ms ease both;
+  /* The keyframe moves the word and never fades it, and carries no fill mode.
+     Both together mean the text is readable whatever the animation does — it
+     was fading in from opacity zero, and an animation that had not started yet
+     left the word invisible and out of line, reading as broken text. Motion is
+     decoration; it must not decide whether words can be read. */
+  animation: headline-in 280ms ease;
 }
 @keyframes headline-in {
   from {
-    opacity: 0;
     transform: translateY(6px);
   }
 }

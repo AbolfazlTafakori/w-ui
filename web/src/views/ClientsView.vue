@@ -462,15 +462,19 @@ async function submitForm(input) {
                   @change="toggleAll($event.target.checked)"
                 />
               </th>
-              <th class="w-actions">{{ t('table.actions') }}</th>
-              <th class="w-sm">{{ t('table.enabled') }}</th>
-              <th class="w-md">{{ t('table.online') }}</th>
+              <!-- Who the row is about comes first. It used to sit fifth,
+                   behind a checkbox, six action buttons, a toggle and a status
+                   badge: finding a customer by name meant the eye jumping past
+                   four columns of controls on every one of them. -->
               <th class="w-name">{{ t('nav.clients') }}</th>
               <th v-if="hasGroups" class="w-md">{{ t('group.name') }}</th>
               <th class="w-md">{{ t('interface.name') }}</th>
               <th class="w-traffic">{{ t('client.traffic') }}</th>
               <th class="w-md">{{ t('client.remaining') }}</th>
               <th class="w-exp">{{ t('client.expires') }}</th>
+              <th class="w-md">{{ t('table.online') }}</th>
+              <th class="w-sm">{{ t('table.enabled') }}</th>
+              <th class="w-actions right">{{ t('table.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -482,41 +486,6 @@ async function submitForm(input) {
                   :aria-label="c.name"
                   @change="toggleOne(c.id, $event.target.checked)"
                 />
-              </td>
-
-              <td>
-                <div class="actions">
-                  <button class="act" :title="t('device.showQR')" @click="shareFor = c">
-                    <Icon name="qr" :size="16" />
-                  </button>
-                  <button class="act" :title="t('action.details')" @click="router.push(`/clients/${c.id}`)">
-                    <Icon name="info" :size="16" />
-                  </button>
-                  <button class="act" :title="t('action.resetTraffic')" @click="resetOne(c)">
-                    <Icon name="refresh" :size="16" />
-                  </button>
-                  <button class="act" :title="t('action.edit')" @click="formFor = { client: c }">
-                    <Icon name="edit" :size="16" />
-                  </button>
-                  <button class="act danger" :title="t('action.delete')" @click="removeOne(c)">
-                    <Icon name="trash" :size="16" />
-                  </button>
-                </div>
-              </td>
-
-              <td>
-                <Toggle
-                  :model-value="c.status === 'active'"
-                  :label="c.name"
-                  :disabled="c.status === 'expired' || c.status === 'exhausted'"
-                  @update:model-value="(v) => setEnabled(c, v)"
-                />
-              </td>
-
-              <td>
-                <span class="tag" :class="statusTag(c).color">
-                  <i v-if="statusTag(c).dot" class="dot"></i>{{ statusTag(c).label }}
-                </span>
               </td>
 
               <td>
@@ -559,6 +528,41 @@ async function submitForm(input) {
                   {{ expiryTag(c).label }}
                 </span>
               </td>
+              <td>
+                <span class="tag" :class="statusTag(c).color">
+                  <i v-if="statusTag(c).dot" class="dot"></i>{{ statusTag(c).label }}
+                </span>
+              </td>
+
+              <td>
+                <Toggle
+                  :model-value="c.status === 'active'"
+                  :label="c.name"
+                  :disabled="c.status === 'expired' || c.status === 'exhausted'"
+                  @update:model-value="(v) => setEnabled(c, v)"
+                />
+              </td>
+
+              <td class="right">
+                <div class="actions">
+                  <button class="act" :title="t('device.showQR')" @click="shareFor = c">
+                    <Icon name="qr" :size="16" />
+                  </button>
+                  <button class="act" :title="t('action.details')" @click="router.push(`/clients/${c.id}`)">
+                    <Icon name="info" :size="16" />
+                  </button>
+                  <button class="act" :title="t('action.resetTraffic')" @click="resetOne(c)">
+                    <Icon name="refresh" :size="16" />
+                  </button>
+                  <button class="act" :title="t('action.edit')" @click="formFor = { client: c }">
+                    <Icon name="edit" :size="16" />
+                  </button>
+                  <button class="act danger" :title="t('action.delete')" @click="removeOne(c)">
+                    <Icon name="trash" :size="16" />
+                  </button>
+                </div>
+              </td>
+
             </tr>
           </tbody>
         </table>
