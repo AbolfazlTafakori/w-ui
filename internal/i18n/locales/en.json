@@ -407,5 +407,8 @@
   "error.pageBroke": "This page could not be displayed",
   "error.reload": "Reload the panel",
   "error.noSuchPage": "There is no page at that address",
-  "error.sessionEnded": "Your session ended. Sign in again."
+  "error.sessionEnded": "Your session ended. Sign in again.",
+  "theme.dark": "Dark — click for pure black",
+  "theme.ultra": "Pure black — click for light",
+  "theme.light": "Light — click for dark"
 }

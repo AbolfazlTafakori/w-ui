@@ -60,6 +60,72 @@
   --t-xl: 1.625rem;   /* 26px — page titles */
 }
 
+/*
+ * Three themes, the way 3x-ui offers them: light, dark, and a pure-black
+ * variant for an operator working at night or on an OLED screen.
+ *
+ * Only the surfaces and the ink change. The accent, the status hues and every
+ * measurement stay where they are, so a page reads the same in all three and
+ * there is only one set of decisions to keep straight.
+ */
+
+/* Pure black. Same palette pushed down, so the accent keeps its weight against
+   it rather than glowing off a background with nothing behind it. */
+:root[data-theme='ultra-dark'] {
+  --ground: #000000;
+  --surface: #0a0a0c;
+  --surface-2: #121215;
+  --surface-3: #1a1a1e;
+  --line: #26262b;
+  --line-soft: #17171b;
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.7), 0 16px 40px -16px rgba(0, 0, 0, 1);
+}
+
+:root.light,
+body.light {
+  color-scheme: light;
+
+  --ground: #eceef1;
+  --surface: #ffffff;
+  --surface-2: #f4f5f7;
+  --surface-3: #e9eaee;
+  --line: #dcdee3;
+  --line-soft: #eaebef;
+
+  /* Inverted with the same faint red bias, so grey text still belongs to this
+     palette rather than looking borrowed from a different one. --muted holds
+     about 5.4:1 on white, which is the same reading it had on the dark
+     surface. */
+  --ink: #141113;
+  --ink-2: #3d363b;
+  --muted: #6b6169;
+  --faint: #8d838a;
+
+  /* The accent darkens: the light one was chosen to carry against near-black
+     and drops to roughly 3:1 on white, which is not enough for text. */
+  --accent: #c81f2e;
+  --accent-hover: #a81826;
+  --accent-ink: #ffffff;
+  --accent-soft: #fdeaec;
+  --accent-line: #f3c3c8;
+
+  --ok: #1a7f3c;
+  --ok-soft: #e6f4ea;
+  --warn: #8a6206;
+  --warn-soft: #fdf3dd;
+  --bad: #c62f28;
+  --bad-soft: #fdeae9;
+
+  --shadow-sm: 0 1px 2px rgba(16, 12, 15, 0.06);
+  --shadow: 0 1px 3px rgba(16, 12, 15, 0.08), 0 12px 32px -14px rgba(16, 12, 15, 0.22);
+}
+
+/* The sign-in page paints its own background from the accent, which needs a
+   lighter hand when the page behind it is white. */
+body.light .auth-shell {
+  --auth-glow: rgba(200, 31, 46, 0.14);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1812,4 +1878,54 @@ td.right .actions {
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 6px;
+}
+
+/*
+ * Status chips for the light theme.
+ *
+ * The dark set is a deep fill with a bright letter, which is exactly wrong on
+ * white: the fill disappears and the letter is too light to read. Light mode
+ * inverts the relationship — a pale fill with a dark letter — so the chips
+ * carry the same meaning at the same weight either way round.
+ */
+body.light .tag.green {
+  background: #e8f6ec;
+  border-color: #b5e0c0;
+  color: #1a7f3c;
+}
+body.light .tag.red {
+  background: #fdecea;
+  border-color: #f5c2bd;
+  color: #b42318;
+}
+body.light .tag.orange {
+  background: #fdf3dd;
+  border-color: #f0d9a0;
+  color: #8a6206;
+}
+body.light .tag.purple {
+  background: #f2ecfd;
+  border-color: #d8c8f5;
+  color: #6633b8;
+}
+body.light .tag.blue {
+  background: #e8f1fd;
+  border-color: #bcd6f7;
+  color: #1a5fb4;
+}
+body.light .tag.geekblue {
+  background: #eceffb;
+  border-color: #c6cff2;
+  color: #2f4bb8;
+}
+body.light .tag.proto {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-hover);
+}
+
+/* The log view paints on the page background, which is white here; its own
+   colours were chosen against near-black. */
+body.light .log-view {
+  background: var(--surface-2);
 }

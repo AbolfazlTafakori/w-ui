@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } fro
 import { useRouter, RouterLink, RouterView } from 'vue-router'
 import { store, t, signOut, loadMessages } from './lib/store.js'
 import Icon from './components/Icon.vue'
+import { themeMode, cycleTheme } from './lib/theme.js'
 
 const router = useRouter()
 
@@ -140,6 +141,14 @@ function reload() {
         </RouterLink>
 
         <div v-show="expanded" class="brand-actions">
+          <button
+            class="sidebar-pin"
+            type="button"
+            :title="t(`theme.${themeMode}`)"
+            @click="cycleTheme"
+          >
+            <Icon :name="themeMode === 'light' ? 'sun' : themeMode === 'dark' ? 'moon' : 'moonFilled'" :size="16" />
+          </button>
           <button
             class="sidebar-pin"
             type="button"

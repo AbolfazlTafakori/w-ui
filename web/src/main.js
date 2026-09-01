@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import App from './App.vue'
 import { store, bootstrap, signOut, notify, t } from './lib/store.js'
+import { initTheme } from './lib/theme.js'
 
 // Fonts are bundled rather than linked. The panel is often reached from
 // networks where a font CDN is unreachable, and falling back to a system font
@@ -67,6 +68,10 @@ window.addEventListener('wui:unauthorized', () => {
     router.replace({ name: 'login' })
   }
 })
+
+// Applied before anything renders, so the panel never shows one palette on
+// its way to another.
+initTheme()
 
 bootstrap()
   .catch((err) => {

@@ -15,6 +15,9 @@ const paths = {
   plus: 'M12 5v14M5 12h14',
   close: 'M18 6 6 18M6 6l12 12',
   menu: 'M3 6h18M3 12h18M3 18h18',
+  sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
+  moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+  moonFilled: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8zM14.5 7.5h.01M17 10h.01',
   // Two pin states: the outline reads as "click to pin", the filled one as
   // "pinned". A single icon would leave the button's state unreadable.
   pin: 'M12 17v5M9 10.76V4h6v6.76a2 2 0 0 0 .55 1.38L18 15H6l2.45-2.86A2 2 0 0 0 9 10.76z',
