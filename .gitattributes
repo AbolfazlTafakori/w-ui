@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.sh text eol=lf
+*.go text eol=lf
+*.png binary
+*.woff2 binary

@@ -1,0 +1,18 @@
+/bin/
+/dist/
+*.exe
+*.db
+*.db-shm
+*.db-wal
+/data/
+.env
+.DS_Store
+node_modules/
+
+# editor and tooling state
+/.idea/
+/.impeccable/
+/.vscode/
+
+# runtime logs
+*.log

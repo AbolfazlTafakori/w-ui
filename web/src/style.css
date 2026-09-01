@@ -1,0 +1,922 @@
+/* W-UI — black and red.
+   A single committed dark theme rather than a light/dark pair: an operator
+   panel is stared at for hours, and one tuned surface beats two compromised
+   ones. Every colour is painted explicitly so nothing inherits a host ground.
+
+   Type scale is fixed in rem against a 16px root so the whole interface follows
+   the reader's browser font size instead of overriding it. Nothing that carries
+   meaning is set below 0.8125rem (13px); a dark ground costs legibility that a
+   light one does not, and small grey-on-black labels are where that shows
+   first. */
+:root {
+  color-scheme: dark;
+
+  --ground: #0a090a;
+  --surface: #141215;
+  --surface-2: #1c191d;
+  --surface-3: #262227;
+  --line: #302a31;
+  --line-soft: #241f25;
+
+  /* Neutrals carry a faint red bias so they sit with the accent instead of
+     reading as untouched greys. --muted holds ~5.5:1 on --surface, which is
+     what lets labels stay grey without becoming decoration. */
+  --ink: #f4f1f2;
+  --ink-2: #d2cbce;
+  --muted: #a1959b;
+  --faint: #746a71;
+
+  --accent: #e02e3d;
+  --accent-hover: #f2404f;
+  --accent-ink: #ffffff;
+  --accent-soft: #2c1217;
+  --accent-line: #55202a;
+
+  /* Status hues stay distinct from the accent: red already means "brand" and
+     "destructive", so a failing quota uses a lighter red and never competes
+     with a primary button. */
+  --ok: #4ac36a;
+  --ok-soft: #12291c;
+  --warn: #e0ab34;
+  --warn-soft: #2d2411;
+  --bad: #f4655f;
+  --bad-soft: #331714;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(0, 0, 0, 0.9);
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --font: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --sidebar-w: 232px;
+
+  /* Type scale */
+  --t-xs: 0.8125rem;  /* 13px — labels, captions. The floor. */
+  --t-sm: 0.875rem;   /* 14px — secondary text, table cells */
+  --t-base: 0.9375rem;/* 15px — body, inputs, buttons */
+  --t-md: 1rem;       /* 16px — card titles */
+  --t-lg: 1.3125rem;  /* 21px — metric values */
+  --t-xl: 1.625rem;   /* 26px — page titles */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--t-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Form controls do not inherit the root rule in every engine, so the selection
+   is themed for everything rather than only for body text. */
+::selection,
+*::selection {
+  background: var(--accent-line);
+  color: var(--ink);
+}
+
+/* Technical values keep their own direction so Persian does not reverse
+   composites like "2 / 3" into "3 / 2". */
+.mono,
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Belongs on a span inside a cell, never on the cell itself: inline-block on a
+   <td> drops it out of the table layout and collapses the row. The override
+   below is cheap insurance against that mistake recurring. */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+}
+td.ltr,
+th.ltr {
+  display: table-cell;
+}
+
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: var(--t-sm);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.spacer {
+  margin-inline-start: auto;
+}
+
+/* ══════════ shell ══════════ */
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100%;
+}
+.shell > * {
+  min-width: 0;
+}
+
+.sidebar {
+  background: var(--surface);
+  border-inline-end: 1px solid var(--line);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 18px;
+}
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: var(--t-base);
+  flex-shrink: 0;
+  box-shadow: 0 2px 12px -2px rgba(224, 46, 61, 0.6);
+}
+.brand-name {
+  font-size: var(--t-md);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.brand-ver {
+  font-size: var(--t-xs);
+  color: var(--faint);
+  font-family: var(--mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+  line-height: 1.25;
+}
+
+.navlink {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  font-size: var(--t-base);
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: background 0.12s, color 0.12s;
+}
+.navlink:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.navlink.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+.navlink svg {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* No width cap. A reading measure belongs on prose, not on a data table — a
+   capped main leaves dead space on a wide monitor and squeezes columns that
+   have somewhere to go. Only the descriptive text below a heading is limited. */
+.main {
+  padding: 26px 30px 72px;
+  width: 100%;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.page-head h1 {
+  font-size: var(--t-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.page-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  max-width: 68ch;
+}
+
+/* ══════════ controls ══════════ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--faint);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn.danger {
+  color: var(--bad);
+  border-color: var(--bad-soft);
+  background: transparent;
+}
+.btn.danger:hover:not(:disabled) {
+  background: var(--bad-soft);
+  border-color: var(--bad);
+}
+.btn.sm {
+  padding: 6px 12px;
+  min-height: 32px;
+  font-size: var(--t-xs);
+}
+.btn.icon {
+  padding: 0;
+  width: 38px;
+  min-height: 38px;
+}
+.btn.sm.icon {
+  width: 32px;
+  min-height: 32px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 9px 12px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-base);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+input:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--faint);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(224, 46, 61, 0.16);
+}
+input::placeholder {
+  color: var(--faint);
+}
+input:disabled,
+select:disabled {
+  background: var(--surface);
+  color: var(--faint);
+}
+select {
+  cursor: pointer;
+}
+option {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.field label {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.field label .req {
+  color: var(--accent);
+  margin-inline-end: 3px;
+}
+.field .hint {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+/* ══════════ surfaces ══════════ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.card-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-wrap: wrap;
+}
+.card-head h2 {
+  font-size: var(--t-md);
+  font-weight: 600;
+}
+.card-body {
+  padding: 18px;
+}
+
+/* A compact metric pair, the unit 3x-ui builds its overview out of: a quiet
+   label with the value under it, large enough to read across a desk. */
+/* Dividers are drawn by a 1px gap over a line-coloured ground rather than by
+   per-cell borders. The grid wraps at different column counts depending on
+   width, and nth-child rules cannot follow that; this draws correct lines at
+   every wrap point on its own. */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+}
+.metric {
+  padding: 15px 18px;
+  background: var(--surface);
+  min-width: 0;
+}
+.metric dt {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.metric dd {
+  margin: 0;
+  font-size: var(--t-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* ══════════ gauges ══════════ */
+.gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 16px;
+  background: var(--surface);
+  text-align: center;
+  min-width: 0;
+}
+.gauge-text {
+  min-width: 0;
+  width: 100%;
+}
+.gauge-label {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+/* Wraps rather than truncates: an elided capacity figure is worse than a
+   two-line one, since the operator cannot read the number that matters. */
+.gauge-value {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  font-family: var(--mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* ══════════ table ══════════ */
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+  min-width: 680px;
+}
+th,
+td {
+  text-align: start;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+thead th {
+  background: var(--surface-2);
+  font-size: var(--t-xs);
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+  padding-block: 11px;
+}
+tbody tr:last-child td {
+  border-bottom: none;
+}
+tbody tr {
+  transition: background 0.1s;
+}
+tbody tr:hover {
+  background: var(--surface-2);
+}
+
+/* Tags carry meaning through colour the way 3x-ui's do, so a row can be read
+   without reading its numbers: purple is unlimited, green is healthy, orange is
+   running low, red is stopped, grey is idle. The palette is Ant Design's dark
+   presets, which is what those semantics are borrowed from.
+
+   The brand red stays on buttons and navigation; making every tag red as well
+   would collapse five distinct states into one and throw the information away. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+
+.tag.green {
+  background: #162312;
+  border-color: #274916;
+  color: #6abe39;
+}
+.tag.red {
+  background: #2a1215;
+  border-color: #58181c;
+  color: #e84749;
+}
+.tag.orange {
+  background: #2b1d11;
+  border-color: #593815;
+  color: #e89a3c;
+}
+.tag.purple {
+  background: #1a1325;
+  border-color: #3a2a5c;
+  color: #a878e6;
+}
+.tag.blue {
+  background: #111a2c;
+  border-color: #15325b;
+  color: #4e9bf5;
+}
+.tag.geekblue {
+  background: #131629;
+  border-color: #263a91;
+  color: #6b8ae4;
+}
+.tag.grey {
+  background: var(--surface-3);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+/* Legacy status aliases, kept so pages not yet converted still read correctly. */
+.tag.active {
+  background: #162312;
+  border-color: #274916;
+  color: #6abe39;
+}
+.tag.disabled {
+  background: var(--surface-3);
+  border-color: var(--line);
+  color: var(--muted);
+}
+.tag.expired,
+.tag.exhausted {
+  background: #2a1215;
+  border-color: #58181c;
+  color: #e84749;
+}
+.tag.proto {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  border-color: var(--accent-line);
+  font-family: var(--mono);
+}
+.tag .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.meter {
+  height: 5px;
+  background: var(--surface-3);
+  border-radius: 100px;
+  overflow: hidden;
+  min-width: 60px;
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 100px;
+  transition: width 0.3s ease;
+}
+.meter span.ok {
+  background: var(--ok);
+}
+.meter span.warn {
+  background: var(--warn);
+}
+.meter span.bad {
+  background: var(--bad);
+}
+
+/* ══════════ banners, toast ══════════ */
+.banner {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  padding: 13px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: var(--t-sm);
+  margin-bottom: 18px;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+.banner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.banner.warn {
+  background: var(--warn-soft);
+  border-color: rgba(224, 171, 52, 0.4);
+  color: var(--ink);
+}
+.banner.warn svg {
+  color: var(--warn);
+}
+.banner.bad {
+  background: var(--bad-soft);
+  border-color: rgba(244, 101, 95, 0.4);
+  color: var(--ink);
+}
+.banner.bad svg {
+  color: var(--bad);
+}
+
+.toast {
+  position: fixed;
+  inset-block-end: 20px;
+  inset-inline-end: 20px;
+  z-index: 60;
+  padding: 13px 18px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  font-size: var(--t-sm);
+  max-width: min(380px, calc(100vw - 40px));
+}
+.toast.error {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.toast.success {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+/* ══════════ modal ══════════
+   The dialog is capped to the viewport and scrolls its own body, so a long
+   form on a short screen keeps its title and its buttons reachable instead of
+   pushing them off-screen. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  z-index: 50;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+.modal > .card-head {
+  flex-shrink: 0;
+}
+.modal > .card-body,
+.modal > form.card-body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.modal-foot {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.empty {
+  padding: 52px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+pre.config {
+  direction: ltr;
+  text-align: left;
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.75;
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.spin {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 2s;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ══════════ responsive ══════════ */
+
+/* Tablet: the sidebar becomes a top bar. */
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: auto;
+    overflow: visible;
+    border-inline-end: none;
+    border-bottom: 1px solid var(--line);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+  .brand {
+    padding: 0;
+  }
+  .navlink {
+    padding: 8px 12px;
+  }
+  .sidebar-foot {
+    margin-inline-start: auto;
+    margin-top: 0;
+    border: none;
+    padding: 0;
+    flex-direction: row;
+    gap: 8px;
+  }
+  .sidebar-foot select {
+    width: auto;
+  }
+  .main {
+    padding: 20px 18px 56px;
+  }
+}
+
+/* Phone: everything goes single file and the dialog fills the screen. */
+@media (max-width: 620px) {
+  :root {
+    --t-xl: 1.4375rem; /* 23px */
+  }
+  .sidebar {
+    padding: 10px 12px;
+  }
+  .brand {
+    width: 100%;
+  }
+  .navlink {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 6px;
+    font-size: var(--t-sm);
+  }
+  .navlink span.label {
+    display: none;
+  }
+  .main {
+    padding: 18px 14px 48px;
+  }
+  .page-head {
+    gap: 12px;
+  }
+  .page-head .spacer {
+    margin-inline-start: 0;
+    width: 100%;
+  }
+  .page-head .spacer .btn {
+    width: 100%;
+  }
+
+  .modal-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+  .modal {
+    max-width: none;
+    max-height: 100dvh;
+    height: 100dvh;
+    border: none;
+    border-radius: 0;
+  }
+  .modal-foot {
+    /* Reversed so the confirming action sits under the writing hand on a
+       phone, and padded for the home indicator. */
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+  .modal-foot .btn {
+    flex: 1;
+  }
+
+  .card-head {
+    padding: 12px 14px;
+  }
+  .card-body {
+    padding: 14px;
+  }
+  th,
+  td {
+    padding: 11px 14px;
+  }
+  .metrics,
+  .gauges {
+    grid-template-columns: 1fr 1fr;
+  }
+  .metric {
+    padding: 13px 14px;
+  }
+  .gauge {
+    padding: 16px 10px;
+  }
+}

@@ -1,0 +1,76 @@
+package model
+
+// Protocol identifies which VPN backend serves an interface and the accounts
+// bound to it. Everything above the backend layer is protocol-agnostic, so this
+// is the only place the distinction is spelled out.
+type Protocol string
+
+const (
+	ProtocolWireGuard Protocol = "wireguard"
+	ProtocolOpenVPN   Protocol = "openvpn"
+)
+
+// Valid reports whether p is a protocol the panel knows how to serve.
+func (p Protocol) Valid() bool {
+	switch p {
+	case ProtocolWireGuard, ProtocolOpenVPN:
+		return true
+	}
+	return false
+}
+
+func (p Protocol) String() string { return string(p) }
+
+// InterfaceMode selects the obfuscation profile of a WireGuard interface.
+// Standard is plain WireGuard; Amnezia adds the AmneziaWG junk/padding layer.
+type InterfaceMode string
+
+const (
+	ModeStandard InterfaceMode = "standard"
+	ModeAmnezia  InterfaceMode = "amnezia"
+)
+
+// ClientStatus is the lifecycle state of a sellable client.
+// Only Active clients are pushed to the kernel.
+type ClientStatus string
+
+const (
+	StatusActive    ClientStatus = "active"
+	StatusDisabled  ClientStatus = "disabled"  // switched off by the admin
+	StatusExpired   ClientStatus = "expired"   // past ExpiresAt
+	StatusExhausted ClientStatus = "exhausted" // hit QuotaBytes
+)
+
+// Serviceable reports whether a client in this state should have its
+// accounts present in the kernel.
+func (s ClientStatus) Serviceable() bool { return s == StatusActive }
+
+// ResetCycle controls automatic quota renewal.
+type ResetCycle string
+
+const (
+	ResetNone    ResetCycle = "none"
+	ResetDaily   ResetCycle = "daily"
+	ResetWeekly  ResetCycle = "weekly"
+	ResetMonthly ResetCycle = "monthly"
+)
+
+// Granularity tags a traffic sample's bucket width. Samples are rolled up as
+// they age: fine buckets are kept briefly, coarse ones for a year.
+type Granularity string
+
+const (
+	GranularityFine   Granularity = "5m"
+	GranularityHourly Granularity = "1h"
+	GranularityDaily  Granularity = "1d"
+)
+
+// NodeKind distinguishes the panel's own host from remote nodes. Only KindLocal
+// is served today; the column exists so multi-node support is an addition
+// rather than a migration.
+type NodeKind string
+
+const (
+	KindLocal  NodeKind = "local"
+	KindRemote NodeKind = "remote"
+)
