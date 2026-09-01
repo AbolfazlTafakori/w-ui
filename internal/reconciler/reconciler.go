@@ -527,8 +527,16 @@ func shapedDevices(interfaces []model.Interface) []string {
 	}
 
 	for _, iface := range interfaces {
+		// Only the tunnel devices, which this panel created and nothing else
+		// uses. The egress interface is deliberately left alone: it is the
+		// machine's main network card, and replacing its root qdisc would throw
+		// away whatever the distribution, the host, or another program running
+		// on this server had configured there, and would put our hierarchy in
+		// front of all of that traffic rather than only the tunnel's.
+		//
+		// The cost is that shaping applies to what a customer is sent. What
+		// they send is not shaped.
 		add(iface.Name)
-		add(iface.NATInterface)
 	}
 	sort.Strings(out)
 	return out

@@ -82,6 +82,36 @@ type interfaceView struct {
 	UsedBytes uint64 `json:"usedBytes"`
 }
 
+// redactKeys strips the server's own key material from an interface before it
+// leaves this process.
+//
+// The OpenVPN parameters are stored as JSON, so the struct that holds the
+// server private key and the tls-crypt key is the same one the database column
+// is built from — tagging those fields json:"-" would stop them being saved at
+// all. They are removed here instead, on the way out.
+//
+// This matters more than it looks. Whoever holds the server key can present
+// themselves as this VPN server to every customer on it, and a response body
+// travels through browser memory, proxy logs and error reporting on its way to
+// a page that never needed it.
+func redactKeys(iface model.Interface) model.Interface {
+	p := iface.OpenVPN.V
+	configured := p.ServerKey != "" && p.CACert != ""
+
+	p.ServerKey = ""
+	p.TLSCryptKey = ""
+	p.ServerCert = ""
+	// The certificate authority stays: it is public by design, it is what every
+	// customer's own configuration already carries, and the panel shows it.
+	iface.OpenVPN = model.JSON(p)
+	iface.Configured = configured
+
+	// The WireGuard private key is already hidden by its struct tag; cleared
+	// here as well so this function is the one place to look.
+	iface.PrivateKey = ""
+	return iface
+}
+
 // interfaceViews builds the list once so both the interfaces page and the
 // overview report the same numbers.
 func (s *Server) interfaceViews(r *http.Request) ([]interfaceView, error) {
@@ -96,7 +126,7 @@ func (s *Server) interfaceViews(r *http.Request) ([]interfaceView, error) {
 
 	out := make([]interfaceView, 0, len(list))
 	for i := range list {
-		v := interfaceView{Interface: list[i]}
+		v := interfaceView{Interface: redactKeys(list[i])}
 		if u, err := s.ifaces.PoolUsage(list[i].ID); err == nil {
 			v.Allocated, v.Capacity = u.Allocated, u.Capacity
 		}
@@ -131,7 +161,7 @@ func (s *Server) handleUpdateInterface(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, iface)
+	writeJSON(w, http.StatusOK, redactKeys(*iface))
 }
 
 func (s *Server) handleDeleteInterface(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +186,7 @@ func (s *Server) handleCreateInterface(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, iface)
+	writeJSON(w, http.StatusCreated, redactKeys(*iface))
 }
 
 // --- clients ----------------------------------------------------------

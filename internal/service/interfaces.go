@@ -133,6 +133,14 @@ func (s *Interfaces) validate(in *CreateInterfaceInput) error {
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
 		return fmt.Errorf("%w: listen port %d is out of range", ErrInvalid, in.ListenPort)
 	}
+	// Checked here rather than discovered later. A tunnel on a port something
+	// else already holds is created, reported as configured, and simply never
+	// reachable — the kind of failure that is only ever found by a customer.
+	// Both protocols default to UDP here; an OpenVPN interface can be switched
+	// to TCP afterwards, and the port is re-checked when the driver opens it.
+	if err := checkPortFree(in.ListenPort, "udp"); err != nil {
+		return err
+	}
 	if in.EndpointHost == "" {
 		return fmt.Errorf("%w: endpoint host is required; it is what clients dial", ErrInvalid)
 	}

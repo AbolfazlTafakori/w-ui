@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +58,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := time.Now()
+	ipKey := "ip:" + clientIP(r)
+	userKey := "user:" + strings.ToLower(strings.TrimSpace(req.Username))
+
+	// Checked before the password is looked at, so a locked-out caller costs
+	// nothing to refuse.
+	for _, key := range []string{ipKey, userKey} {
+		if wait := s.throttle.retryAfter(key, now); wait > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+			writeError(w, http.StatusTooManyRequests, lockoutMessage(wait))
+			return
+		}
+	}
+
 	var admin model.Admin
 	err := s.db.WithContext(r.Context()).
 		Where("username = ?", strings.TrimSpace(req.Username)).
@@ -67,6 +82,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// usernames exist.
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		bcrypt.CompareHashAndPassword([]byte("$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi"), []byte(req.Password))
+		s.throttle.fail(ipKey, now)
+		s.throttle.fail(userKey, now)
 		writeError(w, http.StatusUnauthorized, "incorrect username or password")
 		return
 	}
@@ -75,7 +92,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.Password)) != nil {
-		s.log.Warn("failed sign-in", "username", admin.Username, "ip", clientIP(r))
+		wait := s.throttle.fail(ipKey, now)
+		s.throttle.fail(userKey, now)
+		s.log.Warn("failed sign-in", "username", admin.Username,
+			"ip", clientIP(r), "lockout", wait)
 		writeError(w, http.StatusUnauthorized, "incorrect username or password")
 		return
 	}
@@ -92,6 +112,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !totp.Validate(admin.TOTPSecret, req.Code, time.Now()) {
+			// A wrong code counts as a failed attempt too. Otherwise someone
+			// holding the password could try every one of the million codes
+			// without ever being slowed down.
+			s.throttle.fail(ipKey, now)
+			s.throttle.fail(userKey, now)
 			s.log.Warn("failed second factor", "username", admin.Username, "ip", clientIP(r))
 			writeError(w, http.StatusUnauthorized, "that code is not right")
 			return
@@ -105,10 +130,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC()
+	s.throttle.succeed(ipKey)
+	s.throttle.succeed(userKey)
+
 	ip := clientIP(r)
 	if err := s.db.WithContext(r.Context()).Model(&admin).
-		Updates(map[string]any{"last_login_at": now, "last_login_ip": ip}).Error; err != nil {
+		Updates(map[string]any{"last_login_at": time.Now().UTC(), "last_login_ip": ip}).Error; err != nil {
 		s.log.Error("record sign-in", "error", err)
 	}
 

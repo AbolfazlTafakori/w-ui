@@ -176,6 +176,14 @@ func (s *TC) ensureRoot(ctx context.Context, device string) error {
 		s.mu.Unlock()
 	}
 
+	// Nothing is written over a hierarchy this panel did not create. A device
+	// carrying someone else's qdisc belongs to something else on this machine,
+	// and replacing it would silently undo their configuration.
+	if owned, existing, err := s.ownsRoot(ctx, device); err == nil && !owned {
+		return fmt.Errorf("%w: %s already has a %q qdisc that this panel did not "+
+			"create; leaving it alone", ErrUnavailable, device, existing)
+	}
+
 	if err := s.batch(ctx, RootScript(device)); err != nil {
 		return err
 	}
@@ -183,6 +191,48 @@ func (s *TC) ensureRoot(ctx context.Context, device string) error {
 	s.rooted[device] = true
 	s.mu.Unlock()
 	return nil
+}
+
+// ownsRoot reports whether the device's root qdisc is ours or absent.
+//
+// A device with no meaningful qdisc — the kernel's own default, or none at all
+// — is free to take. Anything else was put there deliberately by somebody, and
+// this panel is a guest on the machine.
+func (s *TC) ownsRoot(ctx context.Context, device string) (bool, string, error) {
+	out, err := s.run(ctx, "-j", "qdisc", "show", "dev", device)
+	if err != nil {
+		return false, "", err
+	}
+
+	var qdiscs []struct {
+		Kind   string `json:"kind"`
+		Handle string `json:"handle"`
+		Parent string `json:"parent"`
+	}
+	if err := json.Unmarshal([]byte(out), &qdiscs); err != nil {
+		return false, "", fmt.Errorf("shaper: reading qdiscs on %s: %w", device, err)
+	}
+
+	// The defaults a kernel puts on a fresh device. Replacing one of these
+	// takes nothing away from anybody.
+	free := map[string]bool{
+		"noqueue": true, "pfifo_fast": true, "mq": true, "fq_codel": true, "fq": true,
+	}
+
+	for _, q := range qdiscs {
+		if q.Parent != "" && q.Parent != "root" {
+			continue // a leaf under someone's hierarchy, not the root
+		}
+		switch {
+		case q.Kind == "htb" && strings.HasPrefix(q.Handle, fmt.Sprintf("%d:", major)):
+			return true, q.Kind, nil // ours from a previous run
+		case free[q.Kind]:
+			return true, q.Kind, nil
+		default:
+			return false, q.Kind, nil
+		}
+	}
+	return true, "", nil
 }
 
 func (s *TC) hasRoot(ctx context.Context, device string) (bool, error) {

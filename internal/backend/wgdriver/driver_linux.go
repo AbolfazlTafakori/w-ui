@@ -101,7 +101,18 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 
 // ensureLink creates the interface if it is not already there.
 func (d *Driver) ensureLink(ctx context.Context, iface *model.Interface) error {
-	if err := d.run(ctx, "ip", "link", "show", "dev", iface.Name); err != nil {
+	exists := d.run(ctx, "ip", "link", "show", "dev", iface.Name) == nil
+
+	if exists {
+		// A device with this name already existed. Names like wg0 are the
+		// convention rather than the exception, so it may well belong to
+		// something else on this machine — and the next few lines would
+		// overwrite its key, its port and its entire peer list, taking that
+		// deployment down without a word.
+		if err := d.assertOurs(ctx, iface); err != nil {
+			return err
+		}
+	} else {
 		if err := d.run(ctx, "ip", "link", "add", "dev", iface.Name,
 			"type", linkType(iface)); err != nil {
 			return fmt.Errorf("%w: creating %s (%s): %v",
@@ -127,6 +138,37 @@ func (d *Driver) ensureLink(ctx context.Context, iface *model.Interface) error {
 		}
 	}
 	return nil
+}
+
+// assertOurs refuses to take over a tunnel this panel did not create.
+//
+// Ownership is decided by the public key, which is the one thing about a
+// WireGuard device that is both unique and already known to us. A device
+// carrying a key we have never issued belongs to somebody else.
+//
+// A device with no key at all is treated as ours: that is what a freshly
+// created link looks like, and what one left behind by a crash looks like too.
+func (d *Driver) assertOurs(ctx context.Context, iface *model.Interface) error {
+	out, err := d.output(ctx, toolFor(iface), "show", iface.Name, "public-key")
+	if err != nil {
+		// Not a WireGuard device at all, or unreadable. Either way it is not
+		// something to start writing peers into.
+		return fmt.Errorf("%w: %s already exists and is not a tunnel this panel "+
+			"can manage; give the interface a different name", ErrLinkFailed, iface.Name)
+	}
+
+	existing := strings.TrimSpace(out)
+	switch {
+	case existing == "" || existing == "(none)":
+		return nil // freshly created, or left over from a crash
+	case existing == strings.TrimSpace(iface.PublicKey):
+		return nil // ours, from a previous run
+	}
+
+	return fmt.Errorf("%w: %s already exists and belongs to another WireGuard "+
+		"configuration (its public key is not one this panel issued). Refusing to "+
+		"take it over; give this interface a different name",
+		ErrLinkFailed, iface.Name)
 }
 
 // configureDevice sets the private key, the listen port and, for AmneziaWG, the

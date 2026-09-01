@@ -43,6 +43,10 @@ type Interface struct {
 
 	OpenVPN JSONField[OpenVPNParams] `gorm:"type:text" json:"openvpn"`
 
+	// Configured is set on the way out of the API, not stored. It lets a page
+	// say that certificates exist without being handed them.
+	Configured bool `gorm:"-" json:"configured"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

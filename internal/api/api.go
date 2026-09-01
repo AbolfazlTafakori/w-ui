@@ -30,6 +30,7 @@ type Server struct {
 	catalog   *i18n.Catalog
 	enforcer  enforce.Enforcer
 	settings  *service.Settings
+	throttle  *throttle
 	notifier  *notify.Notifier
 	backups   *backup.Service
 	shaper    shaper.Shaper
@@ -73,6 +74,7 @@ func New(o Options) *Server {
 		catalog:   o.Catalog,
 		enforcer:  o.Enforcer,
 		settings:  o.Settings,
+		throttle:  newThrottle(),
 		notifier:  o.Notifier,
 		backups:   o.Backups,
 		shaper:    o.Shaper,

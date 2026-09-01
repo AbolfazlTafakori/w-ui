@@ -284,7 +284,7 @@ func buildServer(
 
 	return &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           api.LogRequests(log, root),
+		Handler:           api.LogRequests(log, api.SecureHeaders(root)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
