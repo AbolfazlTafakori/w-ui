@@ -385,5 +385,15 @@
   "settings.twoFactorDisabled": "ورود دومرحله‌ای خاموش شد.",
   "settings.confirmPasswordToDisable": "برای خاموش کردن، رمزتان را وارد کنید.",
   "common.cancel": "انصراف",
-  "overview.onlineNow": "آنلاین"
+  "overview.onlineNow": "آنلاین",
+  "nav.api": "API",
+  "api.lede": "همهٔ اندپوینت‌های این پنل، خوانده‌شده از روی خود مسیرها.",
+  "api.authTitle": "احراز هویت",
+  "api.search": "جست‌وجوی مسیر و توضیح…",
+  "api.noMatches": "چیزی مطابقت ندارد.",
+  "api.noToken": "بدون توکن",
+  "api.copy": "کپی به‌صورت curl",
+  "api.copied": "کپی شد",
+  "api.copyCurl": "کپی دستور curl این اندپوینت",
+  "api.copyFailed": "کپی در کلیپ‌بورد ممکن نشد."
 }

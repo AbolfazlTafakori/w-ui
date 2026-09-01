@@ -220,6 +220,26 @@ wui admin reset [--username NAME] [--password PASS]
 
 ---
 
+## API
+
+Everything the panel does, it does through its own HTTP API — there is no
+private path the interface uses and callers cannot. Sign in for a token and send
+it as `Authorization: Bearer <token>`:
+
+```bash
+curl -X POST 'http://127.0.0.1:2096/api/auth/login'   -H 'Content-Type: application/json'   -d '{"username":"admin","password":"…"}'
+```
+
+The panel documents itself at **API** in the sidebar: every endpoint, grouped,
+with an example body and a `curl` command carrying the address you reached the
+panel on. The page is built from the same table the routes are registered from,
+so it can only describe endpoints that exist, and a new one is documented by
+being added rather than by someone remembering to write it down.
+
+`GET /api/docs` returns the same thing as JSON.
+
+---
+
 ## Configuration
 
 Everything is environment variables — there is no config file to keep in sync.

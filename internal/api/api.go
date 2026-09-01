@@ -92,59 +92,11 @@ func New(o Options) *Server {
 func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Open endpoints: signing in, and the strings the sign-in page itself needs.
-	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
-	mux.HandleFunc("GET /api/meta", s.handleMeta)
-	mux.HandleFunc("GET /api/i18n/{locale}", s.handleMessages)
-
-	auth := s.requireAuth
-	mux.HandleFunc("GET /api/auth/me", auth(s.handleMe))
-	mux.HandleFunc("PATCH /api/auth/me", auth(s.handleUpdateMe))
-	mux.HandleFunc("POST /api/auth/password", auth(s.handleChangePassword))
-	mux.HandleFunc("POST /api/auth/totp/start", auth(s.handleTOTPStart))
-	mux.HandleFunc("POST /api/auth/totp/confirm", auth(s.handleTOTPConfirm))
-	mux.HandleFunc("POST /api/auth/totp/disable", auth(s.handleTOTPDisable))
-	mux.HandleFunc("GET /api/overview", auth(s.handleOverview))
-	mux.HandleFunc("GET /api/system", auth(s.handleSystemInfo))
-	mux.HandleFunc("GET /api/logs", auth(s.handleLogs))
-	mux.HandleFunc("GET /api/settings", auth(s.handleGetSettings))
-	mux.HandleFunc("PUT /api/settings", auth(s.handleSaveSettings))
-	mux.HandleFunc("POST /api/settings/notify/test", auth(s.handleTestNotification))
-	mux.HandleFunc("GET /api/sharing", auth(s.handleSharing))
-	mux.HandleFunc("GET /api/backups", auth(s.handleListBackups))
-	mux.HandleFunc("POST /api/backups", auth(s.handleCreateBackup))
-	mux.HandleFunc("GET /api/backups/{name}", auth(s.handleDownloadBackup))
-	mux.HandleFunc("DELETE /api/backups/{name}", auth(s.handleDeleteBackup))
-	mux.HandleFunc("GET /api/overview/full", auth(s.handleFullOverview))
-
-	mux.HandleFunc("GET /api/interfaces", auth(s.handleListInterfaces))
-	mux.HandleFunc("POST /api/interfaces", auth(s.handleCreateInterface))
-	mux.HandleFunc("PATCH /api/interfaces/{id}", auth(s.handleUpdateInterface))
-	mux.HandleFunc("DELETE /api/interfaces/{id}", auth(s.handleDeleteInterface))
-
-	mux.HandleFunc("GET /api/clients", auth(s.handleListClients))
-	mux.HandleFunc("POST /api/clients", auth(s.handleCreateClient))
-	mux.HandleFunc("GET /api/clients/{id}", auth(s.handleGetClient))
-	mux.HandleFunc("PATCH /api/clients/{id}", auth(s.handleUpdateClient))
-	mux.HandleFunc("DELETE /api/clients/{id}", auth(s.handleDeleteClient))
-	mux.HandleFunc("POST /api/clients/{id}/devices", auth(s.handleAddDevice))
-	mux.HandleFunc("POST /api/clients/{id}/reset", auth(s.handleResetTraffic))
-	mux.HandleFunc("POST /api/clients/bulk", auth(s.handleBulk))
-	mux.HandleFunc("POST /api/clients/adjust", auth(s.handleAdjust))
-	mux.HandleFunc("POST /api/clients/reset-all", auth(s.handleResetAll))
-	mux.HandleFunc("POST /api/clients/purge", auth(s.handlePurge))
-	mux.HandleFunc("POST /api/clients/batch", auth(s.handleCreateBatch))
-	mux.HandleFunc("GET /api/clients/export", auth(s.handleExport))
-	mux.HandleFunc("POST /api/clients/import", auth(s.handleImport))
-
-	mux.HandleFunc("GET /api/groups", auth(s.handleListGroups))
-	mux.HandleFunc("GET /api/groups/names", auth(s.handleGroupNames))
-	mux.HandleFunc("POST /api/groups/rename", auth(s.handleRenameGroup))
-	mux.HandleFunc("POST /api/groups/assign", auth(s.handleAssignGroup))
-	mux.HandleFunc("POST /api/groups/action", auth(s.handleGroupAction))
-
-	mux.HandleFunc("DELETE /api/devices/{id}", auth(s.handleRemoveDevice))
-	mux.HandleFunc("GET /api/devices/{id}/profile", auth(s.handleProfile))
+	// Every endpoint comes from the table in routes.go, which is also what the
+	// documentation page reads. Registering from one place is what stops the
+	// two drifting apart.
+	s.register(mux)
+	mux.HandleFunc("GET /api/docs", s.requireAuth(s.handleAPIDocs))
 
 	return mux
 }

@@ -25,6 +25,7 @@ import InterfacesView from './views/InterfacesView.vue'
 import GroupsView from './views/GroupsView.vue'
 import SettingsView from './views/SettingsView.vue'
 import SharingView from './views/SharingView.vue'
+import ApiView from './views/ApiView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -36,6 +37,7 @@ const router = createRouter({
     { path: '/groups', name: 'groups', component: GroupsView },
     { path: '/interfaces', name: 'interfaces', component: InterfacesView },
     { path: '/sharing', name: 'sharing', component: SharingView },
+    { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

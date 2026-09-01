@@ -385,5 +385,15 @@
   "settings.twoFactorDisabled": "Two-factor authentication is off.",
   "settings.confirmPasswordToDisable": "Enter your password to turn it off.",
   "common.cancel": "Cancel",
-  "overview.onlineNow": "Online now"
+  "overview.onlineNow": "Online now",
+  "nav.api": "API",
+  "api.lede": "Every endpoint this panel serves, read from the routes themselves.",
+  "api.authTitle": "Authentication",
+  "api.search": "Search paths and descriptions…",
+  "api.noMatches": "Nothing matches that.",
+  "api.noToken": "No token needed",
+  "api.copy": "Copy as curl",
+  "api.copied": "Copied",
+  "api.copyCurl": "Copy a curl command for this endpoint",
+  "api.copyFailed": "Could not copy to the clipboard."
 }

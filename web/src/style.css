@@ -1634,3 +1634,143 @@ td.right .actions {
 .ov-cust-label .dot.bad {
   background: var(--accent);
 }
+
+/* ══════════ API reference ══════════ */
+.api-intro {
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.api-intro-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+.api-intro p {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+.api-search {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.api-search .control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  color: var(--faint);
+}
+.api-search input {
+  border: none;
+  background: transparent;
+  width: 100%;
+  color: var(--ink);
+  font: inherit;
+}
+.api-search input:focus {
+  outline: none;
+}
+
+.api-group {
+  padding: 0;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.api-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 16px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: start;
+}
+.api-group-head:hover {
+  background: var(--surface-2);
+}
+.api-group-head svg {
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.api-group-head svg.turned {
+  transform: rotate(-90deg);
+}
+[dir='rtl'] .api-group-head svg.turned {
+  transform: rotate(90deg);
+}
+.api-group-name {
+  flex: 1 1 auto;
+}
+
+.api-routes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.api-route {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.api-route:last-child {
+  border-bottom: 0;
+}
+.api-route-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.api-path {
+  font-family: var(--mono);
+  font-size: var(--t-sm);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.api-summary {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+.api-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 7px 0 0;
+  color: var(--faint);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+}
+.api-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.api-code {
+  margin: 9px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--ground);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  /* Long commands scroll inside their own box rather than widening the page. */
+  overflow-x: auto;
+  white-space: pre;
+}

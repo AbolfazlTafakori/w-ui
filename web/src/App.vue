@@ -14,6 +14,7 @@ const nav = [
   { to: '/groups', key: 'nav.groups', icon: 'tag' },
   { to: '/interfaces', key: 'nav.interfaces', icon: 'server' },
   { to: '/sharing', key: 'nav.sharing', icon: 'eye' },
+  { to: '/api-docs', key: 'nav.api', icon: 'database' },
   { to: '/settings', key: 'nav.settings', icon: 'settings' },
 ]
 
