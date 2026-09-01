@@ -209,7 +209,9 @@ function viewMembers(g) {
       <table>
         <thead>
           <tr>
-            <th>{{ t('table.actions') }}</th>
+            <!-- The group's name leads the row, as on every other table here:
+                 a control column in front of the identity makes a list
+                 something to decode rather than to scan. -->
             <th>{{ t('group.name') }}</th>
             <th>{{ t('nav.clients') }}</th>
             <th>{{ t('status.active') }}</th>
@@ -217,21 +219,11 @@ function viewMembers(g) {
             <th>{{ t('overview.upload') }}</th>
             <th>{{ t('overview.download') }}</th>
             <th>{{ t('client.traffic') }}</th>
+            <th class="right">{{ t('table.actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="g in items" :key="g.name">
-            <td>
-              <button
-                class="act"
-                :title="t('table.actions')"
-                :aria-expanded="menu?.group?.name === g.name"
-                @click="openMenuFor(g, $event)"
-              >
-                <Icon name="more" :size="16" />
-              </button>
-            </td>
-
             <td>
               <button class="tag geekblue name" @click="viewMembers(g)">{{ g.name }}</button>
             </td>
@@ -242,6 +234,17 @@ function viewMembers(g) {
             <td class="muted"><span class="num ltr">{{ bytes(g.upBytes, store.locale) }}</span></td>
             <td class="muted"><span class="num ltr">{{ bytes(g.downBytes, store.locale) }}</span></td>
             <td><span class="num ltr">{{ bytes(g.usedBytes, store.locale) }}</span></td>
+
+            <td class="right">
+              <button
+                class="act"
+                :title="t('table.actions')"
+                :aria-expanded="menu?.group?.name === g.name"
+                @click="openMenuFor(g, $event)"
+              >
+                <Icon name="more" :size="16" />
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>

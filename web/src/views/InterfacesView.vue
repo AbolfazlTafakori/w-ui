@@ -176,15 +176,16 @@ async function submitForm(input) {
                 @change="toggleAll($event.target.checked)"
               />
             </th>
-            <th>ID</th>
-            <th>{{ t('table.actions') }}</th>
-            <th>{{ t('table.enabled') }}</th>
+            <!-- Name first, as on every other table here. The row's own id is
+                 a database detail and reads as noise in front of it. -->
             <th>{{ t('interface.name') }}</th>
             <th>{{ t('interface.port') }}</th>
             <th>{{ t('client.protocol') }}</th>
             <th>{{ t('nav.clients') }}</th>
             <th>{{ t('client.traffic') }}</th>
             <th style="min-width: 190px">{{ t('interface.capacity') }}</th>
+            <th>{{ t('table.enabled') }}</th>
+            <th class="right">{{ t('table.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -198,31 +199,7 @@ async function submitForm(input) {
               />
             </td>
 
-            <td class="num muted">{{ i.id }}</td>
-
-            <td>
-              <div class="actions">
-                <button class="act" :title="t('action.edit')" @click="formFor = { iface: i }">
-                  <Icon name="edit" :size="16" />
-                </button>
-                <button class="act" :title="t('action.details')" @click="detailFor = i">
-                  <Icon name="info" :size="16" />
-                </button>
-                <button class="act danger" :title="t('action.delete')" @click="removeOne(i)">
-                  <Icon name="trash" :size="16" />
-                </button>
-              </div>
-            </td>
-
-            <td>
-              <Toggle
-                :model-value="i.enabled"
-                :label="i.name"
-                @update:model-value="(v) => setEnabled(i, v)"
-              />
-            </td>
-
-            <td class="mono name">{{ i.name }}</td>
+            <td class="mono name" :title="`#${i.id}`">{{ i.name }}</td>
             <td class="mono num">{{ i.listenPort }}</td>
 
             <td>
@@ -257,6 +234,28 @@ async function submitForm(input) {
               <span class="muted small num ltr">
                 {{ nf(i.allocated) }} / {{ nf(i.capacity) }}
               </span>
+            </td>
+
+            <td>
+              <Toggle
+                :model-value="i.enabled"
+                :label="i.name"
+                @update:model-value="(v) => setEnabled(i, v)"
+              />
+            </td>
+
+            <td class="right">
+              <div class="actions">
+                <button class="act" :title="t('action.edit')" @click="formFor = { iface: i }">
+                  <Icon name="edit" :size="16" />
+                </button>
+                <button class="act" :title="t('action.details')" @click="detailFor = i">
+                  <Icon name="info" :size="16" />
+                </button>
+                <button class="act danger" :title="t('action.delete')" @click="removeOne(i)">
+                  <Icon name="trash" :size="16" />
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>

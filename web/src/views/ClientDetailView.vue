@@ -148,7 +148,16 @@ async function copy(text) {
         </div>
         <div class="metric">
           <dt>{{ t('client.expires') }}</dt>
-          <dd>{{ client.expiresAt ? relative(client.expiresAt, store.locale) : t('client.neverExpires') }}</dd>
+          <!-- A plan waiting for its first connection has no date yet. Saying
+               "never expires" here would be the opposite of the truth about a
+               plan with a fixed length. -->
+          <dd v-if="!client.expiresAt && client.startOnFirstUse && client.durationDays > 0">
+            <span class="tag blue ltr">{{ client.durationDays }}d</span>
+            <span class="muted small">{{ t('client.notStartedHint') }}</span>
+          </dd>
+          <dd v-else>
+            {{ client.expiresAt ? relative(client.expiresAt, store.locale) : t('client.neverExpires') }}
+          </dd>
         </div>
         <div class="metric">
           <dt>{{ t('client.deviceLimit') }}</dt>
