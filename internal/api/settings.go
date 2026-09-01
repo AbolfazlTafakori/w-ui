@@ -2,8 +2,10 @@ package api
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,9 +225,21 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, panelSettingsResponse{
-		Settings: current,
+		Settings: maskToken(current),
 		Defaults: s.settings.Defaults(),
 	})
+}
+
+// maskToken keeps the bot token out of every settings response.
+//
+// It is a bearer credential for an account that can message the operator, and
+// this endpoint is fetched on every visit to the page. Returning a placeholder
+// still lets the page show that one is configured.
+func maskToken(in service.PanelSettings) service.PanelSettings {
+	if in.NotifyBotToken != "" {
+		in.NotifyBotToken = service.TokenPlaceholder
+	}
+	return in
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
@@ -239,8 +253,104 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
+
+	// The notifier is told immediately rather than on the next restart, so an
+	// operator who has just fixed their token can test it straight away.
+	if s.notifier != nil {
+		s.notifier.SetConfig(s.settings.Notify(r.Context()))
+	}
+
 	writeJSON(w, http.StatusOK, panelSettingsResponse{
-		Settings: saved,
+		Settings: maskToken(saved),
 		Defaults: s.settings.Defaults(),
 	})
+}
+
+// handleTestNotification sends one message so an operator learns whether their
+// token works here, rather than from the absence of an alert months later.
+func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) {
+	if s.notifier == nil {
+		fail(w, s.log, fmt.Errorf("notifications are not available"))
+		return
+	}
+
+	cfg := s.settings.Notify(r.Context())
+	if err := s.notifier.Test(r.Context(), cfg); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
+	if s.backups == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	list, err := s.backups.List()
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
+	if s.backups == nil {
+		fail(w, s.log, fmt.Errorf("backups are not available"))
+		return
+	}
+	a, err := s.backups.Create(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
+}
+
+func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
+	if s.backups == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	f, a, err := s.backups.Open(r.PathValue("name"))
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Length", strconv.FormatInt(a.Size, 10))
+	w.Header().Set("Content-Disposition", `attachment; filename="`+a.Name+`"`)
+	if _, err := io.Copy(w, f); err != nil {
+		s.log.Warn("backup download interrupted", "file", a.Name, "error", err)
+	}
+}
+
+func (s *Server) handleDeleteBackup(w http.ResponseWriter, r *http.Request) {
+	if s.backups == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.backups.Delete(r.PathValue("name")); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSharing lists credentials seen from several places at once.
+func (s *Server) handleSharing(w http.ResponseWriter, r *http.Request) {
+	if s.rec == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	report, err := s.rec.Sharing(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/shaper"
 )
 
@@ -38,6 +39,7 @@ type Options struct {
 	DB       *gorm.DB
 	Enforcer enforce.Enforcer
 	Shaper   shaper.Shaper
+	Notifier *notify.Notifier
 	Backends map[uint]backend.Backend // by interface id
 	Interval time.Duration
 	Log      *slog.Logger
@@ -61,6 +63,7 @@ type Reconciler struct {
 	db       *gorm.DB
 	enforcer enforce.Enforcer
 	shaper   shaper.Shaper
+	notifier *notify.Notifier
 	backends map[uint]backend.Backend
 	interval time.Duration
 	log      *slog.Logger
@@ -72,6 +75,8 @@ type Reconciler struct {
 	// kernel cannot shape would otherwise log the same line every couple of
 	// seconds for as long as it runs, which buries everything else.
 	lastShapeErr string
+	// lastPrune is when stale connection addresses were last swept.
+	lastPrune time.Time
 }
 
 // New builds a reconciler.
@@ -84,6 +89,7 @@ func New(o Options) *Reconciler {
 		db:       o.DB,
 		enforcer: o.Enforcer,
 		shaper:   o.Shaper,
+		notifier: o.Notifier,
 		backends: o.Backends,
 		interval: interval,
 		log:      o.Log,
@@ -200,6 +206,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 
 	// Handshakes and endpoints come from the drivers, not from nftables, and
 	// are what the online indicator and the sharing detector read.
+	seen := map[uint]string{}
 	for ifaceID, b := range r.backends {
 		stats, err := b.Stats(ctx)
 		if err != nil {
@@ -216,15 +223,51 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 				Endpoint:  s.Endpoint,
 				At:        now,
 			})
+			if s.Endpoint != "" {
+				seen[s.AccountID] = s.Endpoint
+			}
 		}
 	}
+
+	// Written straight through rather than queued behind the traffic writer:
+	// this is an upsert of at most one row per connected account, and it must
+	// not be dropped when that buffer is full, because a missed address is a
+	// missed sharing case rather than a few bytes of usage.
+	if err := recordEndpoints(ctx, r.db, seen, now); err != nil {
+		r.log.Warn("could not record connection addresses", "error", err)
+	}
+	r.maybePrune(ctx, now)
+
 	return total, nil
+}
+
+// maybePrune sweeps stale addresses on a slow schedule of its own.
+func (r *Reconciler) maybePrune(ctx context.Context, now time.Time) {
+	r.mu.Lock()
+	due := now.Sub(r.lastPrune) >= pruneEvery
+	if due {
+		r.lastPrune = now
+	}
+	r.mu.Unlock()
+
+	if !due {
+		return
+	}
+	if err := pruneEndpoints(ctx, r.db, now); err != nil {
+		r.log.Warn("could not prune connection addresses", "error", err)
+	}
 }
 
 // evaluate moves clients out of active when they run out of allowance or time.
 func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, err error) {
 	now := time.Now().UTC()
 	db := r.db.WithContext(ctx)
+
+	// Who is about to be cut off is read before the sweep. Afterwards the rows
+	// no longer match the condition, so there would be no way to say whose
+	// service just stopped — and "someone was cut off" is not a useful message.
+	exhaustedNames := r.namesMatching(ctx,
+		"status = ? AND quota_bytes > 0 AND used_bytes >= quota_bytes", model.StatusActive)
 
 	res := db.Model(&model.Client{}).
 		Where("status = ? AND quota_bytes > 0 AND used_bytes >= quota_bytes", model.StatusActive).
@@ -234,10 +277,16 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	}
 	if res.RowsAffected > 0 {
 		r.log.Info("clients cut off for reaching their allowance", "count", res.RowsAffected)
+		r.announce(notify.KindExhausted, "Allowance used up", exhaustedNames,
+			"stopped: their data allowance is gone")
 	}
 
 	// Passed as plain strings: a slice of a named string type is not expanded
 	// into an IN list, and the sweep silently matches nothing.
+	expiredNames := r.namesMatching(ctx,
+		"status IN (?) AND expires_at IS NOT NULL AND expires_at <= ?",
+		[]string{string(model.StatusActive), string(model.StatusExhausted)}, now)
+
 	res2 := db.Model(&model.Client{}).
 		Where("status IN (?) AND expires_at IS NOT NULL AND expires_at <= ?",
 			[]string{string(model.StatusActive), string(model.StatusExhausted)}, now).
@@ -247,9 +296,40 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	}
 	if res2.RowsAffected > 0 {
 		r.log.Info("clients expired", "count", res2.RowsAffected)
+		r.announce(notify.KindExpired, "Access expired", expiredNames,
+			"stopped: their time is up")
 	}
 
 	return res.RowsAffected, res2.RowsAffected, nil
+}
+
+// namesMatching reads the client names a condition selects, capped so a mass
+// expiry does not build a message nobody can read.
+func (r *Reconciler) namesMatching(ctx context.Context, where string, args ...any) []string {
+	if r.notifier == nil {
+		return nil // nobody is listening; do not pay for the query
+	}
+	var names []string
+	err := r.db.WithContext(ctx).Model(&model.Client{}).
+		Where(where, args...).
+		Order("id").Limit(20).Pluck("name", &names).Error
+	if err != nil {
+		r.log.Debug("could not read client names for a notification", "error", err)
+		return nil
+	}
+	return names
+}
+
+// announce sends one message about a group of clients.
+func (r *Reconciler) announce(kind notify.Kind, title string, names []string, what string) {
+	if r.notifier == nil || len(names) == 0 {
+		return
+	}
+	body := strings.Join(names, ", ") + " — " + what
+	if len(names) == 20 {
+		body += " (and possibly more)"
+	}
+	r.notifier.Send(notify.Event{Kind: kind, Title: title, Body: body, At: time.Now().UTC()})
 }
 
 // desired is the state the database says should exist.

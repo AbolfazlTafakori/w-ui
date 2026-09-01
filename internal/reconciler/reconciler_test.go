@@ -2,8 +2,10 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,9 +52,20 @@ func (f *fakeEnforcer) ruleFor(key string) (enforce.Rule, bool) {
 	return enforce.Rule{}, false
 }
 
+// newTestDB gives the calling test a database of its own.
+//
+// The plain "file::memory:" DSN is one database shared by every connection in
+// the process, so tests saw each other's rows and each other's autoincrement
+// counters. Naming it after the test isolates them, and removes the need for a
+// cleanup list that had to be extended by hand whenever a table was added — the
+// kind of list that is always one table out of date.
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+
+	name := strings.NewReplacer("/", "_", " ", "_", "#", "_").Replace(t.Name())
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", name)
+
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: gormlogger.Discard,
 	})
 	if err != nil {
@@ -61,9 +74,12 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(model.AllModels()...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+
+	// The database lives as long as a connection to it does, so the pool is
+	// held open for the test and closed with it.
 	t.Cleanup(func() {
-		for _, table := range []string{"accounts", "clients", "traffic_samples", "ip_leases"} {
-			db.Exec("DELETE FROM " + table)
+		if sql, err := db.DB(); err == nil {
+			_ = sql.Close()
 		}
 	})
 	return db

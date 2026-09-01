@@ -11,6 +11,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/notify"
 )
 
 // Panel settings live in the database rather than in the environment.
@@ -35,6 +36,12 @@ const (
 	keyDefRateBits     = "client.defaultRateBitsPerSec"
 	keyDefResetCycle   = "client.defaultResetCycle"
 	keyDefInterfaceID  = "client.defaultInterfaceId"
+	keyNotifyEnabled   = "notify.enabled"
+	keyNotifyToken     = "notify.botToken"
+	keyNotifyChat      = "notify.chatId"
+	keyNotifyKinds     = "notify.kinds"
+	keyBackupEvery     = "backup.everyHours"
+	keyBackupKeep      = "backup.keep"
 	maxSessionHours    = 24 * 30
 	maxDeviceLimit     = 64
 	maxExpiryDays      = 365 * 10
@@ -53,7 +60,21 @@ type PanelSettings struct {
 	DefaultRateBitsPerSec uint64 `json:"defaultRateBitsPerSec"`
 	DefaultResetCycle     string `json:"defaultResetCycle"`
 	DefaultInterfaceID    uint   `json:"defaultInterfaceId"`
+
+	NotifyEnabled bool     `json:"notifyEnabled"`
+	NotifyChatID  string   `json:"notifyChatId"`
+	NotifyKinds   []string `json:"notifyKinds"`
+	// NotifyBotToken is write-only. It is returned as a placeholder so the page
+	// can show that one is set without handing it back on every page load.
+	NotifyBotToken string `json:"notifyBotToken"`
+
+	BackupEveryHours int `json:"backupEveryHours"`
+	BackupKeep       int `json:"backupKeep"`
 }
+
+// TokenPlaceholder is what the API returns in place of a stored bot token.
+// Saving it back means "leave the token alone".
+const TokenPlaceholder = "********"
 
 // Settings reads and writes the panel's own configuration.
 type Settings struct {
@@ -84,6 +105,9 @@ func (s *Settings) Defaults() PanelSettings {
 		DefaultLocale:      s.locale,
 		DefaultDeviceLimit: defaultDeviceLimit,
 		DefaultResetCycle:  string(model.ResetNone),
+		NotifyKinds:        []string{},
+		BackupEveryHours:   24,
+		BackupKeep:         7,
 	}
 }
 
@@ -124,6 +148,15 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	}
 	out.DefaultInterfaceID = uint(uintOr(stored[keyDefInterfaceID], uint64(out.DefaultInterfaceID)))
 
+	out.NotifyEnabled = stored[keyNotifyEnabled] == "true"
+	out.NotifyChatID = stored[keyNotifyChat]
+	out.NotifyBotToken = stored[keyNotifyToken]
+	if v := strings.TrimSpace(stored[keyNotifyKinds]); v != "" {
+		out.NotifyKinds = strings.Split(v, ",")
+	}
+	out.BackupEveryHours = intOr(stored[keyBackupEvery], out.BackupEveryHours)
+	out.BackupKeep = intOr(stored[keyBackupKeep], out.BackupKeep)
+
 	s.mu.Lock()
 	s.cache, s.loaded = &out, true
 	s.mu.Unlock()
@@ -146,6 +179,18 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 		keyDefRateBits:    strconv.FormatUint(in.DefaultRateBitsPerSec, 10),
 		keyDefResetCycle:  in.DefaultResetCycle,
 		keyDefInterfaceID: strconv.FormatUint(uint64(in.DefaultInterfaceID), 10),
+		keyNotifyEnabled:  strconv.FormatBool(in.NotifyEnabled),
+		keyNotifyChat:     in.NotifyChatID,
+		keyNotifyKinds:    strings.Join(in.NotifyKinds, ","),
+		keyBackupEvery:    strconv.Itoa(in.BackupEveryHours),
+		keyBackupKeep:     strconv.Itoa(in.BackupKeep),
+	}
+
+	// The placeholder means the operator did not retype the token, so the
+	// stored one stays. Writing the placeholder itself would silently break
+	// notifications the next time they saved any unrelated setting.
+	if in.NotifyBotToken != TokenPlaceholder {
+		values[keyNotifyToken] = in.NotifyBotToken
 	}
 
 	// One transaction: a half-saved settings page would leave the panel in a
@@ -190,7 +235,37 @@ func (s *Settings) validate(in *PanelSettings) error {
 	default:
 		return fmt.Errorf("%w: unknown reset cycle %q", ErrInvalid, in.DefaultResetCycle)
 	}
+	if in.BackupEveryHours < 0 || in.BackupEveryHours > 24*30 {
+		return fmt.Errorf("%w: backup interval must be between 0 and %d hours",
+			ErrInvalid, 24*30)
+	}
+	if in.BackupKeep < 0 || in.BackupKeep > 365 {
+		return fmt.Errorf("%w: keep between 0 and 365 backups", ErrInvalid)
+	}
+	if in.NotifyEnabled && strings.TrimSpace(in.NotifyChatID) == "" {
+		return fmt.Errorf("%w: notifications need a chat id", ErrInvalid)
+	}
 	return nil
+}
+
+// Notify projects the stored settings into what the notifier takes.
+func (s *Settings) Notify(ctx context.Context) notify.Config {
+	got, err := s.Get(ctx)
+	if err != nil {
+		return notify.Config{}
+	}
+	kinds := make(map[string]bool, len(got.NotifyKinds))
+	for _, k := range got.NotifyKinds {
+		if k = strings.TrimSpace(k); k != "" {
+			kinds[k] = true
+		}
+	}
+	return notify.Config{
+		Enabled:  got.NotifyEnabled,
+		BotToken: got.NotifyBotToken,
+		ChatID:   got.NotifyChatID,
+		Kinds:    kinds,
+	}
 }
 
 // SessionTTLHours is the hot path used on every sign-in.

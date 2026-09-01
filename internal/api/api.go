@@ -12,8 +12,10 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
+	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/shaper"
@@ -28,6 +30,8 @@ type Server struct {
 	catalog   *i18n.Catalog
 	enforcer  enforce.Enforcer
 	settings  *service.Settings
+	notifier  *notify.Notifier
+	backups   *backup.Service
 	shaper    shaper.Shaper
 	jwtSecret []byte
 	log       *slog.Logger
@@ -47,6 +51,8 @@ type Options struct {
 	Catalog    *i18n.Catalog
 	Enforcer   enforce.Enforcer
 	Settings   *service.Settings
+	Notifier   *notify.Notifier
+	Backups    *backup.Service
 	Shaper     shaper.Shaper
 	JWTSecret  []byte
 	Logger     *slog.Logger
@@ -67,6 +73,8 @@ func New(o Options) *Server {
 		catalog:   o.Catalog,
 		enforcer:  o.Enforcer,
 		settings:  o.Settings,
+		notifier:  o.Notifier,
+		backups:   o.Backups,
 		shaper:    o.Shaper,
 		jwtSecret: o.JWTSecret,
 		log:       o.Logger,
@@ -97,6 +105,12 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/system", auth(s.handleSystemInfo))
 	mux.HandleFunc("GET /api/settings", auth(s.handleGetSettings))
 	mux.HandleFunc("PUT /api/settings", auth(s.handleSaveSettings))
+	mux.HandleFunc("POST /api/settings/notify/test", auth(s.handleTestNotification))
+	mux.HandleFunc("GET /api/sharing", auth(s.handleSharing))
+	mux.HandleFunc("GET /api/backups", auth(s.handleListBackups))
+	mux.HandleFunc("POST /api/backups", auth(s.handleCreateBackup))
+	mux.HandleFunc("GET /api/backups/{name}", auth(s.handleDownloadBackup))
+	mux.HandleFunc("DELETE /api/backups/{name}", auth(s.handleDeleteBackup))
 	mux.HandleFunc("GET /api/overview/full", auth(s.handleFullOverview))
 
 	mux.HandleFunc("GET /api/interfaces", auth(s.handleListInterfaces))

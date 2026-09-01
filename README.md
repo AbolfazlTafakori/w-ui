@@ -49,7 +49,7 @@ to remove a peer, never to enforce the byte limit.
 | 3 | WireGuard / AmneziaWG kernel driver | done |
 | 4 | OpenVPN driver | done |
 | 5 | Bandwidth rate limiting (`tc`) | done |
-| 6 | Backups, sharing detection, Telegram notifications | not started |
+| 6 | Backups, sharing detection, Telegram notifications | done |
 
 **What works today:** WireGuard, AmneziaWG and OpenVPN, end to end. The panel
 brings up a real interface, writes accounts to it, hands out working configs,
@@ -63,9 +63,21 @@ added. Like the data limit, this depends on the kernel — one built without the
 classful schedulers accepts the command and does nothing, so the installer, the
 `w-ui` diagnostics and the panel all check for it and say so.
 
+Backups run on a schedule with retention, and can be taken and downloaded from
+the panel. An archive is a consistent snapshot: the database is copied by SQLite
+itself rather than read as a file that is being written to.
+
+Shared credentials are detected from where connections come from. One customer
+is one place at a time; several live public addresses at once is the only signal
+available, since two devices holding the same key are identical to the tunnel.
+It is reported with the addresses, never acted on automatically — a phone moving
+between wifi and mobile data changes address legitimately.
+
+Telegram notifications cover customers running out, expiring, credentials being
+shared, and backups.
+
 **What does not:** multi-node is modelled in the schema but there is no Nodes
-page, so one panel drives one server. Backups exist in the `w-ui` menu but are
-not scheduled, and there is no sharing detection or Telegram notification yet.
+page, so one panel drives one server.
 
 ---
 

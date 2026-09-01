@@ -23,6 +23,8 @@ const tabs = [
   { key: 'general', icon: 'settings', label: 'settings.tab.general' },
   { key: 'clients', icon: 'users', label: 'settings.tab.clients' },
   { key: 'security', icon: 'lock', label: 'settings.tab.security' },
+  { key: 'notify', icon: 'alert', label: 'settings.tab.notify' },
+  { key: 'backups', icon: 'database', label: 'settings.tab.backups' },
   { key: 'engine', icon: 'shield', label: 'settings.tab.engine' },
   { key: 'system', icon: 'server', label: 'settings.tab.system' },
 ]
@@ -49,7 +51,8 @@ async function load() {
     info.value = sys
     saved.value = cfg.settings
     defaults.value = cfg.defaults
-    form.value = { ...cfg.settings }
+    form.value = { ...cfg.settings, notifyKinds: [...(cfg.settings.notifyKinds || [])] }
+    await loadBackups()
   } catch (e) {
     notify(e.message, 'error')
   } finally {
@@ -72,10 +75,12 @@ async function save() {
       defaultExpiryDays: Number(form.value.defaultExpiryDays) || 0,
       defaultDeviceLimit: Number(form.value.defaultDeviceLimit) || 1,
       defaultRateBitsPerSec: Number(form.value.defaultRateBitsPerSec) || 0,
+      backupEveryHours: Number(form.value.backupEveryHours) || 0,
+      backupKeep: Number(form.value.backupKeep) || 0,
     })
     saved.value = res.settings
     defaults.value = res.defaults
-    form.value = { ...res.settings }
+    form.value = { ...res.settings, notifyKinds: [...(res.settings.notifyKinds || [])] }
     notify(t('settings.saved'), 'success')
     if (res.settings.defaultLocale !== store.locale) await loadMessages(res.settings.defaultLocale)
   } catch (e) {
@@ -109,6 +114,93 @@ const rateMbit = computed({
     form.value.defaultRateBitsPerSec = Math.max(0, Math.round(Number(v) * 1e6)) || 0
   },
 })
+
+const NOTIFY_KINDS = ['exhausted', 'expired', 'expiring', 'sharing', 'login', 'panel', 'backup']
+
+const backups = ref([])
+const backupBusy = ref(false)
+const testResult = ref(null)
+
+async function loadBackups() {
+  try {
+    backups.value = await api.get('/api/backups')
+  } catch {
+    backups.value = []
+  }
+}
+
+async function makeBackup() {
+  backupBusy.value = true
+  try {
+    await api.post('/api/backups')
+    await loadBackups()
+    notify(t('settings.backupTaken'), 'success')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    backupBusy.value = false
+  }
+}
+
+async function removeBackup(name) {
+  try {
+    await api.del(`/api/backups/${encodeURIComponent(name)}`)
+    await loadBackups()
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+
+// The archive holds every key and credential, so it is fetched with the
+// session token rather than linked: a plain link carries no Authorization
+// header and would either fail or force the file to be served unauthenticated.
+async function downloadBackup(name) {
+  try {
+    const res = await fetch(`/api/backups/${encodeURIComponent(name)}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('wui.token')}` },
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const url = URL.createObjectURL(await res.blob())
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+
+// Saved first, because the server tests what it has stored rather than what is
+// on screen — otherwise an operator would test a token they had not saved.
+async function testNotification() {
+  testResult.value = null
+  if (dirty.value) await save()
+  try {
+    const res = await api.post('/api/settings/notify/test')
+    testResult.value = res.ok ? { ok: true } : { ok: false, error: res.error }
+  } catch (e) {
+    testResult.value = { ok: false, error: e.message }
+  }
+}
+
+function toggleKind(kind, on) {
+  const set = new Set(form.value.notifyKinds || [])
+  if (on) set.add(kind)
+  else set.delete(kind)
+  form.value.notifyKinds = [...set]
+}
+
+function humanBytes(n) {
+  if (!n) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
 
 const uptime = computed(() => {
   const s = info.value?.uptimeSec ?? 0
@@ -378,6 +470,127 @@ async function changePassword() {
                 <span v-else>{{ t('settings.updatePassword') }}</span>
               </button>
             </form>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── Notifications ── -->
+      <template v-else-if="active === 'notify'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.notifyEnabled') }}</div>
+            <p class="setting-desc">{{ t('settings.notifyEnabledDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <label class="switch">
+              <input v-model="form.notifyEnabled" type="checkbox" />
+              <span>{{ form.notifyEnabled ? t('settings.on') : t('settings.off') }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.botToken') }}</div>
+            <p class="setting-desc">{{ t('settings.botTokenDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.notifyBotToken" type="password" autocomplete="off" spellcheck="false" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.chatId') }}</div>
+            <p class="setting-desc">{{ t('settings.chatIdDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.notifyChatId" type="text" inputmode="numeric" class="ltr" />
+          </div>
+        </div>
+
+        <div class="setting-row block">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.notifyKinds') }}</div>
+            <p class="setting-desc">{{ t('settings.notifyKindsDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="check-list">
+              <label v-for="k in NOTIFY_KINDS" :key="k" class="check">
+                <input
+                  type="checkbox"
+                  :checked="(form.notifyKinds || []).includes(k)"
+                  @change="toggleKind(k, $event.target.checked)"
+                />
+                <span>{{ t(`settings.kind.${k}`) }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.testNotify') }}</div>
+            <p class="setting-desc">{{ t('settings.testNotifyDesc') }}</p>
+          </div>
+          <div class="setting-control stack-end">
+            <button class="btn ghost" @click="testNotification">{{ t('settings.sendTest') }}</button>
+            <p v-if="testResult" class="test-result" :class="testResult.ok ? 'ok' : 'bad'">
+              {{ testResult.ok ? t('settings.testOk') : testResult.error }}
+            </p>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── Backups ── -->
+      <template v-else-if="active === 'backups'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.backupEvery') }}</div>
+            <p class="setting-desc">{{ t('settings.backupEveryDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="unit-field">
+              <input v-model.number="form.backupEveryHours" type="number" min="0" max="720" step="1" />
+              <span class="unit">{{ t('settings.hours') }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.backupKeep') }}</div>
+            <p class="setting-desc">{{ t('settings.backupKeepDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model.number="form.backupKeep" type="number" min="0" max="365" step="1" />
+          </div>
+        </div>
+
+        <div class="setting-row block">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.backupsOnDisk') }}</div>
+            <p class="setting-desc">{{ t('settings.backupsWarning') }}</p>
+          </div>
+          <div class="setting-control stack-end">
+            <button class="btn primary" :disabled="backupBusy" @click="makeBackup">
+              <span v-if="backupBusy">{{ t('settings.backingUp') }}</span>
+              <span v-else>{{ t('settings.backupNow') }}</span>
+            </button>
+
+            <ul v-if="backups.length" class="backup-list">
+              <li v-for="b in backups" :key="b.name">
+                <span class="backup-name ltr">{{ b.name }}</span>
+                <span class="backup-size ltr">{{ humanBytes(b.size) }}</span>
+                <button class="linkbtn" @click="downloadBackup(b.name)">
+                  {{ t('settings.download') }}
+                </button>
+                <button class="linkbtn danger" @click="removeBackup(b.name)">
+                  {{ t('common.delete') }}
+                </button>
+              </li>
+            </ul>
+            <p v-else class="muted">{{ t('settings.noBackups') }}</p>
           </div>
         </div>
       </template>

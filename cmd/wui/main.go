@@ -21,6 +21,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
+	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/config"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -28,6 +29,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/logger"
+	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/shaper"
@@ -108,6 +110,25 @@ func run() error {
 	shp := shaper.New(log)
 	defer shp.Close()
 
+	settings := service.NewSettings(db, cfg.DefaultLocale)
+	notifier := notify.New(log)
+	notifier.SetConfig(settings.Notify(context.Background()))
+
+	backups := backup.New(backup.Options{
+		DataDir: cfg.DataDir,
+		Keep:    7,
+		Log:     log,
+		// SQLite can write a consistent copy of itself while it is in use.
+		// Copying the file byte by byte instead can catch it mid-write, and a
+		// torn database is worth nothing at the moment it is needed.
+		Snapshot: func(ctx context.Context, dest string) error {
+			if cfg.DBDriver != config.DriverSQLite {
+				return fmt.Errorf("snapshots are only available for sqlite")
+			}
+			return db.WithContext(ctx).Exec("VACUUM INTO ?", dest).Error
+		},
+	})
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -121,6 +142,7 @@ func run() error {
 		Enforcer: enforcer,
 		Backends: drivers,
 		Shaper:   shp,
+		Notifier: notifier,
 		Interval: cfg.CollectInterval,
 		Log:      log,
 	})
@@ -152,7 +174,41 @@ func run() error {
 	sys := sysinfo.New(cfg.DataDir, cfg.CollectInterval, log)
 	sys.Start(ctx)
 
-	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, jwtSecret, sys, rec, log)
+	notifier.Start(ctx)
+
+	// Re-read on every check rather than captured here, so changing either on
+	// the settings page takes effect without a restart.
+	scheduler := backup.NewScheduler(backups)
+	scheduler.Every = func() time.Duration {
+		got, err := settings.Get(ctx)
+		if err != nil {
+			return 0
+		}
+		return time.Duration(got.BackupEveryHours) * time.Hour
+	}
+	scheduler.Keep = func() int {
+		got, err := settings.Get(ctx)
+		if err != nil {
+			return 7
+		}
+		return got.BackupKeep
+	}
+	scheduler.OnBackup = func(a backup.Archive) {
+		notifier.Send(notify.Event{
+			Kind:  notify.KindBackup,
+			Title: "Backup taken",
+			Body:  fmt.Sprintf("%s (%d bytes)", a.Name, a.Size),
+		})
+	}
+	scheduler.Start(ctx)
+
+	notifier.Send(notify.Event{
+		Kind:  notify.KindPanel,
+		Title: "Panel started",
+		Body:  fmt.Sprintf("W-UI %s on %s", version, cfg.Listen),
+	})
+
+	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, jwtSecret, sys, rec, log)
 	if err != nil {
 		return err
 	}
@@ -189,6 +245,9 @@ func buildServer(
 	catalog *i18n.Catalog,
 	enforcer enforce.Enforcer,
 	shp shaper.Shaper,
+	settings *service.Settings,
+	notifier *notify.Notifier,
+	backups *backup.Service,
 	jwtSecret []byte,
 	sys *sysinfo.Collector,
 	rec *reconciler.Reconciler,
@@ -201,7 +260,9 @@ func buildServer(
 		Catalog:    catalog,
 		Enforcer:   enforcer,
 		Shaper:     shp,
-		Settings:   service.NewSettings(db, cfg.DefaultLocale),
+		Settings:   settings,
+		Notifier:   notifier,
+		Backups:    backups,
 		JWTSecret:  jwtSecret,
 		Logger:     log,
 		Version:    version,

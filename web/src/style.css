@@ -1312,3 +1312,104 @@ code.readonly {
     text-align: start;
   }
 }
+
+/* Settings controls that need more than one line. */
+.setting-control.stack-end {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.check-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 16px;
+  width: 100%;
+}
+.check,
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.check input,
+.switch input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.test-result {
+  margin: 0;
+  font-size: var(--t-sm);
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+.test-result.ok {
+  color: var(--ok, #4ade80);
+}
+.test-result.bad {
+  color: var(--accent-hover);
+}
+
+.backup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.backup-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--t-sm);
+}
+.backup-name {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+.backup-size {
+  color: var(--faint);
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.linkbtn {
+  border: none;
+  background: transparent;
+  color: var(--accent-hover);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+.linkbtn:hover {
+  text-decoration: underline;
+}
+.linkbtn.danger {
+  color: var(--faint);
+}
+.linkbtn.danger:hover {
+  color: var(--accent-hover);
+}
+
+@media (max-width: 768px) {
+  .setting-control.stack-end {
+    align-items: stretch;
+  }
+  .test-result {
+    text-align: start;
+  }
+  .backup-list li {
+    flex-wrap: wrap;
+  }
+}

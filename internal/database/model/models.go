@@ -200,6 +200,23 @@ type Setting struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// AccountEndpoint is one public address an account has connected from.
+//
+// A credential is sold to one person. Two people using it at once show up as
+// two public addresses active in the same short window — which is the only
+// signal available, because the tunnel itself cannot tell two devices apart once
+// they hold the same key. Keeping the addresses rather than a bare count is what
+// lets an operator judge a real case from a phone moving between wifi and
+// mobile data.
+type AccountEndpoint struct {
+	AccountID uint   `gorm:"primaryKey;autoIncrement:false" json:"accountId"`
+	Addr      string `gorm:"size:64;primaryKey" json:"addr"`
+
+	FirstSeen time.Time `json:"firstSeen"`
+	LastSeen  time.Time `gorm:"index" json:"lastSeen"`
+	Hits      uint64    `gorm:"not null;default:1" json:"hits"`
+}
+
 // AllModels is the migration set, in dependency order.
 func AllModels() []any {
 	return []any{
@@ -210,6 +227,7 @@ func AllModels() []any {
 		&TrafficSample{},
 		&IPLease{},
 		&Admin{},
+		&AccountEndpoint{},
 		&Setting{},
 	}
 }
