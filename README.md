@@ -47,18 +47,17 @@ to remove a peer, never to enforce the byte limit.
 | 1 | Data model, address allocator, driver and enforcement contracts | done |
 | 2 | nftables enforcement engine and reconciler | done |
 | 3 | WireGuard / AmneziaWG kernel driver | done |
-| 4 | OpenVPN driver | not started |
+| 4 | OpenVPN driver | done |
 | 5 | Bandwidth rate limiting (`tc`) | not started |
 | 6 | Backups, sharing detection, Telegram notifications | not started |
 
-**What works today:** WireGuard and AmneziaWG end to end. The panel creates a
-real kernel interface, writes peers, hands out working configs, meters traffic,
-and cuts customers off when their quota or expiry is reached.
+**What works today:** WireGuard, AmneziaWG and OpenVPN, end to end. The panel
+brings up a real interface, writes accounts to it, hands out working configs,
+meters traffic, and cuts customers off when their quota or expiry is reached.
 
-**What does not:** OpenVPN. The panel will create OpenVPN clients and render
-their `.ovpn` files, but nothing writes them to a running OpenVPN server yet, so
-those configs will not connect. Rate limiting is stored but not applied.
-Multi-node is modelled in the schema but there is no Nodes page.
+**What does not:** bandwidth rate limiting is stored on the client but not
+applied. Multi-node is modelled in the schema but there is no Nodes page, so one
+panel drives one server.
 
 ---
 
@@ -66,6 +65,7 @@ Multi-node is modelled in the schema but there is no Nodes page.
 
 - Linux with `nftables` and the `nft_quota` kernel module
 - `wireguard-tools` (and `amneziawg` if you want the obfuscated mode)
+- `openvpn` and a `tun` device, if you sell OpenVPN
 - `CAP_NET_ADMIN` — the panel does not need to run as root
 - A public IPv4 address and an open UDP port
 
@@ -181,6 +181,40 @@ Anything other than `active` has its peers removed from the kernel, so the
 customer stops passing traffic. Raising the quota or extending the expiry brings
 them straight back — no restart, no reissued config.
 
+### How OpenVPN accounts work
+
+WireGuard has no concept of a username, so a WireGuard customer is identified by
+a key. OpenVPN customers get a username and password instead, and the panel is
+built around that difference rather than papering over it.
+
+There are **no per-client certificates**. The server runs with
+`verify-client-cert none`, so creating a customer means appending a line to a
+credential file — not issuing, tracking and revoking a certificate. Every
+interface generates its own certificate authority, server certificate and
+`tls-crypt` key when you create it, in-process, with no `easy-rsa` directory to
+keep in sync. That material lives in the interface row, so a database backup is a
+complete backup.
+
+Three properties follow from the configuration and are worth knowing:
+
+- **One credential cannot serve two people.** `duplicate-cn` is off, so a second
+  login on the same username disconnects the first. The protocol enforces it;
+  the panel does not have to detect it after the fact.
+- **Addresses are pinned.** Each account gets a fixed address through
+  `client-config-dir`, so a customer keeps the same address across reconnects and
+  the nftables quota attached to it keeps counting the right person. Without
+  this, the address would come from a pool and change on every reconnect.
+- **Cutting someone off is immediate.** Removing them rewrites the credential
+  file *and* kills their live session over the management socket. Removing the
+  credential alone would only stop their next login, which is no use for a
+  customer who has already run out of data.
+
+Adding or removing a customer never restarts the server, because a restart would
+disconnect everyone else on the interface. The server process is also started
+detached and adopted again by name on the next run, so **restarting or upgrading
+the panel does not disconnect anyone** — the panel compares a fingerprint of the
+configuration and only restarts when the interface itself actually changed.
+
 ---
 
 ## How it works
@@ -204,12 +238,14 @@ driver never deletes or recreates a link or a peer that is already correct.
 internal/
   api/          HTTP handlers, auth, JSON
   backend/      driver contract and registry
+    ovpndriver/ OpenVPN (credential files plus the management socket)
     wgdriver/   WireGuard + AmneziaWG (netlink for standard, awg for amnezia)
   database/     GORM models, migrations, settings
   enforce/      nftables ruleset generator and applier
   ipam/         address allocation
   reconciler/   the loop above; the only thing that touches the data plane
   service/      business rules for clients, groups, interfaces, profiles
+  ovpnconf/     OpenVPN renderer and in-process certificate authority
   wgconf/       the single config renderer, shared by panel and driver
   web/          the embedded frontend
 web/            Vue 3 + Vite source
@@ -224,6 +260,10 @@ Two design notes worth knowing if you plan to modify it:
   pins this.
 - **The quota drop comes before the counter.** Otherwise dropped bytes would be
   billed to the customer who never received them.
+- **The credential alphabet is one constant.** The generator and the shell script
+  that validates a login share it. When they disagreed during development, the
+  panel issued passwords that were rejected at login with nothing in any log
+  explaining why.
 
 The binary is CGO-free and embeds the frontend, so it cross-compiles to a single
 static file with no runtime dependencies.
@@ -282,6 +322,12 @@ docker run --rm --privileged --cap-add=NET_ADMIN -v "$PWD:/src" ubuntu:24.04 \
   checks that a real handshake completes, that traffic actually reaches the far
   side through the tunnel, that it is billed to the right customer, that the
   customer is cut off at their quota, and that topping them up restores service.
+- `test/openvpn.sh` — the same for OpenVPN, using a real `openvpn` client that
+  logs in with the username and password the panel issued. It also checks that
+  the client receives the address the panel pinned, that a second login on the
+  same credential evicts the first, that cutting a customer off drops their live
+  session and refuses their next login, and that restarting the panel adopts the
+  running server instead of disconnecting everyone.
 
 Note that `nft_quota` is absent from the WSL2 kernel, so running these under
 Docker Desktop on Windows will show quota overshoot. That is the kernel, not the

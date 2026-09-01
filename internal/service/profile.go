@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
@@ -54,41 +54,13 @@ func renderWireGuard(acc *model.Account, iface *model.Interface) *Profile {
 }
 
 func renderOpenVPN(acc *model.Account, iface *model.Interface) *Profile {
-	p := iface.OpenVPN.V
-	transport := p.Transport
-	if transport == "" {
-		transport = "udp"
-	}
-
-	var b strings.Builder
-	b.WriteString("client\ndev tun\n")
-	fmt.Fprintf(&b, "proto %s\n", transport)
-	fmt.Fprintf(&b, "remote %s %d\n", iface.EndpointHost, iface.ListenPort)
-	b.WriteString("resolv-retry infinite\nnobind\npersist-key\npersist-tun\n")
-	b.WriteString("remote-cert-tls server\n")
-	if p.CipherSuite != "" {
-		fmt.Fprintf(&b, "cipher %s\n", p.CipherSuite)
-	}
-	if p.Auth != "" {
-		fmt.Fprintf(&b, "auth %s\n", p.Auth)
-	}
-	// This is the line that makes the client prompt for a username and
-	// password. It is the whole reason OpenVPN is offered alongside WireGuard,
-	// which has no credential concept at all.
-	b.WriteString("auth-user-pass\n")
-	b.WriteString("verb 3\n")
-
-	if p.CACert != "" {
-		fmt.Fprintf(&b, "\n<ca>\n%s\n</ca>\n", strings.TrimSpace(p.CACert))
-	}
-	if p.TLSCryptKey != "" {
-		fmt.Fprintf(&b, "\n<tls-crypt>\n%s\n</tls-crypt>\n", strings.TrimSpace(p.TLSCryptKey))
-	}
-
+	// Rendered by the shared generator, the same one the driver writes the
+	// server side with. Two copies would eventually disagree about a cipher or
+	// a port and produce a failure that names neither.
 	return &Profile{
 		Filename: fmt.Sprintf("%s.ovpn", filenameFor(acc)),
 		MIMEType: "application/x-openvpn-profile",
-		Body:     b.String(),
+		Body:     ovpnconf.RenderClient(acc, iface),
 		Username: acc.Username,
 		Secret:   acc.Secret,
 	}

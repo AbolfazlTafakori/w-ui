@@ -233,6 +233,19 @@ install_openvpn() {
     return 0
   }
 
+  # OpenVPN needs a tun device to exist before it will start. It is present on
+  # almost every host and absent on almost every minimal container, and the
+  # failure without it is a server that exits at boot with a message about a
+  # file rather than about networking.
+  modprobe tun 2>/dev/null || true
+  if [[ -c /dev/net/tun ]]; then
+    ok "/dev/net/tun present"
+  else
+    warn "/dev/net/tun is missing; OpenVPN interfaces will not start"
+    warn "  load it with: modprobe tun   (and add 'tun' to /etc/modules-load.d/)"
+  fi
+  echo tun > /etc/modules-load.d/wui-tun.conf 2>/dev/null || true
+
   if have openvpn; then
     OPENVPN_OK=1
     ok "$(openvpn --version 2>/dev/null | head -1 | cut -d' ' -f1-2)"

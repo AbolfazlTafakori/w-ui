@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +13,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
@@ -139,7 +138,7 @@ func (s *Clients) buildAccount(client *model.Client, iface *model.Interface, nam
 		acc.PresharedKey = pair.Preshared.String()
 
 	case model.ProtocolOpenVPN:
-		secret, err := randomSecret(12)
+		secret, err := ovpnconf.NewSecret(16)
 		if err != nil {
 			return nil, err
 		}
@@ -889,14 +888,6 @@ func (s *Clients) loadInterface(ctx context.Context, id uint) (*model.Interface,
 		return nil, fmt.Errorf("service: load interface: %w", err)
 	}
 	return &iface, nil
-}
-
-func randomSecret(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("service: generate secret: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // slug reduces a device name to something safe for an OpenVPN common name.

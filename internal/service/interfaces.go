@@ -21,6 +21,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
@@ -90,15 +91,17 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 			iface.AWG = model.JSON(NewAWGParams())
 		}
 	} else {
-		iface.OpenVPN = model.JSON(model.OpenVPNParams{
-			Transport:   "udp",
-			CipherSuite: "AES-256-GCM",
-			Auth:        "SHA256",
-			// Leaving duplicate-cn off is what makes one credential mean one
-			// session: a second login evicts the first. The device limit is
-			// then enforced by the protocol rather than policed afterwards.
-			DuplicateCN: false,
-		})
+		// Every interface gets its own certificate authority, generated here
+		// rather than by easy-rsa so that the interface row is the only place
+		// this material is stored. Leaving duplicate-cn off is what makes one
+		// credential mean one session: a second login evicts the first, so the
+		// device limit is enforced by the protocol rather than policed after
+		// the fact.
+		params, err := ovpnconf.NewPKI(iface.Name)
+		if err != nil {
+			return nil, err
+		}
+		iface.OpenVPN = model.JSON(params)
 	}
 
 	if err := s.db.WithContext(ctx).Create(&iface).Error; err != nil {

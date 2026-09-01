@@ -19,6 +19,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/api"
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/config"
 	"github.com/abolfazl/w-ui/internal/database"
@@ -78,6 +79,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	// OpenVPN keeps its per-interface files under the data directory, so the
+	// whole of the panel's state stays in one place and one backup.
+	ovpndriver.DataRoot = cfg.DataDir
 
 	registerBackends(log)
 
@@ -207,9 +212,10 @@ func buildServer(
 // protocol left unclaimed. Phases 3 and 4 add wireguard and openvpn drivers
 // that register themselves, and this loop then leaves them alone.
 func registerBackends(log *slog.Logger) {
-	// The real WireGuard driver claims its protocol first; the loop below then
-	// only fills in whatever is still unclaimed.
+	// The real drivers claim their protocols first; the loop below then only
+	// fills in whatever is still unclaimed.
 	wgdriver.Register()
+	ovpndriver.Register()
 
 	for _, p := range []model.Protocol{model.ProtocolWireGuard, model.ProtocolOpenVPN} {
 		if backend.Supports(p) {
