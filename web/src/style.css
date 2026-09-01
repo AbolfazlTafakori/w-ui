@@ -1453,3 +1453,76 @@ code.readonly {
 .field.span-2 {
   grid-column: 1 / -1;
 }
+
+/* Panel log. Monospaced and dense: this is read by scanning, not by reading. */
+.log-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.log-view {
+  width: 100%;
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--ground);
+}
+.log-lines {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.65;
+}
+/* A grid rather than wrapping flex: a long field value used to wrap back to
+   the start of the row, where it read as a new entry with no timestamp. */
+.log-lines li {
+  display: grid;
+  grid-template-columns: auto 44px 1fr;
+  gap: 2px 10px;
+  padding: 3px 12px;
+  border-inline-start: 2px solid transparent;
+}
+.log-msg,
+.log-fields {
+  grid-column: 3;
+  min-width: 0;
+}
+.log-lines li:hover {
+  background: var(--surface-2);
+}
+.log-time {
+  color: var(--faint);
+  white-space: nowrap;
+}
+.log-level {
+  color: var(--faint);
+}
+.log-msg {
+  color: var(--ink);
+}
+.log-fields {
+  color: var(--faint);
+  overflow-wrap: anywhere;
+}
+/* The severity is carried by a rule down the side rather than by colouring the
+   whole line, so a wall of warnings stays readable. */
+.lvl-warn {
+  border-inline-start-color: var(--warn, #d99e2b);
+}
+.lvl-warn .log-level {
+  color: var(--warn, #d99e2b);
+}
+.lvl-error {
+  border-inline-start-color: var(--accent);
+}
+.lvl-error .log-level,
+.lvl-error .log-msg {
+  color: var(--accent-hover);
+}
+.log-view .muted {
+  padding: 18px;
+  margin: 0;
+}

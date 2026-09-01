@@ -9,6 +9,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/i18n"
+	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -482,13 +483,55 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		all = append(all, next.Items...)
 	}
 
+	// Written in the shape import reads, so the file this produces is one the
+	// panel can take back.
+	records := make([]service.ClientRecord, 0, len(all))
+	for _, c := range all {
+		records = append(records, service.ToRecord(c))
+	}
+
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition",
 		fmt.Sprintf("attachment; filename=%q",
 			"wui-clients-"+time.Now().Format("2006-01-02")+".json"))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"exportedAt": time.Now().UTC(),
-		"count":      len(all),
-		"clients":    all,
+		"count":      len(records),
+		"clients":    records,
+	})
+}
+
+// handleImport loads a client list produced by the export.
+func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
+	var in service.ImportInput
+	if !decode(w, r, &in) {
+		return
+	}
+
+	report, err := s.clients.Import(r.Context(), in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	s.log.Info("client list imported",
+		"created", report.Created, "replaced", report.Replaced,
+		"skipped", report.Skipped, "failed", report.Failed)
+	writeJSON(w, http.StatusOK, report)
+}
+
+// handleLogs serves the panel's recent log.
+//
+// Diagnosing a customer's problem otherwise means an SSH session and
+// journalctl, on a different machine from the panel already open in front of
+// whoever is looking.
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	limit := 200
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"entries": logger.Recent.Recent(limit, r.URL.Query().Get("level")),
 	})
 }

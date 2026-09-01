@@ -103,6 +103,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/auth/password", auth(s.handleChangePassword))
 	mux.HandleFunc("GET /api/overview", auth(s.handleOverview))
 	mux.HandleFunc("GET /api/system", auth(s.handleSystemInfo))
+	mux.HandleFunc("GET /api/logs", auth(s.handleLogs))
 	mux.HandleFunc("GET /api/settings", auth(s.handleGetSettings))
 	mux.HandleFunc("PUT /api/settings", auth(s.handleSaveSettings))
 	mux.HandleFunc("POST /api/settings/notify/test", auth(s.handleTestNotification))
@@ -131,6 +132,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/clients/purge", auth(s.handlePurge))
 	mux.HandleFunc("POST /api/clients/batch", auth(s.handleCreateBatch))
 	mux.HandleFunc("GET /api/clients/export", auth(s.handleExport))
+	mux.HandleFunc("POST /api/clients/import", auth(s.handleImport))
 
 	mux.HandleFunc("GET /api/groups", auth(s.handleListGroups))
 	mux.HandleFunc("GET /api/groups/names", auth(s.handleGroupNames))

@@ -10,6 +10,13 @@ import (
 
 // New builds a slog logger at the given level and format and installs it as the
 // process default.
+// Recent is the process-wide ring the panel reads its own log from.
+//
+// It is package-level because the logger is built before anything that would
+// otherwise own it, and because there is exactly one panel process — a second
+// ring would simply be a second half of the same log.
+var Recent = NewRing()
+
 func New(level, format string) (*slog.Logger, error) {
 	var lv slog.Level
 	switch strings.ToLower(level) {
@@ -37,7 +44,9 @@ func New(level, format string) (*slog.Logger, error) {
 		return nil, fmt.Errorf("logger: unknown format %q, want text or json", format)
 	}
 
-	l := slog.New(h)
+	// Everything written also lands in the ring, so the panel can show the
+	// recent past without an SSH session.
+	l := slog.New(Tee(h, Recent))
 	slog.SetDefault(l)
 	return l, nil
 }

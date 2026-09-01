@@ -361,5 +361,13 @@
   "client.startOnFirstUseHint": "پلن تا وقتی مشتری وصل نشده دست‌نخورده می‌ماند، بعد به مدت زیر اجرا می‌شود. کانفیگی که دوشنبه تحویل داده‌اید ماهش را داخل اینباکس نمی‌سوزاند.",
   "client.durationDays": "مدت پلن",
   "client.notStarted": "شروع نشده",
-  "client.notStartedHint": "منتظر اولین اتصال"
+  "client.notStartedHint": "منتظر اولین اتصال",
+  "settings.tab.logs": "لاگ‌ها",
+  "settings.recentLog": "فعالیت اخیر",
+  "settings.recentLogDesc": "چند صد خط آخر، در حافظه. برای تاریخچهٔ کامل روی سرور از journalctl استفاده کنید.",
+  "settings.logAll": "همه",
+  "settings.logInfo": "از info به بالا",
+  "settings.logWarn": "هشدارها و خطاها",
+  "settings.logError": "فقط خطاها",
+  "settings.logEmpty": "هنوز چیزی ثبت نشده."
 }

@@ -361,5 +361,13 @@
   "client.startOnFirstUseHint": "The plan sits unused until the customer connects, then runs for the duration below. A config handed out on Monday does not burn its month sitting in an inbox.",
   "client.durationDays": "Plan length",
   "client.notStarted": "Not started",
-  "client.notStartedHint": "Waiting for their first connection"
+  "client.notStartedHint": "Waiting for their first connection",
+  "settings.tab.logs": "Logs",
+  "settings.recentLog": "Recent activity",
+  "settings.recentLogDesc": "The last few hundred lines, kept in memory. For the full history use journalctl on the server.",
+  "settings.logAll": "Everything",
+  "settings.logInfo": "Info and above",
+  "settings.logWarn": "Warnings and errors",
+  "settings.logError": "Errors only",
+  "settings.logEmpty": "Nothing logged yet."
 }
