@@ -1526,3 +1526,46 @@ code.readonly {
   padding: 18px;
   margin: 0;
 }
+
+.code-input {
+  letter-spacing: 0.4em;
+  font-family: var(--mono);
+  text-align: center;
+}
+
+.enrol {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.enrol-uri {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  overflow-wrap: anywhere;
+}
+.enrol-confirm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.enrol-confirm input {
+  width: 160px;
+}
+@media (max-width: 768px) {
+  .enrol {
+    align-items: stretch;
+  }
+  .enrol-confirm {
+    justify-content: flex-start;
+  }
+}

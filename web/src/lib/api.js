@@ -73,8 +73,8 @@ export const api = {
   put: (path, body) => request('PUT', path, body ?? {}),
   del: (path) => request('DELETE', path),
 
-  login: (username, password) =>
-    request('POST', '/api/auth/login', { username, password }),
+  login: (username, password, code) =>
+    request('POST', '/api/auth/login', { username, password, code: code || '' }),
   me: () => request('GET', '/api/auth/me'),
   updateMe: (input) => request('PATCH', '/api/auth/me', input),
   changePassword: (currentPassword, newPassword) =>

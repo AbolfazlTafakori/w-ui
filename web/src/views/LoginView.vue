@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { nextTick, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { store, t, signIn, loadMessages } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
@@ -10,6 +10,8 @@ const route = useRoute()
 const username = ref('admin')
 const password = ref('')
 const error = ref('')
+const code = ref('')
+const needCode = ref(false)
 const busy = ref(false)
 const langOpen = ref(false)
 
@@ -30,7 +32,17 @@ async function submit() {
   error.value = ''
   busy.value = true
   try {
-    await signIn(username.value, password.value)
+    const res = await signIn(username.value, password.value, code.value)
+    if (res && res.needCode) {
+      needCode.value = true
+      // Focus lands on the code box so the operator can type straight away
+      // rather than hunting for a field that has just appeared. nextTick
+      // rather than an animation frame: a frame never arrives in a tab the
+      // browser has backgrounded, and the field would stay unfocused.
+      await nextTick()
+      document.getElementById('login-code')?.focus()
+      return
+    }
     router.replace(route.query.next || '/')
   } catch (err) {
     error.value = err.message
@@ -117,6 +129,26 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
                 required
               />
             </span>
+          </label>
+
+          <!-- Only after the password was accepted, so this reveals nothing
+               to someone guessing at the username. -->
+          <label v-if="needCode" class="field">
+            <span class="label">{{ t('auth.code') }}</span>
+            <span class="control">
+              <Icon name="shield" :size="16" />
+              <input
+                id="login-code"
+                v-model="code"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                placeholder="000000"
+                class="ltr code-input"
+                required
+              />
+            </span>
+            <span class="hint">{{ t('auth.codeHint') }}</span>
           </label>
 
           <p v-if="error" class="error" role="alert">{{ error }}</p>

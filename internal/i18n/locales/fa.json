@@ -369,5 +369,20 @@
   "settings.logInfo": "از info به بالا",
   "settings.logWarn": "هشدارها و خطاها",
   "settings.logError": "فقط خطاها",
-  "settings.logEmpty": "هنوز چیزی ثبت نشده."
+  "settings.logEmpty": "هنوز چیزی ثبت نشده.",
+  "auth.code": "کد ورود",
+  "auth.codeHint": "شش رقمی که اپلیکیشن احراز هویت نشان می‌دهد.",
+  "settings.twoFactor": "ورود دومرحله‌ای",
+  "settings.twoFactorDesc": "رمز پنل تنها چیزی است که بین مهاجم و کانفیگ همهٔ مشتری‌ها ایستاده. عامل دوم، لو رفتن رمز را از یک فاجعه به یک دردسر تبدیل می‌کند.",
+  "settings.twoFactorOn": "فعال",
+  "settings.twoFactorOff": "غیرفعال",
+  "settings.enableTwoFactor": "فعال کردن",
+  "settings.disableTwoFactor": "غیرفعال کردن",
+  "settings.scanThis": "این را با اپ احراز هویت اسکن کنید، بعد کدی که نشان می‌دهد را وارد کنید.",
+  "settings.orEnterKey": "یا این کلید را دستی وارد کنید:",
+  "settings.confirmCode": "تأیید",
+  "settings.twoFactorEnabled": "ورود دومرحله‌ای روشن شد.",
+  "settings.twoFactorDisabled": "ورود دومرحله‌ای خاموش شد.",
+  "settings.confirmPasswordToDisable": "برای خاموش کردن، رمزتان را وارد کنید.",
+  "common.cancel": "انصراف"
 }

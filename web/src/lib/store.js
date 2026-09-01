@@ -60,8 +60,13 @@ export async function bootstrap() {
   store.ready = true
 }
 
-export async function signIn(username, password) {
-  const res = await api.login(username, password)
+export async function signIn(username, password, code) {
+  const res = await api.login(username, password, code)
+
+  // The password was right but a second factor is set. Nothing is signed in
+  // yet; the caller asks for the code and calls again.
+  if (res.needCode) return { needCode: true }
+
   setToken(res.token)
   store.admin = res.admin
   if (res.admin?.locale && res.admin.locale !== store.locale) {

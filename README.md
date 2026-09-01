@@ -453,6 +453,10 @@ panel — `test/tunnel.sh` prints the overshoot so it is not mistaken for a pass
 
 - Passwords are stored as bcrypt hashes; the first-run password is shown once
   and is not recoverable.
+- Two-factor authentication is available, and is worth turning on: the panel's
+  password is the only thing between an attacker and every customer's
+  configuration, the server's keys, and free service. The code is only asked for
+  after the password was right, so it never reveals which accounts have one.
 - Sessions are JWTs.
 - Interface and device private keys are never included in any config the panel
   renders for copying or display — only in the client's own file, which is the

@@ -55,6 +55,7 @@ async function load() {
     defaults.value = cfg.defaults
     form.value = { ...cfg.settings, notifyKinds: [...(cfg.settings.notifyKinds || [])] }
     await loadBackups()
+    await loadMe()
   } catch (e) {
     notify(e.message, 'error')
   } finally {
@@ -148,6 +149,7 @@ async function removeBackup(name) {
   try {
     await api.del(`/api/backups/${encodeURIComponent(name)}`)
     await loadBackups()
+    await loadMe()
   } catch (e) {
     notify(e.message, 'error')
   }
@@ -191,6 +193,61 @@ function toggleKind(kind, on) {
   if (on) set.add(kind)
   else set.delete(kind)
   form.value.notifyKinds = [...set]
+}
+
+// Two-factor enrolment. The secret is held here only until it is confirmed:
+// it is stored on the server after the operator's app has produced a correct
+// code, never before, so a scan their app silently rejected cannot lock them
+// out of their own panel.
+const twoFactor = ref(false)
+const enrol = ref(null)
+const enrolCode = ref('')
+const enrolError = ref('')
+const disablePw = ref('')
+const disabling = ref(false)
+
+async function loadMe() {
+  try {
+    const me = await api.get('/api/auth/me')
+    twoFactor.value = !!me.twoFactor
+  } catch {
+    /* the page is still usable without it */
+  }
+}
+
+async function startEnrol() {
+  enrolError.value = ''
+  enrolCode.value = ''
+  try {
+    enrol.value = await api.post('/api/auth/totp/start')
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+
+async function confirmEnrol() {
+  enrolError.value = ''
+  try {
+    await api.post('/api/auth/totp/confirm', { secret: enrol.value.secret, code: enrolCode.value })
+    enrol.value = null
+    twoFactor.value = true
+    notify(t('settings.twoFactorEnabled'), 'success')
+  } catch (e) {
+    enrolError.value = e.message
+  }
+}
+
+async function disableTwoFactor() {
+  enrolError.value = ''
+  try {
+    await api.post('/api/auth/totp/disable', { password: disablePw.value })
+    disablePw.value = ''
+    disabling.value = false
+    twoFactor.value = false
+    notify(t('settings.twoFactorDisabled'), 'success')
+  } catch (e) {
+    enrolError.value = e.message
+  }
 }
 
 const logs = ref([])
@@ -474,6 +531,63 @@ async function changePassword() {
             <div class="unit-field">
               <input v-model.number="form.sessionHours" type="number" min="1" max="720" step="1" />
               <span class="unit">{{ t('settings.hours') }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row block">
+          <div class="setting-meta">
+            <div class="setting-title">
+              {{ t('settings.twoFactor') }}
+              <span class="tag" :class="twoFactor ? 'green' : 'grey'">
+                {{ twoFactor ? t('settings.twoFactorOn') : t('settings.twoFactorOff') }}
+              </span>
+            </div>
+            <p class="setting-desc">{{ t('settings.twoFactorDesc') }}</p>
+          </div>
+          <div class="setting-control stack-end">
+            <!-- Off, and not being set up. -->
+            <button v-if="!twoFactor && !enrol" class="btn primary" @click="startEnrol">
+              {{ t('settings.enableTwoFactor') }}
+            </button>
+
+            <!-- Mid-enrolment: the key is shown once, here. -->
+            <div v-else-if="enrol" class="enrol">
+              <p class="setting-desc">{{ t('settings.scanThis') }}</p>
+              <div class="enrol-uri ltr">{{ enrol.uri }}</div>
+              <p class="setting-desc">{{ t('settings.orEnterKey') }}</p>
+              <code class="readonly ltr">{{ enrol.secret }}</code>
+              <div class="enrol-confirm">
+                <input
+                  v-model="enrolCode"
+                  inputmode="numeric"
+                  maxlength="6"
+                  placeholder="000000"
+                  class="ltr code-input"
+                />
+                <button class="btn primary" @click="confirmEnrol">{{ t('settings.confirmCode') }}</button>
+                <button class="btn ghost" @click="enrol = null">{{ t('common.cancel') }}</button>
+              </div>
+              <p v-if="enrolError" class="test-result bad">{{ enrolError }}</p>
+            </div>
+
+            <!-- On. Turning it off asks for the password again, because a
+                 borrowed open session is exactly what it exists to survive. -->
+            <div v-else class="enrol">
+              <template v-if="disabling">
+                <p class="setting-desc">{{ t('settings.confirmPasswordToDisable') }}</p>
+                <div class="enrol-confirm">
+                  <input v-model="disablePw" type="password" autocomplete="current-password" />
+                  <button class="btn danger" @click="disableTwoFactor">
+                    {{ t('settings.disableTwoFactor') }}
+                  </button>
+                  <button class="btn ghost" @click="disabling = false">{{ t('common.cancel') }}</button>
+                </div>
+                <p v-if="enrolError" class="test-result bad">{{ enrolError }}</p>
+              </template>
+              <button v-else class="btn ghost" @click="disabling = true">
+                {{ t('settings.disableTwoFactor') }}
+              </button>
             </div>
           </div>
         </div>

@@ -369,5 +369,20 @@
   "settings.logInfo": "Info and above",
   "settings.logWarn": "Warnings and errors",
   "settings.logError": "Errors only",
-  "settings.logEmpty": "Nothing logged yet."
+  "settings.logEmpty": "Nothing logged yet.",
+  "auth.code": "Authentication code",
+  "auth.codeHint": "The six digits from your authenticator app.",
+  "settings.twoFactor": "Two-factor authentication",
+  "settings.twoFactorDesc": "The panel's password is the only thing between an attacker and every customer's configuration. A second factor makes a leaked password a nuisance instead of a breach.",
+  "settings.twoFactorOn": "Enabled",
+  "settings.twoFactorOff": "Not enabled",
+  "settings.enableTwoFactor": "Enable",
+  "settings.disableTwoFactor": "Disable",
+  "settings.scanThis": "Scan this with your authenticator app, then enter the code it shows.",
+  "settings.orEnterKey": "Or type this key in by hand:",
+  "settings.confirmCode": "Confirm",
+  "settings.twoFactorEnabled": "Two-factor authentication is on.",
+  "settings.twoFactorDisabled": "Two-factor authentication is off.",
+  "settings.confirmPasswordToDisable": "Enter your password to turn it off.",
+  "common.cancel": "Cancel"
 }
