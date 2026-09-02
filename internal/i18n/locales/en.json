@@ -419,5 +419,14 @@
   "group.confirmDelete": "Delete the group \"{name}\"? Its customers are kept and simply ungrouped.",
   "group.deleted": "Group deleted. {n} customer(s) ungrouped.",
   "group.empty": "Empty",
-  "client.speed": "Speed"
+  "client.speed": "Speed",
+  "group.clientCount": "Customers",
+  "group.trafficUsed": "Traffic used",
+  "group.upDown": "Up / Down",
+  "group.addClients": "Add customers to group",
+  "group.removeClients": "Take customers out",
+  "group.selected": "selected",
+  "group.noCandidates": "Nobody to show here.",
+  "group.clientsAdded": "{n} customer(s) added to the group.",
+  "group.clientsRemoved": "{n} customer(s) taken out."
 }

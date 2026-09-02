@@ -419,5 +419,14 @@
   "group.confirmDelete": "گروه «{name}» حذف شود؟ مشتری‌هایش می‌مانند و فقط از گروه خارج می‌شوند.",
   "group.deleted": "گروه حذف شد. {n} مشتری از گروه خارج شد.",
   "group.empty": "خالی",
-  "client.speed": "سرعت"
+  "client.speed": "سرعت",
+  "group.clientCount": "مشتری‌ها",
+  "group.trafficUsed": "مصرف",
+  "group.upDown": "ارسال / دریافت",
+  "group.addClients": "افزودن مشتری به گروه",
+  "group.removeClients": "خارج‌کردن مشتری",
+  "group.selected": "انتخاب‌شده",
+  "group.noCandidates": "کسی برای نمایش نیست.",
+  "group.clientsAdded": "{n} مشتری به گروه اضافه شد.",
+  "group.clientsRemoved": "{n} مشتری خارج شد."
 }

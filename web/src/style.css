@@ -1999,3 +1999,48 @@ body.light .log-view {
     display: none;
   }
 }
+
+/* Groups table: the widths 3x-ui uses, so the name column takes the slack and
+   the numeric ones stay put as figures change. */
+.w-gact { width: 90px; }
+.w-gcount { width: 180px; }
+.w-gsize { width: 140px; }
+.w-gtraffic { width: 160px; }
+
+.menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  border: 0;
+  background: var(--line);
+}
+
+/* Members picker. */
+.picklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.picklist li + li {
+  border-top: 1px solid var(--line-soft);
+}
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.pick:hover {
+  background: var(--surface-2);
+}
+.pick-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

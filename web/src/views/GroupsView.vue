@@ -78,6 +78,10 @@ const totals = computed(() => data.value?.totals || {})
 
 // Every entry in the row menu, with the ones that need members disabled rather
 // than hidden, so the menu keeps the same shape on an empty group.
+// The order is 3x-ui's: what you do to the members, then to the group, then a
+// rule, then everything that destroys something. Entries needing members are
+// disabled rather than hidden, so the menu keeps its shape on an empty group and
+// an operator learns one layout instead of two.
 function menuFor(g) {
   const empty = g.clients === 0
   return [
@@ -86,10 +90,13 @@ function menuFor(g) {
     { key: 'reset', label: t('action.resetTraffic'), icon: 'refresh', disabled: empty },
     { key: 'enable', label: t('action.enable'), icon: 'power', disabled: empty },
     { key: 'disable', label: t('action.disable'), icon: 'power', disabled: empty },
+    { key: 'addClients', label: t('group.addClients'), icon: 'users' },
     { key: 'rename', label: t('group.rename'), icon: 'edit' },
-    { key: 'clear', label: t('group.dissolve'), icon: 'close', disabled: empty },
-    { key: 'delete', label: t('group.delete'), icon: 'trash', danger: true },
+    { divider: true },
+    { key: 'removeClients', label: t('group.removeClients'), icon: 'close', danger: true, disabled: empty },
+    { key: 'clear', label: t('group.dissolve'), icon: 'close', danger: true, disabled: empty },
     { key: 'deleteClients', label: t('group.deleteClients'), icon: 'trash', danger: true, disabled: empty },
+    { key: 'delete', label: t('group.delete'), icon: 'trash', danger: true },
   ]
 }
 
@@ -132,8 +139,17 @@ async function deleteGroup(g) {
   }
 }
 
+function openRename(g) {
+  closeMenu()
+  form.value.name = g.name
+  dialog.value = { kind: 'rename', group: g }
+}
+
 function pick(g, key) {
   closeMenu()
+  if (key === 'addClients' || key === 'removeClients') {
+    return openMembers(g, key === 'addClients' ? 'add' : 'remove')
+  }
   if (key === 'rename') {
     form.value.name = g.name
     dialog.value = { kind: 'rename', group: g }
@@ -202,6 +218,62 @@ async function submitDialog() {
   }
 }
 
+// Members picker, shared by "add clients" and "remove clients". They differ
+// only in which customers are listed and what the confirm does, so one dialog
+// with two modes beats two dialogs that drift apart.
+const members = ref(null) // { group, mode, chosen:Set }
+const allClients = ref([])
+const memberSearch = ref('')
+
+async function openMembers(g, mode) {
+  closeMenu()
+  members.value = { group: g, mode, chosen: new Set() }
+  memberSearch.value = ''
+  try {
+    const res = await api.get('/api/clients?perPage=500')
+    allClients.value = res.items || []
+  } catch (e) {
+    notify(e.message, 'error')
+    members.value = null
+  }
+}
+
+const memberChoices = computed(() => {
+  if (!members.value) return []
+  const { group, mode } = members.value
+  const q = memberSearch.value.trim().toLowerCase()
+  return allClients.value
+    .filter((c) => (mode === 'add' ? c.group !== group.name : c.group === group.name))
+    .filter((c) => !q || c.name.toLowerCase().includes(q))
+})
+
+function toggleMember(id) {
+  const next = new Set(members.value.chosen)
+  next.has(id) ? next.delete(id) : next.add(id)
+  members.value = { ...members.value, chosen: next }
+}
+
+async function applyMembers() {
+  const { group, mode, chosen } = members.value
+  if (!chosen.size) return
+  busy.value = true
+  try {
+    // One endpoint serves both: assigning to a group and assigning to nothing.
+    await api.post('/api/groups/assign', {
+      group: mode === 'add' ? group.name : '',
+      ids: [...chosen],
+    })
+    notify(t(mode === 'add' ? 'group.clientsAdded' : 'group.clientsRemoved')
+      .replace('{n}', chosen.size), 'ok')
+    members.value = null
+    await load()
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
 function viewMembers(g) {
   router.push({ path: '/clients', query: { search: g.name } })
 }
@@ -231,8 +303,10 @@ function viewMembers(g) {
       <span class="strip-value num">{{ nf(totals.groupedClients) }}</span>
     </div>
     <div class="strip-item">
-      <span class="strip-label"><Icon name="users" :size="14" />{{ t('group.ungrouped') }}</span>
-      <span class="strip-value num">{{ nf(totals.ungrouped) }}</span>
+      <span class="strip-label"><Icon name="swap" :size="14" />{{ t('group.upDown') }}</span>
+      <span class="strip-value num ltr small">
+        {{ bytes(totals.upBytes, store.locale) }} / {{ bytes(totals.downBytes, store.locale) }}
+      </span>
     </div>
     <div class="strip-item">
       <span class="strip-label"><Icon name="swap" :size="14" />{{ t('client.traffic') }}</span>
@@ -257,45 +331,101 @@ function viewMembers(g) {
       <table>
         <thead>
           <tr>
-            <!-- The group's name leads the row, as on every other table here:
-                 a control column in front of the identity makes a list
-                 something to decode rather than to scan. -->
+            <th class="w-gact">{{ t('table.actions') }}</th>
             <th>{{ t('group.name') }}</th>
-            <th>{{ t('nav.clients') }}</th>
-            <th>{{ t('status.active') }}</th>
-            <th>{{ t('device.title') }}</th>
-            <th>{{ t('overview.upload') }}</th>
-            <th>{{ t('overview.download') }}</th>
-            <th>{{ t('client.traffic') }}</th>
-            <th class="right">{{ t('table.actions') }}</th>
+            <th class="w-gcount">{{ t('group.clientCount') }}</th>
+            <th class="w-gsize">{{ t('overview.upload') }}</th>
+            <th class="w-gsize">{{ t('overview.download') }}</th>
+            <th class="w-gtraffic">{{ t('group.trafficUsed') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="g in items" :key="g.name">
+            <!-- Two controls, as theirs has: the whole menu behind one
+                 button, and rename lifted out of it because it is the one an
+                 operator reaches for most. -->
+            <td class="w-gact">
+              <div class="actions">
+                <button
+                  class="act"
+                  :title="t('table.actions')"
+                  :aria-expanded="menu?.group?.name === g.name"
+                  @click="openMenuFor(g, $event)"
+                >
+                  <Icon name="more" :size="16" />
+                </button>
+                <button class="act" :title="t('group.rename')" @click="openRename(g)">
+                  <Icon name="edit" :size="16" />
+                </button>
+              </div>
+            </td>
+
             <td>
               <button class="tag geekblue name" @click="viewMembers(g)">{{ g.name }}</button>
+              <div v-if="g.note" class="sub muted small">{{ g.note }}</div>
             </td>
 
             <td class="num">{{ nf(g.clients) }}</td>
-            <td class="num" :style="g.active ? 'color: var(--ok)' : ''">{{ nf(g.active) }}</td>
-            <td class="num">{{ nf(g.devices) }}</td>
             <td class="muted"><span class="num ltr">{{ bytes(g.upBytes, store.locale) }}</span></td>
             <td class="muted"><span class="num ltr">{{ bytes(g.downBytes, store.locale) }}</span></td>
             <td><span class="num ltr">{{ bytes(g.usedBytes, store.locale) }}</span></td>
-
-            <td class="right">
-              <button
-                class="act"
-                :title="t('table.actions')"
-                :aria-expanded="menu?.group?.name === g.name"
-                @click="openMenuFor(g, $event)"
-              >
-                <Icon name="more" :size="16" />
-              </button>
-            </td>
           </tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- Members picker -->
+  <div v-if="members" class="modal-backdrop" @click.self="members = null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+      <div class="card-head">
+        <h2 id="m-title">
+          {{ members.mode === 'add' ? t('group.addClients') : t('group.removeClients') }}
+        </h2>
+        <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="members = null">
+          <Icon name="close" :size="15" />
+        </button>
+      </div>
+
+      <div class="card-body">
+        <p class="target">
+          <span class="tag geekblue">{{ members.group.name }}</span>
+          <span class="muted small">{{ nf(members.chosen.size) }} {{ t('group.selected') }}</span>
+        </p>
+
+        <div class="field">
+          <input v-model="memberSearch" type="search" :placeholder="t('client.searchPlaceholder')" />
+        </div>
+
+        <p v-if="!memberChoices.length" class="muted small">{{ t('group.noCandidates') }}</p>
+
+        <ul v-else class="picklist">
+          <li v-for="c in memberChoices" :key="c.id">
+            <label class="pick">
+              <input
+                type="checkbox"
+                :checked="members.chosen.has(c.id)"
+                @change="toggleMember(c.id)"
+              />
+              <span class="pick-name">{{ c.name }}</span>
+              <span v-if="c.group" class="tag geekblue">{{ c.group }}</span>
+              <span class="muted small ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
+            </label>
+          </li>
+        </ul>
+      </div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" @click="members = null">{{ t('action.cancel') }}</button>
+        <button
+          class="btn primary"
+          :disabled="busy || !members.chosen.size"
+          @click="applyMembers"
+        >
+          <span v-if="busy" class="spin"></span>
+          <template v-else>{{ t('action.save') }}</template>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -305,17 +435,21 @@ function viewMembers(g) {
     role="menu"
     :style="{ top: menu.y + 'px', left: menu.x + 'px' }"
   >
-    <button
-      v-for="m in menuFor(menu.group)"
-      :key="m.key"
-      class="menu-item"
-      :class="{ danger: m.danger }"
-      :disabled="m.disabled"
-      role="menuitem"
-      @click="pick(menu.group, m.key)"
-    >
-      <Icon :name="m.icon" :size="14" />{{ m.label }}
-    </button>
+    <template v-for="(m, i) in menuFor(menu.group)" :key="m.key || `d${i}`">
+      <!-- The rule before the destructive half, so a slip of the pointer lands
+           on a separator rather than on delete. -->
+      <hr v-if="m.divider" class="menu-divider" />
+      <button
+        v-else
+        class="menu-item"
+        :class="{ danger: m.danger }"
+        :disabled="m.disabled"
+        role="menuitem"
+        @click="pick(menu.group, m.key)"
+      >
+        <Icon :name="m.icon" :size="14" />{{ m.label }}
+      </button>
+    </template>
   </div>
 
   <!-- One dialog serves rename, extend and set-quota; they differ only in the
