@@ -20,6 +20,13 @@
 #
 set -euo pipefail
 
+# Whether this host runs systemd. Checked once: a container and a few
+# distributions do not, and the installer has to finish on them rather than
+# aborting at the first systemctl call with a message about a bus.
+have_systemd() {
+  [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
+}
+
 BIN_PATH=/usr/local/bin/wui
 MENU_PATH=/usr/local/bin/w-ui
 MENU_URL="${WUI_MENU_URL:-https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/w-ui.sh}"
@@ -98,11 +105,12 @@ detect_os() {
 # ── uninstall ────────────────────────────────────────────────────────────────
 do_uninstall() {
   step "Removing W-UI"
-  if systemctl list-unit-files 2>/dev/null | grep -q '^wui\.service'; then
+  if have_systemd && systemctl list-unit-files 2>/dev/null | grep -q '^wui\.service'; then
     systemctl disable --now wui.service >/dev/null 2>&1 || true
     ok "service stopped and disabled"
   fi
-  rm -f "$UNIT" && systemctl daemon-reload
+  rm -f "$UNIT"
+  have_systemd && systemctl daemon-reload || true
   rm -f "$BIN_PATH" "$MENU_PATH"
   ok "binary and unit removed"
 
@@ -452,8 +460,15 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 WantedBy=multi-user.target
 UNITFILE
 
-  systemctl daemon-reload
-  ok "$UNIT"
+  if have_systemd; then
+    systemctl daemon-reload
+    ok "$UNIT"
+  else
+    ok "$UNIT (written, not loaded)"
+    warn "this host is not running systemd, so the service was not registered"
+    warn "  start the panel yourself with:"
+    warn "    WUI_LISTEN=0.0.0.0:$PANEL_PORT WUI_DATA_DIR=$DATA_DIR $BIN_PATH"
+  fi
 }
 
 open_firewall() {
@@ -471,6 +486,14 @@ open_firewall() {
 }
 
 start_service() {
+  if ! have_systemd; then
+    # Nothing to start it with. Said plainly rather than failing: everything
+    # else installed correctly and the panel runs perfectly well by hand.
+    step "Starting W-UI"
+    warn "skipped: no systemd on this host"
+    return 0
+  fi
+
   step "Starting W-UI"
   local fresh=0
   [[ -f "$DATA_DIR/wui.db" ]] || fresh=1
@@ -509,8 +532,16 @@ summary() {
     printf '  Username   admin\n'
     printf '  Password   %s%s%s\n' "$B" "$FIRST_RUN_PW" "$N"
     printf '\n  %sThis password is shown once. Change it after signing in.%s\n' "$Y" "$N"
-  else
+  elif ! have_systemd; then
+    # Nothing started the panel, so no account exists yet. Claiming an existing
+    # one here would send the operator looking for something that is not there.
+    printf '  %sThe panel has not been started yet, so no account exists.%s\n' "$Y" "$N"
+    printf '  It prints a generated password to its log the first time it runs.\n'
+  elif [[ -f "$DATA_DIR/wui.db" ]]; then
     printf '  Sign in with your existing admin account.\n'
+  else
+    printf '  %sThe first-run password could not be read from the log.%s\n' "$Y" "$N"
+    printf '  Find it with: journalctl -u wui | grep -A6 "First run"\n'
   fi
 
   printf '\n  %sInstalled%s\n' "$B" "$N"
@@ -521,9 +552,18 @@ summary() {
   printf '    forwarding   %s\n' "$([[ "$(sysctl -n net.ipv4.ip_forward)" == 1 ]] && echo on || echo off)"
 
   printf '\n  %sCommands%s\n' "$B" "$N"
-  printf '    systemctl status wui        service state\n'
-  printf '    journalctl -u wui -f        live log\n'
-  printf '    systemctl restart wui       restart\n'
+  if have_systemd; then
+    printf '    w-ui                        the management menu\n'
+    printf '    systemctl status wui        service state\n'
+    printf '    journalctl -u wui -f        live log\n'
+    printf '    systemctl restart wui       restart\n'
+  else
+    # Only what works here. Four systemctl lines on a host with no systemd are
+    # four commands that fail.
+    printf '    %s   start it in the foreground\n' "$BIN_PATH"
+    printf '    w-ui settings               what it is configured with\n'
+    printf '    w-ui admin                  reset the administrator\n'
+  fi
   printf '    bash %s --uninstall   remove (keeps the database)\n' "$0"
 
   printf '\n  %sNext%s open the panel, add an interface, then add clients.\n' "$B" "$N"
