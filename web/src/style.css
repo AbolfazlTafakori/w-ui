@@ -2012,7 +2012,6 @@ body.light .log-view {
 
 /* Groups table: the widths 3x-ui uses, so the name column takes the slack and
    the numeric ones stay put as figures change. */
-.w-gact { width: 90px; }
 .w-gcount { width: 180px; }
 .w-gsize { width: 140px; }
 .w-gtraffic { width: 160px; }
@@ -2935,5 +2934,64 @@ pre.code code {
     grid-column: 2;
     justify-self: start;
     margin-top: 4px;
+  }
+}
+
+/* ── row actions ────────────────────────────────────────────────────────────
+   The little icon buttons at the start of a table row.
+
+   These lived in two views' scoped blocks, so every page added since inherited
+   the markup and none of the layout: the buttons stacked vertically inside a
+   90px column and the row grew to fit them. Defined once, here, for the same
+   reason the strip styles were hoisted before. */
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Never wrap. A wrapped action cell makes its row twice as tall as every
+     other one, which is how this was noticed. */
+  flex-wrap: nowrap;
+}
+
+.act {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.act:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+.act.danger:hover:not(:disabled) {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+/* A control that cannot be used should look it, rather than looking available
+   and doing nothing — the built-in outbounds cannot be deleted, and the button
+   is the only place to say so. */
+.act:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Wide enough for three buttons and their gaps without wrapping. */
+.w-gact {
+  width: 104px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act {
+    transition: none;
   }
 }

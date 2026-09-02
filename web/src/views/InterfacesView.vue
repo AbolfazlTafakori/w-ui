@@ -467,30 +467,6 @@ input[type='checkbox'] {
   cursor: pointer;
 }
 
-.actions {
-  display: flex;
-  gap: 2px;
-}
-.act {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.act:hover {
-  background: var(--surface-3);
-  color: var(--ink);
-}
-.act.danger:hover {
-  background: var(--bad-soft);
-  color: var(--bad);
-}
 
 tr.picked {
   background: var(--accent-soft);
