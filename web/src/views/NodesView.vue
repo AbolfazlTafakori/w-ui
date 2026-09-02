@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
+import { mergeRows } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -25,7 +26,8 @@ onBeforeUnmount(() => clearInterval(timer))
 
 async function load(quiet = false) {
   try {
-    nodes.value = await api.get('/api/nodes', { background: quiet })
+    const fresh = await api.get('/api/nodes', { background: quiet })
+    nodes.value = quiet ? mergeRows(nodes.value, fresh, pending.value) : fresh
     loadError.value = null
   } catch (e) {
     loadError.value = e
@@ -128,6 +130,7 @@ async function toggle(n, enabled) {
     notify(e.message, 'error')
   } finally {
     release(n.id)
+    load(true)
   }
 }
 

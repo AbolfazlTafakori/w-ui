@@ -86,6 +86,19 @@ useLive(load, {
   busy: () => !!formFor.value || !!shareFor.value || !!ask.value,
 })
 
+// Waiting out the interval after the operator has just changed something is
+// the one case where a poll is too slow to be acceptable: the switch moves and
+// the counts above it go on insisting the opposite for four seconds.
+//
+// Deliberately not the poll's own refresh, which declines to run while another
+// is in flight. A poll that started before this change committed would return
+// the state from before it, and skipping this one would leave the stale answer
+// on screen until the next tick. The operator has just acted and is looking at
+// the result, so this asks regardless.
+function settled() {
+  load(true)
+}
+
 async function loadGroups() {
   try {
     groupNames.value = await api.groupNames()
@@ -287,6 +300,9 @@ async function setEnabled(c, on) {
     notify(err.message, 'error')
   } finally {
     release(c.id)
+    // The row is right the moment the switch moves; the counts above it are
+    // not, and they are what an operator checks to see the change took.
+    settled()
   }
 }
 
@@ -310,6 +326,7 @@ async function resetOne(c) {
     c.rxBytes = 0
     c.txBytes = 0
     notify(t('client.trafficReset'), 'success')
+    settled()
   } catch (err) {
     notify(err.message, 'error')
     await load()

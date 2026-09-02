@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
-import { useLive } from '../lib/live.js'
+import { useLive, mergeRows } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -49,7 +49,7 @@ async function load(quiet = false) {
       api.get('/api/hosts', { background: quiet }),
       api.get('/api/interfaces', { background: quiet }),
     ])
-    hosts.value = h
+    hosts.value = quiet ? mergeRows(hosts.value, h, pending.value) : h
     interfaces.value = Array.isArray(i) ? i : i?.interfaces || []
     loadError.value = ''
   } catch (err) {
@@ -99,6 +99,7 @@ async function setEnabled(h, on) {
     notify(err.message, 'error')
   } finally {
     release(h.id)
+    load(true)
   }
 }
 

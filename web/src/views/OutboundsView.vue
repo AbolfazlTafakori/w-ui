@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
+import { mergeRows } from '../lib/live.js'
 import { t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -38,7 +39,10 @@ const totalTraffic = computed(() =>
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
-    outbounds.value = await api.get('/api/outbounds', { background: quiet })
+    const fresh = await api.get('/api/outbounds', { background: quiet })
+    // Merged rather than replaced: a second switch flipped while the first is
+    // still settling would otherwise be overwritten by the first one's refresh.
+    outbounds.value = quiet ? mergeRows(outbounds.value, fresh, pending.value) : fresh
     loadError.value = ''
   } catch (err) {
     loadError.value = err.message
@@ -112,6 +116,7 @@ async function setEnabled(o, on) {
     notify(err.message, 'error')
   } finally {
     release(o.id)
+    load(true)
   }
 }
 

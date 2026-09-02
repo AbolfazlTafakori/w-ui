@@ -123,6 +123,8 @@ async function setEnabled(iface, on) {
     notify(err.message, 'error')
   } finally {
     release(iface.id)
+    // The strip above the table counts what is enabled and what it carries.
+    load(true)
   }
 }
 
