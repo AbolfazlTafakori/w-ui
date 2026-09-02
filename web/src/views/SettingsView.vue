@@ -5,8 +5,47 @@ import { api } from '../lib/api.js'
 import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
+import SecurityWarnings from '../components/SecurityWarnings.vue'
+import Toggle from '../components/Toggle.vue'
 
 const router = useRouter()
+
+// The subscription service is stored separately from the panel settings, so it
+// loads and saves on its own rather than riding along with a form that has
+// nothing to do with it.
+const sub = ref({
+  enabled: false,
+  path: '/subscribe/',
+  host: '',
+  title: '',
+  updateHours: 12,
+  reverseProxyUri: '',
+})
+const subBusy = ref(false)
+const subError = ref({})
+
+async function loadSub() {
+  try {
+    sub.value = await api.get('/api/subscription', { background: true })
+  } catch {
+    // Leaves the defaults in place. The page is still usable, and saving will
+    // report anything genuinely wrong.
+  }
+}
+
+async function saveSub() {
+  subBusy.value = true
+  subError.value = {}
+  try {
+    sub.value = await api.put('/api/subscription', sub.value)
+    notify(t('sub.saved'), 'success')
+  } catch (err) {
+    if (err.field) subError.value = { [err.field]: err.message }
+    else notify(err.message, 'error')
+  } finally {
+    subBusy.value = false
+  }
+}
 
 const info = ref(null)
 const loading = ref(true)
@@ -30,6 +69,7 @@ const tabs = [
   { key: 'security', icon: 'lock', label: 'settings.tab.security' },
   { key: 'notify', icon: 'alert', label: 'settings.tab.notify' },
   { key: 'backups', icon: 'database', label: 'settings.tab.backups' },
+  { key: 'subscription', icon: 'link', label: 'settings.tab.subscription' },
   { key: 'engine', icon: 'shield', label: 'settings.tab.engine' },
   { key: 'logs', icon: 'info', label: 'settings.tab.logs' },
   { key: 'system', icon: 'server', label: 'settings.tab.system' },
@@ -70,7 +110,10 @@ function selectTab(key) {
   else history.replaceState(null, '', `#${key}`)
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadSub()
+})
 
 async function load() {
   loading.value = true
@@ -375,6 +418,8 @@ async function changePassword() {
     </div>
   </div>
 
+  <SecurityWarnings />
+
   <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
 
   <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
@@ -549,6 +594,86 @@ async function changePassword() {
               <option value="weekly">{{ t('reset.weekly') }}</option>
               <option value="monthly">{{ t('reset.monthly') }}</option>
             </select>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── Subscription ── -->
+      <template v-else-if="active === 'subscription'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('sub.enabled') }}</div>
+            <p class="setting-desc">{{ t('sub.enabledDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <Toggle v-model="sub.enabled" :label="t('sub.enabled')" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('sub.path') }}</div>
+            <p class="setting-desc">{{ t('sub.pathDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="sub.path" class="ltr" autocomplete="off" placeholder="/subscribe/" />
+            <p v-if="subError.path" class="field-error">{{ subError.path }}</p>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('sub.title') }}</div>
+            <p class="setting-desc">{{ t('sub.titleDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="sub.title" autocomplete="off" />
+            <p v-if="subError.title" class="field-error">{{ subError.title }}</p>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('sub.host') }}</div>
+            <p class="setting-desc">{{ t('sub.hostDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="sub.host" class="ltr" autocomplete="off" :placeholder="t('sub.hostPlaceholder')" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('sub.interval') }}</div>
+            <p class="setting-desc">{{ t('sub.intervalDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="unit-field">
+              <input v-model.number="sub.updateHours" type="number" min="1" max="168" />
+              <span class="unit">{{ t('settings.hours') }}</span>
+            </div>
+            <p v-if="subError.updateHours" class="field-error">{{ subError.updateHours }}</p>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('sub.proxy') }}</div>
+            <p class="setting-desc">{{ t('sub.proxyDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="sub.reverseProxyUri" class="ltr" autocomplete="off" placeholder="https://vpn.example.com" />
+            <p v-if="subError.reverseProxyUri" class="field-error">{{ subError.reverseProxyUri }}</p>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta"></div>
+          <div class="setting-control">
+            <button class="btn primary" :disabled="subBusy" @click="saveSub">
+              <span v-if="subBusy" class="spin"></span>
+              <template v-else>{{ t('action.save') }}</template>
+            </button>
           </div>
         </div>
       </template>

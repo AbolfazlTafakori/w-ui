@@ -50,6 +50,8 @@ type Server struct {
 	routing   *service.Routing
 	hosts     *service.Hosts
 	router    *routing.Applier
+	subs      *service.Subscriptions
+	audit     *service.Audit
 }
 
 // Options configures a Server.
@@ -75,6 +77,7 @@ type Options struct {
 	Outbounds  *service.Outbounds
 	Routing    *service.Routing
 	Router     *routing.Applier
+	Subs       *service.Subscriptions
 }
 
 // New builds the API server.
@@ -104,6 +107,8 @@ func New(o Options) *Server {
 		routing:   o.Routing,
 		hosts:     service.NewHosts(o.DB, o.Logger),
 		router:    o.Router,
+		subs:      o.Subs,
+		audit:     service.NewAudit(o.DB, o.Subs, o.Listen),
 	}
 }
 

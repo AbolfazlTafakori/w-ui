@@ -257,6 +257,27 @@ func (s *Server) routes() []Route {
 			Summary: "Try to reach a host the way a customer would.",
 			handler: s.handleCheckHost},
 
+		{Method: "GET", Path: "/api/security/warnings", Group: "Server", Auth: true,
+			Summary: "What an attacker would notice about this installation.",
+			Note:    "Read-only. Nothing here changes anything; each warning says where to fix it.",
+			handler: s.handleSecurityWarnings},
+
+		// ── Subscriptions ──
+		{Method: "GET", Path: "/api/subscription", Group: "Subscriptions", Auth: true,
+			Summary: "Whether the subscription service is on, and where it answers.",
+			handler: s.handleGetSubSettings},
+		{Method: "PUT", Path: "/api/subscription", Group: "Subscriptions", Auth: true,
+			Summary: "Turn the subscription service on and choose its path.",
+			Body:    `{"enabled":true,"path":"/subscribe/","title":"My VPN","updateHours":12}`,
+			Note:    "The path takes effect on the next request; no restart is needed.",
+			handler: s.handleSaveSubSettings},
+		{Method: "GET", Path: "/api/clients/{id}/subscription", Group: "Subscriptions", Auth: true,
+			Summary: "The link for one customer, creating its token if it has none.",
+			handler: s.handleClientSubscription},
+		{Method: "POST", Path: "/api/clients/{id}/subscription/rotate", Group: "Subscriptions", Auth: true,
+			Summary: "Issue a new link. Every copy of the old one stops working at once.",
+			handler: s.handleRotateSubscription},
+
 		// ── Nodes ──
 		{Method: "GET", Path: "/api/nodes", Group: "Nodes", Auth: true,
 			Summary: "Every server this panel watches, with what the last probe found.",

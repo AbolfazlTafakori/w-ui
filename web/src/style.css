@@ -2824,3 +2824,106 @@ pre.code code {
     transition: none;
   }
 }
+
+/* ── security warnings ──────────────────────────────────────────────────────
+   At the top of Settings rather than on a page of its own, because a security
+   page is a page nobody opens. Every entry describes a server that is working
+   perfectly and is one mistake from being somebody else's, so the point is
+   that it is seen without being looked for. */
+
+.warnings {
+  margin-bottom: 18px;
+  border: 1px solid color-mix(in srgb, var(--bad) 32%, var(--line));
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.warnings-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  background: var(--bad-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--bad) 24%, var(--line));
+  color: var(--bad);
+}
+.warnings-head h2 {
+  margin: 0;
+  font-size: var(--t-sm);
+  font-weight: 650;
+  color: var(--ink);
+}
+.warnings-head .tag {
+  margin-inline-start: auto;
+}
+
+.warning-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.warning-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 13px 16px;
+}
+.warning-list li + li {
+  border-top: 1px solid var(--line-soft);
+}
+
+.warning-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.warning-list li.high .warning-mark {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.warning-body {
+  min-width: 0;
+}
+.warning-body strong {
+  display: block;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+.warning-body p {
+  margin: 0;
+  font-size: var(--t-xs);
+  line-height: 1.5;
+}
+/* The fix is what the operator acts on, so it is the line that keeps its
+   colour while the explanation above it recedes. */
+.warning-body .fix {
+  margin-top: 5px;
+  color: var(--ink-2);
+}
+
+.btn.sm {
+  padding: 5px 11px;
+  font-size: var(--t-xs);
+  flex: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .warning-list li {
+    grid-template-columns: auto 1fr;
+  }
+  .warning-list li .btn {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 4px;
+  }
+}

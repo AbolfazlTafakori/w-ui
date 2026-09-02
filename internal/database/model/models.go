@@ -139,6 +139,11 @@ type Client struct {
 
 	Status ClientStatus `gorm:"size:16;not null;index;default:active" json:"status"`
 
+	// SubToken is the secret in a customer's subscription link. Whoever holds it
+	// gets the configuration, so it is never returned by the list endpoints —
+	// only by the one call that exists to show it.
+	SubToken string `gorm:"size:64;index" json:"-"`
+
 	Accounts []Account `gorm:"foreignKey:ClientID;constraint:OnDelete:CASCADE" json:"accounts,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`

@@ -144,6 +144,8 @@ func run() error {
 		return err
 	}
 
+	subs := service.NewSubscriptions(db, drivers, service.NewHosts(db, log), log)
+
 	// The two built-in outbounds are created before the reconciler starts, so
 	// its first tick already has somewhere to send traffic.
 	if err := outbounds.EnsureBuiltins(ctx); err != nil {
@@ -244,7 +246,7 @@ func run() error {
 	})
 
 	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
-		jwtSecret, sys, rec, outbounds, routes, router, log)
+		jwtSecret, sys, rec, outbounds, routes, router, subs, log)
 	if err != nil {
 		return err
 	}
@@ -291,6 +293,7 @@ func buildServer(
 	outbounds *service.Outbounds,
 	routes *service.Routing,
 	router *routing.Applier,
+	subs *service.Subscriptions,
 	log *slog.Logger,
 ) (*http.Server, error) {
 	apiSrv := api.New(api.Options{
@@ -314,6 +317,7 @@ func buildServer(
 		Outbounds:  outbounds,
 		Routing:    routes,
 		Router:     router,
+		Subs:       subs,
 		Reconciler: rec,
 	})
 
@@ -326,9 +330,14 @@ func buildServer(
 	root.Handle("/api/", apiSrv.Routes())
 	root.Handle("/", frontend)
 
+	// The subscription service sits ahead of the frontend so it can answer on
+	// whatever path the operator configured, and is checked before the
+	// single-page fallback swallows the request as a route.
+	handler := apiSrv.SubscriptionRouter(root)
+
 	return &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           api.LogRequests(log, api.SecureHeaders(root)),
+		Handler:           api.LogRequests(log, api.SecureHeaders(handler)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
