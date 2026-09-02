@@ -371,11 +371,17 @@ async function changePassword() {
          change made on one tab must not look lost when another is opened. -->
     <section class="card savebar">
       <div class="savebar-actions">
-        <button class="btn primary" :disabled="!dirty || busy" @click="save">
+        <button class="btn primary"
+          :disabled="!dirty || busy"
+          :title="!dirty ? t('settings.nothingToSave') : ''"
+          @click="save">
           <span v-if="busy">{{ t('common.saving') }}</span>
           <span v-else>{{ t('common.save') }}</span>
         </button>
-        <button class="btn ghost" :disabled="!dirty || busy" @click="revert">
+        <button class="btn ghost"
+          :disabled="!dirty || busy"
+          :title="!dirty ? t('settings.nothingToRevert') : ''"
+          @click="revert">
           {{ t('common.revert') }}
         </button>
       </div>

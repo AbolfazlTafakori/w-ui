@@ -526,5 +526,8 @@
   "settings.backup": "Backup",
   "interface.restart": "Restart this tunnel",
   "interface.restarted": "Tunnel restarted.",
-  "interface.restartFailed": "It would not come up: {error}"
+  "interface.restartFailed": "It would not come up: {error}",
+  "settings.nothingToSave": "Nothing has changed.",
+  "settings.nothingToRevert": "Nothing to undo.",
+  "group.pickSomeone": "Choose at least one customer."
 }

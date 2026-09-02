@@ -526,5 +526,8 @@
   "settings.backup": "بکاپ",
   "interface.restart": "راه‌اندازی دوبارهٔ این تونل",
   "interface.restarted": "تونل دوباره راه‌اندازی شد.",
-  "interface.restartFailed": "بالا نیامد: {error}"
+  "interface.restartFailed": "بالا نیامد: {error}",
+  "settings.nothingToSave": "چیزی تغییر نکرده.",
+  "settings.nothingToRevert": "چیزی برای برگرداندن نیست.",
+  "group.pickSomeone": "حداقل یک مشتری انتخاب کنید."
 }

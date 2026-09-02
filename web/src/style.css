@@ -2264,3 +2264,96 @@ textarea.bad:focus {
   grid-column: 3;
   color: var(--faint);
 }
+
+/* ══════════ motion ══════════ */
+/*
+ * Movement is used for one thing only: showing where something came from, so a
+ * panel or a dialog does not simply appear and leave the eye to find it. Nothing
+ * here animates on a timer, nothing loops, and nothing delays an action — a
+ * dialog that has to finish arriving before it can be used is slower than one
+ * that does not move at all.
+ *
+ * Every duration below is short enough to read as immediate. The whole block is
+ * switched off for anyone who has asked for less motion.
+ */
+
+/* A dialog grows very slightly out of the middle, which reads as "this opened
+   on top of what you were doing" rather than "the page changed". */
+.modal-backdrop {
+  animation: scrim-in 0.16s ease both;
+}
+.modal-backdrop > .modal {
+  animation: modal-in 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes scrim-in {
+  from { opacity: 0; }
+}
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+/* A toast comes from the edge it lives on, so its arrival is noticed without
+   it having to be loud. */
+.toast {
+  animation: toast-in 0.2s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Rows that appear after a filter or a page change fade rather than snap, which
+   makes it obvious the list is the thing that changed. */
+.table-wrap tbody tr {
+  animation: row-in 0.14s ease both;
+}
+@keyframes row-in {
+  from { opacity: 0; }
+}
+
+/* Buttons acknowledge the press itself. Nothing moves on hover — a control that
+   shifts under the pointer is harder to hit, not easier. */
+.btn:active:not(:disabled),
+.act:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn,
+.act,
+.navlink,
+.strip-item,
+.tag {
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.08s ease;
+}
+
+/* The meter fills rather than jumping, so a customer crossing a threshold is
+   something the eye catches on a page it was already looking at. */
+.meter span {
+  transition: width 0.4s cubic-bezier(0.3, 0.8, 0.4, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Asked for less, given none. The elements still appear; they simply do not
+     travel to get there. */
+  .modal-backdrop,
+  .modal-backdrop > .modal,
+  .toast,
+  .table-wrap tbody tr {
+    animation: none !important;
+  }
+  .btn:active:not(:disabled),
+  .act:active:not(:disabled) {
+    transform: none;
+  }
+  .meter span {
+    transition: none;
+  }
+}

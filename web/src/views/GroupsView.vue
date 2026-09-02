@@ -465,6 +465,7 @@ function viewMembers(g) {
         <button
           class="btn primary"
           :disabled="busy || !members.chosen.size"
+          :title="!members.chosen.size ? t('group.pickSomeone') : ''"
           @click="applyMembers"
         >
           <span v-if="busy" class="spin"></span>

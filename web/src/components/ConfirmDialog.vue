@@ -101,6 +101,7 @@ function onKey(e) {
           class="btn"
           :class="danger ? 'danger' : 'primary'"
           :disabled="!ready || busy"
+          :title="!ready ? t('confirm.typeToConfirm').replace('{text}', requireText) : ''"
           @click="emit('confirm')"
         >
           <span v-if="busy" class="spin"></span>
