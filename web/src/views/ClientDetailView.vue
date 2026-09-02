@@ -3,9 +3,10 @@ import { ref, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import QRCode from 'qrcode'
 import { api } from '../lib/api.js'
-import { store, t, notify } from '../lib/store.js'
+import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const props = defineProps({ id: { type: [String, Number], required: true } })
 const router = useRouter()
@@ -15,6 +16,7 @@ const loading = ref(true)
 const profile = ref(null)
 const qr = ref('')
 const newDevice = ref('')
+const busy = ref(false)
 
 async function load() {
   loading.value = true
@@ -65,12 +67,35 @@ const addDevice = () =>
     await load()
   }, 'device.added')
 
+const ask = ref(null)
+
 const removeDevice = (account) => {
-  if (!confirm(t('device.confirmRemove'))) return
-  return guard(async () => {
-    await api.removeDevice(account.id)
-    await load()
-  }, 'device.removed')
+  ask.value = {
+    title: t('device.confirmRemoveTitle'),
+    body: t('device.confirmRemoveBody'),
+    subject: account.deviceName,
+    // Both worth saying: the customer's file stops working, and the address it
+    // held goes back to the pool and may be handed to somebody else.
+    consequences: [t('device.consequenceConfig'), t('device.consequenceAddress')],
+    confirmLabel: t('action.delete'),
+    run: () =>
+      guard(async () => {
+        await api.removeDevice(account.id)
+        await load()
+      }, 'device.removed'),
+  }
+}
+
+async function runConfirmed() {
+  const spec = ask.value
+  if (!spec) return
+  busy.value = true
+  try {
+    await spec.run()
+  } finally {
+    busy.value = false
+    ask.value = null
+  }
 }
 
 const setStatus = (status) =>
@@ -84,11 +109,23 @@ const resetTraffic = () =>
   }, 'client.trafficReset')
 
 const remove = () => {
-  if (!confirm(t('client.confirmDelete'))) return
-  return guard(async () => {
-    await api.deleteClient(props.id)
-    router.push('/clients')
-  }, 'client.deleted')
+  const c = client.value
+  ask.value = {
+    title: t('client.confirmDeleteTitle'),
+    body: t('client.confirmDeleteBody'),
+    subject: c?.name || '',
+    consequences: [
+      tn('client.consequenceDevices', c?.accounts?.length ?? 0),
+      t('client.consequenceConfigs'),
+      t('client.consequenceUsage'),
+    ],
+    confirmLabel: t('action.delete'),
+    run: () =>
+      guard(async () => {
+        await api.deleteClient(props.id)
+        router.push('/clients')
+      }, 'client.deleted'),
+  }
 }
 
 async function copy(text) {
@@ -294,6 +331,18 @@ async function copy(text) {
       </div>
     </div>
   </template>
+
+  <ConfirmDialog
+    :open="!!ask"
+    :title="ask?.title || ''"
+    :body="ask?.body || ''"
+    :subject="ask?.subject || ''"
+    :consequences="ask?.consequences || []"
+    :confirm-label="ask?.confirmLabel || ''"
+    :busy="busy"
+    @confirm="runConfirmed"
+    @cancel="ask = null"
+  />
 </template>
 
 <style scoped>

@@ -2,16 +2,18 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
-import { store, t, notify } from '../lib/store.js'
+import { store, t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import InterfaceForm from '../components/InterfaceForm.vue'
 import InterfaceDetail from '../components/InterfaceDetail.vue'
 import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const router = useRouter()
 
 const interfaces = ref([])
+const busy = ref(false)
 const loading = ref(true)
 const formFor = ref(null) // null = closed, {} = create, { iface } = edit
 const detailFor = ref(null)
@@ -77,18 +79,61 @@ async function guard(fn, successKey) {
 const setEnabled = (iface, on) =>
   guard(() => api.updateInterface(iface.id, { enabled: on }), 'interface.updated')
 
+const ask = ref(null)
+
+async function runConfirmed() {
+  const spec = ask.value
+  if (!spec) return
+  busy.value = true
+  try {
+    await spec.run()
+  } finally {
+    busy.value = false
+    ask.value = null
+  }
+}
+
+// Deleting a tunnel is the most expensive click in the panel: it takes every
+// customer on it and every key they hold, and there is no undo. The dialog says
+// the count, and the name has to be typed.
 const removeOne = (iface) => {
-  if (!confirm(t('interface.confirmDelete'))) return
-  return guard(() => api.deleteInterface(iface.id), 'interface.deleted')
+  ask.value = {
+    title: t('interface.confirmDeleteTitle'),
+    body: t('interface.confirmDeleteBody'),
+    subject: iface.name,
+    consequences: [
+      tn('interface.consequenceClients', iface.clients ?? 0),
+      tn('interface.consequenceDevices', iface.devices ?? 0),
+      t('interface.consequenceKeys'),
+    ],
+    confirmLabel: t('action.delete'),
+    requireText: (iface.clients ?? 0) > 0 ? iface.name : '',
+    run: () => guard(() => api.deleteInterface(iface.id), 'interface.deleted'),
+  }
 }
 
 const bulkDelete = () => {
   const ids = [...selected.value]
-  if (!ids.length || !confirm(t('interface.confirmDeleteMany'))) return
-  return guard(async () => {
-    for (const id of ids) await api.deleteInterface(id)
-    selected.value = new Set()
-  }, 'interface.deleted')
+  if (!ids.length) return
+  const chosen = interfaces.value.filter((i) => selected.value.has(i.id))
+  const clients = chosen.reduce((a, i) => a + (i.clients ?? 0), 0)
+
+  ask.value = {
+    title: t('interface.confirmDeleteManyTitle'),
+    body: t('interface.confirmDeleteBody'),
+    subject: tn('interface.nTunnels', ids.length),
+    consequences: [
+      tn('interface.consequenceClients', clients),
+      t('interface.consequenceKeys'),
+    ],
+    confirmLabel: t('action.delete'),
+    requireText: clients > 0 ? String(clients) : '',
+    run: () =>
+      guard(async () => {
+        for (const id of ids) await api.deleteInterface(id)
+        selected.value = new Set()
+      }, 'interface.deleted'),
+  }
 }
 
 async function submitForm(input) {
@@ -271,6 +316,19 @@ async function submitForm(input) {
   />
 
   <InterfaceDetail v-if="detailFor" :iface="detailFor" @close="detailFor = null" />
+
+  <ConfirmDialog
+    :open="!!ask"
+    :title="ask?.title || ''"
+    :body="ask?.body || ''"
+    :subject="ask?.subject || ''"
+    :consequences="ask?.consequences || []"
+    :confirm-label="ask?.confirmLabel || ''"
+    :require-text="ask?.requireText || ''"
+    :busy="busy"
+    @confirm="runConfirmed"
+    @cancel="ask = null"
+  />
 </template>
 
 <style scoped>

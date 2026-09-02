@@ -2097,3 +2097,83 @@ button.strip-item:hover {
 .strip-value.small {
   font-size: var(--t-base);
 }
+
+/* ══════════ confirmation ══════════ */
+/*
+ * Asking before something cannot be undone. Sized and paced deliberately: the
+ * mark and the heading carry the weight, the consequences are a list because
+ * prose gets skimmed, and the confirm button is never the one under the cursor
+ * when the dialog opens.
+ */
+.modal.confirm {
+  max-width: 460px;
+}
+.confirm-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 26px 24px 20px;
+}
+.confirm-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.confirm-mark.danger {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.confirm-body h2 {
+  margin: 0;
+  font-size: var(--t-md);
+}
+.confirm-text {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+.confirm-subject {
+  margin: 2px 0 0;
+}
+.confirm-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: start;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.confirm-list li {
+  position: relative;
+  padding-inline-start: 18px;
+  color: var(--faint);
+  font-size: var(--t-xs);
+  line-height: 1.55;
+}
+.confirm-list li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 5px;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.confirm-type {
+  width: 100%;
+  margin-top: 6px;
+  text-align: start;
+}
+.confirm-type label {
+  font-size: var(--t-xs);
+}

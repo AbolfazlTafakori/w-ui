@@ -2,7 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '../lib/api.js'
-import { t, notify } from '../lib/store.js'
+import { t, tn, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 
@@ -35,10 +35,10 @@ async function load() {
 function since(iso) {
   if (!iso) return '—'
   const mins = Math.round((Date.now() - new Date(iso)) / 60000)
-  if (mins < 60) return t('sharing.minutesAgo').replace('{n}', mins)
+  if (mins < 60) return tn('sharing.minutesAgo', mins)
   const hours = Math.round(mins / 60)
-  if (hours < 24) return t('sharing.hoursAgo').replace('{n}', hours)
-  return t('sharing.daysAgo').replace('{n}', Math.round(hours / 24))
+  if (hours < 24) return tn('sharing.hoursAgo', hours)
+  return tn('sharing.daysAgo', Math.round(hours / 24))
 }
 
 const total = computed(() => reports.value.length)

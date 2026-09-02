@@ -2,12 +2,13 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
-import { store, t, notify } from '../lib/store.js'
+import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, relative, dateTime, percent, gigabytesToBytes, isOnline } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
 import ShareDialog from '../components/ShareDialog.vue'
 import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -229,16 +230,64 @@ async function guard(fn, successKey) {
 const setEnabled = (c, on) =>
   guard(() => api.updateClient(c.id, { status: on ? 'active' : 'disabled' }), 'client.updated')
 const resetOne = (c) => guard(() => api.resetTraffic(c.id), 'client.trafficReset')
-const removeOne = (c) => {
-  if (!confirm(t('client.confirmDelete'))) return
-  return guard(() => api.deleteClient(c.id), 'client.deleted')
+const ask = ref(null) // { title, body, subject, consequences, confirmLabel, requireText, run }
+
+function confirmAnd(spec) {
+  ask.value = spec
 }
+
+async function runConfirmed() {
+  const spec = ask.value
+  if (!spec) return
+  busy.value = true
+  try {
+    await spec.run()
+  } finally {
+    busy.value = false
+    ask.value = null
+  }
+}
+
+const removeOne = (c) =>
+  confirmAnd({
+    title: t('client.confirmDeleteTitle'),
+    body: t('client.confirmDeleteBody'),
+    subject: c.name,
+    // Said because it is what an operator forgets: the customer's config stops
+    // working the moment this runs, and reissuing it does not bring the old one
+    // back.
+    consequences: [
+      tn('client.consequenceDevices', c.accounts?.length ?? 0),
+      t('client.consequenceConfigs'),
+      t('client.consequenceUsage'),
+    ],
+    confirmLabel: t('action.delete'),
+    run: () => guard(() => api.deleteClient(c.id), 'client.deleted'),
+  })
 
 const ids = () => [...selected.value]
 
 const bulk = (action) => {
   if (!selected.value.size) return
-  if (action === 'delete' && !confirm(t('client.confirmDeleteMany'))) return
+  const n = selected.value.size
+
+  if (action === 'delete') {
+    return confirmAnd({
+      title: t('client.confirmDeleteManyTitle'),
+      body: t('client.confirmDeleteBody'),
+      subject: tn('client.nCustomers', n),
+      consequences: [t('client.consequenceConfigs'), t('client.consequenceUsage')],
+      confirmLabel: t('action.delete'),
+      // Typed out, because a selection of forty is not something the eye
+      // checks and this is the one action that cannot be walked back.
+      requireText: n >= 5 ? String(n) : '',
+      run: () => guard(async () => {
+        await api.bulkClients(action, ids())
+        selected.value = new Set()
+      }, 'client.bulkDone'),
+    })
+  }
+
   return guard(async () => {
     await api.bulkClients(action, ids())
     selected.value = new Set()
@@ -281,16 +330,30 @@ function pickMore(key) {
     return
   }
   if (key === 'resetAll') {
-    if (!confirm(t('client.confirmResetAll'))) return
-    return guard(() => api.resetAllTraffic(), 'client.bulkDone')
+    return confirmAnd({
+      title: t('client.confirmResetAllTitle'),
+      body: t('client.confirmResetAllBody'),
+      subject: tn('client.nCustomers', stats.value?.clients ?? 0),
+      consequences: [t('client.consequenceReset')],
+      confirmLabel: t('action.resetTraffic'),
+      run: () => guard(() => api.resetAllTraffic(), 'client.bulkDone'),
+    })
   }
-  if (key === 'purgeExhausted') {
-    if (!confirm(t('client.confirmPurge'))) return
-    return guard(() => api.purgeClients('exhausted'), 'client.deleted')
-  }
-  if (key === 'purgeExpired') {
-    if (!confirm(t('client.confirmPurge'))) return
-    return guard(() => api.purgeClients('expired'), 'client.deleted')
+  // The two purges are separate dialogs naming separate counts. They used to
+  // share one sentence, so the dialog could not tell an operator which of them
+  // they had picked.
+  if (key === 'purgeExhausted' || key === 'purgeExpired') {
+    const status = key === 'purgeExhausted' ? 'exhausted' : 'expired'
+    const count = (key === 'purgeExhausted' ? stats.value?.exhausted : stats.value?.expired) ?? 0
+    return confirmAnd({
+      title: t(key === 'purgeExhausted' ? 'client.confirmPurgeExhaustedTitle' : 'client.confirmPurgeExpiredTitle'),
+      body: t('client.confirmPurgeBody'),
+      subject: tn('client.nCustomers', count),
+      consequences: [t('client.consequenceConfigs'), t('client.consequenceUsage')],
+      confirmLabel: t('action.delete'),
+      requireText: count >= 5 ? String(count) : '',
+      run: () => guard(() => api.purgeClients(status), 'client.deleted'),
+    })
   }
 }
 
@@ -743,6 +806,19 @@ async function submitForm(input) {
     @submit="submitForm"
   />
   <ShareDialog v-if="shareFor" :client="shareFor" @close="shareFor = null" />
+
+  <ConfirmDialog
+    :open="!!ask"
+    :title="ask?.title || ''"
+    :body="ask?.body || ''"
+    :subject="ask?.subject || ''"
+    :consequences="ask?.consequences || []"
+    :confirm-label="ask?.confirmLabel || ''"
+    :require-text="ask?.requireText || ''"
+    :busy="busy"
+    @confirm="runConfirmed"
+    @cancel="ask = null"
+  />
 </template>
 
 <style scoped>

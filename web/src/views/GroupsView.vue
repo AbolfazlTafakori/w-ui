@@ -2,9 +2,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
-import { store, t, notify } from '../lib/store.js'
+import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, gigabytesToBytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const router = useRouter()
 
@@ -122,20 +123,39 @@ async function createGroup() {
   }
 }
 
-async function deleteGroup(g) {
-  // Deleting a group and deleting the people in it are different actions with
-  // very different consequences, so they are different menu entries and this
-  // one says which it is.
-  if (!confirm(t('group.confirmDelete').replace('{name}', g.name))) return
+const ask = ref(null)
+
+async function runConfirmed() {
+  const spec = ask.value
+  if (!spec) return
   busy.value = true
   try {
-    const res = await api.post('/api/groups/delete', { name: g.name })
-    notify(t('group.deleted').replace('{n}', res.ungrouped ?? 0), 'ok')
-    await load()
-  } catch (e) {
-    notify(e.message, 'error')
+    await spec.run()
   } finally {
     busy.value = false
+    ask.value = null
+  }
+}
+
+// Deleting a group and deleting the people in it are different actions with
+// very different consequences. Each dialog says which one this is, and the one
+// that loses customers asks for the name to be typed.
+function deleteGroup(g) {
+  ask.value = {
+    title: t('group.confirmDeleteTitle'),
+    body: t('group.confirmDeleteBody'),
+    subject: g.name,
+    consequences: [tn('group.consequenceKept', g.clients)],
+    confirmLabel: t('group.delete'),
+    run: async () => {
+      try {
+        const res = await api.post('/api/groups/delete', { name: g.name })
+        notify(tn('group.deleted', res.ungrouped ?? 0), 'ok')
+        await load()
+      } catch (e) {
+        notify(e.message, 'error')
+      }
+    },
   }
 }
 
@@ -167,8 +187,34 @@ function pick(g, key) {
   }
   // The two destructive ones ask before they run; the rest are reversible.
   if (key === 'delete') return deleteGroup(g)
-  if (key === 'clear' && !confirm(t('group.confirmDissolve'))) return
-  if (key === 'deleteClients' && !confirm(t('group.confirmDeleteClients'))) return
+
+  if (key === 'clear') {
+    ask.value = {
+      title: t('group.confirmDissolveTitle'),
+      body: t('group.confirmDissolveBody'),
+      subject: g.name,
+      consequences: [tn('group.consequenceKept', g.clients)],
+      confirmLabel: t('group.dissolve'),
+      run: () => run({ action: key, group: g.name }),
+    }
+    return
+  }
+
+  if (key === 'deleteClients') {
+    ask.value = {
+      title: t('group.confirmDeleteClientsTitle'),
+      body: t('group.confirmDeleteClientsBody'),
+      subject: tn('client.nCustomers', g.clients),
+      consequences: [t('client.consequenceConfigs'), t('client.consequenceUsage')],
+      confirmLabel: t('action.delete'),
+      // The single most destructive thing on this page: it removes paying
+      // customers, not a label.
+      requireText: g.name,
+      run: () => run({ action: key, group: g.name }),
+    }
+    return
+  }
+
   run({ action: key, group: g.name })
 }
 
@@ -263,8 +309,7 @@ async function applyMembers() {
       group: mode === 'add' ? group.name : '',
       ids: [...chosen],
     })
-    notify(t(mode === 'add' ? 'group.clientsAdded' : 'group.clientsRemoved')
-      .replace('{n}', chosen.size), 'ok')
+    notify(tn(mode === 'add' ? 'group.clientsAdded' : 'group.clientsRemoved', chosen.size), 'ok')
     members.value = null
     await load()
   } catch (e) {
@@ -521,6 +566,19 @@ function viewMembers(g) {
       </div>
     </div>
   </div>
+
+  <ConfirmDialog
+    :open="!!ask"
+    :title="ask?.title || ''"
+    :body="ask?.body || ''"
+    :subject="ask?.subject || ''"
+    :consequences="ask?.consequences || []"
+    :confirm-label="ask?.confirmLabel || ''"
+    :require-text="ask?.requireText || ''"
+    :busy="busy"
+    @confirm="runConfirmed"
+    @cancel="ask = null"
+  />
 </template>
 
 <style scoped>

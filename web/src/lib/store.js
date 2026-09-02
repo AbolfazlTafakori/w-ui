@@ -31,6 +31,21 @@ export function t(key) {
   return store.messages[key] || key
 }
 
+// tn picks the right form for a count and substitutes it.
+//
+// "1 customers" is the kind of thing that makes a panel feel unfinished, and
+// "customer(s)" is the workaround that admits the problem rather than solving
+// it. English needs two forms; Persian uses one noun for every count, so its
+// two entries are simply the same sentence and this costs nothing there.
+//
+// The number itself is formatted for the locale, so Persian shows Persian
+// digits rather than a stray Latin numeral mid-sentence.
+export function tn(key, n) {
+  const form = store.messages[`${key}.${n === 1 ? 'one' : 'other'}`]
+  const text = form || store.messages[key] || key
+  return text.replace('{n}', Number(n || 0).toLocaleString(store.locale))
+}
+
 export async function loadMessages(locale) {
   const res = await api.messages(locale)
   store.locale = locale

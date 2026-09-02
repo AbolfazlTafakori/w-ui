@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
-import { store, t, notify } from '../lib/store.js'
+import { store, t, tn, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const nodes = ref([])
 const loading = ref(true)
@@ -96,23 +97,56 @@ async function toggle(n, enabled) {
   }
 }
 
-async function remove(n) {
-  if (!confirm(t('node.confirmDelete').replace('{name}', n.name))) return
-  try {
-    await api.del(`/api/nodes/${n.id}`)
-    await load()
-  } catch (e) {
-    notify(e.message, 'error')
+const ask = ref(null)
+
+function remove(n) {
+  ask.value = {
+    title: t('node.confirmDeleteTitle'),
+    body: t('node.confirmDeleteBody'),
+    subject: n.name,
+    // Worth saying plainly: this is a change to this panel's list, not to the
+    // server at the other end. Its customers keep working.
+    consequences: [t('node.consequenceRemote'), t('node.consequenceToken')],
+    confirmLabel: t('action.delete'),
+    run: async () => {
+      try {
+        await api.del(`/api/nodes/${n.id}`)
+        await load()
+      } catch (e) {
+        notify(e.message, 'error')
+      }
+    },
   }
 }
 
+async function runConfirmed() {
+  const spec = ask.value
+  if (!spec) return
+  busy.value = true
+  try {
+    await spec.run()
+  } finally {
+    busy.value = false
+    ask.value = null
+  }
+}
+
+function openIssue() {
+  form.value = { name: '', address: '', token: '', note: '' }
+  dialog.value = { kind: 'token' }
+}
+
 async function issueToken() {
-  const name = prompt(t('node.tokenName'))
+  const name = (form.value.name || '').trim()
   if (!name) return
+  busy.value = true
   try {
     issued.value = await api.post('/api/tokens', { name })
+    dialog.value = null
   } catch (e) {
     notify(e.message, 'error')
+  } finally {
+    busy.value = false
   }
 }
 
@@ -129,9 +163,9 @@ function ago(iso) {
   if (!iso) return t('node.never')
   const secs = Math.round((Date.now() - new Date(iso)) / 1000)
   if (secs < 60) return t('node.justNow')
-  if (secs < 3600) return t('node.minutesAgo').replace('{n}', Math.round(secs / 60))
-  if (secs < 86400) return t('node.hoursAgo').replace('{n}', Math.round(secs / 3600))
-  return t('node.daysAgo').replace('{n}', Math.round(secs / 86400))
+  if (secs < 3600) return tn('node.minutesAgo', Math.round(secs / 60))
+  if (secs < 86400) return tn('node.hoursAgo', Math.round(secs / 3600))
+  return tn('node.daysAgo', Math.round(secs / 86400))
 }
 
 function uptime(secs) {
@@ -157,7 +191,7 @@ function latencyTone(ms) {
       <p class="lede">{{ t('node.lede') }}</p>
     </div>
     <div class="page-actions">
-      <button class="btn ghost" @click="issueToken">
+      <button class="btn ghost" @click="openIssue">
         <Icon name="key" :size="15" />
         <span>{{ t('node.issueToken') }}</span>
       </button>
@@ -293,13 +327,30 @@ function latencyTone(ms) {
   <div v-if="dialog" class="modal-backdrop" @click.self="dialog = null">
     <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="n-title">
       <div class="card-head">
-        <h2 id="n-title">{{ dialog.kind === 'add' ? t('node.add') : t('node.edit') }}</h2>
+        <h2 id="n-title">
+          {{ dialog.kind === 'token' ? t('node.issueToken')
+            : dialog.kind === 'add' ? t('node.add') : t('node.edit') }}
+        </h2>
         <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="dialog = null">
           <Icon name="close" :size="15" />
         </button>
       </div>
 
-      <form id="n-form" class="card-body" @submit.prevent="submit">
+      <form
+        id="n-form"
+        class="card-body"
+        @submit.prevent="dialog.kind === 'token' ? issueToken() : submit()"
+      >
+        <template v-if="dialog.kind === 'token'">
+          <div class="field">
+            <label for="tk-name">{{ t('node.tokenName') }}</label>
+            <input id="tk-name" v-model="form.name" required autofocus maxlength="64"
+                   :placeholder="t('node.tokenNamePlaceholder')" />
+            <span class="hint">{{ t('node.tokenNameHint') }}</span>
+          </div>
+        </template>
+
+        <template v-else>
         <div class="field">
           <label for="n-name">{{ t('node.name') }}</label>
           <input id="n-name" v-model="form.name" required autofocus maxlength="64" />
@@ -322,6 +373,7 @@ function latencyTone(ms) {
           <label for="n-note">{{ t('group.note') }}</label>
           <input id="n-note" v-model="form.note" maxlength="256" />
         </div>
+        </template>
       </form>
 
       <div class="modal-foot">
@@ -353,6 +405,18 @@ function latencyTone(ms) {
       </div>
     </div>
   </div>
+
+  <ConfirmDialog
+    :open="!!ask"
+    :title="ask?.title || ''"
+    :body="ask?.body || ''"
+    :subject="ask?.subject || ''"
+    :consequences="ask?.consequences || []"
+    :confirm-label="ask?.confirmLabel || ''"
+    :busy="busy"
+    @confirm="runConfirmed"
+    @cancel="ask = null"
+  />
 </template>
 
 <style scoped>
