@@ -2044,3 +2044,56 @@ body.light .log-view {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ══════════ figures strip ══════════ */
+/*
+ * The row of headline numbers above a table. Defined here rather than in each
+ * page that draws one: it lived in two scoped blocks that had already drifted
+ * to different column widths and padding, and a third page using the same
+ * markup got no layout at all.
+ */
+.strip {
+  display: grid;
+  /* auto-fit rather than a fixed count, so four figures sit in a row on a
+     monitor and stack in pairs on a laptop without a breakpoint for each. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.strip-item {
+  background: var(--surface);
+  border: none;
+  padding: 13px 16px;
+  text-align: start;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+/* Only the ones that do something look clickable. */
+button.strip-item {
+  cursor: pointer;
+}
+button.strip-item:hover {
+  background: var(--surface-2);
+}
+.strip-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.strip-value {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.strip-value.small {
+  font-size: var(--t-base);
+}

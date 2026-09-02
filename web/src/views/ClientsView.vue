@@ -746,41 +746,6 @@ async function submitForm(input) {
 </template>
 
 <style scoped>
-.strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 1px;
-  background: var(--line-soft);
-  margin-bottom: 16px;
-  overflow: hidden;
-}
-.strip-item {
-  background: var(--surface);
-  border: none;
-  padding: 13px 16px;
-  text-align: start;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.strip-item:hover {
-  background: var(--surface-2);
-}
-.strip-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--t-xs);
-  color: var(--muted);
-}
-.strip-value {
-  font-size: var(--t-lg);
-  font-weight: 600;
-  line-height: 1.15;
-}
 .dot {
   width: 7px;
   height: 7px;
