@@ -237,9 +237,62 @@ async function guard(fn, successKey) {
   }
 }
 
-const setEnabled = (c, on) =>
-  guard(() => api.updateClient(c.id, { status: on ? 'active' : 'disabled' }), 'client.updated')
-const resetOne = (c) => guard(() => api.resetTraffic(c.id), 'client.trafficReset')
+// Rows with a change in flight, so the switch can spin on that row alone.
+const pending = ref(new Set())
+
+// Toggling one customer moves the switch immediately and patches that row from
+// the reply. It used to await the request and then refetch the whole list and
+// the group list, which meant the switch stayed where it was for the entire
+// round trip — a control that does not move when clicked reads as broken, and
+// the operator clicks it again.
+async function setEnabled(c, on) {
+  const was = c.status
+  const next = on ? 'active' : 'disabled'
+  if (was === next) return
+
+  c.status = next                       // optimistic: the switch moves now
+  pending.value = new Set(pending.value).add(c.id)
+
+  try {
+    const updated = await api.updateClient(c.id, { status: next })
+    // Patched in place rather than reloading. Refetching would also reorder or
+    // re-page the list under the operator's cursor.
+    Object.assign(c, updated)
+  } catch (err) {
+    c.status = was                      // put it back where it was
+    notify(err.message, 'error')
+  } finally {
+    release(c.id)
+  }
+}
+
+function hold(id) {
+  pending.value = new Set(pending.value).add(id)
+}
+function release(id) {
+  const next = new Set(pending.value)
+  next.delete(id)
+  pending.value = next
+}
+const isPending = (id) => pending.value.has(id)
+
+// Zeroing one customer's counters. Fast on a small panel and not fast on a
+// large one, and until it came back the button gave nothing at all — so the
+// operator's second click reset the traffic they had just reset.
+async function resetOne(c) {
+  hold(c.id)
+  try {
+    await api.resetTraffic(c.id)
+    c.rxBytes = 0
+    c.txBytes = 0
+    notify(t('client.trafficReset'), 'success')
+  } catch (err) {
+    notify(err.message, 'error')
+    await load()
+  } finally {
+    release(c.id)
+  }
+}
 const ask = ref(null) // { title, body, subject, consequences, confirmLabel, requireText, run }
 
 function confirmAnd(spec) {
@@ -613,8 +666,14 @@ async function submitForm(input) {
                   <button class="act" :title="t('action.details')" @click="router.push(`/clients/${c.id}`)">
                     <Icon name="info" :size="16" />
                   </button>
-                  <button class="act" :title="t('action.resetTraffic')" @click="resetOne(c)">
-                    <Icon name="refresh" :size="16" />
+                  <button
+                    class="act"
+                    :title="t('action.resetTraffic')"
+                    :disabled="isPending(c.id)"
+                    @click="resetOne(c)"
+                  >
+                    <span v-if="isPending(c.id)" class="spin sm"></span>
+                    <Icon v-else name="refresh" :size="16" />
                   </button>
                   <button class="act" :title="t('action.edit')" @click="formFor = { client: c }">
                     <Icon name="edit" :size="16" />
@@ -630,6 +689,7 @@ async function submitForm(input) {
                   :model-value="c.status === 'active'"
                   :label="c.name"
                   :disabled="c.status === 'expired' || c.status === 'exhausted'"
+                  :loading="isPending(c.id)"
                   @update:model-value="(v) => setEnabled(c, v)"
                 />
               </td>
@@ -704,6 +764,7 @@ async function submitForm(input) {
               :model-value="c.status === 'active'"
               :label="c.name"
               :disabled="c.status === 'expired' || c.status === 'exhausted'"
+              :loading="isPending(c.id)"
               @update:model-value="(v) => setEnabled(c, v)"
             />
           </div>
@@ -729,7 +790,7 @@ async function submitForm(input) {
           <div class="crow actions">
             <button class="act" :title="t('device.showQR')" @click="shareFor = c"><Icon name="qr" :size="17" /></button>
             <button class="act" :title="t('action.details')" @click="router.push(`/clients/${c.id}`)"><Icon name="info" :size="17" /></button>
-            <button class="act" :title="t('action.resetTraffic')" @click="resetOne(c)"><Icon name="refresh" :size="17" /></button>
+            <button class="act" :title="t('action.resetTraffic')" :disabled="isPending(c.id)" @click="resetOne(c)"><span v-if="isPending(c.id)" class="spin sm"></span><Icon v-else name="refresh" :size="17" /></button>
             <button class="act" :title="t('action.edit')" @click="formFor = { client: c }"><Icon name="edit" :size="17" /></button>
             <button class="act danger spacer" :title="t('action.delete')" @click="removeOne(c)"><Icon name="trash" :size="17" /></button>
           </div>

@@ -19,13 +19,13 @@ onMounted(() => {
   load()
   // The panel probes on its own every half minute; this only re-reads what it
   // already found, so it can be frequent without costing a remote request.
-  timer = setInterval(load, 15_000)
+  timer = setInterval(() => load(true), 15_000)
 })
 onBeforeUnmount(() => clearInterval(timer))
 
-async function load() {
+async function load(quiet = false) {
   try {
-    nodes.value = await api.get('/api/nodes')
+    nodes.value = await api.get('/api/nodes', { background: quiet })
     loadError.value = null
   } catch (e) {
     loadError.value = e
@@ -75,25 +75,59 @@ async function submit() {
   }
 }
 
+// Which rows are mid-request, by node id.
+//
+// A probe crosses the network to another server: it can take seconds, and it
+// can time out. Marking the whole page busy meant the operator could not probe
+// a second node while the first was still answering, and the row they had just
+// clicked looked exactly like the ones they had not.
+const pending = ref(new Set())
+const isPending = (id) => pending.value.has(id)
+
+function hold(id) {
+  pending.value = new Set(pending.value).add(id)
+}
+function release(id) {
+  const next = new Set(pending.value)
+  next.delete(id)
+  pending.value = next
+}
+
 async function probe(n) {
-  busy.value = true
+  hold(n.id)
   try {
     await api.post(`/api/nodes/${n.id}/probe`)
-    await load()
+    // Quiet: the row's own spinner already says something is happening, and a
+    // second indicator in the header for the same click reads as two things
+    // going on at once.
+    await load(true)
   } catch (e) {
     notify(e.message, 'error')
   } finally {
-    busy.value = false
+    release(n.id)
   }
 }
 
+// The box ticks now; the panel catches up.
 async function toggle(n, enabled) {
+  const was = n.enabled
+  if (was === enabled) return
+  n.enabled = enabled
+  hold(n.id)
   try {
-    await api.patch(`/api/nodes/${n.id}`, { name: n.name, address: n.address, enabled })
-    await load()
+    const updated = await api.patch(`/api/nodes/${n.id}`, {
+      name: n.name,
+      address: n.address,
+      enabled,
+    })
+    Object.assign(n, updated)
   } catch (e) {
+    // Put the box back where it was rather than leaving it showing a state the
+    // panel never reached.
+    n.enabled = was
     notify(e.message, 'error')
-    await load()
+  } finally {
+    release(n.id)
   }
 }
 
@@ -250,10 +284,11 @@ function latencyTone(ms) {
               <button
                 class="act"
                 :title="t('node.probe')"
-                :disabled="n.kind === 'local' || busy"
+                :disabled="n.kind === 'local' || isPending(n.id)"
                 @click="probe(n)"
               >
-                <Icon name="refresh" :size="16" />
+                <span v-if="isPending(n.id)" class="spin sm"></span>
+                <Icon v-else name="refresh" :size="16" />
               </button>
               <button
                 class="act"
@@ -308,7 +343,7 @@ function latencyTone(ms) {
             <input
               type="checkbox"
               :checked="n.enabled"
-              :disabled="n.kind === 'local'"
+              :disabled="n.kind === 'local' || isPending(n.id)"
               :aria-label="n.name"
               @change="toggle(n, $event.target.checked)"
             />

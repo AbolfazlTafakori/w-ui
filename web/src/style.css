@@ -1135,6 +1135,13 @@ pre.config {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+/* Sized to stand in for a 16px icon inside a row action, so a button that
+   starts working does not change size and shift the ones beside it. */
+.spin.sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -2375,4 +2382,41 @@ textarea.bad:focus {
 }
 .empty-cta .btn {
   margin-top: 4px;
+}
+
+/* ══════════ navigation progress ══════════ */
+/*
+ * A thin bar across the top while a page changes. It does not report real
+ * progress — nothing here knows how long a request will take — so it travels at
+ * a fixed pace and is removed when the page arrives. That is honest about what
+ * it is: an acknowledgement that the click landed, not a measurement.
+ */
+.navbar-progress {
+  position: fixed;
+  top: 0;
+  inset-inline: 0;
+  height: 2px;
+  z-index: 1300;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent) 40%,
+    var(--accent-hover) 60%,
+    transparent
+  );
+  background-size: 45% 100%;
+  background-repeat: no-repeat;
+  animation: nav-sweep 0.9s ease-in-out infinite;
+}
+@keyframes nav-sweep {
+  from { background-position: -45% 0; }
+  to { background-position: 145% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Still says work is happening, without the travel. */
+  .navbar-progress {
+    animation: none;
+    background: var(--accent);
+    opacity: 0.7;
+  }
 }

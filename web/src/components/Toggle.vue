@@ -6,17 +6,22 @@ defineProps({
   modelValue: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   label: { type: String, default: '' },
+  // While a change is in flight. The switch moves to where it was asked to go
+  // and spins, rather than sitting still until the server answers — a control
+  // that does not move when clicked reads as broken, and gets clicked again.
+  loading: { type: Boolean, default: false },
 })
 defineEmits(['update:modelValue'])
 </script>
 
 <template>
-  <label class="toggle" :class="{ on: modelValue, disabled }">
+  <label class="toggle" :class="{ on: modelValue, disabled: disabled || loading, busy: loading }">
     <input
       type="checkbox"
       :checked="modelValue"
-      :disabled="disabled"
+      :disabled="disabled || loading"
       :aria-label="label"
+      :aria-busy="loading"
       @change="$emit('update:modelValue', $event.target.checked)"
     />
     <span class="track"><span class="knob"></span></span>
@@ -33,6 +38,12 @@ defineEmits(['update:modelValue'])
 .toggle.disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+/* Waiting is not the same as unavailable. A pending switch keeps its colour so
+   the state it is moving to stays readable; it simply cannot be clicked again. */
+.toggle.busy {
+  cursor: progress;
+  opacity: 1;
 }
 input {
   position: absolute;
@@ -67,6 +78,42 @@ input {
 .toggle.on .knob {
   background: #fff;
   transform: translateX(18px);
+}
+
+/* The knob becomes the spinner rather than gaining one beside it: the switch
+   keeps its size, so nothing in the row shifts while a change is in flight. */
+.toggle.busy .knob {
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  background: transparent;
+  color: var(--muted);
+  animation: toggle-spin 0.6s linear infinite;
+}
+.toggle.busy.on .knob {
+  color: #fff;
+}
+@keyframes toggle-spin {
+  to { transform: translateX(0) rotate(360deg); }
+}
+.toggle.busy.on .knob {
+  animation-name: toggle-spin-on;
+}
+@keyframes toggle-spin-on {
+  to { transform: translateX(18px) rotate(360deg); }
+}
+[dir='rtl'] .toggle.busy.on .knob {
+  animation-name: toggle-spin-on-rtl;
+}
+@keyframes toggle-spin-on-rtl {
+  to { transform: translateX(-18px) rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still shows it is waiting, without the rotation. */
+  .toggle.busy .knob {
+    animation: none;
+    opacity: 0.55;
+  }
 }
 /* The knob travels the other way when the page does. */
 [dir='rtl'] .toggle.on .knob {

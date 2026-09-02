@@ -30,7 +30,20 @@ const pinned = ref(false)
 const hovered = ref(false)
 const drawerOpen = ref(false)
 
+// The progress bar tracks work, not navigation.
+//
+// Tying it to the router looked right and was wrong: these routes resolve in a
+// few milliseconds, so the bar either never appeared or flashed as a glitch.
+// What an operator actually waits on is the request the page makes once it is
+// mounted. api.js counts those and says when any has been outstanding long
+// enough to be worth admitting to.
+const working = ref(false)
+function onBusy(e) {
+  working.value = !!e.detail
+}
+
 onMounted(() => {
+  window.addEventListener('wui:busy', onBusy)
   try {
     pinned.value = localStorage.getItem(PINNED_KEY) === 'true'
   } catch {
@@ -41,7 +54,10 @@ onMounted(() => {
   document.addEventListener('keydown', onKeydown)
 })
 
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('wui:busy', onBusy)
+})
 
 function togglePinned() {
   pinned.value = !pinned.value
@@ -128,6 +144,9 @@ function reload() {
   </div>
 
   <div v-else class="shell" :class="{ 'rail-pinned': pinned }">
+    <!-- Acknowledges the click before the new page has anything to show. -->
+    <div v-if="store.navigating || working" class="navbar-progress" role="presentation"></div>
+
     <!-- Phone: the rail is gone and this is the only way back to the menu. -->
     <button
       class="drawer-handle"

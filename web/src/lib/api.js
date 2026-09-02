@@ -48,7 +48,53 @@ export class ApiError extends Error {
 // with no way to tell that anything is wrong.
 const requestTimeout = 30_000
 
-async function request(method, path, body) {
+// Work the operator is waiting for.
+//
+// The bar is driven from here rather than from the router, because a route
+// change is usually instant and it is the data behind it that takes time. It is
+// also held back briefly: a request that finishes in 80ms would otherwise flash
+// a bar, and a flash reads as a glitch rather than as progress.
+let inFlight = 0
+let showTimer = null
+const SHOW_AFTER = 160
+
+function started(background) {
+  if (background) return
+  inFlight++
+  if (inFlight === 1 && !showTimer) {
+    showTimer = setTimeout(() => {
+      showTimer = null
+      if (inFlight > 0) window.dispatchEvent(new CustomEvent('wui:busy', { detail: true }))
+    }, SHOW_AFTER)
+  }
+}
+
+function finished(background) {
+  if (background) return
+  inFlight = Math.max(0, inFlight - 1)
+  if (inFlight === 0) {
+    if (showTimer) {
+      clearTimeout(showTimer)
+      showTimer = null
+    }
+    window.dispatchEvent(new CustomEvent('wui:busy', { detail: false }))
+  }
+}
+
+async function request(method, path, body, opts = {}) {
+  // Polling refreshes must not light the bar: a page that re-reads itself every
+  // few seconds would keep it on permanently, and it would stop meaning
+  // anything.
+  const background = !!opts.background
+  started(background)
+  try {
+    return await send(method, path, body)
+  } finally {
+    finished(background)
+  }
+}
+
+async function send(method, path, body) {
   const headers = {}
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
@@ -130,7 +176,9 @@ async function request(method, path, body) {
 }
 
 export const api = {
-  get: (path) => request('GET', path),
+  // opts.background marks a poll: it does work but the operator is not waiting
+  // on it, so it must not light the progress bar.
+  get: (path, opts) => request('GET', path, undefined, opts),
   post: (path, body) => request('POST', path, body ?? {}),
   patch: (path, body) => request('PATCH', path, body ?? {}),
   put: (path, body) => request('PUT', path, body ?? {}),
@@ -146,7 +194,7 @@ export const api = {
   meta: () => request('GET', '/api/meta'),
   messages: (locale) => request('GET', `/api/i18n/${locale}`),
   overview: () => request('GET', '/api/overview'),
-  fullOverview: () => request('GET', '/api/overview/full'),
+  fullOverview: (opts) => request('GET', '/api/overview/full', undefined, opts),
 
   interfaces: () => request('GET', '/api/interfaces'),
   createInterface: (input) => request('POST', '/api/interfaces', input),

@@ -20,7 +20,7 @@ const loadError = ref(null)
 
 async function load(quiet = false) {
   try {
-    data.value = await api.fullOverview()
+    data.value = await api.fullOverview({ background: quiet })
     loadError.value = null
   } catch (err) {
     loadError.value = err

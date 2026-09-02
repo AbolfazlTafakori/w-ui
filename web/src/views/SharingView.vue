@@ -14,15 +14,15 @@ onMounted(() => {
   load()
   // The window this looks at is ten minutes wide, so a slow refresh is enough
   // and a fast one would only add load for no new information.
-  timer = setInterval(load, 30_000)
+  timer = setInterval(() => load(true), 30_000)
 })
 onBeforeUnmount(() => clearInterval(timer))
 
 const loadError = ref(null)
 
-async function load() {
+async function load(quiet = false) {
   try {
-    reports.value = await api.get('/api/sharing')
+    reports.value = await api.get('/api/sharing', { background: quiet })
     loadError.value = null
   } catch (e) {
     loadError.value = e

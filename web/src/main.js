@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
 import App from './App.vue'
-import { store, bootstrap, signOut, notify, t } from './lib/store.js'
+import { store, bootstrap, signOut, notify, t, setNavigating } from './lib/store.js'
 import { initTheme } from './lib/theme.js'
 
 // Fonts are bundled rather than linked. The panel is often reached from
@@ -50,6 +50,11 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  // Shown from the moment of the click. A page whose data takes half a second
+  // otherwise leaves the previous one on screen, and the operator cannot tell
+  // whether the click registered.
+  setNavigating(true)
+
   if (!store.ready) return true
   if (to.meta.public) {
     return store.admin ? { name: 'overview' } : true
@@ -60,6 +65,18 @@ router.beforeEach((to) => {
 // A token can expire between page loads. When any request comes back 401 the
 // api layer raises this, and the app returns to the sign-in screen rather than
 // leaving the operator on a page that silently stops updating.
+// Cleared as soon as the route resolves. The views that load data keep their own
+// spinner from here, so the bar covers only the gap between the click and that.
+//
+// Not inside requestAnimationFrame: that does not fire while a tab is in the
+// background, so a navigation started and then backgrounded would leave the bar
+// running for as long as the tab stayed hidden.
+router.afterEach(() => setNavigating(false))
+
+// A navigation that is cancelled or fails never reaches afterEach, and the bar
+// would run forever on a guard that redirects.
+router.onError(() => setNavigating(false))
+
 window.addEventListener('wui:unauthorized', () => {
   signOut()
   if (router.currentRoute.value.name !== 'login') {

@@ -22,11 +22,19 @@ export const store = reactive({
   messages: {},
   ready: false,
   toast: null,
+  navigating: false,
 })
 
 // t resolves a message key. The catalog comes from the Go binary, so the
 // backend and frontend can never disagree about what a string says, and a key
 // missing from Persian falls back to English server-side.
+// True while a page is changing or its first load is in flight. The shell draws
+// a bar from it, so a click on the sidebar is acknowledged immediately rather
+// than leaving the old page on screen until the new one has its data.
+export function setNavigating(on) {
+  store.navigating = on
+}
+
 export function t(key) {
   return store.messages[key] || key
 }

@@ -77,15 +77,49 @@ async function guard(fn, successKey) {
   }
 }
 
-const setEnabled = (iface, on) =>
-  guard(() => api.updateInterface(iface.id, { enabled: on }), 'interface.updated')
+// Rows that are mid-request. Per-row rather than one flag for the page: taking
+// one tunnel down should not freeze the controls on the other five.
+const pending = ref(new Set())
+const isPending = (id) => pending.value.has(id)
+
+function hold(id) {
+  pending.value = new Set(pending.value).add(id)
+}
+function release(id) {
+  const next = new Set(pending.value)
+  next.delete(id)
+  pending.value = next
+}
+
+// The switch moves on click and the knob spins until the server agrees.
+//
+// Bringing an interface up is slower than a client toggle — a device is
+// created, addresses assigned, a driver opened — so the old behaviour, where
+// nothing moved until a full reload of the list came back, read as a switch
+// that did not work and invited a second click.
+async function setEnabled(iface, on) {
+  const was = iface.enabled
+  if (was === on) return
+  iface.enabled = on
+  hold(iface.id)
+  try {
+    const updated = await api.updateInterface(iface.id, { enabled: on })
+    Object.assign(iface, updated)
+    notify(t('interface.updated'), 'success')
+  } catch (err) {
+    iface.enabled = was
+    notify(err.message, 'error')
+  } finally {
+    release(iface.id)
+  }
+}
 
 // Reopening one tunnel's driver. The reconciler heals most things, but not a
 // driver whose Open failed at startup — a port that was taken, a tool that was
 // not installed yet. Without this the only way out is restarting the panel,
 // which disconnects every customer on every other interface to fix one.
 async function restart(iface) {
-  busy.value = true
+  hold(iface.id)
   try {
     const res = await api.post(`/api/interfaces/${iface.id}/restart`)
     if (res.ok) {
@@ -98,7 +132,7 @@ async function restart(iface) {
   } catch (e) {
     notify(e.message, 'error')
   } finally {
-    busy.value = false
+    release(iface.id)
   }
 }
 
@@ -321,6 +355,7 @@ async function submitForm(input) {
               <Toggle
                 :model-value="i.enabled"
                 :label="i.name"
+                :loading="isPending(i.id)"
                 @update:model-value="(v) => setEnabled(i, v)"
               />
             </td>
@@ -333,10 +368,11 @@ async function submitForm(input) {
                 <button
                   class="act"
                   :title="t('interface.restart')"
-                  :disabled="busy"
+                  :disabled="isPending(i.id)"
                   @click="restart(i)"
                 >
-                  <Icon name="refresh" :size="16" />
+                  <span v-if="isPending(i.id)" class="spin sm"></span>
+                  <Icon v-else name="refresh" :size="16" />
                 </button>
                 <button class="act" :title="t('action.details')" @click="detailFor = i">
                   <Icon name="info" :size="16" />
