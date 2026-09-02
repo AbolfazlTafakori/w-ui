@@ -145,6 +145,12 @@ func (s *Server) routes() []Route {
 		{Method: "PATCH", Path: "/api/interfaces/{id}", Group: "Interfaces", Auth: true,
 			Summary: "Change a tunnel.", Body: `{"dns":"1.1.1.1","mtu":1420}`,
 			handler: s.handleUpdateInterface},
+		{Method: "POST", Path: "/api/interfaces/{id}/restart", Group: "Interfaces", Auth: true,
+			Summary: "Reopen a tunnel's driver without restarting the panel.",
+			Note: "For a tunnel that failed to come up — a taken port, a missing tool. " +
+				"Restarting the panel instead would disconnect every customer on every " +
+				"other interface to fix one.",
+			handler: s.handleRestartInterface},
 		{Method: "DELETE", Path: "/api/interfaces/{id}", Group: "Interfaces", Auth: true,
 			Summary: "Delete a tunnel and everything on it.",
 			handler: s.handleDeleteInterface},

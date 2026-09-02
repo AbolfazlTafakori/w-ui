@@ -2201,3 +2201,66 @@ textarea.bad:focus {
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 18%, transparent);
 }
+
+/* ══════════ overview actions and the log viewer ══════════ */
+.ov-actions {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* On a narrow screen the labels go and the icons remain: three named buttons
+   wrap onto their own line and push the page down for no gain. */
+@media (max-width: 900px) {
+  .ov-actions .lbl {
+    display: none;
+  }
+}
+
+.modal.wide {
+  max-width: 900px;
+  width: 92vw;
+}
+.log-body {
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.loglist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+}
+.loglist li {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  /* The message can be long and the fields longer; neither should widen the
+     dialog, so each row wraps within its own column. */
+  overflow-wrap: anywhere;
+}
+.loglist li:last-child {
+  border-bottom: 0;
+}
+.log-time {
+  color: var(--faint);
+  white-space: nowrap;
+}
+.log-level {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.lvl-warn .log-level { color: var(--warn); }
+.lvl-error .log-level { color: var(--bad); }
+.lvl-error { background: var(--bad-soft); }
+.lvl-warn { background: var(--warn-soft); }
+.log-msg {
+  color: var(--ink);
+}
+.log-fields {
+  grid-column: 3;
+  color: var(--faint);
+}

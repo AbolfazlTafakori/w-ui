@@ -162,6 +162,38 @@ const poolTotals = computed(() => ({
   capacity: ifaces.value.reduce((a, i) => a + (i.capacity || 0), 0),
 }))
 
+const busy = ref(false)
+const logs = ref(null)
+const logLevel = ref('info')
+
+// Both of these used to live a page away. When something is wrong, the log and
+// a fresh backup are the first two things wanted, and this is the page an
+// operator is already looking at.
+async function openLogs() {
+  logs.value = { loading: true, entries: [] }
+  try {
+    const res = await api.get(`/api/logs?limit=200&level=${logLevel.value}`)
+    // The endpoint wraps its rows; taking the response itself would give an
+    // object where a list is expected and render nothing at all.
+    logs.value = { loading: false, entries: res?.entries || [] }
+  } catch (e) {
+    logs.value = null
+    notify(e.message, 'error')
+  }
+}
+
+async function backupNow() {
+  busy.value = true
+  try {
+    const a = await api.post('/api/backups')
+    notify(t('overview.backupTaken').replace('{name}', a.name), 'ok')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
 const ipv4 = computed(() => (sys.value?.ipv4 || [])[0] || '—')
 const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 </script>
@@ -177,14 +209,24 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         <h1>{{ t('nav.overview') }}</h1>
         <p>{{ t('overview.subtitle') }}</p>
       </div>
-      <div class="spacer row">
+      <!-- The things an operator reaches for while looking at this page. They
+           were all a page away before, which is one page too many when
+           something is wrong. -->
+      <div class="spacer row ov-actions">
         <span class="tag" :class="panel.enforcementActive ? 'active' : 'exhausted'">
           <i v-if="panel.enforcementActive" class="dot"></i>
           {{ t('overview.enforcement') }}:
           {{ panel.enforcementActive ? t('overview.running') : t('overview.stopped') }}
         </span>
-        <RouterLink to="/settings" class="btn sm">
-          <Icon name="settings" :size="14" />{{ t('nav.settings') }}
+
+        <button class="btn sm ghost" :title="t('overview.viewLogs')" @click="openLogs">
+          <Icon name="info" :size="14" /><span class="lbl">{{ t('settings.tab.logs') }}</span>
+        </button>
+        <button class="btn sm ghost" :title="t('overview.backupNow')" :disabled="busy" @click="backupNow">
+          <Icon name="database" :size="14" /><span class="lbl">{{ t('settings.backup') }}</span>
+        </button>
+        <RouterLink to="/settings" class="btn sm ghost" :title="t('nav.settings')">
+          <Icon name="settings" :size="14" /><span class="lbl">{{ t('nav.settings') }}</span>
         </RouterLink>
       </div>
     </div>
@@ -453,6 +495,44 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         </table>
       </div>
     </article>
+  </div>
+
+  <!-- The recent log, without leaving the page or opening an SSH session. -->
+  <div v-if="logs" class="modal-backdrop" @click.self="logs = null">
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="lg-title">
+      <div class="card-head">
+        <h2 id="lg-title">{{ t('settings.tab.logs') }}</h2>
+        <div class="spacer row">
+          <select v-model="logLevel" :aria-label="t('logs.level')" @change="openLogs">
+            <option value="debug">{{ t('logs.all') }}</option>
+            <option value="info">{{ t('logs.info') }}</option>
+            <option value="warn">{{ t('logs.warn') }}</option>
+            <option value="error">{{ t('logs.error') }}</option>
+          </select>
+          <button class="btn sm icon ghost" :aria-label="t('common.refresh')" @click="openLogs">
+            <Icon name="refresh" :size="15" />
+          </button>
+          <button class="btn sm icon ghost" :aria-label="t('common.close')" @click="logs = null">
+            <Icon name="close" :size="15" />
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body log-body">
+        <p v-if="logs.loading" class="muted">{{ t('common.loading') }}</p>
+        <p v-else-if="!logs.entries.length" class="muted">{{ t('logs.none') }}</p>
+        <ol v-else class="loglist">
+          <li v-for="(e, i) in logs.entries" :key="i" :class="'lvl-' + (e.level || '').toLowerCase()">
+            <span class="log-time ltr">{{ new Date(e.time).toLocaleTimeString(store.locale) }}</span>
+            <span class="log-level ltr">{{ e.level }}</span>
+            <span class="log-msg">{{ e.message }}</span>
+            <span v-if="e.fields && Object.keys(e.fields).length" class="log-fields ltr">
+              {{ Object.entries(e.fields).map(([k, v]) => `${k}=${v}`).join(' ') }}
+            </span>
+          </li>
+        </ol>
+      </div>
+    </div>
   </div>
 </template>
 

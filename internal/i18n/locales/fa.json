@@ -513,5 +513,18 @@
   "interface.consequenceClients.one": "{n} مشتری روی آن حذف می‌شود.",
   "interface.consequenceClients.other": "{n} مشتری روی آن حذف می‌شوند.",
   "interface.consequenceDevices.one": "{n} دستگاه کانفیگش را از دست می‌دهد.",
-  "interface.consequenceDevices.other": "{n} دستگاه کانفیگشان را از دست می‌دهند."
+  "interface.consequenceDevices.other": "{n} دستگاه کانفیگشان را از دست می‌دهند.",
+  "overview.viewLogs": "لاگ اخیر",
+  "overview.backupNow": "همین حالا بکاپ بگیر",
+  "overview.backupTaken": "بکاپ گرفته شد: {name}",
+  "logs.level": "سطح",
+  "logs.all": "همه",
+  "logs.info": "اطلاعات و بالاتر",
+  "logs.warn": "هشدارها و خطاها",
+  "logs.error": "فقط خطاها",
+  "logs.none": "هنوز چیزی ثبت نشده.",
+  "settings.backup": "بکاپ",
+  "interface.restart": "راه‌اندازی دوبارهٔ این تونل",
+  "interface.restarted": "تونل دوباره راه‌اندازی شد.",
+  "interface.restartFailed": "بالا نیامد: {error}"
 }

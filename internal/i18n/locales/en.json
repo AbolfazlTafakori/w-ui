@@ -513,5 +513,18 @@
   "interface.consequenceClients.one": "{n} customer on it is deleted.",
   "interface.consequenceClients.other": "{n} customers on it are deleted.",
   "interface.consequenceDevices.one": "{n} device loses its configuration.",
-  "interface.consequenceDevices.other": "{n} devices lose their configuration."
+  "interface.consequenceDevices.other": "{n} devices lose their configuration.",
+  "overview.viewLogs": "Recent log",
+  "overview.backupNow": "Take a backup now",
+  "overview.backupTaken": "Backup taken: {name}",
+  "logs.level": "Level",
+  "logs.all": "Everything",
+  "logs.info": "Info and above",
+  "logs.warn": "Warnings and errors",
+  "logs.error": "Errors only",
+  "logs.none": "Nothing logged yet.",
+  "settings.backup": "Backup",
+  "interface.restart": "Restart this tunnel",
+  "interface.restarted": "Tunnel restarted.",
+  "interface.restartFailed": "It would not come up: {error}"
 }

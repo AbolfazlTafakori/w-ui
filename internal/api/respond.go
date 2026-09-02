@@ -90,24 +90,51 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-// humanMessage strips the prefixes that exist to locate an error in the code
-// from a message that is going to be read by a person.
+// humanMessage turns an error chain into a sentence for a person.
 //
-// "service: invalid input: listen port 99999 is out of range" tells an operator
-// two things they cannot use and one they can.
+// Go errors are wrapped with the package that raised them, so by the time one
+// reaches an operator it reads "wgdriver: WireGuard is only available on Linux".
+// The prefix is how a developer finds the code; it is noise to everyone else,
+// and capitalising it produces "Wgdriver", which is worse than leaving it.
 func humanMessage(err error) string {
 	msg := err.Error()
-	for _, prefix := range []string{
-		"service: invalid input: ",
-		"service: ",
-		"invalid input: ",
-	} {
-		msg = strings.TrimPrefix(msg, prefix)
+
+	// Strip leading "package: " segments, of which there may be several. Only a
+	// bare lowercase identifier counts, so a message that happens to contain a
+	// colon — a URL, or a quoted value — keeps it.
+	for {
+		i := strings.Index(msg, ": ")
+		if i <= 0 || i > 24 {
+			break
+		}
+		head := msg[:i]
+		if !isPackageWord(head) {
+			break
+		}
+		msg = msg[i+2:]
 	}
+
 	if msg == "" {
 		return err.Error()
 	}
-	// Capitalised, because it is now the start of a sentence rather than the
-	// tail of a chain.
 	return strings.ToUpper(msg[:1]) + msg[1:]
+}
+
+// isPackageWord reports whether a prefix looks like a package or layer name
+// rather than part of the sentence.
+func isPackageWord(w string) bool {
+	if w == "" {
+		return false
+	}
+	// "invalid input" is two words but is one of ours, and means nothing to a
+	// reader once the specific message follows it.
+	if w == "invalid input" {
+		return true
+	}
+	for _, r := range w {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
 }

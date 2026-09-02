@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -717,4 +718,47 @@ func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRestartInterface reopens one interface's driver.
+//
+// The reconciler heals most things on its own, but not a driver whose Open
+// failed at startup — a tunnel whose port was taken, or whose tool was not yet
+// installed. Without this the only way out is restarting the whole panel, which
+// disconnects every customer on every other interface to fix one.
+func (s *Server) handleRestartInterface(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+
+	var iface model.Interface
+	if err := s.db.WithContext(r.Context()).First(&iface, id).Error; err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	drv, err := backend.New(iface.Protocol)
+	if err != nil {
+		fail(w, s.log, fmt.Errorf("%w: no driver for %s", service.ErrInvalid, iface.Protocol))
+		return
+	}
+	if withLogger, ok := drv.(interface{ SetLogger(*slog.Logger) }); ok {
+		withLogger.SetLogger(s.log)
+	}
+
+	if err := drv.Open(r.Context(), &iface); err != nil {
+		// Reported rather than hidden: the reason a tunnel will not come up is
+		// the whole content of this request.
+		s.log.Warn("interface restart failed", "interface", iface.Name, "error", err)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":        false,
+			"interface": iface.Name,
+			"error":     humanMessage(err),
+		})
+		return
+	}
+
+	s.log.Info("interface restarted", "interface", iface.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "interface": iface.Name})
 }

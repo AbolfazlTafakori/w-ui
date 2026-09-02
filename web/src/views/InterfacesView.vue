@@ -80,6 +80,28 @@ async function guard(fn, successKey) {
 const setEnabled = (iface, on) =>
   guard(() => api.updateInterface(iface.id, { enabled: on }), 'interface.updated')
 
+// Reopening one tunnel's driver. The reconciler heals most things, but not a
+// driver whose Open failed at startup — a port that was taken, a tool that was
+// not installed yet. Without this the only way out is restarting the panel,
+// which disconnects every customer on every other interface to fix one.
+async function restart(iface) {
+  busy.value = true
+  try {
+    const res = await api.post(`/api/interfaces/${iface.id}/restart`)
+    if (res.ok) {
+      notify(t('interface.restarted'), 'success')
+    } else {
+      // The reason it will not come up is the whole point of asking.
+      notify(t('interface.restartFailed').replace('{error}', res.error), 'error')
+    }
+    await load()
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
 const ask = ref(null)
 
 async function runConfirmed() {
@@ -303,6 +325,14 @@ async function submitForm(input) {
               <div class="actions">
                 <button class="act" :title="t('action.edit')" @click="formFor = { iface: i }">
                   <Icon name="edit" :size="16" />
+                </button>
+                <button
+                  class="act"
+                  :title="t('interface.restart')"
+                  :disabled="busy"
+                  @click="restart(i)"
+                >
+                  <Icon name="refresh" :size="16" />
                 </button>
                 <button class="act" :title="t('action.details')" @click="detailFor = i">
                   <Icon name="info" :size="16" />
