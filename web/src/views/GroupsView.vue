@@ -367,9 +367,13 @@ function viewMembers(g) {
   <div class="card">
     <div v-if="loading" class="empty"><span class="spin"></span></div>
 
-    <div v-else-if="!items.length" class="empty">
+    <div v-else-if="!items.length" class="empty empty-cta">
       <p>{{ t('group.none') }}</p>
-      <p class="small">{{ t('group.noneHint') }}</p>
+      <p class="small muted">{{ t('group.noneHint') }}</p>
+      <button class="btn" @click="openCreate">
+        <Icon name="plus" :size="15" />
+        <span>{{ t('group.add') }}</span>
+      </button>
     </div>
 
     <div v-else class="table-wrap">

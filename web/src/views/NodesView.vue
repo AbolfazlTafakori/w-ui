@@ -317,9 +317,13 @@ function latencyTone(ms) {
       </tbody>
     </table>
 
-    <div v-if="!remote.length" class="empty">
+    <div v-if="!remote.length" class="empty empty-cta">
       <p>{{ t('node.none') }}</p>
       <p class="small muted">{{ t('node.noneHint') }}</p>
+      <button class="btn" @click="openAdd">
+        <Icon name="plus" :size="15" />
+        <span>{{ t('node.add') }}</span>
+      </button>
     </div>
   </div>
 

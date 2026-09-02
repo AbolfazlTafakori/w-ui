@@ -209,7 +209,7 @@
   "group.ungrouped": "Ungrouped",
   "group.name": "Group",
   "group.none": "No groups yet.",
-  "group.noneHint": "Give a client a group name and it will show up here.",
+  "group.noneHint": "Create one now and assign customers to it, or type a name into a customer's Group field.",
   "group.rename": "Rename group",
   "group.renamed": "Group renamed",
   "group.newName": "New name",
@@ -529,5 +529,11 @@
   "interface.restartFailed": "It would not come up: {error}",
   "settings.nothingToSave": "Nothing has changed.",
   "settings.nothingToRevert": "Nothing to undo.",
-  "group.pickSomeone": "Choose at least one customer."
+  "group.pickSomeone": "Choose at least one customer.",
+  "client.noneNoInterface": "There is nowhere to put a customer yet.",
+  "client.noneNoInterfaceHint": "A customer lives on a tunnel. Create one first, then come back.",
+  "client.noneMatch": "No customer matches those filters.",
+  "client.clearFilters": "Clear the filters",
+  "client.noneHint": "Add your first customer and hand them their configuration.",
+  "client.add": "Add customer"
 }

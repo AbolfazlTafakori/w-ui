@@ -236,9 +236,13 @@ async function submitForm(input) {
   <div class="card">
     <div v-if="loading" class="empty"><span class="spin"></span></div>
 
-    <div v-else-if="!interfaces.length" class="empty">
+    <div v-else-if="!interfaces.length" class="empty empty-cta">
       <p>{{ t('interface.noneYet') }}</p>
-      <p class="small">{{ t('interface.noneYetHint') }}</p>
+      <p class="small muted">{{ t('interface.noneYetHint') }}</p>
+      <button class="btn" @click="formFor = {}">
+        <Icon name="plus" :size="15" />
+        <span>{{ t('interface.create') }}</span>
+      </button>
     </div>
 
     <div v-else class="table-wrap">

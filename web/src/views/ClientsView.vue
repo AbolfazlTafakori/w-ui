@@ -115,6 +115,16 @@ const activeFilters = computed(
   () => [search.value, statusFilter.value, groupFilter.value].filter(Boolean).length,
 )
 
+// Clearing every filter at once. Undoing three separately, to find out whether
+// the list is empty or merely filtered, is work the panel should do.
+function clearFilters() {
+  search.value = ''
+  statusFilter.value = ''
+  groupFilter.value = ''
+  currentPage.value = 1
+  load()
+}
+
 const strip = computed(() => {
   const s = stats.value
   if (!s) return []
@@ -526,7 +536,32 @@ async function submitForm(input) {
     </div>
 
     <div v-if="loading" class="empty"><span class="spin"></span></div>
-    <div v-else-if="!page || !page.items.length" class="empty">{{ t('client.none') }}</div>
+    <div v-else-if="!page || !page.items.length" class="empty empty-cta">
+      <template v-if="!interfaces.length">
+        <p>{{ t('client.noneNoInterface') }}</p>
+        <p class="small muted">{{ t('client.noneNoInterfaceHint') }}</p>
+        <RouterLink to="/interfaces" class="btn">
+          <Icon name="server" :size="15" />
+          <span>{{ t('interface.create') }}</span>
+        </RouterLink>
+      </template>
+      <template v-else-if="search || statusFilter || groupFilter">
+        <!-- Nothing matched, which is a different thing from having nothing. -->
+        <p>{{ t('client.noneMatch') }}</p>
+        <button class="btn ghost" @click="clearFilters">
+          <Icon name="close" :size="15" />
+          <span>{{ t('client.clearFilters') }}</span>
+        </button>
+      </template>
+      <template v-else>
+        <p>{{ t('client.none') }}</p>
+        <p class="small muted">{{ t('client.noneHint') }}</p>
+        <button class="btn" @click="formFor = {}">
+          <Icon name="plus" :size="15" />
+          <span>{{ t('client.add') }}</span>
+        </button>
+      </template>
+    </div>
 
     <template v-else>
       <!-- Table on a desk, cards on a phone. A ten-column table forced into a

@@ -209,7 +209,7 @@
   "group.ungrouped": "بدون گروه",
   "group.name": "گروه",
   "group.none": "هنوز گروهی نیست.",
-  "group.noneHint": "به یک کلاینت نام گروه بده تا اینجا نمایان شود.",
+  "group.noneHint": "همین حالا یکی بسازید و مشتری‌ها را به آن اختصاص دهید، یا نامی در فیلد Group یک مشتری بنویسید.",
   "group.rename": "تغییر نام گروه",
   "group.renamed": "نام گروه تغییر کرد",
   "group.newName": "نام جدید",
@@ -529,5 +529,11 @@
   "interface.restartFailed": "بالا نیامد: {error}",
   "settings.nothingToSave": "چیزی تغییر نکرده.",
   "settings.nothingToRevert": "چیزی برای برگرداندن نیست.",
-  "group.pickSomeone": "حداقل یک مشتری انتخاب کنید."
+  "group.pickSomeone": "حداقل یک مشتری انتخاب کنید.",
+  "client.noneNoInterface": "هنوز جایی برای گذاشتن مشتری نیست.",
+  "client.noneNoInterfaceHint": "هر مشتری روی یک تونل زندگی می‌کند. اول یکی بسازید، بعد برگردید.",
+  "client.noneMatch": "هیچ مشتری‌ای با این فیلترها نیست.",
+  "client.clearFilters": "پاک‌کردن فیلترها",
+  "client.noneHint": "اولین مشتری را اضافه کنید و کانفیگش را تحویل بدهید.",
+  "client.add": "افزودن مشتری"
 }

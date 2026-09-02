@@ -2357,3 +2357,22 @@ textarea.bad:focus {
     transition: none;
   }
 }
+
+/* An empty state that offers the next step, rather than only reporting that
+   there is nothing. The first thing an operator sees on a new panel is one of
+   these, and "no customers yet" alone leaves them to guess where to go. */
+.empty-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 44px 24px;
+  text-align: center;
+}
+.empty-cta p {
+  margin: 0;
+  max-width: 46ch;
+}
+.empty-cta .btn {
+  margin-top: 4px;
+}
