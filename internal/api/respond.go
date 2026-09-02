@@ -104,7 +104,10 @@ func humanMessage(err error) string {
 	// colon — a URL, or a quoted value — keeps it.
 	for {
 		i := strings.Index(msg, ": ")
-		if i <= 0 || i > 24 {
+		// Long enough for the longest sentinel below. The length is only a cheap
+		// first filter; what actually keeps a real sentence intact is the strict
+		// check that follows.
+		if i <= 0 || i > 40 {
 			break
 		}
 		head := msg[:i]
@@ -126,9 +129,14 @@ func isPackageWord(w string) bool {
 	if w == "" {
 		return false
 	}
-	// "invalid input" is two words but is one of ours, and means nothing to a
-	// reader once the specific message follows it.
-	if w == "invalid input" {
+	// Our own sentinels. Each is a marker for code to match on with errors.Is,
+	// and the message that follows already says what it means — "Device limit
+	// reached: Roya already has 1 of 1 devices" says it twice.
+	switch w {
+	case "invalid input",
+		"device limit reached",
+		"no addresses left on this interface",
+		"not found":
 		return true
 	}
 	for _, r := range w {

@@ -24,6 +24,12 @@ func TestMessagesReadAsSentences(t *testing.T) {
 			"WireGuard is only available on Linux (running on windows)"},
 		{errors.New("ovpndriver: openvpn is not installed"),
 			"Openvpn is not installed"},
+		// Our own sentinels are markers for errors.Is, and the message after
+		// them already says what they mean.
+		{errors.New("service: device limit reached: Roya already has 1 of 1 devices"),
+			"Roya already has 1 of 1 devices"},
+		{errors.New("no addresses left on this interface: every address on tiny is in use"),
+			"Every address on tiny is in use"},
 		// A colon inside the message is not a prefix and must survive.
 		{errors.New("could not reach it: Get \"http://127.0.0.1:9/api/system\""),
 			"Could not reach it: Get \"http://127.0.0.1:9/api/system\""},

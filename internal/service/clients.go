@@ -99,7 +99,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 
 	// Addresses are reserved before the transaction opens and released if it
 	// fails, so a rolled-back create cannot leak addresses out of the pool.
-	addrs, release, err := s.reserve(iface.ID, len(names))
+	addrs, release, err := s.reserve(ctx, iface.ID, len(names))
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (s *Clients) buildAccount(client *model.Client, iface *model.Interface, nam
 }
 
 // reserve allocates n addresses and returns a function that gives them back.
-func (s *Clients) reserve(interfaceID uint, n int) ([]netip.Addr, func(), error) {
+func (s *Clients) reserve(ctx context.Context, interfaceID uint, n int) ([]netip.Addr, func(), error) {
 	alloc, err := s.pools.Get(interfaceID)
 	if err != nil {
 		return nil, nil, err
@@ -195,7 +195,14 @@ func (s *Clients) reserve(interfaceID uint, n int) ([]netip.Addr, func(), error)
 		if err != nil {
 			release()
 			if errors.Is(err, ipam.ErrPoolFull) {
-				return nil, nil, fmt.Errorf("%w: interface %d", ErrPoolExhausted, interfaceID)
+				// Names the tunnel and says how to get out of it. "interface 1"
+				// is an identifier the operator has never seen, on a page that
+				// shows names.
+				name := s.interfaceName(ctx, interfaceID)
+				return nil, nil, fmt.Errorf(
+					"%w: every address on %s is in use. Give it a wider subnet, "+
+						"or remove devices that are no longer needed",
+					ErrPoolExhausted, name)
 			}
 			return nil, nil, err
 		}
@@ -251,7 +258,17 @@ func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) (*mode
 		return nil, err
 	}
 	if len(client.Accounts) >= client.DeviceLimit {
-		return nil, fmt.Errorf("%w: %d of %d in use", ErrDeviceLimit, len(client.Accounts), client.DeviceLimit)
+		return nil, &FieldError{
+			Field: "deviceLimit",
+			// Deliberately not opened with the customer's name. Messages are
+			// capitalised on the way out, and a name is not ours to re-case:
+			// "iPhone user" would be shown back as "IPhone user". The name is
+			// on the page this appears on regardless.
+			Err: fmt.Errorf(
+				"%w: this customer already has %d of %d devices (%s). Raise their "+
+					"device limit to issue another",
+				ErrDeviceLimit, len(client.Accounts), client.DeviceLimit, client.Name),
+		}
 	}
 
 	name = strings.TrimSpace(name)
@@ -264,7 +281,7 @@ func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) (*mode
 		return nil, err
 	}
 
-	addrs, release, err := s.reserve(iface.ID, 1)
+	addrs, release, err := s.reserve(ctx, iface.ID, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -934,4 +951,16 @@ func slug(s string) string {
 		out = out[:32]
 	}
 	return out
+}
+
+// interfaceName resolves an interface id to the name shown in the panel.
+//
+// Errors quote the name because that is what the operator has on screen; the
+// id is a database detail they have never been shown.
+func (s *Clients) interfaceName(ctx context.Context, id uint) string {
+	var iface model.Interface
+	if err := s.db.WithContext(ctx).Select("name").First(&iface, id).Error; err != nil {
+		return fmt.Sprintf("interface %d", id)
+	}
+	return iface.Name
 }
