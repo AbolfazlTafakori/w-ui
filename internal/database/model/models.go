@@ -302,6 +302,9 @@ func AllModels() []any {
 		&APIToken{},
 		&Group{},
 		&AccountEndpoint{},
+		&Outbound{},
+		&RoutingRule{},
+		&Host{},
 		&Setting{},
 	}
 }

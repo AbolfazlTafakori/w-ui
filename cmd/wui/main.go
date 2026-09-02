@@ -32,6 +32,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/reconciler"
+	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/shaper"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
@@ -111,7 +112,12 @@ func run() error {
 	shp := shaper.New(log)
 	defer shp.Close()
 
+	router := routing.NewApplier(log)
+	hops := routing.NewHopManager(log)
+
 	settings := service.NewSettings(db, cfg.DefaultLocale)
+	outbounds := service.NewOutbounds(db, log)
+	routes := service.NewRouting(db, log)
 	notifier := notify.New(log)
 	notifier.SetConfig(settings.Notify(context.Background()))
 
@@ -138,11 +144,24 @@ func run() error {
 		return err
 	}
 
+	// The two built-in outbounds are created before the reconciler starts, so
+	// its first tick already has somewhere to send traffic.
+	if err := outbounds.EnsureBuiltins(ctx); err != nil {
+		return err
+	}
+	// Names in the policy are resolved on a timer; the first pass runs now so
+	// the opening tick is not applied with empty sets.
+	routes.StartResolver(ctx)
+
 	rec := reconciler.New(reconciler.Options{
 		DB:       db,
 		Enforcer: enforcer,
 		Backends: drivers,
 		Shaper:   shp,
+		Router:   router,
+		Hops:     hops,
+		Policy:   routes.Policy,
+		HopsOf:   func(ctx context.Context) ([]routing.HopSpec, error) { return outbounds.HopSpecs(ctx) },
 		Notifier: notifier,
 		Interval: cfg.CollectInterval,
 		Log:      log,
@@ -153,6 +172,16 @@ func run() error {
 		log.Warn("rate limiting inactive: speed limits are recorded but not applied", "reason", err)
 	} else {
 		log.Info("rate limiting active", "engine", "tc/htb")
+	}
+
+	if err := router.Health(ctx); err != nil {
+		// Said once, plainly. Without this an operator can configure a foreign
+		// exit, see it listed, and never learn that every customer is still
+		// leaving through the server's own address.
+		log.Warn("traffic routing inactive: outbounds and routing rules are stored but not applied",
+			"reason", err)
+	} else {
+		log.Info("traffic routing active", "engine", "nftables/fwmark")
 	}
 
 	if err := enforcer.Health(ctx); err != nil {

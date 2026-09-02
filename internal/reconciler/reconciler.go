@@ -31,14 +31,31 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/shaper"
 )
 
 // Options configures the loop.
+// PolicySource hands the reconciler the routing policy for this tick.
+//
+// A function rather than the service itself, so the reconciler does not have to
+// import the service package that imports it back.
+type PolicySource func(context.Context) (routing.Policy, error)
+
+// HopSource lists the upstream tunnels that should be up.
+type HopSource func(context.Context) ([]routing.HopSpec, error)
+
 type Options struct {
 	DB       *gorm.DB
 	Enforcer enforce.Enforcer
 	Shaper   shaper.Shaper
+
+	// Router applies the policy. Nil disables routing entirely, which is what
+	// a panel with no outbounds configured wants.
+	Router *routing.Applier
+	Hops   *routing.HopManager
+	Policy PolicySource
+	HopsOf HopSource
 	Notifier *notify.Notifier
 	Backends map[uint]backend.Backend // by interface id
 	Interval time.Duration
@@ -63,6 +80,10 @@ type Reconciler struct {
 	db       *gorm.DB
 	enforcer enforce.Enforcer
 	shaper   shaper.Shaper
+	router   *routing.Applier
+	hops     *routing.HopManager
+	policyOf PolicySource
+	hopsOf   HopSource
 	notifier *notify.Notifier
 	backends map[uint]backend.Backend
 	interval time.Duration
@@ -71,6 +92,9 @@ type Reconciler struct {
 
 	mu    sync.RWMutex
 	stats Stats
+	// lastRouteErr is the routing failure already reported, for the same reason
+	// as lastShapeErr below.
+	lastRouteErr string
 	// lastShapeErr is the shaping failure already reported. A server whose
 	// kernel cannot shape would otherwise log the same line every couple of
 	// seconds for as long as it runs, which buries everything else.
@@ -89,6 +113,10 @@ func New(o Options) *Reconciler {
 		db:       o.DB,
 		enforcer: o.Enforcer,
 		shaper:   o.Shaper,
+		router:   o.Router,
+		hops:     o.Hops,
+		policyOf: o.Policy,
+		hopsOf:   o.HopsOf,
 		notifier: o.Notifier,
 		backends: o.Backends,
 		interval: interval,
@@ -382,6 +410,15 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 		}
 	}
 
+	// Routing comes after enforcement and before the drivers.
+	//
+	// After enforcement, because a customer who has just run out should be
+	// stopped rather than re-routed. Before the drivers, because a peer that is
+	// about to be added should find its exit already in place — the reverse
+	// order gives the customer a working tunnel that briefly leaves through the
+	// wrong address, which is the one thing a foreign exit is bought to avoid.
+	r.applyRouting(ctx)
+
 	for ifaceID, b := range r.backends {
 		want := d.perIface[ifaceID]
 		if want == nil {
@@ -401,6 +438,66 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 		}
 	}
 	return d.clients, d.accounts, nil
+}
+
+// applyRouting brings the hops up and pushes the policy to the kernel.
+//
+// Failures here are logged once and never fatal. A panel that stopped enforcing
+// quotas because an upstream hop was unreachable would turn one operator's
+// misconfiguration into free traffic for everybody.
+func (r *Reconciler) applyRouting(ctx context.Context) {
+	if r.router == nil || r.policyOf == nil {
+		return
+	}
+
+	// Hops first: the policy that follows references their devices, and a
+	// routing rule pointing at an interface that does not exist yet would drop
+	// traffic into a table with no route.
+	if r.hops != nil && r.hopsOf != nil {
+		if specs, err := r.hopsOf(ctx); err != nil {
+			r.noteRouteErr(err)
+			return
+		} else if err := r.hops.Sync(ctx, specs); err != nil {
+			r.noteRouteErr(err)
+			// Carrying on deliberately: the hops that did come up should still
+			// get their rules, and the ones that did not will simply have no
+			// traffic steered at them.
+		}
+	}
+
+	policy, err := r.policyOf(ctx)
+	if err != nil {
+		r.noteRouteErr(err)
+		return
+	}
+	if err := r.router.Apply(ctx, policy); err != nil {
+		r.noteRouteErr(err)
+		return
+	}
+	r.clearRouteErr()
+}
+
+func (r *Reconciler) noteRouteErr(err error) {
+	msg := err.Error()
+	r.mu.Lock()
+	repeat := r.lastRouteErr == msg
+	r.lastRouteErr = msg
+	r.mu.Unlock()
+	if !repeat {
+		// Said once. A server whose kernel cannot do this would otherwise log
+		// the same line every two seconds and bury everything else.
+		r.log.Warn("traffic routing is not being applied", "error", msg)
+	}
+}
+
+func (r *Reconciler) clearRouteErr() {
+	r.mu.Lock()
+	had := r.lastRouteErr != ""
+	r.lastRouteErr = ""
+	r.mu.Unlock()
+	if had {
+		r.log.Info("traffic routing is being applied again")
+	}
 }
 
 // readDesired builds the target state from the database in two queries.
