@@ -365,6 +365,11 @@ th.ltr {
   flex-shrink: 0;
 }
 .brand-block {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -1984,4 +1989,13 @@ body.light .tag.geekblue {
    colours were chosen against near-black. */
 body.light .log-view {
   background: var(--surface-2);
+}
+
+/* Without a pointer there is no hover, so the rail stays open once it has been
+   opened rather than collapsing to icons the moment a finger lifts. */
+@media (hover: none) {
+  .sidebar:not(.expanded) .navlink .label,
+  .sidebar:not(.expanded) .brand-name {
+    display: none;
+  }
 }

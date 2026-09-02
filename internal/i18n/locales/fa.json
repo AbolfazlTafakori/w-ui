@@ -418,5 +418,6 @@
   "group.delete": "حذف گروه",
   "group.confirmDelete": "گروه «{name}» حذف شود؟ مشتری‌هایش می‌مانند و فقط از گروه خارج می‌شوند.",
   "group.deleted": "گروه حذف شد. {n} مشتری از گروه خارج شد.",
-  "group.empty": "خالی"
+  "group.empty": "خالی",
+  "client.speed": "سرعت"
 }

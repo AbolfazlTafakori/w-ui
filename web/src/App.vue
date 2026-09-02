@@ -135,10 +135,20 @@ function reload() {
       @mouseleave="hovered = false"
     >
       <div class="sider-brand">
-        <RouterLink to="/" class="brand-block" :title="t('app.name')">
+        <!-- The mark toggles the rail. Hover is the quick way to peek at the
+             labels, but a tablet has no pointer to hover with: without this the
+             rail would be stuck at icon width there, and the buttons below —
+             which only appear once expanded — could never be reached at all. -->
+        <button
+          class="brand-block"
+          type="button"
+          :aria-expanded="expanded"
+          :title="pinned ? t('nav.unpin') : t('nav.pin')"
+          @click="togglePinned"
+        >
           <span class="brand-mark">W</span>
           <span v-show="expanded" class="brand-name">{{ t('app.name') }}</span>
-        </RouterLink>
+        </button>
 
         <div v-show="expanded" class="brand-actions">
           <button

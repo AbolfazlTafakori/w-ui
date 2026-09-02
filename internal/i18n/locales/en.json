@@ -418,5 +418,6 @@
   "group.delete": "Delete group",
   "group.confirmDelete": "Delete the group \"{name}\"? Its customers are kept and simply ungrouped.",
   "group.deleted": "Group deleted. {n} customer(s) ungrouped.",
-  "group.empty": "Empty"
+  "group.empty": "Empty",
+  "client.speed": "Speed"
 }

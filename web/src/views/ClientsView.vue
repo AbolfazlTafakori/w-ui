@@ -143,6 +143,23 @@ function toggleOne(id, checked) {
 const clientOnline = (c) => (c.accounts || []).some((a) => isOnline(a.lastHandshake))
 const usedPercent = (c) => percent(c.usedBytes, c.quotaBytes)
 
+// Current throughput, derived from consecutive readings of the stored total.
+// The panel has no per-second counter; two totals and the gap between them is
+// the same arithmetic the overview already does for the host.
+const lastSeen = new Map()
+function speedOf(c) {
+  const now = Date.now()
+  const prev = lastSeen.get(c.id)
+  lastSeen.set(c.id, { bytes: c.usedBytes, at: now })
+
+  if (!prev || now === prev.at) return '—'
+  const delta = c.usedBytes - prev.bytes
+  // A reset makes the total go backwards; reporting a negative speed would be
+  // worse than reporting none.
+  if (delta <= 0) return '—'
+  return `${bytes((delta * 1000) / (now - prev.at), store.locale)}/s`
+}
+
 function meterClass(p) {
   if (p == null) return ''
   if (p >= 100) return 'bad'
@@ -466,15 +483,16 @@ async function submitForm(input) {
                    behind a checkbox, six action buttons, a toggle and a status
                    badge: finding a customer by name meant the eye jumping past
                    four columns of controls on every one of them. -->
+              <th class="w-actions">{{ t('table.actions') }}</th>
+              <th class="w-sm">{{ t('table.enabled') }}</th>
+              <th class="w-md">{{ t('table.online') }}</th>
               <th class="w-name">{{ t('nav.clients') }}</th>
               <th v-if="hasGroups" class="w-md">{{ t('group.name') }}</th>
               <th class="w-md">{{ t('interface.name') }}</th>
               <th class="w-traffic">{{ t('client.traffic') }}</th>
+              <th class="w-md">{{ t('client.speed') }}</th>
               <th class="w-md">{{ t('client.remaining') }}</th>
               <th class="w-exp">{{ t('client.expires') }}</th>
-              <th class="w-md">{{ t('table.online') }}</th>
-              <th class="w-sm">{{ t('table.enabled') }}</th>
-              <th class="w-actions right">{{ t('table.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -486,6 +504,41 @@ async function submitForm(input) {
                   :aria-label="c.name"
                   @change="toggleOne(c.id, $event.target.checked)"
                 />
+              </td>
+
+              <td class="w-actions">
+                <div class="actions">
+                  <button class="act" :title="t('device.showQR')" @click="shareFor = c">
+                    <Icon name="qr" :size="16" />
+                  </button>
+                  <button class="act" :title="t('action.details')" @click="router.push(`/clients/${c.id}`)">
+                    <Icon name="info" :size="16" />
+                  </button>
+                  <button class="act" :title="t('action.resetTraffic')" @click="resetOne(c)">
+                    <Icon name="refresh" :size="16" />
+                  </button>
+                  <button class="act" :title="t('action.edit')" @click="formFor = { client: c }">
+                    <Icon name="edit" :size="16" />
+                  </button>
+                  <button class="act danger" :title="t('action.delete')" @click="removeOne(c)">
+                    <Icon name="trash" :size="16" />
+                  </button>
+                </div>
+              </td>
+
+              <td>
+                <Toggle
+                  :model-value="c.status === 'active'"
+                  :label="c.name"
+                  :disabled="c.status === 'expired' || c.status === 'exhausted'"
+                  @update:model-value="(v) => setEnabled(c, v)"
+                />
+              </td>
+
+              <td>
+                <span class="tag" :class="statusTag(c).color">
+                  <i v-if="statusTag(c).dot" class="dot"></i>{{ statusTag(c).label }}
+                </span>
               </td>
 
               <td>
@@ -516,6 +569,10 @@ async function submitForm(input) {
               </td>
 
               <td>
+                <span class="num ltr muted small">{{ speedOf(c) }}</span>
+              </td>
+
+              <td>
                 <span class="tag num ltr" :class="remainingTag(c).color">{{ remainingTag(c).label }}</span>
               </td>
 
@@ -528,41 +585,6 @@ async function submitForm(input) {
                   {{ expiryTag(c).label }}
                 </span>
               </td>
-              <td>
-                <span class="tag" :class="statusTag(c).color">
-                  <i v-if="statusTag(c).dot" class="dot"></i>{{ statusTag(c).label }}
-                </span>
-              </td>
-
-              <td>
-                <Toggle
-                  :model-value="c.status === 'active'"
-                  :label="c.name"
-                  :disabled="c.status === 'expired' || c.status === 'exhausted'"
-                  @update:model-value="(v) => setEnabled(c, v)"
-                />
-              </td>
-
-              <td class="right">
-                <div class="actions">
-                  <button class="act" :title="t('device.showQR')" @click="shareFor = c">
-                    <Icon name="qr" :size="16" />
-                  </button>
-                  <button class="act" :title="t('action.details')" @click="router.push(`/clients/${c.id}`)">
-                    <Icon name="info" :size="16" />
-                  </button>
-                  <button class="act" :title="t('action.resetTraffic')" @click="resetOne(c)">
-                    <Icon name="refresh" :size="16" />
-                  </button>
-                  <button class="act" :title="t('action.edit')" @click="formFor = { client: c }">
-                    <Icon name="edit" :size="16" />
-                  </button>
-                  <button class="act danger" :title="t('action.delete')" @click="removeOne(c)">
-                    <Icon name="trash" :size="16" />
-                  </button>
-                </div>
-              </td>
-
             </tr>
           </tbody>
         </table>
