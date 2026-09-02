@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -44,7 +45,12 @@ func fail(w http.ResponseWriter, log *slog.Logger, err error) {
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrInvalid),
 		errors.Is(err, service.ErrDeviceLimit),
-		errors.Is(err, service.ErrPoolExhausted):
+		errors.Is(err, service.ErrPoolExhausted),
+		// Raised deeper down, by the code that parses an operator's address and
+		// port lists. Without this a typo in one entry of a list is reported as
+		// an internal error, which tells the operator nothing and suggests the
+		// panel is broken rather than the input.
+		errors.Is(err, routing.ErrInvalidPolicy):
 		// The field travels with the message so the page can put it under the
 		// input it is about rather than in a toast that names nothing.
 		if field := service.FieldOf(err); field != "" {
@@ -136,7 +142,8 @@ func isPackageWord(w string) bool {
 	case "invalid input",
 		"device limit reached",
 		"no addresses left on this interface",
-		"not found":
+		"not found",
+		"invalid policy":
 		return true
 	}
 	for _, r := range w {

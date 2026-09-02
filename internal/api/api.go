@@ -18,6 +18,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/reconciler"
+	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/shaper"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
@@ -45,6 +46,10 @@ type Server struct {
 	dbSource  string
 	sys       *sysinfo.Collector
 	rec       *reconciler.Reconciler
+	outbounds *service.Outbounds
+	routing   *service.Routing
+	hosts     *service.Hosts
+	router    *routing.Applier
 }
 
 // Options configures a Server.
@@ -67,6 +72,9 @@ type Options struct {
 	DBSource   string
 	SysInfo    *sysinfo.Collector
 	Reconciler *reconciler.Reconciler
+	Outbounds  *service.Outbounds
+	Routing    *service.Routing
+	Router     *routing.Applier
 }
 
 // New builds the API server.
@@ -92,6 +100,10 @@ func New(o Options) *Server {
 		dbSource:  o.DBSource,
 		sys:       o.SysInfo,
 		rec:       o.Reconciler,
+		outbounds: o.Outbounds,
+		routing:   o.Routing,
+		hosts:     service.NewHosts(o.DB, o.Logger),
+		router:    o.Router,
 	}
 }
 

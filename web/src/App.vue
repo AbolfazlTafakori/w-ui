@@ -1,24 +1,72 @@
 <script setup>
 import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
-import { useRouter, RouterLink, RouterView } from 'vue-router'
+import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
 import { store, t, notify, signOut, loadMessages } from './lib/store.js'
 import Icon from './components/Icon.vue'
 import { themeMode, cycleTheme } from './lib/theme.js'
 
 const router = useRouter()
+const route = useRoute()
 
 const signedIn = computed(() => !!store.admin)
 
+// The order traffic actually flows in: what comes in, who it belongs to, then
+// where it goes out and by which route. Settings and the config templates sit
+// below as collapsible groups, and the docs last.
 const nav = [
   { to: '/', key: 'nav.overview', icon: 'dashboard', exact: true },
+  { to: '/interfaces', key: 'nav.interfaces', icon: 'inbound' },
   { to: '/clients', key: 'nav.clients', icon: 'users' },
   { to: '/groups', key: 'nav.groups', icon: 'tag' },
-  { to: '/interfaces', key: 'nav.interfaces', icon: 'server' },
   { to: '/nodes', key: 'nav.nodes', icon: 'hdd' },
+  { to: '/hosts', key: 'nav.hosts', icon: 'globe' },
+  { to: '/outbounds', key: 'nav.outbounds', icon: 'outbound' },
+  { to: '/routing', key: 'nav.routing', icon: 'route' },
   { to: '/sharing', key: 'nav.sharing', icon: 'eye' },
-  { to: '/api-docs', key: 'nav.api', icon: 'database' },
-  { to: '/settings', key: 'nav.settings', icon: 'settings' },
+  {
+    key: 'nav.settings',
+    icon: 'settings',
+    children: [
+      { to: '/settings/general', key: 'settings.tab.general', icon: 'settings' },
+      { to: '/settings/security', key: 'settings.tab.security', icon: 'lock' },
+      { to: '/settings/clients', key: 'settings.tab.clients', icon: 'users' },
+      { to: '/settings/notify', key: 'settings.tab.notify', icon: 'alert' },
+      { to: '/settings/backups', key: 'settings.tab.backups', icon: 'database' },
+      { to: '/settings/system', key: 'settings.tab.system', icon: 'server' },
+    ],
+  },
+  {
+    key: 'nav.configs',
+    icon: 'code',
+    children: [
+      { to: '/configs/engine', key: 'nav.configs.engine', icon: 'shield' },
+      { to: '/configs/templates', key: 'nav.configs.templates', icon: 'code' },
+      { to: '/configs/logs', key: 'nav.configs.logs', icon: 'info' },
+    ],
+  },
+  { to: '/api-docs', key: 'nav.api', icon: 'link' },
 ]
+
+// Which collapsible groups are open. A group containing the current page opens
+// itself, so arriving by URL never leaves the menu pointing somewhere else.
+const openGroups = ref(new Set())
+
+function groupHasActive(item) {
+  return !!item.children?.some((c) => route.path.startsWith(c.to))
+}
+function isGroupOpen(item) {
+  return openGroups.value.has(item.key) || groupHasActive(item)
+}
+function toggleGroup(item) {
+  const next = new Set(openGroups.value)
+  if (next.has(item.key)) next.delete(item.key)
+  else next.add(item.key)
+  // A group holding the current page cannot be closed by clicking it -- the
+  // page would stay open with its own entry hidden, which reads as the menu
+  // having lost track of where you are.
+  if (groupHasActive(item)) next.add(item.key)
+  openGroups.value = next
+}
 
 const REPO_URL = 'https://github.com/AbolfazlTafakori/w-ui'
 const PINNED_KEY = 'wui.sidebar.pinned'
@@ -203,17 +251,55 @@ function reload() {
       </div>
 
       <nav class="sider-nav">
-        <RouterLink
-          v-for="item in nav"
-          :key="item.to"
-          :to="item.to"
-          class="navlink"
-          :class="{ active: isActive(item) }"
-          :title="t(item.key)"
-        >
-          <Icon :name="item.icon" :size="16" />
-          <span v-show="expanded" class="label">{{ t(item.key) }}</span>
-        </RouterLink>
+        <template v-for="item in nav" :key="item.key || item.to">
+          <!-- A plain destination. -->
+          <RouterLink
+            v-if="!item.children"
+            :to="item.to"
+            class="navlink"
+            :class="{ active: isActive(item) }"
+            :title="t(item.key)"
+          >
+            <Icon :name="item.icon" :size="16" />
+            <span v-show="expanded" class="label">{{ t(item.key) }}</span>
+          </RouterLink>
+
+          <!-- A group that opens in place, pushing what follows down. -->
+          <template v-else>
+            <button
+              type="button"
+              class="navlink as-button"
+              :class="{ active: groupHasActive(item), open: isGroupOpen(item) }"
+              :title="t(item.key)"
+              :aria-expanded="isGroupOpen(item)"
+              @click="toggleGroup(item)"
+            >
+              <Icon :name="item.icon" :size="16" />
+              <span v-show="expanded" class="label">{{ t(item.key) }}</span>
+              <Icon
+                v-show="expanded"
+                class="chev"
+                :class="{ turned: isGroupOpen(item) }"
+                name="chevronDown"
+                :size="14"
+              />
+            </button>
+
+            <div v-show="isGroupOpen(item) && expanded" class="subnav">
+              <RouterLink
+                v-for="child in item.children"
+                :key="child.to"
+                :to="child.to"
+                class="navlink sub"
+                :class="{ active: route.path.startsWith(child.to) }"
+                :title="t(child.key)"
+              >
+                <Icon :name="child.icon" :size="14" />
+                <span class="label">{{ t(child.key) }}</span>
+              </RouterLink>
+            </div>
+          </template>
+        </template>
       </nav>
 
       <div class="sider-utility">

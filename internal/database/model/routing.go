@@ -93,7 +93,11 @@ type Outbound struct {
 	// Mark is the packet mark that steers traffic into this outbound's routing
 	// table. Assigned by the panel, never by the operator: a mark that collided
 	// with another program's would hijack its traffic.
-	Mark uint32 `gorm:"not null;default:0;uniqueIndex" json:"mark"`
+	//
+	// Indexed but not unique. It is derived from the row id, so two outbounds
+	// cannot share one; and the outbounds that dial nothing all carry zero,
+	// which a unique index would reject on the second of them.
+	Mark uint32 `gorm:"not null;default:0;index" json:"mark"`
 
 	Note string `gorm:"size:256" json:"note"`
 

@@ -2420,3 +2420,407 @@ textarea.bad:focus {
     opacity: 0.7;
   }
 }
+
+/* ── routing, outbounds, hosts and configs ──────────────────────────────────
+   Everything below belongs to the pages that decide where traffic goes. It is
+   kept in the global sheet rather than in scoped blocks because several of
+   these classes are shared across three views, and a scoped copy in each was
+   how the Nodes page once ended up with no layout at all. */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.toolbar:last-child {
+  border-bottom: 0;
+}
+.toolbar .spacer {
+  flex: 1;
+}
+
+.statbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.statbar .stat {
+  background: var(--surface);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-label {
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+/* Tabs. A row of them reads as one control, so the active one is marked by a
+   line under it rather than by a filled pill: a pill would compete with the
+   primary button beside it. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+.tab:hover {
+  color: var(--ink-2);
+}
+.tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab svg {
+  opacity: 0.85;
+}
+
+/* Two or three mutually exclusive choices, all visible at once. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.segmented button {
+  padding: 6px 12px;
+  border: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.segmented button + button {
+  border-inline-start: 1px solid var(--line);
+}
+.segmented button:hover {
+  color: var(--ink-2);
+}
+.segmented button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* An explanatory line above the fields it explains. */
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+.notice.info {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+/* Label and helper on one side, the control on the other. A wide field needs
+   its explanation beside it rather than above, or the form turns into a column
+   of prose with inputs buried in it. */
+.form.wide .row-field {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.form.wide .row-field:last-of-type {
+  border-bottom: 0;
+}
+.row-label label {
+  display: block;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 3px;
+}
+.row-label .hint {
+  margin: 0;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.row-control {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .form.wide .row-field {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+/* A save bar that appears only when there is something to save. */
+.sticky-foot {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  z-index: 2;
+}
+.sticky-foot .spacer {
+  flex: 1;
+}
+
+/* ── tag input ──────────────────────────────────────────────────────────── */
+
+.taginput {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 6px;
+  cursor: text;
+  transition: border-color 0.14s ease;
+}
+.taginput:focus-within {
+  border-color: var(--accent-line);
+}
+.taginput .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-block: 3px;
+  padding-inline: 9px 4px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  max-width: 100%;
+}
+.chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+}
+.chip-x:hover {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.chip-input {
+  flex: 1;
+  min-width: 120px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-sm);
+  padding: 3px 4px;
+  outline: none;
+}
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--line-soft);
+}
+.chip.ghost {
+  background: none;
+  border-style: dashed;
+  color: var(--muted);
+  cursor: pointer;
+  padding-inline: 9px;
+}
+.chip.ghost:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+/* ── the route tester ───────────────────────────────────────────────────── */
+
+.tester-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.tester-row input,
+.tester-row select {
+  flex: 1;
+  min-width: 110px;
+}
+.tester-row input.narrow {
+  flex: 0 0 100px;
+  min-width: 80px;
+}
+.tester-row .btn {
+  flex: none;
+}
+
+.answer {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.answer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.tag.lg {
+  font-size: var(--t-sm);
+  padding: 5px 12px;
+}
+.steps {
+  margin: 10px 0 0;
+  padding-inline-start: 18px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+.steps li + li {
+  margin-top: 3px;
+}
+
+/* ── generated configuration ────────────────────────────────────────────── */
+
+.engine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.engine-card.inert {
+  border-color: color-mix(in srgb, var(--bad) 28%, var(--line));
+}
+
+pre.code {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  background: var(--ground);
+  border-top: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+  max-height: 62vh;
+}
+pre.code code {
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.group-card + .group-card {
+  margin-top: 14px;
+}
+.small-empty {
+  padding: 18px;
+  min-height: 0;
+}
+
+/* ── the menu's collapsible groups ──────────────────────────────────────── */
+
+.navlink .chev {
+  margin-inline-start: auto;
+  opacity: 0.6;
+  transition: transform 0.18s ease;
+}
+[dir='rtl'] .navlink .chev {
+  transform: scaleX(-1);
+}
+.navlink .chev.turned {
+  transform: rotate(180deg);
+}
+[dir='rtl'] .navlink .chev.turned {
+  transform: rotate(180deg) scaleX(-1);
+}
+.navlink.open {
+  color: var(--ink);
+}
+
+/* Children sit in from their parent and carry less weight, so a group reads as
+   one block rather than as more top-level entries. */
+.subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 3px;
+  padding-inline-start: 14px;
+  border-inline-start: 1px solid var(--line-soft);
+  margin-inline-start: 16px;
+}
+.navlink.sub {
+  padding-block: 6px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.navlink.sub:hover {
+  color: var(--ink-2);
+}
+.navlink.sub.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.navlink.sub svg {
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navlink .chev,
+  .tab,
+  .segmented button,
+  .taginput {
+    transition: none;
+  }
+}

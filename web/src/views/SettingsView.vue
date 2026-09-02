@@ -1,9 +1,12 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
+
+const router = useRouter()
 
 const info = ref(null)
 const loading = ref(true)
@@ -31,19 +34,40 @@ const tabs = [
   { key: 'logs', icon: 'info', label: 'settings.tab.logs' },
   { key: 'system', icon: 'server', label: 'settings.tab.system' },
 ]
-const active = ref(tabFromHash())
+// The section can be named two ways: as a path, which is what the menu links
+// to, or as a hash, which is what older links and bookmarks carry. Both are
+// honoured so neither form breaks.
+const props = defineProps({ tab: { type: String, default: '' } })
 
-function tabFromHash() {
-  const slug = (location.hash || '').replace(/^#/, '')
-  return tabs.some((x) => x.key === slug) ? slug : 'general'
+const active = ref(known(props.tab) || tabFromHash())
+
+function known(slug) {
+  return tabs.some((x) => x.key === slug) ? slug : ''
 }
+function tabFromHash() {
+  return known((location.hash || '').replace(/^#/, '')) || 'general'
+}
+
+// Arriving from the menu while already on this page changes the parameter
+// rather than remounting, so the tab has to follow it.
+watch(
+  () => props.tab,
+  (v) => {
+    const next = known(v)
+    if (next && next !== active.value) {
+      active.value = next
+      if (next === 'logs') loadLogs()
+    }
+  },
+)
 
 function selectTab(key) {
   active.value = key
   if (key === 'logs') loadLogs()
-  // Kept in the address bar so a particular section can be linked to, and so a
-  // reload does not throw the operator back to the first tab.
-  history.replaceState(null, '', `#${key}`)
+  // Kept in the address bar so a section can be linked to, and so a reload does
+  // not throw the operator back to the first tab.
+  if (props.tab) router.replace(`/settings/${key}`)
+  else history.replaceState(null, '', `#${key}`)
 }
 
 onMounted(load)

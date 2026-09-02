@@ -28,6 +28,10 @@ import SettingsView from './views/SettingsView.vue'
 import SharingView from './views/SharingView.vue'
 import ApiView from './views/ApiView.vue'
 import NodesView from './views/NodesView.vue'
+import HostsView from './views/HostsView.vue'
+import OutboundsView from './views/OutboundsView.vue'
+import RoutingView from './views/RoutingView.vue'
+import ConfigsView from './views/ConfigsView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 
 const router = createRouter({
@@ -40,9 +44,17 @@ const router = createRouter({
     { path: '/groups', name: 'groups', component: GroupsView },
     { path: '/interfaces', name: 'interfaces', component: InterfacesView },
     { path: '/nodes', name: 'nodes', component: NodesView },
+    { path: '/hosts', name: 'hosts', component: HostsView },
+    { path: '/outbounds', name: 'outbounds', component: OutboundsView },
+    { path: '/routing', name: 'routing', component: RoutingView },
     { path: '/sharing', name: 'sharing', component: SharingView },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },
+    // The menu links straight to a settings section. Each is the same page with
+    // its tab already chosen, so a bookmark lands where it was taken from.
+    { path: '/settings/:tab', name: 'settings-tab', component: SettingsView, props: true },
+    { path: '/configs/:tab', name: 'configs', component: ConfigsView, props: true },
+    { path: '/configs', redirect: '/configs/engine' },
     // Shown rather than redirected: silently swallowing a typo leaves the
     // operator unsure whether they mistyped or the page moved.
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },

@@ -243,7 +243,8 @@ func run() error {
 		Body:  fmt.Sprintf("W-UI %s on %s", version, cfg.Listen),
 	})
 
-	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober, jwtSecret, sys, rec, log)
+	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
+		jwtSecret, sys, rec, outbounds, routes, router, log)
 	if err != nil {
 		return err
 	}
@@ -287,6 +288,9 @@ func buildServer(
 	jwtSecret []byte,
 	sys *sysinfo.Collector,
 	rec *reconciler.Reconciler,
+	outbounds *service.Outbounds,
+	routes *service.Routing,
+	router *routing.Applier,
 	log *slog.Logger,
 ) (*http.Server, error) {
 	apiSrv := api.New(api.Options{
@@ -307,6 +311,9 @@ func buildServer(
 		DBDriver:   string(cfg.DBDriver),
 		DBSource:   cfg.DBSource,
 		SysInfo:    sys,
+		Outbounds:  outbounds,
+		Routing:    routes,
+		Router:     router,
 		Reconciler: rec,
 	})
 

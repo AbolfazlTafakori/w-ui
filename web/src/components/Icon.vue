@@ -32,6 +32,13 @@ const paths = {
   power: 'M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10',
   alert: 'M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
   chevronDown: 'M6 9l6 6 6-6',
+  // Arrows into and out of a box: what arrives at this server, and what leaves
+  // it. Mirrored rather than reused, so the two are distinguishable at 16px.
+  inbound: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3',
+  outbound: 'M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4M14 17l5-5-5-5M19 12H7',
+  route: 'M6 3v12a3 3 0 0 0 3 3h6M18 3v6M6 21h.01M18 12l3 3-3 3M21 15h-6',
+  code: 'M8 6l-6 6 6 6M16 6l6 6-6 6',
+  link: 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
   globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z',
   shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   settings:

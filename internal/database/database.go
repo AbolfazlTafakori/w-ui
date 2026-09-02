@@ -103,10 +103,15 @@ func Migrate(db *gorm.DB) error {
 	return nil
 }
 
+// gormLogger keeps the ORM quiet unless it is asked not to be.
+//
+// The default writes to stdout, in colour, prefixed with the absolute source
+// path of the machine the binary was built on — which lands a developer's home
+// directory in an operator's terminal. Errors that matter are already returned
+// and reported by the caller, so nothing is lost by discarding these.
 func gormLogger(cfg config.Config) gormlogger.Interface {
-	level := gormlogger.Warn
-	if cfg.Debug {
-		level = gormlogger.Info
+	if !cfg.Debug {
+		return gormlogger.Discard
 	}
-	return gormlogger.Default.LogMode(level)
+	return gormlogger.Default.LogMode(gormlogger.Info)
 }
