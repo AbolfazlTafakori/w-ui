@@ -130,6 +130,24 @@ writable path (`/var/lib/wui`).
 
 ---
 
+## Watching more than one server
+
+A node is another W-UI panel, reached over the same API this one serves —
+not a purpose-built agent. That means one protocol to secure and one to keep
+working, and a node that goes wrong is still a panel someone can sign in to and
+fix directly.
+
+Issue a token on the far panel, add it here by address, and this one asks it
+every thirty seconds what it is carrying: version, uptime, load, customer count,
+and whether its own limits are being enforced. When a node is unreachable the
+page says which kind of unreachable — refused, unanswered, wrong credentials, or
+something that answered but is not a panel — because those send you to four
+different places.
+
+Tokens are 256 bits of randomness, shown once, and stored only as a hash.
+
+---
+
 ## The `w-ui` command
 
 Installing the panel also installs a management script. Running `w-ui` with no
@@ -217,6 +235,15 @@ The panel binary also answers directly, which is what the script uses:
 wui setting show [--json]
 wui admin reset [--username NAME] [--password PASS]
 ```
+
+---
+
+## Themes and language
+
+Light, dark, and a pure black for an OLED screen, cycled from the sidebar. The
+interface is English and Persian, and Persian is a full right-to-left layout
+rather than translated strings in a left-to-right frame — including the
+direction of the sidebar, the tables, and the bullet in every list.
 
 ---
 
