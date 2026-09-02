@@ -42,16 +42,16 @@ const DefaultSubPath = "/subscribe/"
 // A subscription link is fetched by the customer's client on a schedule, so the
 // panel stays the single source of what they should be using.
 type Subscriptions struct {
-	db       *gorm.DB
-	backends map[uint]backend.Backend
-	hosts    *Hosts
-	log      *slog.Logger
+	db    *gorm.DB
+	pool  *backend.Pool
+	hosts *Hosts
+	log   *slog.Logger
 }
 
 func NewSubscriptions(
-	db *gorm.DB, backends map[uint]backend.Backend, hosts *Hosts, log *slog.Logger,
+	db *gorm.DB, pool *backend.Pool, hosts *Hosts, log *slog.Logger,
 ) *Subscriptions {
-	return &Subscriptions{db: db, backends: backends, hosts: hosts, log: log}
+	return &Subscriptions{db: db, pool: pool, hosts: hosts, log: log}
 }
 
 // SubSettings is what the settings page can change.
@@ -271,7 +271,7 @@ func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundl
 		if !ok {
 			continue
 		}
-		drv, ok := s.backends[acc.InterfaceID]
+		drv, ok := s.pool.Get(acc.InterfaceID)
 		if !ok {
 			// The interface exists in the database but its driver did not open,
 			// which is normal on a host that cannot serve that protocol. Skipped

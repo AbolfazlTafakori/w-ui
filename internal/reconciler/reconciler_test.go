@@ -120,21 +120,41 @@ func newRig(t *testing.T) (*Reconciler, *gorm.DB, *fakeEnforcer, *backend.Memory
 	t.Helper()
 	db := newTestDB(t)
 	enf := newFakeEnforcer()
+	// The interface has to exist in the database as well as in the driver. The
+	// reconciler brings the open drivers in line with what the database says,
+	// so accounts on an interface that is not there would have their driver
+	// closed underneath them -- which is correct, and is what this fixture was
+	// quietly relying on not happening.
+	iface := &model.Interface{
+		ID: 1, NodeID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard,
+		Enabled: true, ListenPort: 51820, Subnet: "10.66.0.0/16",
+		EndpointHost: "vpn.example.com", MTU: 1420,
+	}
+	if err := db.Create(iface).Error; err != nil {
+		t.Fatalf("seed interface: %v", err)
+	}
+
 	drv := backend.NewMemory(model.ProtocolWireGuard)
-	if err := drv.Open(context.Background(), &model.Interface{
-		ID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard,
-	}); err != nil {
+	if err := drv.Open(context.Background(), iface); err != nil {
 		t.Fatalf("open driver: %v", err)
 	}
 
 	r := New(Options{
 		DB:       db,
 		Enforcer: enf,
-		Backends: map[uint]backend.Backend{1: drv},
+		Pool:     testPool(iface, drv),
 		Interval: time.Second,
 		Log:      quietLog(),
 	})
 	return r, db, enf, drv
+}
+
+// testPool holds the in-memory driver the rig already opened, without asking
+// the registry for a real one.
+func testPool(iface *model.Interface, drv backend.Backend) *backend.Pool {
+	p := backend.NewPool(quietLog())
+	p.Put(iface, drv)
+	return p
 }
 
 func TestActiveClientReachesBothKernelAndDriver(t *testing.T) {
@@ -414,5 +434,59 @@ func TestKeyRoundTrip(t *testing.T) {
 	}
 	if _, ok := clientIDFromKey("nonsense"); ok {
 		t.Error("a foreign key was decoded as a client id")
+	}
+}
+
+// The bug this pair exists to prevent: interfaces used to be opened once, at
+// startup, into a map nothing could add to. Creating one from the panel
+// produced a database row and nothing else, and there was no sign of it until
+// somebody restarted the whole panel.
+func TestAnInterfaceCreatedWhileRunningGetsADriver(t *testing.T) {
+	r, db, _, _ := newRig(t)
+
+	// A second interface, created after the panel is already up.
+	second := model.Interface{
+		ID: 2, NodeID: 1, Name: "wg1", Protocol: model.ProtocolWireGuard,
+		Enabled: true, ListenPort: 51821, Subnet: "10.70.0.0/16",
+		EndpointHost: "vpn.example.com", MTU: 1420,
+	}
+	if err := db.Create(&second).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if _, open := r.pool.Get(second.ID); open {
+		t.Fatal("the new interface already had a driver before any tick")
+	}
+
+	r.Tick(context.Background())
+
+	// The memory driver is not in the registry, so opening genuinely fails
+	// here. What matters is that the attempt was made and recorded, rather
+	// than the interface being ignored until a restart.
+	if err := r.pool.ErrorFor(second.ID); err == nil {
+		if _, open := r.pool.Get(second.ID); !open {
+			t.Fatal("a tick neither opened the new interface nor recorded why not")
+		}
+	}
+}
+
+func TestAnInterfaceSwitchedOffLosesItsDriver(t *testing.T) {
+	// A disabled interface should stop carrying traffic, not keep a live
+	// device that the panel no longer believes in.
+	r, db, _, _ := newRig(t)
+	r.Tick(context.Background())
+
+	if _, open := r.pool.Get(1); !open {
+		t.Fatal("the seeded interface had no driver to begin with")
+	}
+
+	if err := db.Model(&model.Interface{}).Where("id = ?", 1).
+		Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	r.Tick(context.Background())
+
+	if _, open := r.pool.Get(1); open {
+		t.Fatal("a disabled interface kept its driver open")
 	}
 }

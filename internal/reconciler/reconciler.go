@@ -57,7 +57,10 @@ type Options struct {
 	Policy   PolicySource
 	HopsOf   HopSource
 	Notifier *notify.Notifier
-	Backends map[uint]backend.Backend // by interface id
+	// Pool holds the open drivers. The reconciler brings it in line with the
+	// database on every tick, so an interface created from the panel starts
+	// working within one tick instead of at the next restart.
+	Pool     *backend.Pool
 	Interval time.Duration
 	Log      *slog.Logger
 }
@@ -85,7 +88,7 @@ type Reconciler struct {
 	policyOf PolicySource
 	hopsOf   HopSource
 	notifier *notify.Notifier
-	backends map[uint]backend.Backend
+	pool     *backend.Pool
 	interval time.Duration
 	log      *slog.Logger
 	writer   *trafficWriter
@@ -118,7 +121,7 @@ func New(o Options) *Reconciler {
 		policyOf: o.Policy,
 		hopsOf:   o.HopsOf,
 		notifier: o.Notifier,
-		backends: o.Backends,
+		pool:     o.Pool,
 		interval: interval,
 		log:      o.Log,
 		writer:   newTrafficWriter(o.DB, o.Log),
@@ -235,7 +238,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	// Handshakes and endpoints come from the drivers, not from nftables, and
 	// are what the online indicator and the sharing detector read.
 	seen := map[uint]string{}
-	for ifaceID, b := range r.backends {
+	for ifaceID, b := range r.pool.All() {
 		stats, err := b.Stats(ctx)
 		if err != nil {
 			r.log.Warn("driver stats unavailable", "interface", ifaceID, "error", err)
@@ -369,12 +372,14 @@ func (r *Reconciler) announce(kind notify.Kind, title string, names []string, wh
 
 // desired is the state the database says should exist.
 type desired struct {
-	rules    []enforce.Rule
-	shaping  []shaper.Client
-	devices  []string
-	perIface map[uint][]backend.DesiredAccount
-	clients  int
-	accounts int
+	// interfaces is what the pool is brought in line with.
+	interfaces []model.Interface
+	rules      []enforce.Rule
+	shaping    []shaper.Client
+	devices    []string
+	perIface   map[uint][]backend.DesiredAccount
+	clients    int
+	accounts   int
 }
 
 // apply reads the desired state and pushes it to the enforcer and the drivers.
@@ -382,6 +387,15 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	d, err := r.readDesired(ctx)
 	if err != nil {
 		return 0, 0, err
+	}
+
+	// Drivers first, and from the database rather than from whatever was open
+	// at startup. An interface added since then has no driver yet, and one that
+	// failed to open gets another attempt: the reasons they fail are mostly
+	// temporary, and the alternative is an interface that looks configured and
+	// silently carries nothing until the panel is restarted.
+	if r.pool != nil {
+		r.pool.Sync(ctx, d.interfaces)
 	}
 
 	// The enforcer goes first. If a client just ran out, the kernel should stop
@@ -419,7 +433,7 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	// wrong address, which is the one thing a foreign exit is bought to avoid.
 	r.applyRouting(ctx)
 
-	for ifaceID, b := range r.backends {
+	for ifaceID, b := range r.pool.All() {
 		want := d.perIface[ifaceID]
 		if want == nil {
 			want = []backend.DesiredAccount{}
@@ -525,12 +539,13 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	}
 
 	d := &desired{
-		rules:    make([]enforce.Rule, 0, len(clients)),
-		shaping:  make([]shaper.Client, 0, len(clients)),
-		perIface: map[uint][]backend.DesiredAccount{},
-		clients:  len(clients),
-		accounts: len(accounts),
-		devices:  shapedDevices(interfaces),
+		rules:      make([]enforce.Rule, 0, len(clients)),
+		shaping:    make([]shaper.Client, 0, len(clients)),
+		perIface:   map[uint][]backend.DesiredAccount{},
+		clients:    len(clients),
+		accounts:   len(accounts),
+		interfaces: interfaces,
+		devices:    shapedDevices(interfaces),
 	}
 
 	for _, c := range clients {

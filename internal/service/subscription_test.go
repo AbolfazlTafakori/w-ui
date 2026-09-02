@@ -98,11 +98,13 @@ func seed(t *testing.T, db *gorm.DB, n int) *model.Client {
 }
 
 func newSubs(db *gorm.DB, drv backend.Backend) *Subscriptions {
-	backends := map[uint]backend.Backend{}
+	pool := backend.NewPool(quietLog())
 	if drv != nil {
-		backends[1] = drv
+		// Registered directly: the fake needs no kernel, and going through
+		// Open would ask the registry for a real driver.
+		pool.Put(&model.Interface{ID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard}, drv)
 	}
-	return NewSubscriptions(db, backends, NewHosts(db, quietLog()), quietLog())
+	return NewSubscriptions(db, pool, NewHosts(db, quietLog()), quietLog())
 }
 
 // ── what a customer's app actually receives ──────────────────────────────────

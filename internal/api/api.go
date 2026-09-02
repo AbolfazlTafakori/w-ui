@@ -13,6 +13,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
@@ -53,6 +54,7 @@ type Server struct {
 	router    *routing.Applier
 	subs      *service.Subscriptions
 	audit     *service.Audit
+	pool      *backend.Pool
 }
 
 // Options configures a Server.
@@ -79,6 +81,7 @@ type Options struct {
 	Routing    *service.Routing
 	Router     *routing.Applier
 	Subs       *service.Subscriptions
+	Pool       *backend.Pool
 }
 
 // New builds the API server.
@@ -109,6 +112,7 @@ func New(o Options) *Server {
 		hosts:     service.NewHosts(o.DB, o.Logger),
 		router:    o.Router,
 		subs:      o.Subs,
+		pool:      o.Pool,
 	}
 
 	// Built last because it asks the server which engines are running, and that

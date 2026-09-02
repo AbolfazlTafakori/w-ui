@@ -120,6 +120,9 @@ func (a *Audit) checkEngines(ctx context.Context) []Warning {
 	return out
 }
 
+// PlainReason is plainReason for callers outside this package.
+func PlainReason(msg string) string { return plainReason(msg) }
+
 // plainReason strips the package prefixes off an engine's error.
 //
 // "enforce: enforcement backend unavailable: nftables is Linux-only" is three

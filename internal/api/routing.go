@@ -129,7 +129,10 @@ func (s *Server) handleGetRouting(w http.ResponseWriter, r *http.Request) {
 	var health string
 	if s.router != nil {
 		if err := s.router.Health(r.Context()); err != nil {
-			health = err.Error()
+			// Cleaned the same way the security panel cleans it. The two sit on
+			// screen together, and one of them showing a Go error while the
+			// other shows a sentence makes the panel look half-finished.
+			health = service.PlainReason(err.Error())
 		}
 	}
 

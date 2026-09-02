@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -187,7 +186,20 @@ func (s *Server) handleCreateInterface(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, redactKeys(*iface))
+
+	// Opened now rather than at the next tick, so the operator finds out here
+	// whether the port was free and the tool was installed. A failure is
+	// reported alongside the interface rather than instead of it: the row is
+	// created either way, and the reconciler keeps retrying.
+	out := map[string]any{"interface": redactKeys(*iface)}
+	if s.pool != nil {
+		if err := s.pool.Open(r.Context(), iface); err != nil {
+			s.log.Warn("a new interface would not come up",
+				"interface", iface.Name, "error", err)
+			out["warning"] = humanMessage(err)
+		}
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 // --- clients ----------------------------------------------------------
@@ -738,16 +750,11 @@ func (s *Server) handleRestartInterface(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	drv, err := backend.New(iface.Protocol)
-	if err != nil {
-		fail(w, s.log, fmt.Errorf("%w: no driver for %s", service.ErrInvalid, iface.Protocol))
-		return
-	}
-	if withLogger, ok := drv.(interface{ SetLogger(*slog.Logger) }); ok {
-		withLogger.SetLogger(s.log)
-	}
-
-	if err := drv.Open(r.Context(), &iface); err != nil {
+	// Through the pool, so the reopened driver is the one the reconciler will
+	// use. Building a driver here and keeping it to ourselves is what the old
+	// version did, and it left the interface looking restarted while nothing
+	// was actually pushing peers to it.
+	if err := s.pool.Open(r.Context(), &iface); err != nil {
 		// Reported rather than hidden: the reason a tunnel will not come up is
 		// the whole content of this request.
 		s.log.Warn("interface restart failed", "interface", iface.Name, "error", err)

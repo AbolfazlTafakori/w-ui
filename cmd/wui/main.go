@@ -139,12 +139,13 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	drivers, err := openDrivers(ctx, db, log)
+	pool, err := openPool(ctx, db, log)
 	if err != nil {
 		return err
 	}
+	defer pool.CloseAll()
 
-	subs := service.NewSubscriptions(db, drivers, service.NewHosts(db, log), log)
+	subs := service.NewSubscriptions(db, pool, service.NewHosts(db, log), log)
 
 	// The two built-in outbounds are created before the reconciler starts, so
 	// its first tick already has somewhere to send traffic.
@@ -158,7 +159,7 @@ func run() error {
 	rec := reconciler.New(reconciler.Options{
 		DB:       db,
 		Enforcer: enforcer,
-		Backends: drivers,
+		Pool:     pool,
 		Shaper:   shp,
 		Router:   router,
 		Hops:     hops,
@@ -246,7 +247,7 @@ func run() error {
 	})
 
 	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
-		jwtSecret, sys, rec, outbounds, routes, router, subs, log)
+		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, log)
 	if err != nil {
 		return err
 	}
@@ -294,6 +295,7 @@ func buildServer(
 	routes *service.Routing,
 	router *routing.Applier,
 	subs *service.Subscriptions,
+	pool *backend.Pool,
 	log *slog.Logger,
 ) (*http.Server, error) {
 	apiSrv := api.New(api.Options{
@@ -318,6 +320,7 @@ func buildServer(
 		Routing:    routes,
 		Router:     router,
 		Subs:       subs,
+		Pool:       pool,
 		Reconciler: rec,
 	})
 
@@ -479,34 +482,20 @@ var _ enforce.Enforcer = (*enforce.Noop)(nil)
 // assert that the in-memory backend satisfies the driver contract.
 var _ backend.Backend = (*backend.Memory)(nil)
 
-// openDrivers binds one protocol driver per configured interface.
+// openPool brings up a driver for every interface that has one.
 //
-// A driver that will not open is logged and skipped rather than aborting the
-// boot: one broken interface should not take the panel — and every other
-// interface's enforcement — down with it.
-func openDrivers(ctx context.Context, db *gorm.DB, log *slog.Logger) (map[uint]backend.Backend, error) {
+// A driver that will not open is recorded and skipped rather than aborting the
+// boot: one broken interface should not take the panel -- and every other
+// interface's enforcement -- down with it. The reconciler retries them, and
+// picks up interfaces created after this point, which is what the old
+// open-once map could not do.
+func openPool(ctx context.Context, db *gorm.DB, log *slog.Logger) (*backend.Pool, error) {
 	var interfaces []model.Interface
 	if err := db.Where("enabled = ?", true).Find(&interfaces).Error; err != nil {
 		return nil, fmt.Errorf("load interfaces: %w", err)
 	}
 
-	out := make(map[uint]backend.Backend, len(interfaces))
-	for i := range interfaces {
-		iface := &interfaces[i]
-		drv, err := backend.New(iface.Protocol)
-		if err != nil {
-			log.Error("no driver for interface", "interface", iface.Name, "error", err)
-			continue
-		}
-		if withLogger, ok := drv.(interface{ SetLogger(*slog.Logger) }); ok {
-			withLogger.SetLogger(log)
-		}
-		if err := drv.Open(ctx, iface); err != nil {
-			log.Error("could not open interface", "interface", iface.Name, "error", err)
-			continue
-		}
-		out[iface.ID] = drv
-		log.Info("driver open", "interface", iface.Name, "protocol", iface.Protocol)
-	}
-	return out, nil
+	pool := backend.NewPool(log)
+	pool.Sync(ctx, interfaces)
+	return pool, nil
 }
