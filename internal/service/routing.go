@@ -154,14 +154,25 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 		return BasicRouting{}, fmt.Errorf("service: save routing settings: %w", err)
 	}
 
-	// Names change meaning the moment they are saved, so they are looked up now
-	// rather than at the next timer tick. An operator who blocks a domain
-	// expects it blocked before they have finished reading the page.
-	go s.refreshDomains(context.WithoutCancel(ctx))
+	s.namesChanged(ctx)
 
 	s.log.Info("routing policy changed", "defaultOutbound", tag,
 		"blockedNames", len(in.BlockDomains), "pinnedNames", len(in.DirectDomains))
 	return s.Basic(ctx)
+}
+
+// namesChanged re-resolves the policy's domains without waiting for the timer.
+//
+// A rule that matches a domain matches the addresses that name resolves to, and
+// until the resolver has seen it the rule matches nothing at all. Adding a rule
+// and finding it does nothing for the next quarter of an hour is not a delay an
+// operator would attribute to caching -- they would reasonably conclude the
+// feature is broken and go and file that.
+//
+// Run in the background: the caller is answering an HTTP request and should not
+// wait on somebody else's name server.
+func (s *Routing) namesChanged(ctx context.Context) {
+	go s.refreshDomains(context.WithoutCancel(ctx))
 }
 
 // ── rules ────────────────────────────────────────────────────────────────────
@@ -210,6 +221,7 @@ func (s *Routing) CreateRule(ctx context.Context, in RuleInput) (*model.RoutingR
 	if err := db.Create(&rule).Error; err != nil {
 		return nil, fmt.Errorf("service: create routing rule: %w", err)
 	}
+	s.namesChanged(ctx)
 	s.log.Info("routing rule added", "name", rule.Name, "to", rule.OutboundTag)
 	return &rule, nil
 }
@@ -243,6 +255,7 @@ func (s *Routing) UpdateRule(ctx context.Context, id uint, in RuleInput) (*model
 	if err := db.First(&rule, id).Error; err != nil {
 		return nil, fmt.Errorf("service: reload routing rule: %w", err)
 	}
+	s.namesChanged(ctx)
 	return &rule, nil
 }
 
@@ -255,6 +268,7 @@ func (s *Routing) DeleteRule(ctx context.Context, id uint) error {
 	if res.RowsAffected == 0 {
 		return fmt.Errorf("%w: no routing rule %d", ErrNotFound, id)
 	}
+	s.namesChanged(ctx)
 	return nil
 }
 
