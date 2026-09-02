@@ -214,6 +214,22 @@ type Setting struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// Group is a named bucket of customers.
+//
+// The membership itself still lives on the client, as a name, so a rename is one
+// statement and nothing can point at a group that is gone. What this row adds is
+// existence: a group can be created before it has anybody in it, and survives its
+// last member leaving. Without it "create a group" is not an action an operator
+// can take — they can only type a name onto a customer and hope.
+type Group struct {
+	ID   uint   `gorm:"primaryKey" json:"id"`
+	Name string `gorm:"size:64;uniqueIndex;not null" json:"name"`
+	Note string `gorm:"size:256" json:"note"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // AccountEndpoint is one public address an account has connected from.
 //
 // A credential is sold to one person. Two people using it at once show up as
@@ -241,6 +257,7 @@ func AllModels() []any {
 		&TrafficSample{},
 		&IPLease{},
 		&Admin{},
+		&Group{},
 		&AccountEndpoint{},
 		&Setting{},
 	}

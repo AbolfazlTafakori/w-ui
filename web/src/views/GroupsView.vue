@@ -55,7 +55,7 @@ function onKey(e) {
   if (e.key === 'Escape') closeMenu()
 }
 const dialog = ref(null) // { kind, group }
-const form = ref({ name: '', days: 30, quotaGB: '' })
+const form = ref({ name: '', note: '', days: 30, quotaGB: '' })
 const busy = ref(false)
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
@@ -87,9 +87,49 @@ function menuFor(g) {
     { key: 'enable', label: t('action.enable'), icon: 'power', disabled: empty },
     { key: 'disable', label: t('action.disable'), icon: 'power', disabled: empty },
     { key: 'rename', label: t('group.rename'), icon: 'edit' },
-    { key: 'clear', label: t('group.dissolve'), icon: 'close', danger: true },
+    { key: 'clear', label: t('group.dissolve'), icon: 'close', disabled: empty },
+    { key: 'delete', label: t('group.delete'), icon: 'trash', danger: true },
     { key: 'deleteClients', label: t('group.deleteClients'), icon: 'trash', danger: true, disabled: empty },
   ]
+}
+
+function openCreate() {
+  form.value.name = ''
+  form.value.note = ''
+  dialog.value = { kind: 'create' }
+}
+
+async function createGroup() {
+  const name = (form.value.name || '').trim()
+  if (!name) return
+  busy.value = true
+  try {
+    await api.post('/api/groups', { name, note: (form.value.note || '').trim() })
+    notify(t('group.created'), 'ok')
+    dialog.value = null
+    await load()
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function deleteGroup(g) {
+  // Deleting a group and deleting the people in it are different actions with
+  // very different consequences, so they are different menu entries and this
+  // one says which it is.
+  if (!confirm(t('group.confirmDelete').replace('{name}', g.name))) return
+  busy.value = true
+  try {
+    const res = await api.post('/api/groups/delete', { name: g.name })
+    notify(t('group.deleted').replace('{n}', res.ungrouped ?? 0), 'ok')
+    await load()
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    busy.value = false
+  }
 }
 
 function pick(g, key) {
@@ -110,6 +150,7 @@ function pick(g, key) {
     return
   }
   // The two destructive ones ask before they run; the rest are reversible.
+  if (key === 'delete') return deleteGroup(g)
   if (key === 'clear' && !confirm(t('group.confirmDissolve'))) return
   if (key === 'deleteClients' && !confirm(t('group.confirmDeleteClients'))) return
   run({ action: key, group: g.name })
@@ -130,6 +171,7 @@ async function run(op) {
 }
 
 async function submitDialog() {
+  if (dialog.value.kind === 'create') return createGroup()
   const d = dialog.value
   if (!d) return
 
@@ -170,6 +212,12 @@ function viewMembers(g) {
     <div>
       <h1>{{ t('nav.groups') }}</h1>
       <p>{{ t('group.subtitle') }}</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn" @click="openCreate">
+        <Icon name="plus" :size="15" />
+        <span>{{ t('group.add') }}</span>
+      </button>
     </div>
   </div>
 
@@ -276,7 +324,8 @@ function viewMembers(g) {
     <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="g-title">
       <div class="card-head">
         <h2 id="g-title">
-          {{ dialog.kind === 'rename' ? t('group.rename')
+          {{ dialog.kind === 'create' ? t('group.add')
+            : dialog.kind === 'rename' ? t('group.rename')
             : dialog.kind === 'extend' ? t('group.extend') : t('group.setQuota') }}
         </h2>
         <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="dialog = null">
@@ -285,12 +334,24 @@ function viewMembers(g) {
       </div>
 
       <form id="g-form" class="card-body" @submit.prevent="submitDialog">
-        <p class="target">
+        <p v-if="dialog.group" class="target">
           <span class="tag geekblue">{{ dialog.group.name }}</span>
           <span class="muted small">{{ nf(dialog.group.clients) }} {{ t('nav.clients') }}</span>
         </p>
 
-        <div v-if="dialog.kind === 'rename'" class="field">
+        <template v-if="dialog.kind === 'create'">
+          <div class="field">
+            <label for="g-new">{{ t('group.name') }}</label>
+            <input id="g-new" v-model="form.name" required autofocus maxlength="64" />
+            <span class="hint">{{ t('group.addHint') }}</span>
+          </div>
+          <div class="field">
+            <label for="g-note">{{ t('group.note') }}</label>
+            <input id="g-note" v-model="form.note" maxlength="256" />
+          </div>
+        </template>
+
+        <div v-else-if="dialog.kind === 'rename'" class="field">
           <label for="g-name">{{ t('group.newName') }}</label>
           <input id="g-name" v-model="form.name" required autofocus />
           <span class="hint">{{ t('group.renameHint') }}</span>
@@ -416,7 +477,7 @@ function viewMembers(g) {
 }
 
 .name {
-  border: 1px solid #263a91;
+  border: 1px solid var(--tag-geek-line);
   cursor: pointer;
   font: inherit;
   font-family: var(--mono);
@@ -424,8 +485,8 @@ function viewMembers(g) {
   font-weight: 600;
 }
 .name:hover {
-  background: #263a91;
-  color: #cdd8ff;
+  background: var(--tag-geek-line);
+  color: var(--tag-geek-ink);
 }
 
 .modal.narrow {

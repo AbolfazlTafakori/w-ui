@@ -565,3 +565,34 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"entries": logger.Recent.Recent(limit, r.URL.Query().Get("level")),
 	})
 }
+
+func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+		Note string `json:"note"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	g, err := s.clients.CreateGroup(r.Context(), in.Name, in.Note)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, g)
+}
+
+func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	ungrouped, err := s.clients.DeleteGroup(r.Context(), in.Name)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ungrouped": ungrouped})
+}

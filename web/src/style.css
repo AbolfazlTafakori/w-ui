@@ -42,6 +42,45 @@
   --bad: #f4655f;
   --bad-soft: #331714;
 
+  /* Chips. Dark: a deep fill with a bright letter. */
+  --tag-green-bg: #162312;
+  --tag-green-line: #274916;
+  --tag-green-ink: #6abe39;
+  --tag-red-bg: #2a1215;
+  --tag-red-line: #58181c;
+  --tag-red-ink: #e84749;
+  --tag-orange-bg: #2b1d11;
+  --tag-orange-line: #593815;
+  --tag-orange-ink: #e89a3c;
+  --tag-purple-bg: #1a1325;
+  --tag-purple-line: #3a2a5c;
+  --tag-purple-ink: #a878e6;
+  --tag-blue-bg: #111a2c;
+  --tag-blue-line: #15325b;
+  --tag-blue-ink: #4e9bf5;
+  --tag-geek-bg: #131629;
+  --tag-geek-line: #263a91;
+  --tag-geek-ink: #6b8ae4;
+
+  /* Anything tinted by the accent or painted over the page, so a theme can
+     move them together with everything else. */
+  --accent-glow: rgba(224, 46, 61, 0.6);
+  --accent-ring: rgba(224, 46, 61, 0.16);
+  --scrim: rgba(0, 0, 0, 0.55);
+  --scrim-ink: #ffffff;
+  --rail-shadow: rgba(0, 0, 0, 0.45);
+  --modal-scrim: rgba(0, 0, 0, 0.72);
+
+  /* The sign-in page paints its own scenery. */
+  --auth-wash: #1a0d11;
+  --auth-blob-1: rgba(224, 46, 61, 0.5);
+  --auth-blob-2: rgba(160, 26, 42, 0.45);
+  --auth-blob-3: rgba(242, 64, 79, 0.28);
+  --auth-blob-4: rgba(120, 18, 30, 0.5);
+  --auth-blob-5: rgba(224, 46, 61, 0.22);
+  --auth-grid: rgba(255, 255, 255, 0.045);
+  --auth-card: rgba(20, 18, 21, 0.72);
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(0, 0, 0, 0.9);
 
@@ -115,6 +154,47 @@ body.light {
   --warn-soft: #fdf3dd;
   --bad: #c62f28;
   --bad-soft: #fdeae9;
+
+  /* Light: the relationship inverts — a pale fill with a dark letter. A deep
+     fill with a bright letter vanishes on white and cannot be read. */
+  --tag-green-bg: #e8f6ec;
+  --tag-green-line: #b5e0c0;
+  --tag-green-ink: #1a7f3c;
+  --tag-red-bg: #fdecea;
+  --tag-red-line: #f5c2bd;
+  --tag-red-ink: #b42318;
+  --tag-orange-bg: #fdf3dd;
+  --tag-orange-line: #f0d9a0;
+  --tag-orange-ink: #8a6206;
+  --tag-purple-bg: #f2ecfd;
+  --tag-purple-line: #d8c8f5;
+  --tag-purple-ink: #6633b8;
+  --tag-blue-bg: #e8f1fd;
+  --tag-blue-line: #bcd6f7;
+  --tag-blue-ink: #1a5fb4;
+  --tag-geek-bg: #eceffb;
+  --tag-geek-line: #c6cff2;
+  --tag-geek-ink: #2f4bb8;
+
+  --accent-glow: rgba(200, 31, 46, 0.35);
+  --accent-ring: rgba(200, 31, 46, 0.18);
+  --scrim: rgba(24, 20, 22, 0.42);
+  --scrim-ink: #ffffff;
+  --rail-shadow: rgba(16, 12, 15, 0.18);
+  --modal-scrim: rgba(24, 20, 22, 0.5);
+
+  /* Far weaker on a pale page: the same wash that reads as depth on near-black
+     reads as a stain on white. */
+  --auth-wash: #fbe9eb;
+  --auth-blob-1: rgba(200, 31, 46, 0.16);
+  --auth-blob-2: rgba(160, 26, 42, 0.12);
+  --auth-blob-3: rgba(242, 64, 79, 0.10);
+  --auth-blob-4: rgba(120, 18, 30, 0.10);
+  --auth-blob-5: rgba(200, 31, 46, 0.08);
+  /* The grid is drawn in ink rather than light: white lines on a white page
+     are not a faint grid, they are nothing at all. */
+  --auth-grid: rgba(20, 17, 19, 0.05);
+  --auth-card: rgba(255, 255, 255, 0.86);
 
   --shadow-sm: 0 1px 2px rgba(16, 12, 15, 0.06);
   --shadow: 0 1px 3px rgba(16, 12, 15, 0.08), 0 12px 32px -14px rgba(16, 12, 15, 0.22);
@@ -268,7 +348,7 @@ th.ltr {
 /* Only while it is floating. Pinned, it owns its column and a shadow would
    read as a seam down the middle of the page. */
 .shell:not(.rail-pinned) .sidebar.expanded {
-  box-shadow: 0 0 32px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 32px var(--rail-shadow);
 }
 
 .sider-brand {
@@ -303,7 +383,7 @@ th.ltr {
   font-weight: 800;
   font-size: var(--t-base);
   flex-shrink: 0;
-  box-shadow: 0 2px 12px -2px rgba(224, 46, 61, 0.6);
+  box-shadow: 0 2px 12px -2px var(--accent-glow);
 }
 .brand-name {
   font-size: var(--t-md);
@@ -443,21 +523,21 @@ th.ltr {
   height: 40px;
   border: none;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--scrim);
   backdrop-filter: blur(6px);
-  color: #fff;
+  color: var(--scrim-ink);
   cursor: pointer;
   display: none;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 8px var(--rail-shadow);
 }
 
 .drawer-scrim {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--scrim);
   display: flex;
 }
 .drawer {
@@ -632,7 +712,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(224, 46, 61, 0.16);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 input::placeholder {
   color: var(--faint);
@@ -832,58 +912,54 @@ tbody tr:hover {
   color: var(--ink-2);
 }
 
+/*
+ * Chip colours come from tokens rather than literals, so a theme declares the
+ * palette once and every chip follows. Written as literals, each new theme
+ * needed its own copy of every rule — which is how the light theme shipped with
+ * dark chips on white cards.
+ */
 .tag.green {
-  background: #162312;
-  border-color: #274916;
-  color: #6abe39;
+  background: var(--tag-green-bg);
+  border-color: var(--tag-green-line);
+  color: var(--tag-green-ink);
 }
-.tag.red {
-  background: #2a1215;
-  border-color: #58181c;
-  color: #e84749;
+.tag.red,
+.tag.expired,
+.tag.exhausted {
+  background: var(--tag-red-bg);
+  border-color: var(--tag-red-line);
+  color: var(--tag-red-ink);
 }
 .tag.orange {
-  background: #2b1d11;
-  border-color: #593815;
-  color: #e89a3c;
+  background: var(--tag-orange-bg);
+  border-color: var(--tag-orange-line);
+  color: var(--tag-orange-ink);
 }
 .tag.purple {
-  background: #1a1325;
-  border-color: #3a2a5c;
-  color: #a878e6;
+  background: var(--tag-purple-bg);
+  border-color: var(--tag-purple-line);
+  color: var(--tag-purple-ink);
 }
 .tag.blue {
-  background: #111a2c;
-  border-color: #15325b;
-  color: #4e9bf5;
+  background: var(--tag-blue-bg);
+  border-color: var(--tag-blue-line);
+  color: var(--tag-blue-ink);
 }
 .tag.geekblue {
-  background: #131629;
-  border-color: #263a91;
-  color: #6b8ae4;
+  background: var(--tag-geek-bg);
+  border-color: var(--tag-geek-line);
+  color: var(--tag-geek-ink);
 }
-.tag.grey {
-  background: var(--surface-3);
-  border-color: var(--line);
-  color: var(--muted);
-}
-
-/* Legacy status aliases, kept so pages not yet converted still read correctly. */
-.tag.active {
-  background: #162312;
-  border-color: #274916;
-  color: #6abe39;
-}
+.tag.grey,
 .tag.disabled {
   background: var(--surface-3);
   border-color: var(--line);
   color: var(--muted);
 }
-.tag.expired,
-.tag.exhausted {
-  background: #2a1215;
-  border-color: #58181c;
-  color: #e84749;
+.tag.active {
+  background: var(--tag-green-bg);
+  border-color: var(--tag-green-line);
+  color: var(--tag-green-ink);
 }
 .tag.proto {
   background: var(--accent-soft);
@@ -942,7 +1018,7 @@ tbody tr:hover {
 }
 .banner.warn {
   background: var(--warn-soft);
-  border-color: rgba(224, 171, 52, 0.4);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
   color: var(--ink);
 }
 .banner.warn svg {
@@ -950,7 +1026,7 @@ tbody tr:hover {
 }
 .banner.bad {
   background: var(--bad-soft);
-  border-color: rgba(244, 101, 95, 0.4);
+  border-color: color-mix(in srgb, var(--bad) 40%, transparent);
   color: var(--ink);
 }
 .banner.bad svg {
@@ -986,7 +1062,7 @@ tbody tr:hover {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--modal-scrim);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -1888,40 +1964,20 @@ td.right .actions {
  * inverts the relationship — a pale fill with a dark letter — so the chips
  * carry the same meaning at the same weight either way round.
  */
-body.light .tag.green {
-  background: #e8f6ec;
-  border-color: #b5e0c0;
-  color: #1a7f3c;
-}
 body.light .tag.red {
   background: #fdecea;
   border-color: #f5c2bd;
   color: #b42318;
-}
-body.light .tag.orange {
-  background: #fdf3dd;
-  border-color: #f0d9a0;
-  color: #8a6206;
 }
 body.light .tag.purple {
   background: #f2ecfd;
   border-color: #d8c8f5;
   color: #6633b8;
 }
-body.light .tag.blue {
-  background: #e8f1fd;
-  border-color: #bcd6f7;
-  color: #1a5fb4;
-}
 body.light .tag.geekblue {
   background: #eceffb;
   border-color: #c6cff2;
   color: #2f4bb8;
-}
-body.light .tag.proto {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--accent-hover);
 }
 
 /* The log view paints on the page background, which is white here; its own

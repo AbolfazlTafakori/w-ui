@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type GroupSummary struct {
 	UpBytes   uint64 `json:"upBytes"`
 	DownBytes uint64 `json:"downBytes"`
 	UsedBytes uint64 `json:"usedBytes"`
+	Note      string `json:"note"`
 }
 
 // GroupTotals is the strip above the table.
@@ -113,6 +115,44 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 		out.Totals.UsedBytes += r.UsedBytes
 	}
 
+	// Groups that exist but hold nobody. The aggregate above can only see a
+	// group through its members, so without this a freshly created group is
+	// invisible and creating one looks like it failed.
+	var declared []model.Group
+	if err := db.Order("name").Find(&declared).Error; err != nil {
+		return nil, fmt.Errorf("service: read groups: %w", err)
+	}
+	seen := make(map[string]bool, len(out.Items))
+	for _, item := range out.Items {
+		seen[item.Name] = true
+	}
+	for _, g := range declared {
+		if seen[g.Name] {
+			continue
+		}
+		out.Items = append(out.Items, GroupSummary{Name: g.Name, Note: g.Note})
+		out.Totals.Groups++
+	}
+	sort.Slice(out.Items, func(i, j int) bool {
+		// Populated groups first, then alphabetical: an operator scanning this
+		// page is looking for the busy ones.
+		if (out.Items[i].Clients > 0) != (out.Items[j].Clients > 0) {
+			return out.Items[i].Clients > 0
+		}
+		return strings.ToLower(out.Items[i].Name) < strings.ToLower(out.Items[j].Name)
+	})
+
+	// Notes come from the group row, so a group with members shows one too.
+	notes := make(map[string]string, len(declared))
+	for _, g := range declared {
+		notes[g.Name] = g.Note
+	}
+	for i := range out.Items {
+		if out.Items[i].Note == "" {
+			out.Items[i].Note = notes[out.Items[i].Name]
+		}
+	}
+
 	if err := db.Raw(
 		`SELECT COUNT(*) FROM clients WHERE COALESCE("group", '') = ''`).
 		Scan(&out.Totals.Ungrouped).Error; err != nil {
@@ -157,13 +197,27 @@ func (s *Clients) RenameGroup(ctx context.Context, from, to string) (int64, erro
 		return 0, fmt.Errorf("%w: group names are limited to 64 characters", ErrInvalid)
 	}
 
-	res := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where(`"group" = ?`, from).Update("group", to)
-	if res.Error != nil {
-		return 0, fmt.Errorf("service: rename group: %w", res.Error)
+	var moved int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Client{}).Where(`"group" = ?`, from).Update("group", to)
+		if res.Error != nil {
+			return fmt.Errorf("rename members: %w", res.Error)
+		}
+		moved = res.RowsAffected
+
+		// The row moves too. Leaving it behind would keep the old name alive as
+		// an empty group and lose the new one's note.
+		if err := tx.Model(&model.Group{}).Where("name = ?", from).
+			Update("name", to).Error; err != nil {
+			return fmt.Errorf("rename group: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("service: %w", err)
 	}
-	s.log.Info("group renamed", "from", from, "to", to, "clients", res.RowsAffected)
-	return res.RowsAffected, nil
+	s.log.Info("group renamed", "from", from, "to", to, "clients", moved)
+	return moved, nil
 }
 
 // AssignGroup puts the given clients into a group. An empty name takes them out
@@ -305,4 +359,69 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 	default:
 		return 0, fmt.Errorf("%w: unknown action %q", ErrInvalid, op.Action)
 	}
+}
+
+// CreateGroup makes an empty group.
+//
+// An empty group is the point: an operator sets one up before the customers
+// exist, then assigns them. Without a row of its own a group could only be
+// brought into being by typing its name onto a customer, which is not a thing
+// anybody would guess.
+func (s *Clients) CreateGroup(ctx context.Context, name, note string) (*model.Group, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("%w: a group needs a name", ErrInvalid)
+	}
+	if len(name) > 64 {
+		return nil, fmt.Errorf("%w: that name is too long", ErrInvalid)
+	}
+
+	// Checked case-insensitively. Two groups differing only in capitalisation
+	// are two groups nobody can tell apart in a list.
+	var clash int64
+	if err := s.db.WithContext(ctx).Model(&model.Group{}).
+		Where("LOWER(name) = LOWER(?)", name).Count(&clash).Error; err != nil {
+		return nil, fmt.Errorf("service: check group name: %w", err)
+	}
+	if clash > 0 {
+		return nil, fmt.Errorf("%w: a group called %q already exists", ErrInvalid, name)
+	}
+
+	g := model.Group{Name: name, Note: strings.TrimSpace(note)}
+	if err := s.db.WithContext(ctx).Create(&g).Error; err != nil {
+		return nil, fmt.Errorf("service: create group: %w", err)
+	}
+	s.log.Info("group created", "group", name)
+	return &g, nil
+}
+
+// DeleteGroup removes a group. Its members are ungrouped, not deleted.
+//
+// The two are separated deliberately: deleting a group is tidying, deleting the
+// customers in it is losing money, and a single button that did both would
+// eventually do the second when someone meant the first.
+func (s *Clients) DeleteGroup(ctx context.Context, name string) (int64, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0, fmt.Errorf("%w: which group?", ErrInvalid)
+	}
+
+	var ungrouped int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(`UPDATE clients SET "group" = '' WHERE "group" = ?`, name)
+		if res.Error != nil {
+			return fmt.Errorf("ungroup members: %w", res.Error)
+		}
+		ungrouped = res.RowsAffected
+
+		if err := tx.Where("name = ?", name).Delete(&model.Group{}).Error; err != nil {
+			return fmt.Errorf("delete group: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("service: %w", err)
+	}
+	s.log.Info("group deleted", "group", name, "ungrouped", ungrouped)
+	return ungrouped, nil
 }

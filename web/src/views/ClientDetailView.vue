@@ -320,7 +320,10 @@ async function copy(text) {
 }
 .qr img {
   border-radius: var(--radius-sm);
-  background: #fff;
+  /* Deliberately white in every theme. A scanner reads the contrast between
+     light and dark modules, and tinting the light ones is what makes a code
+     fail on half the phones that try it. */
+  background: #ffffff;
   padding: 8px;
 }
 .creds {

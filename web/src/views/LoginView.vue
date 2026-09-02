@@ -173,7 +173,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   /* A dark ground with a faint warm centre, so the blobs have something to
      sit on rather than floating in flat black. */
   background:
-    radial-gradient(1200px 700px at 50% -10%, #1a0d11 0%, transparent 60%),
+    radial-gradient(1200px 700px at 50% -10%, var(--auth-wash) 0%, transparent 60%),
     var(--ground);
 }
 
@@ -194,7 +194,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   height: 46vw;
   top: -6%;
   left: -8%;
-  background: radial-gradient(circle, rgba(224, 46, 61, 0.5), transparent 68%);
+  background: radial-gradient(circle, var(--auth-blob-1), transparent 68%);
   animation: drift-a 24s ease-in-out infinite alternate;
 }
 .blob.b {
@@ -202,7 +202,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   height: 40vw;
   bottom: -12%;
   right: -6%;
-  background: radial-gradient(circle, rgba(160, 26, 42, 0.45), transparent 68%);
+  background: radial-gradient(circle, var(--auth-blob-2), transparent 68%);
   animation: drift-b 30s ease-in-out infinite alternate;
 }
 .blob.c {
@@ -210,7 +210,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   height: 34vw;
   top: 28%;
   left: 38%;
-  background: radial-gradient(circle, rgba(242, 64, 79, 0.28), transparent 70%);
+  background: radial-gradient(circle, var(--auth-blob-3), transparent 70%);
   animation: drift-c 36s ease-in-out infinite alternate;
 }
 .blob.d {
@@ -218,7 +218,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   height: 26vw;
   top: 6%;
   right: 18%;
-  background: radial-gradient(circle, rgba(120, 18, 30, 0.5), transparent 70%);
+  background: radial-gradient(circle, var(--auth-blob-4), transparent 70%);
   animation: drift-d 28s ease-in-out infinite alternate;
 }
 .blob.e {
@@ -226,7 +226,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   height: 30vw;
   bottom: 4%;
   left: 14%;
-  background: radial-gradient(circle, rgba(224, 46, 61, 0.22), transparent 72%);
+  background: radial-gradient(circle, var(--auth-blob-5), transparent 72%);
   animation: drift-e 32s ease-in-out infinite alternate;
 }
 
@@ -269,8 +269,8 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    linear-gradient(to right, var(--auth-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--auth-grid) 1px, transparent 1px);
   background-size: 48px 48px;
   -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 10%, transparent 75%);
   mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 10%, transparent 75%);
@@ -285,7 +285,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   max-width: 400px;
   padding: 40px 32px 28px;
   border-radius: 20px;
-  background: rgba(20, 18, 21, 0.72);
+  background: var(--auth-card);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   box-shadow:

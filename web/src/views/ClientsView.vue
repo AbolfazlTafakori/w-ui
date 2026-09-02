@@ -765,9 +765,9 @@ async function submitForm(input) {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.dot.ok { background: #6abe39; }
-.dot.warn { background: #e89a3c; }
-.dot.bad { background: #e84749; }
+.dot.ok { background: var(--tag-green-ink); }
+.dot.warn { background: var(--tag-orange-ink); }
+.dot.bad { background: var(--tag-red-ink); }
 .dot.muted { background: var(--faint); }
 .dot.ink { background: var(--accent); }
 
