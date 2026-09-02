@@ -22,10 +22,14 @@ export function setToken(token) {
 }
 
 export class ApiError extends Error {
-  constructor(message, status, kind = 'server') {
+  constructor(message, status, kind = 'server', field = '') {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    // Which input the server was complaining about, when it said. Lets a form
+    // put the message under the field it belongs to instead of in a toast that
+    // names nothing.
+    this.field = field
     // kind separates the three things a caller may want to do differently:
     // 'network' — the panel could not be reached at all, so retrying may work
     // 'timeout' — it was reached and did not answer
@@ -115,7 +119,12 @@ async function request(method, path, body) {
         res.status,
       )
     }
-    throw new ApiError(payload?.error || `Request failed (${res.status})`, res.status)
+    throw new ApiError(
+      payload?.error || `Request failed (${res.status})`,
+      res.status,
+      'server',
+      payload?.field || '',
+    )
   }
   return payload
 }

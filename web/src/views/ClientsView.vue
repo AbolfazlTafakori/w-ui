@@ -422,7 +422,8 @@ async function submitForm(input) {
     await Promise.all([load(), loadGroups()])
   } catch (err) {
     notify(err.message, 'error')
-    throw err
+    // Handled here. Rethrowing sends it to Vue's error boundary, which would
+    // report a failed save as a page that cannot be displayed.
   }
 }
 </script>

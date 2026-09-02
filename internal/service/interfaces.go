@@ -56,6 +56,11 @@ type CreateInterfaceInput struct {
 	DNS          string              `json:"dns"`
 	NATInterface string              `json:"natInterface"`
 	Mode         model.InterfaceMode `json:"mode"`
+
+	// Enabled lets a tunnel be created switched off, so it can be prepared
+	// before anyone is put on it. Absent means enabled, which is what someone
+	// filling in this form almost always wants.
+	Enabled *bool `json:"enabled"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -69,7 +74,6 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		Name:         in.Name,
 		NodeID:       1,
 		Protocol:     in.Protocol,
-		Enabled:      true,
 		ListenPort:   in.ListenPort,
 		Subnet:       in.Subnet,
 		EndpointHost: in.EndpointHost,
@@ -77,6 +81,7 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		DNS:          in.DNS,
 		NATInterface: in.NATInterface,
 		Mode:         in.Mode,
+		Enabled:      in.Enabled == nil || *in.Enabled,
 	}
 
 	if in.Protocol == model.ProtocolWireGuard {
@@ -122,16 +127,16 @@ func (s *Interfaces) validate(in *CreateInterfaceInput) error {
 	in.EndpointHost = strings.TrimSpace(in.EndpointHost)
 
 	if in.Name == "" {
-		return fmt.Errorf("%w: name is required", ErrInvalid)
+		return invalidField("name", "name is required")
 	}
 	if !in.Protocol.Valid() {
-		return fmt.Errorf("%w: unknown protocol %q", ErrInvalid, in.Protocol)
+		return invalidField("protocol", "unknown protocol %q", in.Protocol)
 	}
 	if !backend.Supports(in.Protocol) {
-		return fmt.Errorf("%w: no driver available for %q on this server", ErrInvalid, in.Protocol)
+		return invalidField("protocol", "no driver available for %q on this server", in.Protocol)
 	}
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
-		return fmt.Errorf("%w: listen port %d is out of range", ErrInvalid, in.ListenPort)
+		return invalidField("listenPort", "listen port %d is out of range", in.ListenPort)
 	}
 	// Checked here rather than discovered later. A tunnel on a port something
 	// else already holds is created, reported as configured, and simply never
@@ -139,19 +144,19 @@ func (s *Interfaces) validate(in *CreateInterfaceInput) error {
 	// Both protocols default to UDP here; an OpenVPN interface can be switched
 	// to TCP afterwards, and the port is re-checked when the driver opens it.
 	if err := checkPortFree(in.ListenPort, "udp"); err != nil {
-		return err
+		return &FieldError{Field: "listenPort", Err: err}
 	}
 	if in.EndpointHost == "" {
-		return fmt.Errorf("%w: endpoint host is required; it is what clients dial", ErrInvalid)
+		return invalidField("endpointHost", "endpoint host is required; it is what clients dial")
 	}
 	if _, err := netip.ParsePrefix(in.Subnet); err != nil {
-		return fmt.Errorf("%w: subnet %q: %v", ErrInvalid, in.Subnet, err)
+		return invalidField("subnet", "subnet %q: %v", in.Subnet, err)
 	}
 	if in.MTU == 0 {
 		in.MTU = 1420
 	}
 	if in.MTU < 576 || in.MTU > 9000 {
-		return fmt.Errorf("%w: MTU %d is out of range", ErrInvalid, in.MTU)
+		return invalidField("mtu", "MTU %d is out of range (576-9000)", in.MTU)
 	}
 	if in.DNS == "" {
 		in.DNS = "1.1.1.1"
@@ -164,10 +169,10 @@ func (s *Interfaces) validate(in *CreateInterfaceInput) error {
 		in.Mode = model.ModeStandard
 	case model.ModeStandard, model.ModeAmnezia:
 	default:
-		return fmt.Errorf("%w: unknown mode %q", ErrInvalid, in.Mode)
+		return invalidField("mode", "unknown mode %q", in.Mode)
 	}
 	if in.Mode == model.ModeAmnezia && in.Protocol != model.ProtocolWireGuard {
-		return fmt.Errorf("%w: AmneziaWG mode applies to WireGuard only", ErrInvalid)
+		return invalidField("mode", "AmneziaWG mode applies to WireGuard only")
 	}
 	return nil
 }
@@ -275,13 +280,13 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	if in.EndpointHost != nil {
 		host := strings.TrimSpace(*in.EndpointHost)
 		if host == "" {
-			return nil, fmt.Errorf("%w: endpoint host is required", ErrInvalid)
+			return nil, invalidField("endpointHost", "endpoint host is required")
 		}
 		fields["endpoint_host"] = host
 	}
 	if in.MTU != nil {
 		if *in.MTU < 576 || *in.MTU > 9000 {
-			return nil, fmt.Errorf("%w: MTU %d is out of range", ErrInvalid, *in.MTU)
+			return nil, invalidField("mtu", "MTU %d is out of range (576-9000)", *in.MTU)
 		}
 		fields["mtu"] = *in.MTU
 	}

@@ -14,6 +14,7 @@ const router = useRouter()
 
 const interfaces = ref([])
 const busy = ref(false)
+const formRef = ref(null)
 const loading = ref(true)
 const formFor = ref(null) // null = closed, {} = create, { iface } = edit
 const detailFor = ref(null)
@@ -158,8 +159,17 @@ async function submitForm(input) {
     formFor.value = null
     await load()
   } catch (err) {
-    notify(err.message, 'error')
-    throw err
+    // A message the server attached to a field belongs under that field, not in
+    // a toast the operator has to map back to one of nine inputs themselves.
+    if (err?.field) {
+      formRef.value?.showError(err)
+    } else {
+      notify(err.message, 'error')
+    }
+    // Deliberately not rethrown. It has been handled; letting it escape an
+    // event handler sends it to Vue, which routes it to the error boundary and
+    // turns "that port is out of range" into "this page could not be
+    // displayed".
   }
 }
 </script>
@@ -309,6 +319,7 @@ async function submitForm(input) {
   </div>
 
   <InterfaceForm
+      ref="formRef"
     v-if="formFor"
     :iface="formFor.iface"
     @close="formFor = null"

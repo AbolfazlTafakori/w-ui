@@ -207,25 +207,25 @@ func (s *Clients) reserve(interfaceID uint, n int) ([]netip.Addr, func(), error)
 func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
-		return nil, fmt.Errorf("%w: name is required", ErrInvalid)
+		return nil, invalidField("name", "name is required")
 	}
 	if in.DeviceLimit < 1 {
 		in.DeviceLimit = 1
 	}
 	if in.DeviceLimit > 50 {
-		return nil, fmt.Errorf("%w: device limit %d is unreasonably high", ErrInvalid, in.DeviceLimit)
+		return nil, invalidField("deviceLimit", "device limit must be between 1 and 64")
 	}
 	switch in.ResetCycle {
 	case "":
 		in.ResetCycle = model.ResetNone
 	case model.ResetNone, model.ResetDaily, model.ResetWeekly, model.ResetMonthly:
 	default:
-		return nil, fmt.Errorf("%w: unknown reset cycle %q", ErrInvalid, in.ResetCycle)
+		return nil, invalidField("resetCycle", "unknown reset cycle %q", in.ResetCycle)
 	}
 	// A date in the past is a mistake when someone is selling a plan, and a
 	// fact when a record is being restored. Import says so; the form does not.
 	if !in.Historical && in.ExpiresAt != nil && in.ExpiresAt.Before(time.Now()) {
-		return nil, fmt.Errorf("%w: expiry is in the past", ErrInvalid)
+		return nil, invalidField("expiresAt", "expiry is in the past")
 	}
 
 	names := make([]string, 0, len(in.DeviceNames))

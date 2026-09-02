@@ -68,7 +68,7 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		return nil, fmt.Errorf("service: check node name: %w", err)
 	}
 	if clash > 0 {
-		return nil, fmt.Errorf("%w: a node called %q already exists", ErrInvalid, in.Name)
+		return nil, invalidField("name", "a node called %q already exists", in.Name)
 	}
 
 	node := model.Node{
@@ -161,24 +161,24 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	in.Note = strings.TrimSpace(in.Note)
 
 	if in.Name == "" {
-		return fmt.Errorf("%w: a node needs a name", ErrInvalid)
+		return invalidField("name", "a node needs a name")
 	}
 	if len(in.Name) > 64 {
-		return fmt.Errorf("%w: that name is too long", ErrInvalid)
+		return invalidField("name", "that name is too long")
 	}
 	if in.Address == "" {
-		return fmt.Errorf("%w: a node needs an address", ErrInvalid)
+		return invalidField("address", "a node needs an address")
 	}
 
 	u, err := url.Parse(in.Address)
 	if err != nil || u.Host == "" {
-		return fmt.Errorf("%w: %q is not a URL. It should look like https://vpn2.example.com:2096",
-			ErrInvalid, in.Address)
+		return invalidField("address", "%q is not a URL. It should look like https://vpn2.example.com:2096",
+			in.Address)
 	}
 	switch u.Scheme {
 	case "http", "https":
 	default:
-		return fmt.Errorf("%w: the address must start with http:// or https://", ErrInvalid)
+		return invalidField("address", "the address must start with http:// or https://")
 	}
 	// Said once, here. A token travelling over plain HTTP to another machine is
 	// readable by everything between them, and this is the panel's own key to a
@@ -189,8 +189,8 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	}
 
 	if needToken && in.Token == "" {
-		return fmt.Errorf("%w: a node needs an access token. Create one on that "+
-			"panel under Settings, then paste it here", ErrInvalid)
+		return invalidField("token", "a node needs an access token. Create one on that "+
+			"panel under Settings, then paste it here")
 	}
 	return nil
 }

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useRouter, RouterLink, RouterView } from 'vue-router'
-import { store, t, signOut, loadMessages } from './lib/store.js'
+import { store, t, notify, signOut, loadMessages } from './lib/store.js'
 import Icon from './components/Icon.vue'
 import { themeMode, cycleTheme } from './lib/theme.js'
 
@@ -91,6 +91,16 @@ const version = computed(() => store.meta?.version || 'dev')
 const crash = ref(null)
 
 onErrorCaptured((err, _instance, info) => {
+  // An error from the API is not a broken page: it is a request that failed,
+  // and some handler let it escape. Showing "this page could not be displayed"
+  // for "that port is out of range" is worse than the bug it is reporting, so
+  // it is surfaced as what it is and the page is left standing.
+  if (err?.name === 'ApiError') {
+    notify(err.message, 'error')
+    console.warn('an API error reached the error boundary; a handler did not catch it', err)
+    return false
+  }
+
   crash.value = { message: err?.message || String(err), where: info }
   // Kept in the console too: the message on screen is for the operator, the
   // stack is for whoever they send it to.

@@ -2177,3 +2177,27 @@ button.strip-item:hover {
 .confirm-type label {
   font-size: var(--t-xs);
 }
+
+/* ══════════ field-level errors ══════════ */
+/*
+ * The server's complaint, under the input it is about. A toast naming none of
+ * nine inputs is a message the operator has to solve before they can act on it.
+ */
+.field-error {
+  display: block;
+  margin-top: 5px;
+  color: var(--bad);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+}
+input.bad,
+select.bad,
+textarea.bad {
+  border-color: var(--bad);
+}
+input.bad:focus,
+select.bad:focus,
+textarea.bad:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 18%, transparent);
+}

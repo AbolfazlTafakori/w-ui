@@ -370,10 +370,10 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 func (s *Clients) CreateGroup(ctx context.Context, name, note string) (*model.Group, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, fmt.Errorf("%w: a group needs a name", ErrInvalid)
+		return nil, invalidField("name", "a group needs a name")
 	}
 	if len(name) > 64 {
-		return nil, fmt.Errorf("%w: that name is too long", ErrInvalid)
+		return nil, invalidField("name", "that name is too long")
 	}
 
 	// Checked case-insensitively. Two groups differing only in capitalisation
@@ -384,7 +384,7 @@ func (s *Clients) CreateGroup(ctx context.Context, name, note string) (*model.Gr
 		return nil, fmt.Errorf("service: check group name: %w", err)
 	}
 	if clash > 0 {
-		return nil, fmt.Errorf("%w: a group called %q already exists", ErrInvalid, name)
+		return nil, invalidField("name", "a group called %q already exists", name)
 	}
 
 	g := model.Group{Name: name, Note: strings.TrimSpace(note)}

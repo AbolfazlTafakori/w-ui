@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { store, t } from '../lib/store.js'
 import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
@@ -53,14 +53,43 @@ function onProtocolChange() {
   if (form.value.protocol === 'openvpn') form.value.mode = 'standard'
 }
 
+const fieldError = ref('')
+const fieldName = ref('')
+
+function clearError(name) {
+  if (fieldName.value === name) {
+    fieldName.value = ''
+    fieldError.value = ''
+  }
+}
+
 async function submit() {
   busy.value = true
+  fieldName.value = ''
+  fieldError.value = ''
   try {
     await emit('submit', { ...form.value })
   } finally {
     busy.value = false
   }
 }
+
+// Called by the page when the server refused the submission.
+function showError(err) {
+  if (err?.field) {
+    fieldName.value = err.field
+    fieldError.value = err.message
+    // Put the operator in the field being complained about, so the fix is one
+    // keystroke away rather than a hunt down the form.
+    nextTick(() => {
+      const el = document.querySelector(`[data-field="${err.field}"]`)
+      el?.focus()
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+  }
+}
+
+defineExpose({ showError })
 </script>
 
 <template>
@@ -75,6 +104,7 @@ async function submit() {
       </div>
 
       <form id="iface-form" class="card-body form" @submit.prevent="submit">
+        <p v-if="fieldError && !fieldName" class="field-error" role="alert">{{ fieldError }}</p>
         <div v-if="editing" class="enable-row">
           <div>
             <div class="enable-label">{{ t('table.enabled') }}</div>
@@ -86,19 +116,30 @@ async function submit() {
         <div class="grid-2">
           <div class="field">
             <label for="if-proto"><span class="req">*</span>{{ t('client.protocol') }}</label>
-            <select id="if-proto" v-model="form.protocol" :disabled="editing" @change="onProtocolChange">
+            <select id="if-proto" data-field="protocol" :class="{ bad: fieldName === 'protocol' }" @input="clearError('protocol')" v-model="form.protocol" :disabled="editing" @change="onProtocolChange">
               <option v-for="p in protocols" :key="p" :value="p">{{ t(`protocol.${p}`) }}</option>
             </select>
+            <span v-if="fieldName === 'protocol'" class="field-error" role="alert">{{ fieldError }}</span>
           </div>
 
           <div class="field">
             <label for="if-name"><span class="req">*</span>{{ t('interface.name') }}</label>
-            <input id="if-name" v-model="form.name" :disabled="editing" required />
+            <input id="if-name" data-field="name" :class="{ bad: fieldName === 'name' }" @input="clearError('name')" v-model="form.name" :disabled="editing" required />
+            <span v-if="fieldName === 'name'" class="field-error" role="alert">{{ fieldError }}</span>
           </div>
 
           <div class="field">
             <label for="if-host"><span class="req">*</span>{{ t('interface.endpoint') }}</label>
-            <input id="if-host" v-model="form.endpointHost" placeholder="vpn.example.com" required />
+            <input
+              id="if-host"
+              data-field="endpointHost"
+              :class="{ bad: fieldName === 'endpointHost' }"
+              v-model="form.endpointHost"
+              placeholder="vpn.example.com"
+              required
+              @input="clearError('endpointHost')"
+            />
+            <span v-if="fieldName === 'endpointHost'" class="field-error" role="alert">{{ fieldError }}</span>
             <span class="hint">{{ t('interface.endpointHint') }}</span>
           </div>
 
@@ -106,6 +147,9 @@ async function submit() {
             <label for="if-port"><span class="req">*</span>{{ t('interface.port') }}</label>
             <input
               id="if-port"
+              data-field="listenPort"
+              :class="{ bad: fieldName === 'listenPort' }"
+              @input="clearError('listenPort')"
               v-model="form.listenPort"
               type="number"
               min="1"
@@ -113,17 +157,20 @@ async function submit() {
               :disabled="editing"
               required
             />
+            <span v-if="fieldName === 'listenPort'" class="field-error" role="alert">{{ fieldError }}</span>
           </div>
 
           <div class="field">
             <label for="if-subnet"><span class="req">*</span>{{ t('interface.subnet') }}</label>
-            <input id="if-subnet" v-model="form.subnet" :disabled="editing" required />
+            <input id="if-subnet" data-field="subnet" :class="{ bad: fieldName === 'subnet' }" @input="clearError('subnet')" v-model="form.subnet" :disabled="editing" required />
+            <span v-if="fieldName === 'subnet'" class="field-error" role="alert">{{ fieldError }}</span>
             <span class="hint">{{ t('interface.subnetHint') }}</span>
           </div>
 
           <div class="field">
             <label for="if-mtu">MTU</label>
-            <input id="if-mtu" v-model="form.mtu" type="number" min="576" max="9000" />
+            <input id="if-mtu" data-field="mtu" :class="{ bad: fieldName === 'mtu' }" @input="clearError('mtu')" v-model="form.mtu" type="number" min="576" max="9000" />
+            <span v-if="fieldName === 'mtu'" class="field-error" role="alert">{{ fieldError }}</span>
           </div>
 
           <div class="field">
@@ -139,10 +186,11 @@ async function submit() {
 
         <div v-if="isWireGuard" class="field">
           <label for="if-mode">{{ t('interface.mode') }}</label>
-          <select id="if-mode" v-model="form.mode" :disabled="editing">
+          <select id="if-mode" data-field="mode" :class="{ bad: fieldName === 'mode' }" @input="clearError('mode')" v-model="form.mode" :disabled="editing">
             <option value="standard">{{ t('interface.mode.standard') }}</option>
             <option value="amnezia">{{ t('interface.mode.amnezia') }}</option>
           </select>
+            <span v-if="fieldName === 'mode'" class="field-error" role="alert">{{ fieldError }}</span>
           <span class="hint">{{ t('interface.modeHint') }}</span>
         </div>
 
