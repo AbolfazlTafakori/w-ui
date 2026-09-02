@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useLive, mergeRows } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import InterfaceForm from '../components/InterfaceForm.vue'
@@ -22,20 +23,31 @@ const selected = ref(new Set())
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
-async function load() {
-  loading.value = true
+async function load(quiet = false) {
+  if (!quiet) loading.value = true
   try {
-    interfaces.value = await api.interfaces()
+    const fresh = await api.interfaces({ background: quiet })
+    interfaces.value = quiet
+      ? mergeRows(interfaces.value, fresh, pending.value)
+      : fresh
     const visible = new Set(interfaces.value.map((i) => i.id))
     selected.value = new Set([...selected.value].filter((id) => visible.has(id)))
   } catch (err) {
-    notify(err.message, 'error')
+    if (!quiet) notify(err.message, 'error')
   } finally {
     loading.value = false
   }
 }
 
 onMounted(load)
+
+// What these rows carry -- the traffic, the speed, how much of the address pool
+// is spoken for -- changes constantly. An interface that has just been created
+// also takes a moment to come up, and this is what shows it happening.
+useLive(load, {
+  every: 5000,
+  busy: () => !!formFor.value || !!detailFor.value || !!ask.value,
+})
 
 // The strip 3x-ui puts above its inbound table: what the whole set is carrying.
 const totals = computed(() => {

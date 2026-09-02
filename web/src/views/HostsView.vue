@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
+import { useLive } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -59,6 +60,10 @@ async function load(quiet = false) {
 }
 
 onMounted(load)
+
+// Reachability is filled in by the prober rather than by this page, so the
+// status column is only ever as current as the last read of it.
+useLive(load, { every: 15_000, busy: () => !!formFor.value || !!ask.value })
 
 async function check(h) {
   hold(h.id)

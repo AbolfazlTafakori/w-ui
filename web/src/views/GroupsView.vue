@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useLive } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, gigabytesToBytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -61,18 +62,23 @@ const busy = ref(false)
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
-async function load() {
-  loading.value = true
+async function load(quiet = false) {
+  if (!quiet) loading.value = true
   try {
-    data.value = await api.groups()
+    data.value = await api.groups({ background: quiet })
   } catch (err) {
-    notify(err.message, 'error')
+    if (!quiet) notify(err.message, 'error')
   } finally {
     loading.value = false
   }
 }
 
 onMounted(load)
+
+// The totals here are sums over the customers, so they move whenever any of
+// them does. Slower than the customer list itself: this is a summary, and
+// nobody watches a summary for a change of one row.
+useLive(load, { every: 10_000, busy: () => !!ask.value })
 
 const items = computed(() => data.value?.items || [])
 const totals = computed(() => data.value?.totals || {})

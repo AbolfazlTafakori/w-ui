@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useLive, mergeRows } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, relative, dateTime, percent, gigabytesToBytes, isOnline } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
@@ -35,32 +36,55 @@ const busy = ref(false)
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
-async function load() {
-  loading.value = true
+// `quiet` marks a poll: no spinner, no progress bar, and a failure that is not
+// worth a toast — the page keeps showing what it had and tries again shortly.
+async function load(quiet = false) {
+  if (!quiet) loading.value = true
   try {
     const [p, o] = await Promise.all([
-      api.clients({
-        search: search.value,
-        status: statusFilter.value,
-        group: groupFilter.value,
-        sort: sort.value,
-        page: currentPage.value,
-        perPage: 25,
-      }),
-      api.overview(),
+      api.clients(
+        {
+          search: search.value,
+          status: statusFilter.value,
+          group: groupFilter.value,
+          sort: sort.value,
+          page: currentPage.value,
+          perPage: 25,
+        },
+        { background: quiet },
+      ),
+      api.overview({ background: quiet }),
     ])
-    page.value = p
+
     stats.value = o
+    if (quiet && page.value) {
+      // Patched in place so a switch the operator has just flipped does not
+      // snap back for one tick while its own request is still in flight.
+      page.value.total = p.total
+      page.value.items = mergeRows(page.value.items, p.items, pending.value)
+    } else {
+      page.value = p
+    }
+
     // Drop selections for rows no longer on screen, so a bulk action can never
     // reach a client the operator can no longer see.
     const visible = new Set(p.items.map((c) => c.id))
     selected.value = new Set([...selected.value].filter((id) => visible.has(id)))
   } catch (err) {
-    notify(err.message, 'error')
+    if (!quiet) notify(err.message, 'error')
   } finally {
     loading.value = false
   }
 }
+
+// Online, traffic and remaining are recomputed on the server every couple of
+// seconds. Five is often enough to follow that without asking a busy panel for
+// a hundred rows every three.
+useLive(load, {
+  every: 5000,
+  // Not while something is open over the top of the list.
+  busy: () => !!formFor.value || !!shareFor.value || !!ask.value,
+})
 
 async function loadGroups() {
   try {

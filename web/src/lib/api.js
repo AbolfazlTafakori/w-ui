@@ -193,21 +193,21 @@ export const api = {
   system: () => request('GET', '/api/system'),
   meta: () => request('GET', '/api/meta'),
   messages: (locale) => request('GET', `/api/i18n/${locale}`),
-  overview: () => request('GET', '/api/overview'),
+  overview: (opts) => request('GET', '/api/overview', undefined, opts),
   fullOverview: (opts) => request('GET', '/api/overview/full', undefined, opts),
 
-  interfaces: () => request('GET', '/api/interfaces'),
+  interfaces: (opts) => request('GET', '/api/interfaces', undefined, opts),
   createInterface: (input) => request('POST', '/api/interfaces', input),
   updateInterface: (id, input) => request('PATCH', `/api/interfaces/${id}`, input),
   deleteInterface: (id) => request('DELETE', `/api/interfaces/${id}`),
 
-  clients: (params = {}) => {
+  clients: (params = {}, opts) => {
     const q = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) {
       if (v !== '' && v != null) q.set(k, v)
     }
     const qs = q.toString()
-    return request('GET', `/api/clients${qs ? `?${qs}` : ''}`)
+    return request('GET', `/api/clients${qs ? `?${qs}` : ''}`, undefined, opts)
   },
   client: (id) => request('GET', `/api/clients/${id}`),
   createClient: (input) => request('POST', '/api/clients', input),
@@ -222,7 +222,7 @@ export const api = {
   exportUrl: () => '/api/clients/export',
   addDevice: (id, name) => request('POST', `/api/clients/${id}/devices`, { name }),
 
-  groups: () => request('GET', '/api/groups'),
+  groups: (opts) => request('GET', '/api/groups', undefined, opts),
   groupNames: () => request('GET', '/api/groups/names'),
   renameGroup: (from, to) => request('POST', '/api/groups/rename', { from, to }),
   assignGroup: (group, ids) => request('POST', '/api/groups/assign', { group, ids }),
