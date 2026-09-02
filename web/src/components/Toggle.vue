@@ -45,12 +45,27 @@ defineEmits(['update:modelValue'])
   cursor: progress;
   opacity: 1;
 }
-input {
+/* The real checkbox, kept reachable by keyboard and screen reader but out of
+   the layout. Scoped to .toggle so a global rule for form inputs cannot win on
+   specificity and give it a size again -- which it did, and in right-to-left
+   the stray 180px box hung off the edge and scrolled every page sideways.
+   Clipped rather than merely sized to zero, so a width from anywhere still
+   cannot affect layout. */
+.toggle > input {
   position: absolute;
+  width: 1px;
+  height: 1px;
+  /* Stated as well as the width, because a minimum from a surrounding form
+     layout would otherwise put the box back. */
+  min-width: 0;
+  max-width: none;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   opacity: 0;
-  width: 0;
-  height: 0;
-  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .track {
   width: 40px;

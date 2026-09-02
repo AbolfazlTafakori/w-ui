@@ -1364,8 +1364,11 @@ pre.config {
 .setting-control > * {
   max-width: 100%;
 }
+/* A floor for the fields somebody types into. Checkboxes are excluded: this
+   was giving a toggle's hidden control a 180px box, which in right-to-left hung
+   off the edge of the page and scrolled every settings page sideways. */
 .setting-control select,
-.setting-control input {
+.setting-control input:not([type='checkbox']) {
   min-width: 180px;
 }
 
@@ -2743,6 +2746,13 @@ textarea.bad:focus {
 }
 
 pre.code {
+  /* Explicitly a block. Something upstream leaves `pre` as inline-block, which
+     sizes it to its longest line -- and a generated nftables program has lines
+     wide enough to scroll the whole page sideways. */
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin: 0;
   padding: 14px 16px;
   overflow-x: auto;
