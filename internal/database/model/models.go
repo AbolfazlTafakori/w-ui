@@ -6,13 +6,55 @@ import "time"
 // node today; the table and the NodeID foreign keys exist so a second node is
 // an insert rather than a schema migration.
 type Node struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"size:64;uniqueIndex;not null" json:"name"`
-	Kind      NodeKind  `gorm:"size:16;not null;default:local" json:"kind"`
-	Address   string    `gorm:"size:255" json:"address"`
-	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	ID      uint     `gorm:"primaryKey" json:"id"`
+	Name    string   `gorm:"size:64;uniqueIndex;not null" json:"name"`
+	Kind    NodeKind `gorm:"size:16;not null;default:local" json:"kind"`
+	Address string   `gorm:"size:255" json:"address"`
+	Enabled bool     `gorm:"not null;default:true" json:"enabled"`
+	Note    string   `gorm:"size:256" json:"note"`
+
+	// Token authenticates this panel to the remote one. A node is another W-UI
+	// panel rather than a purpose-built agent, so the thing being spoken to is
+	// the same API served here — which means one implementation to secure and
+	// one to keep working, instead of a second protocol nobody exercises.
+	//
+	// Never returned by the API: it is a bearer credential for a whole panel.
+	Token string `gorm:"size:128" json:"-"`
+
+	// What the last probe found. Held on the row rather than in memory so the
+	// page has something to show immediately after a restart instead of an
+	// empty table that fills in a few seconds later.
+	LastSeenAt *time.Time `json:"lastSeenAt"`
+	LatencyMS  int        `gorm:"not null;default:0" json:"latencyMs"`
+	Version    string     `gorm:"size:32" json:"version"`
+	Reachable  bool       `gorm:"not null;default:false" json:"reachable"`
+	LastError  string     `gorm:"size:256" json:"lastError"`
+
+	CPUPercent  float64 `gorm:"not null;default:0" json:"cpuPercent"`
+	MemPercent  float64 `gorm:"not null;default:0" json:"memPercent"`
+	UptimeSec   int64   `gorm:"not null;default:0" json:"uptimeSec"`
+	Clients     int64   `gorm:"not null;default:0" json:"clients"`
+	Interfaces  int64   `gorm:"not null;default:0" json:"interfaces"`
+	Enforcement string  `gorm:"size:32" json:"enforcement"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// APIToken is a long-lived credential for machine access.
+//
+// A session token expires and is bound to a person signing in; a node talking to
+// another node has neither. Stored as a hash for the same reason a password is:
+// a leaked database should not hand over live access to every panel this one
+// federates with.
+type APIToken struct {
+	ID     uint   `gorm:"primaryKey" json:"id"`
+	Name   string `gorm:"size:64;not null" json:"name"`
+	Hash   string `gorm:"size:128;uniqueIndex;not null" json:"-"`
+	Prefix string `gorm:"size:12;not null" json:"prefix"`
+
+	LastUsedAt *time.Time `json:"lastUsedAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
 }
 
 // Interface is one listening VPN endpoint on a node.
@@ -257,6 +299,7 @@ func AllModels() []any {
 		&TrafficSample{},
 		&IPLease{},
 		&Admin{},
+		&APIToken{},
 		&Group{},
 		&AccountEndpoint{},
 		&Setting{},

@@ -42,6 +42,11 @@ type systemInfo struct {
 	Clients    int64 `json:"clients"`
 	Accounts   int64 `json:"accounts"`
 
+	// Host load, so a panel watching this one as a node can show it without a
+	// second request. It is the same reading the overview draws.
+	CPUPercent float64 `json:"cpuPercent"`
+	MemPercent float64 `json:"memPercent"`
+
 	Reconciler reconciler.Stats `json:"reconciler"`
 }
 
@@ -78,6 +83,12 @@ func (s *Server) handleFullOverview(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 	info := s.buildSystemInfo(r)
+
+	if s.sys != nil {
+		snap := s.sys.Snapshot()
+		info.CPUPercent = snap.CPU.Percent
+		info.MemPercent = snap.Memory.Percent
+	}
 
 	db := s.db.WithContext(r.Context())
 	if err := db.Model(&model.Interface{}).Count(&info.Interfaces).Error; err != nil {

@@ -27,6 +27,7 @@ import GroupsView from './views/GroupsView.vue'
 import SettingsView from './views/SettingsView.vue'
 import SharingView from './views/SharingView.vue'
 import ApiView from './views/ApiView.vue'
+import NodesView from './views/NodesView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 
 const router = createRouter({
@@ -38,6 +39,7 @@ const router = createRouter({
     { path: '/clients/:id', name: 'client', component: ClientDetailView, props: true },
     { path: '/groups', name: 'groups', component: GroupsView },
     { path: '/interfaces', name: 'interfaces', component: InterfacesView },
+    { path: '/nodes', name: 'nodes', component: NodesView },
     { path: '/sharing', name: 'sharing', component: SharingView },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },

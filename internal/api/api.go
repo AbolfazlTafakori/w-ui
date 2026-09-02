@@ -15,6 +15,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
+	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -30,6 +31,8 @@ type Server struct {
 	catalog   *i18n.Catalog
 	enforcer  enforce.Enforcer
 	settings  *service.Settings
+	nodes     *service.Nodes
+	prober    *nodes.Prober
 	throttle  *throttle
 	notifier  *notify.Notifier
 	backups   *backup.Service
@@ -52,6 +55,7 @@ type Options struct {
 	Catalog    *i18n.Catalog
 	Enforcer   enforce.Enforcer
 	Settings   *service.Settings
+	Prober     *nodes.Prober
 	Notifier   *notify.Notifier
 	Backups    *backup.Service
 	Shaper     shaper.Shaper
@@ -74,6 +78,8 @@ func New(o Options) *Server {
 		catalog:   o.Catalog,
 		enforcer:  o.Enforcer,
 		settings:  o.Settings,
+		nodes:     service.NewNodes(o.DB, o.Logger),
+		prober:    o.Prober,
 		throttle:  newThrottle(),
 		notifier:  o.Notifier,
 		backups:   o.Backups,

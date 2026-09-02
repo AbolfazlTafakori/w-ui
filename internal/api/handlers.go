@@ -596,3 +596,125 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ungrouped": ungrouped})
 }
+
+// --- nodes ------------------------------------------------------------
+
+func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
+	list, err := s.nodes.List(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
+	var in service.NodeInput
+	if !decode(w, r, &in) {
+		return
+	}
+	node, err := s.nodes.Create(r.Context(), in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	// Probed straight away, so an operator finds out about a wrong address or a
+	// refused token now rather than in half a minute.
+	if s.prober != nil {
+		s.prober.ProbeOne(r.Context(), *node)
+		_ = s.db.WithContext(r.Context()).First(node, node.ID).Error
+	}
+	writeJSON(w, http.StatusCreated, node)
+}
+
+func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in service.NodeInput
+	if !decode(w, r, &in) {
+		return
+	}
+	node, err := s.nodes.Update(r.Context(), id, in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if s.prober != nil {
+		s.prober.ProbeOne(r.Context(), *node)
+		_ = s.db.WithContext(r.Context()).First(node, node.ID).Error
+	}
+	writeJSON(w, http.StatusOK, node)
+}
+
+func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.nodes.Delete(r.Context(), id); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleProbeNode asks one node now, for the button next to it.
+func (s *Server) handleProbeNode(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var node model.Node
+	if err := s.db.WithContext(r.Context()).First(&node, id).Error; err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if s.prober == nil {
+		fail(w, s.log, fmt.Errorf("probing is not available"))
+		return
+	}
+
+	s.prober.ProbeOne(r.Context(), node)
+	_ = s.db.WithContext(r.Context()).First(&node, id).Error
+	writeJSON(w, http.StatusOK, node)
+}
+
+func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
+	list, err := s.nodes.ListTokens(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) handleIssueToken(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	issued, err := s.nodes.IssueToken(r.Context(), in.Name)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	// The only time the secret exists outside the caller's hands. It is stored
+	// as a hash, so this response is the one chance to copy it.
+	writeJSON(w, http.StatusCreated, issued)
+}
+
+func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.nodes.RevokeToken(r.Context(), id); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

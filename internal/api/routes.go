@@ -173,6 +173,36 @@ func (s *Server) routes() []Route {
 			Summary: "Act on every member of a group.",
 			Body:    `{"group":"reseller-a","action":"disable"}`, handler: s.handleGroupAction},
 
+		// ── Nodes ──
+		{Method: "GET", Path: "/api/nodes", Group: "Nodes", Auth: true,
+			Summary: "Every server this panel watches, with what the last probe found.",
+			handler: s.handleListNodes},
+		{Method: "POST", Path: "/api/nodes", Group: "Nodes", Auth: true,
+			Summary: "Register another W-UI panel as a node.",
+			Body:    `{"name":"frankfurt","address":"https://vpn2.example.com:2096","token":"wui_…"}`,
+			Note:    "The token is issued on that panel, under Settings. It is probed immediately.",
+			handler: s.handleCreateNode},
+		{Method: "PATCH", Path: "/api/nodes/{id}", Group: "Nodes", Auth: true,
+			Summary: "Change a node.", Body: `{"name":"frankfurt","address":"https://…","enabled":true}`,
+			Note:    "An empty token leaves the stored one alone.",
+			handler: s.handleUpdateNode},
+		{Method: "DELETE", Path: "/api/nodes/{id}", Group: "Nodes", Auth: true,
+			Summary: "Remove a node. Refused while it still carries interfaces.",
+			handler: s.handleDeleteNode},
+		{Method: "POST", Path: "/api/nodes/{id}/probe", Group: "Nodes", Auth: true,
+			Summary: "Ask one node right now instead of waiting for the schedule.",
+			handler: s.handleProbeNode},
+		{Method: "GET", Path: "/api/tokens", Group: "Nodes", Auth: true,
+			Summary: "Access tokens issued for machine use.",
+			handler: s.handleListTokens},
+		{Method: "POST", Path: "/api/tokens", Group: "Nodes", Auth: true,
+			Summary: "Issue a token another panel can use against this one.",
+			Body:    `{"name":"frankfurt panel"}`,
+			Note:    "The secret is returned once and stored only as a hash.",
+			handler: s.handleIssueToken},
+		{Method: "DELETE", Path: "/api/tokens/{id}", Group: "Nodes", Auth: true,
+			Summary: "Revoke a token.", handler: s.handleRevokeToken},
+
 		// ── The server ──
 		{Method: "GET", Path: "/api/overview", Group: "Server", Auth: true,
 			Summary: "Host telemetry.", handler: s.handleOverview},
@@ -236,7 +266,7 @@ type APIGroup struct {
 // handleAPIDocs describes the API from the same table that serves it.
 func (s *Server) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
 	order := []string{"Authentication", "Customers", "Devices", "Interfaces",
-		"Groups", "Server", "Settings"}
+		"Groups", "Nodes", "Server", "Settings"}
 	rank := map[string]int{}
 	for i, g := range order {
 		rank[g] = i

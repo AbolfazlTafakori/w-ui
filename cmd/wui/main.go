@@ -29,6 +29,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/logger"
+	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -176,6 +177,11 @@ func run() error {
 
 	notifier.Start(ctx)
 
+	// Watching the other servers. Started before the HTTP listener so the nodes
+	// page has answers the first time it is opened rather than an empty table.
+	prober := nodes.New(db, log)
+	prober.Start(ctx)
+
 	// Re-read on every check rather than captured here, so changing either on
 	// the settings page takes effect without a restart.
 	scheduler := backup.NewScheduler(backups)
@@ -208,7 +214,7 @@ func run() error {
 		Body:  fmt.Sprintf("W-UI %s on %s", version, cfg.Listen),
 	})
 
-	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, jwtSecret, sys, rec, log)
+	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober, jwtSecret, sys, rec, log)
 	if err != nil {
 		return err
 	}
@@ -248,6 +254,7 @@ func buildServer(
 	settings *service.Settings,
 	notifier *notify.Notifier,
 	backups *backup.Service,
+	prober *nodes.Prober,
 	jwtSecret []byte,
 	sys *sysinfo.Collector,
 	rec *reconciler.Reconciler,
@@ -263,6 +270,7 @@ func buildServer(
 		Settings:   settings,
 		Notifier:   notifier,
 		Backups:    backups,
+		Prober:     prober,
 		JWTSecret:  jwtSecret,
 		Logger:     log,
 		Version:    version,

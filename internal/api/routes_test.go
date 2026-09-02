@@ -84,6 +84,7 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/backups":              true,
 		"POST /api/settings/notify/test": true,
 		"POST /api/auth/totp/start":      true,
+		"POST /api/nodes/{id}/probe":     true, // asks a node; nothing to send
 	}
 	for _, r := range newRouteServer().routes() {
 		if r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodPut {

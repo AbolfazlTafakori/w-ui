@@ -173,6 +173,19 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// A machine token, from another panel watching this one. Checked before
+		// the JWT because it is not one and would fail that parse with a
+		// message about sessions that would send an operator looking in the
+		// wrong place.
+		if strings.HasPrefix(raw, "wui_") {
+			if s.nodes != nil && s.nodes.VerifyToken(r.Context(), raw) {
+				next(w, r)
+				return
+			}
+			writeError(w, http.StatusUnauthorized, "that access token is not valid")
+			return
+		}
+
 		claims := &jwt.RegisteredClaims{}
 		_, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
 			// Pinning the algorithm is what stops a token signed with "none",
