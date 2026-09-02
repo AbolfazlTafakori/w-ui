@@ -394,7 +394,7 @@ function viewMembers(g) {
         </p>
 
         <div class="field">
-          <input v-model="memberSearch" type="search" :placeholder="t('client.searchPlaceholder')" />
+          <input v-model="memberSearch" type="search" :placeholder="t('client.searchHint')" />
         </div>
 
         <p v-if="!memberChoices.length" class="muted small">{{ t('group.noCandidates') }}</p>
