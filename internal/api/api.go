@@ -6,6 +6,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -82,7 +83,7 @@ type Options struct {
 
 // New builds the API server.
 func New(o Options) *Server {
-	return &Server{
+	srv := &Server{
 		db:        o.DB,
 		clients:   o.Clients,
 		ifaces:    o.Interfaces,
@@ -108,8 +109,36 @@ func New(o Options) *Server {
 		hosts:     service.NewHosts(o.DB, o.Logger),
 		router:    o.Router,
 		subs:      o.Subs,
-		audit:     service.NewAudit(o.DB, o.Subs, o.Listen),
 	}
+
+	// Built last because it asks the server which engines are running, and that
+	// question needs the enforcer, shaper and router the server was just given.
+	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, srv.engineHealth)
+	return srv
+}
+
+// engineHealth reports why each engine is not doing its job, keyed by name.
+//
+// An engine that is working contributes no entry, so an empty map means the
+// kernel is doing everything the panel asked of it.
+func (s *Server) engineHealth(ctx context.Context) map[string]string {
+	out := map[string]string{}
+	if s.enforcer != nil {
+		if err := s.enforcer.Health(ctx); err != nil {
+			out["enforcement"] = err.Error()
+		}
+	}
+	if s.router != nil {
+		if err := s.router.Health(ctx); err != nil {
+			out["routing"] = err.Error()
+		}
+	}
+	if s.shaper != nil {
+		if err := s.shaper.Health(ctx); err != nil {
+			out["shaping"] = err.Error()
+		}
+	}
+	return out
 }
 
 // Routes returns the API mux. The caller mounts it under /api/ and serves the

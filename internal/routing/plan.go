@@ -101,7 +101,7 @@ func BuildPlan(hops []Hop) Plan {
 
 		p.Add = append(p.Add,
 			Statement{
-				Args: []string{"route", "replace", "default", "dev", h.Device, "table", tableArg},
+				Args:     []string{"route", "replace", "default", "dev", h.Device, "table", tableArg},
 				Describe: fmt.Sprintf("point %q at %s", h.Tag, h.Device),
 			},
 			Statement{

@@ -41,16 +41,24 @@ type Audit struct {
 	db     *gorm.DB
 	subs   *Subscriptions
 	listen string
+	// engines reports why each engine is not running, keyed by name, and is
+	// empty when everything is working. Supplied as a function so this package
+	// does not have to know what an nftables or a tc is.
+	engines func(context.Context) map[string]string
 }
 
-func NewAudit(db *gorm.DB, subs *Subscriptions, listen string) *Audit {
-	return &Audit{db: db, subs: subs, listen: listen}
+func NewAudit(
+	db *gorm.DB, subs *Subscriptions, listen string,
+	engines func(context.Context) map[string]string,
+) *Audit {
+	return &Audit{db: db, subs: subs, listen: listen, engines: engines}
 }
 
 // Run collects the warnings that currently apply.
 func (a *Audit) Run(ctx context.Context) []Warning {
 	var out []Warning
 
+	out = append(out, a.checkEngines(ctx)...)
 	out = append(out, a.checkAdmins(ctx)...)
 	out = append(out, a.checkSubscription(ctx)...)
 	out = append(out, a.checkExposure()...)
@@ -58,6 +66,103 @@ func (a *Audit) Run(ctx context.Context) []Warning {
 	out = append(out, a.checkNodes(ctx)...)
 
 	return out
+}
+
+// checkEngines reports the parts of the kernel that are not doing their job.
+//
+// These are the ones that cost money rather than merely risk it: a panel whose
+// quota engine is inert records a customer going over their limit and does
+// nothing about it, and every plan sold is effectively unlimited until someone
+// notices.
+func (a *Audit) checkEngines(ctx context.Context) []Warning {
+	if a.engines == nil {
+		return nil
+	}
+	var out []Warning
+
+	inert := a.engines(ctx)
+	for k, v := range inert {
+		inert[k] = plainReason(v)
+	}
+	if reason, bad := inert["enforcement"]; bad {
+		out = append(out, Warning{
+			ID:       "enforcement-inactive",
+			Severity: "high",
+			Title:    "Data limits are not being enforced",
+			Detail: "Usage is recorded, but nothing stops a customer once they " +
+				"pass their quota. Every plan sold is effectively unlimited " +
+				"until somebody looks. " + reason,
+			Fix:   "Run the panel on a kernel with nftables, or sell only time-limited plans.",
+			Where: "/configs/engine",
+		})
+	}
+	if reason, bad := inert["routing"]; bad {
+		out = append(out, Warning{
+			ID:       "routing-inactive",
+			Severity: "medium",
+			Title:    "Outbounds and routing rules are not being applied",
+			Detail: "They are stored and shown as configured, but every customer " +
+				"still leaves through this server's own address. " + reason,
+			Fix:   "Run the panel on a kernel that supports packet marking and policy routing.",
+			Where: "/configs/engine",
+		})
+	}
+	if reason, bad := inert["shaping"]; bad {
+		out = append(out, Warning{
+			ID:       "shaping-inactive",
+			Severity: "medium",
+			Title:    "Speed limits are not being applied",
+			Detail:   "A customer sold a capped connection gets the whole line. " + reason,
+			Fix:      "Run the panel on a kernel with tc and the HTB scheduler.",
+			Where:    "/configs/engine",
+		})
+	}
+	return out
+}
+
+// plainReason strips the package prefixes off an engine's error.
+//
+// "enforce: enforcement backend unavailable: nftables is Linux-only" is three
+// sentences of which only the last one is addressed to a person. What reaches
+// the panel should read as something said to the operator, not as a Go error
+// that happened to be displayed.
+func plainReason(msg string) string {
+	for {
+		i := strings.Index(msg, ": ")
+		if i <= 0 || i > 48 {
+			break
+		}
+		word := msg[:i]
+		if !looksLikePrefix(word) {
+			break
+		}
+		msg = msg[i+2:]
+	}
+	if msg == "" {
+		return msg
+	}
+	// Ends up inside a sentence, so it should read as one.
+	return strings.ToUpper(msg[:1]) + msg[1:] + "."
+}
+
+// looksLikePrefix reports whether a segment is a package or sentinel name
+// rather than the beginning of a real sentence.
+func looksLikePrefix(w string) bool {
+	if w == "" {
+		return false
+	}
+	switch w {
+	case "enforcement backend unavailable",
+		"traffic shaping is unavailable",
+		"policy routing unavailable":
+		return true
+	}
+	for _, r := range w {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 // checkAdmins looks at who can sign in.

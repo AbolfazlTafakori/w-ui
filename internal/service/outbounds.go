@@ -193,15 +193,15 @@ func (s *Outbounds) Update(ctx context.Context, id uint, in OutboundInput) (*mod
 	}
 
 	updates := map[string]any{
-		"tag":         in.Tag,
-		"kind":        in.Kind,
-		"address":     in.Address,
-		"username":    in.Username,
+		"tag":          in.Tag,
+		"kind":         in.Kind,
+		"address":      in.Address,
+		"username":     in.Username,
 		"peer_pub_key": in.PeerPubKey,
-		"hop_address": in.HopAddress,
-		"hop_dns":     in.HopDNS,
-		"note":        strings.TrimSpace(in.Note),
-		"updated_at":  time.Now().UTC(),
+		"hop_address":  in.HopAddress,
+		"hop_dns":      in.HopDNS,
+		"note":         strings.TrimSpace(in.Note),
+		"updated_at":   time.Now().UTC(),
 	}
 	if in.HopMTU > 0 {
 		updates["hop_mtu"] = in.HopMTU

@@ -371,19 +371,6 @@ const uptime = computed(() => {
   return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`
 })
 
-// Concrete risks, not a lecture. Each one names something an operator can act on.
-const warnings = computed(() => {
-  const out = []
-  if (!info.value) return out
-  if (location.protocol !== 'https:') out.push(t('settings.warn.http'))
-  if (info.value.listen?.startsWith('0.0.0.0') && location.protocol !== 'https:') {
-    out.push(t('settings.warn.exposed'))
-  }
-  if (!info.value.enforcementActive) out.push(t('settings.warn.enforcement'))
-  if (info.value.shapingActive === false) out.push(t('settings.warn.shaping'))
-  return out
-})
-
 async function changePassword() {
   pwError.value = ''
   if (pw.value.next.length < 8) {
@@ -418,23 +405,15 @@ async function changePassword() {
     </div>
   </div>
 
-  <SecurityWarnings />
 
   <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
 
   <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
 
   <template v-else-if="form">
-    <!-- Named risks first, because they are the reason to open this page. -->
-    <div v-if="warnings.length" class="banner warn stack" role="status">
-      <div class="banner-head">
-        <Icon name="alert" :size="15" />
-        <strong>{{ t('settings.warn.title') }}</strong>
-      </div>
-      <ul>
-        <li v-for="(w, i) in warnings" :key="i">{{ w }}</li>
-      </ul>
-    </div>
+    <!-- Everything worth saying about this server, in one place. Two stacked
+         warning boxes read as two unrelated problems and get skimmed. -->
+    <SecurityWarnings :listen="info?.listen" />
 
     <!-- The save bar sits above the tabs: it applies to all of them, and a
          change made on one tab must not look lost when another is opened. -->

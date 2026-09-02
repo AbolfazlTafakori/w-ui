@@ -52,10 +52,10 @@ type Options struct {
 
 	// Router applies the policy. Nil disables routing entirely, which is what
 	// a panel with no outbounds configured wants.
-	Router *routing.Applier
-	Hops   *routing.HopManager
-	Policy PolicySource
-	HopsOf HopSource
+	Router   *routing.Applier
+	Hops     *routing.HopManager
+	Policy   PolicySource
+	HopsOf   HopSource
 	Notifier *notify.Notifier
 	Backends map[uint]backend.Backend // by interface id
 	Interval time.Duration

@@ -40,7 +40,7 @@ type fakeDriver struct {
 	err  error
 }
 
-func (f *fakeDriver) Protocol() model.Protocol { return model.ProtocolWireGuard }
+func (f *fakeDriver) Protocol() model.Protocol                     { return model.ProtocolWireGuard }
 func (f *fakeDriver) Open(context.Context, *model.Interface) error { return nil }
 func (f *fakeDriver) Sync(context.Context, []backend.DesiredAccount) (backend.SyncReport, error) {
 	return backend.SyncReport{}, nil

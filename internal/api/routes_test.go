@@ -79,16 +79,16 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 	// A POST or PATCH documented with no example leaves the caller guessing at
 	// field names, which is the one thing the page exists to prevent.
 	exempt := map[string]bool{
-		"POST /api/clients/{id}/reset":      true, // no body
-		"POST /api/clients/reset-all":       true,
-		"POST /api/backups":                 true,
-		"POST /api/settings/notify/test":    true,
-		"POST /api/auth/totp/start":         true,
-		"POST /api/nodes/{id}/probe":        true, // asks a node; nothing to send
-		"POST /api/interfaces/{id}/restart": true,
-		"POST /api/outbounds/{id}/check":    true, // measures; nothing to send
-		"POST /api/outbounds/check":         true,
-		"POST /api/hosts/{id}/check":        true,
+		"POST /api/clients/{id}/reset":               true, // no body
+		"POST /api/clients/reset-all":                true,
+		"POST /api/backups":                          true,
+		"POST /api/settings/notify/test":             true,
+		"POST /api/auth/totp/start":                  true,
+		"POST /api/nodes/{id}/probe":                 true, // asks a node; nothing to send
+		"POST /api/interfaces/{id}/restart":          true,
+		"POST /api/outbounds/{id}/check":             true, // measures; nothing to send
+		"POST /api/outbounds/check":                  true,
+		"POST /api/hosts/{id}/check":                 true,
 		"POST /api/clients/{id}/subscription/rotate": true, // acts on the id in the path
 	}
 	for _, r := range newRouteServer().routes() {

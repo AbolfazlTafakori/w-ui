@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
 import { t } from '../lib/store.js'
 import Icon from './Icon.vue'
@@ -10,13 +10,38 @@ import Icon from './Icon.vue'
 // security page is a page nobody opens. Every one of these describes a server
 // that is working perfectly and is one mistake away from being someone else's,
 // so the point is that the operator sees it without going to look.
-const warnings = ref([])
+const props = defineProps({
+  // The address the panel is bound to, so the browser-side check can say
+  // whether an unencrypted page is also a public one.
+  listen: { type: String, default: '' },
+})
+
+const fromServer = ref([])
 const loaded = ref(false)
+
+// The one thing the server cannot know: how this page actually arrived. A
+// panel behind a TLS proxy is served over HTTPS while its own listener is
+// plain, and only the browser can tell the two apart.
+const fromBrowser = computed(() => {
+  if (typeof location === 'undefined' || location.protocol === 'https:') return []
+  const publicly = props.listen?.startsWith('0.0.0.0') || props.listen?.startsWith(':')
+  return [
+    {
+      id: 'plain-http',
+      severity: publicly ? 'high' : 'medium',
+      title: t('security.http.title'),
+      detail: publicly ? t('security.http.detailPublic') : t('security.http.detail'),
+      fix: t('security.http.fix'),
+    },
+  ]
+})
+
+const warnings = computed(() => [...fromBrowser.value, ...fromServer.value])
 
 onMounted(async () => {
   try {
     const res = await api.get('/api/security/warnings', { background: true })
-    warnings.value = res.warnings || []
+    fromServer.value = res.warnings || []
   } catch {
     // A panel that cannot audit itself should still let its settings be
     // changed, so this is deliberately silent.

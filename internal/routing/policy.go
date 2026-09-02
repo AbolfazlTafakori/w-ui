@@ -141,7 +141,7 @@ type MarkRule struct {
 	// Exactly one of these selects the traffic.
 	Addrs    []netip.Prefix
 	Ports    []PortRange
-	Protocol string      // "tcp", "udp", "icmp"
+	Protocol string       // "tcp", "udp", "icmp"
 	Sources  []netip.Addr // customer addresses, for a per-client rule
 }
 

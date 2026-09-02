@@ -258,11 +258,6 @@
   "settings.default": "Default",
   "settings.note": "Changes apply immediately. Nothing here restarts the panel.",
   "settings.unsaved": "You have unsaved changes.",
-  "settings.warn.title": "Worth fixing",
-  "settings.warn.http": "This page is served over plain HTTP. The admin password and every customer's configuration travel unencrypted. Put a reverse proxy with TLS in front of it.",
-  "settings.warn.exposed": "The panel listens on every address without TLS, so it is reachable from the internet in the clear.",
-  "settings.warn.enforcement": "Data limits are not being enforced by the kernel. A customer can exceed their quota before the panel notices.",
-  "settings.warn.shaping": "Speed limits are recorded but not applied: this kernel cannot shape traffic.",
   "settings.languageDesc": "The language the panel opens in.",
   "settings.listenDesc": "Set with the w-ui command; the panel cannot change its own listening address while running.",
   "settings.dataDir": "Database",
@@ -728,5 +723,9 @@
   "sub.rotateTitle": "Issue a new subscription link?",
   "sub.rotateBody": "Every copy of the current link stops working immediately, including the one on the customer's device.",
   "sub.rotated": "A new link has been issued",
-  "sub.disabled": "The subscription service is switched off, so this link will not answer."
+  "sub.disabled": "The subscription service is switched off, so this link will not answer.",
+  "security.http.title": "This page is served over plain HTTP",
+  "security.http.detail": "The admin password and every customer's configuration cross the network unencrypted, readable by anything between here and you.",
+  "security.http.detailPublic": "The panel is bound to every address without TLS, so the sign-in page and every customer's configuration are on the open internet in the clear.",
+  "security.http.fix": "Put a reverse proxy with a certificate in front of the panel, and bind the panel itself to 127.0.0.1."
 }

@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	nftBinary = "nft"
-	ipBinary  = "ip"
+	nftBinary  = "nft"
+	ipBinary   = "ip"
 	cmdTimeout = 10 * time.Second
 )
 
