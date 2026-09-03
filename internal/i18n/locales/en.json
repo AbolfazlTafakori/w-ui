@@ -103,6 +103,8 @@
   "device.namePlaceholder": "Phone, laptop…",
   "device.config": "Config",
   "device.downloadConfig": "Download",
+  "device.downloadAll": "Download all",
+  "device.downloadAllHint": "Every device in one zip, one file each",
   "device.showQR": "Share config",
   "device.qrHint": "Scan this in the WireGuard app to import the tunnel.",
   "device.lastSeen": "Last handshake",

@@ -1,11 +1,15 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -249,7 +253,29 @@ func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundl
 		// Deliberately the same answer as a token that never existed.
 		return nil, fmt.Errorf("%w: no such subscription", ErrNotFound)
 	}
+	return s.bundle(ctx, &c, format)
+}
 
+// BundleForClient renders one customer's configurations for an administrator.
+//
+// The same work as Serve, reached by client id rather than by a subscription
+// token: an operator asking the panel for a customer's files should not be made
+// to turn the public subscription service on first, and should not have to
+// handle that customer's token to do it.
+func (s *Subscriptions) BundleForClient(ctx context.Context, id uint, format string) (*Bundle, error) {
+	var c model.Client
+	if err := s.db.WithContext(ctx).Preload("Accounts").
+		Where("id = ?", id).Limit(1).Find(&c).Error; err != nil {
+		return nil, fmt.Errorf("service: read client: %w", err)
+	}
+	if c.ID == 0 {
+		return nil, fmt.Errorf("%w: no such client", ErrNotFound)
+	}
+	return s.bundle(ctx, &c, format)
+}
+
+// bundle renders every device a client has, in the format asked for.
+func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format string) (*Bundle, error) {
 	cfg, err := s.Settings(ctx)
 	if err != nil {
 		return nil, err
@@ -264,7 +290,7 @@ func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundl
 		byID[ifaces[i].ID] = ifaces[i]
 	}
 
-	var parts [][]byte
+	var parts []backend.ClientProfile
 	for i := range c.Accounts {
 		acc := c.Accounts[i]
 		iface, ok := byID[acc.InterfaceID]
@@ -285,7 +311,10 @@ func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundl
 				"client", c.Name, "account", acc.ID, "error", err)
 			continue
 		}
-		parts = append(parts, profile.Body)
+		// Kept whole rather than reduced to bytes: the filename the driver
+		// chose is what tells one device's configuration from another's once
+		// they are in an archive together.
+		parts = append(parts, profile)
 	}
 
 	// An empty body with a 200 is the worst available answer: the customer's app
@@ -311,40 +340,96 @@ func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundl
 		Body:        body,
 		ContentType: ctype,
 		Filename:    safeFilename(c.Name) + configExt(format),
-		UserInfo:    userInfo(&c),
+		UserInfo:    userInfo(c),
 		Title:       cfg.Title,
 		UpdateHours: cfg.UpdateHours,
 	}, nil
 }
 
 // encodeBundle puts the configurations into the shape asked for.
-func encodeBundle(parts [][]byte, format string) (body []byte, contentType string) {
-	joined := []byte(strings.Join(asStrings(parts), "\n\n"))
-
+func encodeBundle(parts []backend.ClientProfile, format string) (body []byte, contentType string) {
 	switch strings.ToLower(format) {
+	case "zip":
+		// One file per device. Concatenating them, which is what every other
+		// format here does, produces something no WireGuard client can import:
+		// a .conf holds exactly one [Interface], so a customer with a phone and
+		// a laptop was being handed a file where the second device silently did
+		// not exist. This is the only format that can carry more than one.
+		//
+		// Not the default, and not what a subscription URL should return:
+		// OpenVPN Connect and most WireGuard subscription clients fetch that URL
+		// expecting text and reject an archive outright.
+		return zipBundle(parts), "application/zip"
 	case "base64":
 		// What most subscription clients expect. Standard encoding rather than
 		// URL-safe: the body is not a URL, and clients decode it as standard.
-		enc := base64.StdEncoding.EncodeToString(joined)
+		enc := base64.StdEncoding.EncodeToString(joinProfiles(parts))
 		return []byte(enc), "text/plain; charset=utf-8"
 	default:
-		return joined, "text/plain; charset=utf-8"
+		return joinProfiles(parts), "text/plain; charset=utf-8"
 	}
 }
 
-func asStrings(parts [][]byte) []string {
+func joinProfiles(parts []backend.ClientProfile) []byte {
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
-		out = append(out, strings.TrimSpace(string(p)))
+		out = append(out, strings.TrimSpace(string(p.Body)))
 	}
-	return out
+	return []byte(strings.Join(out, "\n\n"))
+}
+
+// zipBundle writes one entry per configuration.
+//
+// Names are made unique as they go: two devices on different interfaces can
+// arrive with the same filename, and a zip with two identical names is one an
+// unpacker will either refuse or silently reduce to one file -- losing exactly
+// the configuration this format exists to deliver.
+func zipBundle(parts []backend.ClientProfile) []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	used := make(map[string]int, len(parts))
+
+	for i, p := range parts {
+		// Only the last element, and only after slashes are normalised: a
+		// filename is chosen by a driver, but an archive entry with a path in
+		// it is how an unpacker gets talked into writing outside its directory.
+		name := path.Base(filepath.ToSlash(strings.TrimSpace(p.Filename)))
+		if name == "" || name == "." || name == "/" {
+			name = fmt.Sprintf("device-%d.conf", i+1)
+		}
+
+		// Suffixed until it is free, rather than once: -2 can itself already be
+		// taken by a device that happened to be named that way.
+		base, ext := strings.TrimSuffix(name, path.Ext(name)), path.Ext(name)
+		for n := 2; used[name] > 0; n++ {
+			name = fmt.Sprintf("%s-%d%s", base, n, ext)
+		}
+		used[name]++
+
+		w, err := zw.Create(name)
+		if err != nil {
+			continue
+		}
+		// A trailing newline: some editors and some clients will not read the
+		// last line of a file that does not end in one.
+		_, _ = w.Write(append(bytes.TrimSpace(p.Body), '\n'))
+	}
+
+	if err := zw.Close(); err != nil {
+		return nil
+	}
+	return buf.Bytes()
 }
 
 func configExt(format string) string {
-	if strings.EqualFold(format, "base64") {
+	switch strings.ToLower(format) {
+	case "base64":
 		return ".txt"
+	case "zip":
+		return ".zip"
+	default:
+		return ".conf"
 	}
-	return ".conf"
 }
 
 // userInfo renders the header client apps read.

@@ -103,6 +103,8 @@
   "device.namePlaceholder": "موبایل، لپ‌تاپ…",
   "device.config": "کانفیگ",
   "device.downloadConfig": "دانلود",
+  "device.downloadAll": "دانلود همه",
+  "device.downloadAllHint": "همه‌ی دستگاه‌ها در یک zip، هرکدام یک فایل",
   "device.showQR": "اشتراک‌گذاری کانفیگ",
   "device.qrHint": "این را در اپ وایرگارد اسکن کن تا تونل وارد شود.",
   "device.lastSeen": "آخرین handshake",

@@ -99,6 +99,10 @@ func (s *Server) routes() []Route {
 			handler: s.handleAddDevice},
 		{Method: "POST", Path: "/api/clients/{id}/reset", Group: "Customers", Auth: true,
 			Summary: "Set one customer's usage back to zero.", handler: s.handleResetTraffic},
+		{Method: "GET", Path: "/api/clients/{id}/configs", Group: "Customers", Auth: true,
+			Summary: "Every device's configuration, as a zip. Add ?format=base64 or " +
+				"?format=plain for the subscription formats instead.",
+			handler: s.handleClientConfigs},
 
 		{Method: "POST", Path: "/api/clients/bulk", Group: "Customers", Auth: true,
 			Summary: "Enable, disable, reset or delete many at once.",

@@ -293,6 +293,37 @@ func (s *Server) handleResetTraffic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, client)
 }
 
+// handleClientConfigs hands an operator every configuration one customer has.
+//
+// An archive by default, because a .conf file holds exactly one [Interface]:
+// a customer with two devices cannot be given one file, and joining them —
+// which is what the subscription formats do — quietly delivers only the first.
+func (s *Server) handleClientConfigs(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "zip"
+	}
+
+	bundle, err := s.subs.BundleForClient(r.Context(), id, format)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+
+	h := w.Header()
+	h.Set("Content-Type", bundle.ContentType)
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", bundle.Filename))
+	// These are keys. Nothing between here and the operator should keep a copy.
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(bundle.Body)
+}
+
 // handleBulk applies one action to a selected set of clients.
 func (s *Server) handleBulk(w http.ResponseWriter, r *http.Request) {
 	var body struct {

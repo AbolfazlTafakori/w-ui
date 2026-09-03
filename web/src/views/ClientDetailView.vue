@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import QRCode from 'qrcode'
-import { api } from '../lib/api.js'
+import { api, apiURL, getToken } from '../lib/api.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -17,6 +17,37 @@ const profile = ref(null)
 const qr = ref('')
 const newDevice = ref('')
 const busy = ref(false)
+const downloading = ref(false)
+
+// Every device's configuration in one archive.
+//
+// Fetched with the session token rather than linked: these are private keys,
+// and a plain link carries no Authorization header — it would either fail or
+// force the panel to serve them unauthenticated.
+async function downloadAll() {
+  downloading.value = true
+  try {
+    const res = await fetch(apiURL(`/api/clients/${props.id}/configs`), {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+    if (!res.ok) throw new Error((await res.text()) || t('error.unknown'))
+
+    // The server names the file after the customer; falling back to the id
+    // beats saving something called "download".
+    const disposition = res.headers.get('Content-Disposition') || ''
+    const named = /filename="([^"]+)"/.exec(disposition)
+    const url = URL.createObjectURL(await res.blob())
+    const a = document.createElement('a')
+    a.href = url
+    a.download = named ? named[1] : `client-${props.id}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    downloading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
@@ -178,6 +209,13 @@ async function copy(text) {
         <div class="metric">
           <dt>{{ t('client.used') }}</dt>
           <dd>{{ bytes(client.usedBytes, store.locale) }}</dd>
+          <!-- Shown only once there is a split to show. The enforcer that
+               cannot tell the directions apart leaves both at zero, and
+               "↓ 0 B ↑ 0 B" under a real total reads as a fault. -->
+          <dd v-if="client.downBytes || client.upBytes" class="muted small num ltr">
+            ↓ {{ bytes(client.downBytes, store.locale) }}
+            ↑ {{ bytes(client.upBytes, store.locale) }}
+          </dd>
         </div>
         <div class="metric">
           <dt>{{ t('client.quota') }}</dt>
@@ -232,6 +270,18 @@ async function copy(text) {
             @click="addDevice"
           >
             <Icon name="plus" :size="13" />{{ t('device.add') }}
+          </button>
+          <!-- A .conf holds one [Interface], so several devices cannot be one
+               file. Shown only when there is more than one to collect. -->
+          <button
+            v-if="(client.accounts?.length ?? 0) > 1"
+            class="btn sm"
+            :title="t('device.downloadAllHint')"
+            :disabled="downloading"
+            @click="downloadAll"
+          >
+            <span v-if="downloading" class="spin sm"></span>
+            <Icon v-else name="download" :size="13" />{{ t('device.downloadAll') }}
           </button>
         </div>
       </div>
