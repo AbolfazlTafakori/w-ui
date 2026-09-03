@@ -82,6 +82,10 @@ detect_os() {
   OS_LIKE="${ID_LIKE:-}"
   OS_NAME="${PRETTY_NAME:-$OS_ID}"
   OS_VERSION="${VERSION_ID:-}"
+  # The archive codename, which is what a third-party repository publishes
+  # under. A release too new for a PPA is the usual reason apt breaks after
+  # adding one.
+  OS_CODENAME="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
 
   case "$OS_ID" in
     ubuntu|debian) FAMILY=debian ;;
@@ -130,11 +134,70 @@ do_uninstall() {
 }
 
 # ── packages ─────────────────────────────────────────────────────────────────
+# Third-party repositories break. When one does, everything this installer
+# actually needs is still in the distribution's own archive, so a failed
+# refresh is reported and stepped over rather than being fatal.
+#
+# It is fatal only in the sense that `set -e` would make it so: `apt-get update`
+# returns non-zero if any single source failed, including one this installer
+# added itself on an earlier run. That is how an install could end at the first
+# step with nothing done.
 pkg_refresh() {
   case "$FAMILY" in
-    debian) DEBIAN_FRONTEND=noninteractive apt-get update -qq ;;
+    debian)
+      if ! DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/tmp/wui-apt.err; then
+        # Name the repositories that failed, so the operator can see it is not
+        # the distribution archive that is unreachable.
+        local broken
+        broken="$(grep -oE "https?://[^ ]+" /tmp/wui-apt.err 2>/dev/null | sort -u | head -3)"
+        warn "some package sources could not be refreshed"
+        [[ -n "$broken" ]] && printf '%s\n' "$broken" | sed 's/^/      /'
+        warn "continuing with what the distribution archive has"
+      fi
+      rm -f /tmp/wui-apt.err
+      ;;
     rhel)   : ;;  # dnf refreshes per transaction
   esac
+}
+
+# Remove an AmneziaWG PPA that this installer added and that does not publish
+# for this release.
+#
+# Left in place it breaks every `apt-get update` on the machine from then on,
+# including this installer's own -- which is exactly how a second run ends at
+# the first step. Only the file this installer writes is touched.
+repair_amnezia_ppa() {
+  [[ "$FAMILY" == debian ]] || return 0
+  local f found=0
+  for f in /etc/apt/sources.list.d/amnezia-ubuntu-ppa-*.list \
+           /etc/apt/sources.list.d/amnezia-ubuntu-ppa-*.sources; do
+    [[ -e "$f" ]] || continue
+    if ! ppa_publishes_for_this_release; then
+      rm -f "$f"
+      found=1
+    fi
+  done
+  if [[ "$found" == 1 ]]; then
+    warn "removed the AmneziaWG repository: it publishes nothing for ${OS_CODENAME:-this release}"
+    warn "that repository was breaking apt; standard WireGuard is unaffected"
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
+  fi
+}
+
+# Does the AmneziaWG PPA actually have packages for this release?
+#
+# `add-apt-repository` succeeds whether or not it does -- it only writes a file
+# -- so asking first is the difference between skipping a feature and leaving
+# the machine with an apt that no longer works.
+ppa_publishes_for_this_release() {
+  [[ -n "${OS_CODENAME:-}" ]] || return 1
+  # Without curl there is no way to ask, and "cannot ask" must not be read as
+  # "no" -- that would have the repair below remove a repository that is
+  # working perfectly well. This runs before curl is installed.
+  command -v curl >/dev/null 2>&1 || return 0
+  curl -fsSI --max-time 10 \
+    "https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu/dists/${OS_CODENAME}/Release" \
+    >/dev/null 2>&1
 }
 
 pkg_install() {
@@ -148,6 +211,9 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 install_base() {
   step "Installing base packages"
+  # Before anything else: if an earlier run left a repository behind that this
+  # release has no packages in, apt is broken and nothing below would work.
+  repair_amnezia_ppa
   pkg_refresh
 
   local base
@@ -193,6 +259,17 @@ install_amnezia() {
         AMNEZIA_OK=0
         return 0
       fi
+      # Asked before it is added. A PPA that publishes nothing for this
+      # release still installs cleanly as a sources file and then breaks every
+      # apt operation afterwards, including this installer's own on the next
+      # run. Ubuntu releases routinely ship before their PPAs catch up.
+      if ! ppa_publishes_for_this_release; then
+        warn "AmneziaWG has no packages for ${OS_CODENAME:-this release} yet; skipping"
+        warn "standard WireGuard is unaffected — re-run later to add it"
+        AMNEZIA_OK=0
+        return 0
+      fi
+
       pkg_install software-properties-common
       if ! add-apt-repository -y ppa:amnezia/ppa >/dev/null 2>&1; then
         warn "could not add ppa:amnezia/ppa; skipping AmneziaWG"
