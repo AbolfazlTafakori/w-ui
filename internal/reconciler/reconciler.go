@@ -232,7 +232,9 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 			continue // idle clients are not worth a write
 		}
 		total += d.Bytes
-		r.writer.submit(trafficUpdate{Key: d.Key, Bytes: d.Bytes, At: now})
+		r.writer.submit(trafficUpdate{
+			Key: d.Key, Bytes: d.Bytes, Up: d.Up, Down: d.Down, At: now,
+		})
 	}
 
 	// Handshakes and endpoints come from the drivers, not from nftables, and

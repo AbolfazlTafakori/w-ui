@@ -72,8 +72,17 @@ func (r Rule) Unlimited() bool { return r.QuotaBytes == 0 }
 
 // Usage is the byte count observed for one rule.
 type Usage struct {
-	Key   string
+	Key string
+
+	// Bytes is the total, which is what an allowance is spent from.
 	Bytes uint64
+
+	// Up and Down split that total by direction, when whatever produced this
+	// could tell them apart. They sum to Bytes when they are set at all; an
+	// implementation with no directional counters leaves them zero and only
+	// the total is recorded.
+	Up   uint64
+	Down uint64
 }
 
 // Enforcer programs and reads the kernel-side policy.

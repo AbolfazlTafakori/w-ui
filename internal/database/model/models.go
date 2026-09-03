@@ -113,8 +113,12 @@ type Client struct {
 	// QuotaBytes of 0 means unlimited.
 	QuotaBytes uint64 `gorm:"not null;default:0" json:"quotaBytes"`
 	UsedBytes  uint64 `gorm:"not null;default:0" json:"usedBytes"`
-	// UpBytes and DownBytes split the total by direction. They stay zero until
-	// the collector lands; the quota is enforced on their sum either way.
+	// UpBytes and DownBytes split the total by direction, from the customer's
+	// point of view. The quota is enforced on their sum, not on either one.
+	//
+	// They stay zero on a server whose enforcer cannot tell the directions
+	// apart — the in-memory stand-in used when nftables is unavailable — in
+	// which case only UsedBytes moves rather than the split being guessed at.
 	UpBytes   uint64     `gorm:"not null;default:0" json:"upBytes"`
 	DownBytes uint64     `gorm:"not null;default:0" json:"downBytes"`
 	ExpiresAt *time.Time `gorm:"index" json:"expiresAt"`

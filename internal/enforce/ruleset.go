@@ -20,9 +20,20 @@ const TableName = "wui"
 // script. That is what makes string-building safe here.
 func Key(clientID uint) string { return fmt.Sprintf("c%d", clientID) }
 
-func quotaName(key string) string   { return "q_" + key }
-func counterName(key string) string { return "n_" + key }
-func chainName(key string) string   { return "cl_" + key }
+func quotaName(key string) string { return "q_" + key }
+
+// Counters and chains come in pairs, one per direction.
+//
+// The two verdict maps already tell the directions apart -- @dl is matched on
+// the destination address and @ul on the source -- but both used to jump to one
+// chain and add to one counter, so the split was discarded at the last moment.
+// Every customer's upload and download therefore read zero: on the groups page,
+// in the traffic history, and in the Subscription-Userinfo header their client
+// app reads to show them what they have used.
+func downCounter(key string) string { return "nd_" + key }
+func upCounter(key string) string   { return "nu_" + key }
+func downChain(key string) string   { return "cd_" + key }
+func upChain(key string) string     { return "cu_" + key }
 
 // validKey reports whether a key is one this package generated.
 func validKey(k string) bool {
@@ -86,10 +97,15 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 			return "", fmt.Errorf("%w: rule key %q is not one we generate", ErrInvalidRule, r.Key)
 		}
 
-		// The reporting counter is separate from the quota on purpose. The
-		// quota is cumulative and only cleared on renewal; the counter is
+		// The reporting counters are separate from the quota on purpose. The
+		// quota is cumulative and only cleared on renewal; the counters are
 		// drained on every collection tick and folded into the history.
-		fmt.Fprintf(&b, "\tcounter %s { }\n", counterName(r.Key))
+		//
+		// Two of them, because "how much have I uploaded" is a different
+		// question from "how much have I left", and the kernel is the only
+		// thing in a position to tell the two directions apart.
+		fmt.Fprintf(&b, "\tcounter %s { }\n", downCounter(r.Key))
+		fmt.Fprintf(&b, "\tcounter %s { }\n", upCounter(r.Key))
 
 		if caps.Quota && !r.Unlimited() {
 			// Seeding `used` is what lets a reboot resume where the customer
@@ -101,36 +117,11 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 
 	b.WriteString("\n")
 	for _, r := range sorted {
-		fmt.Fprintf(&b, "\tchain %s {\n", chainName(r.Key))
-
-		// Stamp the packet with its traffic class before anything else. HTB
-		// reads this stamp directly, so a rate limit needs no tc filter and the
-		// cost of classifying stays flat as customers are added — a filter list
-		// would be walked once per packet per customer. A blocked client is
-		// about to be dropped and needs no class.
-		if !r.Blocked && r.RateBitsPerSec > 0 {
-			if minor, err := shaper.Minor(r.Key); err == nil {
-				fmt.Fprintf(&b, "\t\tmeta priority set %s\n", shaper.ClassID(minor))
-			}
-		}
-
-		switch {
-		case r.Blocked:
-			// An admin switched this client off: nothing else needs evaluating.
-			b.WriteString("\t\tdrop\n")
-		case r.Unlimited(), !caps.Quota:
-			// Without kernel quota support the client is still counted, and the
-			// reconciler cuts them off once the stored total crosses the limit —
-			// a tick late instead of a packet late.
-			fmt.Fprintf(&b, "\t\tcounter name \"%s\"\n", counterName(r.Key))
-		default:
-			// Order matters. `drop` ends rule evaluation, so once the quota is
-			// over the counter below is never reached and dropped bytes are not
-			// billed as usage.
-			fmt.Fprintf(&b, "\t\tquota name \"%s\" drop\n", quotaName(r.Key))
-			fmt.Fprintf(&b, "\t\tcounter name \"%s\"\n", counterName(r.Key))
-		}
-		b.WriteString("\t}\n")
+		// One chain per direction, identical but for the counter the bytes
+		// land in. The quota is shared between them: an allowance is spent in
+		// both directions and is one number.
+		writeClientChain(&b, r, caps, downChain(r.Key), downCounter(r.Key))
+		writeClientChain(&b, r, caps, upChain(r.Key), upCounter(r.Key))
 	}
 
 	dl, ul := mapElements(sorted)
@@ -184,6 +175,44 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 // Download and upload share one chain per client, so a customer's traffic is
 // counted against a single quota whichever way it flows — which is what makes
 // the allowance apply to the client rather than to each direction separately.
+// writeClientChain emits one customer's chain for one direction.
+//
+// Both directions get the same treatment, so they are written by the same code:
+// a rate limit that applied only to downloads, or a block that stopped only
+// uploads, would be a very quiet way to give service away.
+func writeClientChain(b *strings.Builder, r Rule, caps Caps, chain, counter string) {
+	fmt.Fprintf(b, "\tchain %s {\n", chain)
+
+	// Stamp the packet with its traffic class before anything else. HTB
+	// reads this stamp directly, so a rate limit needs no tc filter and the
+	// cost of classifying stays flat as customers are added — a filter list
+	// would be walked once per packet per customer. A blocked client is
+	// about to be dropped and needs no class.
+	if !r.Blocked && r.RateBitsPerSec > 0 {
+		if minor, err := shaper.Minor(r.Key); err == nil {
+			fmt.Fprintf(b, "\t\tmeta priority set %s\n", shaper.ClassID(minor))
+		}
+	}
+
+	switch {
+	case r.Blocked:
+		// An admin switched this client off: nothing else needs evaluating.
+		b.WriteString("\t\tdrop\n")
+	case r.Unlimited(), !caps.Quota:
+		// Without kernel quota support the client is still counted, and the
+		// reconciler cuts them off once the stored total crosses the limit —
+		// a tick late instead of a packet late.
+		fmt.Fprintf(b, "\t\tcounter name \"%s\"\n", counter)
+	default:
+		// Order matters. `drop` ends rule evaluation, so once the quota is
+		// over the counter below is never reached and dropped bytes are not
+		// billed as usage.
+		fmt.Fprintf(b, "\t\tquota name \"%s\" drop\n", quotaName(r.Key))
+		fmt.Fprintf(b, "\t\tcounter name \"%s\"\n", counter)
+	}
+	b.WriteString("\t}\n")
+}
+
 func mapElements(rules []Rule) (dl, ul string) {
 	var dlParts, ulParts []string
 	seen := map[netip.Addr]bool{}
@@ -197,9 +226,12 @@ func mapElements(rules []Rule) (dl, ul string) {
 				continue
 			}
 			seen[a] = true
-			entry := fmt.Sprintf("%s : jump %s", a.String(), chainName(r.Key))
-			dlParts = append(dlParts, entry)
-			ulParts = append(ulParts, entry)
+			// The one place the two maps stop being copies of each other:
+			// which way a packet was going is decided here and nowhere else.
+			dlParts = append(dlParts,
+				fmt.Sprintf("%s : jump %s", a.String(), downChain(r.Key)))
+			ulParts = append(ulParts,
+				fmt.Sprintf("%s : jump %s", a.String(), upChain(r.Key)))
 		}
 	}
 	return strings.Join(dlParts, ", "), strings.Join(ulParts, ", ")

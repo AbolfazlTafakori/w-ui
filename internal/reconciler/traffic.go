@@ -35,6 +35,13 @@ type trafficUpdate struct {
 	Key   string
 	Bytes uint64
 
+	// The same bytes split by direction, from the customer's point of view:
+	// Up is what they sent, Down is what they received. Zero when the enforcer
+	// could not tell the two apart, in which case only the total is recorded
+	// and the split is left alone rather than being guessed at.
+	Up   uint64
+	Down uint64
+
 	// Set for a liveness update.
 	AccountID uint
 	Handshake time.Time
@@ -49,9 +56,16 @@ type trafficWriter struct {
 	ch  chan trafficUpdate
 
 	mu       sync.Mutex
-	usage    map[uint]uint64 // client id -> bytes since last flush
+	usage    map[uint]usageDelta // client id -> bytes since last flush
 	liveness map[uint]trafficUpdate
 	dropped  uint64
+}
+
+// usageDelta is what one client accumulated between two flushes.
+type usageDelta struct {
+	Bytes uint64
+	Up    uint64
+	Down  uint64
 }
 
 func newTrafficWriter(db *gorm.DB, log *slog.Logger) *trafficWriter {
@@ -59,7 +73,7 @@ func newTrafficWriter(db *gorm.DB, log *slog.Logger) *trafficWriter {
 		db:       db,
 		log:      log,
 		ch:       make(chan trafficUpdate, queueSize),
-		usage:    map[uint]uint64{},
+		usage:    map[uint]usageDelta{},
 		liveness: map[uint]trafficUpdate{},
 	}
 }
@@ -103,7 +117,11 @@ func (w *trafficWriter) absorb(u trafficUpdate) {
 
 	if u.Key != "" && u.Bytes > 0 {
 		if id, ok := clientIDFromKey(u.Key); ok {
-			w.usage[id] += u.Bytes
+			d := w.usage[id]
+			d.Bytes += u.Bytes
+			d.Up += u.Up
+			d.Down += u.Down
+			w.usage[id] = d
 		}
 	}
 	if u.AccountID != 0 {
@@ -131,7 +149,7 @@ func (w *trafficWriter) flush(ctx context.Context) {
 	usage := w.usage
 	liveness := w.liveness
 	dropped := w.dropped
-	w.usage = map[uint]uint64{}
+	w.usage = map[uint]usageDelta{}
 	w.liveness = map[uint]trafficUpdate{}
 	w.dropped = 0
 	w.mu.Unlock()
@@ -149,15 +167,37 @@ func (w *trafficWriter) flush(ctx context.Context) {
 	bucket := now.Truncate(5 * time.Minute)
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		for id, bytes := range usage {
+		for id, d := range usage {
 			// Incremented in SQL rather than read-modify-written in Go, so a
 			// concurrent reset from the UI cannot be silently overwritten by a
 			// stale total.
+			//
+			// All three move in one statement: an allowance that was spent but
+			// whose direction was not recorded would leave the groups page and
+			// the customer's own client app disagreeing with the quota bar on
+			// the same screen.
+			cols := map[string]any{
+				"used_bytes": gorm.Expr("used_bytes + ?", d.Bytes),
+			}
+			if d.Up > 0 {
+				cols["up_bytes"] = gorm.Expr("up_bytes + ?", d.Up)
+			}
+			if d.Down > 0 {
+				cols["down_bytes"] = gorm.Expr("down_bytes + ?", d.Down)
+			}
 			if err := tx.Model(&model.Client{}).
 				Where("id = ?", id).
-				UpdateColumn("used_bytes", gorm.Expr("used_bytes + ?", bytes)).
-				Error; err != nil {
+				UpdateColumns(cols).Error; err != nil {
 				return err
+			}
+
+			// RX is what the customer received and TX what they sent, which is
+			// the way round their own client app reports it. An enforcer that
+			// cannot split the two puts the lot in RX, as this did for every
+			// sample before there were two counters to read.
+			rx, tx2 := d.Down, d.Up
+			if rx == 0 && tx2 == 0 {
+				rx = d.Bytes
 			}
 
 			// The time series is bucketed on write, so the table grows with
@@ -167,8 +207,10 @@ func (w *trafficWriter) flush(ctx context.Context) {
 				id, bucket, model.GranularityFine).First(&sample).Error
 			switch {
 			case err == nil:
-				if err := tx.Model(&sample).
-					UpdateColumn("rx", gorm.Expr("rx + ?", bytes)).Error; err != nil {
+				if err := tx.Model(&sample).UpdateColumns(map[string]any{
+					"rx": gorm.Expr("rx + ?", rx),
+					"tx": gorm.Expr("tx + ?", tx2),
+				}).Error; err != nil {
 					return err
 				}
 			default:
@@ -176,7 +218,8 @@ func (w *trafficWriter) flush(ctx context.Context) {
 					ClientID:    id,
 					BucketTS:    bucket,
 					Granularity: model.GranularityFine,
-					RX:          bytes,
+					RX:          rx,
+					TX:          tx2,
 				}).Error; err != nil {
 					return err
 				}

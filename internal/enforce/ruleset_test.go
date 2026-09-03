@@ -51,7 +51,7 @@ func TestLimitedClientDropsThenCounts(t *testing.T) {
 		t.Errorf("quota object not seeded from stored usage:\n%s", got)
 	}
 
-	chain := chainBody(t, got, "cl_c7")
+	chain := chainBody(t, got, "cd_c7")
 	dropIdx := strings.Index(chain, "quota name")
 	countIdx := strings.Index(chain, "counter name")
 	if dropIdx < 0 || countIdx < 0 {
@@ -70,10 +70,10 @@ func TestUnlimitedClientHasNoQuotaObject(t *testing.T) {
 	if strings.Contains(got, "quota q_c1") {
 		t.Error("an unlimited client should not get a quota object")
 	}
-	if !strings.Contains(got, `counter n_c1`) {
+	if !strings.Contains(got, `counter nd_c1`) {
 		t.Error("an unlimited client should still be counted for reporting")
 	}
-	if !strings.Contains(chainBody(t, got, "cl_c1"), "counter name") {
+	if !strings.Contains(chainBody(t, got, "cd_c1"), "counter name") {
 		t.Error("unlimited chain should count")
 	}
 }
@@ -86,7 +86,7 @@ func TestBlockedClientDropsUnconditionally(t *testing.T) {
 		Blocked:    true,
 	})
 
-	chain := chainBody(t, got, "cl_c9")
+	chain := chainBody(t, got, "cd_c9")
 	if strings.TrimSpace(chain) != "drop" {
 		t.Errorf("a blocked client should drop outright, got:\n%s", chain)
 	}
@@ -107,23 +107,34 @@ func TestSeededUsageNeverExceedsTheQuota(t *testing.T) {
 	}
 }
 
-func TestBothDirectionsShareOneChain(t *testing.T) {
+func TestEachDirectionCountsSeparatelyButSharesTheAllowance(t *testing.T) {
 	got := build(t, Rule{Key: "c4", Addrs: addrs("10.66.0.4"), QuotaBytes: 10})
 
-	dl := mapBody(t, got, "dl")
-	ul := mapBody(t, got, "ul")
-	want := "10.66.0.4 : jump cl_c4"
+	if dl := mapBody(t, got, "dl"); !strings.Contains(dl, "10.66.0.4 : jump cd_c4") {
+		t.Errorf("download map does not reach the download chain:\n%s", dl)
+	}
+	if ul := mapBody(t, got, "ul"); !strings.Contains(ul, "10.66.0.4 : jump cu_c4") {
+		t.Errorf("upload map does not reach the upload chain:\n%s", ul)
+	}
 
-	if !strings.Contains(dl, want) {
-		t.Errorf("download map missing the client:\n%s", dl)
+	// Two counters, because the panel and the customer's own client app both
+	// report upload and download as separate figures. One shared quota,
+	// because an allowance is spent by the customer, not by a direction: two
+	// quotas would silently hand out twice what was sold.
+	for _, want := range []string{"counter nd_c4", "counter nu_c4"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q:\n%s", want, got)
+		}
 	}
-	if !strings.Contains(ul, want) {
-		t.Errorf("upload map missing the client:\n%s", ul)
+	if n := strings.Count(got, "quota q_c4"); n != 1 {
+		t.Errorf("found %d quota objects for one client, want exactly 1", n)
 	}
-	// Sharing the chain is what makes the allowance apply to the customer
-	// rather than separately to each direction.
-	if strings.Count(got, "chain cl_c4 {") != 1 {
-		t.Error("the two directions should reach the same chain, not two copies")
+	// Both chains must consult that one quota, or the direction without it
+	// would keep flowing after the customer had been cut off.
+	for _, chain := range []string{"cd_c4", "cu_c4"} {
+		if body := chainBody(t, got, chain); !strings.Contains(body, `quota name "q_c4" drop`) {
+			t.Errorf("%s does not enforce the shared quota:\n%s", chain, body)
+		}
 	}
 }
 
@@ -136,7 +147,7 @@ func TestMultiDeviceClientMapsEveryAddressToOneChain(t *testing.T) {
 
 	dl := mapBody(t, got, "dl")
 	for _, a := range []string{"10.66.0.10", "10.66.0.11", "10.66.0.12"} {
-		if !strings.Contains(dl, a+" : jump cl_c5") {
+		if !strings.Contains(dl, a+" : jump cd_c5") {
 			t.Errorf("address %s not routed to the client's chain:\n%s", a, dl)
 		}
 	}
@@ -156,7 +167,7 @@ func TestIPv6AddressesAreSkipped(t *testing.T) {
 	if strings.Contains(got, "fd00::1") {
 		t.Error("an IPv6 address reached an ipv4_addr map")
 	}
-	if !strings.Contains(got, "10.66.0.6 : jump cl_c6") {
+	if !strings.Contains(got, "10.66.0.6 : jump cd_c6") {
 		t.Error("the v4 address of the same client was dropped too")
 	}
 }
@@ -329,7 +340,12 @@ func TestABlockedCustomerIsCutOffFromTheServerToo(t *testing.T) {
 			t.Errorf("%s chain does not consult the client map:\n%s", hook, body)
 		}
 	}
-	if !strings.Contains(chainBody(t, out, chainName(Key(1))), "drop") {
-		t.Error("a blocked client's chain does not drop")
+	// Both directions, because a block that stopped downloads and let uploads
+	// through would be a very quiet way to keep serving somebody who was
+	// switched off.
+	for _, chain := range []string{downChain(Key(1)), upChain(Key(1))} {
+		if !strings.Contains(chainBody(t, out, chain), "drop") {
+			t.Errorf("a blocked client's %s chain does not drop", chain)
+		}
 	}
 }

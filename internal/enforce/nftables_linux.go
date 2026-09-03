@@ -5,7 +5,6 @@ package enforce
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -121,22 +120,6 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 	return nil
 }
 
-// nftObject is the shape `nft -j` emits for a stateful object.
-type nftObject struct {
-	Family string `json:"family"`
-	Name   string `json:"name"`
-	Table  string `json:"table"`
-	Bytes  uint64 `json:"bytes"`
-	Used   uint64 `json:"used"`
-}
-
-type nftOutput struct {
-	Nftables []struct {
-		Counter *nftObject `json:"counter"`
-		Quota   *nftObject `json:"quota"`
-	} `json:"nftables"`
-}
-
 // missingTable reports whether an error is nft saying the table is not there.
 //
 // On a fresh install the first tick reads counters before anything has been
@@ -180,43 +163,7 @@ func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("enforce: drain counters: %w", err)
 	}
-	return parseObjects(out, func(e struct {
-		Counter *nftObject `json:"counter"`
-		Quota   *nftObject `json:"quota"`
-	}) (*nftObject, uint64, bool) {
-		if e.Counter == nil {
-			return nil, 0, false
-		}
-		return e.Counter, e.Counter.Bytes, true
-	}, "n_")
-}
-
-func parseObjects(
-	raw []byte,
-	pick func(struct {
-		Counter *nftObject `json:"counter"`
-		Quota   *nftObject `json:"quota"`
-	}) (*nftObject, uint64, bool),
-	prefix string,
-) ([]Usage, error) {
-	var doc nftOutput
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("decode nft json: %w", err)
-	}
-
-	out := make([]Usage, 0, len(doc.Nftables))
-	for _, e := range doc.Nftables {
-		obj, value, ok := pick(e)
-		if !ok || obj.Table != TableName {
-			continue
-		}
-		key := strings.TrimPrefix(obj.Name, prefix)
-		if key == obj.Name || !validKey(key) {
-			continue // not one of ours
-		}
-		out = append(out, Usage{Key: key, Bytes: value})
-	}
-	return out, nil
+	return drainedUsage(out)
 }
 
 // ResetQuota clears the cumulative quota for the given keys, used on renewal.
