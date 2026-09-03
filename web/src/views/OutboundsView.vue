@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
-import { mergeRows } from '../lib/live.js'
+import { mergeRows, useDelayed } from '../lib/live.js'
 import { t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -50,6 +50,8 @@ async function load(quiet = false) {
     loading.value = false
   }
 }
+
+const showSkeleton = useDelayed(computed(() => loading.value && !outbounds.value.length))
 
 onMounted(load)
 
@@ -220,7 +222,14 @@ async function onSaved() {
       <button class="btn" @click="load()">{{ t('action.retry') }}</button>
     </div>
 
-    <div v-else-if="loading" class="empty"><span class="spin"></span></div>
+    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
+      <tbody>
+        <tr v-for="n in 4" :key="n">
+          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else-if="loading" class="empty"></div>
 
     <div v-else class="card">
       <table class="table">

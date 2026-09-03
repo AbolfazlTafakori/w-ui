@@ -2,7 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
-import { useLive, mergeRows } from '../lib/live.js'
+import { useLive, mergeRows, useDelayed } from '../lib/live.js'
+import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import InterfaceForm from '../components/InterfaceForm.vue'
@@ -15,6 +16,11 @@ const router = useRouter()
 
 const interfaces = ref([])
 const busy = ref(false)
+// A failed load and an empty list are not the same thing, and until now this
+// page told an operator whose connection had dropped that they had no
+// interfaces -- and offered to create one. On a page whose rows are live
+// customer tunnels, that is an invitation to build a duplicate.
+const loadError = ref(null)
 const formRef = ref(null)
 const loading = ref(true)
 const formFor = ref(null) // null = closed, {} = create, { iface } = edit
@@ -27,13 +33,19 @@ async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
     const fresh = await api.interfaces({ background: quiet })
+    loadError.value = null
     interfaces.value = quiet
       ? mergeRows(interfaces.value, fresh, pending.value)
       : fresh
     const visible = new Set(interfaces.value.map((i) => i.id))
     selected.value = new Set([...selected.value].filter((id) => visible.has(id)))
   } catch (err) {
-    if (!quiet) notify(err.message, 'error')
+    // A poll that fails leaves the rows that are already on screen alone; a
+    // first load that fails has nothing to leave, so it says so.
+    if (!quiet) {
+      if (!interfaces.value.length) loadError.value = err
+      else notify(err.message, 'error')
+    }
   } finally {
     loading.value = false
   }
@@ -44,6 +56,8 @@ onMounted(load)
 // What these rows carry -- the traffic, the speed, how much of the address pool
 // is spoken for -- changes constantly. An interface that has just been created
 // also takes a moment to come up, and this is what shows it happening.
+const showSkeleton = useDelayed(computed(() => loading.value && !interfaces.value.length))
+
 useLive(load, {
   every: 5000,
   busy: () => !!formFor.value || !!detailFor.value || !!ask.value,
@@ -282,7 +296,16 @@ async function submitForm(input) {
   </div>
 
   <div class="card">
-    <div v-if="loading" class="empty"><span class="spin"></span></div>
+    <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
+
+    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
+      <tbody>
+        <tr v-for="n in 5" :key="n">
+          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else-if="loading" class="empty"></div>
 
     <div v-else-if="!interfaces.length" class="empty empty-cta">
       <p>{{ t('interface.noneYet') }}</p>

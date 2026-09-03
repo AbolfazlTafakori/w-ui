@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
-import { useLive, mergeRows } from '../lib/live.js'
+import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -58,6 +58,8 @@ async function load(quiet = false) {
     loading.value = false
   }
 }
+
+const showSkeleton = useDelayed(computed(() => loading.value && !hosts.value.length))
 
 onMounted(load)
 
@@ -167,7 +169,14 @@ async function runConfirmed() {
       <button class="btn" @click="load()">{{ t('action.retry') }}</button>
     </div>
 
-    <div v-else-if="loading" class="empty"><span class="spin"></span></div>
+    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
+      <tbody>
+        <tr v-for="n in 4" :key="n">
+          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else-if="loading" class="empty"></div>
 
     <!-- Nowhere to put a host yet. Pointing at the page that fixes it rather
          than stating the problem and stopping. -->

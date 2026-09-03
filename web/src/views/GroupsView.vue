@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
-import { useLive } from '../lib/live.js'
+import { useLive, useDelayed } from '../lib/live.js'
+import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, gigabytesToBytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -62,16 +63,26 @@ const busy = ref(false)
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
+const loadError = ref(null)
+
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
     data.value = await api.groups({ background: quiet })
+    loadError.value = null
   } catch (err) {
-    if (!quiet) notify(err.message, 'error')
+    // Saying "no groups yet, create one" to somebody whose request failed is
+    // worse than saying nothing: it describes a state the panel cannot see.
+    if (!quiet) {
+      if (!data.value) loadError.value = err
+      else notify(err.message, 'error')
+    }
   } finally {
     loading.value = false
   }
 }
+
+const showSkeleton = useDelayed(computed(() => loading.value && !data.value))
 
 onMounted(load)
 
@@ -371,7 +382,16 @@ function viewMembers(g) {
   </div>
 
   <div class="card">
-    <div v-if="loading" class="empty"><span class="spin"></span></div>
+    <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
+
+    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
+      <tbody>
+        <tr v-for="n in 4" :key="n">
+          <td v-for="c in 6" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else-if="loading" class="empty"></div>
 
     <div v-else-if="!items.length" class="empty empty-cta">
       <p>{{ t('group.none') }}</p>

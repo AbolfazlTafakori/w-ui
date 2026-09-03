@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
-import { mergeRows } from '../lib/live.js'
+import { mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -9,6 +9,10 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const nodes = ref([])
 const loading = ref(true)
+
+// Declared here, after the state it reads: useDelayed watches with `immediate`
+// and evaluates its source during setup.
+const showSkeleton = useDelayed(computed(() => loading.value && !nodes.value.length))
 const loadError = ref(null)
 const busy = ref(false)
 const dialog = ref(null) // { kind, node }
@@ -260,7 +264,14 @@ function latencyTone(ms) {
     </div>
   </div>
 
-  <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
+  <table v-if="showSkeleton" class="skeleton card" aria-hidden="true">
+    <tbody>
+      <tr v-for="n in 3" :key="n">
+        <td v-for="c in 8" :key="c"><span class="sk"></span></td>
+      </tr>
+    </tbody>
+  </table>
+  <p v-else-if="loading" class="muted"></p>
   <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
 
   <div v-else class="card table-wrap">
