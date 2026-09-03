@@ -49,15 +49,15 @@ run_wizard() {
     die() { printf 'DIED: %s\n' "$*"; exit 9; }
 
     configure >/dev/null 2>&1
-    printf 'PORT=%s\nUSER=%s\nPASS=%s\nBASE=%s\nMODE=%s\nDOMAIN=%s\nEMAIL=%s\nCERT=%s\nOVPN=%s\nAWG=%s\n' \
+    printf 'PORT=%s\nUSER=%s\nPASS=%s\nBASE=%s\nMODE=%s\nDOMAIN=%s\nEMAIL=%s\nCERT=%s\nLISTEN=%s\nOVPN=%s\nAWG=%s\n' \
       "$PANEL_PORT" "$ADMIN_USER" "$ADMIN_PASS" "$BASE_PATH" "$TLS_MODE" "$ACME_DOMAIN" \
-      "$ACME_EMAIL" "$TLS_CERT" "$WANT_OPENVPN" "$WANT_AMNEZIA"
+      "$ACME_EMAIL" "$TLS_CERT" "$LISTEN_ADDR" "$WANT_OPENVPN" "$WANT_AMNEZIA"
   )
 }
 
-# Eight blank lines: port? path? credentials? certificate? domain? openvpn?
-# amneziawg? confirm?
-ALL_DEFAULT=$'\n\n\n\n\n\n\n\n'
+# Nine blank lines: port? path? credentials? certificate? domain? loopback?
+# openvpn? amneziawg? confirm?
+ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n'
 
 echo
 echo "── pressing enter through everything leaves nothing guessable ─────────"
@@ -117,6 +117,7 @@ out=$(run_wizard "y
 n
 n
 3
+n
 y
 y
 y" 'BUSY_PORT=2096')
@@ -129,10 +130,32 @@ y
 
 n
 3
+n
 y
 y
 y")
 check "a blank path means the root" "" "$(field BASE "$out")"
+
+echo
+echo "── plain HTTP can be shut in to the loopback, and nothing is then opened ─"
+out=$(run_wizard "n
+n
+n
+3
+y
+y
+y
+y")
+check "binds to the loopback when asked"  "127.0.0.1" "$(field LISTEN "$out")"
+out=$(run_wizard "n
+n
+n
+3
+n
+y
+y
+y")
+check "and to every interface when not"   "0.0.0.0"   "$(field LISTEN "$out")"
 
 echo
 echo "── junk answers are re-asked rather than accepted ─────────────────────"
@@ -169,6 +192,7 @@ secondpassword
 matching-one
 matching-one
 3
+n
 y
 y
 y")
@@ -184,6 +208,7 @@ short
 longenough1
 longenough1
 3
+n
 y
 y
 y")
@@ -207,7 +232,7 @@ out=$(
   set +e
   # shellcheck disable=SC1091
   source "$WORK/lib.sh" >/dev/null 2>&1
-  printf 'n\nn\nn\n3\ny\ny\nn\n' >"$WORK/answers"
+  printf 'n\nn\nn\n3\nn\ny\ny\nn\n' >"$WORK/answers"
   open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
   have() { return 1; }
   port_taken() { return 1; }

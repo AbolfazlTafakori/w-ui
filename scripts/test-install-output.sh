@@ -25,7 +25,7 @@ unit_with() { # unit_with CERT KEY PORT [BASE]
     # shellcheck disable=SC1091
     source "$WORK/lib.sh" >/dev/null 2>&1
     UNIT="$WORK/wui.service"
-    TLS_CERT="$1"; TLS_KEY="$2"; PANEL_PORT="$3"; BASE_PATH="${4:-}"
+    TLS_CERT="$1"; TLS_KEY="$2"; PANEL_PORT="$3"; BASE_PATH="${4:-}"; LISTEN_ADDR="${5:-0.0.0.0}"
     have_systemd() { return 1; }
     write_unit >/dev/null 2>&1
     cat "$UNIT"
@@ -53,6 +53,7 @@ echo "── half a pair would stop the panel booting, so it is never written �
 u=$(unit_with /etc/wui/certs/panel.crt "" 2096)
 no_ "WUI_TLS_CERT" "$u" "a certificate with no key is dropped rather than written"
 
+
 summary_of() { # summary_of MODE DOMAIN CERT PASS GENERATED [BASE]
   (
     set +e
@@ -61,6 +62,7 @@ summary_of() { # summary_of MODE DOMAIN CERT PASS GENERATED [BASE]
     TLS_MODE="$1"; ACME_DOMAIN="$2"; TLS_CERT="$3"; TLS_KEY="$3"
     ADMIN_PASS="$4"; ADMIN_GENERATED="$5"
     ADMIN_USER=operator; PANEL_PORT=8443; DATA_DIR="$WORK"; BASE_PATH="${6:-}"
+    LISTEN_ADDR="${7:-0.0.0.0}"; ACME_METHOD=""
     public_ip() { printf '203.0.113.9'; }
     have_systemd() { return 0; }
     have() { return 1; }
@@ -94,6 +96,38 @@ echo "── an operator-supplied certificate is reported as theirs ────
 s=$(summary_of files "" /srv/certs/live.pem "p" 0)
 yes_ "https://203.0.113.9:8443" "$s" "https on the address"
 yes_ "yours, at /srv/certs/live.pem" "$s" "and named as their own file"
+
+echo
+echo "── behind a proxy, the panel's own port is not the address ────────────"
+u=$(unit_with "" "" 39001 secretPath 127.0.0.1)
+yes_ "Environment=WUI_LISTEN=127.0.0.1:39001" "$u" "the service binds the loopback, not every interface"
+no_  "WUI_TLS_CERT" "$u" "and terminates no TLS of its own"
+
+s=$(summary_of proxy wui.example.com "" "Chosen-Pass-1" 0 secretPath 127.0.0.1)
+yes_ "https://wui.example.com/secretPath/" "$s" "the address is the domain nginx answers on"
+no_  ":39001" "$s" "the panel's own port is not offered — it is firewalled off by design"
+yes_ "127.0.0.1 only" "$s" "and the operator is told it listens on the loopback"
+yes_ "certbot, through the nginx already on this server" "$s" "the certificate is named as certbot's, not a second one"
+
+s=$(summary_of proxy_plain wui.example.com "" "p" 0 secretPath 127.0.0.1)
+yes_ "http://wui.example.com/secretPath/" "$s" "a proxy with no certificate yet is reported over http"
+yes_ "nginx serves the panel over plain HTTP" "$s" "and said plainly"
+
+fw() {
+  (
+    set +e
+    # shellcheck disable=SC1091
+    source "$WORK/lib.sh" >/dev/null 2>&1
+    LISTEN_ADDR="$1"; PANEL_PORT=39001; ACME_METHOD="${2:-}"
+    have() { return 1; }
+    open_firewall 2>&1
+  )
+}
+echo
+echo "── the firewall is not asked to open a port nothing can reach ─────────"
+yes_ "the panel listens on 127.0.0.1 only" "$(fw 127.0.0.1)" "nothing is opened for a loopback-only panel"
+no_  "39001" "$(fw 127.0.0.1)" "and its port is never named as open"
+yes_ "39001" "$(fw 0.0.0.0)" "a public panel still gets its port opened"
 
 echo
 echo "── a terminal that closes mid-question stops instead of spinning ──────"

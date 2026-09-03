@@ -26,6 +26,7 @@
 #   --tls-cert <path>  use a certificate you already have
 #   --tls-key <path>   its private key
 #   --no-tls           serve plain HTTP (only sane behind a proxy or tunnel)
+#   --local-only       bind to 127.0.0.1, for use behind a proxy or a tunnel
 #   -y, --yes          ask nothing; use flags, environment and defaults
 #   --uninstall        remove the service, binary and unit; keeps the database
 #   --purge            remove everything including the database
@@ -72,6 +73,10 @@ TLS_KEY="${WUI_TLS_KEY:-}"
 ACME_DOMAIN="${WUI_DOMAIN:-}"
 ACME_EMAIL="${WUI_ACME_EMAIL:-}"
 ACME_METHOD=""
+# Which address the panel binds to. 127.0.0.1 when something else is
+# terminating TLS in front of it, in which case the panel must not be
+# reachable from outside at all.
+LISTEN_ADDR="${WUI_LISTEN_ADDR:-0.0.0.0}"
 # The URL path the panel answers on, one segment, empty for the root.
 BASE_PATH="${WUI_BASE_PATH:-}"
 # Set when an existing install already decided these, so re-running does not
@@ -110,6 +115,7 @@ while [[ $# -gt 0 ]]; do
     --tls-key)     TLS_KEY="${2:?--tls-key needs a path}"; shift 2 ;;
     --path)        BASE_PATH="${2:?--path needs a value}"; BASE_KNOWN=1; shift 2 ;;
     --no-path)     BASE_PATH=""; BASE_KNOWN=1; shift ;;
+    --local-only)  LISTEN_ADDR=127.0.0.1; shift ;;
     --no-tls)      TLS_MODE=none; shift ;;
     -y|--yes)      ASSUME_YES=1; shift ;;
     --uninstall)   ACTION=uninstall; shift ;;
@@ -810,6 +816,21 @@ configure() {
       ;;
   esac
 
+  # Asked wherever the panel ends up on plain HTTP, not only when that was
+  # picked outright -- choosing a domain and then leaving it blank lands in
+  # the same place and deserves the same question.
+  #
+  # A panel on a public address over plain HTTP puts an administrator's
+  # password on the wire. Bound to the loopback it is reachable only through
+  # an SSH tunnel or a proxy on this machine, which is the one way serving
+  # plain HTTP is defensible at all.
+  if [[ "$TLS_MODE" == none && "$LISTEN_ADDR" != 127.0.0.1 ]]; then
+    printf '\n' >&3
+    if ask_yn "Bind it to 127.0.0.1 only? (reachable via an SSH tunnel or a local proxy)" n; then
+      LISTEN_ADDR=127.0.0.1
+    fi
+  fi
+
   # ── what is installed alongside ───────────────────────────────────────────
   printf '\n' >&3
   if ask_yn "Install OpenVPN as well as WireGuard?" y; then WANT_OPENVPN=1; else WANT_OPENVPN=0; fi
@@ -824,7 +845,7 @@ configure() {
   case "$TLS_MODE" in
     acme)  info "Address        https://$ACME_DOMAIN:$PANEL_PORT$shown_path  (certificate from Let's Encrypt)" ;;
     files) info "Address        https://<your host>:$PANEL_PORT$shown_path  (your own certificate)" ;;
-    none)  info "Address        http://<this server>:$PANEL_PORT$shown_path  (no certificate)" ;;
+    none)  info "Address        http://$([[ "$LISTEN_ADDR" == 127.0.0.1 ]] && echo 127.0.0.1 || echo '<this server>'):$PANEL_PORT$shown_path  (no certificate)" ;;
   esac
   local extras="WireGuard"
   [[ "$WANT_AMNEZIA" == 1 ]] && extras="AmneziaWG, $extras"
@@ -1001,8 +1022,6 @@ use_existing_cert() {
 # and drops the challenge file there instead, which is the one way to get a
 # certificate without interrupting a site that is already running.
 issue_certificate() {
-  pkg_install socat || warn "socat is missing; the standalone challenge may not work"
-
   if ! domain_points_here "$ACME_DOMAIN"; then
     warn "$ACME_DOMAIN does not resolve to this server's address"
     warn "  the certificate authority has to reach it here to issue anything"
@@ -1011,6 +1030,18 @@ issue_certificate() {
     else
       warn "trying anyway"
     fi
+  fi
+
+  # A machine that already has a web server in front is not a machine to take
+  # port 80 from. Going through the proxy is better in every direction: no
+  # outage for the sites already on it, one certificate manager instead of two,
+  # and a panel that is not exposed on a public port at all.
+  if [[ "$(proxy_on_80 2>/dev/null)" == nginx ]]; then
+    info "nginx is already serving port 80 on this machine"
+    info "the panel will sit behind it rather than taking the port"
+    issue_via_nginx && return 0
+    warn "could not put the panel behind nginx"
+    return 1
   fi
 
   local method="standalone" webroot=""
@@ -1031,6 +1062,10 @@ issue_certificate() {
       return 1
     fi
   fi
+
+  # Only the standalone challenge needs it, and only now that we know that is
+  # the route being taken.
+  [[ "$method" == standalone ]] && { pkg_install socat || warn "socat is missing; the standalone challenge may not work"; }
 
   # A fixed home rather than $HOME. Under `sudo bash` the environment often
   # still carries the calling user's home, so acme.sh would install itself
@@ -1092,6 +1127,147 @@ issue_certificate() {
     # warning — so it is said once, now, while it can still be written down.
     warn "renewal needs port 80 free again in ~60 days"
   fi
+  return 0
+}
+
+# ── sitting behind a proxy that is already here ──────────────────────────────
+# A server that already runs nginx on port 80 and 443 is the common case, not
+# the exception: it has other sites on it, a certbot that renews them, and an
+# operator who will not thank anyone for a panel that took port 80 away to run
+# its own ACME challenge.
+#
+# So when nginx is found holding port 80, the panel does not compete with it. It
+# binds to localhost, a new server block is added for the panel's domain, and
+# the certificate is obtained with the certbot that is already managing every
+# other certificate on the machine. Nothing that was already configured is read,
+# rewritten or reloaded out from under itself -- one new file, checked before it
+# is allowed to take effect.
+
+# Which reverse proxy, if any, owns port 80.
+proxy_on_80() {
+  port_taken 80 || return 1
+  case "$(port_owner 80)" in
+    nginx) printf 'nginx'; return 0 ;;
+    apache2|httpd) printf 'apache'; return 0 ;;
+    caddy) printf 'caddy'; return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The panel's own nginx site. Its own file, so removing the panel is removing
+# one file and nothing of anybody else's is involved.
+NGINX_SITE=""
+
+# Put the panel behind the nginx that is already running.
+#
+# Returns non-zero without having changed anything that matters if it cannot
+# finish, so the caller can fall back to serving plain HTTP rather than leaving
+# a half-configured web server behind.
+issue_via_nginx() {
+  local avail="/etc/nginx/sites-available" enabled="/etc/nginx/sites-enabled"
+  if [[ ! -d "$avail" || ! -d "$enabled" ]]; then
+    # A distribution that does not use the sites-available layout. conf.d is
+    # the other convention and is read by every nginx build.
+    avail="/etc/nginx/conf.d"; enabled=""
+    [[ -d "$avail" ]] || { warn "cannot find nginx's configuration directory"; return 1; }
+  fi
+
+  have certbot || pkg_install certbot python3-certbot-nginx || {
+    warn "could not install certbot"; return 1; }
+  certbot plugins --non-interactive 2>/dev/null | grep -q '^\* nginx' || {
+    warn "certbot has no nginx plugin here; install python3-certbot-nginx"; return 1; }
+
+  local site="$avail/wui-panel"
+  [[ "$avail" == */conf.d ]] && site="$avail/wui-panel.conf"
+
+  if [[ -e "$site" ]]; then
+    # A previous run's file. Ours to replace; anybody else's would not be
+    # called this.
+    info "replacing the panel's own nginx site"
+  fi
+
+  # Plain HTTP only, on purpose. certbot adds the TLS half itself, the same way
+  # it did for every other site here, so renewal keeps working through the same
+  # mechanism instead of a second one nobody remembers.
+  cat >"$site" <<NGINXSITE
+# W-UI panel. Written by the W-UI installer; safe to delete with the panel.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $ACME_DOMAIN;
+
+    # The panel is the only thing on this name, so everything goes through.
+    location / {
+        proxy_pass         http://127.0.0.1:$PANEL_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+
+        # The overview polls, and a configuration download can be slow on a
+        # busy node. Neither should be cut off by the proxy.
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+
+        # Buffering off: the panel streams its own responses and an operator
+        # watching a live figure should see it move.
+        proxy_buffering off;
+    }
+
+    # QR codes and configuration files.
+    client_max_body_size 16m;
+}
+NGINXSITE
+
+  if [[ -n "$enabled" ]]; then
+    ln -sfn "$site" "$enabled/$(basename "$site")"
+  fi
+
+  # Checked before it is allowed anywhere near a running web server. A syntax
+  # error here would take every other site on this machine down with it, and
+  # this installer's whole promise is that it does not do that.
+  if ! nginx -t >/tmp/wui-nginx.err 2>&1; then
+    warn "the panel's nginx site did not pass nginx -t; removing it"
+    sed 's/^/      /' /tmp/wui-nginx.err | head -6
+    rm -f "$site"
+    [[ -n "$enabled" ]] && rm -f "$enabled/$(basename "$site")"
+    nginx -t >/dev/null 2>&1 || warn "nginx was already failing its own config test before this"
+    return 1
+  fi
+  rm -f /tmp/wui-nginx.err
+
+  systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || {
+    warn "nginx would not reload"; return 1; }
+  NGINX_SITE="$site"
+  ok "nginx now serves $ACME_DOMAIN on port 80"
+
+  # certbot is pointed at this one name, so it edits this one server block.
+  info "asking certbot for a certificate (this takes a moment)"
+  local out
+  out=$(certbot --nginx -d "$ACME_DOMAIN" --non-interactive --agree-tos --redirect \
+        ${ACME_EMAIL:+-m "$ACME_EMAIL"} ${ACME_EMAIL:+--no-eff-email} 2>&1) || true
+
+  if [[ ! -s "/etc/letsencrypt/live/$ACME_DOMAIN/fullchain.pem" ]]; then
+    warn "certbot did not issue a certificate"
+    printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
+    warn "the panel is still reachable over plain HTTP at http://$ACME_DOMAIN/"
+    # The site stays: it works, it just has no TLS yet. Removing it would
+    # leave the operator with nothing at all.
+    TLS_MODE=proxy_plain
+    LISTEN_ADDR=127.0.0.1
+    return 0
+  fi
+
+  ok "certificate issued; nginx serves https://$ACME_DOMAIN"
+  ok "renewal is certbot's, alongside every other certificate on this server"
+
+  # The panel itself speaks plain HTTP to nginx over the loopback and is not
+  # reachable from outside at all. Its own TLS support is for servers that have
+  # no proxy in front of them.
+  TLS_MODE=proxy
+  LISTEN_ADDR=127.0.0.1
+  TLS_CERT=""; TLS_KEY=""
   return 0
 }
 
@@ -1266,7 +1442,7 @@ AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 NoNewPrivileges=true
 
-Environment=WUI_LISTEN=0.0.0.0:$PANEL_PORT
+Environment=WUI_LISTEN=$LISTEN_ADDR:$PANEL_PORT
 Environment=WUI_DATA_DIR=$DATA_DIR
 Environment=WUI_DB_SOURCE=$DATA_DIR/wui.db
 $BASE_ENV$TLS_ENV
@@ -1297,7 +1473,7 @@ UNITFILE
     ok "$UNIT (written, not loaded)"
     warn "this host is not running systemd, so the service was not registered"
     warn "  start the panel yourself with:"
-    warn "    WUI_LISTEN=0.0.0.0:$PANEL_PORT WUI_DATA_DIR=$DATA_DIR $BIN_PATH"
+    warn "    WUI_LISTEN=$LISTEN_ADDR:$PANEL_PORT WUI_DATA_DIR=$DATA_DIR $BIN_PATH"
   fi
 }
 
@@ -1308,9 +1484,18 @@ open_firewall() {
   # way, in about sixty days, on a machine nobody is watching. If port 80 is
   # closed by then the renewal fails silently and the panel serves an expired
   # certificate — so the port that made this work stays open.
-  local ports=("$PANEL_PORT/tcp")
+  # Nothing is opened for a panel that only listens on the loopback: the
+  # port is unreachable from outside by design, and a firewall rule for it
+  # would be a lie in the operator's own rule list.
+  local ports=()
+  [[ "$LISTEN_ADDR" == 127.0.0.1 ]] || ports+=("$PANEL_PORT/tcp")
   [[ "$ACME_METHOD" == standalone ]] && ports+=("80/tcp")
   local pr
+  if [[ ${#ports[@]} -eq 0 ]]; then
+    ok "nothing to open: the panel listens on 127.0.0.1 only"
+    return 0
+  fi
+
   if have ufw && ufw status 2>/dev/null | grep -q "Status: active"; then
     for pr in "${ports[@]}"; do
       ufw allow "$pr" >/dev/null 2>&1 && ok "ufw: $pr allowed"
@@ -1369,15 +1554,24 @@ summary() {
   # The address that will actually work. A certificate issued for a domain is
   # not valid for the address, so printing the IP there would hand the operator
   # a URL their browser refuses.
-  scheme=http; host="$ip"
+  scheme=http; host="$ip"; local port=":$PANEL_PORT"
   if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then scheme=https; fi
   [[ "$TLS_MODE" == acme && -n "$ACME_DOMAIN" ]] && host="$ACME_DOMAIN"
+
+  # Behind a proxy the panel's own port is not the address anybody uses: nginx
+  # answers on 443 for the domain and reaches the panel over the loopback.
+  # Printing the panel's port here would hand the operator a URL that is
+  # firewalled off from the internet.
+  case "$TLS_MODE" in
+    proxy)       scheme=https; host="$ACME_DOMAIN"; port="" ;;
+    proxy_plain) scheme=http;  host="$ACME_DOMAIN"; port="" ;;
+  esac
 
   printf '\n%s────────────────────────────────────────────────────────────%s\n' "$D" "$N"
   printf '  %sW-UI is installed%s\n\n' "$B" "$N"
   local shown_path="/"
   [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
-  printf '  Panel      %s://%s:%s%s\n' "$scheme" "$host" "$PANEL_PORT" "$shown_path"
+  printf '  Panel      %s://%s%s%s\n' "$scheme" "$host" "$port" "$shown_path"
 
   if [[ -n "$ADMIN_PASS" ]]; then
     printf '  Username   %s\n' "$ADMIN_USER"
@@ -1407,10 +1601,13 @@ summary() {
   printf '    OpenVPN      %s\n' "$([[ "${OPENVPN_OK:-0}" == 1 ]] && openvpn --version 2>/dev/null | head -1 | awk '{print $2}' || echo 'not installed')"
   printf '    nftables     %s\n' "$(nft --version 2>/dev/null | awk '{print $2}')"
   printf '    forwarding   %s\n' "$([[ "$(sysctl -n net.ipv4.ip_forward)" == 1 ]] && echo on || echo off)"
+  printf '    listening    %s\n' "$([[ "$LISTEN_ADDR" == 127.0.0.1 ]] && echo '127.0.0.1 only — not reachable from outside this server' || echo "$LISTEN_ADDR:$PANEL_PORT")"
   printf '    URL path     %s\n' "$([[ -n "$BASE_PATH" ]] && echo "$shown_path — nothing else on this address answers" || echo 'none (the panel is at the root)')"
   case "$TLS_MODE" in
     acme)  printf "    certificate  Let%ss Encrypt, renews itself\n" "'" ;;
     files) printf '    certificate  yours, at %s\n' "$TLS_CERT" ;;
+    proxy) printf '    certificate  certbot, through the nginx already on this server\n' ;;
+    proxy_plain) printf '    certificate  %snone yet — nginx serves the panel over plain HTTP%s\n' "$Y" "$N" ;;
     *)     printf '    certificate  %snone — this panel serves plain HTTP%s\n' "$Y" "$N" ;;
   esac
 
