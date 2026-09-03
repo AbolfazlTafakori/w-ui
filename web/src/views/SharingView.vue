@@ -2,12 +2,14 @@
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useDelayed } from '../lib/live.js'
 import { t, tn, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 
 const reports = ref([])
 const loading = ref(true)
+const showWait = useDelayed(computed(() => loading.value && !reports.value.length))
 let timer = null
 
 onMounted(() => {
@@ -68,7 +70,8 @@ const total = computed(() => reports.value.length)
     <p>{{ t('sharing.caveat') }}</p>
   </div>
 
-  <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
+  <p v-if="showWait" class="muted">{{ t('common.loading') }}</p>
+  <div v-else-if="loading" class="empty"></div>
 
   <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
 

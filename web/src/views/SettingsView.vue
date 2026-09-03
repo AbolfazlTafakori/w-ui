@@ -1,12 +1,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useDelayed } from '../lib/live.js'
 import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import SecurityWarnings from '../components/SecurityWarnings.vue'
 import Toggle from '../components/Toggle.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const router = useRouter()
 
@@ -57,6 +59,7 @@ const loadError = ref(null)
 const saved = ref(null)
 const defaults = ref(null)
 const form = ref(null)
+const showWait = useDelayed(computed(() => loading.value && !form.value))
 const busy = ref(false)
 
 const pw = ref({ current: '', next: '', confirm: '' })
@@ -162,6 +165,41 @@ async function save() {
   } finally {
     busy.value = false
   }
+}
+
+const pendingRoute = ref(null)
+// Set while we are deliberately going, so the guard does not stop the very
+// navigation it just authorised.
+const leaving = ref(false)
+
+// Settings are a form you fill in and then leave, and clicking a link in the
+// sidebar is how you leave. Without this, an edit made and not saved is gone
+// with no word: measured before adding it, a value changed from 0 to 5 was 0
+// again on returning, and nothing had asked.
+//
+// A dialog rather than the browser's own confirm: the panel does not use that
+// anywhere else, and this one can name what is unsaved.
+onBeforeRouteLeave((to) => {
+  if (!dirty.value || leaving.value) return true
+  pendingRoute.value = to.fullPath
+  return false
+})
+
+async function discardAndGo() {
+  leaving.value = true
+  const to = pendingRoute.value
+  pendingRoute.value = null
+  await router.push(to)
+  leaving.value = false
+}
+
+async function saveAndGo() {
+  await save()
+  // Only leave if the save actually took: a validation failure should keep the
+  // operator on the page with their edit and the message, not send them away
+  // having lost both.
+  if (!dirty.value) await discardAndGo()
+  else pendingRoute.value = null
 }
 
 function revert() {
@@ -406,7 +444,8 @@ async function changePassword() {
   </div>
 
 
-  <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
+  <p v-if="showWait" class="muted">{{ t('common.loading') }}</p>
+  <div v-else-if="loading" class="empty"></div>
 
   <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
 
@@ -414,6 +453,18 @@ async function changePassword() {
     <!-- Everything worth saying about this server, in one place. Two stacked
          warning boxes read as two unrelated problems and get skimmed. -->
     <SecurityWarnings :listen="info?.listen" />
+
+    <!-- Raised when a link is clicked with an unsaved edit on the page. -->
+    <ConfirmDialog
+      :open="!!pendingRoute"
+      :title="t('settings.leaveTitle')"
+      :body="t('settings.leaveBody')"
+      :confirm-label="t('settings.saveAndLeave')"
+      :danger="false"
+      :busy="busy"
+      @confirm="saveAndGo"
+      @cancel="discardAndGo"
+    />
 
     <!-- The save bar sits above the tabs: it applies to all of them, and a
          change made on one tab must not look lost when another is opened. -->

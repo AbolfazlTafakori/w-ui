@@ -1,12 +1,14 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
+import { useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 
 const docs = ref(null)
 const loading = ref(true)
+const showWait = useDelayed(computed(() => loading.value))
 const query = ref('')
 const openGroup = ref(null)
 const copied = ref('')
@@ -95,7 +97,8 @@ const methodTone = (m) =>
     </div>
   </div>
 
-  <p v-if="loading" class="muted">{{ t('common.loading') }}</p>
+  <p v-if="showWait" class="muted">{{ t('common.loading') }}</p>
+  <div v-else-if="loading" class="empty"></div>
 
   <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
 

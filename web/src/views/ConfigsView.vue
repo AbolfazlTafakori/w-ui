@@ -2,6 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 
@@ -31,6 +32,7 @@ const level = ref('')
 const loading = ref(true)
 const loadError = ref('')
 const which = ref('enforcement')
+const showWait = useDelayed(computed(() => loading.value && !configs.value))
 let timer = null
 
 const programs = computed(() => [
@@ -127,7 +129,8 @@ async function copy() {
       <button class="btn" @click="refresh()">{{ t('action.retry') }}</button>
     </div>
 
-    <div v-else-if="loading" class="empty"><span class="spin"></span></div>
+    <div v-else-if="showWait" class="empty"><span class="spin"></span></div>
+    <div v-else-if="loading" class="empty"></div>
 
     <!-- ── engine ──────────────────────────────────────────────────────── -->
     <div v-else-if="current === 'engine'" class="engine-grid">
