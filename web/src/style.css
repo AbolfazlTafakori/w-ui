@@ -84,6 +84,30 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(0, 0, 0, 0.9);
 
+  /* Depth comes from light before it comes from shadow. A one-pixel highlight
+     along the top edge of a surface reads as a lit edge, which is what makes a
+     card sit on the page rather than be cut out of it. On a dark ground it is
+     white at very low alpha; the light theme flips it to a soft shade, because
+     a white highlight on white is nothing. */
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), var(--edge);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 28px -10px rgba(0, 0, 0, 0.72), var(--edge);
+  --elev-3: 0 2px 6px rgba(0, 0, 0, 0.5), 0 28px 64px -24px rgba(0, 0, 0, 0.85), var(--edge);
+
+  /* One easing for movement and one for colour. Movement decelerates hard so a
+     control feels like it arrives rather than drifts; colour is linear-ish and
+     quick, because a tint that eases looks like lag. */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-quick: 0.12s;
+  --t-move: 0.18s;
+
+  /* A focus ring that is legible on every surface: a ground-coloured gap so the
+     ring never touches the control, then the accent. Keyboard users were
+     getting the browser default or nothing at all. */
+  --ring: 0 0 0 2px var(--ground), 0 0 0 4px var(--accent);
+  --ring-inset: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+
   --radius: 10px;
   --radius-sm: 7px;
   --font: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -122,6 +146,14 @@
 
 :root.light,
 body.light {
+  /* Light from above still, but expressed as a soft top shade: a white
+     highlight on a white card says nothing. */
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --elev-1: 0 1px 2px rgba(16, 12, 14, 0.06), 0 1px 1px rgba(16, 12, 14, 0.04);
+  --elev-2: 0 1px 2px rgba(16, 12, 14, 0.07), 0 10px 28px -12px rgba(16, 12, 14, 0.18);
+  --elev-3: 0 2px 6px rgba(16, 12, 14, 0.08), 0 28px 64px -28px rgba(16, 12, 14, 0.26);
+  --ring: 0 0 0 2px #fff, 0 0 0 4px var(--accent);
+  --ring-inset: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
   color-scheme: light;
 
   --ground: #eceef1;
@@ -2993,5 +3025,180 @@ pre.code code {
 @media (prefers-reduced-motion: reduce) {
   .act {
     transition: none;
+  }
+}
+
+
+/* ── Phase 1: shell and core kit ─────────────────────────────────────────────
+
+   What follows is appearance only. Every behaviour the components already had
+   -- the switch that moves before the server answers, the knob that becomes its
+   own spinner, the row actions that never wrap, the hidden checkbox that cannot
+   be given a width again -- is untouched.
+*/
+
+/* One focus treatment for everything that can take focus.
+   
+   Written against element types rather than a list of class names, because a
+   list of class names is a list somebody will add a control to and forget --
+   `.sidebar-pin` was already missing from exactly such a list and its focus
+   was invisible.
+   
+   Drawn with a box-shadow rather than an outline on purpose: this sheet has
+   seven `outline: none` rules scattered through it, several on plain `:focus`,
+   and any of them would quietly erase an outline-based ring. A shadow is not
+   something they can cancel.
+   
+   `:focus-visible` rather than `:focus`, so clicking a button does not leave a
+   ring behind while tabbing to it does. */
+:is(a, button, input, select, textarea, summary, [tabindex]):focus-visible,
+.toggle:focus-within .track {
+  outline: none;
+  box-shadow: var(--ring);
+}
+/* Inside a card the gap should match the card, not the page behind it. */
+.card :is(input, select, textarea):focus-visible,
+.modal :is(input, select, textarea, .btn):focus-visible {
+  box-shadow: var(--ring-inset);
+}
+
+/* ── shell ──────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  /* The rail is a raised surface, not a painted stripe: a lit top edge and a
+     shadow cast onto the content it sits over. */
+  box-shadow: 1px 0 0 var(--line-soft), var(--edge);
+  transition: width var(--t-move) var(--ease);
+}
+
+.main {
+  /* Without a ceiling, a nine-column table on a 2560px monitor stretches until
+     the eye cannot carry a row from the name to the expiry. This is the width
+     past which a table stops being readable, not a number picked to look tidy. */
+  max-width: 1680px;
+  transition: margin-inline-start var(--t-move) var(--ease);
+}
+
+.navlink {
+  transition:
+    background var(--t-quick) linear,
+    color var(--t-quick) linear;
+}
+/* Hover is a wash, not a block: at 48px tall a full-strength fill on every row
+   the pointer crosses turns the rail into a flicker. */
+.navlink:hover:not(.active) {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+}
+.navlink.active {
+  /* The bar is drawn with a shadow rather than a border so it cannot take part
+     in layout and shift the label by three pixels. */
+  box-shadow: inset 3px 0 0 var(--accent), var(--edge);
+}
+[dir='rtl'] .navlink.active {
+  box-shadow: inset -3px 0 0 var(--accent), var(--edge);
+}
+
+/* ── cards ──────────────────────────────────────────────────────────────── */
+
+.card {
+  box-shadow: var(--elev-1);
+}
+.modal {
+  box-shadow: var(--elev-3);
+}
+
+/* ── buttons ────────────────────────────────────────────────────────────── */
+
+.btn {
+  box-shadow: var(--elev-1);
+  transition:
+    background var(--t-quick) linear,
+    border-color var(--t-quick) linear,
+    color var(--t-quick) linear,
+    transform 0.06s var(--ease);
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: color-mix(in srgb, var(--line) 60%, var(--ink) 12%);
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+/* A press that moves one pixel is the difference between a button and a
+   picture of one. */
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── row actions ────────────────────────────────────────────────────────── */
+
+.act {
+  transition:
+    background var(--t-quick) linear,
+    color var(--t-quick) linear;
+}
+.act:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
+  box-shadow: var(--edge);
+}
+.act.danger:hover:not(:disabled) {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.act:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ── chips ──────────────────────────────────────────────────────────────── */
+
+.tag {
+  /* Deep fill, bright ink, and a hairline lit from above. In a table of forty
+     rows this is what keeps a chip legible without it becoming the loudest
+     thing on the page. */
+  box-shadow: var(--edge);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── quota meters ───────────────────────────────────────────────────────── */
+
+.meter {
+  /* Recessed rather than flat: the track reads as a channel the fill sits in,
+     which is what makes a 6% bar still look like a bar. */
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  height: 6px;
+}
+:root.light .meter,
+body.light .meter {
+  box-shadow: inset 0 1px 2px rgba(16, 12, 14, 0.1);
+}
+.meter span {
+  /* A fill that never quite reaches zero width, so a customer who has used
+     almost nothing still sees that the bar is theirs and working. */
+  min-width: 3px;
+  box-shadow: 0 0 8px -2px currentColor;
+  transition: width 0.4s var(--ease-soft), background-color var(--t-quick) linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .main,
+  .btn,
+  .act,
+  .meter span {
+    transition: none;
+  }
+  .btn:active:not(:disabled),
+  .act:active:not(:disabled) {
+    transform: none;
   }
 }

@@ -74,7 +74,12 @@ defineEmits(['update:modelValue'])
   background: var(--surface-3);
   border: 1px solid var(--line);
   position: relative;
-  transition: background 0.16s, border-color 0.16s;
+  /* Recessed when off, so the knob reads as sitting in a channel. */
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition:
+    background var(--t-quick, 0.12s) linear,
+    border-color var(--t-quick, 0.12s) linear,
+    box-shadow var(--t-quick, 0.12s) linear;
 }
 .knob {
   position: absolute;
@@ -84,11 +89,22 @@ defineEmits(['update:modelValue'])
   height: 16px;
   border-radius: 50%;
   background: var(--muted);
-  transition: transform 0.16s, background 0.16s;
+  /* The knob is the only part that moves, so it is the only part that carries
+     a shadow -- it lifts out of the channel it slides in. */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  /* Decelerating hard rather than easing evenly: the knob should feel like it
+     arrives at the far end, not like it drifts there. */
+  transition:
+    transform var(--t-move, 0.18s) var(--ease, cubic-bezier(0.2, 0.8, 0.2, 1)),
+    background var(--t-quick, 0.12s) linear;
 }
 .toggle.on .track {
   background: var(--accent);
   border-color: var(--accent);
+  /* On: the channel fills and lifts, so the state reads from the form of the
+     control and not from its colour alone -- which is what makes it legible to
+     someone who cannot separate the red from the grey. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 3px var(--accent-ring);
 }
 .toggle.on .knob {
   background: #fff;
