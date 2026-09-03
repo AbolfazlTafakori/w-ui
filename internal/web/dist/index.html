@@ -2,13 +2,18 @@
 <html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
+    <!-- Every asset and every API call is resolved against this, so the panel
+         works unchanged whether it is served at the root or behind a secret
+         path prefix. The server rewrites the href to whatever it was
+         configured with; "/" is what the dev server uses. -->
+    <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>W-UI</title>
-    <script type="module" crossorigin src="/assets/index-Dl4bbGls.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CC7IhYbK.css">
+    <script type="module" crossorigin src="./assets/index-BsdSVhCR.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Dkw8f_TM.css">
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app"></div>
   </body>
 </html>

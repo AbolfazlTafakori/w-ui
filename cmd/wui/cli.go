@@ -137,17 +137,18 @@ func cmdSetting(args []string) error {
 	if *asJSON {
 		fmt.Printf(`{"listen":%q,"dataDir":%q,"dbDriver":%q,"dbSource":%q,`+
 			`"collectInterval":%q,"defaultLocale":%q,"logLevel":%q,"logFormat":%q,`+
-			`"scheme":%q,"tls":%t,"tlsCert":%q,"tlsKey":%q,`+
+			`"scheme":%q,"tls":%t,"tlsCert":%q,"tlsKey":%q,"basePath":%q,`+
 			`"admin":%q,"interfaces":%d,"clients":%d,"accounts":%d,"activeClients":%d}`+"\n",
 			cfg.Listen, cfg.DataDir, cfg.DBDriver, cfg.DBSource,
 			cfg.CollectInterval, cfg.DefaultLocale, cfg.LogLevel, cfg.LogFormat,
-			cfg.Scheme(), cfg.TLS(), cfg.TLSCert, cfg.TLSKey,
+			cfg.Scheme(), cfg.TLS(), cfg.TLSCert, cfg.TLSKey, cfg.BasePath,
 			adminName, c.Interfaces, c.Clients, c.Accounts, c.Active)
 		return nil
 	}
 
 	fmt.Printf("listen: %s\n", cfg.Listen)
 	fmt.Printf("port: %s\n", portOf(cfg.Listen))
+	fmt.Printf("basePath: %s\n", cfg.BasePath)
 	fmt.Printf("scheme: %s\n", cfg.Scheme())
 	if cfg.TLS() {
 		fmt.Printf("tlsCert: %s\n", cfg.TLSCert)

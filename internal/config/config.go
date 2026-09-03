@@ -46,6 +46,17 @@ type Config struct {
 	// English-first with Persian as the second locale.
 	DefaultLocale string
 
+	// BasePath is the URL prefix the whole panel answers on, "/" for none.
+	//
+	// A panel at the root of a public address is found by anyone scanning for
+	// one, and what they find is a login form to guess at. Behind a random
+	// prefix there is nothing at that address to find: every path outside it
+	// answers 404, including the sign-in page.
+	//
+	// It is not a substitute for a password. It is what stops the password
+	// from being the only thing between a scanner and the panel.
+	BasePath string
+
 	// TLSCert and TLSKey turn the panel's own listener into an HTTPS one.
 	//
 	// The panel terminates TLS itself rather than expecting a reverse proxy in
@@ -72,6 +83,7 @@ func Default() Config {
 		Listen:          "127.0.0.1:2096",
 		DBDriver:        DriverSQLite,
 		DataDir:         "./data",
+		BasePath:        "/",
 		CollectInterval: 2 * time.Second,
 		DefaultLocale:   "en",
 		LogLevel:        "info",
@@ -89,6 +101,7 @@ func Load() (Config, error) {
 	c.DBSource = env("WUI_DB_SOURCE", c.DBSource)
 	c.DataDir = env("WUI_DATA_DIR", c.DataDir)
 	c.DefaultLocale = strings.ToLower(env("WUI_DEFAULT_LOCALE", c.DefaultLocale))
+	c.BasePath = normalizeBase(env("WUI_BASE_PATH", c.BasePath))
 	c.TLSCert = env("WUI_TLS_CERT", c.TLSCert)
 	c.TLSKey = env("WUI_TLS_KEY", c.TLSKey)
 	c.LogLevel = strings.ToLower(env("WUI_LOG_LEVEL", c.LogLevel))
@@ -136,8 +149,48 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("config: unsupported locale %q, want en or fa", c.DefaultLocale)
 	}
+	if err := c.validateBase(); err != nil {
+		return err
+	}
 	if err := c.validateTLS(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// normalizeBase turns whatever was configured into either "/" or "/thing/".
+//
+// Operators write it every way there is — "xyz", "/xyz", "xyz/", "/xyz/" — and
+// every part of the panel that joins a URL together needs exactly one of those.
+func normalizeBase(v string) string {
+	v = strings.Trim(strings.TrimSpace(v), "/")
+	if v == "" {
+		return "/"
+	}
+	return "/" + v + "/"
+}
+
+// validateBase refuses a prefix that would not survive being put in a URL.
+func (c Config) validateBase() error {
+	if c.BasePath == "/" {
+		return nil
+	}
+	inner := strings.Trim(c.BasePath, "/")
+	if strings.Contains(inner, "/") {
+		return fmt.Errorf("config: WUI_BASE_PATH %q must be a single path segment", c.BasePath)
+	}
+	for _, r := range inner {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.', r == '~':
+		default:
+			return fmt.Errorf("config: WUI_BASE_PATH %q may only contain letters, digits, and - _ . ~", c.BasePath)
+		}
+	}
+	// "api" would sit exactly where the API already is, and the panel would
+	// answer neither.
+	if inner == "api" {
+		return fmt.Errorf("config: WUI_BASE_PATH may not be %q; it collides with the API", inner)
 	}
 	return nil
 }

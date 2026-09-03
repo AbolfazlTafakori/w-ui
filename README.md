@@ -108,13 +108,24 @@ installs a hardened systemd unit.
 It asks first, and only then starts work, so you answer for a minute and can
 walk away:
 
-- **the panel port** — refused if another service is already listening there,
-  rather than taken over
-- **the administrator's name and password** — created before the panel's first
-  start, so no generated password is ever printed or has to be changed
+- **the panel port** — a random free one unless you name it, and never a port
+  another service is already listening on
+- **the URL path** — a random 18-character prefix unless you name it. Every
+  path outside it answers 404, the sign-in page included
+- **the administrator's name and password** — both generated unless you set
+  them, and created before the panel's first start
 - **how the panel is reached** — a domain with a free Let's Encrypt certificate,
   a certificate you already have, or plain HTTP
 - **which tunnels to install** alongside WireGuard
+
+**Press enter through all of it and nothing about the result is guessable:** a
+random port, a random path, a random administrator name and a generated
+password. There is no default address to scan for and no `admin` to guess at.
+The path is not a substitute for the password — it is what stops the password
+being the only thing in the way.
+
+Re-running the installer keeps the port and path the panel is already reached
+at, and leaves an existing administrator account alone.
 
 The certificate is the panel's own: it serves HTTPS itself and no reverse proxy
 is configured, added to, or restarted. If something is already serving port 80,
@@ -132,6 +143,8 @@ what a cloud-init or CI install wants.
 | `--domain NAME` | Fetch a Let's Encrypt certificate for this domain |
 | `--email ADDR` | Where the certificate authority sends expiry notices |
 | `--tls-cert PATH` / `--tls-key PATH` | Use a certificate you already have |
+| `--path SEG` | Serve the panel under this URL path instead of a random one |
+| `--no-path` | Serve the panel at the root, where anyone can find it |
 | `--no-tls` | Serve plain HTTP — only sane behind a proxy or an SSH tunnel |
 | `-y`, `--yes` | Ask nothing; use flags, environment and defaults |
 | `--local PATH` | Install a binary you already built |

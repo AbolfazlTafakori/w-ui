@@ -4,6 +4,17 @@
 
 const TOKEN_KEY = 'wui.token'
 
+// Where the panel is mounted, taken from the <base> tag the server writes.
+//
+// The panel can be served under a random path prefix, so an API path may not
+// begin at the root of the host. Resolving against document.baseURI is what
+// makes every call in this file work unchanged either way -- and it has to be
+// baseURI rather than location, because on /prefix/clients/12 a relative URL
+// would otherwise resolve against /prefix/clients/.
+export function apiURL(path) {
+  return new URL(String(path).replace(/^\/+/, ''), document.baseURI).toString()
+}
+
 export function getToken() {
   try {
     return localStorage.getItem(TOKEN_KEY)
@@ -105,7 +116,7 @@ async function send(method, path, body) {
 
   let res
   try {
-    res = await fetch(path, {
+    res = await fetch(apiURL(path), {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),

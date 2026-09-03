@@ -34,8 +34,14 @@ import RoutingView from './views/RoutingView.vue'
 import ConfigsView from './views/ConfigsView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 
+// The router's own base, read from the <base> tag the server writes rather
+// than compiled in. The panel may be mounted under a random path prefix, and
+// a router that did not know about it would push /clients over the top of
+// the prefix and navigate straight out of the panel.
+const routerBase = new URL(document.baseURI).pathname
+
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(routerBase),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/', name: 'overview', component: OverviewView },

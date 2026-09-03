@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
-import { api } from '../lib/api.js'
+import { api, apiURL } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
 import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
@@ -269,7 +269,7 @@ async function removeBackup(name) {
 // header and would either fail or force the file to be served unauthenticated.
 async function downloadBackup(name) {
   try {
-    const res = await fetch(`/api/backups/${encodeURIComponent(name)}`, {
+    const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(name)}`), {
       headers: { Authorization: `Bearer ${localStorage.getItem('wui.token')}` },
     })
     if (!res.ok) throw new Error(await res.text())

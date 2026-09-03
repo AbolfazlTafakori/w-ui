@@ -257,7 +257,7 @@ func run() error {
 	go func() {
 		log.Info("listening",
 			"address", cfg.Listen,
-			"url", cfg.Scheme()+"://"+cfg.Listen,
+			"url", cfg.Scheme()+"://"+cfg.Listen+cfg.BasePath,
 			"tls", cfg.TLS())
 		var err error
 		if cfg.TLS() {
@@ -342,7 +342,7 @@ func buildServer(
 		Reconciler: rec,
 	})
 
-	frontend, err := web.Handler()
+	frontend, err := web.Handler(cfg.BasePath)
 	if err != nil {
 		return nil, fmt.Errorf("frontend: %w", err)
 	}
@@ -351,10 +351,16 @@ func buildServer(
 	root.Handle("/api/", apiSrv.Routes())
 	root.Handle("/", frontend)
 
+	// Everything an administrator touches moves behind the configured prefix.
+	// Subscriptions deliberately stay outside it: those links go to customers,
+	// and putting the panel's own secret path into every one of them would
+	// hand it to everybody who was ever sold a tunnel.
+	app := web.MountAt(cfg.BasePath, root)
+
 	// The subscription service sits ahead of the frontend so it can answer on
 	// whatever path the operator configured, and is checked before the
 	// single-page fallback swallows the request as a route.
-	handler := apiSrv.SubscriptionRouter(root)
+	handler := apiSrv.SubscriptionRouter(app)
 
 	return &http.Server{
 		Addr: cfg.Listen,

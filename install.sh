@@ -52,6 +52,8 @@ RELEASE_URL="${WUI_RELEASE_URL:-}"
 REPO="${WUI_REPO:-AbolfazlTafakori/w-ui}"
 BRANCH="${WUI_BRANCH:-main}"
 
+# Only a starting point for the prompt. Nothing is installed on it unless the
+# operator asks for it by name: the default is a random free port.
 PANEL_PORT=2096
 WANT_AMNEZIA=1
 WANT_OPENVPN=1
@@ -70,6 +72,12 @@ TLS_KEY="${WUI_TLS_KEY:-}"
 ACME_DOMAIN="${WUI_DOMAIN:-}"
 ACME_EMAIL="${WUI_ACME_EMAIL:-}"
 ACME_METHOD=""
+# The URL path the panel answers on, one segment, empty for the root.
+BASE_PATH="${WUI_BASE_PATH:-}"
+# Set when an existing install already decided these, so re-running does not
+# move a panel that people have bookmarked.
+PORT_KNOWN=0
+BASE_KNOWN=0
 ASSUME_YES=0
 INTERACTIVE=0
 
@@ -93,13 +101,15 @@ while [[ $# -gt 0 ]]; do
     --from-source) FROM_SOURCE=1; shift ;;
     --no-amnezia)  WANT_AMNEZIA=0; shift ;;
     --no-openvpn)  WANT_OPENVPN=0; shift ;;
-    --port)        PANEL_PORT="${2:?--port needs a number}"; shift 2 ;;
+    --port)        PANEL_PORT="${2:?--port needs a number}"; PORT_KNOWN=1; shift 2 ;;
     --username)    ADMIN_USER="${2:?--username needs a name}"; shift 2 ;;
     --password)    ADMIN_PASS="${2:?--password needs a value}"; shift 2 ;;
     --domain)      ACME_DOMAIN="${2:?--domain needs a name}"; shift 2 ;;
     --email)       ACME_EMAIL="${2:?--email needs an address}"; shift 2 ;;
     --tls-cert)    TLS_CERT="${2:?--tls-cert needs a path}"; shift 2 ;;
     --tls-key)     TLS_KEY="${2:?--tls-key needs a path}"; shift 2 ;;
+    --path)        BASE_PATH="${2:?--path needs a value}"; BASE_KNOWN=1; shift 2 ;;
+    --no-path)     BASE_PATH=""; BASE_KNOWN=1; shift ;;
     --no-tls)      TLS_MODE=none; shift ;;
     -y|--yes)      ASSUME_YES=1; shift ;;
     --uninstall)   ACTION=uninstall; shift ;;
@@ -629,8 +639,24 @@ port_owner() {
   if [[ -n "$who" ]]; then printf '%s' "$who"; else printf 'another service'; fi
 }
 
+# What this machine is already running, so an upgrade does not move the panel.
+#
+# A re-run that handed out a fresh random port and a fresh random path would
+# leave every bookmark, every firewall rule and every note the operator wrote
+# down pointing at nothing.
+read_existing() {
+  [[ -f "$UNIT" ]] || return 0
+  local v
+  v=$(sed -n 's/^Environment=WUI_LISTEN=.*:\([0-9]\{1,5\}\)$/\1/p' "$UNIT" | head -1)
+  if [[ -n "$v" && "$PORT_KNOWN" == 0 ]]; then PANEL_PORT="$v"; PORT_KNOWN=1; fi
+  v=$(sed -n 's|^Environment=WUI_BASE_PATH=/\{0,1\}\(.*\)|\1|p' "$UNIT" | head -1)
+  v="${v%/}"
+  if [[ -n "$v" && "$BASE_KNOWN" == 0 ]]; then BASE_PATH="$v"; BASE_KNOWN=1; fi
+}
+
 configure() {
   open_tty
+  read_existing
 
   if [[ "$INTERACTIVE" != 1 ]]; then
     # Said, not silently assumed. An operator who piped this from a file and
@@ -646,29 +672,88 @@ configure() {
   printf '\n' >&3
 
   # ── the port ──────────────────────────────────────────────────────────────
+  #
+  # Random unless the operator wants otherwise. A panel on a port that is
+  # written down in a README is a panel that gets found by anyone sweeping the
+  # address space for one, and what they find is a form to guess passwords at.
   local p
-  while true; do
-    ask p "Panel port" "$PANEL_PORT"
-    if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1 || p > 65535 )); then
-      warn "a port is a number from 1 to 65535"
-      continue
-    fi
-    if port_taken "$p"; then
-      # Never offered as something to take over. Whatever is listening there
-      # belongs to somebody, and this installer's job is to fit around it.
-      warn "port $p is already served by $(port_owner "$p") — pick another"
-      continue
-    fi
-    PANEL_PORT="$p"
-    break
-  done
+  if [[ "$PORT_KNOWN" == 1 ]]; then
+    info "keeping the port this install already uses: $PANEL_PORT"
+  elif ask_yn "Choose the panel port yourself? (otherwise a random one is used)" n; then
+    while true; do
+      ask p "Panel port" "$PANEL_PORT"
+      if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1 || p > 65535 )); then
+        warn "a port is a number from 1 to 65535"
+        continue
+      fi
+      if port_taken "$p"; then
+        # Never offered as something to take over. Whatever is listening there
+        # belongs to somebody, and this installer's job is to fit around it.
+        warn "port $p is already served by $(port_owner "$p") — pick another"
+        continue
+      fi
+      PANEL_PORT="$p"
+      break
+    done
+  else
+    PANEL_PORT="$(random_free_port)"
+    info "panel port: $PANEL_PORT"
+  fi
+
+  # ── the path it answers on ────────────────────────────────────────────────
+  #
+  # The other half of not being found. With a random prefix there is nothing at
+  # the root of this address at all: every path outside it answers 404,
+  # including the sign-in page. It is not a replacement for the password — it
+  # is what stops the password being the only thing in the way.
+  if [[ "$BASE_KNOWN" == 1 ]]; then
+    info "keeping the path this install already uses: /$BASE_PATH/"
+  elif ask_yn "Choose the panel's URL path yourself? (otherwise a random one is used)" n; then
+    while true; do
+      ask BASE_PATH "URL path (one segment, blank for none)" ""
+      # Surrounding slashes are how people write a path and are simply
+      # dropped. A slash in the middle is a different path from the one
+      # typed, so it is refused rather than quietly flattened -- an
+      # operator who is handed a path they did not type will write down
+      # the one they did.
+      BASE_PATH="${BASE_PATH#/}"
+      BASE_PATH="${BASE_PATH%/}"
+      if [[ -z "$BASE_PATH" ]]; then
+        warn "no path — the panel answers at the root, where anyone can find it"
+        break
+      fi
+      if [[ "$BASE_PATH" == api ]]; then
+        warn "\"api\" is where the API already answers; pick another"
+        continue
+      fi
+      if [[ ! "$BASE_PATH" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+        warn "one segment of letters, digits and - _ . ~ — no slashes or spaces"
+        continue
+      fi
+      break
+    done
+  else
+    BASE_PATH="$(gen_string 18)"
+    info "panel path: /$BASE_PATH/"
+  fi
 
   # ── who signs in ──────────────────────────────────────────────────────────
-  ask ADMIN_USER "Administrator username" "${ADMIN_USER:-admin}"
-  ask_secret ADMIN_PASS "Administrator password (blank to generate one)"
-  [[ -n "$ADMIN_PASS" ]] || info "a password will be generated and shown at the end"
+  #
+  # Generated unless asked otherwise, name included. "admin" is half of every
+  # credential-stuffing attempt ever made against a panel, and a name nobody
+  # can guess costs nothing to keep in the same place as the password.
+  if ask_yn "Choose the administrator name and password yourself? (otherwise both are generated)" n; then
+    ask ADMIN_USER "Administrator username" "${ADMIN_USER:-admin}"
+    ask_secret ADMIN_PASS "Administrator password (blank to generate one)"
+    [[ -n "$ADMIN_PASS" ]] || info "a password will be generated and shown at the end"
+  else
+    [[ -n "$ADMIN_USER" ]] || ADMIN_USER="$(gen_string 10)"
+    info "administrator: $ADMIN_USER"
+    info "the password is generated and shown once, at the end"
+  fi
 
   # ── how it is reached ─────────────────────────────────────────────────────
+────────────────────────────────────────────────────
   printf '\n' >&3
   info "How should the panel be reached?"
   info "  1) a domain name, with a free certificate from Let's Encrypt"
@@ -734,10 +819,12 @@ configure() {
   printf '\n' >&3
   info "Panel port     $PANEL_PORT"
   info "Administrator  $ADMIN_USER"
+  local shown_path="/"
+  [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
   case "$TLS_MODE" in
-    acme)  info "Address        https://$ACME_DOMAIN:$PANEL_PORT  (certificate from Let's Encrypt)" ;;
-    files) info "Address        https://<your host>:$PANEL_PORT  (your own certificate)" ;;
-    none)  info "Address        http://<this server>:$PANEL_PORT  (no certificate)" ;;
+    acme)  info "Address        https://$ACME_DOMAIN:$PANEL_PORT$shown_path  (certificate from Let's Encrypt)" ;;
+    files) info "Address        https://<your host>:$PANEL_PORT$shown_path  (your own certificate)" ;;
+    none)  info "Address        http://<this server>:$PANEL_PORT$shown_path  (no certificate)" ;;
   esac
   local extras="WireGuard"
   [[ "$WANT_AMNEZIA" == 1 ]] && extras="AmneziaWG, $extras"
@@ -750,7 +837,15 @@ configure() {
 
 # The same decisions, made without a terminal.
 configure_defaults() {
-  ADMIN_USER="${ADMIN_USER:-admin}"
+  # The same decisions the questions would have reached, made without a
+  # terminal: unguessable unless something was passed in.
+  ADMIN_USER="${ADMIN_USER:-$(gen_string 10)}"
+  [[ "$BASE_KNOWN" == 1 ]] || BASE_PATH="$(gen_string 18)"
+  if [[ "$PORT_KNOWN" == 0 ]]; then
+    PANEL_PORT="$(random_free_port)"
+  elif port_taken "$PANEL_PORT"; then
+    die "port $PANEL_PORT is already served by $(port_owner "$PANEL_PORT"); pass --port with a free one"
+  fi
   if [[ -n "$TLS_MODE" ]]; then
     : # --no-tls, or a mode already chosen
   elif [[ -n "$ACME_DOMAIN" ]]; then
@@ -759,9 +854,6 @@ configure_defaults() {
     TLS_MODE=files
   else
     TLS_MODE=none
-  fi
-  if port_taken "$PANEL_PORT"; then
-    die "port $PANEL_PORT is already served by $(port_owner "$PANEL_PORT"); pass --port with a free one"
   fi
 }
 
@@ -784,6 +876,29 @@ as_service_user() {
     for a in "$@"; do q+="$(printf '%q ' "$a")"; done
     su -s /bin/sh -c "$q" "$SERVICE_USER"
   fi
+}
+
+# n random alphanumeric characters. Alphanumeric so the result survives being
+# copied out of a terminal, typed into a phone, or pasted through a chat app
+# that helpfully reformats punctuation.
+gen_string() {
+  LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "${1:-16}"
+}
+
+# A high port nothing else is listening on.
+#
+# Random rather than fixed: a well-known port is the first thing a scanner
+# tries. Checked for a listener before it is offered, because a collision here
+# would take down whatever was already there.
+random_free_port() {
+  local p tries=0
+  while (( tries++ < 60 )); do
+    if have shuf; then p=$(shuf -i 1024-62000 -n 1); else p=$(( (RANDOM << 15 | RANDOM) % 60977 + 1024 )); fi
+    port_taken "$p" || { printf '%s' "$p"; return 0; }
+  done
+  # Sixty collisions in a row is not a busy machine, it is a broken check.
+  # Falling back to the prompt's own default beats returning nothing.
+  printf '%s' "$PANEL_PORT"
 }
 
 gen_password() {
@@ -1126,7 +1241,8 @@ write_unit() {
   # Two lines or none. An empty WUI_TLS_CERT is not the same as an unset one:
   # the panel refuses to start when only half a pair is present, which is the
   # right answer for a typo and the wrong one for a plain-HTTP install.
-  local TLS_ENV=""
+  local TLS_ENV="" BASE_ENV=""
+  [[ -n "$BASE_PATH" ]] && BASE_ENV="Environment=WUI_BASE_PATH=$BASE_PATH"$'\n'
   if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then
     TLS_ENV="Environment=WUI_TLS_CERT=$TLS_CERT"$'\n'"Environment=WUI_TLS_KEY=$TLS_KEY"
   fi
@@ -1153,7 +1269,7 @@ NoNewPrivileges=true
 Environment=WUI_LISTEN=0.0.0.0:$PANEL_PORT
 Environment=WUI_DATA_DIR=$DATA_DIR
 Environment=WUI_DB_SOURCE=$DATA_DIR/wui.db
-$TLS_ENV
+$BASE_ENV$TLS_ENV
 EnvironmentFile=-$CONF_DIR/wui.env
 
 ExecStart=$BIN_PATH
@@ -1259,7 +1375,9 @@ summary() {
 
   printf '\n%s────────────────────────────────────────────────────────────%s\n' "$D" "$N"
   printf '  %sW-UI is installed%s\n\n' "$B" "$N"
-  printf '  Panel      %s://%s:%s\n' "$scheme" "$host" "$PANEL_PORT"
+  local shown_path="/"
+  [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
+  printf '  Panel      %s://%s:%s%s\n' "$scheme" "$host" "$PANEL_PORT" "$shown_path"
 
   if [[ -n "$ADMIN_PASS" ]]; then
     printf '  Username   %s\n' "$ADMIN_USER"
@@ -1289,6 +1407,7 @@ summary() {
   printf '    OpenVPN      %s\n' "$([[ "${OPENVPN_OK:-0}" == 1 ]] && openvpn --version 2>/dev/null | head -1 | awk '{print $2}' || echo 'not installed')"
   printf '    nftables     %s\n' "$(nft --version 2>/dev/null | awk '{print $2}')"
   printf '    forwarding   %s\n' "$([[ "$(sysctl -n net.ipv4.ip_forward)" == 1 ]] && echo on || echo off)"
+  printf '    URL path     %s\n' "$([[ -n "$BASE_PATH" ]] && echo "$shown_path — nothing else on this address answers" || echo 'none (the panel is at the root)')"
   case "$TLS_MODE" in
     acme)  printf "    certificate  Let%ss Encrypt, renews itself\n" "'" ;;
     files) printf '    certificate  yours, at %s\n' "$TLS_CERT" ;;

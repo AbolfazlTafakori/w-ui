@@ -4,6 +4,11 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
 
+  // Relative, not absolute. The panel can be served under a random path
+  // prefix, and an asset URL beginning with / would look for it at the root
+  // of the host instead. The <base> tag in index.html supplies the prefix.
+  base: './',
+
   // The build lands directly in the Go module's embed directory, so
   // `npm run build && go build` produces one binary carrying both halves.
   build: {

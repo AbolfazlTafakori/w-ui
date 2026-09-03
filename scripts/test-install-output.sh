@@ -19,13 +19,13 @@ yes_() { if [[ "$2" == *"$1"* ]]; then printf '  \e[32mok\e[0m   %s\n' "$3"; pas
 no_()  { if [[ "$2" != *"$1"* ]]; then printf '  \e[32mok\e[0m   %s\n' "$3"; pass=$((pass+1));
          else printf '  \e[31mFAIL\e[0m %s\n       should not contain: %s\n' "$3" "$1"; fail=$((fail+1)); fi; }
 
-unit_with() { # unit_with CERT KEY PORT
+unit_with() { # unit_with CERT KEY PORT [BASE]
   (
     set +e
     # shellcheck disable=SC1091
     source "$WORK/lib.sh" >/dev/null 2>&1
     UNIT="$WORK/wui.service"
-    TLS_CERT="$1"; TLS_KEY="$2"; PANEL_PORT="$3"
+    TLS_CERT="$1"; TLS_KEY="$2"; PANEL_PORT="$3"; BASE_PATH="${4:-}"
     have_systemd() { return 1; }
     write_unit >/dev/null 2>&1
     cat "$UNIT"
@@ -34,31 +34,33 @@ unit_with() { # unit_with CERT KEY PORT
 
 echo
 echo "── the unit carries the certificate the operator was given ────────────"
-u=$(unit_with /etc/wui/certs/panel.crt /etc/wui/certs/panel.key 8443)
+u=$(unit_with /etc/wui/certs/panel.crt /etc/wui/certs/panel.key 8443 hiddenPath9)
 yes_ "Environment=WUI_TLS_CERT=/etc/wui/certs/panel.crt" "$u" "certificate path reaches the service"
 yes_ "Environment=WUI_TLS_KEY=/etc/wui/certs/panel.key"  "$u" "key path reaches the service"
 yes_ "Environment=WUI_LISTEN=0.0.0.0:8443"               "$u" "the chosen port reaches the service"
+yes_ "Environment=WUI_BASE_PATH=hiddenPath9"             "$u" "the URL path reaches the service"
 
 echo
 echo "── and says nothing about TLS when there is none ──────────────────────"
-u=$(unit_with "" "" 2096)
+u=$(unit_with "" "" 2096 "")
 no_  "WUI_TLS_CERT" "$u" "no half-configured TLS in the unit"
 no_  "WUI_TLS_KEY"  "$u" "no stray key variable"
 yes_ "Environment=WUI_LISTEN=0.0.0.0:2096" "$u" "still listens"
+no_  "WUI_BASE_PATH" "$u" "no path variable when the panel is at the root"
 
 echo
 echo "── half a pair would stop the panel booting, so it is never written ───"
 u=$(unit_with /etc/wui/certs/panel.crt "" 2096)
 no_ "WUI_TLS_CERT" "$u" "a certificate with no key is dropped rather than written"
 
-summary_of() { # summary_of MODE DOMAIN CERT PASS GENERATED
+summary_of() { # summary_of MODE DOMAIN CERT PASS GENERATED [BASE]
   (
     set +e
     # shellcheck disable=SC1091
     source "$WORK/lib.sh" >/dev/null 2>&1
     TLS_MODE="$1"; ACME_DOMAIN="$2"; TLS_CERT="$3"; TLS_KEY="$3"
     ADMIN_PASS="$4"; ADMIN_GENERATED="$5"
-    ADMIN_USER=operator; PANEL_PORT=8443; DATA_DIR="$WORK"
+    ADMIN_USER=operator; PANEL_PORT=8443; DATA_DIR="$WORK"; BASE_PATH="${6:-}"
     public_ip() { printf '203.0.113.9'; }
     have_systemd() { return 0; }
     have() { return 1; }
@@ -70,8 +72,10 @@ summary_of() { # summary_of MODE DOMAIN CERT PASS GENERATED
 
 echo
 echo "── the summary prints an address that actually works ──────────────────"
-s=$(summary_of acme panel.example.com /etc/wui/certs/panel.crt "Chosen-Pass-1" 0)
-yes_ "https://panel.example.com:8443" "$s" "a domain certificate is advertised on the domain, not the IP"
+s=$(summary_of acme panel.example.com /etc/wui/certs/panel.crt "Chosen-Pass-1" 0 s3cretPath)
+# The path is half the address. A summary that prints the host and port but
+# not the prefix hands the operator a URL that answers 404.
+yes_ "https://panel.example.com:8443/s3cretPath/" "$s" "the address includes the path the panel is actually at"
 no_  "https://203.0.113.9:8443"       "$s" "the IP, which the certificate is not valid for, is not offered"
 yes_ "operator"                       "$s" "the chosen username"
 yes_ "Chosen-Pass-1"                  "$s" "the chosen password"
@@ -80,7 +84,8 @@ no_  "shown once"                     "$s" "a password the operator chose is not
 echo
 echo "── a generated password is called what it is ──────────────────────────"
 s=$(summary_of none "" "" "Rand0mGenerated" 1)
-yes_ "http://203.0.113.9:8443" "$s" "no certificate means the IP over plain HTTP"
+yes_ "http://203.0.113.9:8443/" "$s" "no certificate means the IP over plain HTTP"
+yes_ "none (the panel is at the root)" "$s" "and says so when there is no path to hide behind"
 yes_ "generated and is shown once" "$s" "the operator is told to write it down"
 yes_ "serves plain HTTP" "$s" "and told there is no certificate"
 
