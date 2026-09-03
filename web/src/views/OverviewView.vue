@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useDelayed } from '../lib/live.js'
 import { store, t, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Sparkline from '../components/Sparkline.vue'
@@ -40,6 +41,14 @@ onMounted(async () => {
 onUnmounted(() => clearInterval(timer))
 
 const sys = computed(() => data.value?.system)
+
+// A first load only: the three-second refresh must never put a skeleton over a
+// page that already has numbers on it.
+//
+// Declared after `sys`, not before it: useDelayed watches with `immediate`, so
+// it reads the source during setup -- placed any earlier it reaches a `const`
+// that does not exist yet and the whole page fails to render.
+const showSkeleton = useDelayed(computed(() => loading.value && !sys.value))
 const panel = computed(() => data.value?.panel)
 const clients = computed(() => data.value?.clients)
 
@@ -199,7 +208,32 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 </script>
 
 <template>
-  <div v-if="loading" class="card"><div class="empty"><span class="spin"></span></div></div>
+  <!-- The shape of the page while it is still arriving, rather than a spinner
+       where the page will be. Only once the load has run long enough to be
+       worth admitting to: this reading refreshes every three seconds, and a
+       skeleton that flashed on each of them would be unusable. -->
+  <div v-if="showSkeleton" class="ov-page" aria-hidden="true">
+    <div class="ov-vitals">
+      <div v-for="n in 4" :key="n" class="card ov-tile">
+        <span class="sk" style="width: 42%"></span>
+        <span class="sk sk-lg" style="width: 58%"></span>
+        <span class="sk" style="width: 70%"></span>
+        <span class="sk sk-chart"></span>
+      </div>
+    </div>
+    <div class="ov-mid">
+      <div class="card ov-wide">
+        <span class="sk" style="width: 26%"></span>
+        <span class="sk sk-tall"></span>
+      </div>
+      <div class="card ov-side">
+        <span class="sk" style="width: 40%"></span>
+        <span class="sk sk-lg" style="width: 55%"></span>
+      </div>
+    </div>
+  </div>
+
+  <div v-else-if="loading" class="ov-page"></div>
 
   <ErrorState v-else-if="loadError && !sys" :error="loadError" @retry="load()" />
 

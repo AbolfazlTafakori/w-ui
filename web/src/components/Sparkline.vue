@@ -1,9 +1,20 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, getCurrentInstance } from 'vue'
 
 // A hand-drawn SVG sparkline rather than a charting library: the whole need is
 // one or two smoothed series with an optional reference line, and pulling in a
 // chart package for that would cost more bundle than the rest of the app.
+// Gradient ids have to be unique to this chart and stable for its lifetime.
+//
+// They used to be Math.random() called inside a computed, so they were
+// regenerated on every recompute -- and the page they sit on polls every three
+// seconds, which meant six gradients being torn down and rebuilt continuously.
+//
+// The instance id rather than a module counter: a counter declared at the top
+// of `<script setup>` is per-instance and resets to zero for every chart, which
+// gives all of them the same id and has them all reading one gradient.
+const uid = `sg${getCurrentInstance()?.uid ?? 0}`
+
 const props = defineProps({
   // One or two series: [{ data: number[], color: string, fill: boolean }]
   series: { type: Array, required: true },
@@ -63,6 +74,14 @@ function pathFor(data) {
   return d
 }
 
+// Where the series currently sits: the right-hand end of the line.
+function tipFor(data) {
+  const pts = points(data)
+  if (!pts.length) return null
+  const [x, y] = pts[pts.length - 1]
+  return { x, y }
+}
+
 function areaFor(data) {
   const line = pathFor(data)
   if (!line) return ''
@@ -80,7 +99,10 @@ const drawn = computed(() =>
       fill: s.fill !== false,
       line: pathFor(s.data),
       area: areaFor(s.data),
-      id: `sg-${Math.random().toString(36).slice(2, 8)}`,
+      // The last point is where the series is now, which on a live chart is the
+      // one value anybody is actually reading.
+      tip: tipFor(s.data),
+      id: `${uid}-${i}`,
     })),
 )
 
@@ -92,6 +114,7 @@ const refLines = computed(() =>
 </script>
 
 <template>
+  <div class="spark-wrap" :style="{ height: height + 'px' }">
   <svg
     class="spark"
     :viewBox="`0 0 ${W} ${height}`"
@@ -133,12 +156,45 @@ const refLines = computed(() =>
       />
     </template>
   </svg>
+
+    <!-- The current value, marked in HTML rather than in the SVG. The viewBox is
+         stretched to the container width, so a circle drawn inside it comes out
+         as an ellipse; positioned by percentage out here it is always round.
+         This is the one point on a live chart anybody is actually reading. -->
+    <span
+      v-for="s in drawn"
+      v-show="s.tip"
+      :key="`tip${s.key}`"
+      class="tip"
+      :style="{
+        left: `${(s.tip.x / W) * 100}%`,
+        top: `${(s.tip.y / height) * 100}%`,
+        '--tip-color': s.color,
+      }"
+    ></span>
+  </div>
 </template>
 
 <style scoped>
+.spark-wrap {
+  position: relative;
+  width: 100%;
+}
 .spark {
   display: block;
   width: 100%;
   overflow: visible;
+}
+.tip {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--tip-color, var(--accent));
+  /* The halo is a spread shadow rather than a second element: one node, and it
+     cannot fall out of step with the dot it belongs to. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tip-color, var(--accent)) 22%, transparent);
+  pointer-events: none;
 }
 </style>

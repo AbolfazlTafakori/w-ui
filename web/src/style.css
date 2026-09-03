@@ -3340,3 +3340,23 @@ table.skeleton td:nth-child(9) .sk { width: 55%; }
     transition: none;
   }
 }
+
+/* Skeleton pieces for the overview, which is a grid of tiles rather than a
+   table and so cannot borrow the table's row shapes. */
+.sk-lg {
+  height: 22px;
+  margin-block: 4px;
+}
+.sk-chart {
+  height: 62px;
+  margin-top: 10px;
+}
+.sk-tall {
+  height: 180px;
+  margin-top: 12px;
+}
+.ov-tile .sk,
+.ov-wide .sk,
+.ov-side .sk {
+  margin-bottom: 8px;
+}
