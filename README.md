@@ -105,9 +105,35 @@ and `qrencode`, enables IPv4 and IPv6 forwarding, verifies that the kernel can
 actually hold quota objects, creates an unprivileged `wui` system user, and
 installs a hardened systemd unit.
 
+It asks first, and only then starts work, so you answer for a minute and can
+walk away:
+
+- **the panel port** — refused if another service is already listening there,
+  rather than taken over
+- **the administrator's name and password** — created before the panel's first
+  start, so no generated password is ever printed or has to be changed
+- **how the panel is reached** — a domain with a free Let's Encrypt certificate,
+  a certificate you already have, or plain HTTP
+- **which tunnels to install** alongside WireGuard
+
+The certificate is the panel's own: it serves HTTPS itself and no reverse proxy
+is configured, added to, or restarted. If something is already serving port 80,
+that service is left running and the ACME challenge goes through its document
+root instead.
+
+Every answer is also a flag, and `--yes` skips the questions entirely — which is
+what a cloud-init or CI install wants.
+
 | Flag | Effect |
 |------|--------|
 | `--port N` | Listen on port N instead of 2096 |
+| `--username NAME` | Administrator name (default `admin`) |
+| `--password PASS` | Administrator password (default: generated and shown once) |
+| `--domain NAME` | Fetch a Let's Encrypt certificate for this domain |
+| `--email ADDR` | Where the certificate authority sends expiry notices |
+| `--tls-cert PATH` / `--tls-key PATH` | Use a certificate you already have |
+| `--no-tls` | Serve plain HTTP — only sane behind a proxy or an SSH tunnel |
+| `-y`, `--yes` | Ask nothing; use flags, environment and defaults |
 | `--local PATH` | Install a binary you already built |
 | `--from-source` | Build from the current checkout (needs Go) |
 | `--no-amnezia` | Skip the AmneziaWG packages |

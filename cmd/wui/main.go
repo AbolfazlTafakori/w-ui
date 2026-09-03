@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -69,7 +70,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	log.Info("starting", "version", version, "listen", cfg.Listen)
+	log.Info("starting", "version", version, "listen", cfg.Listen, "scheme", cfg.Scheme())
 
 	catalog, err := i18n.Load()
 	if err != nil {
@@ -254,8 +255,25 @@ func run() error {
 
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("listening", "address", cfg.Listen, "url", "http://"+cfg.Listen)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Info("listening",
+			"address", cfg.Listen,
+			"url", cfg.Scheme()+"://"+cfg.Listen,
+			"tls", cfg.TLS())
+		var err error
+		if cfg.TLS() {
+			// Paths, not preloaded certificates: the server reads them per
+			// handshake, so a renewal that rewrites the files is picked up by
+			// a restart and nothing has to be rebuilt.
+			err = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+		} else {
+			// Worth saying once. An administrator's password crosses this
+			// listener in the clear, and a panel that never mentions it is how
+			// that goes unnoticed for a year.
+			log.Warn("serving plain HTTP: sign-in credentials are not encrypted",
+				"advice", "set WUI_TLS_CERT and WUI_TLS_KEY, or put a TLS-terminating proxy in front")
+			err = srv.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- err
 		}
 	}()
@@ -339,7 +357,10 @@ func buildServer(
 	handler := apiSrv.SubscriptionRouter(root)
 
 	return &http.Server{
-		Addr:              cfg.Listen,
+		Addr: cfg.Listen,
+		// Nothing below TLS 1.2 is offered. The clients that need less are
+		// older than any browser an operator will be signing in from.
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 		Handler:           api.LogRequests(log, api.SecureHeaders(handler)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

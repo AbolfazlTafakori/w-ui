@@ -6,6 +6,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"fmt"
 	"os"
 	"strconv"
@@ -45,6 +46,19 @@ type Config struct {
 	// English-first with Persian as the second locale.
 	DefaultLocale string
 
+	// TLSCert and TLSKey turn the panel's own listener into an HTTPS one.
+	//
+	// The panel terminates TLS itself rather than expecting a reverse proxy in
+	// front of it. A server that is already running somebody else's nginx must
+	// not have its configuration rewritten by this panel's installer, and a
+	// server running nothing else should not have to grow a web server just to
+	// get a certificate in front of a login form.
+	//
+	// Empty means plain HTTP, which is only defensible behind a proxy or an
+	// SSH tunnel: the sign-in POST carries an administrator's password.
+	TLSCert string
+	TLSKey  string
+
 	LogLevel  string
 	LogFormat string // text | json
 
@@ -75,6 +89,8 @@ func Load() (Config, error) {
 	c.DBSource = env("WUI_DB_SOURCE", c.DBSource)
 	c.DataDir = env("WUI_DATA_DIR", c.DataDir)
 	c.DefaultLocale = strings.ToLower(env("WUI_DEFAULT_LOCALE", c.DefaultLocale))
+	c.TLSCert = env("WUI_TLS_CERT", c.TLSCert)
+	c.TLSKey = env("WUI_TLS_KEY", c.TLSKey)
 	c.LogLevel = strings.ToLower(env("WUI_LOG_LEVEL", c.LogLevel))
 	c.LogFormat = strings.ToLower(env("WUI_LOG_FORMAT", c.LogFormat))
 
@@ -119,6 +135,49 @@ func (c Config) Validate() error {
 	case "en", "fa":
 	default:
 		return fmt.Errorf("config: unsupported locale %q, want en or fa", c.DefaultLocale)
+	}
+	if err := c.validateTLS(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TLS reports whether the panel should serve HTTPS.
+func (c Config) TLS() bool { return c.TLSCert != "" && c.TLSKey != "" }
+
+// Scheme is the URL scheme the panel answers on.
+func (c Config) Scheme() string {
+	if c.TLS() {
+		return "https"
+	}
+	return "http"
+}
+
+// validateTLS refuses a certificate that will not work, at boot.
+//
+// The alternative is a panel that starts, reports itself healthy, and then
+// fails every connection -- which looks like a network problem and is not one.
+// A renewal that wrote a certificate the key no longer matches is caught here
+// too, on the restart that follows it.
+func (c Config) validateTLS() error {
+	switch {
+	case c.TLSCert == "" && c.TLSKey == "":
+		return nil
+	case c.TLSCert == "":
+		return fmt.Errorf("config: WUI_TLS_KEY is set without WUI_TLS_CERT")
+	case c.TLSKey == "":
+		return fmt.Errorf("config: WUI_TLS_CERT is set without WUI_TLS_KEY")
+	}
+	for _, f := range []struct{ what, path string }{
+		{"WUI_TLS_CERT", c.TLSCert},
+		{"WUI_TLS_KEY", c.TLSKey},
+	} {
+		if _, err := os.Stat(f.path); err != nil {
+			return fmt.Errorf("config: %s %q: %w", f.what, f.path, err)
+		}
+	}
+	if _, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey); err != nil {
+		return fmt.Errorf("config: the certificate and key do not form a usable pair: %w", err)
 	}
 	return nil
 }

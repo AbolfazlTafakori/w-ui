@@ -63,6 +63,9 @@ Usage:
 Flags for "admin reset":
   --username NAME    the administrator's name (default: keep the current one)
   --password PASS    the new password (default: generate one and print it)
+  --password-stdin   read the password from standard input instead, so it
+                     never appears in the process list
+  --quiet            print nothing on success
 
 Configuration is read from WUI_* environment variables. The management script
 keeps them in /etc/wui/wui.env.
@@ -134,15 +137,22 @@ func cmdSetting(args []string) error {
 	if *asJSON {
 		fmt.Printf(`{"listen":%q,"dataDir":%q,"dbDriver":%q,"dbSource":%q,`+
 			`"collectInterval":%q,"defaultLocale":%q,"logLevel":%q,"logFormat":%q,`+
+			`"scheme":%q,"tls":%t,"tlsCert":%q,"tlsKey":%q,`+
 			`"admin":%q,"interfaces":%d,"clients":%d,"accounts":%d,"activeClients":%d}`+"\n",
 			cfg.Listen, cfg.DataDir, cfg.DBDriver, cfg.DBSource,
 			cfg.CollectInterval, cfg.DefaultLocale, cfg.LogLevel, cfg.LogFormat,
+			cfg.Scheme(), cfg.TLS(), cfg.TLSCert, cfg.TLSKey,
 			adminName, c.Interfaces, c.Clients, c.Accounts, c.Active)
 		return nil
 	}
 
 	fmt.Printf("listen: %s\n", cfg.Listen)
 	fmt.Printf("port: %s\n", portOf(cfg.Listen))
+	fmt.Printf("scheme: %s\n", cfg.Scheme())
+	if cfg.TLS() {
+		fmt.Printf("tlsCert: %s\n", cfg.TLSCert)
+		fmt.Printf("tlsKey: %s\n", cfg.TLSKey)
+	}
 	fmt.Printf("dataDir: %s\n", cfg.DataDir)
 	fmt.Printf("dbDriver: %s\n", cfg.DBDriver)
 	fmt.Printf("dbSource: %s\n", cfg.DBSource)
@@ -176,8 +186,28 @@ func cmdAdmin(args []string) error {
 	fs.SetOutput(io.Discard)
 	username := fs.String("username", "", "administrator name")
 	password := fs.String("password", "", "new password")
+	// A password passed as an argument is readable by every user on the box
+	// for as long as the command runs, via ps. Scripts should pipe it instead.
+	fromStdin := fs.Bool("password-stdin", false, "read the password from stdin")
+	quiet := fs.Bool("quiet", false, "print nothing on success")
 	if err := fs.Parse(args[1:]); err != nil {
 		return fmt.Errorf("admin reset: %w", err)
+	}
+
+	if *fromStdin {
+		if *password != "" {
+			return fmt.Errorf("admin reset: use --password or --password-stdin, not both")
+		}
+		raw, rerr := io.ReadAll(os.Stdin)
+		if rerr != nil {
+			return fmt.Errorf("admin reset: read password from stdin: %w", rerr)
+		}
+		// One trailing newline is what an echo or a heredoc adds; anything
+		// else the operator typed is theirs to keep.
+		*password = strings.TrimRight(string(raw), "\r\n")
+		if *password == "" {
+			return fmt.Errorf("admin reset: --password-stdin was given nothing to read")
+		}
 	}
 
 	db, cfg, err := openDatabase()
@@ -238,6 +268,9 @@ func cmdAdmin(args []string) error {
 		}
 	}
 
+	if *quiet {
+		return nil
+	}
 	fmt.Printf("username: %s\n", admin.Username)
 	fmt.Printf("password: %s\n", *password)
 	if generated {
