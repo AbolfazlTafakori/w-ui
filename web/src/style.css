@@ -3360,3 +3360,48 @@ table.skeleton td:nth-child(9) .sk { width: 55%; }
 .ov-side .sk {
   margin-bottom: 8px;
 }
+
+/* ── Phase 5: the routing rules ─────────────────────────────────────────────
+   The order of this table is the behaviour, so the order is written down. */
+
+.w-step {
+  width: 46px;
+}
+/* The position the router consults this rule at. Numbered because the sequence
+   is real information here and not decoration -- rule 1 is asked first and the
+   first one that matches ends the search. */
+.step {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding-inline: 5px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  box-shadow: var(--edge);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* A rule that is switched off is not consulted, so it recedes rather than
+   sitting in the sequence looking like it still counts. */
+tbody tr.off td:not(.w-gact) {
+  opacity: 0.5;
+}
+/* The rule the tester said would decide. Marked so an answer that names a rule
+   also shows you which row it meant. */
+tbody tr.decided {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+[dir='rtl'] tbody tr.decided {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+tbody tr.decided .step {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}

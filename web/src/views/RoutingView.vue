@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
+import { useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import Toggle from '../components/Toggle.vue'
@@ -31,6 +32,11 @@ const resolver = ref(null)
 const rules = ref([])
 const outbounds = ref([])
 const fieldError = ref({})
+
+// Declared after `rules`, not above it: useDelayed watches with `immediate` and
+// reads its source during setup, so placed any earlier it reaches a const that
+// does not exist yet and takes the page down.
+const showSkeleton = useDelayed(computed(() => loading.value && !rules.value.length))
 
 const basic = ref({
   blockBitTorrent: false,
@@ -99,6 +105,24 @@ function revert() {
 }
 
 // ── rules ────────────────────────────────────────────────────────────────────
+
+// The position each rule is actually evaluated at.
+//
+// Not the row index: a disabled rule is skipped entirely, so with rule two off,
+// the rule sitting third in the list is the second one the router consults.
+// Showing the row index there would be a number that looks like precedence and
+// is not.
+const evalOrder = computed(() => {
+  const map = {}
+  let n = 0
+  for (const r of rules.value) map[r.id] = r.enabled ? ++n : null
+  return map
+})
+
+// The rule the tester last said would decide. Held so the row can be pointed
+// at: an answer that names a rule and leaves you to find it in a list of
+// twenty has told you half of what you asked.
+const decidedBy = ref(null)
 
 const ruleFormFor = ref(null)
 const ask = ref(null)
@@ -179,12 +203,21 @@ const answer = ref(null)
 const testing = ref(false)
 const testError = ref('')
 
+// Switch to the rules and mark the row the answer named.
+function showDecidingRule() {
+  tab.value = 'rules'
+  nextTick(() => {
+    document.querySelector('tr.decided')?.scrollIntoView({ block: 'center' })
+  })
+}
+
 async function testRoute() {
   testing.value = true
   testError.value = ''
   answer.value = null
   try {
     answer.value = await api.post('/api/routing/test', probe.value)
+    decidedBy.value = answer.value.ruleId || null
   } catch (err) {
     testError.value = err.message
   } finally {
@@ -215,7 +248,14 @@ async function testRoute() {
       <button class="btn" @click="load()">{{ t('action.retry') }}</button>
     </div>
 
-    <div v-else-if="loading" class="empty"><span class="spin"></span></div>
+    <table v-else-if="showSkeleton" class="skeleton card" aria-hidden="true">
+      <tbody>
+        <tr v-for="n in 5" :key="n">
+          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else-if="loading" class="empty"></div>
 
     <template v-else>
       <div class="tabs" role="tablist">
@@ -358,6 +398,7 @@ async function testRoute() {
           <thead>
             <tr>
               <th class="w-gact">{{ t('table.actions') }}</th>
+              <th class="w-step">#</th>
               <th>{{ t('table.enabled') }}</th>
               <th>{{ t('routing.rule.name') }}</th>
               <th>{{ t('routing.rule.match') }}</th>
@@ -367,7 +408,11 @@ async function testRoute() {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(r, i) in rules" :key="r.id">
+            <tr
+              v-for="(r, i) in rules"
+              :key="r.id"
+              :class="{ decided: decidedBy === r.id, off: !r.enabled }"
+            >
               <td class="w-gact">
                 <div class="actions">
                   <button class="act" :title="t('action.edit')" @click="ruleFormFor = { rule: r }">
@@ -377,6 +422,13 @@ async function testRoute() {
                     <Icon name="trash" :size="16" />
                   </button>
                 </div>
+              </td>
+              <!-- Where this rule sits in the order the router consults them.
+                   A rule that is switched off is not consulted at all, so it
+                   has no place in the sequence rather than a greyed-out one. -->
+              <td class="w-step num">
+                <span v-if="evalOrder[r.id]" class="step">{{ evalOrder[r.id] }}</span>
+                <span v-else class="muted" :title="t('routing.disabled')">—</span>
               </td>
               <td>
                 <Toggle
@@ -467,6 +519,11 @@ async function testRoute() {
               </span>
             </div>
             <p class="muted">{{ answer.reason }}</p>
+            <!-- Closes the loop: the answer names a rule, and this is the way
+                 to the row it names. -->
+            <button v-if="decidedBy" type="button" class="btn sm" @click="showDecidingRule">
+              {{ t('routing.showRule') }}
+            </button>
             <ul v-if="answer.steps?.length" class="steps">
               <li v-for="(s, i) in answer.steps" :key="i">{{ s }}</li>
             </ul>

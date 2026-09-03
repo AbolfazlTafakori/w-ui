@@ -727,5 +727,6 @@
   "security.http.title": "This page is served over plain HTTP",
   "security.http.detail": "The admin password and every customer's configuration cross the network unencrypted, readable by anything between here and you.",
   "security.http.detailPublic": "The panel is bound to every address without TLS, so the sign-in page and every customer's configuration are on the open internet in the clear.",
-  "security.http.fix": "Put a reverse proxy with a certificate in front of the panel, and bind the panel itself to 127.0.0.1."
+  "security.http.fix": "Put a reverse proxy with a certificate in front of the panel, and bind the panel itself to 127.0.0.1.",
+  "routing.showRule": "Show me that rule"
 }

@@ -665,6 +665,10 @@ type RouteAnswer struct {
 	Reason  string   `json:"reason"`
 	Blocked bool     `json:"blocked"`
 	Steps   []string `json:"steps"`
+	// RuleID is the rule that decided it, when a rule did. Carried as an id
+	// rather than left to the page to find by name: two rules may share a name,
+	// and the one the operator needs to look at is a particular row.
+	RuleID uint `json:"ruleId,omitempty"`
 }
 
 // TestRoute answers where a connection would be sent, without sending one.
@@ -759,6 +763,7 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 			ans.Outbound = r.OutboundTag
 			ans.Reason = fmt.Sprintf("rule %q", r.Name)
 			ans.Blocked = r.OutboundTag == TagBlocked
+			ans.RuleID = r.ID
 			note("first matching rule: %s", r.Name)
 			return ans, nil
 		}
