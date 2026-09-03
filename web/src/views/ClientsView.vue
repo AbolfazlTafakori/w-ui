@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
-import { useLive, mergeRows } from '../lib/live.js'
+import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, relative, dateTime, percent, gigabytesToBytes, isOnline } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
@@ -80,6 +80,15 @@ async function load(quiet = false) {
 // Online, traffic and remaining are recomputed on the server every couple of
 // seconds. Five is often enough to follow that without asking a busy panel for
 // a hundred rows every three.
+// Shown only once a first load has been running for 160ms. Anything faster
+// leaves the screen alone: a skeleton that appears and vanishes inside two
+// frames reads as a rendering fault, not as progress.
+const firstLoad = computed(() => loading.value && !page.value)
+const showSkeleton = useDelayed(firstLoad)
+// A refilter keeps the rows on screen and dims them instead, so the page does
+// not collapse and spring back for every change of a dropdown.
+const refiltering = computed(() => loading.value && !!page.value)
+
 useLive(load, {
   every: 5000,
   // Not while something is open over the top of the list.
@@ -165,8 +174,16 @@ function clearFilters() {
 const strip = computed(() => {
   const s = stats.value
   if (!s) return []
+  // `filter` is the status this figure narrows the table to. An empty string
+  // means "all of them"; null means the figure is not a filter at all.
+  //
+  // Online and running-low are the two that are not: neither is a stored
+  // status -- one is derived from recent handshakes, the other from usage
+  // against quota -- so there is nothing to ask the server for. They used to
+  // be buttons anyway, which meant clicking either of them silently cleared
+  // whatever filter you had set.
   return [
-    { key: 'clients', value: s.clients, tone: 'ink', filter: null },
+    { key: 'clients', value: s.clients, tone: 'ink', filter: '' },
     { key: 'online', value: s.online, tone: 'ok', filter: null },
     { key: 'depleting', value: s.depleting, tone: 'warn', filter: null },
     { key: 'exhausted', value: s.exhausted, tone: 'bad', filter: 'exhausted' },
@@ -541,16 +558,22 @@ async function submitForm(input) {
   </div>
 
   <div v-if="stats" class="strip card">
-    <button
+    <!-- A figure is a button only when it can actually narrow the table. The
+         two that cannot are rendered as plain figures, so nothing here looks
+         pressable and then does something else. -->
+    <component
+      :is="s.filter === null ? 'div' : 'button'"
       v-for="s in strip"
       :key="s.key"
       class="strip-item"
-      type="button"
-      @click="statusFilter = s.filter || ''"
+      :class="{ on: s.filter !== null && s.filter === statusFilter, plain: s.filter === null }"
+      :type="s.filter === null ? undefined : 'button'"
+      :aria-pressed="s.filter === null ? undefined : s.filter === statusFilter"
+      @click="s.filter === null || (statusFilter = s.filter)"
     >
       <span class="strip-label"><i class="dot" :class="s.tone"></i>{{ t(`stat.${s.key}`) }}</span>
       <span class="strip-value num">{{ nf(s.value) }}</span>
-    </button>
+    </component>
   </div>
 
   <div class="actionbar">
@@ -629,7 +652,16 @@ async function submitForm(input) {
       <span v-if="page" class="spacer muted small num">{{ nf(page.total) }}</span>
     </div>
 
-    <div v-if="loading" class="empty"><span class="spin"></span></div>
+    <!-- A skeleton in the table's own shape, so the page does not collapse to a
+         spinner and spring back to full height a moment later. -->
+    <table v-if="showSkeleton" class="skeleton" aria-hidden="true">
+      <tbody>
+        <tr v-for="n in 8" :key="n">
+          <td v-for="c in 9" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else-if="loading && !page" class="empty"></div>
     <div v-else-if="!page || !page.items.length" class="empty empty-cta">
       <template v-if="!interfaces.length">
         <p>{{ t('client.noneNoInterface') }}</p>
@@ -659,8 +691,13 @@ async function submitForm(input) {
 
     <template v-else>
       <!-- Table on a desk, cards on a phone. A ten-column table forced into a
-           375px viewport is a horizontal scroll nobody uses. -->
-      <div class="table-wrap desk">
+           375px viewport is a horizontal scroll nobody uses.
+
+           While a refilter is in flight the rows stay and simply recede. The
+           answer is about to replace them either way, and a table that empties
+           itself to fetch the same twenty-five rows is a worse wait than one
+           that holds still. -->
+      <div class="table-wrap desk" :class="{ stale: refiltering }">
         <table>
           <thead>
             <tr>

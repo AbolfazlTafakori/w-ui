@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 
 // Keep a page's data current without getting in the operator's way.
 //
@@ -88,4 +88,37 @@ export function mergeRows(current, incoming, skip = new Set()) {
     if (fresh) Object.assign(row, fresh)
   }
   return current
+}
+
+// True only once `source()` has been true for `after` milliseconds.
+//
+// For loading indicators. A request that comes back in 40ms should leave the
+// screen alone: showing a skeleton and removing it again inside two frames is
+// a flash that reads as a rendering fault, and it is more distracting than the
+// wait it was meant to cover.
+//
+// The delay is one-directional. Becoming busy waits; becoming idle is instant,
+// because a spinner that lingers after the data has arrived is the one thing
+// worse than a spinner that flashed.
+export function useDelayed(source, { after = 160 } = {}) {
+  const shown = ref(false)
+  let timer = null
+
+  watch(
+    source,
+    (busy) => {
+      clearTimeout(timer)
+      if (!busy) {
+        shown.value = false
+        return
+      }
+      timer = setTimeout(() => {
+        shown.value = true
+      }, after)
+    },
+    { immediate: true },
+  )
+
+  onUnmounted(() => clearTimeout(timer))
+  return shown
 }

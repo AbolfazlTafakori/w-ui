@@ -3202,3 +3202,141 @@ body.light .meter {
     transform: none;
   }
 }
+
+/* ── Phase 2: the customer list ─────────────────────────────────────────────
+
+   The page an operator has open all day. Everything here is about reading a
+   dense table quickly and knowing what the panel is currently showing you.
+*/
+
+/* ── the seven counters, which are also the status filter ────────────────── */
+
+button.strip-item {
+  cursor: pointer;
+  position: relative;
+  transition:
+    background var(--t-quick) linear,
+    color var(--t-quick) linear;
+}
+button.strip-item:hover:not(.on) {
+  background: var(--surface-2);
+}
+/* These are buttons that change what the table below is showing, and until now
+   nothing said which one was engaged: you could filter to "expired" and the
+   only evidence was the row count. The engaged one is tinted and carries a bar
+   on its top edge -- top rather than side, because they sit in a row. */
+button.strip-item.on {
+  background: var(--accent-soft);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+button.strip-item.on .strip-label {
+  color: var(--accent-hover);
+}
+button.strip-item.on .strip-value {
+  color: var(--ink);
+}
+/* The dot is the row's own status colour and should not be repainted by the
+   engaged state, or the colour stops meaning anything. */
+button.strip-item.on .dot {
+  opacity: 1;
+}
+
+.strip-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the table ──────────────────────────────────────────────────────────── */
+
+/* Twenty-five rows and nine columns: by the time you have scrolled to the row
+   you want, the headings are off the top of the screen and the column under
+   your eye could be traffic, speed or what is left. */
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  /* Opaque, or the rows show through it as they pass underneath. */
+  background: var(--surface-2);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+
+tbody tr {
+  transition: background var(--t-quick) linear;
+}
+tbody tr:hover {
+  background: var(--surface-2);
+}
+/* A selected row is not merely hovered: it is in the set the batch actions are
+   about to operate on, so it keeps its mark whether or not the pointer is
+   there. */
+tbody tr.picked {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+[dir='rtl'] tbody tr.picked {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+tbody tr.picked:hover {
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface-2));
+}
+
+/* ── waiting ────────────────────────────────────────────────────────────── */
+
+/* A refilter keeps its rows and lets them recede. Not hidden, not replaced:
+   the previous answer is still the best available one until the next arrives. */
+.table-wrap.stale {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--t-move) var(--ease);
+}
+
+/* The skeleton holds the table's shape so the page does not collapse to a
+   spinner and spring back to full height a moment later. Shown only after the
+   load has been running long enough to be worth admitting to. */
+table.skeleton td {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sk {
+  display: block;
+  height: 11px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    var(--surface-3) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: sk-sweep 1.4s ease-in-out infinite;
+}
+/* Rows further down start their sweep later, so the block reads as one surface
+   catching light rather than eight bars pulsing in lockstep. */
+table.skeleton tr:nth-child(2n) .sk {
+  animation-delay: 0.12s;
+}
+table.skeleton tr:nth-child(3n) .sk {
+  animation-delay: 0.24s;
+}
+/* Columns are not all the same width in the real table, and a skeleton of
+   identical bars looks like a placeholder rather than like the thing arriving. */
+table.skeleton td:nth-child(1) .sk { width: 30%; }
+table.skeleton td:nth-child(4) .sk { width: 72%; }
+table.skeleton td:nth-child(5) .sk { width: 48%; }
+table.skeleton td:nth-child(9) .sk { width: 55%; }
+
+@keyframes sk-sweep {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+    background: var(--surface-2);
+  }
+  .table-wrap.stale,
+  tbody tr,
+  button.strip-item {
+    transition: none;
+  }
+}
