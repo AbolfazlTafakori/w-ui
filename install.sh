@@ -35,6 +35,10 @@ CONF_DIR=/etc/wui
 UNIT=/etc/systemd/system/wui.service
 SERVICE_USER=wui
 RELEASE_URL="${WUI_RELEASE_URL:-}"
+# Where to fetch from when nothing else was asked for. Overridable, because a
+# fork or a mirror is a normal thing to install from.
+REPO="${WUI_REPO:-AbolfazlTafakori/w-ui}"
+BRANCH="${WUI_BRANCH:-main}"
 
 PANEL_PORT=2096
 WANT_AMNEZIA=1
@@ -410,6 +414,62 @@ check_nftables() {
 }
 
 # ── the panel ────────────────────────────────────────────────────────────────
+# The download for this machine's architecture in the newest release, if the
+# project has published one.
+#
+# Asked over the API rather than guessed at a URL, so a release whose assets
+# are named differently still resolves, and a repository with no releases at
+# all answers cleanly instead of 404-ing on a made-up path.
+release_asset_url() {
+  local api json
+  api="https://api.github.com/repos/${REPO}/releases/latest"
+  json="$(curl -fsSL --max-time 20 "$api" 2>/dev/null)" || return 1
+  [[ -n "$json" ]] || return 1
+
+  ASSET_URL="$(printf '%s' "$json" \
+    | grep -o '"browser_download_url": *"[^"]*"' \
+    | sed 's/.*"browser_download_url": *"//; s/"$//' \
+    | grep -E "linux[-_]${ARCH}" \
+    | head -1)"
+  [[ -n "$ASSET_URL" ]]
+}
+
+# Build the panel from the project's own source, without needing the repository
+# to have been cloned first.
+#
+# `--from-source` used to require a checkout -- it looked for go.mod in the
+# working directory -- which the one-line install can never have. It fetches a
+# tarball now, and installs Go if the machine has none, because "install Go and
+# come back" is not an answer an installer should be giving.
+build_from_tarball() {
+  local work
+  work="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$work'" RETURN
+
+  if ! have go; then
+    info "installing Go to build with"
+    pkg_install golang-go || pkg_install golang || die "could not install Go; use --local <path> with a prebuilt binary"
+  fi
+  have go || die "Go is still not on PATH after installing it"
+
+  info "fetching source"
+  curl -fsSL --max-time 120 \
+    "https://codeload.github.com/${REPO}/tar.gz/refs/heads/${BRANCH}" \
+    -o "$work/src.tgz" || die "could not fetch the source"
+  tar -xzf "$work/src.tgz" -C "$work" || die "could not unpack the source"
+
+  local root
+  root="$(find "$work" -maxdepth 1 -type d -name 'w-ui-*' | head -1)"
+  [[ -n "$root" && -f "$root/go.mod" ]] || die "the source archive does not look like this project"
+
+  info "building (this takes a minute)…"
+  ( cd "$root" && CGO_ENABLED=0 GOFLAGS=-mod=mod go build -ldflags "-s -w" -o "$BIN_PATH" ./cmd/wui ) \
+    || die "build failed"
+  chmod 0755 "$BIN_PATH"
+  ok "built from source"
+}
+
 install_binary() {
   step "Installing the panel"
 
@@ -419,13 +479,18 @@ install_binary() {
     ok "installed from $LOCAL_BIN"
 
   elif [[ "$FROM_SOURCE" == 1 ]]; then
-    have go || die "--from-source needs Go on PATH"
-    [[ -f go.mod ]] || die "--from-source must run from the repository root"
-    info "building (this takes a minute)…"
-    CGO_ENABLED=0 go build -ldflags "-s -w" -o "$BIN_PATH" ./cmd/wui \
-      || die "build failed"
-    chmod 0755 "$BIN_PATH"
-    ok "built from source"
+    if [[ -f go.mod ]]; then
+      # Run from a checkout: build what is in front of us, which is what
+      # somebody testing a change expects.
+      have go || die "--from-source needs Go on PATH"
+      info "building (this takes a minute)…"
+      CGO_ENABLED=0 go build -ldflags "-s -w" -o "$BIN_PATH" ./cmd/wui \
+        || die "build failed"
+      chmod 0755 "$BIN_PATH"
+      ok "built from source"
+    else
+      build_from_tarball
+    fi
 
   elif [[ -n "$RELEASE_URL" ]]; then
     info "downloading $RELEASE_URL"
@@ -435,7 +500,23 @@ install_binary() {
     ok "installed from release"
 
   else
-    die "no binary source. Use --local <path>, --from-source, or set WUI_RELEASE_URL"
+    # Nothing was asked for, which is what `curl … | bash` looks like. Work it
+    # out rather than refusing: a published build if there is one, and the
+    # source if there is not.
+    #
+    # This used to be a `die`, which meant the one-line install printed in the
+    # README could not succeed on any machine -- it reached the last step and
+    # stopped there having installed WireGuard, OpenVPN and nothing else.
+    if release_asset_url; then
+      info "downloading $ASSET_URL"
+      curl -fsSL "$ASSET_URL" -o /tmp/wui.new || die "download failed"
+      install -m 0755 /tmp/wui.new "$BIN_PATH"
+      rm -f /tmp/wui.new
+      ok "installed from the latest release"
+    else
+      info "no published build for $ARCH; building from source instead"
+      build_from_tarball
+    fi
   fi
 
   [[ -x "$BIN_PATH" ]] || die "installed binary is not executable"
