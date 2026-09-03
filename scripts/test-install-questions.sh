@@ -17,11 +17,20 @@ SRC="${1:?usage: test-install-questions.sh /path/to/install.sh}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Definitions only: the run section is cut, and so is argument parsing — which
-# ends in a root check that would exit the moment this is sourced. set -e goes
-# too, so a deliberately wrong answer under test does not kill the shell that
-# is checking how it was handled.
-sed -e '/^# ── run ─/,$d' -e '/^# ── arguments ─/,/^# ── platform ─/d' -e '/^set -euo pipefail$/d' "$SRC" >"$WORK/lib.sh"
+# The installer is sourced with WUI_LIB_ONLY=1, which stops it just before it
+# would start installing. That is deliberately not a copy with the run section
+# cut out: cutting it out with sed was how these tests came to run against a
+# file that was not the one that ships -- sed split a long comment line in two
+# on one machine, and everything after it was nonsense.
+#
+# The `set` line is sourced along with everything else, errexit included. It
+# used to be stripped, which made these tests blind to the whole class of bug
+# errexit exists to catch: a real install died silently at exit 141 on its
+# first random password while every test here passed. Each case runs in its
+# own subshell, so a death under errexit is an empty result and a failed
+# check rather than the end of this script.
+
+cp "$SRC" "$WORK/lib.sh"
 
 pass=0; fail=0
 ok_()   { printf '  \e[32mok\e[0m   %s\n' "$1"; pass=$((pass+1)); }
@@ -37,7 +46,7 @@ run_wizard() {
   (
     set +e
     # shellcheck disable=SC1091
-    source "$WORK/lib.sh" >/dev/null 2>&1
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
     eval "${2:-:}"
 
     # The only substitution: answers come from a file, not a terminal.
@@ -231,7 +240,7 @@ echo "── declining the summary cancels without touching anything ───�
 out=$(
   set +e
   # shellcheck disable=SC1091
-  source "$WORK/lib.sh" >/dev/null 2>&1
+  WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
   printf 'n\nn\nn\n3\nn\ny\ny\nn\n' >"$WORK/answers"
   open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
   have() { return 1; }
@@ -246,7 +255,7 @@ echo "── no terminal: the same unguessable defaults, not weaker ones ──�
 out=$(
   set +e
   # shellcheck disable=SC1091
-  source "$WORK/lib.sh" >/dev/null 2>&1
+  WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
   ASSUME_YES=1
   have() { return 1; }
   port_taken() { return 1; }
@@ -262,7 +271,7 @@ truth "a random name even with nobody to ask"  "$([[ "$(field USER "$out")" != a
 out=$(
   set +e
   # shellcheck disable=SC1091
-  source "$WORK/lib.sh" >/dev/null 2>&1
+  WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
   ASSUME_YES=1; BASE_KNOWN=1; BASE_PATH=""; PORT_KNOWN=1; PANEL_PORT=2096
   ACME_DOMAIN="auto.example.com"
   have() { return 1; }
@@ -278,7 +287,7 @@ check "a domain in the environment selects acme" "acme" "$(field MODE "$out")"
 out=$(
   set +e
   # shellcheck disable=SC1091
-  source "$WORK/lib.sh" >/dev/null 2>&1
+  WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
   ASSUME_YES=1; PORT_KNOWN=1; PANEL_PORT=2096
   have() { return 1; }
   port_taken() { return 0; }

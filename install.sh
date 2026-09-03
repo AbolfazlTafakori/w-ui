@@ -31,7 +31,25 @@
 #   --uninstall        remove the service, binary and unit; keeps the database
 #   --purge            remove everything including the database
 #
-set -euo pipefail
+# errexit and nounset, deliberately without pipefail.
+#
+# Nearly every pipeline here ends in `head`, `grep -q` or `tail`, which is
+# how those tools are meant to be used: they close the pipe as soon as they
+# have what they need, and the command upstream dies of SIGPIPE. Under
+# pipefail that is reported as a failure of the whole pipeline -- exit 141 --
+# and errexit then ends the install without printing anything at all.
+#
+# That is not a hypothetical. It killed a real install at the first random
+# password: `tr -dc … </dev/urandom | head -c 16` exits 141 every single
+# time, and the whole run stopped there with an empty log.
+#
+# Worse, it can give the wrong answer rather than no answer:
+# `certbot plugins | grep -q nginx` returns 141 when grep matches and finds
+# what it wanted, so the check reports the plugin missing when it is there.
+#
+# Nothing here depends on catching a failure in the middle of a pipeline;
+# every pipeline's meaning is its last command.
+set -eu
 
 # Whether this host runs systemd. Checked once: a container and a few
 # distributions do not, and the installer has to finish on them rather than
@@ -100,7 +118,18 @@ warn() { printf '    %s!%s %s\n' "$Y" "$N" "$*"; }
 die()  { printf '\n%serror:%s %s\n\n' "$R" "$N" "$*" >&2; exit 1; }
 
 # ── arguments ────────────────────────────────────────────────────────────────
-while [[ $# -gt 0 ]]; do
+# WUI_LIB_ONLY lets the test suites source this file for its functions without
+# installing anything. It is what makes them able to test what actually ships:
+# they used to cut the definitions out with sed, and sed on one machine split a
+# long comment line in half, so every test after it ran against a file that was
+# not this one.
+#
+# Checked here rather than further down because a sourced file inherits the
+# caller's positional parameters -- inside a function, that is the function's
+# own arguments, which this loop would then try to parse as install flags.
+LIB_ONLY="${WUI_LIB_ONLY:-0}"
+
+while [[ "$LIB_ONLY" != 1 && $# -gt 0 ]]; do
   case "$1" in
     --local)       LOCAL_BIN="${2:?--local needs a path}"; shift 2 ;;
     --from-source) FROM_SOURCE=1; shift ;;
@@ -125,7 +154,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ $EUID -eq 0 ]] || die "run as root (sudo bash $0)"
+[[ "$LIB_ONLY" == 1 || $EUID -eq 0 ]] || die "run as root (sudo bash $0)"
 
 # ── platform ─────────────────────────────────────────────────────────────────
 detect_os() {
@@ -556,14 +585,23 @@ no_more_input() {
   die "no answer — the terminal closed before the questions were finished"
 }
 
+# Prompt text, written to the terminal rather than to stdout.
+#
+# Two reasons it is not a plain printf. An install whose output is being
+# captured to a file should still ask its questions on the screen, which is
+# what fd 3 is for; and a write that fails must not end the install. Under
+# errexit an unchecked `printf … >&3` onto a descriptor that is not writable
+# aborts the whole run with nothing but "Bad file descriptor" to show for it.
+tty_out() { printf "$@" >&3 2>/dev/null || true; }
+
 # ask VAR "question" "default"
 ask() {
   local __var="$1" __q="$2" __def="$3" __ans=""
   if [[ "$INTERACTIVE" == 1 ]]; then
     if [[ -n "$__def" ]]; then
-      printf '    %s [%s%s%s]: ' "$__q" "$B" "$__def" "$N" >&3
+      tty_out '    %s [%s%s%s]: ' "$__q" "$B" "$__def" "$N"
     else
-      printf '    %s: ' "$__q" >&3
+      tty_out '    %s: ' "$__q"
     fi
     IFS= read -r __ans <&3 || no_more_input
   fi
@@ -579,19 +617,19 @@ ask_secret() {
   local __var="$1" __q="$2" a="" b=""
   if [[ "$INTERACTIVE" != 1 ]]; then printf -v "$__var" '%s' ""; return 0; fi
   while true; do
-    printf '    %s: ' "$__q" >&3
+    tty_out '    %s: ' "$__q"
     IFS= read -rs a <&3 || no_more_input
-    printf '\n' >&3
+    tty_out '\n'
     if [[ -z "$a" ]]; then printf -v "$__var" '%s' ""; return 0; fi
     if (( ${#a} < 8 )); then
-      printf '    %s!%s at least 8 characters\n' "$Y" "$N" >&3
+      tty_out '    %s!%s at least 8 characters\n' "$Y" "$N"
       continue
     fi
-    printf '    confirm it: ' >&3
+    tty_out '    confirm it: '
     IFS= read -rs b <&3 || no_more_input
-    printf '\n' >&3
+    tty_out '\n'
     if [[ "$a" == "$b" ]]; then printf -v "$__var" '%s' "$a"; return 0; fi
-    printf '    %s!%s they do not match — try again\n' "$Y" "$N" >&3
+    tty_out '    %s!%s they do not match — try again\n' "$Y" "$N"
   done
 }
 
@@ -601,7 +639,7 @@ ask_yn() {
   if [[ "$INTERACTIVE" != 1 ]]; then [[ "$def" == y ]]; return; fi
   [[ "$def" == y ]] && hint="Y/n"
   while true; do
-    printf '    %s [%s]: ' "$q" "$hint" >&3
+    tty_out '    %s [%s]: ' "$q" "$hint"
     IFS= read -r ans <&3 || no_more_input
     ans="${ans:-$def}"
     case "${ans,,}" in
@@ -675,7 +713,7 @@ configure() {
 
   step "Setup"
   info "a few questions, then the install runs on its own"
-  printf '\n' >&3
+  tty_out '\n'
 
   # ── the port ──────────────────────────────────────────────────────────────
   #
@@ -758,14 +796,13 @@ configure() {
     info "the password is generated and shown once, at the end"
   fi
 
-  # ── how it is reached ─────────────────────────────────────────────────────
-────────────────────────────────────────────────────
-  printf '\n' >&3
+  # ── how it is reached ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+  tty_out '\n'
   info "How should the panel be reached?"
   info "  1) a domain name, with a free certificate from Let's Encrypt"
   info "  2) certificate files you already have"
   info "  3) plain HTTP — no certificate"
-  printf '\n' >&3
+  tty_out '\n'
   warn "option 3 sends your password across the network in the clear"
 
   local choice
@@ -825,19 +862,19 @@ configure() {
   # an SSH tunnel or a proxy on this machine, which is the one way serving
   # plain HTTP is defensible at all.
   if [[ "$TLS_MODE" == none && "$LISTEN_ADDR" != 127.0.0.1 ]]; then
-    printf '\n' >&3
+    tty_out '\n'
     if ask_yn "Bind it to 127.0.0.1 only? (reachable via an SSH tunnel or a local proxy)" n; then
       LISTEN_ADDR=127.0.0.1
     fi
   fi
 
   # ── what is installed alongside ───────────────────────────────────────────
-  printf '\n' >&3
+  tty_out '\n'
   if ask_yn "Install OpenVPN as well as WireGuard?" y; then WANT_OPENVPN=1; else WANT_OPENVPN=0; fi
   if ask_yn "Install AmneziaWG (obfuscated WireGuard)?" y; then WANT_AMNEZIA=1; else WANT_AMNEZIA=0; fi
 
   # ── read it back ──────────────────────────────────────────────────────────
-  printf '\n' >&3
+  tty_out '\n'
   info "Panel port     $PANEL_PORT"
   info "Administrator  $ADMIN_USER"
   local shown_path="/"
@@ -851,7 +888,7 @@ configure() {
   [[ "$WANT_AMNEZIA" == 1 ]] && extras="AmneziaWG, $extras"
   [[ "$WANT_OPENVPN" == 1 ]] && extras="OpenVPN, $extras"
   info "Installing     $extras"
-  printf '\n' >&3
+  tty_out '\n'
 
   ask_yn "Start the install with these?" y || die "cancelled — nothing was changed"
 }
@@ -903,7 +940,16 @@ as_service_user() {
 # copied out of a terminal, typed into a phone, or pasted through a chat app
 # that helpfully reformats punctuation.
 gen_string() {
-  LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "${1:-16}"
+  local n="${1:-16}" out=""
+  # Read a fixed number of bytes rather than letting head close the pipe.
+  # /dev/urandom is a file, so head reading from it kills nothing, and the
+  # length is checked instead of assumed: a password that came out short
+  # because a tool was interrupted is a security bug, not a cosmetic one.
+  while (( ${#out} < n )); do
+    out+="$(head -c 256 /dev/urandom 2>/dev/null | base64 2>/dev/null | LC_ALL=C tr -dc 'A-Za-z0-9')"
+    [[ -n "$out" ]] || die "cannot read randomness from /dev/urandom"
+  done
+  printf '%s' "${out:0:n}"
 }
 
 # A high port nothing else is listening on.
@@ -926,7 +972,7 @@ gen_password() {
   # 16 characters from a real random source, alphanumeric so it survives being
   # copied out of a terminal, typed into a phone, or pasted through a chat app
   # that helpfully reformats punctuation.
-  LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 16
+  gen_string 16
 }
 
 # This server's address as the internet sees it, for checking that a domain
@@ -1631,6 +1677,10 @@ summary() {
 }
 
 # ── run ──────────────────────────────────────────────────────────────────────
+# Everything above is definitions. A test suite that only wants those stops
+# here, with the file it sourced being byte for byte the file that installs.
+if [[ "$LIB_ONLY" == 1 ]]; then return 0 2>/dev/null || exit 0; fi
+
 detect_os
 [[ "$ACTION" == install ]] || do_uninstall
 

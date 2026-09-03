@@ -11,7 +11,7 @@ SRC="${1:?usage: test-output.sh /path/to/install.sh}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-sed -e '/^# ── run ─/,$d' -e '/^# ── arguments ─/,/^# ── platform ─/d' -e '/^set -euo pipefail$/d' "$SRC" >"$WORK/lib.sh"
+cp "$SRC" "$WORK/lib.sh"
 
 pass=0; fail=0
 yes_() { if [[ "$2" == *"$1"* ]]; then printf '  \e[32mok\e[0m   %s\n' "$3"; pass=$((pass+1));
@@ -23,7 +23,7 @@ unit_with() { # unit_with CERT KEY PORT [BASE]
   (
     set +e
     # shellcheck disable=SC1091
-    source "$WORK/lib.sh" >/dev/null 2>&1
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
     UNIT="$WORK/wui.service"
     TLS_CERT="$1"; TLS_KEY="$2"; PANEL_PORT="$3"; BASE_PATH="${4:-}"; LISTEN_ADDR="${5:-0.0.0.0}"
     have_systemd() { return 1; }
@@ -58,7 +58,7 @@ summary_of() { # summary_of MODE DOMAIN CERT PASS GENERATED [BASE]
   (
     set +e
     # shellcheck disable=SC1091
-    source "$WORK/lib.sh" >/dev/null 2>&1
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
     TLS_MODE="$1"; ACME_DOMAIN="$2"; TLS_CERT="$3"; TLS_KEY="$3"
     ADMIN_PASS="$4"; ADMIN_GENERATED="$5"
     ADMIN_USER=operator; PANEL_PORT=8443; DATA_DIR="$WORK"; BASE_PATH="${6:-}"
@@ -117,7 +117,7 @@ fw() {
   (
     set +e
     # shellcheck disable=SC1091
-    source "$WORK/lib.sh" >/dev/null 2>&1
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
     LISTEN_ADDR="$1"; PANEL_PORT=39001; ACME_METHOD="${2:-}"
     have() { return 1; }
     open_firewall 2>&1
@@ -134,7 +134,7 @@ echo "── a terminal that closes mid-question stops instead of spinning ─�
 out=$(
   timeout 20 bash -c '
     set -uo pipefail
-    source "'"$WORK"'/lib.sh" >/dev/null 2>&1
+    WUI_LIB_ONLY=1 source "'"$WORK"'/lib.sh" >/dev/null 2>&1
     : >"'"$WORK"'/empty"
     open_tty() { INTERACTIVE=1; exec 3<"'"$WORK"'/empty"; }
     have() { return 1; }
