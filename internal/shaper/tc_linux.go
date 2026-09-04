@@ -184,7 +184,15 @@ func (s *TC) ensureRoot(ctx context.Context, device string) error {
 			"create; leaving it alone", ErrUnavailable, device, existing)
 	}
 
-	if err := s.batch(ctx, RootScript(device)); err != nil {
+	// A root this panel already put there must not be written again: the
+	// kernel carries out `qdisc replace` over an existing htb as a change, and
+	// htb has no change operation. The class is still replaced, so a
+	// half-built hierarchy is completed either way.
+	script := RootScript(device)
+	if ok, err := s.hasRoot(ctx, device); err == nil && ok {
+		script = RootClassScript(device)
+	}
+	if err := s.batch(ctx, script); err != nil {
 		return err
 	}
 	s.mu.Lock()

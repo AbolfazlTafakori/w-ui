@@ -208,9 +208,22 @@ func RootScript(device string) string {
 	// already set up, and must still correct one whose root is wrong.
 	fmt.Fprintf(&b, "qdisc replace dev %s root handle %d: htb default %x\n",
 		device, major, defaultMinor)
-	fmt.Fprintf(&b, "class replace dev %s parent %d: classid %s htb rate %s ceil %s\n",
-		device, major, ClassID(defaultMinor), defaultRate, defaultRate)
+	b.WriteString(RootClassScript(device))
 	return b.String()
+}
+
+// RootClassScript is the catch-all class on its own.
+//
+// For a device whose root qdisc this panel already laid down, on a previous
+// run. The kernel carries out `tc qdisc replace` over an existing htb as a
+// change, and htb has no change operation, so asking for the root a second
+// time fails outright — which left the panel unable to adopt its own
+// hierarchy after a restart, and every speed limit on that device unapplied
+// until somebody deleted the qdisc by hand. Classes have no such problem:
+// `class replace` is how a customer's rate is edited in the first place.
+func RootClassScript(device string) string {
+	return fmt.Sprintf("class replace dev %s parent %d: classid %s htb rate %s ceil %s\n",
+		device, major, ClassID(defaultMinor), defaultRate, defaultRate)
 }
 
 // parseMinor pulls the minor number out of a "1:a" handle.
