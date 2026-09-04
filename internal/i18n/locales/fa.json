@@ -503,6 +503,8 @@
   "node.tokenNameHint": "تا بعداً بدانید کدام توکن را باید باطل کنید.",
   "client.nCustomers.one": "{n} مشتری",
   "client.nCustomers.other": "{n} مشتری",
+  "client.acrossServers.one": "روی {n} سرور",
+  "client.acrossServers.other": "روی {n} سرور",
   "client.consequenceDevices.one": "{n} دستگاه هم با او حذف می‌شود.",
   "client.consequenceDevices.other": "{n} دستگاه هم با او حذف می‌شوند.",
   "group.consequenceKept.one": "{n} مشتری می‌ماند و فقط از گروه خارج می‌شود.",

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import QRCode from 'qrcode'
 import { api, apiURL, getToken } from '../lib/api.js'
@@ -18,6 +18,19 @@ const qr = ref('')
 const newDevice = ref('')
 const busy = ref(false)
 const downloading = ref(false)
+
+// Devices, not accounts. A customer on three servers holds three accounts
+// per device, and showing the row count against the device limit would read
+// as 6 / 2 for somebody who has two devices.
+const deviceCount = computed(
+  () => new Set((client.value?.accounts || []).map((a) => a.deviceName.toLowerCase())).size,
+)
+
+// Which servers this customer reaches, for the same reason: the device
+// table lists one row per account, and the count above it must not.
+const serverCount = computed(
+  () => new Set((client.value?.accounts || []).map((a) => a.interfaceId)).size,
+)
 
 // Every device's configuration in one archive.
 //
@@ -146,7 +159,7 @@ const remove = () => {
     body: t('client.confirmDeleteBody'),
     subject: c?.name || '',
     consequences: [
-      tn('client.consequenceDevices', c?.accounts?.length ?? 0),
+      tn('client.consequenceDevices', deviceCount.value),
       t('client.consequenceConfigs'),
       t('client.consequenceUsage'),
     ],
@@ -236,7 +249,12 @@ async function copy(text) {
         </div>
         <div class="metric">
           <dt>{{ t('client.deviceLimit') }}</dt>
-          <dd class="ltr">{{ client.accounts?.length ?? 0 }} / {{ client.deviceLimit }}</dd>
+          <dd class="ltr">
+            {{ deviceCount }} / {{ client.deviceLimit }}
+            <span v-if="serverCount > 1" class="muted small">
+              · {{ tn('client.acrossServers', serverCount) }}
+            </span>
+          </dd>
         </div>
         <div class="metric">
           <dt>{{ t('client.resetCycle') }}</dt>
@@ -265,8 +283,8 @@ async function copy(text) {
           />
           <button
             class="btn sm primary"
-            :disabled="(client.accounts?.length ?? 0) >= client.deviceLimit"
-            :title="(client.accounts?.length ?? 0) >= client.deviceLimit ? t('error.deviceLimitReached') : ''"
+            :disabled="deviceCount >= client.deviceLimit"
+            :title="deviceCount >= client.deviceLimit ? t('error.deviceLimitReached') : ''"
             @click="addDevice"
           >
             <Icon name="plus" :size="13" />{{ t('device.add') }}

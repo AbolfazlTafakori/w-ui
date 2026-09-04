@@ -503,6 +503,8 @@
   "node.tokenNameHint": "So you can tell which token to revoke later.",
   "client.nCustomers.one": "{n} customer",
   "client.nCustomers.other": "{n} customers",
+  "client.acrossServers.one": "across {n} server",
+  "client.acrossServers.other": "across {n} servers",
   "client.consequenceDevices.one": "{n} device is removed with them.",
   "client.consequenceDevices.other": "{n} devices are removed with them.",
   "group.consequenceKept.one": "{n} customer is kept and simply ungrouped.",

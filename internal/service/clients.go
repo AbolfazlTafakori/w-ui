@@ -633,9 +633,14 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		fields["expires_at"] = *in.ExpiresAt
 	}
 	if in.DeviceLimit != nil {
-		if *in.DeviceLimit < len(client.Accounts) {
+		// Devices, not accounts. A customer on three servers holds three
+		// accounts per device, and counting rows here refuses an operator
+		// raising the limit from two to three on the grounds that they already
+		// have six — which is the same mistake AddDevice used to make.
+		issued := len(deviceNames(client.Accounts))
+		if *in.DeviceLimit < issued {
 			return nil, fmt.Errorf("%w: limit %d is below the %d devices already issued",
-				ErrInvalid, *in.DeviceLimit, len(client.Accounts))
+				ErrInvalid, *in.DeviceLimit, issued)
 		}
 		fields["device_limit"] = *in.DeviceLimit
 	}
