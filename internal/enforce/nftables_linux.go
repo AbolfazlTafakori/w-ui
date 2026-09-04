@@ -31,13 +31,16 @@ const nftTimeout = 10 * time.Second
 type NFTables struct {
 	log *slog.Logger
 
-	mu       sync.Mutex
-	applied  string // the last ruleset written, to skip no-op applies
-	ready    bool
-	lastErr  error
-	caps     Caps
-	probed   bool
-	probeErr error
+	mu      sync.Mutex
+	applied string // the last ruleset written, to skip no-op applies
+	// appliedKeys is who that ruleset covered, so a drained tick can tell
+	// whether the kernel still holds it or something has cleared it since.
+	appliedKeys map[string]struct{}
+	ready       bool
+	lastErr     error
+	caps        Caps
+	probed      bool
+	probeErr    error
 }
 
 // probeCaps finds out what this kernel supports, once.
@@ -112,6 +115,7 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 
 	n.mu.Lock()
 	n.applied = script
+	n.appliedKeys = ruleKeys(rules)
 	n.ready = true
 	n.lastErr = nil
 	n.mu.Unlock()
@@ -158,12 +162,52 @@ func (n *NFTables) Usage(ctx context.Context) ([]Usage, error) {
 func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
 	out, err := n.run(ctx, "", "-j", "reset", "counters", "table", "inet", TableName)
 	if missingTable(err) {
+		// The whole table is gone. Nothing was counted, and the cache must not
+		// keep claiming the ruleset is already in place.
+		n.forget("the table is no longer there")
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("enforce: drain counters: %w", err)
 	}
-	return drainedUsage(out)
+
+	usage, err := drainedUsage(out)
+	if err != nil {
+		return nil, err
+	}
+	n.verify(usage)
+	return usage, nil
+}
+
+// verify checks the drained counters against what was last applied.
+//
+// This is the tick's own reading of the kernel, so it costs nothing extra, and
+// it is the only thing standing between a cleared ruleset and every customer
+// running unmetered until something unrelated happens to change the script.
+func (n *NFTables) verify(seen []Usage) {
+	n.mu.Lock()
+	gone := missingKeys(n.appliedKeys, seen)
+	n.mu.Unlock()
+	if len(gone) == 0 {
+		return
+	}
+	n.forget(fmt.Sprintf("%d of the rules we wrote are missing (%s)",
+		len(gone), strings.Join(gone, " ")))
+}
+
+// forget drops the cached ruleset so the next tick rewrites it.
+func (n *NFTables) forget(why string) {
+	n.mu.Lock()
+	had := n.applied != ""
+	n.applied = ""
+	n.appliedKeys = nil
+	n.mu.Unlock()
+	if !had {
+		return
+	}
+	n.log.Warn("something cleared our ruleset; rewriting it",
+		"detail", why,
+		"consequence", "traffic between then and now was neither counted nor capped")
 }
 
 // ResetQuota clears the cumulative quota for the given keys, used on renewal.
@@ -182,6 +226,7 @@ func (n *NFTables) ResetQuota(ctx context.Context, keys []string) error {
 	// apply to rewrite them rather than seeing no change and skipping.
 	n.mu.Lock()
 	n.applied = ""
+	n.appliedKeys = nil
 	n.mu.Unlock()
 	return nil
 }
