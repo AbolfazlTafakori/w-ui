@@ -89,6 +89,15 @@ type Interface struct {
 	// say that certificates exist without being handed them.
 	Configured bool `gorm:"-" json:"configured"`
 
+	// Hosts is filled in on the way to a profile renderer and is neither
+	// stored nor serialised.
+	//
+	// A renderer has no database, and the addresses a customer should dial are
+	// not a property of the interface: they are the spares an operator keeps
+	// for when the first one is blocked. Attaching them here is what lets one
+	// profile carry all of them.
+	Hosts []Host `gorm:"-" json:"-"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

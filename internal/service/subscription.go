@@ -274,9 +274,9 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 	if err := s.db.WithContext(ctx).Find(&ifaces).Error; err != nil {
 		return nil, fmt.Errorf("service: read interfaces: %w", err)
 	}
-	byID := make(map[uint]model.Interface, len(ifaces))
-	for i := range ifaces {
-		byID[ifaces[i].ID] = ifaces[i]
+	byID, err := s.interfacesWithHosts(ctx, ifaces)
+	if err != nil {
+		return nil, err
 	}
 
 	rendered, err := s.renderDevices(ctx, c, byID)
@@ -298,6 +298,35 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 		Title:       cfg.Title,
 		UpdateHours: cfg.UpdateHours,
 	}, nil
+}
+
+// interfacesWithHosts indexes interfaces by id, each carrying the spare
+// addresses an operator configured for it.
+//
+// The renderer has no database of its own, so the addresses have to arrive
+// attached to the interface. Loaded in one query rather than one per interface:
+// a customer with several devices on several tunnels would otherwise cost a
+// round trip per device just to write their file.
+func (s *Subscriptions) interfacesWithHosts(
+	ctx context.Context, ifaces []model.Interface,
+) (map[uint]model.Interface, error) {
+	var hosts []model.Host
+	if err := s.db.WithContext(ctx).Where("enabled = ?", true).
+		Order("priority, id").Find(&hosts).Error; err != nil {
+		return nil, fmt.Errorf("service: read hosts: %w", err)
+	}
+	byIface := make(map[uint][]model.Host, len(hosts))
+	for _, h := range hosts {
+		byIface[h.InterfaceID] = append(byIface[h.InterfaceID], h)
+	}
+
+	out := make(map[uint]model.Interface, len(ifaces))
+	for i := range ifaces {
+		iface := ifaces[i]
+		iface.Hosts = byIface[iface.ID]
+		out[iface.ID] = iface
+	}
+	return out, nil
 }
 
 // RenderedDevice is one device's configuration together with the account it
@@ -428,9 +457,9 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 	if err := s.db.WithContext(ctx).Find(&ifaces).Error; err != nil {
 		return nil, fmt.Errorf("service: read interfaces: %w", err)
 	}
-	byID := make(map[uint]model.Interface, len(ifaces))
-	for i := range ifaces {
-		byID[ifaces[i].ID] = ifaces[i]
+	byID, err := s.interfacesWithHosts(ctx, ifaces)
+	if err != nil {
+		return nil, err
 	}
 
 	rendered, err := s.renderDevices(ctx, c, byID)
@@ -481,9 +510,9 @@ func (s *Subscriptions) DeviceConfig(
 	if err := s.db.WithContext(ctx).Find(&ifaces).Error; err != nil {
 		return nil, fmt.Errorf("service: read interfaces: %w", err)
 	}
-	byID := make(map[uint]model.Interface, len(ifaces))
-	for i := range ifaces {
-		byID[ifaces[i].ID] = ifaces[i]
+	byID, err := s.interfacesWithHosts(ctx, ifaces)
+	if err != nil {
+		return nil, err
 	}
 
 	rendered, err := s.renderDevices(ctx, c, byID)

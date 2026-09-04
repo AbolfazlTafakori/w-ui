@@ -91,7 +91,17 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 	b.WriteString("client\n")
 	b.WriteString("dev tun\n")
 	fmt.Fprintf(&b, "proto %s\n", transport(p))
-	fmt.Fprintf(&b, "remote %s %d\n", iface.EndpointHost, iface.ListenPort)
+	// One line per address the customer may dial, in the operator's order.
+	//
+	// OpenVPN walks this list and moves to the next when one will not connect,
+	// which is the whole point of keeping spares: when an address is blocked,
+	// the customer's own client finds the next one without being handed a new
+	// file. Commercial sellers do this by shipping nine separate profiles and
+	// telling people to try another; one profile with nine remotes is the same
+	// thing without the instructions.
+	for _, r := range remotes(iface) {
+		fmt.Fprintf(&b, "remote %s %d\n", r.address, r.port)
+	}
 	b.WriteString("resolv-retry infinite\n")
 	b.WriteString("nobind\n")
 	b.WriteString("persist-key\n")
@@ -321,6 +331,52 @@ func RenderClientConfig(acc Account, subnet string) (string, error) {
 	// gets a different one on every reconnect, which would detach them from the
 	// quota counting their traffic.
 	return fmt.Sprintf("ifconfig-push %s %s\n", acc.IP, netmask), nil
+}
+
+// remote is one address a customer's client may dial.
+type remote struct {
+	address string
+	port    int
+}
+
+// remotes lists them in the order the client should try.
+//
+// The interface's own endpoint comes first, because it is the one the operator
+// filled in when they built the tunnel and the one that is certainly correct.
+// Hosts follow in their configured priority. Duplicates are dropped: a host
+// added that happens to repeat the endpoint would otherwise make the client
+// try the same dead address twice before moving on.
+func remotes(iface *model.Interface) []remote {
+	out := make([]remote, 0, len(iface.Hosts)+1)
+	seen := map[remote]bool{}
+
+	add := func(addr string, port int) {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			return
+		}
+		if port <= 0 {
+			port = iface.ListenPort
+		}
+		r := remote{address: addr, port: port}
+		if seen[r] {
+			return
+		}
+		seen[r] = true
+		out = append(out, r)
+	}
+
+	add(iface.EndpointHost, iface.ListenPort)
+
+	hosts := append([]model.Host(nil), iface.Hosts...)
+	sort.SliceStable(hosts, func(i, j int) bool { return hosts[i].Priority < hosts[j].Priority })
+	for _, h := range hosts {
+		if !h.Enabled {
+			continue
+		}
+		add(h.Address, h.Port)
+	}
+	return out
 }
 
 func transport(p model.OpenVPNParams) string {
