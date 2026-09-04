@@ -124,7 +124,7 @@ func (s *Syncer) Round(ctx context.Context) {
 }
 
 func (s *Syncer) one(ctx context.Context, node model.Node) {
-	states, err := s.desired(ctx, node.ID)
+	states, err := s.desired(ctx, node.ID, node.OverAllowance)
 	if err != nil {
 		s.report(node, fmt.Errorf("could not build the state for it: %w", err))
 		return
@@ -146,6 +146,18 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 		s.report(node, fmt.Errorf("reading its usage: %w", err))
 		return
 	}
+	// The node's own allowance is counted in what actually crossed its wire,
+	// before the coefficient: the coefficient is a price, and the host bills
+	// bytes. Recorded even when it is zero, so a month that rolls over on a
+	// quiet node still rolls over.
+	var raw uint64
+	for _, u := range reply.Usage {
+		raw += u.Bytes
+	}
+	if err := service.RecordNodeTraffic(ctx, s.db, node.ID, raw, time.Now().UTC()); err != nil {
+		s.log.Warn("could not record what a node carried", "node", node.Name, "error", err)
+	}
+
 	if len(reply.Usage) > 0 && s.usage != nil {
 		s.usage(scale(reply.Usage, node.UsageCoefficient))
 	}
@@ -157,7 +169,7 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 // Per tunnel rather than one big payload: a node with three interfaces should
 // not have all three refused because one of them has a customer with a bad row,
 // and a failure that names the tunnel is one an operator can act on.
-func (s *Syncer) desired(ctx context.Context, nodeID uint) ([]service.NodeState, error) {
+func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]service.NodeState, error) {
 	db := s.db.WithContext(ctx)
 
 	var interfaces []model.Interface
@@ -230,8 +242,12 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint) ([]service.NodeState,
 			// because the allowance is one number spent across every node and
 			// only this panel can see the whole of it.
 			state.Clients = append(state.Clients, service.NodeClient{
-				OriginID:       c.ID,
-				Enabled:        c.Status == model.StatusActive,
+				OriginID: c.ID,
+				// A server past its host's transfer allowance carries nobody.
+				// Sent as a disabled customer rather than an omitted one so the
+				// node keeps the record and lets them straight back on when the
+				// month rolls over, instead of rebuilding every peer.
+				Enabled:        !spent && c.Status == model.StatusActive,
 				RateBitsPerSec: c.RateBitsPerSec,
 				Accounts:       accs,
 			})

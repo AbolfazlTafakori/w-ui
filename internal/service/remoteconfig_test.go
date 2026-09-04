@@ -143,3 +143,68 @@ func TestAnOpenDriverIsStillPreferred(t *testing.T) {
 		t.Errorf("the open driver was bypassed:\n%s", b.Body)
 	}
 }
+
+// A server past its host's transfer allowance drops out of what the customer is
+// handed, and the ones that are left stay.
+//
+// This is the point of selling more than one server: the customer's app moves
+// on to a server that still works instead of the operator being billed for
+// overage, and neither the customer nor the operator has to do anything.
+func TestAServerPastItsAllowanceLeavesTheSubscription(t *testing.T) {
+	db := testDB(t)
+	c := seedTwoServers(t, db)
+
+	// Node 7 runs vpn2 and has used every byte its host allows.
+	spent := model.Node{
+		ID: 7, Name: "berlin", Kind: model.KindRemote,
+		DataLimitBytes: 1 << 30, UsedBytes: 1 << 30,
+	}
+	if err := db.Create(&spent).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	s := newSubs(db, nil)
+	b, err := s.BundleForClient(context.Background(), c.ID, "raw")
+	if err != nil {
+		t.Fatalf("BundleForClient: %v", err)
+	}
+
+	body := string(b.Body)
+	if strings.Contains(body, "vpn2.example.com") {
+		t.Errorf("a server past its allowance is still being handed out:\n%s", body)
+	}
+	if !strings.Contains(body, "vpn1.example.com") {
+		t.Errorf("the servers that still have allowance were dropped too:\n%s", body)
+	}
+}
+
+// And it comes back on its own when the host's month starts again. Nothing is
+// rebuilt and no operator has to remember anything.
+func TestTheServerComesBackWhenItsAllowanceDoes(t *testing.T) {
+	db := testDB(t)
+	c := seedTwoServers(t, db)
+
+	last := time.Date(2026, time.August, 20, 0, 0, 0, 0, time.UTC)
+	spent := model.Node{
+		ID: 7, Name: "berlin", Kind: model.KindRemote,
+		DataLimitBytes: 1 << 30, UsedBytes: 1 << 30,
+		ResetDay: 1, UsageResetAt: &last,
+	}
+	if err := db.Create(&spent).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RecordNodeTraffic(context.Background(), db, 7, 0,
+		time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("RecordNodeTraffic: %v", err)
+	}
+
+	s := newSubs(db, nil)
+	b, err := s.BundleForClient(context.Background(), c.ID, "raw")
+	if err != nil {
+		t.Fatalf("BundleForClient: %v", err)
+	}
+	if !strings.Contains(string(b.Body), "vpn2.example.com") {
+		t.Errorf("the server did not come back after its month rolled over:\n%s", b.Body)
+	}
+}

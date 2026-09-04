@@ -320,11 +320,38 @@ func (s *Subscriptions) interfacesWithHosts(
 		byIface[h.InterfaceID] = append(byIface[h.InterfaceID], h)
 	}
 
+	spent, err := s.nodesOverAllowance(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make(map[uint]model.Interface, len(ifaces))
 	for i := range ifaces {
 		iface := ifaces[i]
+		// A server that has used up its host's transfer allowance is left out
+		// of what the customer is handed. Their app then uses the servers that
+		// are left, which is the whole reason a customer is sold more than one.
+		if spent[iface.NodeID] {
+			continue
+		}
 		iface.Hosts = byIface[iface.ID]
 		out[iface.ID] = iface
+	}
+	return out, nil
+}
+
+// nodesOverAllowance is the set of servers that have carried more this period
+// than their host allows.
+func (s *Subscriptions) nodesOverAllowance(ctx context.Context) (map[uint]bool, error) {
+	var nodes []model.Node
+	if err := s.db.WithContext(ctx).
+		Where("data_limit_bytes > 0 AND used_bytes >= data_limit_bytes").
+		Find(&nodes).Error; err != nil {
+		return nil, fmt.Errorf("service: read node allowances: %w", err)
+	}
+	out := make(map[uint]bool, len(nodes))
+	for _, n := range nodes {
+		out[n.ID] = true
 	}
 	return out, nil
 }

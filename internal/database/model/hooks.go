@@ -52,3 +52,16 @@ func (t *TrafficSample) BeforeSave(*gorm.DB) error {
 	t.BucketTS = t.BucketTS.UTC()
 	return nil
 }
+
+// AfterFind marks a node that has carried more than its host allows.
+//
+// Computed on the way out of the database rather than stored, because it is two
+// columns compared and a stored copy would be a third thing to keep in step.
+// In a hook rather than at each call site for the same reason the timestamps
+// are: the page, the sync loop and the reconciler all ask this question, and a
+// path that forgot to work it out would keep sending customers to a server
+// whose allowance is already spent.
+func (n *Node) AfterFind(*gorm.DB) error {
+	n.OverAllowance = n.DataLimitBytes > 0 && n.UsedBytes >= n.DataLimitBytes
+	return nil
+}

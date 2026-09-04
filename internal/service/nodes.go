@@ -45,6 +45,12 @@ type NodeInput struct {
 	// as one, because a node that charged nothing would be free traffic nobody
 	// asked for.
 	UsageCoefficient *float64 `json:"usageCoefficient"`
+
+	// DataLimitBytes is the machine's own monthly transfer allowance and
+	// ResetDay is the day of the month the host starts it again. Absent leaves
+	// both as they are; zero in either means no cap and no automatic reset.
+	DataLimitBytes *uint64 `json:"dataLimitBytes"`
+	ResetDay       *int    `json:"resetDay"`
 }
 
 // List returns every node, the local one first.
@@ -85,6 +91,8 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 	node := model.Node{
 		Name:             in.Name,
 		UsageCoefficient: coefficient,
+		DataLimitBytes:   deref(in.DataLimitBytes),
+		ResetDay:         deref(in.ResetDay),
 		Kind:             model.KindRemote,
 		Address:          in.Address,
 		Token:            in.Token,
@@ -140,6 +148,13 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 				*in.UsageCoefficient)
 		}
 		updates["usage_coefficient"] = *in.UsageCoefficient
+	}
+
+	if in.DataLimitBytes != nil {
+		updates["data_limit_bytes"] = *in.DataLimitBytes
+	}
+	if in.ResetDay != nil {
+		updates["reset_day"] = *in.ResetDay
 	}
 
 	if err := s.db.WithContext(ctx).Model(&node).Updates(updates).Error; err != nil {
@@ -220,11 +235,28 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 		return invalidField("token", "a node needs an access token. Create one on that "+
 			"panel under Settings, then paste it here")
 	}
+
+	// 28 rather than 31: a reset day of the 30th would skip February entirely,
+	// and a transfer limit that lapses for one month a year lapses in the month
+	// nobody is watching for it.
+	if in.ResetDay != nil && (*in.ResetDay < 0 || *in.ResetDay > 28) {
+		return invalidField("resetDay",
+			"the allowance can start again on day 1 to 28 of the month, or 0 to never reset")
+	}
 	return nil
 }
 
 func isLoopback(host string) bool {
 	return host == "localhost" || strings.HasPrefix(host, "127.") || host == "::1"
+}
+
+// deref reads an optional field, treating absent as the zero value.
+func deref[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return *p
 }
 
 // ── access tokens ────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
 import { mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
+import { bytes, bytesToGigabytes, gigabytesToBytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -55,7 +56,10 @@ const totals = computed(() => ({
 }))
 
 function openAdd() {
-  form.value = { name: '', address: '', token: '', note: '', usageCoefficient: 1 }
+  form.value = {
+    name: '', address: '', token: '', note: '',
+    usageCoefficient: 1, dataLimitGB: '', resetDay: '',
+  }
   dialog.value = { kind: 'add' }
 }
 
@@ -68,6 +72,8 @@ function openEdit(n) {
     token: '',
     note: n.note || '',
     usageCoefficient: n.usageCoefficient || 1,
+    dataLimitGB: bytesToGigabytes(n.dataLimitBytes),
+    resetDay: n.resetDay || '',
   }
   dialog.value = { kind: 'edit', node: n }
 }
@@ -75,7 +81,13 @@ function openEdit(n) {
 async function submit() {
   busy.value = true
   try {
-    const body = { ...form.value, usageCoefficient: Number(form.value.usageCoefficient) || 1 }
+    const body = {
+      ...form.value,
+      usageCoefficient: Number(form.value.usageCoefficient) || 1,
+      dataLimitBytes: gigabytesToBytes(form.value.dataLimitGB),
+      resetDay: Number(form.value.resetDay) || 0,
+      dataLimitGB: undefined,
+    }
     if (dialog.value.kind === 'add') await api.post('/api/nodes', body)
     else await api.patch(`/api/nodes/${dialog.value.node.id}`, body)
     dialog.value = null
@@ -287,6 +299,7 @@ function latencyTone(ms) {
           <th class="w-gact">{{ t('table.actions') }}</th>
           <th>{{ t('node.name') }}</th>
           <th>{{ t('node.address') }}</th>
+          <th class="w-md">{{ t('node.transfer') }}</th>
           <th class="w-md">{{ t('node.status') }}</th>
           <th class="w-sm">{{ t('node.latency') }}</th>
           <th class="w-sm">{{ t('node.cpu') }}</th>
@@ -339,10 +352,23 @@ function latencyTone(ms) {
                  see the reason here rather than open every node in turn. -->
             <span v-if="n.usageCoefficient && n.usageCoefficient !== 1" class="tag num ltr"
                   :title="t('node.coefficientHint')">x{{ n.usageCoefficient }}</span>
+            <!-- Said plainly, because an operator whose customers have quietly
+                 moved off a server deserves to know it was this and not a
+                 fault. -->
+            <span v-if="n.overAllowance" class="tag red" :title="t('node.spentHint')">
+              {{ t('node.spent') }}
+            </span>
             <div v-if="n.note" class="sub muted small">{{ n.note }}</div>
           </td>
 
           <td class="muted small ltr">{{ n.address || '—' }}</td>
+
+          <td class="muted small ltr">
+            <template v-if="n.dataLimitBytes">
+              {{ bytes(n.usedBytes || 0, store.locale) }} / {{ bytes(n.dataLimitBytes, store.locale) }}
+            </template>
+            <template v-else>{{ bytes(n.usedBytes || 0, store.locale) }}</template>
+          </td>
 
           <td>
             <span v-if="n.kind === 'local'" class="tag green"><i class="dot"></i>{{ t('node.running') }}</span>
@@ -446,6 +472,25 @@ function latencyTone(ms) {
           <input id="n-coef" v-model="form.usageCoefficient" type="number"
                  step="0.1" min="0.1" max="100" class="ltr" />
           <span class="hint">{{ t('node.coefficientHint') }}</span>
+        </div>
+
+        <!-- The machine's own allowance, which is a different thing from a
+             customer's: a hundred customers well inside their own limits can
+             still take a server past what its host gives it. -->
+        <div class="grid-2">
+          <div class="field">
+            <label for="n-limit">{{ t('node.dataLimit') }}</label>
+            <input id="n-limit" v-model="form.dataLimitGB" type="number"
+                   min="0" step="1" placeholder="∞" class="ltr" />
+          </div>
+          <div class="field">
+            <label for="n-resetday">{{ t('node.resetDay') }}</label>
+            <input id="n-resetday" v-model="form.resetDay" type="number"
+                   min="0" max="28" step="1" placeholder="0" class="ltr" />
+          </div>
+        </div>
+        <div class="field">
+          <span class="hint">{{ t('node.dataLimitHint') }}</span>
         </div>
         </template>
       </form>

@@ -42,6 +42,33 @@ type Node struct {
 	// stays one number and the page that shows it needs no arithmetic.
 	UsageCoefficient float64 `gorm:"not null;default:1" json:"usageCoefficient"`
 
+	// DataLimitBytes is the server's own transfer allowance, not a customer's.
+	//
+	// Hosts sell a machine with a monthly cap and charge for what runs over it,
+	// or cut the port to a crawl. An operator who cannot see that coming finds
+	// out from an invoice. Zero means no cap, which is what a machine on an
+	// unmetered line has.
+	//
+	// Counted in what the node actually carried, before UsageCoefficient: the
+	// coefficient is a price, and the host bills bytes.
+	DataLimitBytes uint64 `gorm:"not null;default:0" json:"dataLimitBytes"`
+	UsedBytes      uint64 `gorm:"not null;default:0" json:"usedBytes"`
+
+	// ResetDay is the day of the month the host's allowance starts again, 1-28,
+	// or zero for a counter that only an operator clears.
+	//
+	// Capped at 28 because a limit that skips February is a limit that fails in
+	// the one month an operator is not watching for it.
+	ResetDay     int        `gorm:"not null;default:0" json:"resetDay"`
+	UsageResetAt *time.Time `json:"usageResetAt"`
+
+	// OverAllowance is what the page and the sync loop both read, so the rule
+	// lives here rather than being written out twice with a chance of drifting.
+	//
+	// Not stored: it is two columns compared, and a stored copy would be a
+	// third thing to keep in step.
+	OverAllowance bool `gorm:"-" json:"overAllowance"`
+
 	CPUPercent  float64 `gorm:"not null;default:0" json:"cpuPercent"`
 	MemPercent  float64 `gorm:"not null;default:0" json:"memPercent"`
 	UptimeSec   int64   `gorm:"not null;default:0" json:"uptimeSec"`

@@ -32,6 +32,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/routing"
+	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/shaper"
 )
 
@@ -227,6 +228,13 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 	counted, err := r.collect(ctx)
 	if err != nil {
 		return fmt.Errorf("collect: %w", err)
+	}
+
+	// What this machine itself carried, against its own host's allowance.
+	// Nodes are accounted for by the syncer as their usage arrives; this is the
+	// same thing for the panel's own server, which is a server like any other.
+	if err := service.RecordNodeTraffic(ctx, r.db, r.localNodeID, counted, time.Now().UTC()); err != nil {
+		r.log.Warn("could not record what this server carried", "error", err)
 	}
 
 	// 2. Evaluate limits in one statement rather than looping in Go. With ten
@@ -576,6 +584,14 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		return nil, fmt.Errorf("load interfaces: %w", err)
 	}
 
+	// A machine past the transfer allowance its host gives it carries nobody,
+	// the same as any node. The interfaces stay up and configured; what stops
+	// is the peers on them, so the month rolling over puts everyone back
+	// without rebuilding a thing.
+	if r.overAllowance(ctx) {
+		interfaces = nil
+	}
+
 	// Accounts on another node's tunnel are that node's to program. Kept out of
 	// the desired state here so this kernel is never asked for a peer on an
 	// interface it does not have.
@@ -730,4 +746,24 @@ func max64(v, floor uint) uint {
 		return floor
 	}
 	return v
+}
+
+// overAllowance reports whether this machine has carried more this period than
+// its host allows.
+//
+// Read every tick rather than cached: an operator raising the cap, or clearing
+// the counter, should put customers back on within a tick and not after a
+// restart.
+func (r *Reconciler) overAllowance(ctx context.Context) bool {
+	var node model.Node
+	if err := r.db.WithContext(ctx).First(&node, r.localNodeID).Error; err != nil {
+		return false // no row to read a limit from is no limit
+	}
+	if !node.OverAllowance {
+		return false
+	}
+	r.log.Warn("this server has used its whole transfer allowance; customers are off it",
+		"used", node.UsedBytes, "allowance", node.DataLimitBytes,
+		"fix", "raise the allowance on the Servers page, or clear the counter")
+	return true
 }
