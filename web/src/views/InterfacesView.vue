@@ -407,6 +407,17 @@ async function submitForm(input) {
                 <span v-if="i.mode === 'amnezia'" class="tag active">
                   <Icon name="shield" :size="11" />AmneziaWG
                 </span>
+                <!-- Only for tunnels that are not on this machine. Naming the
+                     local server on every row would be noise on the panels that
+                     have no nodes at all, which is most of them. -->
+                <span
+                  v-if="i.nodeName && !i.nodeLocal"
+                  class="tag"
+                  :class="i.nodeUp ? '' : 'red'"
+                  :title="i.nodeUp ? '' : t('node.unreachableHint')"
+                >
+                  <Icon name="server" :size="11" />{{ i.nodeName }}
+                </span>
               </div>
             </td>
 

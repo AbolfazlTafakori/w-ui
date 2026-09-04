@@ -80,6 +80,15 @@ type interfaceView struct {
 	Clients   int64  `json:"clients"`
 	Devices   int64  `json:"devices"`
 	UsedBytes uint64 `json:"usedBytes"`
+
+	// Which server this tunnel runs on, and whether that server is answering.
+	//
+	// The id alone tells an operator nothing, and a tunnel on a node that has
+	// gone quiet looks identical to one that is working: the panel holds the
+	// records either way, and the customers on it are the ones who find out.
+	NodeName  string `json:"nodeName"`
+	NodeLocal bool   `json:"nodeLocal"`
+	NodeUp    bool   `json:"nodeUp"`
 }
 
 // redactKeys strips the server's own key material from an interface before it
@@ -124,9 +133,23 @@ func (s *Server) interfaceViews(r *http.Request) ([]interfaceView, error) {
 		return nil, err
 	}
 
+	// One query for the names rather than one per row.
+	nodesByID := map[uint]model.Node{}
+	if all, err := s.nodes.List(r.Context()); err == nil {
+		for _, n := range all {
+			nodesByID[n.ID] = n
+		}
+	}
+
 	out := make([]interfaceView, 0, len(list))
 	for i := range list {
 		v := interfaceView{Interface: redactKeys(list[i])}
+		if n, ok := nodesByID[list[i].NodeID]; ok {
+			v.NodeName = n.Name
+			v.NodeLocal = n.Kind == model.KindLocal
+			// The local node is up by definition: this code is running on it.
+			v.NodeUp = v.NodeLocal || n.Reachable
+		}
 		if u, err := s.ifaces.PoolUsage(list[i].ID); err == nil {
 			v.Allocated, v.Capacity = u.Allocated, u.Capacity
 		}
@@ -192,7 +215,11 @@ func (s *Server) handleCreateInterface(w http.ResponseWriter, r *http.Request) {
 	// reported alongside the interface rather than instead of it: the row is
 	// created either way, and the reconciler keeps retrying.
 	out := map[string]any{"interface": redactKeys(*iface)}
-	if s.pool != nil {
+	// Only a tunnel on this machine. One on another node has its kernel
+	// somewhere else: opening a driver here would build a device nobody dials,
+	// and its failure to open would be reported as a fault on a server that is
+	// working. The sync loop carries it to the node that owns it instead.
+	if s.pool != nil && iface.NodeID == s.localNodeID {
 		if err := s.pool.Open(r.Context(), iface); err != nil {
 			s.log.Warn("a new interface would not come up",
 				"interface", iface.Name, "error", err)
