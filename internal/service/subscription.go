@@ -238,22 +238,11 @@ type Bundle struct {
 // a 404 would look to the customer's app exactly like the server being down,
 // and the header below is what lets their app say "you have run out" instead.
 func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundle, error) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return nil, fmt.Errorf("%w: no subscription token", ErrNotFound)
-	}
-
-	var c model.Client
-	err := s.db.WithContext(ctx).Preload("Accounts").
-		Where("sub_token = ?", token).Limit(1).Find(&c).Error
+	c, err := s.byToken(ctx, token)
 	if err != nil {
-		return nil, fmt.Errorf("service: read subscription: %w", err)
+		return nil, err
 	}
-	if c.ID == 0 {
-		// Deliberately the same answer as a token that never existed.
-		return nil, fmt.Errorf("%w: no such subscription", ErrNotFound)
-	}
-	return s.bundle(ctx, &c, format)
+	return s.bundle(ctx, c, format)
 }
 
 // BundleForClient renders one customer's configurations for an administrator.
@@ -290,48 +279,13 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 		byID[ifaces[i].ID] = ifaces[i]
 	}
 
-	var parts []backend.ClientProfile
-	for i := range c.Accounts {
-		acc := c.Accounts[i]
-		iface, ok := byID[acc.InterfaceID]
-		if !ok {
-			continue
-		}
-		drv, ok := s.pool.Get(acc.InterfaceID)
-		if !ok {
-			// The interface exists in the database but its driver did not open,
-			// which is normal on a host that cannot serve that protocol. Skipped
-			// rather than failing the whole bundle: the customer's other devices
-			// should still work.
-			continue
-		}
-		profile, err := drv.Render(ctx, &acc, &iface)
-		if err != nil {
-			s.log.Warn("could not render a configuration for a subscription",
-				"client", c.Name, "account", acc.ID, "error", err)
-			continue
-		}
-		// Kept whole rather than reduced to bytes: the filename the driver
-		// chose is what tells one device's configuration from another's once
-		// they are in an archive together.
-		parts = append(parts, profile)
+	rendered, err := s.renderDevices(ctx, c, byID)
+	if err != nil {
+		return nil, err
 	}
-
-	// An empty body with a 200 is the worst available answer: the customer's app
-	// accepts it, shows a subscription with nothing in it, and gives them
-	// nothing to report but "it stopped working". A client that genuinely has no
-	// devices is a different thing from one whose drivers are down, and the two
-	// are distinguished here so the operator sees the real cause in the log.
-	if len(parts) == 0 {
-		if len(c.Accounts) == 0 {
-			return nil, fmt.Errorf("%w: %s has no devices to configure", ErrInvalid, c.Name)
-		}
-		s.log.Error("a subscription could not be rendered",
-			"client", c.Name, "devices", len(c.Accounts),
-			"reason", "no driver produced a configuration; the interfaces are probably not open")
-		return nil, fmt.Errorf(
-			"service: no configuration could be produced for %s: its interfaces are not running",
-			c.Name)
+	parts := make([]backend.ClientProfile, 0, len(rendered))
+	for _, d := range rendered {
+		parts = append(parts, d.Profile)
 	}
 
 	body, ctype := encodeBundle(parts, format)
@@ -344,6 +298,222 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 		Title:       cfg.Title,
 		UpdateHours: cfg.UpdateHours,
 	}, nil
+}
+
+// RenderedDevice is one device's configuration together with the account it
+// belongs to, so a caller that needs to say which device this is — a page
+// listing them — does not have to look the account up again.
+type RenderedDevice struct {
+	Account model.Account
+	Profile backend.ClientProfile
+}
+
+// renderDevices produces a configuration for every device that has a working
+// driver.
+//
+// A device whose interface is not running is skipped rather than failing the
+// lot: one interface being down should not take away the configurations for a
+// customer's other devices. Producing nothing at all is a different matter and
+// is an error, because a client app given an empty body accepts it, shows a
+// subscription with nothing in it, and leaves the customer with nothing to
+// report but "it stopped working".
+func (s *Subscriptions) renderDevices(
+	ctx context.Context, c *model.Client, byID map[uint]model.Interface,
+) ([]RenderedDevice, error) {
+	var out []RenderedDevice
+
+	for i := range c.Accounts {
+		acc := c.Accounts[i]
+		iface, ok := byID[acc.InterfaceID]
+		if !ok {
+			continue
+		}
+		drv, ok := s.pool.Get(acc.InterfaceID)
+		if !ok {
+			continue
+		}
+		profile, err := drv.Render(ctx, &acc, &iface)
+		if err != nil {
+			s.log.Warn("could not render a configuration for a subscription",
+				"client", c.Name, "account", acc.ID, "error", err)
+			continue
+		}
+		out = append(out, RenderedDevice{Account: acc, Profile: profile})
+	}
+
+	if len(out) == 0 {
+		if len(c.Accounts) == 0 {
+			return nil, fmt.Errorf("%w: %s has no devices to configure", ErrInvalid, c.Name)
+		}
+		s.log.Error("a subscription could not be rendered",
+			"client", c.Name, "devices", len(c.Accounts),
+			"reason", "no driver produced a configuration; the interfaces are probably not open")
+		return nil, fmt.Errorf(
+			"service: no configuration could be produced for %s: its interfaces are not running",
+			c.Name)
+	}
+	return out, nil
+}
+
+// SubPage is everything a customer's own page shows them.
+//
+// Assembled here rather than in the HTTP layer so that the one place which
+// decides what a customer may see about their own account is this package, and
+// so the page cannot accidentally grow a field the API would not have exposed.
+type SubPage struct {
+	Title     string
+	Name      string
+	Status    string
+	Protocol  string
+	Locale    string
+	UpdatedAt time.Time
+
+	QuotaBytes uint64
+	UsedBytes  uint64
+	UpBytes    uint64
+	DownBytes  uint64
+	ExpiresAt  *time.Time
+
+	// SubURL is the link itself, for a customer who wants to paste it into a
+	// client app rather than download a file.
+	SubURL  string
+	Devices []SubPageDevice
+}
+
+// SubPageDevice is one row on that page.
+type SubPageDevice struct {
+	ID       uint
+	Name     string
+	Address  string
+	Filename string
+	Config   string
+}
+
+// Unlimited reports whether this plan has no volume ceiling.
+func (p SubPage) Unlimited() bool { return p.QuotaBytes == 0 }
+
+// Remaining is what is left of the allowance, floored at zero.
+func (p SubPage) Remaining() uint64 {
+	if p.QuotaBytes == 0 || p.UsedBytes >= p.QuotaBytes {
+		return 0
+	}
+	return p.QuotaBytes - p.UsedBytes
+}
+
+// UsedPercent is how full the allowance is, clamped to 100.
+func (p SubPage) UsedPercent() int {
+	if p.QuotaBytes == 0 {
+		return 0
+	}
+	pct := int(float64(p.UsedBytes) / float64(p.QuotaBytes) * 100)
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
+// PageFor builds what a customer sees when they open their link in a browser.
+func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*SubPage, error) {
+	c, err := s.byToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := s.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var ifaces []model.Interface
+	if err := s.db.WithContext(ctx).Find(&ifaces).Error; err != nil {
+		return nil, fmt.Errorf("service: read interfaces: %w", err)
+	}
+	byID := make(map[uint]model.Interface, len(ifaces))
+	for i := range ifaces {
+		byID[ifaces[i].ID] = ifaces[i]
+	}
+
+	rendered, err := s.renderDevices(ctx, c, byID)
+	if err != nil {
+		return nil, err
+	}
+
+	page := &SubPage{
+		Title:      cfg.Title,
+		Name:       c.Name,
+		Status:     string(c.Status),
+		Protocol:   string(c.Protocol),
+		UpdatedAt:  time.Now().UTC(),
+		QuotaBytes: c.QuotaBytes,
+		UsedBytes:  c.UsedBytes,
+		UpBytes:    c.UpBytes,
+		DownBytes:  c.DownBytes,
+		ExpiresAt:  c.ExpiresAt,
+		SubURL:     subURL,
+	}
+	for _, d := range rendered {
+		page.Devices = append(page.Devices, SubPageDevice{
+			ID:       d.Account.ID,
+			Name:     d.Account.DeviceName,
+			Address:  d.Account.IP,
+			Filename: d.Profile.Filename,
+			Config:   string(d.Profile.Body),
+		})
+	}
+	return page, nil
+}
+
+// DeviceConfig returns one device's configuration, for a customer downloading a
+// single file from their own page.
+//
+// The device is looked up through the token's client rather than by id alone:
+// an id is guessable and a token is not, so the ownership check is what stops
+// one customer reading another's keys.
+func (s *Subscriptions) DeviceConfig(
+	ctx context.Context, token string, deviceID uint,
+) (*backend.ClientProfile, error) {
+	c, err := s.byToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	var ifaces []model.Interface
+	if err := s.db.WithContext(ctx).Find(&ifaces).Error; err != nil {
+		return nil, fmt.Errorf("service: read interfaces: %w", err)
+	}
+	byID := make(map[uint]model.Interface, len(ifaces))
+	for i := range ifaces {
+		byID[ifaces[i].ID] = ifaces[i]
+	}
+
+	rendered, err := s.renderDevices(ctx, c, byID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rendered {
+		if rendered[i].Account.ID == deviceID {
+			return &rendered[i].Profile, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: no such device on this subscription", ErrNotFound)
+}
+
+// byToken finds the client a subscription token belongs to.
+func (s *Subscriptions) byToken(ctx context.Context, token string) (*model.Client, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, fmt.Errorf("%w: no subscription token", ErrNotFound)
+	}
+	var c model.Client
+	if err := s.db.WithContext(ctx).Preload("Accounts").
+		Where("sub_token = ?", token).Limit(1).Find(&c).Error; err != nil {
+		return nil, fmt.Errorf("service: read subscription: %w", err)
+	}
+	if c.ID == 0 {
+		// Deliberately the same answer as a token that never existed.
+		return nil, fmt.Errorf("%w: no such subscription", ErrNotFound)
+	}
+	return &c, nil
 }
 
 // encodeBundle puts the configurations into the shape asked for.

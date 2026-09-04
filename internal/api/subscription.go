@@ -42,6 +42,17 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One file, for a customer downloading a single device from their page.
+	if s.maybeServeSubDevice(w, r, token) {
+		return
+	}
+	// A browser gets a page about the plan; a client app gets the configuration.
+	// Decided on what the caller says it accepts, so an app fetching this URL on
+	// a schedule keeps receiving exactly what it did before.
+	if s.maybeServeSubPage(w, r, token) {
+		return
+	}
+
 	format := r.URL.Query().Get("format")
 	bundle, err := s.subs.Serve(r.Context(), token, format)
 	if err != nil {
