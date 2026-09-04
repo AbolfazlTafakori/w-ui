@@ -135,8 +135,12 @@ func NewPKI(commonName string) (model.OpenVPNParams, error) {
 // directive expects.
 //
 // tls-crypt wraps the whole TLS handshake in a symmetric layer keyed by this
-// value. Without it, an observer can see that a port is speaking OpenVPN from
-// the handshake alone, and anyone at all can make the server do TLS work. With
+// value. It does not hide that the port is speaking OpenVPN -- the opcode byte
+// in the first packet is in the clear either way, which was measured rather
+// than assumed. What it hides is everything after that: without it a TLS
+// ClientHello and the server's own certificate are visible in the client's
+// stream, which is a far better fingerprint than the opcode. It also stops
+// anyone at all making the server do TLS work. With
 // it, a packet that does not authenticate is dropped before any state is
 // allocated, which is both the anti-probing and the anti-DoS property.
 func NewStaticKey() (string, error) {
