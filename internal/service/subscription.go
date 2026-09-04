@@ -357,8 +357,10 @@ func (s *Subscriptions) renderDevices(
 		if !ok {
 			continue
 		}
-		drv, ok := s.pool.Get(acc.InterfaceID)
-		if !ok {
+		drv, err := s.renderer(acc.InterfaceID, iface.Protocol)
+		if err != nil {
+			s.log.Warn("no driver could render a configuration",
+				"client", c.Name, "account", acc.ID, "error", err)
 			continue
 		}
 		profile, err := drv.Render(ctx, &acc, &iface)
@@ -382,6 +384,26 @@ func (s *Subscriptions) renderDevices(
 			c.Name)
 	}
 	return out, nil
+}
+
+// renderer finds something that can produce a customer's file for an interface.
+//
+// The open driver when there is one, since that is the interface as this
+// machine actually runs it. Otherwise an unopened one built from the protocol,
+// which is what makes a customer's other servers reachable at all: an interface
+// on a node has no driver on the panel that holds the records — that node runs
+// it — and requiring an open driver quietly dropped every one of those
+// configurations from the subscription. A customer sold three servers received
+// only the ones this panel happened to terminate, which is the opposite of the
+// reason for having nodes.
+//
+// Rendering needs no device. A profile is made of the keys, addresses and ports
+// already on these rows, which is why an unopened driver is enough.
+func (s *Subscriptions) renderer(interfaceID uint, protocol model.Protocol) (backend.Backend, error) {
+	if drv, ok := s.pool.Get(interfaceID); ok {
+		return drv, nil
+	}
+	return backend.New(protocol)
 }
 
 // SubPage is everything a customer's own page shows them.
