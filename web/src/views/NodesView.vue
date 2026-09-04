@@ -55,21 +55,27 @@ const totals = computed(() => ({
 }))
 
 function openAdd() {
-  form.value = { name: '', address: '', token: '', note: '' }
+  form.value = { name: '', address: '', token: '', note: '', usageCoefficient: 1 }
   dialog.value = { kind: 'add' }
 }
 
 function openEdit(n) {
   // The token is deliberately blank: it is stored as given and never sent back,
   // so the field means "replace it" rather than "here is what it is".
-  form.value = { name: n.name, address: n.address, token: '', note: n.note || '' }
+  form.value = {
+    name: n.name,
+    address: n.address,
+    token: '',
+    note: n.note || '',
+    usageCoefficient: n.usageCoefficient || 1,
+  }
   dialog.value = { kind: 'edit', node: n }
 }
 
 async function submit() {
   busy.value = true
   try {
-    const body = { ...form.value }
+    const body = { ...form.value, usageCoefficient: Number(form.value.usageCoefficient) || 1 }
     if (dialog.value.kind === 'add') await api.post('/api/nodes', body)
     else await api.patch(`/api/nodes/${dialog.value.node.id}`, body)
     dialog.value = null
@@ -328,6 +334,11 @@ function latencyTone(ms) {
             <!-- The panel's own row is marked, because everything else on it
                  behaves differently and an operator should not wonder why. -->
             <span v-if="n.kind === 'local'" class="tag grey">{{ t('node.thisPanel') }}</span>
+            <!-- Shown only when it is not 1. An operator looking at a customer
+                 whose usage climbed faster than their traffic should be able to
+                 see the reason here rather than open every node in turn. -->
+            <span v-if="n.usageCoefficient && n.usageCoefficient !== 1" class="tag num ltr"
+                  :title="t('node.coefficientHint')">x{{ n.usageCoefficient }}</span>
             <div v-if="n.note" class="sub muted small">{{ n.note }}</div>
           </td>
 
@@ -425,6 +436,16 @@ function latencyTone(ms) {
         <div class="field">
           <label for="n-note">{{ t('group.note') }}</label>
           <input id="n-note" v-model="form.note" maxlength="256" />
+        </div>
+
+        <!-- What a gigabyte through this server costs a customer. The nearest a
+             reseller gets to charging more for an expensive server without
+             selling a second plan. -->
+        <div class="field">
+          <label for="n-coef">{{ t('node.coefficient') }}</label>
+          <input id="n-coef" v-model="form.usageCoefficient" type="number"
+                 step="0.1" min="0.1" max="100" class="ltr" />
+          <span class="hint">{{ t('node.coefficientHint') }}</span>
         </div>
         </template>
       </form>

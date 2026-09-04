@@ -121,6 +121,8 @@
   "interface.transportTcpHint": "Slower, but on port 443 it looks like an ordinary HTTPS connection. Every customer needs their configuration again after changing this.",
   "interface.downloadProfile": "Download the .ovpn for this tunnel",
   "interface.profileDownloaded": "Downloaded. Give this one file to every customer on this tunnel; their username and password is what identifies them.",
+  "node.coefficient": "Usage multiplier",
+  "node.coefficientHint": "What a gigabyte through this server costs a customer. 1 is what it counted; 2 charges double for an expensive server; 0.5 discounts a cheap one.",
   "node.unreachableHint": "This server is not answering. The panel still holds the records; the customers on it are the ones who notice.",
   "interface.node": "Server",
   "interface.thisServer": "this server",

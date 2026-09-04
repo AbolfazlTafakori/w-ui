@@ -147,7 +147,7 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 		return
 	}
 	if len(reply.Usage) > 0 && s.usage != nil {
-		s.usage(reply.Usage)
+		s.usage(scale(reply.Usage, node.UsageCoefficient))
 	}
 	s.report(node, nil)
 }
@@ -316,6 +316,43 @@ func (s *Syncer) post(ctx context.Context, node model.Node, path string, body, i
 		}
 	}
 	return nil
+}
+
+// scale applies a node's coefficient to what it reported.
+//
+// A gigabyte through an expensive server can be charged as two, without a
+// second plan or a second panel. Applied here rather than stored per node so a
+// customer's total stays one number that means what it says.
+//
+// A coefficient of zero is a node that was created before this existed, not an
+// operator asking for free traffic; it is read as one. Anything a node reports
+// is at least a byte once scaled, or a node with a very small coefficient would
+// serve traffic that never appears on any total.
+func scale(usage []service.NodeUsage, coefficient float64) []service.NodeUsage {
+	if coefficient <= 0 || coefficient == 1 {
+		return usage
+	}
+	out := make([]service.NodeUsage, 0, len(usage))
+	for _, u := range usage {
+		out = append(out, service.NodeUsage{
+			OriginID: u.OriginID,
+			Bytes:    atLeastOne(u.Bytes, coefficient),
+			Up:       atLeastOne(u.Up, coefficient),
+			Down:     atLeastOne(u.Down, coefficient),
+		})
+	}
+	return out
+}
+
+func atLeastOne(v uint64, coefficient float64) uint64 {
+	if v == 0 {
+		return 0
+	}
+	scaled := uint64(float64(v) * coefficient)
+	if scaled == 0 {
+		return 1
+	}
+	return scaled
 }
 
 // report logs a node's state only when it changes.

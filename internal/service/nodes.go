@@ -39,6 +39,12 @@ type NodeInput struct {
 	Token   string `json:"token"`
 	Note    string `json:"note"`
 	Enabled *bool  `json:"enabled"`
+
+	// UsageCoefficient multiplies what this node reports before it is charged
+	// against a customer's allowance. Absent leaves it as it is; zero is read
+	// as one, because a node that charged nothing would be free traffic nobody
+	// asked for.
+	UsageCoefficient *float64 `json:"usageCoefficient"`
 }
 
 // List returns every node, the local one first.
@@ -71,13 +77,19 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		return nil, invalidField("name", "a node called %q already exists", in.Name)
 	}
 
+	coefficient := 1.0
+	if in.UsageCoefficient != nil && *in.UsageCoefficient > 0 {
+		coefficient = *in.UsageCoefficient
+	}
+
 	node := model.Node{
-		Name:    in.Name,
-		Kind:    model.KindRemote,
-		Address: in.Address,
-		Token:   in.Token,
-		Note:    in.Note,
-		Enabled: in.Enabled == nil || *in.Enabled,
+		Name:             in.Name,
+		UsageCoefficient: coefficient,
+		Kind:             model.KindRemote,
+		Address:          in.Address,
+		Token:            in.Token,
+		Note:             in.Note,
+		Enabled:          in.Enabled == nil || *in.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&node).Error; err != nil {
 		return nil, fmt.Errorf("service: create node: %w", err)
@@ -112,6 +124,22 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 	// one, so submitting the page unchanged must not wipe it.
 	if strings.TrimSpace(in.Token) != "" {
 		updates["token"] = in.Token
+	}
+	// Zero is refused rather than stored: a node that charged nothing would
+	// serve traffic that never appears on any customer's total, which is the
+	// one setting here that quietly gives service away.
+	if in.UsageCoefficient != nil {
+		if *in.UsageCoefficient <= 0 {
+			return nil, invalidField("usageCoefficient",
+				"a coefficient of %g would charge nothing for traffic through this server",
+				*in.UsageCoefficient)
+		}
+		if *in.UsageCoefficient > 100 {
+			return nil, invalidField("usageCoefficient",
+				"a coefficient of %g charges a hundred times what the customer used",
+				*in.UsageCoefficient)
+		}
+		updates["usage_coefficient"] = *in.UsageCoefficient
 	}
 
 	if err := s.db.WithContext(ctx).Model(&node).Updates(updates).Error; err != nil {

@@ -30,6 +30,18 @@ type Node struct {
 	Reachable  bool       `gorm:"not null;default:false" json:"reachable"`
 	LastError  string     `gorm:"size:256" json:"lastError"`
 
+	// UsageCoefficient multiplies what this node reports before it is charged
+	// against a customer's allowance.
+	//
+	// Servers do not cost the same. A gigabyte through an expensive one can be
+	// billed as two, or a cheap one discounted below one, without needing a
+	// second plan or a second panel. Marzban calls it the same thing and it is
+	// the closest a reseller gets to per-server pricing.
+	//
+	// Applied on the way in rather than stored per node, so a customer's total
+	// stays one number and the page that shows it needs no arithmetic.
+	UsageCoefficient float64 `gorm:"not null;default:1" json:"usageCoefficient"`
+
 	CPUPercent  float64 `gorm:"not null;default:0" json:"cpuPercent"`
 	MemPercent  float64 `gorm:"not null;default:0" json:"memPercent"`
 	UptimeSec   int64   `gorm:"not null;default:0" json:"uptimeSec"`
