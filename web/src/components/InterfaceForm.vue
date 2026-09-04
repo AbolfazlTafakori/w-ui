@@ -29,6 +29,9 @@ const form = ref(
         dns: props.iface.dns || '',
         natInterface: props.iface.natInterface || '',
         mode: props.iface.mode,
+        // Nested under openvpn on the way out of the API, because that is
+        // where it is stored; the scrubbed view keeps it and drops the keys.
+        transport: props.iface.openvpn?.transport || 'udp',
         enabled: props.iface.enabled,
       }
     : {
@@ -38,6 +41,7 @@ const form = ref(
         dns: '1.1.1.1',
         natInterface: 'eth0',
         mode: 'standard',
+        transport: 'udp',
         enabled: true,
       },
 )
@@ -158,6 +162,26 @@ defineExpose({ showError })
               required
             />
             <span v-if="fieldName === 'listenPort'" class="field-error" role="alert">{{ fieldError }}</span>
+          </div>
+
+          <!-- OpenVPN only: WireGuard is UDP and has no other option, so
+               offering the choice there would be offering a setting that does
+               nothing. -->
+          <div v-if="!isWireGuard" class="field">
+            <label for="if-transport">{{ t('interface.transport') }}</label>
+            <select
+              id="if-transport"
+              data-field="transport"
+              :class="{ bad: fieldName === 'transport' }"
+              @input="clearError('transport')"
+              v-model="form.transport"
+            >
+              <option value="udp">{{ t('interface.transportUdp') }}</option>
+              <option value="tcp">{{ t('interface.transportTcp') }}</option>
+            </select>
+            <span v-if="fieldName === 'transport'" class="field-error" role="alert">{{ fieldError }}</span>
+            <span v-else-if="form.transport === 'tcp'" class="hint">{{ t('interface.transportTcpHint') }}</span>
+            <span v-else class="hint">{{ t('interface.transportUdpHint') }}</span>
           </div>
 
           <div class="field">

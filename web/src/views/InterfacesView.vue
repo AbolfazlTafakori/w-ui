@@ -230,13 +230,20 @@ async function submitForm(input) {
         mtu: Number(input.mtu),
         dns: input.dns,
         natInterface: input.natInterface,
+        // Only sent for OpenVPN, and only when it actually moved: the server
+        // refuses the field on a WireGuard interface rather than ignoring it.
+        ...(input.protocol === 'openvpn' && input.transport ? { transport: input.transport } : {}),
       })
       notify(t('interface.updated'), 'success')
     } else {
+      // transport is OpenVPN's alone and the server refuses it elsewhere, so
+      // a WireGuard interface must not carry the form's default along with it.
+      const { transport, ...rest } = input
       await api.createInterface({
-        ...input,
+        ...rest,
         listenPort: Number(input.listenPort),
         mtu: Number(input.mtu),
+        ...(input.protocol === 'openvpn' && transport ? { transport } : {}),
       })
       notify(t('interface.created'), 'success')
     }

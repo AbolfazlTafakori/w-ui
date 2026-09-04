@@ -57,6 +57,16 @@ type CreateInterfaceInput struct {
 	NATInterface string              `json:"natInterface"`
 	Mode         model.InterfaceMode `json:"mode"`
 
+	// Transport is udp or tcp, and only means anything for OpenVPN — WireGuard
+	// has no other option.
+	//
+	// It is worth exposing because TCP on 443 is what gets through a network
+	// that inspects traffic and drops what it does not recognise: to anything
+	// watching, the connection is a machine talking HTTPS to a web server.
+	// It costs throughput, which is why UDP stays the default, and it is the
+	// answer only when UDP is being blocked.
+	Transport string `json:"transport"`
+
 	// Enabled lets a tunnel be created switched off, so it can be prepared
 	// before anyone is put on it. Absent means enabled, which is what someone
 	// filling in this form almost always wants.
@@ -106,6 +116,9 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		if err != nil {
 			return nil, err
 		}
+		if in.Transport != "" {
+			params.Transport = in.Transport
+		}
 		iface.OpenVPN = model.JSON(params)
 	}
 
@@ -138,12 +151,30 @@ func (s *Interfaces) validate(in *CreateInterfaceInput) error {
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
 		return invalidField("listenPort", "listen port %d is out of range", in.ListenPort)
 	}
+	// Transport is OpenVPN's alone. WireGuard is UDP and nothing else, so
+	// accepting the field there would be accepting a setting that does nothing.
+	switch in.Transport {
+	case "", "udp", "tcp":
+	default:
+		return invalidField("transport", "transport must be udp or tcp, not %q", in.Transport)
+	}
+	if in.Transport != "" && in.Protocol != model.ProtocolOpenVPN {
+		return invalidField("transport",
+			"only OpenVPN has a choice of transport; WireGuard is always UDP")
+	}
+
 	// Checked here rather than discovered later. A tunnel on a port something
 	// else already holds is created, reported as configured, and simply never
 	// reachable — the kind of failure that is only ever found by a customer.
-	// Both protocols default to UDP here; an OpenVPN interface can be switched
-	// to TCP afterwards, and the port is re-checked when the driver opens it.
-	if err := checkPortFree(in.ListenPort, "udp"); err != nil {
+	//
+	// Checked against the transport this interface will actually use: UDP 443
+	// being free says nothing about TCP 443, which is the port most worth
+	// asking about because a web server is so often already on it.
+	proto := "udp"
+	if in.Transport == "tcp" {
+		proto = "tcp"
+	}
+	if err := checkPortFree(in.ListenPort, proto); err != nil {
 		return &FieldError{Field: "listenPort", Err: err}
 	}
 	if in.EndpointHost == "" {
@@ -264,6 +295,11 @@ type UpdateInterfaceInput struct {
 	MTU          *int    `json:"mtu"`
 	DNS          *string `json:"dns"`
 	NATInterface *string `json:"natInterface"`
+
+	// Transport switches an OpenVPN tunnel between udp and tcp. Every customer
+	// on it needs their configuration again afterwards, so it is not a setting
+	// to change idly.
+	Transport *string `json:"transport"`
 }
 
 // Update applies changes to an interface.
@@ -295,6 +331,38 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	}
 	if in.NATInterface != nil {
 		fields["nat_interface"] = strings.TrimSpace(*in.NATInterface)
+	}
+
+	// Switching an OpenVPN tunnel between UDP and TCP.
+	//
+	// It rewrites both halves of the configuration — the server's proto line
+	// and every customer's — so a customer whose file still says udp cannot
+	// connect afterwards. Said plainly in the log rather than left for the
+	// operator to work out from support messages.
+	if in.Transport != nil {
+		want := strings.ToLower(strings.TrimSpace(*in.Transport))
+		switch want {
+		case "udp", "tcp":
+		default:
+			return nil, invalidField("transport", "transport must be udp or tcp, not %q", want)
+		}
+		if iface.Protocol != model.ProtocolOpenVPN {
+			return nil, invalidField("transport",
+				"only OpenVPN has a choice of transport; WireGuard is always UDP")
+		}
+		params := iface.OpenVPN.V
+		if params.Transport != want {
+			// The port has to be free on the transport being moved to. UDP 443
+			// being ours says nothing about TCP 443, where a web server usually
+			// already is.
+			if err := checkPortFree(iface.ListenPort, want); err != nil {
+				return nil, &FieldError{Field: "transport", Err: err}
+			}
+			params.Transport = want
+			fields["open_vpn"] = model.JSON(params)
+			s.log.Warn("openvpn transport changed; every customer needs their configuration again",
+				"interface", iface.Name, "from", iface.OpenVPN.V.Transport, "to", want)
+		}
 	}
 
 	if len(fields) == 0 {
