@@ -7,15 +7,14 @@ import "sort"
 // The enforcer skips an apply whose text matches the last one, so a steady
 // server does not reload its firewall every two seconds. That is worth having,
 // but on its own it makes the panel trust a memory of the kernel rather than
-// the kernel. Anything that clears the table behind us -- a firewall package's
-// own reload, an operator running `nft flush ruleset`, a second panel on the
-// same host, a container restart -- leaves the cache saying "already applied"
-// and the kernel enforcing nothing. Every customer then runs unmetered and
-// uncapped until something unrelated happens to change the ruleset text.
+// the kernel.
 //
-// The counters are drained every tick anyway, and a counter object is listed
-// whether or not a byte has passed through it. So the tick already carries the
-// answer to "is our ruleset still there", for free.
+// A table that has been deleted outright is already covered: the next nft call
+// fails, and a failing call drops the cached script. The gap is the quiet case
+// -- the table is still there and our rules are not, because something else
+// rewrote its contents. Nothing fails, so nothing is noticed, and every
+// customer runs unmetered and uncapped until an unrelated change happens to
+// alter the ruleset text.
 
 // missingKeys reports which of the keys we last applied the kernel no longer
 // has, so the caller can rewrite instead of trusting its cache.

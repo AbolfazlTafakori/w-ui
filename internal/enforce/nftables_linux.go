@@ -162,9 +162,8 @@ func (n *NFTables) Usage(ctx context.Context) ([]Usage, error) {
 func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
 	out, err := n.run(ctx, "", "-j", "reset", "counters", "table", "inet", TableName)
 	if missingTable(err) {
-		// The whole table is gone. Nothing was counted, and the cache must not
-		// keep claiming the ruleset is already in place.
-		n.forget("the table is no longer there")
+		// Nothing counted, and nothing to invalidate: any failing nft call
+		// already drops the cached script, so the next tick rewrites.
 		return nil, nil
 	}
 	if err != nil {
@@ -181,9 +180,16 @@ func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
 
 // verify checks the drained counters against what was last applied.
 //
-// This is the tick's own reading of the kernel, so it costs nothing extra, and
-// it is the only thing standing between a cleared ruleset and every customer
-// running unmetered until something unrelated happens to change the script.
+// The case this exists for is the quiet one. A table that has been deleted
+// outright makes the next nft call fail, and a failing call already drops the
+// cached script, so that recovers on its own. A table that is still there but
+// no longer holds our rules -- another writer replacing its contents, a second
+// panel on the same host, a restore of someone else's saved ruleset -- fails
+// nothing: the drain succeeds, returns no counters, and the cache goes on
+// saying the ruleset is applied while nothing is enforced.
+//
+// The counters are drained every tick anyway and a counter is listed whether
+// or not a byte has passed through it, so noticing costs nothing extra.
 func (n *NFTables) verify(seen []Usage) {
 	n.mu.Lock()
 	gone := missingKeys(n.appliedKeys, seen)
