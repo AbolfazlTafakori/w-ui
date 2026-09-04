@@ -90,6 +90,7 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/outbounds/check":                  true,
 		"POST /api/hosts/{id}/check":                 true,
 		"POST /api/clients/{id}/subscription/rotate": true, // acts on the id in the path
+		"POST /api/node/usage":                       true, // drains counters; nothing to send
 	}
 	for _, r := range newRouteServer().routes() {
 		if r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodPut {

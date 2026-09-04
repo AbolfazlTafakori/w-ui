@@ -147,6 +147,29 @@ func (s *Server) routes() []Route {
 		{Method: "DELETE", Path: "/api/devices/{id}", Group: "Devices", Auth: true,
 			Summary: "Remove a device and free its address.", handler: s.handleRemoveDevice},
 
+		// ── Being a node ──
+		//
+		// What another panel calls when it is using this one as a node. Same
+		// API and same token as everything else: a node is another W-UI panel,
+		// so there is one implementation to secure rather than a second
+		// protocol that only runs one way.
+		{Method: "POST", Path: "/api/node/sync", Group: "Nodes", Auth: true,
+			Summary: "Take the desired state for one tunnel and make this panel match it.",
+			Body: `{"interface":{"originId":1,"name":"wg0","protocol":"wireguard",` +
+				`"listenPort":51820,"subnet":"10.66.0.0/16","endpointHost":"de.example.com"},` +
+				`"clients":[{"originId":7,"enabled":true,"accounts":[…]}]}`,
+			Note: "The whole state every time, never a command, so a node that was " +
+				"unreachable catches up on its next successful call and a sync that " +
+				"arrives twice does nothing the second time. Carries no allowance, " +
+				"expiry or customer name: enabled is the only enforcement a node needs.",
+			handler: s.handleNodeSync},
+		{Method: "POST", Path: "/api/node/usage", Group: "Nodes", Auth: true,
+			Summary: "Report what each customer spent here, and reset the counters.",
+			Note: "A read that resets, in one transaction. The panel asking adds these " +
+				"to a total spanning every node, so a figure returned twice would bill " +
+				"a customer for traffic they never sent.",
+			handler: s.handleNodeUsage},
+
 		// ── Interfaces ──
 		{Method: "GET", Path: "/api/interfaces", Group: "Interfaces", Auth: true,
 			Summary: "List the tunnels on this server.", handler: s.handleListInterfaces},

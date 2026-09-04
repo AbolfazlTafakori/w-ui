@@ -57,6 +57,13 @@ type CreateInterfaceInput struct {
 	NATInterface string              `json:"natInterface"`
 	Mode         model.InterfaceMode `json:"mode"`
 
+	// NodeID is the server this tunnel runs on. Zero means this one.
+	//
+	// A tunnel on another node is programmed by the panel running there, not by
+	// this one: this panel pushes it the interface and the peers, and that
+	// panel's own reconciler takes them to its kernel.
+	NodeID uint `json:"nodeId"`
+
 	// Transport is udp or tcp, and only means anything for OpenVPN — WireGuard
 	// has no other option.
 	//
@@ -76,13 +83,21 @@ type CreateInterfaceInput struct {
 // Create validates and stores a new interface, generating the server key pair
 // for WireGuard and an obfuscation profile when the mode calls for one.
 func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*model.Interface, error) {
-	if err := s.validate(&in); err != nil {
+	node, err := s.resolveNode(ctx, in.NodeID)
+	if err != nil {
 		return nil, err
 	}
+	// A port check asks this machine what is listening on it. That answer says
+	// nothing about another server, so on a remote node it is skipped rather
+	// than being a check that looks like one and is not.
+	if err := s.validate(&in, node.Kind == model.KindLocal); err != nil {
+		return nil, err
+	}
+	nodeID := node.ID
 
 	iface := model.Interface{
 		Name:         in.Name,
-		NodeID:       1,
+		NodeID:       nodeID,
 		Protocol:     in.Protocol,
 		ListenPort:   in.ListenPort,
 		Subnet:       in.Subnet,
@@ -135,7 +150,35 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	return &iface, nil
 }
 
-func (s *Interfaces) validate(in *CreateInterfaceInput) error {
+// resolveNode finds the server a tunnel is being created on.
+//
+// Zero means this one, which is what every caller that predates nodes sends and
+// what the form sends when there is only one server to choose from.
+func (s *Interfaces) resolveNode(ctx context.Context, id uint) (*model.Node, error) {
+	if id == 0 {
+		var local model.Node
+		if err := s.db.WithContext(ctx).Where("kind = ?", model.KindLocal).
+			Order("id").First(&local).Error; err != nil {
+			return nil, fmt.Errorf("service: load the local node: %w", err)
+		}
+		return &local, nil
+	}
+
+	var node model.Node
+	if err := s.db.WithContext(ctx).First(&node, id).Error; err != nil {
+		return nil, invalidField("nodeId", "there is no server with id %d", id)
+	}
+	if !node.Enabled {
+		return nil, invalidField("nodeId",
+			"%s is switched off; turn it on before putting a tunnel on it", node.Name)
+	}
+	// Deliberately not a reachability check. A node that is briefly down should
+	// not stop an operator preparing a tunnel on it; the sync loop will carry
+	// it over when the node answers again.
+	return &node, nil
+}
+
+func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	in.Name = strings.TrimSpace(in.Name)
 	in.EndpointHost = strings.TrimSpace(in.EndpointHost)
 
@@ -174,8 +217,10 @@ func (s *Interfaces) validate(in *CreateInterfaceInput) error {
 	if in.Transport == "tcp" {
 		proto = "tcp"
 	}
-	if err := checkPortFree(in.ListenPort, proto); err != nil {
-		return &FieldError{Field: "listenPort", Err: err}
+	if checkPort {
+		if err := checkPortFree(in.ListenPort, proto); err != nil {
+			return &FieldError{Field: "listenPort", Err: err}
+		}
 	}
 	if in.EndpointHost == "" {
 		return invalidField("endpointHost", "endpoint host is required; it is what clients dial")

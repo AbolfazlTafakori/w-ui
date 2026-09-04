@@ -140,7 +140,14 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := openPool(ctx, db, log)
+	// Which node this panel is. Everything it programs is filtered by it, and
+	// everything belonging to another node is pushed there instead.
+	local, err := database.LocalNode(db)
+	if err != nil {
+		return err
+	}
+
+	pool, err := openPool(ctx, db, local.ID, log)
 	if err != nil {
 		return err
 	}
@@ -158,17 +165,18 @@ func run() error {
 	routes.StartResolver(ctx)
 
 	rec := reconciler.New(reconciler.Options{
-		DB:       db,
-		Enforcer: enforcer,
-		Pool:     pool,
-		Shaper:   shp,
-		Router:   router,
-		Hops:     hops,
-		Policy:   routes.Policy,
-		HopsOf:   func(ctx context.Context) ([]routing.HopSpec, error) { return outbounds.HopSpecs(ctx) },
-		Notifier: notifier,
-		Interval: cfg.CollectInterval,
-		Log:      log,
+		DB:          db,
+		Enforcer:    enforcer,
+		Pool:        pool,
+		Shaper:      shp,
+		Router:      router,
+		Hops:        hops,
+		Policy:      routes.Policy,
+		HopsOf:      func(ctx context.Context) ([]routing.HopSpec, error) { return outbounds.HopSpecs(ctx) },
+		Notifier:    notifier,
+		Interval:    cfg.CollectInterval,
+		Log:         log,
+		LocalNodeID: local.ID,
 	})
 	rec.Start(ctx)
 
@@ -215,6 +223,17 @@ func run() error {
 	prober := nodes.New(db, log)
 	prober.Start(ctx)
 
+	// Carrying this panel's decisions out to the servers that terminate tunnels,
+	// and bringing back what they counted. A node's traffic lands in the same
+	// per-customer total the local kernel feeds, which is what makes one
+	// allowance span every server the customer reaches.
+	syncer := nodes.NewSyncer(db, func(usage []service.NodeUsage) {
+		for _, u := range usage {
+			rec.AddNodeUsage(u.OriginID, u.Bytes, u.Up, u.Down)
+		}
+	}, log)
+	syncer.Start(ctx)
+
 	// Re-read on every check rather than captured here, so changing either on
 	// the settings page takes effect without a restart.
 	scheduler := backup.NewScheduler(backups)
@@ -248,7 +267,7 @@ func run() error {
 	})
 
 	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
-		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, log)
+		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, local.ID, log)
 	if err != nil {
 		return err
 	}
@@ -314,32 +333,34 @@ func buildServer(
 	router *routing.Applier,
 	subs *service.Subscriptions,
 	pool *backend.Pool,
+	localNodeID uint,
 	log *slog.Logger,
 ) (*http.Server, error) {
 	apiSrv := api.New(api.Options{
-		DB:         db,
-		Clients:    service.NewClients(db, pools, log),
-		Interfaces: service.NewInterfaces(db, pools, log),
-		Catalog:    catalog,
-		Enforcer:   enforcer,
-		Shaper:     shp,
-		Settings:   settings,
-		Notifier:   notifier,
-		Backups:    backups,
-		Prober:     prober,
-		JWTSecret:  jwtSecret,
-		Logger:     log,
-		Version:    version,
-		Listen:     cfg.Listen,
-		DBDriver:   string(cfg.DBDriver),
-		DBSource:   cfg.DBSource,
-		SysInfo:    sys,
-		Outbounds:  outbounds,
-		Routing:    routes,
-		Router:     router,
-		Subs:       subs,
-		Pool:       pool,
-		Reconciler: rec,
+		DB:          db,
+		Clients:     service.NewClients(db, pools, log),
+		Interfaces:  service.NewInterfaces(db, pools, log),
+		Catalog:     catalog,
+		Enforcer:    enforcer,
+		Shaper:      shp,
+		Settings:    settings,
+		Notifier:    notifier,
+		Backups:     backups,
+		Prober:      prober,
+		JWTSecret:   jwtSecret,
+		Logger:      log,
+		Version:     version,
+		Listen:      cfg.Listen,
+		DBDriver:    string(cfg.DBDriver),
+		DBSource:    cfg.DBSource,
+		SysInfo:     sys,
+		Outbounds:   outbounds,
+		Routing:     routes,
+		Router:      router,
+		Subs:        subs,
+		Pool:        pool,
+		LocalNodeID: localNodeID,
+		Reconciler:  rec,
 	})
 
 	frontend, err := web.Handler(cfg.BasePath)
@@ -516,9 +537,13 @@ var _ backend.Backend = (*backend.Memory)(nil)
 // interface's enforcement -- down with it. The reconciler retries them, and
 // picks up interfaces created after this point, which is what the old
 // open-once map could not do.
-func openPool(ctx context.Context, db *gorm.DB, log *slog.Logger) (*backend.Pool, error) {
+func openPool(ctx context.Context, db *gorm.DB, nodeID uint, log *slog.Logger) (*backend.Pool, error) {
+	// Only this node's tunnels. A driver for an interface that lives on another
+	// server would open a device here that nobody dials, and its failure to open
+	// would be reported as a fault on a machine that is working perfectly.
 	var interfaces []model.Interface
-	if err := db.Where("enabled = ?", true).Find(&interfaces).Error; err != nil {
+	if err := db.Where("enabled = ? AND node_id = ?", true, nodeID).
+		Find(&interfaces).Error; err != nil {
 		return nil, fmt.Errorf("load interfaces: %w", err)
 	}
 

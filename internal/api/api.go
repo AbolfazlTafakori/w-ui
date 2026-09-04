@@ -55,6 +55,10 @@ type Server struct {
 	subs      *service.Subscriptions
 	audit     *service.Audit
 	pool      *backend.Pool
+	nodeSync  *service.NodeSync
+	// localNodeID is which node this panel is, for the state another panel
+	// pushes here.
+	localNodeID uint
 }
 
 // Options configures a Server.
@@ -82,6 +86,9 @@ type Options struct {
 	Router     *routing.Applier
 	Subs       *service.Subscriptions
 	Pool       *backend.Pool
+	// LocalNodeID is this panel's own node row, used when another panel is
+	// driving this one as a node.
+	LocalNodeID uint
 }
 
 // New builds the API server.
@@ -113,6 +120,10 @@ func New(o Options) *Server {
 		router:    o.Router,
 		subs:      o.Subs,
 		pool:      o.Pool,
+		nodeSync:  service.NewNodeSync(o.DB, o.Logger),
+		// Falls back to the first node, which is this one on every install that
+		// has never added a second.
+		localNodeID: maxUint(o.LocalNodeID, 1),
 	}
 
 	// Built last because it asks the server which engines are running, and that
@@ -186,4 +197,12 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+// maxUint keeps a node id usable when the caller left it unset.
+func maxUint(v, floor uint) uint {
+	if v < floor {
+		return floor
+	}
+	return v
 }

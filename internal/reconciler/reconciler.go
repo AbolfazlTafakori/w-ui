@@ -63,6 +63,15 @@ type Options struct {
 	Pool     *backend.Pool
 	Interval time.Duration
 	Log      *slog.Logger
+
+	// LocalNodeID is the node this panel runs on.
+	//
+	// Tunnels belonging to another node are skipped entirely: their kernel is
+	// on another machine, and programming their peers here would build an
+	// interface nobody dials while leaving the one customers actually use
+	// untouched. The panel that runs there is sent the same desired state and
+	// applies it with its own reconciler.
+	LocalNodeID uint
 }
 
 // Stats is what the last tick did, for the settings page and the logs.
@@ -92,6 +101,9 @@ type Reconciler struct {
 	interval time.Duration
 	log      *slog.Logger
 	writer   *trafficWriter
+	// localNodeID is the node this panel programs. Everything belonging to
+	// another node is another panel's to apply.
+	localNodeID uint
 
 	mu    sync.RWMutex
 	stats Stats
@@ -125,6 +137,10 @@ func New(o Options) *Reconciler {
 		interval: interval,
 		log:      o.Log,
 		writer:   newTrafficWriter(o.DB, o.Log),
+		// Zero would silently match nothing and leave a panel programming an
+		// empty kernel, so it falls back to the first node, which is this one on
+		// every install that has never added a second.
+		localNodeID: max64(o.LocalNodeID, 1),
 	}
 }
 
@@ -149,6 +165,30 @@ func (r *Reconciler) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// AddNodeUsage folds traffic a remote node counted into the customer's total.
+//
+// The same total the local kernel feeds, through the same batching writer, so a
+// customer's allowance is one number spent across every server they reach. That
+// is the whole point of the shared plan: a node counting its own share and
+// enforcing against it would cut somebody off at a third of what they bought.
+//
+// Deliberately takes plain numbers rather than the node package's type. This
+// package is the only thing that talks to the data plane and imports nothing
+// that imports it back; a shared struct here would be the first strand of a
+// cycle.
+func (r *Reconciler) AddNodeUsage(clientID uint, total, up, down uint64) {
+	if clientID == 0 || total == 0 {
+		return
+	}
+	r.writer.submit(trafficUpdate{
+		Key:   keyFromClientID(clientID),
+		Bytes: total,
+		Up:    up,
+		Down:  down,
+		At:    time.Now().UTC(),
+	})
 }
 
 // Stats returns what the last tick did.
@@ -531,9 +571,25 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	}
 
 	var interfaces []model.Interface
-	if err := db.Where("enabled = ?", true).Find(&interfaces).Error; err != nil {
+	if err := db.Where("enabled = ? AND node_id = ?", true, r.localNodeID).
+		Find(&interfaces).Error; err != nil {
 		return nil, fmt.Errorf("load interfaces: %w", err)
 	}
+
+	// Accounts on another node's tunnel are that node's to program. Kept out of
+	// the desired state here so this kernel is never asked for a peer on an
+	// interface it does not have.
+	local := make(map[uint]bool, len(interfaces))
+	for _, iface := range interfaces {
+		local[iface.ID] = true
+	}
+	kept := accounts[:0]
+	for _, a := range accounts {
+		if local[a.InterfaceID] {
+			kept = append(kept, a)
+		}
+	}
+	accounts = kept
 
 	byClient := make(map[uint][]model.Account, len(clients))
 	for _, a := range accounts {
@@ -666,4 +722,12 @@ func (r *Reconciler) setShapeErr(msg string) {
 	r.mu.Lock()
 	r.lastShapeErr = msg
 	r.mu.Unlock()
+}
+
+// max64 keeps a node id usable when the caller left it unset.
+func max64(v, floor uint) uint {
+	if v < floor {
+		return floor
+	}
+	return v
 }

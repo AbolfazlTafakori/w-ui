@@ -15,6 +15,9 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 const router = useRouter()
 
 const interfaces = ref([])
+// The servers a tunnel can be put on. An install that never added one has
+// only its own, and the form then says so instead of offering a choice of one.
+const nodeList = ref([])
 const busy = ref(false)
 // A failed load and an empty list are not the same thing, and until now this
 // page told an operator whose connection had dropped that they had no
@@ -52,6 +55,15 @@ async function load(quiet = false) {
 }
 
 onMounted(load)
+onMounted(async () => {
+  try {
+    nodeList.value = await api.get('/api/nodes', { background: true })
+  } catch {
+    // Not worth a message: the form falls back to this server, which is
+    // where every tunnel goes on a panel with no nodes anyway.
+    nodeList.value = []
+  }
+})
 
 // What these rows carry -- the traffic, the speed, how much of the address pool
 // is spoken for -- changes constantly. An interface that has just been created
@@ -478,6 +490,7 @@ async function submitForm(input) {
       ref="formRef"
     v-if="formFor"
     :iface="formFor.iface"
+    :nodes="nodeList"
     @close="formFor = null"
     @submit="submitForm"
   />

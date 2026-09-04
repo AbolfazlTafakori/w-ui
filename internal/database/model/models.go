@@ -89,6 +89,24 @@ type Interface struct {
 	// say that certificates exist without being handed them.
 	Configured bool `gorm:"-" json:"configured"`
 
+	// OriginID is this tunnel's id on the panel that owns it. Only set when
+	// Managed, and it is what a sync matches on: a tunnel renamed centrally
+	// must move this node's interface rather than leaving the old one behind.
+	OriginID uint `gorm:"index;not null;default:0" json:"originId,omitempty"`
+
+	// Managed marks an interface this panel did not create.
+	//
+	// A panel acting as a node is handed its interfaces and their peers by the
+	// panel that holds the records. It programs them exactly as it would its
+	// own, and refuses to let anybody edit them here: the central panel would
+	// overwrite the change on its next sync, so allowing it would only produce
+	// a setting that silently reverts.
+	//
+	// It also never enforces an allowance on them. The customer's quota is one
+	// number on the central panel, spent across every node they reach, and a
+	// node deciding for itself would cut them off at its own share.
+	Managed bool `gorm:"not null;default:false" json:"managed"`
+
 	// Hosts is filled in on the way to a profile renderer and is neither
 	// stored nor serialised.
 	//
@@ -113,6 +131,15 @@ type Client struct {
 	Name     string   `gorm:"size:128;not null;index" json:"name"`
 	Note     string   `gorm:"size:512" json:"note"`
 	Protocol Protocol `gorm:"size:16;not null;index" json:"protocol"`
+
+	// OriginID is this customer's id on the panel that owns them.
+	//
+	// Only set on a node. A node is handed the peers it must serve and nothing
+	// about the plan behind them: no allowance, no expiry, not even the
+	// customer's name — the row here is called after the id so that a node,
+	// which may be rented from somebody else, never learns who the customers
+	// are. Usage is reported back against this id.
+	OriginID uint `gorm:"index;not null;default:0" json:"originId,omitempty"`
 
 	// Group is a free-text label, not a foreign key. A group has no identity of
 	// its own: the groups page is a GROUP BY over this column, so creating one
@@ -214,6 +241,13 @@ type Account struct {
 	Secret   string `gorm:"size:128" json:"-"`
 
 	Enabled bool `gorm:"not null;default:true" json:"enabled"`
+
+	// OriginID is this account's id on the panel that owns it.
+	//
+	// Only set on a node, where it is what usage is reported against: the
+	// central panel asked for these peers and needs the answer keyed by names
+	// it already has, not by ids this node happened to assign.
+	OriginID uint `gorm:"index;not null;default:0" json:"originId,omitempty"`
 
 	// Runtime state, written by the collector. LastEndpoint is what the
 	// key-sharing detector watches: a peer whose public endpoint hops between

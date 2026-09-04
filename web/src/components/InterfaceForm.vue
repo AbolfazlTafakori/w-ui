@@ -7,6 +7,9 @@ import Toggle from './Toggle.vue'
 const props = defineProps({
   // When present the dialog edits that interface instead of creating one.
   iface: { type: Object, default: null },
+  // The servers a tunnel can be placed on. Empty or one means there is nothing
+  // to choose, and the field is not shown at all.
+  nodes: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close', 'submit'])
 
@@ -29,6 +32,7 @@ const form = ref(
         dns: props.iface.dns || '',
         natInterface: props.iface.natInterface || '',
         mode: props.iface.mode,
+        nodeId: props.iface.nodeId ?? 0,
         // Nested under openvpn on the way out of the API, because that is
         // where it is stored; the scrubbed view keeps it and drops the keys.
         transport: props.iface.openvpn?.transport || 'udp',
@@ -41,6 +45,7 @@ const form = ref(
         dns: '1.1.1.1',
         natInterface: 'eth0',
         mode: 'standard',
+        nodeId: 0,
         transport: 'udp',
         enabled: true,
       },
@@ -48,6 +53,10 @@ const form = ref(
 const busy = ref(false)
 
 const protocols = computed(() => store.meta?.protocols || ['wireguard'])
+
+// Only worth asking when there is more than one answer. A panel that has
+// never added a node would otherwise show a select with a single option.
+const canChooseNode = computed(() => props.nodes.length > 1)
 const isWireGuard = computed(() => form.value.protocol === 'wireguard')
 
 // Switching protocol swaps in that protocol's conventional port and subnet, so
@@ -124,6 +133,22 @@ defineExpose({ showError })
               <option v-for="p in protocols" :key="p" :value="p">{{ t(`protocol.${p}`) }}</option>
             </select>
             <span v-if="fieldName === 'protocol'" class="field-error" role="alert">{{ fieldError }}</span>
+          </div>
+
+          <!-- Which server terminates this tunnel. A tunnel on another node is
+               programmed by the panel running there: this one pushes it the
+               interface and the peers. Fixed after creation, because moving a
+               live tunnel between machines would strand every customer on it. -->
+          <div v-if="canChooseNode" class="field">
+            <label for="if-node">{{ t('interface.node') }}</label>
+            <select id="if-node" data-field="nodeId" :class="{ bad: fieldName === 'nodeId' }"
+                    @input="clearError('nodeId')" v-model="form.nodeId" :disabled="editing">
+              <option v-for="n in nodes" :key="n.id" :value="n.id">
+                {{ n.name }}{{ n.kind === 'local' ? ` — ${t('interface.thisServer')}` : '' }}
+              </option>
+            </select>
+            <span v-if="fieldName === 'nodeId'" class="field-error" role="alert">{{ fieldError }}</span>
+            <span v-else-if="editing" class="hint">{{ t('interface.nodeLocked') }}</span>
           </div>
 
           <div class="field">
