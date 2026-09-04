@@ -31,10 +31,24 @@ func NewClients(db *gorm.DB, pools *ipam.Pools, log *slog.Logger) *Clients {
 
 // CreateInput describes a new client.
 type CreateInput struct {
-	Name           string           `json:"name"`
-	Note           string           `json:"note"`
-	Group          string           `json:"group"`
-	InterfaceID    uint             `json:"interfaceId"`
+	Name  string `json:"name"`
+	Note  string `json:"note"`
+	Group string `json:"group"`
+	// InterfaceID is the tunnel a customer is placed on. Kept for callers that
+	// sell one server, and it is the first entry of InterfaceIDs when both are
+	// given.
+	InterfaceID uint `json:"interfaceId"`
+
+	// InterfaceIDs is every tunnel this customer may connect to.
+	//
+	// One plan, several servers: the allowance, the expiry and the device
+	// limit are the customer's and are shared across all of them, so when one
+	// server is blocked the others keep working on the same purchase. Each
+	// tunnel needs its own credentials — a WireGuard peer carries a key per
+	// interface and each OpenVPN tunnel has its own authority — so a device
+	// gets one account on every tunnel it is allowed to reach.
+	InterfaceIDs []uint `json:"interfaceIds"`
+
 	QuotaBytes     uint64           `json:"quotaBytes"`
 	ExpiresAt      *time.Time       `json:"expiresAt"`
 	DeviceLimit    int              `json:"deviceLimit"`
@@ -62,7 +76,7 @@ type CreateInput struct {
 // account only exists on an interface, and an interface serves exactly one
 // protocol, so accepting both would allow them to disagree.
 func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, error) {
-	iface, err := s.loadInterface(ctx, in.InterfaceID)
+	ifaces, err := s.loadInterfaces(ctx, in.chosenInterfaces())
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +84,10 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 	if err != nil {
 		return nil, err
 	}
+	// The first tunnel decides the protocol recorded on the customer, which is
+	// only a label for the list; what each device actually speaks is settled
+	// per account by the tunnel it sits on.
+	iface := ifaces[0]
 
 	client := model.Client{
 		Name:           in.Name,
@@ -99,30 +117,46 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 
 	// Addresses are reserved before the transaction opens and released if it
 	// fails, so a rolled-back create cannot leak addresses out of the pool.
-	addrs, release, err := s.reserve(ctx, iface.ID, len(names))
-	if err != nil {
-		return nil, err
+	// One address per device per tunnel: a device needs its own credentials on
+	// each server it is allowed to reach.
+	addrs := make(map[uint][]netip.Addr, len(ifaces))
+	var releases []func()
+	release := func() {
+		for _, r := range releases {
+			r()
+		}
+	}
+	for _, f := range ifaces {
+		got, rel, err := s.reserve(ctx, f.ID, len(names))
+		if err != nil {
+			release()
+			return nil, err
+		}
+		addrs[f.ID] = got
+		releases = append(releases, rel)
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&client).Error; err != nil {
 			return fmt.Errorf("create client: %w", err)
 		}
-		for i, name := range names {
-			acc, err := s.buildAccount(&client, iface, name, addrs[i])
-			if err != nil {
-				return err
-			}
-			if err := tx.Create(acc).Error; err != nil {
-				return fmt.Errorf("create device %q: %w", name, err)
-			}
-			if err := tx.Create(&model.IPLease{
-				AccountID: acc.ID,
-				ClientID:  client.ID,
-				IP:        acc.IP,
-				FromTS:    time.Now().UTC(),
-			}).Error; err != nil {
-				return fmt.Errorf("record address lease: %w", err)
+		for _, f := range ifaces {
+			for i, name := range names {
+				acc, err := s.buildAccount(&client, f, name, addrs[f.ID][i])
+				if err != nil {
+					return err
+				}
+				if err := tx.Create(acc).Error; err != nil {
+					return fmt.Errorf("create device %q on %s: %w", name, f.Name, err)
+				}
+				if err := tx.Create(&model.IPLease{
+					AccountID: acc.ID,
+					ClientID:  client.ID,
+					IP:        acc.IP,
+					FromTS:    time.Now().UTC(),
+				}).Error; err != nil {
+					return fmt.Errorf("record address lease: %w", err)
+				}
 			}
 		}
 		return nil
@@ -134,9 +168,50 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 
 	s.log.Info("client created",
 		"id", client.ID, "name", client.Name, "protocol", client.Protocol,
-		"devices", len(names), "quotaBytes", client.QuotaBytes)
+		"devices", len(names), "tunnels", len(ifaces),
+		"accounts", len(names)*len(ifaces), "quotaBytes", client.QuotaBytes)
 
 	return s.Get(ctx, client.ID)
+}
+
+// chosenInterfaces is every tunnel the caller asked for, de-duplicated and in
+// the order they gave.
+//
+// Both fields are accepted so a caller selling one server keeps working
+// unchanged. Order is kept because the first one decides the protocol label on
+// the customer's row, and an operator who listed a WireGuard tunnel first
+// should not find their customer described as OpenVPN.
+func (in CreateInput) chosenInterfaces() []uint {
+	out := make([]uint, 0, len(in.InterfaceIDs)+1)
+	seen := map[uint]bool{}
+	for _, id := range append([]uint{in.InterfaceID}, in.InterfaceIDs...) {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+// loadInterfaces reads every tunnel a customer is being placed on.
+//
+// All of them are checked before anything is created: half a customer, on two
+// of the three servers they paid for, is worse than a refusal that says which
+// tunnel was wrong.
+func (s *Clients) loadInterfaces(ctx context.Context, ids []uint) ([]*model.Interface, error) {
+	if len(ids) == 0 {
+		return nil, invalidField("interfaceId", "choose at least one server for this customer")
+	}
+	out := make([]*model.Interface, 0, len(ids))
+	for _, id := range ids {
+		iface, err := s.loadInterface(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, iface)
+	}
+	return out, nil
 }
 
 // buildAccount generates the credentials for one device.
@@ -252,12 +327,17 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 }
 
 // AddDevice adds one device to an existing client.
-func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) (*model.Account, error) {
+func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) ([]*model.Account, error) {
 	client, err := s.Get(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
-	if len(client.Accounts) >= client.DeviceLimit {
+
+	// Devices, not accounts. A customer on three servers holds three accounts
+	// per device, and counting rows here would refuse their second device on
+	// the grounds that they already have three.
+	devices := deviceNames(client.Accounts)
+	if len(devices) >= client.DeviceLimit {
 		return nil, &FieldError{
 			Field: "deviceLimit",
 			// Deliberately not opened with the customer's name. Messages are
@@ -267,47 +347,105 @@ func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) (*mode
 			Err: fmt.Errorf(
 				"%w: this customer already has %d of %d devices (%s). Raise their "+
 					"device limit to issue another",
-				ErrDeviceLimit, len(client.Accounts), client.DeviceLimit, client.Name),
+				ErrDeviceLimit, len(devices), client.DeviceLimit, client.Name),
 		}
 	}
 
 	name = strings.TrimSpace(name)
 	if name == "" {
-		name = fmt.Sprintf("device-%d", len(client.Accounts)+1)
+		name = fmt.Sprintf("device-%d", len(devices)+1)
+	}
+	for _, existing := range devices {
+		if strings.EqualFold(existing, name) {
+			return nil, invalidField("name", "this customer already has a device called %q", name)
+		}
 	}
 
-	iface, err := s.loadInterface(ctx, client.Accounts[0].InterfaceID)
+	// The new device goes on every server the customer already reaches, or it
+	// would be the one device that stops working when the others fail over.
+	ifaces, err := s.loadInterfaces(ctx, clientInterfaces(client.Accounts))
 	if err != nil {
 		return nil, err
 	}
 
-	addrs, release, err := s.reserve(ctx, iface.ID, 1)
-	if err != nil {
-		return nil, err
+	addrs := make(map[uint][]netip.Addr, len(ifaces))
+	var releases []func()
+	release := func() {
+		for _, r := range releases {
+			r()
+		}
+	}
+	for _, f := range ifaces {
+		got, rel, err := s.reserve(ctx, f.ID, 1)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		addrs[f.ID] = got
+		releases = append(releases, rel)
 	}
 
-	acc, err := s.buildAccount(client, iface, name, addrs[0])
-	if err != nil {
-		release()
-		return nil, err
+	out := make([]*model.Account, 0, len(ifaces))
+	for _, f := range ifaces {
+		acc, err := s.buildAccount(client, f, name, addrs[f.ID][0])
+		if err != nil {
+			release()
+			return nil, err
+		}
+		out = append(out, acc)
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(acc).Error; err != nil {
-			return err
+		for _, acc := range out {
+			if err := tx.Create(acc).Error; err != nil {
+				return err
+			}
+			if err := tx.Create(&model.IPLease{
+				AccountID: acc.ID,
+				ClientID:  client.ID,
+				IP:        acc.IP,
+				FromTS:    time.Now().UTC(),
+			}).Error; err != nil {
+				return err
+			}
 		}
-		return tx.Create(&model.IPLease{
-			AccountID: acc.ID,
-			ClientID:  client.ID,
-			IP:        acc.IP,
-			FromTS:    time.Now().UTC(),
-		}).Error
+		return nil
 	})
 	if err != nil {
 		release()
 		return nil, fmt.Errorf("service: add device: %w", err)
 	}
-	return acc, nil
+	return out, nil
+}
+
+// deviceNames is the distinct devices a customer holds, in the order they were
+// issued. One device has one account per server it can reach.
+func deviceNames(accounts []model.Account) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, a := range accounts {
+		k := strings.ToLower(a.DeviceName)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, a.DeviceName)
+	}
+	return out
+}
+
+// clientInterfaces is every tunnel a customer currently reaches.
+func clientInterfaces(accounts []model.Account) []uint {
+	var out []uint
+	seen := map[uint]bool{}
+	for _, a := range accounts {
+		if seen[a.InterfaceID] {
+			continue
+		}
+		seen[a.InterfaceID] = true
+		out = append(out, a.InterfaceID)
+	}
+	return out
 }
 
 // RemoveDevice deletes a device and returns its address to the pool.
@@ -457,6 +595,14 @@ type UpdateInput struct {
 	RateBitsPerSec *uint64             `json:"rateBitsPerSec"`
 	ResetCycle     *model.ResetCycle   `json:"resetCycle"`
 	Status         *model.ClientStatus `json:"status"`
+
+	// InterfaceIDs replaces the set of servers this customer can reach.
+	//
+	// Adding one issues them credentials there for every device they already
+	// have; removing one deletes those credentials and frees the addresses.
+	// Their allowance, expiry and usage are untouched either way, because those
+	// belong to the customer and not to a server.
+	InterfaceIDs []uint `json:"interfaceIds"`
 }
 
 // Update applies changes to a client.
@@ -509,14 +655,116 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		fields["status"] = model.StatusActive
 	}
 
-	if len(fields) == 0 {
+	if len(fields) > 0 {
+		if err := s.db.WithContext(ctx).Model(&model.Client{}).
+			Where("id = ?", id).Updates(fields).Error; err != nil {
+			return nil, fmt.Errorf("service: update client: %w", err)
+		}
+	}
+
+	// Done after the plan, and separately, because it creates and deletes rows
+	// rather than setting columns. A failure here leaves the plan change
+	// applied, which is the right way round: the customer keeps what they were
+	// sold even if a server could not be added.
+	if in.InterfaceIDs != nil {
+		if err := s.setInterfaces(ctx, client, in.InterfaceIDs); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(fields) == 0 && in.InterfaceIDs == nil {
 		return client, nil
 	}
-	if err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("id = ?", id).Updates(fields).Error; err != nil {
-		return nil, fmt.Errorf("service: update client: %w", err)
-	}
 	return s.Get(ctx, id)
+}
+
+// setInterfaces makes the customer reach exactly these servers.
+//
+// Adding one issues credentials there for every device they already hold;
+// removing one deletes those credentials and returns the addresses to the pool.
+// Nothing about their plan moves: the allowance and the expiry belong to the
+// customer, not to a server, which is the whole reason one purchase can span
+// several.
+func (s *Clients) setInterfaces(ctx context.Context, client *model.Client, want []uint) error {
+	ifaces, err := s.loadInterfaces(ctx, dedupe(want))
+	if err != nil {
+		return err
+	}
+
+	have := map[uint]bool{}
+	for _, id := range clientInterfaces(client.Accounts) {
+		have[id] = true
+	}
+	keep := map[uint]bool{}
+	for _, f := range ifaces {
+		keep[f.ID] = true
+	}
+
+	devices := deviceNames(client.Accounts)
+	if len(devices) == 0 {
+		devices = []string{"device-1"}
+	}
+
+	// Added first. If reserving addresses on a new server fails, the customer
+	// still reaches everything they did before rather than having been moved
+	// off the old one for nothing.
+	for _, f := range ifaces {
+		if have[f.ID] {
+			continue
+		}
+		addrs, release, err := s.reserve(ctx, f.ID, len(devices))
+		if err != nil {
+			return err
+		}
+		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			for i, name := range devices {
+				acc, err := s.buildAccount(client, f, name, addrs[i])
+				if err != nil {
+					return err
+				}
+				if err := tx.Create(acc).Error; err != nil {
+					return fmt.Errorf("add %q on %s: %w", name, f.Name, err)
+				}
+				if err := tx.Create(&model.IPLease{
+					AccountID: acc.ID, ClientID: client.ID,
+					IP: acc.IP, FromTS: time.Now().UTC(),
+				}).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			release()
+			return fmt.Errorf("service: %w", err)
+		}
+		s.log.Info("customer added to a server",
+			"client", client.Name, "interface", f.Name, "devices", len(devices))
+	}
+
+	for _, acc := range client.Accounts {
+		if keep[acc.InterfaceID] {
+			continue
+		}
+		if err := s.RemoveDevice(ctx, acc.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// dedupe keeps the first occurrence of each id.
+func dedupe(ids []uint) []uint {
+	out := make([]uint, 0, len(ids))
+	seen := map[uint]bool{}
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 func (s *Clients) revives(client *model.Client, in UpdateInput) bool {

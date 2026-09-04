@@ -26,7 +26,8 @@ const form = ref(
         name: props.client.name,
         note: props.client.note || '',
         group: props.client.group || '',
-        interfaceId: props.client.accounts?.[0]?.interfaceId ?? props.interfaces[0]?.id ?? null,
+        // Every server this customer already reaches, from their accounts.
+        interfaceIds: [...new Set((props.client.accounts || []).map((a) => a.interfaceId))],
         quotaGB: bytesToGigabytes(props.client.quotaBytes),
         expiresInDays: daysLeft(props.client.expiresAt),
         deviceLimit: props.client.deviceLimit,
@@ -39,7 +40,7 @@ const form = ref(
         name: '',
         note: '',
         group: '',
-        interfaceId: props.interfaces[0]?.id ?? null,
+        interfaceIds: props.interfaces[0] ? [props.interfaces[0].id] : [],
         quotaGB: '',
         expiresInDays: '',
         deviceLimit: 1,
@@ -86,13 +87,23 @@ onMounted(async () => {
 // protocol, and the two can never be made to disagree. Moving an existing
 // client between interfaces would mean reissuing every device, so the field is
 // locked once the client exists.
-const selected = computed(() =>
-  props.interfaces.find((i) => i.id === form.value.interfaceId),
+const chosen = computed(() =>
+  props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)),
 )
 
+function toggleInterface(id, on) {
+  const next = new Set(form.value.interfaceIds)
+  on ? next.add(id) : next.delete(id)
+  form.value.interfaceIds = [...next]
+}
+
+// The tightest pool among the chosen servers, because that is the one that
+// runs out first and stops the whole customer being created.
 const poolLeft = computed(() => {
-  const i = selected.value
-  return i && i.capacity ? i.capacity - i.allocated : null
+  const left = chosen.value
+    .filter((i) => i.capacity)
+    .map((i) => i.capacity - i.allocated)
+  return left.length ? Math.min(...left) : null
 })
 
 const presets = [
@@ -121,7 +132,7 @@ async function submit() {
       name: form.value.name.trim(),
       note: form.value.note.trim(),
       group: form.value.group.trim(),
-      interfaceId: form.value.interfaceId,
+      interfaceIds: form.value.interfaceIds,
       quotaGB: form.value.quotaGB,
       expiresAt,
       deviceLimit: Number(form.value.deviceLimit) || 1,
@@ -169,17 +180,35 @@ async function submit() {
             <input id="cf-name" v-model="form.name" required autofocus />
           </div>
 
-          <div class="field">
-            <label for="cf-iface"><span class="req">*</span>{{ t('client.chooseInterface') }}</label>
-            <select id="cf-iface" v-model="form.interfaceId" :disabled="editing" required>
-              <option v-for="i in interfaces" :key="i.id" :value="i.id">
-                {{ i.name }} — {{ t(`protocol.${i.protocol}`) }}{{ i.mode === 'amnezia' ? ' · AmneziaWG' : '' }}
-              </option>
-            </select>
-            <span v-if="editing" class="hint">{{ t('client.interfaceLocked') }}</span>
-            <span v-else-if="poolLeft !== null" class="hint">
-              {{ t('interface.addressesLeft') }}:
-              <span class="num ltr">{{ poolLeft.toLocaleString() }}</span>
+          <!-- Every server this customer may use. One plan across all of them:
+               when one is blocked the others keep working on the same
+               purchase, which is the whole reason to sell more than one. -->
+          <div class="field span-2">
+            <label><span class="req">*</span>{{ t('client.chooseServers') }}</label>
+            <div class="server-list">
+              <label v-for="i in interfaces" :key="i.id" class="server">
+                <input
+                  type="checkbox"
+                  :checked="form.interfaceIds.includes(i.id)"
+                  @change="toggleInterface(i.id, $event.target.checked)"
+                />
+                <span class="server-name">{{ i.name }}</span>
+                <span class="tag proto">{{ t(`protocol.${i.protocol}`) }}</span>
+                <span v-if="i.mode === 'amnezia'" class="tag">AmneziaWG</span>
+                <span v-if="i.capacity" class="muted small num ltr spacer">
+                  {{ (i.capacity - i.allocated).toLocaleString() }}
+                </span>
+              </label>
+            </div>
+            <span v-if="!form.interfaceIds.length" class="field-error" role="alert">
+              {{ t('client.chooseAtLeastOne') }}
+            </span>
+            <span v-else class="hint">
+              {{ t('client.serversHint') }}
+              <template v-if="poolLeft !== null">
+                · {{ t('interface.addressesLeft') }}:
+                <span class="num ltr">{{ poolLeft.toLocaleString() }}</span>
+              </template>
             </span>
           </div>
 
@@ -300,5 +329,41 @@ async function submit() {
   flex-wrap: wrap;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line-soft);
+}
+
+/* A scrolling list rather than a growing one: an operator with twenty tunnels
+   should not have the rest of the form pushed off the dialog. */
+.server-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 168px;
+  overflow-y: auto;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 5px;
+}
+.server {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.server:hover {
+  background: var(--hover, rgba(127, 127, 127, 0.08));
+}
+.server input {
+  width: auto;
+  margin: 0;
+  flex: none;
+  cursor: pointer;
+}
+.server-name {
+  font-weight: 550;
+}
+.server .spacer {
+  margin-inline-start: auto;
 }
 </style>

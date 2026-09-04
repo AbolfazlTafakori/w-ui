@@ -531,7 +531,9 @@ async function submitForm(input) {
   const payload = { ...input, quotaBytes: gigabytesToBytes(input.quotaGB), quotaGB: undefined }
   try {
     if (formFor.value?.client) {
-      delete payload.interfaceId
+      // interfaceIds is deliberately kept on an edit: it is how an operator
+      // adds or removes a server for an existing customer. deviceNames is not,
+      // because devices are managed on the customer's own page.
       delete payload.deviceNames
       await api.updateClient(formFor.value.client.id, payload)
       notify(t('client.updated'), 'success')

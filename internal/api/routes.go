@@ -81,21 +81,30 @@ func (s *Server) routes() []Route {
 			handler: s.handleListClients},
 		{Method: "POST", Path: "/api/clients", Group: "Customers", Auth: true,
 			Summary: "Create a customer and their devices.",
-			Body: `{"name":"Ali","interfaceId":1,"quotaBytes":10737418240,` +
+			Body: `{"name":"Ali","interfaceIds":[1,2],"quotaBytes":10737418240,` +
 				`"deviceLimit":2,"resetCycle":"none","deviceNames":["Phone","Laptop"]}`,
-			Note:    "Set startOnFirstUse with durationDays to begin the clock on first connection.",
+			Note: "interfaceIds is every server this customer may use; their allowance, " +
+				"expiry and device limit are shared across all of them, so one being " +
+				"blocked leaves the rest working on the same purchase. interfaceId still " +
+				"works for one server. Set startOnFirstUse with durationDays to begin " +
+				"the clock on first connection.",
 			handler: s.handleCreateClient},
 		{Method: "GET", Path: "/api/clients/{id}", Group: "Customers", Auth: true,
 			Summary: "One customer with their devices.", handler: s.handleGetClient},
 		{Method: "PATCH", Path: "/api/clients/{id}", Group: "Customers", Auth: true,
-			Summary: "Change a customer's plan or status.",
-			Body:    `{"quotaBytes":21474836480,"status":"active"}`,
+			Summary: "Change a customer's plan, status, or which servers they reach.",
+			Body:    `{"quotaBytes":21474836480,"status":"active","interfaceIds":[1,3]}`,
+			Note: "Sending interfaceIds replaces the set of servers: one added issues " +
+				"credentials there for every device they hold, one removed deletes " +
+				"those credentials. Their usage and expiry are untouched.",
 			handler: s.handleUpdateClient},
 		{Method: "DELETE", Path: "/api/clients/{id}", Group: "Customers", Auth: true,
 			Summary: "Delete a customer and release their addresses.",
 			handler: s.handleDeleteClient},
 		{Method: "POST", Path: "/api/clients/{id}/devices", Group: "Customers", Auth: true,
-			Summary: "Issue another device.", Body: `{"name":"Tablet"}`,
+			Summary: "Issue another device, on every server this customer reaches.",
+			Body:    `{"name":"Tablet"}`,
+			Note:    "Returns one account per server. The device limit counts devices, not accounts.",
 			handler: s.handleAddDevice},
 		{Method: "POST", Path: "/api/clients/{id}/reset", Group: "Customers", Auth: true,
 			Summary: "Set one customer's usage back to zero.", handler: s.handleResetTraffic},
