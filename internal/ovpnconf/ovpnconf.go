@@ -84,7 +84,27 @@ func Network(subnet string) (network, netmask string, err error) {
 }
 
 // RenderClient produces the .ovpn file handed to a customer.
-func RenderClient(acc *model.Account, iface *model.Interface) string {
+// RenderClient produces the profile for one account.
+//
+// The account is not read, and that is the point rather than an oversight: an
+// OpenVPN profile carries no per-customer material at all. The certificate
+// authority, the addresses and the cipher are the tunnel's; who the customer is
+// gets settled at connect time by the username and password they type. Two
+// customers on the same tunnel receive byte-identical files.
+//
+// It stays a distinct function because the driver contract renders per account,
+// and because a WireGuard profile genuinely is per device.
+func RenderClient(_ *model.Account, iface *model.Interface) string {
+	return RenderProfile(iface)
+}
+
+// RenderProfile produces the one profile every customer on this tunnel uses.
+//
+// Handing out a file per customer, when the file cannot differ, is what makes
+// an operator think revoking somebody means reissuing files. It does not: the
+// file is the tunnel's, the credentials are the customer, and taking a customer
+// away is deleting their credentials while everyone else's file keeps working.
+func RenderProfile(iface *model.Interface) string {
 	p := iface.OpenVPN.V
 	var b strings.Builder
 

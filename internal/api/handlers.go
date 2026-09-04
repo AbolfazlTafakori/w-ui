@@ -293,6 +293,32 @@ func (s *Server) handleResetTraffic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, client)
 }
 
+// handleInterfaceProfile hands over the one OpenVPN file a tunnel has.
+//
+// The same file for everybody on it, on purpose: an OpenVPN profile carries
+// nothing about who is connecting. An operator gives this out once and then
+// sells access by creating credentials, which is also what makes revoking work
+// — the customer's file keeps opening and connects to nothing.
+func (s *Server) handleInterfaceProfile(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	name, body, err := s.ifaces.Profile(r.Context(), id)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+
+	h := w.Header()
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(body))
+}
+
 // handleClientConfigs hands an operator every configuration one customer has.
 //
 // An archive by default, because a .conf file holds exactly one [Interface]:

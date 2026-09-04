@@ -152,6 +152,11 @@ func (s *Server) routes() []Route {
 				"customer on it, who then need their configuration again.",
 			Body:    `{"dns":"1.1.1.1","mtu":1420,"transport":"tcp"}`,
 			handler: s.handleUpdateInterface},
+		{Method: "GET", Path: "/api/interfaces/{id}/profile", Group: "Interfaces", Auth: true,
+			Summary: "The one OpenVPN file for this tunnel, the same for every customer on it.",
+			Note: "OpenVPN only. Hand it out once; sell access by creating credentials. " +
+				"A WireGuard profile is per device and comes from /api/devices/{id}/profile.",
+			handler: s.handleInterfaceProfile},
 		{Method: "POST", Path: "/api/interfaces/{id}/restart", Group: "Interfaces", Auth: true,
 			Summary: "Reopen a tunnel's driver without restarting the panel.",
 			Note: "For a tunnel that failed to come up — a taken port, a missing tool. " +

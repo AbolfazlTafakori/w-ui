@@ -118,6 +118,8 @@
   "interface.transportTcp": "TCP — از شبکه‌های بیشتری رد می‌شود",
   "interface.transportUdpHint": "تا وقتی UDP بسته نشده، همین درست است.",
   "interface.transportTcpHint": "کندتر است، ولی روی پورت ۴۴۳ شبیه یک اتصال معمولی HTTPS دیده می‌شود. بعد از تغییر، هر مشتری باید کانفیگش را دوباره بگیرد.",
+  "interface.downloadProfile": "دانلود فایل .ovpn این تونل",
+  "interface.profileDownloaded": "دانلود شد. همین یک فایل را به همه‌ی مشتریان این تونل بدهید؛ چیزی که آنها را از هم جدا می‌کند یوزرنیم و پسوردشان است.",
   "interface.subnet": "ساب‌نت",
   "interface.subnetHint": "یک /16 حدود ۶۵ هزار دستگاه جا می‌دهد و آدرس‌های آزادشده را بازیافت می‌کند.",
   "interface.endpoint": "اندپوینت",

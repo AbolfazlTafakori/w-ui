@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { api } from '../lib/api.js'
+import { api, apiURL, getToken } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
@@ -221,6 +221,34 @@ const bulkDelete = () => {
   }
 }
 
+// The tunnel's own OpenVPN profile, which every customer on it uses.
+//
+// Fetched with the session token rather than linked: it carries the certificate
+// authority, and a plain link sends no Authorization header — the panel would
+// either refuse it or have to serve it to anyone who guessed the URL.
+const downloadingProfile = ref(0)
+
+async function downloadProfile(iface) {
+  downloadingProfile.value = iface.id
+  try {
+    const res = await fetch(apiURL(`/api/interfaces/${iface.id}/profile`), {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+    if (!res.ok) throw new Error((await res.text()) || t('error.unknown'))
+    const url = URL.createObjectURL(await res.blob())
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${iface.name}.ovpn`
+    a.click()
+    URL.revokeObjectURL(url)
+    notify(t('interface.profileDownloaded'), 'success')
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    downloadingProfile.value = 0
+  }
+}
+
 async function submitForm(input) {
   try {
     if (formFor.value?.iface) {
@@ -417,6 +445,20 @@ async function submitForm(input) {
                 >
                   <span v-if="isPending(i.id)" class="spin sm"></span>
                   <Icon v-else name="refresh" :size="16" />
+                </button>
+                <!-- OpenVPN only. Its profile is the tunnel's and is the same
+                     for everyone on it, so it is downloaded from here once;
+                     a WireGuard profile belongs to a device and comes from
+                     that device instead. -->
+                <button
+                  v-if="i.protocol === 'openvpn'"
+                  class="act"
+                  :title="t('interface.downloadProfile')"
+                  :disabled="downloadingProfile === i.id"
+                  @click="downloadProfile(i)"
+                >
+                  <span v-if="downloadingProfile === i.id" class="spin sm"></span>
+                  <Icon v-else name="download" :size="16" />
                 </button>
                 <button class="act" :title="t('action.details')" @click="detailFor = i">
                   <Icon name="info" :size="16" />

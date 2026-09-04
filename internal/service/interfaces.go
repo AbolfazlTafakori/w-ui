@@ -230,6 +230,42 @@ func (s *Interfaces) Get(ctx context.Context, id uint) (*model.Interface, error)
 	return &iface, nil
 }
 
+// Profile is the one OpenVPN file every customer on this tunnel uses.
+//
+// An OpenVPN profile carries nothing about who is connecting: the certificate
+// authority, the addresses and the cipher belong to the tunnel, and the
+// customer is settled at connect time by the username and password they type.
+// So there is one file per tunnel, handed out once, and selling somebody access
+// is creating them credentials rather than generating them a file.
+//
+// That is also what makes taking access away work. Deleting a customer removes
+// their credentials; the file they still have on their phone connects to
+// nothing, and nobody else's file has to change.
+//
+// WireGuard has no equivalent — its profile carries the device's own private
+// key — so this is refused there rather than returning something misleading.
+func (s *Interfaces) Profile(ctx context.Context, id uint) (name, body string, err error) {
+	iface, err := s.Get(ctx, id)
+	if err != nil {
+		return "", "", err
+	}
+	if iface.Protocol != model.ProtocolOpenVPN {
+		return "", "", fmt.Errorf(
+			"%w: a WireGuard profile is per device, because it carries that device's own key",
+			ErrInvalid)
+	}
+
+	var hosts []model.Host
+	if err := s.db.WithContext(ctx).
+		Where("interface_id = ? AND enabled = ?", iface.ID, true).
+		Order("priority, id").Find(&hosts).Error; err != nil {
+		return "", "", fmt.Errorf("service: read hosts: %w", err)
+	}
+	iface.Hosts = hosts
+
+	return iface.Name + ".ovpn", ovpnconf.RenderProfile(iface), nil
+}
+
 // Load is what an interface is carrying: how many customers sit on it, how many
 // devices they hold, and how much they have used between them.
 type Load struct {
