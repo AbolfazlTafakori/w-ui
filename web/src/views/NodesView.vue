@@ -59,6 +59,7 @@ function openAdd() {
   form.value = {
     name: '', address: '', token: '', note: '',
     usageCoefficient: 1, dataLimitGB: '', resetDay: '',
+    tlsMode: 'verify', tlsPin: '',
   }
   dialog.value = { kind: 'add' }
 }
@@ -72,10 +73,36 @@ function openEdit(n) {
     token: '',
     note: n.note || '',
     usageCoefficient: n.usageCoefficient || 1,
+    tlsMode: n.tlsMode || 'verify',
+    tlsPin: n.tlsPin || '',
     dataLimitGB: bytesToGigabytes(n.dataLimitBytes),
     resetDay: n.resetDay || '',
   }
   dialog.value = { kind: 'edit', node: n }
+}
+
+const pinBusy = ref(false)
+
+// Read the fingerprint the address is presenting, so nobody has to run openssl
+// and copy a hash by hand — which is how certificate checking ends up switched
+// off instead. Nothing is verified while reading it, and the hint under the
+// field says so.
+async function fetchPin() {
+  const address = (form.value.address || '').trim()
+  if (!address) {
+    notify(t('node.addressFirst'), 'error')
+    return
+  }
+  pinBusy.value = true
+  try {
+    const res = await api.post('/api/nodes/fetch-pin', { address })
+    form.value.tlsPin = res?.tlsPin || ''
+    notify(t('node.pinFetched'), 'ok')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    pinBusy.value = false
+  }
 }
 
 async function submit() {
@@ -84,6 +111,8 @@ async function submit() {
     const body = {
       ...form.value,
       usageCoefficient: Number(form.value.usageCoefficient) || 1,
+      tlsMode: form.value.tlsMode || 'verify',
+      tlsPin: (form.value.tlsPin || '').trim(),
       dataLimitBytes: gigabytesToBytes(form.value.dataLimitGB),
       resetDay: Number(form.value.resetDay) || 0,
       dataLimitGB: undefined,
@@ -355,6 +384,12 @@ function latencyTone(ms) {
             <!-- Said plainly, because an operator whose customers have quietly
                  moved off a server deserves to know it was this and not a
                  fault. -->
+            <!-- Said on the row, because a node nobody is checking the identity
+                 of is a decision somebody made once and forgot. -->
+            <span v-if="n.kind !== 'local' && n.tlsMode === 'skip'" class="tag red"
+                  :title="t('node.tlsSkipWarning')">{{ t('node.tlsUnchecked') }}</span>
+            <span v-else-if="n.kind !== 'local' && n.tlsMode === 'pin'" class="tag grey"
+                  :title="t('node.tlsPinnedHint')">{{ t('node.tlsPinned') }}</span>
             <span v-if="n.overAllowance" class="tag red" :title="t('node.spentHint')">
               {{ t('node.spent') }}
             </span>
@@ -450,6 +485,36 @@ function latencyTone(ms) {
           <label for="n-addr">{{ t('node.address') }}</label>
           <input id="n-addr" v-model="form.address" required placeholder="https://vpn2.example.com:2096" class="ltr" />
           <span class="hint">{{ t('node.addressHint') }}</span>
+        </div>
+
+        <!-- The token below is a bearer credential for a whole panel, so who
+             is on the other end is not a detail. Verification is right when the
+             node has a real certificate; pinning is the answer when it does
+             not, and is stronger there rather than weaker. -->
+        <div class="field">
+          <label for="n-tls">{{ t('node.tlsMode') }}</label>
+          <select id="n-tls" v-model="form.tlsMode">
+            <option value="verify">{{ t('node.tlsVerify') }}</option>
+            <option value="pin">{{ t('node.tlsPin') }}</option>
+            <option value="skip">{{ t('node.tlsSkip') }}</option>
+          </select>
+          <span class="hint">{{ t('node.tlsModeHint') }}</span>
+        </div>
+
+        <div v-if="form.tlsMode === 'pin'" class="field">
+          <label for="n-pin">{{ t('node.pin') }}</label>
+          <div class="row gap">
+            <input id="n-pin" v-model="form.tlsPin" class="ltr" placeholder="sha256/…" />
+            <button type="button" class="btn sm" :disabled="pinBusy" @click="fetchPin">
+              <span v-if="pinBusy" class="spin sm"></span>
+              <span v-else>{{ t('node.fetchPin') }}</span>
+            </button>
+          </div>
+          <span class="hint">{{ t('node.fetchPinHint') }}</span>
+        </div>
+
+        <div v-if="form.tlsMode === 'skip'" class="field">
+          <span class="hint warn-text">{{ t('node.tlsSkipWarning') }}</span>
         </div>
 
         <div class="field">

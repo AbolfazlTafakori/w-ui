@@ -891,3 +891,36 @@ func (s *Server) handleRestartInterface(w http.ResponseWriter, r *http.Request) 
 	s.log.Info("interface restarted", "interface", iface.Name)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "interface": iface.Name})
 }
+
+// handleCloneInterface copies a tunnel's settings into a new one.
+func (s *Server) handleCloneInterface(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+
+	var in service.CloneInput
+	if !decode(w, r, &in) {
+		return
+	}
+
+	iface, err := s.ifaces.Clone(r.Context(), id, in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+
+	// Opened straight away, so an operator does not have to wait a tick to find
+	// out whether the port they chose was free.
+	if s.pool != nil && iface.NodeID == s.localNodeID {
+		if err := s.pool.Open(r.Context(), iface); err != nil {
+			s.log.Warn("the copy was created but would not start",
+				"interface", iface.Name, "error", err)
+		}
+	}
+
+	s.log.Info("interface copied", "id", id, "to", iface.Name,
+		"by", adminName(r), "ip", clientIP(r))
+
+	writeJSON(w, http.StatusCreated, redactKeys(*iface))
+}

@@ -74,3 +74,30 @@ const (
 	KindLocal  NodeKind = "local"
 	KindRemote NodeKind = "remote"
 )
+
+// NodeTLSMode is how this panel checks a node's certificate.
+//
+// The token in every request to a node is a bearer credential for a whole
+// panel, so who is on the other end is not a detail.
+type NodeTLSMode string
+
+const (
+	// TLSVerify is ordinary certificate verification, and is right whenever the
+	// node has a real certificate.
+	TLSVerify NodeTLSMode = "verify"
+
+	// TLSPin accepts exactly one public key and nothing else. Stronger than
+	// verification rather than weaker: a certificate authority mis-issuing for
+	// that address does not help, because the key would still be wrong. This is
+	// the answer for a node reached by bare address with a certificate it
+	// signed itself.
+	TLSPin NodeTLSMode = "pin"
+
+	// TLSSkip checks nothing. Offered because refusing to offer it is how
+	// operators end up disabling verification somewhere worse, and reported
+	// loudly wherever it is in use.
+	TLSSkip NodeTLSMode = "skip"
+)
+
+// Safe reports whether a mode actually establishes who is on the other end.
+func (m NodeTLSMode) Safe() bool { return m != TLSSkip }

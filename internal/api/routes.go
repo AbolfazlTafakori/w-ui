@@ -415,6 +415,20 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/tunnels/start", Group: "Server", Auth: true,
 			Summary: "Switch every tunnel that is off back on.",
 			handler: s.handleStartAll},
+		{Method: "POST", Path: "/api/interfaces/{id}/clone", Group: "Interfaces", Auth: true,
+			Summary: "Make another tunnel with the same settings.",
+			Body:    `{"name":"wg1","listenPort":51821,"subnet":"10.67.0.0/16"}`,
+			Note: "Its own name, port, subnet and keys. Customers are not copied, and " +
+				"an AmneziaWG copy gets a fresh obfuscation profile — sharing one would " +
+				"mean both tunnels blocked by the same rule.",
+			handler: s.handleCloneInterface},
+		{Method: "POST", Path: "/api/nodes/fetch-pin", Group: "Nodes", Auth: true,
+			Summary: "Read the certificate fingerprint an address is presenting.",
+			Body:    `{"address":"https://vpn2.example.com:2096"}`,
+			Note: "Nothing is verified while reading it, so it records whoever answers " +
+				"right now. Do it from a network you trust, and check the fingerprint " +
+				"against the node itself if you can.",
+			handler: s.handleFetchPin},
 		{Method: "GET", Path: "/api/backups", Group: "Settings", Auth: true,
 			Summary: "Backups on disk, newest first.", handler: s.handleListBackups},
 		{Method: "POST", Path: "/api/backups", Group: "Settings", Auth: true,

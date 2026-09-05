@@ -95,6 +95,20 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	}
 	nodeID := node.ID
 
+	// A name already used on this node is a mistake somebody can fix, and until
+	// now it reached the database and came back as "constraint failed: UNIQUE
+	// constraint failed: interfaces.node_id, interfaces.name (2067)" — reported
+	// to the operator as an internal error, which is both alarming and useless.
+	var clash int64
+	if err := s.db.WithContext(ctx).Model(&model.Interface{}).
+		Where("node_id = ? AND name = ?", nodeID, in.Name).Count(&clash).Error; err != nil {
+		return nil, fmt.Errorf("service: check interface name: %w", err)
+	}
+	if clash > 0 {
+		return nil, invalidField("name", "a tunnel called %q already exists on %s",
+			in.Name, node.Name)
+	}
+
 	iface := model.Interface{
 		Name:         in.Name,
 		NodeID:       nodeID,

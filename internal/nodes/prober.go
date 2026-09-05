@@ -39,25 +39,12 @@ const (
 
 // Prober polls the remote nodes.
 type Prober struct {
-	db     *gorm.DB
-	log    *slog.Logger
-	client *http.Client
+	db  *gorm.DB
+	log *slog.Logger
 }
 
 func New(db *gorm.DB, log *slog.Logger) *Prober {
-	return &Prober{
-		db:  db,
-		log: log,
-		client: &http.Client{
-			Timeout: probeTimeout,
-			// Redirects are refused. A node that answers with one is not the
-			// panel we configured, and following it would send the token
-			// somewhere nobody chose.
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
-	}
+	return &Prober{db: db, log: log}
 }
 
 // Start polls until the context ends.
@@ -180,8 +167,16 @@ func (p *Prober) ask(ctx context.Context, node model.Node) (Snapshot, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+node.Token)
 
+	// Per node: see clientFor. A probe that trusted a certificate the sync
+	// loop would refuse would report a node as healthy right up until nothing
+	// could be pushed to it.
+	client, err := clientFor(node, probeTimeout)
+	if err != nil {
+		return snap, err
+	}
+
 	start := time.Now()
-	resp, err := p.client.Do(req)
+	resp, err := client.Do(req)
 	snap.LatencyMS = int(time.Since(start).Milliseconds())
 	if err != nil {
 		return snap, fmt.Errorf("could not reach it: %w", err)

@@ -30,6 +30,18 @@ type Node struct {
 	Reachable  bool       `gorm:"not null;default:false" json:"reachable"`
 	LastError  string     `gorm:"size:256" json:"lastError"`
 
+	// TLSMode is how this panel checks the node's certificate, and TLSPin is
+	// the public key it will accept when the mode is "pin".
+	//
+	// Verification is the default and is right whenever the node has a real
+	// certificate. Pinning exists for the common case it cannot help with — a
+	// node reached by bare address with a certificate it signed itself — and is
+	// stronger than verification there, not weaker: a certificate authority
+	// mis-issuing for that address does not help, because the key would still
+	// be wrong.
+	TLSMode NodeTLSMode `gorm:"size:16;not null;default:verify" json:"tlsMode"`
+	TLSPin  string      `gorm:"size:128" json:"tlsPin"`
+
 	// UsageCoefficient multiplies what this node reports before it is charged
 	// against a customer's allowance.
 	//

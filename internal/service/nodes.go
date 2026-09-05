@@ -46,6 +46,11 @@ type NodeInput struct {
 	// asked for.
 	UsageCoefficient *float64 `json:"usageCoefficient"`
 
+	// TLSMode is how the node's certificate is checked, and TLSPin is the key
+	// to accept when pinning. Absent leaves both as they are.
+	TLSMode *model.NodeTLSMode `json:"tlsMode"`
+	TLSPin  *string            `json:"tlsPin"`
+
 	// DataLimitBytes is the machine's own monthly transfer allowance and
 	// ResetDay is the day of the month the host starts it again. Absent leaves
 	// both as they are; zero in either means no cap and no automatic reset.
@@ -93,6 +98,8 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		UsageCoefficient: coefficient,
 		DataLimitBytes:   deref(in.DataLimitBytes),
 		ResetDay:         deref(in.ResetDay),
+		TLSMode:          tlsModeOr(in.TLSMode, model.TLSVerify),
+		TLSPin:           strings.TrimSpace(deref(in.TLSPin)),
 		Kind:             model.KindRemote,
 		Address:          in.Address,
 		Token:            in.Token,
@@ -150,6 +157,12 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 		updates["usage_coefficient"] = *in.UsageCoefficient
 	}
 
+	if in.TLSMode != nil {
+		updates["tls_mode"] = tlsModeOr(in.TLSMode, model.TLSVerify)
+	}
+	if in.TLSPin != nil {
+		updates["tls_pin"] = strings.TrimSpace(*in.TLSPin)
+	}
 	if in.DataLimitBytes != nil {
 		updates["data_limit_bytes"] = *in.DataLimitBytes
 	}
@@ -234,6 +247,22 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	if needToken && in.Token == "" {
 		return invalidField("token", "a node needs an access token. Create one on that "+
 			"panel under Settings, then paste it here")
+	}
+
+	// Pinning with nothing to pin would accept no certificate at all, so it is
+	// caught here rather than as a connection failure every twenty seconds.
+	if in.TLSMode != nil {
+		switch *in.TLSMode {
+		case model.TLSVerify, model.TLSSkip:
+		case model.TLSPin:
+			if strings.TrimSpace(deref(in.TLSPin)) == "" {
+				return invalidField("tlsPin",
+					"pinning needs a certificate to pin. Fetch it from the node, or paste a sha256/… fingerprint")
+			}
+		default:
+			return invalidField("tlsMode",
+				"a node's certificate is either verified, pinned, or not checked at all")
+		}
 	}
 
 	// 28 rather than 31: a reset day of the 30th would skip February entirely,
@@ -341,4 +370,13 @@ func (s *Nodes) VerifyToken(ctx context.Context, presented string) bool {
 func hashToken(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// tlsModeOr reads an optional mode, defaulting for a node created before this
+// existed or by a caller that did not mention it.
+func tlsModeOr(p *model.NodeTLSMode, fallback model.NodeTLSMode) model.NodeTLSMode {
+	if p == nil || *p == "" {
+		return fallback
+	}
+	return *p
 }

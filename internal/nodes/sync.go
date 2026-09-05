@@ -48,10 +48,8 @@ const (
 
 // Syncer keeps remote nodes matching this panel's records.
 type Syncer struct {
-	db     *gorm.DB
-	log    *slog.Logger
-	client *http.Client
-
+	db  *gorm.DB
+	log *slog.Logger
 	// usage is where drained node counters are handed back to the caller, which
 	// folds them into the same per-customer total the local kernel feeds.
 	usage func([]service.NodeUsage)
@@ -67,7 +65,6 @@ func NewSyncer(db *gorm.DB, onUsage func([]service.NodeUsage), log *slog.Logger)
 	return &Syncer{
 		db:      db,
 		log:     log,
-		client:  &http.Client{Timeout: syncTimeout},
 		usage:   onUsage,
 		lastErr: map[uint]string{},
 	}
@@ -309,7 +306,15 @@ func (s *Syncer) post(ctx context.Context, node model.Node, path string, body, i
 	req.Header.Set("Authorization", "Bearer "+node.Token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := s.client.Do(req)
+	// Built per node, because each carries its own idea of which certificate
+	// to accept and a shared transport would pool a connection opened under
+	// one node's rules and hand it to another.
+	client, err := clientFor(node, syncTimeout)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("could not reach it: %w", err)
 	}

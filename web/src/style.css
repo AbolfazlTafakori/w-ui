@@ -3836,3 +3836,17 @@ tbody tr.decided .step {
   font-size: var(--t-xs);
   color: var(--faint);
 }
+
+/* A warning that belongs to a field rather than to the page. */
+.warn-text {
+  color: var(--warn);
+}
+.row.gap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row.gap input {
+  flex: 1;
+  min-width: 0;
+}

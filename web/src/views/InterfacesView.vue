@@ -158,6 +158,73 @@ async function setEnabled(iface, on) {
 // driver whose Open failed at startup — a port that was taken, a tool that was
 // not installed yet. Without this the only way out is restarting the panel,
 // which disconnects every customer on every other interface to fix one.
+// Copying a tunnel.
+//
+// The port and the address range have to be new — two tunnels sharing either
+// would collide — so they are suggested rather than assumed, moved one along
+// from the original where that is free.
+const cloning = ref(null)
+const cloneBusy = ref(false)
+
+function openClone(iface) {
+  cloning.value = {
+    from: iface,
+    // Stepped past names already in use, so the suggestion is one that will
+    // actually be accepted rather than one the operator has to correct.
+    name: freeName(iface.name),
+    listenPort: (iface.listenPort || 51820) + 1,
+    subnet: nextSubnet(iface.subnet),
+    endpointHost: iface.endpointHost || '',
+  }
+}
+
+// wg0 -> wg1, ovpn443 -> ovpn444, anything else -> name-2. Only a suggestion;
+// the operator can type whatever they like over it.
+function nextName(name) {
+  const m = String(name || '').match(/^(.*?)(\d+)$/)
+  if (!m) return `${name}-2`
+  return m[1] + String(Number(m[2]) + 1)
+}
+
+// freeName steps nextName along until it finds one nothing is using.
+function freeName(name) {
+  const taken = new Set((interfaces.value || []).map((i) => i.name))
+  let candidate = nextName(name)
+  for (let i = 0; i < 100 && taken.has(candidate); i++) {
+    candidate = nextName(candidate)
+  }
+  return candidate
+}
+
+// 10.66.0.0/24 -> 10.67.0.0/24. Only the third octet moves, which is the one
+// that is free to move in every range this panel hands out.
+function nextSubnet(cidr) {
+  const m = String(cidr || '').match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)(\/\d+)$/)
+  if (!m) return cidr || ''
+  const third = (Number(m[3]) + 1) % 256
+  return `${m[1]}.${m[2]}.${third}.${m[4]}${m[5]}`
+}
+
+async function submitClone() {
+  cloneBusy.value = true
+  try {
+    const c = cloning.value
+    await api.post(`/api/interfaces/${c.from.id}/clone`, {
+      name: c.name.trim(),
+      listenPort: Number(c.listenPort),
+      subnet: c.subnet.trim(),
+      endpointHost: c.endpointHost.trim(),
+    })
+    notify(t('interface.cloned'), 'success')
+    cloning.value = null
+    await load()
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    cloneBusy.value = false
+  }
+}
+
 async function restart(iface) {
   hold(iface.id)
   try {
@@ -460,6 +527,13 @@ async function submitForm(input) {
                 <button class="act" :title="t('action.edit')" @click="formFor = { iface: i }">
                   <Icon name="edit" :size="16" />
                 </button>
+                <!-- A second tunnel is rarely a new decision: same protocol,
+                     same MTU, another port, because the first one is being
+                     blocked. Retyping all of it is how the copy ends up subtly
+                     different from the original. -->
+                <button class="act" :title="t('interface.clone')" @click="openClone(i)">
+                  <Icon name="copy" :size="16" />
+                </button>
                 <button
                   class="act"
                   :title="t('interface.restart')"
@@ -520,6 +594,50 @@ async function submitForm(input) {
     @confirm="runConfirmed"
     @cancel="ask = null"
   />
+
+  <!-- Copying a tunnel. Its own name, port, range and keys; no customers. -->
+  <div v-if="cloning" class="modal-backdrop" @click.self="cloning = null">
+    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="cl-title">
+      <div class="card-head">
+        <h2 id="cl-title">{{ t('interface.cloneTitle') }}</h2>
+        <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="cloning = null">
+          <Icon name="close" :size="15" />
+        </button>
+      </div>
+
+      <form id="cl-form" class="card-body" @submit.prevent="submitClone">
+        <p class="muted small">{{ cloning.from.name }} → {{ cloning.name }}</p>
+
+        <div class="field">
+          <label for="cl-name">{{ t('interface.name') }}</label>
+          <input id="cl-name" v-model="cloning.name" required autofocus maxlength="32" class="ltr" />
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="cl-port">{{ t('interface.port') }}</label>
+            <input id="cl-port" v-model="cloning.listenPort" type="number" min="1" max="65535" required class="ltr" />
+          </div>
+          <div class="field">
+            <label for="cl-subnet">{{ t('interface.subnet') }}</label>
+            <input id="cl-subnet" v-model="cloning.subnet" required class="ltr" />
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="hint">{{ t('interface.cloneHint') }}</span>
+        </div>
+      </form>
+
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" @click="cloning = null">{{ t('action.cancel') }}</button>
+        <button type="submit" form="cl-form" class="btn primary" :disabled="cloneBusy">
+          <span v-if="cloneBusy" class="spin"></span>
+          <span v-else>{{ t('interface.clone') }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
