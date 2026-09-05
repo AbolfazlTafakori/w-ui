@@ -34,23 +34,21 @@ const nav = [
     key: 'nav.settings',
     icon: 'settings',
     children: [
-      // The order 3x-ui uses, because an operator who has run one panel should
-      // not have to learn where things moved to. Our own pages are placed
-      // inside it rather than appended: customer defaults belong next to the
-      // panel's own settings, and backups and system are the ones you go
-      // looking for last.
+      // Exactly 3x-ui's five, in its order. An operator who has run one panel
+      // should find these where they left them, and a settings menu that grows
+      // an entry every time something is added stops being a place you can
+      // find anything. Our own pages live under Maintenance instead.
       { to: '/settings/general', key: 'settings.tab.general', icon: 'settings' },
       { to: '/settings/security', key: 'settings.tab.security', icon: 'lock' },
-      { to: '/settings/clients', key: 'settings.tab.clients', icon: 'users' },
       { to: '/settings/notify', key: 'settings.tab.notify', icon: 'send' },
       { to: '/settings/email', key: 'settings.tab.email', icon: 'mail' },
-      // Was reachable only by typing the address: the page existed and nothing
-      // linked to it.
       { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'link' },
-      { to: '/settings/backups', key: 'settings.tab.backups', icon: 'database' },
-      { to: '/settings/system', key: 'settings.tab.system', icon: 'server' },
     ],
   },
+  // Everything that is about running the server rather than configuring the
+  // panel. Backups and the system report were in Settings and made it long;
+  // they are the pages you go to when something is wrong, not when you are
+  // setting something up.
   {
     key: 'nav.configs',
     icon: 'code',
@@ -58,6 +56,8 @@ const nav = [
       { to: '/configs/engine', key: 'nav.configs.engine', icon: 'shield' },
       { to: '/configs/templates', key: 'nav.configs.templates', icon: 'code' },
       { to: '/configs/logs', key: 'nav.configs.logs', icon: 'info' },
+      { to: '/settings/backups', key: 'settings.tab.backups', icon: 'database' },
+      { to: '/settings/system', key: 'settings.tab.system', icon: 'server' },
     ],
   },
   { to: '/api-docs', key: 'nav.api', icon: 'link' },

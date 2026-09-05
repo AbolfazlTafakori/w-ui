@@ -1371,6 +1371,42 @@ pre.config {
   border-start-start-radius: 0;
   border-start-end-radius: 0;
 }
+/* A small table inside a settings row: a handful of rows with a control on
+   each, not the full data table the list pages use. */
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+}
+.mini-table th {
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  text-align: start;
+}
+.mini-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.mini-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* A heading between groups of settings on one page, so a long page reads as
+   sections rather than as a list that goes on. */
+.setting-group {
+  margin: 24px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 .setting-row {
   display: flex;
   align-items: center;

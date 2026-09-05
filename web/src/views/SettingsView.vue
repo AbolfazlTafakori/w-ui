@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { api, apiURL, getToken } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
+import { relative } from '../lib/format.js'
 import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -66,22 +67,21 @@ const pw = ref({ current: '', next: '', confirm: '' })
 const pwBusy = ref(false)
 const pwError = ref('')
 
-// The same order as the menu, which is 3x-ui's with our own pages placed
-// inside it. The tabs along the top and the links down the side have to agree:
-// they are two ways to the same pages, and an operator who learns one order
-// should not meet another.
+// The same five as the menu, in the same order. The tabs along the top and the
+// links down the side are two ways to the same pages: an operator who learns
+// one order must not meet another.
 const tabs = [
   { key: 'general', icon: 'settings', label: 'settings.tab.general' },
   { key: 'security', icon: 'lock', label: 'settings.tab.security' },
-  { key: 'clients', icon: 'users', label: 'settings.tab.clients' },
   { key: 'notify', icon: 'send', label: 'settings.tab.notify' },
   { key: 'email', icon: 'mail', label: 'settings.tab.email' },
   { key: 'subscription', icon: 'link', label: 'settings.tab.subscription' },
-  { key: 'backups', icon: 'database', label: 'settings.tab.backups' },
-  { key: 'engine', icon: 'shield', label: 'settings.tab.engine' },
-  { key: 'logs', icon: 'info', label: 'settings.tab.logs' },
-  { key: 'system', icon: 'server', label: 'settings.tab.system' },
 ]
+
+// Pages this view still renders that are not part of that menu. They are
+// reached from Maintenance, and showing the settings tabs above them would
+// offer a row where nothing is selected.
+const asideTabs = ['backups', 'engine', 'logs', 'system']
 // The section can be named two ways: as a path, which is what the menu links
 // to, or as a hash, which is what older links and bookmarks carry. Both are
 // honoured so neither form breaks.
@@ -90,8 +90,11 @@ const props = defineProps({ tab: { type: String, default: '' } })
 const active = ref(known(props.tab) || tabFromHash())
 
 function known(slug) {
-  return tabs.some((x) => x.key === slug) ? slug : ''
+  return tabs.some((x) => x.key === slug) || asideTabs.includes(slug) ? slug : ''
 }
+
+// Whether the row of settings tabs belongs above this page.
+const inSettingsMenu = computed(() => tabs.some((x) => x.key === active.value))
 function tabFromHash() {
   return known((location.hash || '').replace(/^#/, '')) || 'general'
 }
@@ -121,6 +124,7 @@ function selectTab(key) {
 onMounted(() => {
   load()
   loadSub()
+  loadTokens()
 })
 
 async function load() {
@@ -306,6 +310,40 @@ const restoring = ref(null)
 const uploading = ref(false)
 // Which archive the confirmation is about, or null.
 const ask = ref(null)
+
+// Machine access to this panel.
+//
+// A token here can do everything an administrator can, so the list is on the
+// page about ways in rather than only on the page where one happens to be
+// issued. Revoking is immediate and cannot be undone, which is why it asks.
+const tokens = ref([])
+const revoking = ref(null)
+
+async function loadTokens() {
+  try {
+    tokens.value = await api.get('/api/tokens')
+  } catch {
+    // Not worth a message on a settings page that is showing other things
+    // successfully; the empty line says as much as an error would.
+    tokens.value = []
+  }
+}
+
+function revokeToken(tk) {
+  revoking.value = tk
+}
+
+async function doRevoke() {
+  const tk = revoking.value
+  revoking.value = null
+  try {
+    await api.del(`/api/tokens/${tk.id}`)
+    notify(t('settings.tokenRevoked', { n: tk.name }), 'success')
+    await loadTokens()
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
 
 async function restoreBackup(name) {
   restoring.value = name
@@ -581,6 +619,18 @@ async function changePassword() {
       @cancel="ask = null"
     />
 
+    <!-- Revoking is immediate: whatever was using that token stops working the
+         moment this is confirmed, and there is no undoing it. -->
+    <ConfirmDialog
+      :open="!!revoking"
+      :title="t('settings.revokeTitle')"
+      :body="t('settings.revokeBody', { n: revoking?.name || '' })"
+      :confirm-label="t('action.revoke')"
+      :danger="true"
+      @confirm="doRevoke"
+      @cancel="revoking = null"
+    />
+
     <!-- Raised when a link is clicked with an unsaved edit on the page. -->
     <ConfirmDialog
       :open="!!pendingRoute"
@@ -617,7 +667,7 @@ async function changePassword() {
       </p>
     </section>
 
-    <nav class="cat-tabs" role="tablist">
+    <nav v-if="inSettingsMenu" class="cat-tabs" role="tablist">
       <button
         v-for="tab in tabs"
         :key="tab.key"
@@ -671,10 +721,11 @@ async function changePassword() {
             <code class="readonly ltr">{{ info?.dbSource || '—' }}</code>
           </div>
         </div>
-      </template>
 
-      <!-- ── New customer defaults ── -->
-      <template v-else-if="active === 'clients'">
+        <!-- What a new customer starts with. Its own page before, which made
+             the settings menu longer than it needed to be for three fields
+             that are read once and rarely changed. -->
+        <h3 class="setting-group">{{ t('settings.tab.clients') }}</h3>
         <div class="setting-row">
           <div class="setting-meta">
             <div class="setting-title">
@@ -754,6 +805,8 @@ async function changePassword() {
           </div>
         </div>
       </template>
+
+
 
       <!-- ── Subscription ── -->
       <template v-else-if="active === 'subscription'">
@@ -837,6 +890,45 @@ async function changePassword() {
 
       <!-- ── Security ── -->
       <template v-else-if="active === 'security'">
+        <!-- Machine access to this panel. It was only on the Nodes page, where
+             it was reachable while adding a node and nowhere else: a credential
+             that can do everything an administrator can belongs with the other
+             ways in, so it can be looked at and revoked without a reason. -->
+        <div class="setting-row block">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.apiTokens') }}</div>
+            <p class="setting-desc">{{ t('settings.apiTokensDesc') }}</p>
+          </div>
+          <div class="setting-control wide">
+            <table v-if="tokens.length" class="mini-table">
+              <thead>
+                <tr>
+                  <th>{{ t('node.tokenName') }}</th>
+                  <th class="ltr">{{ t('settings.tokenPrefix') }}</th>
+                  <th>{{ t('settings.tokenLastUsed') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="tk in tokens" :key="tk.id">
+                  <td>{{ tk.name }}</td>
+                  <td><code class="ltr">{{ tk.prefix }}…</code></td>
+                  <!-- A token that has never been used is worth seeing: it is
+                       either not wired up yet, or it was forgotten. -->
+                  <td class="muted small">
+                    {{ tk.lastUsedAt ? relative(tk.lastUsedAt) : t('settings.tokenNeverUsed') }}
+                  </td>
+                  <td class="right">
+                    <button class="btn sm ghost danger" @click="revokeToken(tk)">
+                      {{ t('action.revoke') }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="muted small">{{ t('settings.noTokens') }}</p>
+          </div>
+        </div>
         <!-- This panel as a node: which panel is allowed to manage it. The
              token says the caller knows a secret and travels in every request;
              a certificate says which machine it is and its key never moves. -->
