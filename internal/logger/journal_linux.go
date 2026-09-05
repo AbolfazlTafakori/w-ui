@@ -71,6 +71,17 @@ func Journal(ctx context.Context, n int, minLevel, query string) ([]Entry, error
 		return nil, fmt.Errorf("could not read the system journal: %s", msg)
 	}
 
+	// journalctl exits zero when it has no permission to read anything, saying
+	// so only on stderr. Taking that as success returns an empty list, which
+	// reads as "nothing happened" rather than "this could not be read" — and
+	// the panel runs as its own user, which by default is exactly the case.
+	if msg := strings.TrimSpace(errBuf.String()); strings.Contains(msg, "insufficient permissions") {
+		return nil, fmt.Errorf(
+			"this panel's user cannot read the system journal. To allow it, run: " +
+				"usermod -aG systemd-journal wui && systemctl restart wui — " +
+				"note that this also lets the panel read other services' logs on this machine")
+	}
+
 	return parseJournal(out.Bytes(), minLevel, query), nil
 }
 
