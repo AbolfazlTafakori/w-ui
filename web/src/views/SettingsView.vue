@@ -595,7 +595,17 @@ async function changePassword() {
   </div>
 
 
-  <p v-if="showWait" class="muted">{{ t('common.loading') }}</p>
+  <!-- Settings rows are a label with a description on the left and a control
+       on the right, and that is what stands in for them. -->
+  <section v-if="showWait" class="card sk-rows" aria-hidden="true">
+    <div v-for="n in 6" :key="n" class="sk-row">
+      <div class="sk-row-meta">
+        <span class="sk" :style="{ width: 34 + ((n * 7) % 22) + '%' }"></span>
+        <span class="sk" :style="{ width: 62 + ((n * 5) % 26) + '%' }"></span>
+      </div>
+      <span class="sk sk-lg sk-row-control"></span>
+    </div>
+  </section>
   <div v-else-if="loading" class="empty"></div>
 
   <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />

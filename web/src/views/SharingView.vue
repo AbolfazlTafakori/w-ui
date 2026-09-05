@@ -70,7 +70,18 @@ const total = computed(() => reports.value.length)
     <p>{{ t('sharing.caveat') }}</p>
   </div>
 
-  <p v-if="showWait" class="muted">{{ t('common.loading') }}</p>
+  <!-- The table's own shape rather than the word "loading". A page that
+       collapses to one line and springs back to full height a moment later
+       reads as a glitch; this holds the space it is about to need. -->
+  <section v-if="showWait" class="card table-wrap" aria-hidden="true">
+    <table class="skeleton">
+      <tbody>
+        <tr v-for="n in 5" :key="n">
+          <td v-for="c in 5" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
   <div v-else-if="loading" class="empty"></div>
 
   <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />

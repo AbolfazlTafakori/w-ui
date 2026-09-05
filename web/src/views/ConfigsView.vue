@@ -129,7 +129,19 @@ async function copy() {
       <button class="btn" @click="refresh()">{{ t('action.retry') }}</button>
     </div>
 
-    <div v-else-if="showWait" class="empty"><span class="spin"></span></div>
+    <!-- A spinner said work was happening and nothing about what was coming.
+         These hold the shape of the page instead. -->
+    <div v-else-if="showWait && current === 'engine'" class="engine-grid" aria-hidden="true">
+      <div v-for="n in 4" :key="n" class="card sk-block">
+        <span class="sk sk-lg" style="width: 42%"></span>
+        <span class="sk" style="width: 70%"></span>
+        <span class="sk" style="width: 54%"></span>
+      </div>
+    </div>
+    <section v-else-if="showWait" class="card sk-block" aria-hidden="true">
+      <span class="sk sk-lg" style="width: 30%"></span>
+      <span class="sk sk-tall"></span>
+    </section>
     <div v-else-if="loading" class="empty"></div>
 
     <!-- ── engine ──────────────────────────────────────────────────────── -->

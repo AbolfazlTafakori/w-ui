@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { makeQR } from '../lib/qr.js'
+import { useDelayed } from '../lib/live.js'
 import { api, apiURL, getToken } from '../lib/api.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
@@ -13,6 +14,9 @@ const router = useRouter()
 
 const client = ref(null)
 const loading = ref(true)
+// Held back a moment. A skeleton that appears and vanishes inside a tenth of a
+// second is a flash, and a flash reads as a fault rather than as progress.
+const showSkeleton = useDelayed(loading)
 const profile = ref(null)
 const qr = ref('')
 // The size the code must be shown at, which comes from the code: see lib/qr.
@@ -199,7 +203,31 @@ async function copy(text) {
 </script>
 
 <template>
-  <div v-if="loading" class="card"><div class="empty"><span class="spin"></span></div></div>
+  <!-- The page's own shape: the customer's name, the plan figures across, then
+       a row for each device. A spinner in a short card made the page jump to
+       full height the moment it was replaced. -->
+  <template v-if="showSkeleton">
+    <div class="page-head" aria-hidden="true">
+      <div>
+        <span class="sk" style="width: 90px"></span>
+        <span class="sk sk-lg" style="width: 190px"></span>
+      </div>
+    </div>
+    <section class="card sk-block" aria-hidden="true">
+      <div class="sk-stats">
+        <span v-for="n in 4" :key="n" class="sk sk-lg"></span>
+      </div>
+    </section>
+    <section class="card sk-rows" aria-hidden="true">
+      <div v-for="n in 3" :key="n" class="sk-row">
+        <div class="sk-row-meta">
+          <span class="sk" style="width: 42%"></span>
+          <span class="sk" style="width: 68%"></span>
+        </div>
+        <span class="sk sk-lg sk-row-control"></span>
+      </div>
+    </section>
+  </template>
 
   <template v-else-if="client">
     <div class="page-head">

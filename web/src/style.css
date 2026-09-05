@@ -3571,6 +3571,62 @@ table.skeleton td:nth-child(9) .sk { width: 55%; }
   height: 22px;
   margin-block: 4px;
 }
+
+/* Shapes for the pages that are not tables. Each stands in for what is about
+   to arrive, so the page holds the height it will need rather than collapsing
+   to one line and springing back. */
+.sk-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+.sk-block .sk {
+  width: 100%;
+}
+/* A label with its description on one side, a control on the other: the shape
+   of a settings row and of a device row. */
+.sk-rows {
+  padding: 6px 18px;
+}
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sk-row:last-child {
+  border-bottom: 0;
+}
+.sk-row-meta {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 9px;
+}
+.sk-row-control {
+  width: 120px;
+  flex: none;
+}
+/* Figures side by side, as a plan is shown. */
+.sk-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 18px;
+}
+
+/* The sweep starts a little later further down, so a block reads as one
+   surface catching light rather than as bars pulsing in lockstep. */
+.sk-block .sk:nth-child(2n),
+.sk-row:nth-child(2n) .sk {
+  animation-delay: 0.12s;
+}
+.sk-block .sk:nth-child(3n),
+.sk-row:nth-child(3n) .sk {
+  animation-delay: 0.24s;
+}
 .sk-chart {
   height: 62px;
   margin-top: 10px;

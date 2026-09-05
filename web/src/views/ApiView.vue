@@ -97,7 +97,22 @@ const methodTone = (m) =>
     </div>
   </div>
 
-  <p v-if="showWait" class="muted">{{ t('common.loading') }}</p>
+  <!-- Roughly what arrives: the authentication note, the search box, then the
+       routes grouped under their headings. -->
+  <template v-if="showWait">
+    <section class="card sk-block" aria-hidden="true">
+      <span class="sk sk-lg" style="width: 34%"></span>
+      <span class="sk" style="width: 76%"></span>
+      <span class="sk sk-tall"></span>
+    </section>
+    <section class="card sk-block" aria-hidden="true">
+      <span class="sk sk-lg"></span>
+    </section>
+    <section v-for="g in 3" :key="g" class="card sk-block" aria-hidden="true">
+      <span class="sk sk-lg" style="width: 22%"></span>
+      <span v-for="n in 4" :key="n" class="sk" :style="{ width: 88 - n * 9 + '%' }"></span>
+    </section>
+  </template>
   <div v-else-if="loading" class="empty"></div>
 
   <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
