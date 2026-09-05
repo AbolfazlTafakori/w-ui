@@ -183,9 +183,19 @@ func LogRequests(log *slog.Logger, next http.Handler) http.Handler {
 		} else if rec.status >= 400 {
 			level = slog.LevelWarn
 		}
-		log.Log(r.Context(), level, "request",
+		attrs := []any{
 			"method", r.Method, "path", r.URL.Path,
-			"status", rec.status, "duration", time.Since(start))
+			"status", rec.status, "duration", time.Since(start),
+		}
+		// Only when something went wrong. A refused sign-in or a scan is the
+		// line an operator goes looking for afterwards, and without an address
+		// it says only that somebody, somewhere, tried. Left off the ordinary
+		// ones so a panel's debug log is not a record of where its operator
+		// works from, kept for as long as the journal keeps anything.
+		if rec.status >= 400 {
+			attrs = append(attrs, "ip", clientIP(r))
+		}
+		log.Log(r.Context(), level, "request", attrs...)
 	})
 }
 
