@@ -680,6 +680,11 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         <button class="btn sm ghost" :title="t('overview.backupTitle')" @click="openBackup">
           <Icon name="database" :size="14" /><span class="lbl">{{ t('settings.backup') }}</span>
         </button>
+        <!-- The system report is reached from the page about this server. It
+             was in the settings menu, which is for settings. -->
+        <RouterLink to="/settings/system" class="btn sm ghost" :title="t('settings.tab.system')">
+          <Icon name="server" :size="14" /><span class="lbl">{{ t('settings.tab.system') }}</span>
+        </RouterLink>
         <RouterLink to="/settings" class="btn sm ghost" :title="t('nav.settings')">
           <Icon name="settings" :size="14" /><span class="lbl">{{ t('nav.settings') }}</span>
         </RouterLink>
@@ -1122,6 +1127,12 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
                    :disabled="!!backup.working" @change="importBackup" />
           </label>
         </div>
+
+        <!-- Out to the older archives, from the dialog somebody who wants one
+             is already in. -->
+        <RouterLink to="/settings/backups" class="bk-all" @click="backup = null">
+          {{ t('overview.allBackups') }}
+        </RouterLink>
 
         <!-- The one that matters when a panel moves house: the addresses in an
              archive name the server it was taken on. -->

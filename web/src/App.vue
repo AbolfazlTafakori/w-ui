@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
-import { store, t, notify, signOut, loadMessages } from './lib/store.js'
+import { store, t, notify, signOut } from './lib/store.js'
 import Icon from './components/Icon.vue'
 import { themeMode, cycleTheme } from './lib/theme.js'
 
@@ -35,9 +35,10 @@ const nav = [
     icon: 'settings',
     children: [
       // Exactly 3x-ui's five, in its order. An operator who has run one panel
-      // should find these where they left them, and a settings menu that grows
-      // an entry every time something is added stops being a place you can
-      // find anything. Our own pages live under Maintenance instead.
+      // should find these where they left them, and a menu that grows an entry
+      // every time something is added stops being a place anyone can find
+      // anything. The language is chosen on the General page, as it is there,
+      // rather than being a line in the menu as well.
       { to: '/settings/general', key: 'settings.tab.general', icon: 'settings' },
       { to: '/settings/security', key: 'settings.tab.security', icon: 'lock' },
       { to: '/settings/notify', key: 'settings.tab.notify', icon: 'send' },
@@ -45,10 +46,6 @@ const nav = [
       { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'link' },
     ],
   },
-  // Everything that is about running the server rather than configuring the
-  // panel. Backups and the system report were in Settings and made it long;
-  // they are the pages you go to when something is wrong, not when you are
-  // setting something up.
   {
     key: 'nav.configs',
     icon: 'code',
@@ -56,8 +53,6 @@ const nav = [
       { to: '/configs/engine', key: 'nav.configs.engine', icon: 'shield' },
       { to: '/configs/templates', key: 'nav.configs.templates', icon: 'code' },
       { to: '/configs/logs', key: 'nav.configs.logs', icon: 'info' },
-      { to: '/settings/backups', key: 'settings.tab.backups', icon: 'database' },
-      { to: '/settings/system', key: 'settings.tab.system', icon: 'server' },
     ],
   },
   { to: '/api-docs', key: 'nav.api', icon: 'link' },
@@ -151,10 +146,6 @@ watch(drawerOpen, (open) => {
 function isActive(item) {
   const path = router.currentRoute.value.path
   return item.exact ? path === item.to : path.startsWith(item.to)
-}
-
-async function switchLocale(event) {
-  await loadMessages(event.target.value)
 }
 
 function handleSignOut() {
@@ -319,17 +310,6 @@ function reload() {
       </nav>
 
       <div class="sider-utility">
-        <label class="navlink as-select" :title="t('nav.language')">
-          <Icon name="translate" :size="16" />
-          <span v-show="expanded" class="label">
-            <select :value="store.locale" :aria-label="t('nav.language')" @change="switchLocale">
-              <option v-for="l in store.meta?.locales || ['en']" :key="l" :value="l">
-                {{ l === 'fa' ? 'فارسی' : 'English' }}
-              </option>
-            </select>
-          </span>
-        </label>
-
         <button
           class="navlink as-button"
           type="button"
@@ -383,16 +363,6 @@ function reload() {
           </nav>
 
           <div class="drawer-utility">
-            <label class="navlink as-select">
-              <Icon name="translate" :size="16" />
-              <span class="label">
-                <select :value="store.locale" :aria-label="t('nav.language')" @change="switchLocale">
-                  <option v-for="l in store.meta?.locales || ['en']" :key="l" :value="l">
-                    {{ l === 'fa' ? 'فارسی' : 'English' }}
-                  </option>
-                </select>
-              </span>
-            </label>
             <button class="navlink as-button" type="button" @click="handleSignOut">
               <Icon name="logout" :size="16" />
               <span class="label">{{ t('auth.signOut') }}</span>

@@ -686,6 +686,7 @@
   "update.unsigned": "This build carries no release-signing key, so it will not install an update. That is deliberate: a panel that installed an unverified binary would be worse than one that does not update.",
   "update.upToDate": "This is the newest release.",
   "update.whatHappens": "The panel downloads the release itself, checks it against a signing key built into this binary, replaces itself and restarts. Nothing unsigned is ever written to disk. Customers stay connected: the tunnels are in the kernel and outlive the panel process.",
+  "overview.allBackups": "All backups →",
   "overview.backupTaken": "Backup taken: {name}",
   "logs.level": "Level",
   "logs.all": "Everything",

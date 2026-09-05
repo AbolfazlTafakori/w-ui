@@ -3686,6 +3686,16 @@ tbody tr.decided .step {
 .bk-item .btn {
   flex: 0 0 auto;
 }
+/* Out to the full list, for the archives older than the last one. */
+.bk-all {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-size: var(--t-sm);
+}
+.bk-all:hover {
+  text-decoration: underline;
+}
 .bk-keep {
   display: flex;
   align-items: flex-start;
