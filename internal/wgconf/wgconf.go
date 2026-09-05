@@ -99,26 +99,23 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 	return b.String()
 }
 
-// RenderServer produces the interface's own configuration.
+// RenderServer produces what `awg setconf` and `awg syncconf` accept.
 //
-// This is what `awg syncconf` is fed for an AmneziaWG interface, and what an
-// operator copies to /etc/wireguard when running the tunnel by hand. Standard
-// WireGuard interfaces are configured over netlink instead and never need it,
-// but it is still shown in the panel so the server side is inspectable.
-func RenderServer(iface *model.Interface, peers []Peer) (string, error) {
-	gw, bits, err := Gateway(iface.Subnet)
-	if err != nil {
-		return "", err
-	}
-
+// This is the device's own configuration and nothing else. Address, MTU, DNS
+// and the PostUp rules belong to wg-quick, which reads them itself and then
+// calls this same tool without them. Passing them here is answered with "Line
+// unrecognized" and the whole file is rejected, leaving a tunnel that exists
+// and carries nothing. The copyable wg-quick file an operator sees in the panel
+// is RenderServerHuman: a different format for a different reader.
+//
+// Standard WireGuard interfaces are configured over netlink and never need
+// this. It is the only way to reach an AmneziaWG one, whose obfuscation
+// parameters netlink knows nothing about.
+func RenderServer(iface *model.Interface, peers []Peer) string {
 	var b strings.Builder
 	b.WriteString("[Interface]\n")
-	fmt.Fprintf(&b, "Address = %s/%d\n", gw, bits)
 	fmt.Fprintf(&b, "ListenPort = %d\n", iface.ListenPort)
 	fmt.Fprintf(&b, "PrivateKey = %s\n", iface.PrivateKey)
-	if iface.MTU > 0 {
-		fmt.Fprintf(&b, "MTU = %d\n", iface.MTU)
-	}
 
 	if iface.Mode == model.ModeAmnezia {
 		b.WriteString("\n# AmneziaWG obfuscation — must match every client exactly\n")
@@ -139,7 +136,7 @@ func RenderServer(iface *model.Interface, peers []Peer) (string, error) {
 		fmt.Fprintf(&b, "AllowedIPs = %s\n", p.AllowedIP)
 	}
 
-	return b.String(), nil
+	return b.String()
 }
 
 // RenderServerHuman is the copyable version shown in the panel, with the key

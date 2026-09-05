@@ -1,8 +1,10 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -18,8 +20,23 @@ import (
 // and a port held by a process that is currently stopped looks free. It catches
 // the ordinary case, which is a port already in use right now.
 
-// portInUse reports whether anything is listening on a UDP or TCP port.
-func portInUse(port int, transport string) (bool, string) {
+// portStatus is what an attempt to bind the port found.
+type portStatus int
+
+const (
+	portFree portStatus = iota
+	portTaken
+	portNotPermitted
+)
+
+// probePort reports whether anything is listening on a UDP or TCP port.
+//
+// A refusal is not always a busy port. The panel runs unprivileged, so
+// anything below 1024 comes back denied whether or not it is free, and the two
+// have to be told apart: 443 is the most useful port a tunnel can have on a
+// network that blocks by port, and being told it is "already in use" sends an
+// operator hunting for a program that is not there.
+func probePort(port int, transport string) (portStatus, string) {
 	network := "udp"
 	if strings.EqualFold(transport, "tcp") {
 		network = "tcp"
@@ -30,31 +47,47 @@ func portInUse(port int, transport string) (bool, string) {
 	// them, and binding to a single address would not notice.
 	addr := fmt.Sprintf(":%d", port)
 
+	var err error
 	if network == "tcp" {
-		l, err := net.Listen("tcp", addr)
-		if err != nil {
-			return true, err.Error()
+		var l net.Listener
+		if l, err = net.Listen("tcp", addr); err == nil {
+			_ = l.Close()
 		}
-		_ = l.Close()
-		return false, ""
+	} else {
+		var c net.PacketConn
+		if c, err = net.ListenPacket("udp", addr); err == nil {
+			_ = c.Close()
+		}
 	}
 
-	c, err := net.ListenPacket("udp", addr)
-	if err != nil {
-		return true, err.Error()
+	switch {
+	case err == nil:
+		return portFree, ""
+	case errors.Is(err, os.ErrPermission):
+		return portNotPermitted, err.Error()
+	default:
+		return portTaken, err.Error()
 	}
-	_ = c.Close()
-	return false, ""
 }
 
-// checkPortFree returns a readable error when a port is already taken.
+// checkPortFree returns a readable error when a port cannot be claimed.
 func checkPortFree(port int, transport string) error {
-	inUse, reason := portInUse(port, transport)
-	if !inUse {
+	switch status, reason := probePort(port, transport); status {
+	case portFree:
 		return nil
+	case portNotPermitted:
+		// Said as the thing to fix rather than as a refusal. A tunnel on 443 is
+		// often the only one that gets through, and one line in the service
+		// file is all that stands in the way.
+		return fmt.Errorf("%w: the panel is not allowed to bind port %d (%s). "+
+			"Ports below 1024 need CAP_NET_BIND_SERVICE, which this service does "+
+			"not have. Add it to the panel's systemd unit and restart, or choose "+
+			"a port above 1024",
+			ErrInvalid, port, reason)
+	default:
+		return fmt.Errorf("%w: port %d is already in use on this server (%s). "+
+			"Something else is listening there — another VPN, or another program. "+
+			"Choose a different port",
+			ErrInvalid, port, reason)
 	}
-	return fmt.Errorf("%w: port %d is already in use on this server (%s). "+
-		"Something else is listening there — another VPN, or another program. "+
-		"Choose a different port",
-		ErrInvalid, port, reason)
 }

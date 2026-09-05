@@ -1639,10 +1639,13 @@ User=$SERVICE_USER
 Group=$SERVICE_USER
 
 # The panel programs nftables and WireGuard through netlink, which needs
-# CAP_NET_ADMIN. Granting exactly that instead of running as root keeps a
-# compromised panel from owning the whole machine.
-AmbientCapabilities=CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_NET_ADMIN
+# CAP_NET_ADMIN. CAP_NET_BIND_SERVICE is for the tunnels themselves: a tunnel on
+# UDP 443 is often the only one that survives a network which blocks by port,
+# and a userspace tunnel binds that socket in this process. Granting exactly
+# these two instead of running as root keeps a compromised panel from owning the
+# whole machine.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 
 Environment=WUI_LISTEN=$LISTEN_ADDR:$PANEL_PORT

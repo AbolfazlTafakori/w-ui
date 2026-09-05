@@ -61,10 +61,7 @@ func TestClientRoutesEverythingThroughTheTunnel(t *testing.T) {
 func TestObfuscationMatchesOnBothSides(t *testing.T) {
 	iface := testIface(model.ModeAmnezia)
 	client := RenderClient(testAccount(), iface)
-	server, err := RenderServer(iface, nil)
-	if err != nil {
-		t.Fatalf("server: %v", err)
-	}
+	server := RenderServer(iface, nil)
 
 	// S1-S4 and the H values must be byte-identical at both ends, or every
 	// handshake fails with nothing in the logs to explain it.
@@ -92,17 +89,11 @@ func TestStandardModeEmitsNoObfuscation(t *testing.T) {
 }
 
 func TestServerConfinesEachPeerToItsOwnAddress(t *testing.T) {
-	got, err := RenderServer(testIface(model.ModeStandard), []Peer{
+	got := RenderServer(testIface(model.ModeStandard), []Peer{
 		{PublicKey: "A", AllowedIP: "10.66.0.2/32"},
 		{PublicKey: "B", AllowedIP: "10.66.0.3/32", PresharedKey: "PSK"},
 	})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
 
-	if !strings.Contains(got, "Address = 10.66.0.1/16") {
-		t.Error("server did not take the gateway address")
-	}
 	// On the server side AllowedIPs is a filter. A wide mask would let one
 	// customer send as another and have the traffic billed to them.
 	if !strings.Contains(got, "AllowedIPs = 10.66.0.2/32") ||
@@ -131,7 +122,36 @@ func TestServerHumanCopyWithholdsThePrivateKey(t *testing.T) {
 func TestBadSubnetIsRejected(t *testing.T) {
 	iface := testIface(model.ModeStandard)
 	iface.Subnet = "not-a-subnet"
-	if _, err := RenderServer(iface, nil); err == nil {
+	// The gateway address is only worked out for the wg-quick file; the device
+	// configuration has no address in it at all.
+	if _, err := RenderServerHuman(iface, "eth0"); err == nil {
 		t.Error("an unparseable subnet was accepted")
+	}
+}
+
+// The device configuration must carry nothing wg-quick-only.
+//
+// awg setconf and syncconf answer an Address or MTU line with "Line
+// unrecognized" and reject the whole file. The interface is still created and
+// still reported as configured, so the tunnel exists, has no peers and no key,
+// and carries nothing — a failure that only shows up as a customer who cannot
+// connect.
+func TestTheDeviceConfigurationHasNothingWgQuickOnly(t *testing.T) {
+	iface := testIface(model.ModeAmnezia)
+	iface.MTU = 1320
+	iface.DNS = "1.1.1.1"
+
+	got := RenderServer(iface, []Peer{{PublicKey: "A", AllowedIP: "10.66.0.2/32"}})
+
+	for _, banned := range []string{"Address", "MTU", "DNS", "PostUp", "PostDown"} {
+		if strings.Contains(got, banned+" =") {
+			t.Errorf("the device configuration carries %q, which awg rejects:\n%s", banned, got)
+		}
+	}
+	// And it still carries what the device actually needs.
+	for _, wanted := range []string{"ListenPort =", "PrivateKey =", "PublicKey =", "S1 =", "H4 ="} {
+		if !strings.Contains(got, wanted) {
+			t.Errorf("the device configuration is missing %q", wanted)
+		}
 	}
 }

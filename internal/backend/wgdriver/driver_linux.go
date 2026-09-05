@@ -219,10 +219,7 @@ func (d *Driver) configureDevice(ctx context.Context, iface *model.Interface) er
 // drops all live sessions. syncconf changes only what differs, so customers who
 // were not touched keep their connection.
 func (d *Driver) syncConfFile(ctx context.Context, iface *model.Interface, peers []wgconf.Peer) error {
-	text, err := wgconf.RenderServer(iface, peers)
-	if err != nil {
-		return err
-	}
+	text := wgconf.RenderServer(iface, peers)
 
 	// 0600 because the file carries the server's private key for as long as it
 	// exists, which is a few milliseconds but still on disk.

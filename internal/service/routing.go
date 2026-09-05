@@ -394,6 +394,7 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	for _, i := range ifaces {
 		if pfx, err := netip.ParsePrefix(i.Subnet); err == nil {
 			p.CustomerNets = append(p.CustomerNets, pfx)
+			p.TunnelDevices = append(p.TunnelDevices, i.Name)
 		}
 	}
 

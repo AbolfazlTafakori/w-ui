@@ -115,6 +115,10 @@ type Policy struct {
 	// came from one of them, so nothing this panel does can reach the routing
 	// of any other service sharing the machine.
 	CustomerNets []netip.Prefix
+
+	// TunnelDevices are the interface names those subnets live on. Used only
+	// to keep customer-to-customer traffic out of the masquerade: see nat.go.
+	TunnelDevices []string
 }
 
 // PortRange is an inclusive range. A single port has From == To.

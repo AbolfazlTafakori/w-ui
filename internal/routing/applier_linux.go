@@ -33,11 +33,12 @@ var ErrUnavailable = errors.New("routing: policy routing unavailable")
 type Applier struct {
 	log *slog.Logger
 
-	mu       sync.Mutex
-	applied  string // last nft program written
-	appliedP string // fingerprint of the last routing plan
-	lastErr  error
-	ready    bool
+	mu         sync.Mutex
+	applied    string // last nft program written
+	appliedNAT string // last masquerade program written
+	appliedP   string // fingerprint of the last routing plan
+	lastErr    error
+	ready      bool
 }
 
 // NewApplier builds an applier for this host.
@@ -63,6 +64,10 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 		a.mu.Unlock()
 		a.log.Info("routing policy applied",
 			"rules", len(p.Rules), "hops", len(p.Hops))
+	}
+
+	if err := a.applyNAT(ctx, p); err != nil {
+		return err
 	}
 
 	plan := BuildPlan(p.Hops)
@@ -97,6 +102,36 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 	a.ready = true
 	a.lastErr = nil
 	a.mu.Unlock()
+	return nil
+}
+
+// applyNAT rewrites the source address of traffic leaving a tunnel.
+//
+// Kept apart from the steering program because it can fail on its own: a kernel
+// without nat support loses this and keeps its routing, rather than losing
+// both. The failure is reported rather than swallowed -- without it customers
+// connect, handshake, and reach nothing, which is indistinguishable from a
+// tunnel that is simply broken.
+func (a *Applier) applyNAT(ctx context.Context, p Policy) error {
+	script := BuildNAT(p.CustomerNets, p.TunnelDevices)
+
+	a.mu.Lock()
+	same := script == a.appliedNAT
+	a.mu.Unlock()
+	if same {
+		return nil
+	}
+
+	if _, err := a.runNFT(ctx, script, "-f", "-"); err != nil {
+		return fmt.Errorf("routing: customers cannot reach anything outside the "+
+			"tunnel until this is applied: %w", err)
+	}
+
+	a.mu.Lock()
+	a.appliedNAT = script
+	a.mu.Unlock()
+	a.log.Info("tunnel egress translated",
+		"subnets", len(p.CustomerNets), "tunnels", len(p.TunnelDevices))
 	return nil
 }
 
