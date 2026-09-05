@@ -698,9 +698,35 @@ read_existing() {
   if [[ -n "$v" && "$BASE_KNOWN" == 0 ]]; then BASE_PATH="$v"; BASE_KNOWN=1; fi
 }
 
+# Say plainly what a re-run does, because the wrong idea about it is the one
+# that causes real damage.
+#
+# A panel on this machine is upgraded in place: same port, same path, same data.
+# The installer cannot produce a second panel and should not — two on one
+# machine overwrite each other's firewall rules with neither noticing, and the
+# panel refuses to start rather than let that happen.
+#
+# The mistake worth heading off is "I will add a node to this server". A node is
+# another panel; it belongs on another machine.
+announce_existing() {
+  [[ -f "$UNIT" ]] || return 0
+
+  local state="installed"
+  if have_systemd && systemctl is-active --quiet wui.service 2>/dev/null; then
+    state="installed and running"
+  fi
+
+  tty_out '\n%s%sA panel is already %s on this machine.%s\n' "$B" "$Y" "$state" "$N"
+  tty_out '%sThis will upgrade it, keeping its port, its path and its data.%s\n' "$D" "$N"
+  tty_out '%sIt cannot add a second panel: two on one machine overwrite each%s\n' "$D" "$N"
+  tty_out "%sother's firewall rules, so the second one refuses to start. A node%s\n" "$D" "$N"
+  tty_out '%sis another panel and belongs on another machine.%s\n\n' "$D" "$N"
+}
+
 configure() {
   open_tty
   read_existing
+  announce_existing
 
   if [[ "$INTERACTIVE" != 1 ]]; then
     # Said, not silently assumed. An operator who piped this from a file and

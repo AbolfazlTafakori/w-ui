@@ -38,6 +38,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/shaper"
+	"github.com/abolfazl/w-ui/internal/single"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
 	"github.com/abolfazl/w-ui/internal/web"
 )
@@ -73,6 +74,20 @@ func run() error {
 		return err
 	}
 	log.Info("starting", "version", version, "listen", cfg.Listen, "scheme", cfg.Scheme())
+
+	// Before anything else, and before the database is even opened.
+	//
+	// Two panels on one machine overwrite each other's firewall rules without
+	// either noticing, which is a panel that looks healthy and enforces
+	// nothing. Refusing to start is the only honest answer, and it has to come
+	// first: a second panel that got as far as migrating a database or opening
+	// an interface has already changed things.
+	held, err := single.Claim(fmt.Sprintf("pid %d, data %s, listening on %s",
+		os.Getpid(), cfg.DataDir, cfg.Listen))
+	if err != nil {
+		return err
+	}
+	defer held.Release()
 
 	catalog, err := i18n.Load()
 	if err != nil {
