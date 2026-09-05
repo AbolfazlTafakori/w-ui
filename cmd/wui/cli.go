@@ -40,6 +40,10 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, cmdSetting(args[1:])
 	case "admin":
 		return true, cmdAdmin(args[1:])
+	case "keygen":
+		return true, keygenCommand(args[1:])
+	case "sign":
+		return true, signCommand(args[1:])
 	case "version", "-v", "--version":
 		fmt.Println(version)
 		return true, nil
@@ -59,6 +63,8 @@ Usage:
   wui setting show --json          the same, as JSON
   wui admin reset [flags]          reset the administrator account
   wui version                      print the version
+  wui keygen                       make a release-signing key pair
+  wui sign <binary>                sign a build, for a release
 
 Flags for "admin reset":
   --username NAME    the administrator's name (default: keep the current one)

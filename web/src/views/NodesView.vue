@@ -82,6 +82,29 @@ function openEdit(n) {
   dialog.value = { kind: 'edit', node: n }
 }
 
+// Asking a node to update its own panel.
+//
+// The answer is passed back whole: "this build carries no release-signing key"
+// is something an operator can act on, and is a different problem from the node
+// not answering at all.
+async function askNodeUpdate(node) {
+  ask.value = {
+    title: t('update.askNodeTitle'),
+    subject: node.name,
+    body: t('update.askNodeBody'),
+    confirmLabel: t('update.install'),
+    run: async () => {
+      const res = await api.post(`/api/nodes/${node.id}/update`)
+      if (res?.updated) {
+        notify(t('update.nodeUpdated').replace('{v}', res.to || ''), 'ok')
+      } else {
+        notify(res?.notice || t('update.upToDate'), 'ok')
+      }
+      await load()
+    },
+  }
+}
+
 const pinBusy = ref(false)
 
 // This panel's own authority, which an operator copies once into each node.
@@ -393,6 +416,17 @@ function latencyTone(ms) {
               >
                 <span v-if="isPending(n.id)" class="spin sm"></span>
                 <Icon v-else name="refresh" :size="16" />
+              </button>
+              <!-- No binary travels from here. The node fetches the release
+                   itself and checks the signature, so taking this panel does
+                   not mean running code of your choosing on every node. -->
+              <button
+                class="act"
+                :title="t('update.askNode')"
+                :disabled="n.kind === 'local' || isPending(n.id)"
+                @click="askNodeUpdate(n)"
+              >
+                <Icon name="download" :size="16" />
               </button>
               <button
                 class="act"

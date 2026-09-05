@@ -445,6 +445,22 @@ func (s *Server) routes() []Route {
 				"an AmneziaWG copy gets a fresh obfuscation profile — sharing one would " +
 				"mean both tunnels blocked by the same rule.",
 			handler: s.handleCloneInterface},
+		{Method: "GET", Path: "/api/system/update", Group: "Server", Auth: true,
+			Summary: "What release is available, and whether this build can install one.",
+			Note: "A build with no release-signing key cannot install anything, and says " +
+				"so here rather than when the button is pressed.",
+			handler: s.handleUpdateAvailable},
+		{Method: "POST", Path: "/api/system/update", Group: "Server", Auth: true,
+			Summary: "Fetch the newest release, check its signature, install it and restart.",
+			Note: "The panel downloads it itself and verifies it against a key built into " +
+				"this binary. Nothing unsigned is ever written to disk.",
+			handler: s.handleSelfUpdate},
+		{Method: "POST", Path: "/api/nodes/{id}/update", Group: "Nodes", Auth: true,
+			Summary: "Ask a node to update its own panel.",
+			Note: "No binary travels from here: the node fetches the release itself and " +
+				"checks the signature, so taking this panel does not mean running code " +
+				"of your choosing on every node.",
+			handler: s.handleUpgradeNode},
 		{Method: "GET", Path: "/api/nodes/mtls/authority", Group: "Nodes", Auth: true,
 			Summary: "This panel's node authority, to paste into a node.",
 			Note: "The public half only; the key stays here, which is why a certificate " +

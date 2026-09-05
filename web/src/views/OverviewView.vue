@@ -553,6 +553,53 @@ function historyLabel(l) {
   return l.label.includes('.') ? t(l.label) : l.label
 }
 
+// Whether there is a newer release, and whether this build could install it.
+//
+// A build with no signing key cannot, and says so instead of offering a button
+// that fails: refusing to install something nobody vouched for is the point,
+// not an accident.
+const update = ref(null)
+const updateBusy = ref(false)
+
+async function loadUpdate() {
+  try {
+    update.value = await api.get('/api/system/update')
+  } catch {
+    // Quiet. The release list being unreachable is not something to interrupt
+    // an operator looking at their own server for.
+    update.value = null
+  }
+}
+
+function openUpdate() {
+  loadUpdate()
+  updateOpen.value = true
+}
+
+const updateOpen = ref(false)
+
+async function applyUpdate() {
+  updateBusy.value = true
+  try {
+    const res = await api.post('/api/system/update')
+    if (res?.updated) {
+      notify(t('update.installed').replace('{v}', res.to), 'ok')
+      // The panel is replacing itself and will be gone for a moment. Reloading
+      // straight away would land on a closed port.
+      setTimeout(() => window.location.reload(), 6000)
+    } else {
+      notify(res?.notice || t('update.upToDate'), 'ok')
+      updateOpen.value = false
+    }
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    updateBusy.value = false
+  }
+}
+
+onMounted(loadUpdate)
+
 const ipv4 = computed(() => (sys.value?.ipv4 || [])[0] || '\u2014')
 const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 </script>
@@ -604,7 +651,12 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
           <i v-if="tunnelsUp" class="dot"></i>
           {{ t('overview.tunnels') }}: {{ tunnelsUp }} / {{ ifaces.length }}
         </span>
-        <span class="ov-version ltr" :title="t('overview.panelVersion')">{{ panel.version }}</span>
+        <button class="ov-version ltr" :title="t('update.check')" @click="openUpdate">
+          {{ panel.version }}
+          <!-- Only when there is something to install. A dot that is always
+               there is a dot nobody looks at. -->
+          <i v-if="update?.available" class="ov-version-dot"></i>
+        </button>
 
         <button class="btn sm ghost" :title="t('overview.restartAllHint')"
                 :disabled="planeBusy || !ifaces.length" @click="restartTunnels">
@@ -898,6 +950,49 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         </table>
       </div>
     </article>
+  </div>
+
+  <!-- What release is available, and what installing it involves. -->
+  <div v-if="updateOpen" class="modal-backdrop" @click.self="updateOpen = false">
+    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="up-title">
+      <div class="card-head">
+        <h2 id="up-title">{{ t('update.title') }}</h2>
+        <button class="btn sm icon ghost spacer" :aria-label="t('common.close')" @click="updateOpen = false">
+          <Icon name="close" :size="15" />
+        </button>
+      </div>
+
+      <div class="card-body">
+        <p class="muted small ltr">
+          {{ t('update.running') }}: <b>{{ update?.current || panel.version }}</b>
+          <template v-if="update?.latest"> · {{ t('update.newest') }}: <b>{{ update.latest }}</b></template>
+        </p>
+
+        <p v-if="update?.notice" class="log-notice">{{ update.notice }}</p>
+
+        <!-- Said before the button rather than after pressing it. -->
+        <p v-if="update && !update.signed" class="log-notice">{{ t('update.unsigned') }}</p>
+
+        <p v-else-if="update && !update.available" class="muted">{{ t('update.upToDate') }}</p>
+
+        <template v-else-if="update?.available">
+          <p class="hint">{{ t('update.whatHappens') }}</p>
+          <pre v-if="update.notes" class="update-notes ltr">{{ update.notes }}</pre>
+        </template>
+      </div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" @click="updateOpen = false">{{ t('action.cancel') }}</button>
+        <button
+          class="btn primary"
+          :disabled="updateBusy || !update?.available || !update?.signed"
+          @click="applyUpdate"
+        >
+          <span v-if="updateBusy" class="spin"></span>
+          <span v-else>{{ t('update.install') }}</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- What this server has been doing, rather than what it is doing now. The

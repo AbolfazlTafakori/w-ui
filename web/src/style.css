@@ -3876,3 +3876,38 @@ textarea.mono {
   flex: 1;
 }
 
+/* The version, which is also the way to an update. A button rather than text,
+   with a mark on it only when there is something to install. */
+button.ov-version {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  cursor: pointer;
+}
+button.ov-version:hover {
+  color: var(--ink-2);
+}
+.ov-version-dot {
+  position: absolute;
+  top: -1px;
+  inset-inline-end: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* Release notes, as the project wrote them. */
+.update-notes {
+  max-height: 220px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
