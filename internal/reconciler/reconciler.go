@@ -490,6 +490,14 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 		}
 		rep, err := b.Sync(ctx, want)
 		if err != nil {
+			// A cancelled context is the panel shutting down, not a fault.
+			// Logged as an error it made every restart look like something
+			// broke, which is how a real failure gets read past.
+			if ctx.Err() != nil {
+				r.log.Debug("driver sync stopped by shutdown",
+					"interface", ifaceID, "error", err)
+				continue
+			}
 			// One broken interface must not stop the others from being
 			// reconciled, so this is logged and the loop continues.
 			r.log.Error("driver sync failed", "interface", ifaceID, "error", err)
