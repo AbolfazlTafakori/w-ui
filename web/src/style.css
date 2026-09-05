@@ -762,6 +762,21 @@ select:disabled {
 select {
   cursor: pointer;
 }
+
+/* A checkbox is not a text field and the rule above is not for it: full width
+   and a 38px minimum height stretch a tick box into a rectangle, and the
+   browser's own accent leaves a bright blue control on a panel that has none
+   anywhere else. */
+input[type='checkbox'],
+input[type='radio'] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  flex: 0 0 auto;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 option {
   background: var(--surface-2);
   color: var(--ink);
@@ -3599,3 +3614,82 @@ tbody tr.decided .step {
 .upload-btn input[type='file']:disabled {
   cursor: not-allowed;
 }
+
+/* ══════════ backup dialog ══════════ */
+.bk-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bk-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.bk-item:last-of-type {
+  border-bottom: 0;
+}
+.bk-meta {
+  flex: 1;
+  min-width: 0;
+}
+.bk-title {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+.bk-desc {
+  margin: 3px 0 0;
+  font-size: var(--t-xs);
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.bk-item .btn {
+  flex: 0 0 auto;
+}
+.bk-keep {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.bk-keep b {
+  display: block;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+.bk-keep .bk-desc {
+  display: block;
+}
+.bk-working,
+.bk-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--t-xs);
+}
+.bk-working {
+  color: var(--ink-2);
+  background: var(--surface-2);
+}
+.bk-done {
+  color: var(--ok, var(--ink-2));
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+.upload-btn.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/backup"
 )
 
 // Restoring a backup, and taking one in from outside.
@@ -70,7 +72,22 @@ func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := s.backups.Restore(r.Context(), r.PathValue("name"))
+	// Default on. The usual reason to restore onto another machine is that the
+	// first one was blocked or lost, and faithfully restoring its address hands
+	// every customer a configuration pointing at the server that stopped
+	// working. Turned off deliberately when cloning one machine onto another.
+	keepAddresses := r.URL.Query().Get("keepAddresses") != "false"
+
+	var keep *backup.LocalAddresses
+	if keepAddresses {
+		var err error
+		if keep, err = backup.ReadLocalAddresses(s.db.WithContext(r.Context())); err != nil {
+			fail(w, s.log, err)
+			return
+		}
+	}
+
+	report, err := s.backups.Restore(r.Context(), r.PathValue("name"), keep)
 	if err != nil {
 		fail(w, s.log, err)
 		return
@@ -84,9 +101,10 @@ func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 		"safetyCopy", report.SafetyCopy, "by", adminName(r), "ip", clientIP(r))
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"files":      report.Files,
-		"safetyCopy": report.SafetyCopy,
-		"restarting": true,
+		"files":         report.Files,
+		"safetyCopy":    report.SafetyCopy,
+		"keptAddresses": keepAddresses,
+		"restarting":    true,
 	})
 
 	// Everything this process holds — the open database, the drivers, the

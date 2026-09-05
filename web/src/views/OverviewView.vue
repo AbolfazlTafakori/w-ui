@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { RouterLink } from 'vue-router'
-import { api } from '../lib/api.js'
+import { api, apiURL, getToken } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
@@ -299,15 +299,105 @@ function downloadLogs() {
   URL.revokeObjectURL(url)
 }
 
+// Backup, in one place, on the page an operator is already looking at.
+//
+// A button that silently wrote a file somewhere was the whole of it before.
+// Taking one is the least of what somebody wants from this: the reasons to
+// open it are to get the archive off the server, to put one back, and to move
+// a panel to another machine.
+const backup = ref(null)
+const keepAddresses = ref(true)
+
+function openBackup() {
+  backup.value = { latest: null, working: '', done: '' }
+  loadLatest()
+}
+
+async function loadLatest() {
+  try {
+    const list = await api.get('/api/backups')
+    if (backup.value) backup.value.latest = list?.[0] || null
+  } catch {
+    // The list is a convenience; failing to read it must not close the dialog
+    // an operator opened to take a backup.
+  }
+}
+
 async function backupNow() {
-  busy.value = true
+  if (!backup.value) return
+  backup.value.working = t('overview.backingUp')
   try {
     const a = await api.post('/api/backups')
-    notify(t('overview.backupTaken').replace('{name}', a.name), 'ok')
+    await loadLatest()
+    backup.value.done = t('overview.backupTaken').replace('{name}', a.name)
   } catch (e) {
     notify(e.message, 'error')
   } finally {
-    busy.value = false
+    if (backup.value) backup.value.working = ''
+  }
+}
+
+// Fetched rather than linked: the archive holds every key on the server, and a
+// plain link carries no session.
+async function exportBackup() {
+  const name = backup.value?.latest?.name
+  if (!name) return
+  backup.value.working = t('overview.preparingDownload')
+  try {
+    const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(name)}`), {
+      headers: { Authorization: `Bearer ${getToken()}` },
+      credentials: 'same-origin',
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const url = URL.createObjectURL(await res.blob())
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    if (backup.value) backup.value.working = ''
+  }
+}
+
+// Upload and restore in one action, because that is one intention: this
+// archive, on this server, now. Two buttons would leave an operator with a file
+// uploaded and nothing apparently changed.
+async function importBackup(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !backup.value) return
+
+  if (!window.confirm(t('overview.importConfirm'))) return
+
+  backup.value.working = t('overview.uploading')
+  try {
+    const body = new FormData()
+    body.append('archive', file)
+    const up = await fetch(apiURL('/api/backups/upload'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      credentials: 'same-origin',
+      body,
+    })
+    const stored = await up.json().catch(() => null)
+    if (!up.ok) throw new Error(stored?.error || t('overview.importFailed'))
+
+    backup.value.working = t('overview.restoring')
+    const params = keepAddresses.value ? '' : '?keepAddresses=false'
+    await api.post(`/api/backups/${encodeURIComponent(stored.name)}/restore${params}`)
+
+    // The panel is on its way out. Saying so and then reloading is what turns
+    // "the page stopped working" into "it came back with the restored data".
+    backup.value.working = t('overview.restarting')
+    setTimeout(() => window.location.reload(), 7000)
+  } catch (e) {
+    backup.value.working = ''
+    notify(e.message, 'error')
   }
 }
 
@@ -364,7 +454,7 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         <button class="btn sm ghost" :title="t('overview.viewLogs')" @click="openLogs">
           <Icon name="info" :size="14" /><span class="lbl">{{ t('settings.tab.logs') }}</span>
         </button>
-        <button class="btn sm ghost" :title="t('overview.backupNow')" :disabled="busy" @click="backupNow">
+        <button class="btn sm ghost" :title="t('overview.backupTitle')" @click="openBackup">
           <Icon name="database" :size="14" /><span class="lbl">{{ t('settings.backup') }}</span>
         </button>
         <RouterLink to="/settings" class="btn sm ghost" :title="t('nav.settings')">
@@ -637,6 +727,76 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         </table>
       </div>
     </article>
+  </div>
+
+  <!-- Backup, on the page an operator is already looking at. Taking one is the
+       least of it: the reasons to open this are to get the archive off the
+       server, to put one back, and to move a panel to another machine. -->
+  <div v-if="backup" class="modal-backdrop" @click.self="backup.working || (backup = null)">
+    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="bk-title">
+      <div class="card-head">
+        <h2 id="bk-title">{{ t('overview.backupTitle') }}</h2>
+        <button class="btn sm icon ghost spacer" :aria-label="t('common.close')"
+                :disabled="!!backup.working" @click="backup = null">
+          <Icon name="close" :size="15" />
+        </button>
+      </div>
+
+      <div class="card-body bk-body">
+        <p v-if="backup.working" class="bk-working">
+          <span class="spin sm"></span>{{ backup.working }}
+        </p>
+        <p v-else-if="backup.done" class="bk-done">{{ backup.done }}</p>
+
+        <div class="bk-item">
+          <div class="bk-meta">
+            <div class="bk-title">{{ t('overview.takeBackup') }}</div>
+            <p class="bk-desc">{{ t('overview.takeBackupDesc') }}</p>
+          </div>
+          <button class="btn primary" :disabled="!!backup.working" @click="backupNow">
+            <Icon name="database" :size="15" />
+          </button>
+        </div>
+
+        <div class="bk-item">
+          <div class="bk-meta">
+            <div class="bk-title">{{ t('overview.exportBackup') }}</div>
+            <p class="bk-desc">
+              <template v-if="backup.latest">
+                <span class="ltr">{{ backup.latest.name }}</span>
+                — {{ bytes(backup.latest.size, store.locale) }}
+              </template>
+              <template v-else>{{ t('overview.noArchiveYet') }}</template>
+            </p>
+          </div>
+          <button class="btn" :disabled="!backup.latest || !!backup.working" @click="exportBackup">
+            <Icon name="download" :size="15" />
+          </button>
+        </div>
+
+        <div class="bk-item">
+          <div class="bk-meta">
+            <div class="bk-title">{{ t('overview.importBackup') }}</div>
+            <p class="bk-desc">{{ t('overview.importBackupDesc') }}</p>
+          </div>
+          <label class="btn upload-btn" :class="{ disabled: !!backup.working }">
+            <Icon name="upload" :size="15" />
+            <input type="file" accept=".gz,.tar.gz,application/gzip"
+                   :disabled="!!backup.working" @change="importBackup" />
+          </label>
+        </div>
+
+        <!-- The one that matters when a panel moves house: the addresses in an
+             archive name the server it was taken on. -->
+        <label class="bk-keep">
+          <input v-model="keepAddresses" type="checkbox" :disabled="!!backup.working" />
+          <span>
+            <b>{{ t('overview.keepAddresses') }}</b>
+            <span class="bk-desc">{{ t('overview.keepAddressesDesc') }}</span>
+          </span>
+        </label>
+      </div>
+    </div>
   </div>
 
   <!-- The recent log, without leaving the page or opening an SSH session. -->

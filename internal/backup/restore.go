@@ -61,7 +61,7 @@ type RestoreReport struct {
 // The next start applies it before anything opens the database, which is the
 // only moment nothing is holding those files. The caller ends the process; the
 // service comes back and the data is there.
-func (s *Service) Restore(ctx context.Context, name string) (*RestoreReport, error) {
+func (s *Service) Restore(ctx context.Context, name string, keep *LocalAddresses) (*RestoreReport, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -106,6 +106,14 @@ func (s *Service) Restore(ctx context.Context, name string) (*RestoreReport, err
 		return nil, fmt.Errorf("backup: %q holds no files", name)
 	}
 
+	// Where this machine says it can be reached, carried across the restart so
+	// the addresses in the archive — which name the server it was taken on —
+	// can be put back afterwards.
+	if err := stashLocalAddresses(staging, keep); err != nil {
+		os.RemoveAll(staging)
+		return nil, err
+	}
+
 	// Written last, and it is what the next start looks for. An unpack that
 	// failed or was interrupted leaves a directory with no marker, which is
 	// discarded rather than half applied.
@@ -145,7 +153,7 @@ func pendingDir(dataDir string) string {
 // Returns the archive's name when one was applied, so the caller can say so.
 // Anything that goes wrong here is reported and the panel starts on the data it
 // already had: a failed restore must not also be a panel that will not start.
-func ApplyPending(dataDir string, log *slog.Logger) (string, bool) {
+func ApplyPending(dataDir string, log *slog.Logger) (string, *LocalAddresses, bool) {
 	staging := pendingDir(dataDir)
 
 	marker, err := os.ReadFile(filepath.Join(staging, markerFile))
@@ -156,20 +164,26 @@ func ApplyPending(dataDir string, log *slog.Logger) (string, bool) {
 			log.Warn("discarding an incomplete staged restore", "path", staging)
 			_ = os.RemoveAll(staging)
 		}
-		return "", false
+		return "", nil, false
 	}
 	archive := strings.TrimSpace(string(marker))
+
+	// Read before the directory goes, and applied by the caller once the
+	// restored database is open.
+	keep := readStashedAddresses(staging)
 
 	entries, err := collectFiles(staging)
 	if err != nil {
 		log.Error("could not read the staged restore; starting on the existing data",
 			"error", err)
-		return "", false
+		return "", nil, false
 	}
 
 	applied := 0
 	for _, rel := range entries {
-		if rel == markerFile {
+		// Neither of these is part of the panel's data; they are how the
+		// restore carried itself across the restart.
+		if rel == markerFile || rel == localAddressesFile {
 			continue
 		}
 		src := filepath.Join(staging, filepath.FromSlash(rel))
@@ -194,7 +208,7 @@ func ApplyPending(dataDir string, log *slog.Logger) (string, bool) {
 	_ = os.RemoveAll(staging)
 
 	log.Warn("restored from a backup", "archive", archive, "files", applied)
-	return archive, true
+	return archive, keep, true
 }
 
 // collectFiles lists every regular file under root, relative and slash

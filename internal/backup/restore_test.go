@@ -153,7 +153,7 @@ func TestAnIncompleteStagedRestoreIsDiscarded(t *testing.T) {
 	}
 	// No marker.
 
-	if _, ok := ApplyPending(data, quiet()); ok {
+	if _, _, ok := ApplyPending(data, quiet()); ok {
 		t.Error("an unmarked staging directory was applied")
 	}
 	live, err := os.ReadFile(filepath.Join(data, "wui.db"))
@@ -196,7 +196,7 @@ func TestAStagedRestoreIsAppliedAndCleanedUp(t *testing.T) {
 		}
 	}
 
-	archive, ok := ApplyPending(data, quiet())
+	archive, _, ok := ApplyPending(data, quiet())
 	if !ok {
 		t.Fatal("a complete staged restore was not applied")
 	}
@@ -232,7 +232,7 @@ func TestAStagedRestoreIsAppliedAndCleanedUp(t *testing.T) {
 // Nothing staged, nothing done — every ordinary start goes through this.
 func TestAnOrdinaryStartDoesNothing(t *testing.T) {
 	data := t.TempDir()
-	if _, ok := ApplyPending(data, quiet()); ok {
+	if _, _, ok := ApplyPending(data, quiet()); ok {
 		t.Error("a start with nothing staged reported a restore")
 	}
 }

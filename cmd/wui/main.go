@@ -84,13 +84,30 @@ func run() error {
 	// to whichever file was open when it was written. Applying a restore under
 	// a running process means the log is checkpointed back over it and the
 	// restore quietly undoes itself.
-	if archive, ok := backup.ApplyPending(cfg.DataDir, log); ok {
-		log.Info("this panel is running on data restored from a backup", "archive", archive)
-	}
+	restoredFrom, keepAddresses, restored := backup.ApplyPending(cfg.DataDir, log)
 
 	db, err := database.Open(cfg, log)
 	if err != nil {
 		return err
+	}
+
+	if restored {
+		log.Info("this panel is running on data restored from a backup", "archive", restoredFrom)
+		// After the database is open, because this is a change to the restored
+		// data: the addresses in the archive name the server it was taken on,
+		// and this puts back the ones that name this one.
+		if kept, unknown, err := backup.ApplyLocalAddresses(db, keepAddresses); err != nil {
+			log.Error("restored, but this server's own addresses could not be put back",
+				"error", err,
+				"consequence", "customers may be handed the address of the server the backup came from")
+		} else if keepAddresses != nil {
+			log.Info("kept this server's own addresses over the ones in the backup",
+				"interfaces", kept, "notOnThisServer", unknown)
+			if unknown > 0 {
+				log.Warn("some tunnels in the backup are not on this server and kept their old address",
+					"count", unknown, "fix", "check the endpoint of each interface on the Interfaces page")
+			}
+		}
 	}
 
 	password, err := database.Bootstrap(db, cfg.DefaultLocale, log)
