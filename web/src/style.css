@@ -3797,3 +3797,42 @@ tbody tr.decided .step {
 .hs-peak {
   color: var(--muted);
 }
+
+/* A list of servers to tick, in a dialog. Scrolls rather than growing, because
+   an operator with twenty nodes should still be able to reach the buttons. */
+.srv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.srv-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.srv-item:hover {
+  background: var(--surface);
+}
+.srv-item input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+}
+.srv-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+.srv-meta {
+  margin-inline-start: auto;
+  font-size: var(--t-xs);
+  color: var(--faint);
+}

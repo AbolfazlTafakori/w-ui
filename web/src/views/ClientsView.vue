@@ -415,6 +415,35 @@ const bulk = (action) => {
   }, 'client.bulkDone')
 }
 
+// Moving a selection of customers onto a server, or off it.
+//
+// The answer names every customer it could not move and why — a device limit,
+// an address pool with nothing left — because a count alone would leave an
+// operator to work out which of three hundred people is still on the old
+// server.
+async function submitServers(kind) {
+  const chosen = (form.value.interfaceIds || []).map(Number)
+  if (!chosen.length) {
+    notify(t('client.pickAServer'), 'error')
+    return
+  }
+
+  const res = await api.post(`/api/clients/servers/${kind === 'attach' ? 'attach' : 'detach'}`, {
+    ids: ids(),
+    interfaceIds: chosen,
+  })
+
+  const failed = Object.entries(res?.failures || {})
+  if (failed.length) {
+    notify(failed.map(([name, why]) => `${name}: ${why}`).join('\n'), 'error')
+  } else {
+    notify(`${t('client.bulkDone')} — ${nf(res?.changed || 0)}`, 'success')
+  }
+  dialog.value = null
+  selected.value = new Set()
+  await load()
+}
+
 const ungroup = () =>
   guard(async () => {
     await api.assignGroup('', ids())
@@ -485,6 +514,9 @@ function openDialog(kind) {
     form.value.quotaGB = ''
     form.value.resetCycle = ''
   }
+  // Cleared each time it opens: a list of ticks left over from the last use
+  // would be a bulk action applied to servers nobody chose this time.
+  if (kind === 'attach' || kind === 'detach') form.value.interfaceIds = []
   dialog.value = { kind }
 }
 
@@ -492,6 +524,10 @@ async function submitDialog() {
   busy.value = true
   try {
     const d = dialog.value
+    if (d.kind === 'attach' || d.kind === 'detach') {
+      await submitServers(d.kind)
+      return
+    }
     if (d.kind === 'group') {
       const res = await api.assignGroup(form.value.group.trim(), ids())
       notify(`${t('client.bulkDone')} — ${nf(res.affected)}`, 'success')
@@ -609,6 +645,14 @@ async function submitForm(input) {
       <button class="btn sm" @click="ungroup">{{ t('client.ungroup') }}</button>
       <button class="btn sm" @click="openDialog('adjust')">
         <Icon name="clock" :size="13" />{{ t('client.adjust') }}
+      </button>
+      <!-- The operation having several servers makes necessary: a node is
+           rented, and the customers who already exist have to be given it. -->
+      <button class="btn sm" @click="openDialog('attach')">
+        <Icon name="server" :size="13" />{{ t('client.attachServers') }}
+      </button>
+      <button class="btn sm" @click="openDialog('detach')">
+        <Icon name="swap" :size="13" />{{ t('client.detachServers') }}
       </button>
       <button class="btn sm" @click="bulk('enable')">{{ t('action.enable') }}</button>
       <button class="btn sm" @click="bulk('disable')">{{ t('action.disable') }}</button>
@@ -903,7 +947,9 @@ async function submitForm(input) {
       <div class="card-head">
         <h2 id="cd-title">
           {{ dialog.kind === 'group' ? t('client.addToGroup')
-            : dialog.kind === 'adjust' ? t('client.adjust') : t('client.batchAdd') }}
+            : dialog.kind === 'adjust' ? t('client.adjust')
+            : dialog.kind === 'attach' ? t('client.attachServers')
+            : dialog.kind === 'detach' ? t('client.detachServers') : t('client.batchAdd') }}
         </h2>
         <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="dialog = null">
           <Icon name="close" :size="15" />
@@ -923,6 +969,26 @@ async function submitForm(input) {
           </datalist>
           <span class="hint">{{ t('client.groupHint') }}</span>
         </div>
+
+        <!-- Adding keeps what a customer already has; only taking away
+             removes anything. Said on the dialog, because "attach" and
+             "detach" do not say it and the difference is the whole point of
+             selling more than one server. -->
+        <template v-else-if="dialog.kind === 'attach' || dialog.kind === 'detach'">
+          <div class="field">
+            <label>{{ dialog.kind === 'attach' ? t('client.attachServers') : t('client.detachServers') }}</label>
+            <div class="srv-list">
+              <label v-for="i in interfaces" :key="i.id" class="srv-item">
+                <input v-model="form.interfaceIds" type="checkbox" :value="i.id" />
+                <span class="srv-name">{{ i.name }}</span>
+                <span class="srv-meta ltr">{{ i.protocol }} · {{ i.endpointHost }}</span>
+              </label>
+            </div>
+            <span class="hint">
+              {{ dialog.kind === 'attach' ? t('client.attachHint') : t('client.detachHint') }}
+            </span>
+          </div>
+        </template>
 
         <template v-else-if="dialog.kind === 'adjust'">
           <div class="field">
