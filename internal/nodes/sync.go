@@ -247,7 +247,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 				// Sent as a disabled customer rather than an omitted one so the
 				// node keeps the record and lets them straight back on when the
 				// month rolls over, instead of rebuilding every peer.
-				Enabled:        !spent && c.Status == model.StatusActive,
+				Enabled:        !spent && c.Status.Serviceable(),
 				RateBitsPerSec: c.RateBitsPerSec,
 				Accounts:       accs,
 			})
