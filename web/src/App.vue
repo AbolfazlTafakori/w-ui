@@ -405,7 +405,21 @@ function reload() {
         </div>
       </section>
 
-      <RouterView v-else />
+      <!-- One page gives way to the next rather than replacing it in a frame.
+           Keyed on the path so it runs on navigation and not on a query change,
+           which is what a filter or a page number is: re-animating the whole
+           view every time somebody types in a search box would be motion for
+           its own sake.
+
+           The key alone does this. A <Transition mode="out-in"> was tried and
+           removed: it holds the new page back until the old one has finished
+           leaving, and a second navigation arriving during that wait left the
+           panel showing nothing at all, permanently. An animation is not worth
+           a blank screen, and the key gives the same entrance without the
+           coordination that can get stuck. -->
+      <RouterView v-else v-slot="{ Component }">
+        <component :is="Component" :key="route.path" />
+      </RouterView>
     </main>
   </div>
 

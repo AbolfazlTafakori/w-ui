@@ -3957,3 +3957,154 @@ button.ov-version:hover {
   line-height: 1.6;
   white-space: pre-wrap;
 }
+
+/* ── movement ───────────────────────────────────────────────────────────────
+
+   What was here already: dialogs grow out of the middle, toasts arrive from
+   their edge, buttons acknowledge a press. What was missing is everything
+   between those moments — a page replaced the last one in a single frame, and
+   a table of forty rows appeared all at once.
+
+   The rules this follows, and the reason for each:
+
+   - Motion carries meaning or it is not here. Every animation below says
+     something: this replaced that, these arrived in this order, this is
+     raised above the page.
+   - Entrances ease out and exits ease in. Linear reads as mechanical.
+   - 150-300ms. Below that nothing is perceived; above it the interface feels
+     like it is waiting for permission.
+   - Transform and opacity only. Animating width or height makes the browser
+     lay the page out again on every frame, which is how animation turns into
+     jank on the cheap VPS this panel is usually installed on.
+   - Anyone who asked their system for less motion gets none of it. */
+
+/* An entrance curve with a little overshoot at the end, for things arriving.
+   The existing --ease stays what it is: it is used for hover and state, where
+   overshoot would read as a wobble. */
+:root {
+  --ease-enter: cubic-bezier(0.16, 0.84, 0.44, 1);
+  --stagger: 26ms;
+}
+
+/* ── one page giving way to the next ─────────────────────────────────────── */
+
+/* The incoming page rises into place. Driven by the element being new -- the
+   router view is keyed on the path, so navigating builds a fresh element and
+   the animation plays -- rather than by a transition that has to coordinate an
+   exit with an entrance. That coordination is what left the panel blank when a
+   second click arrived mid-exit. The banner above is not re-created by a
+   navigation, so it stays where it is. */
+.main > * {
+  animation: rise-in 0.22s var(--ease-enter) both;
+}
+
+/* ── things arriving in the order they are read ──────────────────────────── */
+
+/* Cards on a page cascade rather than appearing together. The delay is capped
+   at the eighth: past that a cascade stops reading as sequence and starts
+   reading as the page being slow. */
+.main .card {
+  animation: rise-in 0.26s var(--ease-enter) both;
+}
+.main .card:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
+.main .card:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
+.main .card:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
+.main .card:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
+.main .card:nth-child(6) { animation-delay: calc(var(--stagger) * 5); }
+.main .card:nth-child(7) { animation-delay: calc(var(--stagger) * 6); }
+.main .card:nth-child(n + 8) { animation-delay: calc(var(--stagger) * 7); }
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Table rows already faded in together. Now they arrive down the list, which
+   is the direction they are read in. Capped at twelve for the same reason. */
+.table-wrap tbody tr {
+  animation: row-in 0.2s var(--ease-enter) both;
+}
+.table-wrap tbody tr:nth-child(2) { animation-delay: 14ms; }
+.table-wrap tbody tr:nth-child(3) { animation-delay: 28ms; }
+.table-wrap tbody tr:nth-child(4) { animation-delay: 42ms; }
+.table-wrap tbody tr:nth-child(5) { animation-delay: 56ms; }
+.table-wrap tbody tr:nth-child(6) { animation-delay: 70ms; }
+.table-wrap tbody tr:nth-child(7) { animation-delay: 84ms; }
+.table-wrap tbody tr:nth-child(8) { animation-delay: 98ms; }
+.table-wrap tbody tr:nth-child(9) { animation-delay: 112ms; }
+.table-wrap tbody tr:nth-child(10) { animation-delay: 126ms; }
+.table-wrap tbody tr:nth-child(11) { animation-delay: 140ms; }
+.table-wrap tbody tr:nth-child(n + 12) { animation-delay: 154ms; }
+
+/* ── depth that answers the pointer ──────────────────────────────────────── */
+
+/* A surface that does something lifts under the pointer; one that only holds
+   text does not. The difference is the whole signal: if everything lifts,
+   nothing is telling you what can be clicked -- which is why the vitals tiles
+   on the overview, which are readouts, are deliberately not in this list. */
+a.card,
+button.card,
+.ccard {
+  transition:
+    box-shadow 0.18s var(--ease),
+    transform 0.18s var(--ease),
+    border-color 0.18s var(--ease);
+}
+a.card:hover,
+button.card:hover,
+.ccard:hover {
+  box-shadow: var(--elev-2);
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--line) 55%, var(--accent) 22%);
+}
+
+/* Rows highlight without moving. A row that shifts under the pointer makes the
+   button at its end harder to hit, not easier. */
+.table-wrap tbody tr {
+  transition: background-color 0.14s var(--ease);
+}
+
+/* ── the panel arriving at all ───────────────────────────────────────────── */
+
+/* The side menu comes in from its own edge on first paint, so the panel
+   assembles rather than appearing whole. Once only: it is keyed to the
+   element, not to navigation. */
+.sidebar {
+  animation: sider-in 0.3s var(--ease-enter) both;
+}
+@keyframes sider-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+[dir='rtl'] .sidebar {
+  animation-name: sider-in-rtl;
+}
+@keyframes sider-in-rtl {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+/* ── asked for less, given none ──────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Everything still appears and still changes; nothing travels to get there,
+     and nothing waits its turn. A cascade is exactly the kind of motion that
+     makes somebody who asked for less feel unwell. */
+  .main > *,
+  .main .card,
+  .table-wrap tbody tr,
+  .sidebar {
+    animation: none;
+  }
+  a.card:hover,
+  button.card:hover,
+  .ccard:hover {
+    transform: none;
+  }
+}
