@@ -70,6 +70,19 @@ type Config struct {
 	TLSCert string
 	TLSKey  string
 
+	// TrustedProxies are the machines whose forwarded-for headers are believed.
+	//
+	// Comma separated addresses or CIDRs. Loopback by default, which is the
+	// installer's own arrangement: a proxy on this machine holding the
+	// certificate. A proxy on another machine has to be named here, or every
+	// request looks like it came from that proxy — which turns the sign-in
+	// throttle into one bucket for the whole internet and makes the recorded
+	// address of a sign-in useless.
+	//
+	// Naming a machine that is not really a proxy is worse than naming none: it
+	// lets that machine claim to be anybody.
+	TrustedProxies string
+
 	LogLevel  string
 	LogFormat string // text | json
 
@@ -104,6 +117,7 @@ func Load() (Config, error) {
 	c.BasePath = normalizeBase(env("WUI_BASE_PATH", c.BasePath))
 	c.TLSCert = env("WUI_TLS_CERT", c.TLSCert)
 	c.TLSKey = env("WUI_TLS_KEY", c.TLSKey)
+	c.TrustedProxies = env("WUI_TRUSTED_PROXIES", c.TrustedProxies)
 	c.LogLevel = strings.ToLower(env("WUI_LOG_LEVEL", c.LogLevel))
 	c.LogFormat = strings.ToLower(env("WUI_LOG_FORMAT", c.LogFormat))
 

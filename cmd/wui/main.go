@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -336,6 +337,13 @@ func buildServer(
 	localNodeID uint,
 	log *slog.Logger,
 ) (*http.Server, error) {
+	// Who may speak for somebody else. Done before anything serves, so no
+	// request is ever handled with the wrong idea of where it came from.
+	if bad := api.SetTrustedProxies(strings.Split(cfg.TrustedProxies, ",")); len(bad) > 0 {
+		log.Warn("ignoring entries in WUI_TRUSTED_PROXIES that are not an address or a CIDR",
+			"entries", strings.Join(bad, " "))
+	}
+
 	apiSrv := api.New(api.Options{
 		DB:          db,
 		Clients:     service.NewClients(db, pools, log),

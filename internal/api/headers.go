@@ -47,7 +47,7 @@ func SecureHeaders(next http.Handler) http.Handler {
 		// Only over TLS. Sending it over plain HTTP would tell a browser to
 		// refuse the panel entirely on a server that has not set TLS up yet,
 		// which is an operator locked out by a header.
-		if r.TLS != nil {
+		if clientScheme(r) == "https" {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 

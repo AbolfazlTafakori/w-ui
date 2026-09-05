@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -230,14 +229,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		*model.Admin
 		TwoFactor bool `json:"twoFactor"`
 	}{Admin: admin, TwoFactor: admin.TOTPSecret != ""})
-}
-
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 // Enrolling a second factor.
