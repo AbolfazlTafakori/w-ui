@@ -59,7 +59,7 @@ function openAdd() {
   form.value = {
     name: '', address: '', token: '', note: '',
     usageCoefficient: 1, dataLimitGB: '', resetDay: '',
-    tlsMode: 'verify', tlsPin: '',
+    tlsMode: 'verify', tlsPin: '', allowPrivateAddress: false,
   }
   dialog.value = { kind: 'add' }
 }
@@ -74,6 +74,7 @@ function openEdit(n) {
     note: n.note || '',
     usageCoefficient: n.usageCoefficient || 1,
     tlsMode: n.tlsMode || 'verify',
+    allowPrivateAddress: !!n.allowPrivateAddress,
     tlsPin: n.tlsPin || '',
     dataLimitGB: bytesToGigabytes(n.dataLimitBytes),
     resetDay: n.resetDay || '',
@@ -95,7 +96,10 @@ async function fetchPin() {
   }
   pinBusy.value = true
   try {
-    const res = await api.post('/api/nodes/fetch-pin', { address })
+    const res = await api.post('/api/nodes/fetch-pin', {
+      address,
+      allowPrivateAddress: !!form.value.allowPrivateAddress,
+    })
     form.value.tlsPin = res?.tlsPin || ''
     notify(t('node.pinFetched'), 'ok')
   } catch (e) {
@@ -112,6 +116,7 @@ async function submit() {
       ...form.value,
       usageCoefficient: Number(form.value.usageCoefficient) || 1,
       tlsMode: form.value.tlsMode || 'verify',
+      allowPrivateAddress: !!form.value.allowPrivateAddress,
       tlsPin: (form.value.tlsPin || '').trim(),
       dataLimitBytes: gigabytesToBytes(form.value.dataLimitGB),
       resetDay: Number(form.value.resetDay) || 0,
@@ -491,6 +496,14 @@ function latencyTone(ms) {
              is on the other end is not a detail. Verification is right when the
              node has a real certificate; pinning is the answer when it does
              not, and is stronger there rather than weaker. -->
+        <div class="field">
+          <label class="log-follow">
+            <input v-model="form.allowPrivateAddress" type="checkbox" />
+            <span>{{ t('node.allowPrivate') }}</span>
+          </label>
+          <span class="hint">{{ t('node.allowPrivateHint') }}</span>
+        </div>
+
         <div class="field">
           <label for="n-tls">{{ t('node.tlsMode') }}</label>
           <select id="n-tls" v-model="form.tlsMode">

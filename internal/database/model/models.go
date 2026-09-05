@@ -42,6 +42,17 @@ type Node struct {
 	TLSMode NodeTLSMode `gorm:"size:16;not null;default:verify" json:"tlsMode"`
 	TLSPin  string      `gorm:"size:128" json:"tlsPin"`
 
+	// AllowPrivateAddress lets this node be reached at an address inside the
+	// server's own network.
+	//
+	// Off by default. Every request to a node carries a token that is full
+	// access to a panel, and an address typed by mistake — a leftover one, or
+	// 169.254.169.254, which on most clouds hands out credentials to whatever
+	// asks — would have that token posted to whatever is listening. Two
+	// machines on the same VPN is a real arrangement, so it can be turned on
+	// deliberately for the node it applies to.
+	AllowPrivateAddress bool `gorm:"not null;default:false" json:"allowPrivateAddress"`
+
 	// UsageCoefficient multiplies what this node reports before it is charged
 	// against a customer's allowance.
 	//

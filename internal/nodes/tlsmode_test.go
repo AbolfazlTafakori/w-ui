@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,9 +57,12 @@ func nodeServing(t *testing.T, cert tls.Certificate, mode model.NodeTLSMode, pin
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
 	srv.StartTLS()
 
+	// A test server is always on loopback, which the network guard refuses by
+	// design. These tests are about which certificate is accepted, so they say
+	// so here; the test that is about the guard turns it back off.
 	return model.Node{
 		Name: "berlin", Kind: model.KindRemote, Address: srv.URL,
-		TLSMode: mode, TLSPin: pin,
+		TLSMode: mode, TLSPin: pin, AllowPrivateAddress: true,
 	}, srv.Close
 }
 
@@ -187,7 +191,7 @@ func TestTheFingerprintCanBeReadFromTheNode(t *testing.T) {
 	node, stop := nodeServing(t, cert, model.TLSSkip, "")
 	defer stop()
 
-	got, err := FetchPin(node.Address, 5*time.Second)
+	got, err := FetchPin(node.Address, 5*time.Second, true)
 	if err != nil {
 		t.Fatalf("FetchPin: %v", err)
 	}
@@ -202,11 +206,71 @@ func TestTheFingerprintCanBeReadFromTheNode(t *testing.T) {
 // There is nothing to read from a plain-HTTP address, and saying so beats a
 // connection error an operator has to interpret.
 func TestFetchingFromAPlainAddressSaysWhy(t *testing.T) {
-	_, err := FetchPin("http://node.example:2096", time.Second)
+	_, err := FetchPin("http://node.example:2096", time.Second, true)
 	if err == nil {
 		t.Fatal("fetching a certificate from a plain HTTP address was accepted")
 	}
 	if !strings.Contains(err.Error(), "not an https address") {
 		t.Errorf("the refusal does not explain itself: %v", err)
+	}
+}
+
+// The guard that matters: a node's address is typed by an operator and every
+// request to it carries a token that is full access to a panel. An address
+// inside the server — a typo, a leftover, or the cloud metadata address that
+// hands out credentials to whatever asks — must not receive it.
+func TestAnAddressInsideTheServerIsRefused(t *testing.T) {
+	cert := selfSigned(t)
+	node, stop := nodeServing(t, cert, model.TLSSkip, "")
+	defer stop()
+
+	// The test server is on loopback, which is exactly the case being refused.
+	node.AllowPrivateAddress = false
+	client, err := clientFor(node, 3*time.Second)
+	if err != nil {
+		t.Fatalf("clientFor: %v", err)
+	}
+	if resp, err := client.Get(node.Address); err == nil {
+		resp.Body.Close()
+		t.Fatal("the panel connected to an address inside its own server")
+	} else if !strings.Contains(err.Error(), "own network") {
+		t.Errorf("the refusal does not explain itself: %v", err)
+	}
+}
+
+// Two machines on one VPN is a real arrangement, so it can be allowed for the
+// node it applies to.
+func TestAPrivateAddressWorksWhenTheNodeSaysSo(t *testing.T) {
+	cert := selfSigned(t)
+	node, stop := nodeServing(t, cert, model.TLSSkip, "")
+	defer stop()
+
+	client, err := clientFor(node, 3*time.Second)
+	if err != nil {
+		t.Fatalf("clientFor: %v", err)
+	}
+	resp, err := client.Get(node.Address)
+	if err != nil {
+		t.Fatalf("a node allowed a private address was still refused: %v", err)
+	}
+	resp.Body.Close()
+}
+
+// The cloud metadata address by name and by number, and the usual private
+// ranges. Checked as addresses rather than as text, because what matters is
+// where the connection goes.
+func TestTheAddressesThatAreRefused(t *testing.T) {
+	for _, s := range []string{
+		"127.0.0.1", "10.0.0.5", "192.168.1.1", "172.16.0.1",
+		"169.254.169.254", "0.0.0.0", "::1", "fe80::1", "fc00::1",
+	} {
+		if !blocked(net.ParseIP(s)) {
+			t.Errorf("%s is not refused", s)
+		}
+	}
+	for _, s := range []string{"1.1.1.1", "8.8.8.8", "203.0.113.9", "2001:4860:4860::8888"} {
+		if blocked(net.ParseIP(s)) {
+			t.Errorf("%s is refused but is an ordinary public address", s)
+		}
 	}
 }

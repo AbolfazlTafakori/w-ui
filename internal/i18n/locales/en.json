@@ -152,6 +152,8 @@
   "node.tlsSkipWarning": "Anyone able to sit between this panel and the node can read and change everything it sends, including the access token. Only defensible on a private link.",
   "node.tlsUnchecked": "certificate unchecked",
   "node.tlsVerify": "Verify normally",
+  "node.allowPrivate": "Allow an address inside this server's network",
+  "node.allowPrivateHint": "Off by default. Every request to a node carries a token that is full access to a panel, and an address typed by mistake would post it to whatever is listening there. Turn this on only when the node really is on a private network you control.",
   "node.unreachableHint": "This server is not answering. The panel still holds the records; the customers on it are the ones who notice.",
   "interface.node": "Server",
   "interface.thisServer": "this server",

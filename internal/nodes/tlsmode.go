@@ -65,6 +65,9 @@ func clientFor(node model.Node, timeout time.Duration) (*http.Client, error) {
 		Timeout: timeout,
 		Transport: &http.Transport{
 			TLSClientConfig: cfg,
+			// Every request here carries a token that is full access to a
+			// panel, so it does not go to an address inside this server.
+			DialContext: guardedDial(node.AllowPrivateAddress, timeout),
 			// Nothing is kept between rounds. A node's mode can change while
 			// the panel runs, and a pooled connection opened under the old one
 			// would go on being used after.
@@ -145,7 +148,7 @@ func verifyPin(want string) func([][]byte, [][]*x509.Certificate) error {
 // because the alternative — an operator running openssl and copying a hash by
 // hand — is how verification ends up switched off instead, but the page that
 // offers it has to say what it is.
-func FetchPin(address string, timeout time.Duration) (string, error) {
+func FetchPin(address string, timeout time.Duration, allowPrivate bool) (string, error) {
 	host, err := hostPort(address)
 	if err != nil {
 		return "", err
@@ -154,6 +157,14 @@ func FetchPin(address string, timeout time.Duration) (string, error) {
 	dialer := &tls.Dialer{
 		NetDialer: &net.Dialer{Timeout: timeout},
 		Config:    &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12},
+	}
+	// The same guard as a real request. Reading a fingerprint is a connection
+	// like any other, and an operator who has typed a private address by
+	// mistake should find out here rather than after storing its certificate.
+	if !allowPrivate {
+		if err := checkPublic(host); err != nil {
+			return "", err
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

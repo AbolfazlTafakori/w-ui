@@ -19,12 +19,16 @@ const fetchPinTimeout = 10 * time.Second
 func (s *Server) handleFetchPin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Address string `json:"address"`
+		// Sent from the same form as the node's own setting, so reading a
+		// fingerprint from a node on a private network is possible exactly when
+		// talking to it would be.
+		AllowPrivateAddress bool `json:"allowPrivateAddress"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
 
-	pin, err := nodes.FetchPin(in.Address, fetchPinTimeout)
+	pin, err := nodes.FetchPin(in.Address, fetchPinTimeout, in.AllowPrivateAddress)
 	if err != nil {
 		// A refusal with a reason, not a fault: an unreachable address or a
 		// plain-HTTP one is something the operator can act on.

@@ -51,6 +51,10 @@ type NodeInput struct {
 	TLSMode *model.NodeTLSMode `json:"tlsMode"`
 	TLSPin  *string            `json:"tlsPin"`
 
+	// AllowPrivateAddress permits an address inside this server's own network,
+	// which is off unless the operator says so for that node.
+	AllowPrivateAddress *bool `json:"allowPrivateAddress"`
+
 	// DataLimitBytes is the machine's own monthly transfer allowance and
 	// ResetDay is the day of the month the host starts it again. Absent leaves
 	// both as they are; zero in either means no cap and no automatic reset.
@@ -94,17 +98,18 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 	}
 
 	node := model.Node{
-		Name:             in.Name,
-		UsageCoefficient: coefficient,
-		DataLimitBytes:   deref(in.DataLimitBytes),
-		ResetDay:         deref(in.ResetDay),
-		TLSMode:          tlsModeOr(in.TLSMode, model.TLSVerify),
-		TLSPin:           strings.TrimSpace(deref(in.TLSPin)),
-		Kind:             model.KindRemote,
-		Address:          in.Address,
-		Token:            in.Token,
-		Note:             in.Note,
-		Enabled:          in.Enabled == nil || *in.Enabled,
+		Name:                in.Name,
+		UsageCoefficient:    coefficient,
+		DataLimitBytes:      deref(in.DataLimitBytes),
+		ResetDay:            deref(in.ResetDay),
+		TLSMode:             tlsModeOr(in.TLSMode, model.TLSVerify),
+		TLSPin:              strings.TrimSpace(deref(in.TLSPin)),
+		AllowPrivateAddress: deref(in.AllowPrivateAddress),
+		Kind:                model.KindRemote,
+		Address:             in.Address,
+		Token:               in.Token,
+		Note:                in.Note,
+		Enabled:             in.Enabled == nil || *in.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&node).Error; err != nil {
 		return nil, fmt.Errorf("service: create node: %w", err)
@@ -162,6 +167,9 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 	}
 	if in.TLSPin != nil {
 		updates["tls_pin"] = strings.TrimSpace(*in.TLSPin)
+	}
+	if in.AllowPrivateAddress != nil {
+		updates["allow_private_address"] = *in.AllowPrivateAddress
 	}
 	if in.DataLimitBytes != nil {
 		updates["data_limit_bytes"] = *in.DataLimitBytes
