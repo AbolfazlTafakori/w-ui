@@ -207,6 +207,12 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		if clean == backupsDir {
 			return filepath.SkipDir
 		}
+		// A restore staged but not yet applied. Archiving it would put a whole
+		// second copy of the data inside the backup, and restoring that backup
+		// would stage the older one again.
+		if d.IsDir() && d.Name() == PendingDirName {
+			return filepath.SkipDir
+		}
 		// SQLite's sidecar files are meaningless without the moment they
 		// belonged to, and restoring a stale one corrupts the database.
 		if strings.HasSuffix(clean, ".db-wal") || strings.HasSuffix(clean, ".db-shm") {

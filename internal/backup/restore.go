@@ -123,11 +123,20 @@ func (s *Service) Restore(ctx context.Context, name string) (*RestoreReport, err
 // markerFile is what tells the next start that a staged restore is complete.
 const markerFile = ".restore-ready"
 
-// pendingDir is where a staged restore waits. Beside the data directory rather
-// than inside it, so a restore that is never applied cannot end up inside the
-// next backup.
+// PendingDirName is the staging directory, inside the data directory.
+//
+// Inside rather than beside it, which is the only place that works: the unit
+// runs with ProtectSystem=strict and one writable path, so the panel cannot
+// create a sibling of its own data directory — the parent belongs to root and
+// is read-only to the process. Found by deploying it and looking at the
+// permissions, because nothing on a development machine has either.
+//
+// Being inside means the backup walk has to skip it, the way it already skips
+// the archives themselves.
+const PendingDirName = ".restore-pending"
+
 func pendingDir(dataDir string) string {
-	return filepath.Clean(dataDir) + ".restore-pending"
+	return filepath.Join(filepath.Clean(dataDir), PendingDirName)
 }
 
 // ApplyPending puts a staged restore in place, and is called at startup before

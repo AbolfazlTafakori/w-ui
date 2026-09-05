@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -264,5 +265,51 @@ func TestUnpackStaysInsideItsDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "escaped.txt")); !os.IsNotExist(err) {
 		t.Error("unpack wrote a file outside the directory it was given")
+	}
+}
+
+// The staging directory lives inside the data directory, because that is the
+// only path the panel can write to under its own systemd sandbox. Which means
+// a backup taken while a restore is staged would otherwise carry a second copy
+// of everything, and restoring that backup would stage the old one all over
+// again.
+func TestABackupSkipsAStagedRestore(t *testing.T) {
+	dir := t.TempDir()
+	data := filepath.Join(dir, "data")
+	if err := os.MkdirAll(filepath.Join(data, PendingDirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "wui.db"), []byte("live"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, PendingDirName, "wui.db"), []byte("staged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(Options{DataDir: data, Dir: filepath.Join(dir, "backups"), Log: quiet()})
+	archive, err := s.Create(context.Background())
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	f, _, err := s.Open(archive.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		if strings.HasPrefix(hdr.Name, PendingDirName+"/") {
+			t.Errorf("the backup carries a staged restore: %s", hdr.Name)
+		}
 	}
 }
