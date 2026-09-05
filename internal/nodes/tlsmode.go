@@ -56,8 +56,8 @@ func Fingerprint(cert *x509.Certificate) string {
 // One per node rather than one shared: the whole point is that each carries a
 // different idea of what certificate to accept, and a shared transport would
 // pool a connection opened under one node's rules and hand it to another.
-func clientFor(node model.Node, timeout time.Duration) (*http.Client, error) {
-	cfg, err := tlsConfigFor(node)
+func clientFor(node model.Node, timeout time.Duration, id *Identity) (*http.Client, error) {
+	cfg, err := tlsConfigFor(node, id)
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +82,20 @@ func clientFor(node model.Node, timeout time.Duration) (*http.Client, error) {
 	}, nil
 }
 
-func tlsConfigFor(node model.Node) (*tls.Config, error) {
+func tlsConfigFor(node model.Node, id *Identity) (*tls.Config, error) {
 	switch node.TLSMode {
+	case model.TLSMutual:
+		// The node's own certificate is still verified normally: presenting one
+		// of ours says who we are and says nothing about who they are.
+		cert, err := clientCertificate(id)
+		if err != nil {
+			return nil, err
+		}
+		return &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}, nil
+
 	case model.TLSPin:
 		pin := strings.TrimSpace(node.TLSPin)
 		if pin == "" {

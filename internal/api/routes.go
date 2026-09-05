@@ -173,13 +173,16 @@ func (s *Server) routes() []Route {
 				"unreachable catches up on its next successful call and a sync that " +
 				"arrives twice does nothing the second time. Carries no allowance, " +
 				"expiry or customer name: enabled is the only enforcement a node needs.",
-			handler: s.handleNodeSync},
+			// Both halves when this panel has been told which authority to
+			// trust: the token says the caller knows a secret, the certificate
+			// says which machine it is.
+			handler: s.requireManagingPanel(s.handleNodeSync)},
 		{Method: "POST", Path: "/api/node/usage", Group: "Nodes", Auth: true,
 			Summary: "Report what each customer spent here, and reset the counters.",
 			Note: "A read that resets, in one transaction. The panel asking adds these " +
 				"to a total spanning every node, so a figure returned twice would bill " +
 				"a customer for traffic they never sent.",
-			handler: s.handleNodeUsage},
+			handler: s.requireManagingPanel(s.handleNodeUsage)},
 
 		// ── Interfaces ──
 		{Method: "GET", Path: "/api/interfaces", Group: "Interfaces", Auth: true,
@@ -442,6 +445,18 @@ func (s *Server) routes() []Route {
 				"an AmneziaWG copy gets a fresh obfuscation profile — sharing one would " +
 				"mean both tunnels blocked by the same rule.",
 			handler: s.handleCloneInterface},
+		{Method: "GET", Path: "/api/nodes/mtls/authority", Group: "Nodes", Auth: true,
+			Summary: "This panel's node authority, to paste into a node.",
+			Note: "The public half only; the key stays here, which is why a certificate " +
+				"is worth more than a token. Minted the first time it is asked for.",
+			handler: s.handleMTLSIdentity},
+		{Method: "POST", Path: "/api/nodes/mtls/trust", Group: "Nodes", Auth: true,
+			Summary: "Require the panel managing this one to present a client certificate.",
+			Body: `{"caCert":"-----BEGIN CERTIFICATE-----
+…"}`,
+			Note: "Paste the authority from the managing panel. An empty value turns the " +
+				"requirement off and leaves the token as the only check.",
+			handler: s.handleSetMTLSTrust},
 		{Method: "POST", Path: "/api/nodes/fetch-pin", Group: "Nodes", Auth: true,
 			Summary: "Read the certificate fingerprint an address is presenting.",
 			Body:    `{"address":"https://vpn2.example.com:2096"}`,

@@ -170,7 +170,15 @@ func (p *Prober) ask(ctx context.Context, node model.Node) (Snapshot, error) {
 	// Per node: see clientFor. A probe that trusted a certificate the sync
 	// loop would refuse would report a node as healthy right up until nothing
 	// could be pushed to it.
-	client, err := clientFor(node, probeTimeout)
+	var id *Identity
+	if node.TLSMode == model.TLSMutual {
+		var idErr error
+		if id, idErr = EnsureIdentity(p.db); idErr != nil {
+			return snap, fmt.Errorf("could not load this panel's client certificate: %w", idErr)
+		}
+	}
+
+	client, err := clientFor(node, probeTimeout, id)
 	if err != nil {
 		return snap, err
 	}

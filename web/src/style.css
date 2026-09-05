@@ -3855,3 +3855,24 @@ tbody tr.decided .step {
 .flip {
   transform: rotate(180deg);
 }
+
+/* A certificate, shown to be copied. Monospace because it is machine text, and
+   scrollable because it is long and the dialog is not. */
+textarea.mono {
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* A setting whose value is a block of text rather than a number or a switch. */
+.setting-control.wide {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 320px;
+  flex: 1;
+}
+

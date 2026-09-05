@@ -2,8 +2,10 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/nodes"
 )
 
@@ -40,4 +42,58 @@ func (s *Server) handleFetchPin(w http.ResponseWriter, r *http.Request) {
 		"address", in.Address, "by", adminName(r), "ip", clientIP(r))
 
 	writeJSON(w, http.StatusOK, map[string]any{"tlsPin": pin})
+}
+
+// handleMTLSIdentity hands back the authority this panel signs its own client
+// certificate with, to be pasted into a node.
+//
+// The public half only: the key stays here, which is the whole reason a
+// certificate is worth more than a token.
+func (s *Server) handleMTLSIdentity(w http.ResponseWriter, r *http.Request) {
+	id, err := nodes.EnsureIdentity(s.db)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+
+	s.log.Info("the node authority was read for copying to a node",
+		"by", adminName(r), "ip", clientIP(r))
+
+	writeJSON(w, http.StatusOK, map[string]any{"caCert": id.CACertPEM})
+}
+
+// handleSetMTLSTrust stores the authority this panel accepts when it is the
+// node being managed. An empty value turns the requirement off.
+func (s *Server) handleSetMTLSTrust(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		CACert string `json:"caCert"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	in.CACert = strings.TrimSpace(in.CACert)
+
+	// Checked before it is stored. An authority that cannot be read would
+	// otherwise be found out by every request arriving afterwards.
+	if in.CACert != "" {
+		if _, err := nodes.TrustPool(in.CACert); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	if err := database.PutSetting(s.db, nodes.KeyMTLSTrustCA, in.CACert); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+
+	if in.CACert == "" {
+		s.log.Warn("this panel no longer requires a client certificate from the panel managing it",
+			"by", adminName(r), "ip", clientIP(r))
+	} else {
+		s.log.Warn("this panel now requires a client certificate from the panel managing it",
+			"by", adminName(r), "ip", clientIP(r))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"required": in.CACert != ""})
 }

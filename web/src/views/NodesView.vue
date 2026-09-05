@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { watch, computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
 import { mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
@@ -83,6 +83,43 @@ function openEdit(n) {
 }
 
 const pinBusy = ref(false)
+
+// This panel's own authority, which an operator copies once into each node.
+//
+// Only ever read here: the key behind it stays in this panel, which is the
+// whole reason a certificate is worth more than a token that travels.
+const authority = ref('')
+const authorityBusy = ref(false)
+
+async function loadAuthority() {
+  authorityBusy.value = true
+  try {
+    const res = await api.get('/api/nodes/mtls/authority')
+    authority.value = res?.caCert || ''
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    authorityBusy.value = false
+  }
+}
+
+async function copyAuthority() {
+  try {
+    await navigator.clipboard.writeText(authority.value)
+    notify(t('node.authorityCopied'), 'ok')
+  } catch {
+    notify(t('action.copyFailed'), 'error')
+  }
+}
+
+// Fetched as soon as the mode is chosen, because the value is the point of
+// choosing it and a button nobody presses leaves an empty box.
+watch(
+  () => form.value.tlsMode,
+  (mode) => {
+    if (mode === 'mtls' && !authority.value) loadAuthority()
+  },
+)
 
 // Read the fingerprint the address is presenting, so nobody has to run openssl
 // and copy a hash by hand — which is how certificate checking ends up switched
@@ -393,6 +430,8 @@ function latencyTone(ms) {
                  of is a decision somebody made once and forgot. -->
             <span v-if="n.kind !== 'local' && n.tlsMode === 'skip'" class="tag red"
                   :title="t('node.tlsSkipWarning')">{{ t('node.tlsUnchecked') }}</span>
+            <span v-else-if="n.kind !== 'local' && n.tlsMode === 'mtls'" class="tag green"
+                  :title="t('node.tlsMutualHint')">{{ t('node.tlsMutualShort') }}</span>
             <span v-else-if="n.kind !== 'local' && n.tlsMode === 'pin'" class="tag grey"
                   :title="t('node.tlsPinnedHint')">{{ t('node.tlsPinned') }}</span>
             <span v-if="n.overAllowance" class="tag red" :title="t('node.spentHint')">
@@ -509,6 +548,7 @@ function latencyTone(ms) {
           <select id="n-tls" v-model="form.tlsMode">
             <option value="verify">{{ t('node.tlsVerify') }}</option>
             <option value="pin">{{ t('node.tlsPin') }}</option>
+            <option value="mtls">{{ t('node.tlsMutual') }}</option>
             <option value="skip">{{ t('node.tlsSkip') }}</option>
           </select>
           <span class="hint">{{ t('node.tlsModeHint') }}</span>
@@ -524,6 +564,24 @@ function latencyTone(ms) {
             </button>
           </div>
           <span class="hint">{{ t('node.fetchPinHint') }}</span>
+        </div>
+
+        <!-- The one value an operator has to move by hand, and it only goes
+             one way: the authority's public half, from here into the node. -->
+        <div v-if="form.tlsMode === 'mtls'" class="field">
+          <label>{{ t('node.authority') }}</label>
+          <textarea v-model="authority" rows="4" readonly class="ltr mono"
+                    :placeholder="t('node.authorityLoading')"></textarea>
+          <div class="row gap">
+            <button type="button" class="btn sm" :disabled="authorityBusy" @click="loadAuthority">
+              <span v-if="authorityBusy" class="spin sm"></span>
+              <span v-else>{{ t('node.authorityLoad') }}</span>
+            </button>
+            <button type="button" class="btn sm" :disabled="!authority" @click="copyAuthority">
+              {{ t('action.copy') }}
+            </button>
+          </div>
+          <span class="hint">{{ t('node.authorityHint') }}</span>
         </div>
 
         <div v-if="form.tlsMode === 'skip'" class="field">

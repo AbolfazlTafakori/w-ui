@@ -309,7 +309,16 @@ func (s *Syncer) post(ctx context.Context, node model.Node, path string, body, i
 	// Built per node, because each carries its own idea of which certificate
 	// to accept and a shared transport would pool a connection opened under
 	// one node's rules and hand it to another.
-	client, err := clientFor(node, syncTimeout)
+	var id *Identity
+	if node.TLSMode == model.TLSMutual {
+		// Loaded only when a node asks for it: a panel managing nothing over
+		// mutual TLS never mints a key it will not use.
+		if id, err = EnsureIdentity(s.db); err != nil {
+			return fmt.Errorf("could not load this panel's client certificate: %w", err)
+		}
+	}
+
+	client, err := clientFor(node, syncTimeout, id)
 	if err != nil {
 		return err
 	}

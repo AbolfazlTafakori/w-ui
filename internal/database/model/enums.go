@@ -97,6 +97,12 @@ const (
 	// operators end up disabling verification somewhere worse, and reported
 	// loudly wherever it is in use.
 	TLSSkip NodeTLSMode = "skip"
+
+	// TLSMutual verifies the node's certificate normally and presents this
+	// panel's own, so the node can refuse a caller that merely knows the token.
+	// A token travels in every request and can be read out of a log or a
+	// backup; a client key never leaves the panel holding it.
+	TLSMutual NodeTLSMode = "mtls"
 )
 
 // Safe reports whether a mode actually establishes who is on the other end.

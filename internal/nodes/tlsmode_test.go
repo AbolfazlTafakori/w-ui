@@ -75,7 +75,7 @@ func TestAPinnedCertificateIsAccepted(t *testing.T) {
 	node, stop := nodeServing(t, cert, model.TLSPin, pin)
 	defer stop()
 
-	client, err := clientFor(node, 5*time.Second)
+	client, err := clientFor(node, 5*time.Second, nil)
 	if err != nil {
 		t.Fatalf("clientFor: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestSomebodyElsesCertificateIsRefused(t *testing.T) {
 	node, stop := nodeServing(t, attacker, model.TLSPin, Fingerprint(pinned.Leaf))
 	defer stop()
 
-	client, err := clientFor(node, 5*time.Second)
+	client, err := clientFor(node, 5*time.Second, nil)
 	if err != nil {
 		t.Fatalf("clientFor: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestVerificationStillRefusesASelfSignedNode(t *testing.T) {
 	node, stop := nodeServing(t, cert, model.TLSVerify, "")
 	defer stop()
 
-	client, err := clientFor(node, 5*time.Second)
+	client, err := clientFor(node, 5*time.Second, nil)
 	if err != nil {
 		t.Fatalf("clientFor: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestSkippingChecksConnects(t *testing.T) {
 	node, stop := nodeServing(t, cert, model.TLSSkip, "")
 	defer stop()
 
-	client, err := clientFor(node, 5*time.Second)
+	client, err := clientFor(node, 5*time.Second, nil)
 	if err != nil {
 		t.Fatalf("clientFor: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestSkippingChecksConnects(t *testing.T) {
 func TestPinningWithNoFingerprintIsAConfigurationError(t *testing.T) {
 	node := model.Node{Name: "berlin", Address: "https://x.example", TLSMode: model.TLSPin}
 
-	if _, err := clientFor(node, time.Second); err == nil {
+	if _, err := clientFor(node, time.Second, nil); err == nil {
 		t.Fatal("pinning with no fingerprint was accepted")
 	}
 }
@@ -226,7 +226,7 @@ func TestAnAddressInsideTheServerIsRefused(t *testing.T) {
 
 	// The test server is on loopback, which is exactly the case being refused.
 	node.AllowPrivateAddress = false
-	client, err := clientFor(node, 3*time.Second)
+	client, err := clientFor(node, 3*time.Second, nil)
 	if err != nil {
 		t.Fatalf("clientFor: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestAPrivateAddressWorksWhenTheNodeSaysSo(t *testing.T) {
 	node, stop := nodeServing(t, cert, model.TLSSkip, "")
 	defer stop()
 
-	client, err := clientFor(node, 3*time.Second)
+	client, err := clientFor(node, 3*time.Second, nil)
 	if err != nil {
 		t.Fatalf("clientFor: %v", err)
 	}

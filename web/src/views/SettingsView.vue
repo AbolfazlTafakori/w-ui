@@ -374,6 +374,24 @@ const enrolError = ref('')
 const disablePw = ref('')
 const disabling = ref(false)
 
+// The authority of the panel that manages this one, when this panel is being
+// used as a node. Empty means the token alone, which is what an operator who
+// has not set this up is relying on.
+const mtlsTrust = ref('')
+const mtlsBusy = ref(false)
+
+async function saveMtlsTrust() {
+  mtlsBusy.value = true
+  try {
+    const res = await api.post('/api/nodes/mtls/trust', { caCert: mtlsTrust.value.trim() })
+    notify(res?.required ? t('settings.mtlsTrustSaved') : t('settings.mtlsTrustCleared'), 'ok')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    mtlsBusy.value = false
+  }
+}
+
 async function loadMe() {
   try {
     const me = await api.get('/api/auth/me')
@@ -783,6 +801,24 @@ async function changePassword() {
 
       <!-- ── Security ── -->
       <template v-else-if="active === 'security'">
+        <!-- This panel as a node: which panel is allowed to manage it. The
+             token says the caller knows a secret and travels in every request;
+             a certificate says which machine it is and its key never moves. -->
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mtlsTrust') }}</div>
+            <p class="setting-desc">{{ t('settings.mtlsTrustHint') }}</p>
+          </div>
+          <div class="setting-control wide">
+            <textarea v-model="mtlsTrust" rows="4" class="ltr mono"
+                      placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+            <button class="btn sm" :disabled="mtlsBusy" @click="saveMtlsTrust">
+              <span v-if="mtlsBusy" class="spin sm"></span>
+              <span v-else>{{ t('action.save') }}</span>
+            </button>
+          </div>
+        </div>
+
         <div class="setting-row">
           <div class="setting-meta">
             <div class="setting-title">
