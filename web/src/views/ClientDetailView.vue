@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import QRCode from 'qrcode'
+import { makeQR } from '../lib/qr.js'
 import { api, apiURL, getToken } from '../lib/api.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
@@ -15,6 +15,8 @@ const client = ref(null)
 const loading = ref(true)
 const profile = ref(null)
 const qr = ref('')
+// The size the code must be shown at, which comes from the code: see lib/qr.
+const qrSize = ref(340)
 const newDevice = ref('')
 const busy = ref(false)
 const downloading = ref(false)
@@ -62,6 +64,19 @@ async function downloadAll() {
   }
 }
 
+const savingProfile = ref(false)
+
+async function saveProfile() {
+  savingProfile.value = true
+  try {
+    await api.downloadProfile(profile.value.account.id)
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    savingProfile.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   try {
@@ -83,11 +98,9 @@ async function showProfile(account) {
     // WireGuard clients import a tunnel by camera, so the QR is the primary
     // delivery path on mobile. OpenVPN clients cannot, so it is skipped there.
     if (client.value.protocol === 'wireguard') {
-      qr.value = await QRCode.toDataURL(p.body, {
-        margin: 1,
-        width: 300,
-        color: { dark: '#000000', light: '#ffffff' },
-      })
+      const code = await makeQR(p.body)
+      qr.value = code.dataUrl
+      qrSize.value = code.size
     }
   } catch (err) {
     notify(err.message, 'error')
@@ -360,7 +373,7 @@ async function copy(text) {
 
         <div class="card-body">
           <div v-if="qr" class="qr">
-            <img :src="qr" :alt="t('device.showQR')" width="240" height="240" />
+            <img :src="qr" :alt="t('device.showQR')" :width="qrSize" :height="qrSize" />
             <p class="muted small">{{ t('device.qrHint') }}</p>
           </div>
 
@@ -392,9 +405,10 @@ async function copy(text) {
           <button class="btn ghost" @click="copy(profile.body)">
             <Icon name="copy" :size="13" />{{ t('action.copy') }}
           </button>
-          <a class="btn primary" :href="api.profileDownloadUrl(profile.account.id)" download>
-            <Icon name="download" :size="13" />{{ t('device.downloadConfig') }}
-          </a>
+          <button class="btn primary" :disabled="savingProfile" @click="saveProfile">
+            <span v-if="savingProfile" class="spin sm"></span>
+            <Icon v-else name="download" :size="13" />{{ t('device.downloadConfig') }}
+          </button>
         </div>
       </div>
     </div>
@@ -442,6 +456,11 @@ async function copy(text) {
      fail on half the phones that try it. */
   background: #ffffff;
   padding: 8px;
+  /* The white border sits around the image rather than being taken out of it:
+     the code is sized to whole pixels per module and must not be squeezed. */
+  box-sizing: content-box;
+  max-width: 100%;
+  height: auto;
 }
 .creds {
   display: grid;

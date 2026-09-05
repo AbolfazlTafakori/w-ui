@@ -476,7 +476,7 @@ function pickMore(key) {
     return
   }
   if (key === 'export') {
-    window.location.href = api.exportUrl()
+    api.downloadClients().catch((e) => notify(e.message, 'error'))
     return
   }
   if (key === 'resetAll') {

@@ -191,6 +191,47 @@ async function send(method, path, body) {
   return payload
 }
 
+// Saving a file the panel produces.
+//
+// Never an <a href> pointing at the API. Two things go wrong with one, and both
+// did: the path it links to is not the right one when the panel is served under
+// a prefix, which every install has by default, and a plain link carries no
+// Authorization header — so it either 404s or 401s. These files hold private
+// keys, so serving them unauthenticated to make a link work is not the trade to
+// make. Fetched with the session and handed to the browser as a blob instead.
+export async function saveFile(path, fallbackName) {
+  const res = await fetch(apiURL(path), {
+    headers: { Authorization: `Bearer ${getToken()}` },
+    credentials: 'same-origin',
+  })
+
+  if (res.status === 401) {
+    setToken(null)
+    window.dispatchEvent(new CustomEvent('wui:unauthorized'))
+    throw new ApiError('', 401, 'session')
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    let message = text
+    try {
+      message = JSON.parse(text)?.error || text
+    } catch {
+      /* not JSON: the body is the message */
+    }
+    throw new ApiError(message || `Download failed (${res.status})`, res.status)
+  }
+
+  // The server names the file; falling back to a given name beats saving
+  // something called "download".
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = named ? named[1] : fallbackName
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   // opts.background marks a poll: it does work but the operator is not waiting
   // on it, so it must not light the progress bar.
@@ -235,7 +276,6 @@ export const api = {
   resetAllTraffic: () => request('POST', '/api/clients/reset-all', {}),
   purgeClients: (status) => request('POST', '/api/clients/purge', { status }),
   createBatch: (input) => request('POST', '/api/clients/batch', input),
-  exportUrl: () => '/api/clients/export',
   addDevice: (id, name) => request('POST', `/api/clients/${id}/devices`, { name }),
 
   groups: (opts) => request('GET', '/api/groups', undefined, opts),
@@ -246,5 +286,6 @@ export const api = {
 
   removeDevice: (id) => request('DELETE', `/api/devices/${id}`),
   profile: (id) => request('GET', `/api/devices/${id}/profile`),
-  profileDownloadUrl: (id) => `/api/devices/${id}/profile?download=1`,
+  downloadProfile: (id) => saveFile(`/api/devices/${id}/profile?download=1`, `device-${id}.conf`),
+  downloadClients: () => saveFile('/api/clients/export', 'clients.csv'),
 }

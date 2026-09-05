@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import QRCode from 'qrcode'
+import { makeQR } from '../lib/qr.js'
 import { api } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
 import { isOnline } from '../lib/format.js'
@@ -16,6 +16,9 @@ const activeId = ref(null)
 const profile = ref(null)
 const qr = ref('')
 const loading = ref(true)
+
+// The size the code has to be shown at, which comes from the code: see lib/qr.
+const qrSize = ref(340)
 
 const active = computed(() => devices.value.find((d) => d.id === activeId.value))
 
@@ -43,14 +46,25 @@ async function select(id) {
     // Only WireGuard clients can import a tunnel from a camera; OpenVPN
     // profiles carry no credentials, so a QR of one would be a dead end.
     if (props.client.protocol === 'wireguard') {
-      qr.value = await QRCode.toDataURL(p.body, {
-        margin: 1,
-        width: 300,
-        color: { dark: '#000000', light: '#ffffff' },
-      })
+      const code = await makeQR(p.body)
+      qr.value = code.dataUrl
+      qrSize.value = code.size
     }
   } catch (err) {
     notify(err.message, 'error')
+  }
+}
+
+const saving = ref(false)
+
+async function save() {
+  saving.value = true
+  try {
+    await api.downloadProfile(activeId.value)
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    saving.value = false
   }
 }
 
@@ -101,7 +115,7 @@ async function copy(text, label) {
 
           <div v-if="profile" class="pane">
             <div v-if="qr" class="qr">
-              <img :src="qr" :alt="t('device.showQR')" width="230" height="230" />
+              <img :src="qr" :alt="t('device.showQR')" :width="qrSize" :height="qrSize" />
               <p class="muted small">{{ t('device.qrHint') }}</p>
             </div>
 
@@ -140,9 +154,10 @@ async function copy(text, label) {
         <button class="btn ghost" @click="copy(profile.body)">
           <Icon name="copy" :size="14" />{{ t('action.copy') }}
         </button>
-        <a class="btn primary" :href="api.profileDownloadUrl(activeId)" download>
-          <Icon name="download" :size="14" />{{ t('device.downloadConfig') }}
-        </a>
+        <button class="btn primary" :disabled="saving" @click="save">
+          <span v-if="saving" class="spin sm"></span>
+          <Icon v-else name="download" :size="14" />{{ t('device.downloadConfig') }}
+        </button>
       </div>
     </div>
   </div>
@@ -210,6 +225,14 @@ async function copy(text, label) {
   border-radius: var(--radius-sm);
   background: #fff;
   padding: 9px;
+  /* The white border is around the image, not taken out of it: the code is
+     sized to whole pixels per module and must not be squeezed by padding. */
+  box-sizing: content-box;
+  /* On a screen narrower than the code it is better to shrink than to push the
+     dialog off the side, though a code read from this screen is not the case
+     this is for. */
+  max-width: 100%;
+  height: auto;
 }
 .creds {
   display: grid;
