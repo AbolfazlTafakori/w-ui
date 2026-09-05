@@ -13,16 +13,23 @@ const signedIn = computed(() => !!store.admin)
 // The order traffic actually flows in: what comes in, who it belongs to, then
 // where it goes out and by which route. Settings and the config templates sit
 // below as collapsible groups, and the docs last.
+//
+// It is also, item for item, the order 3x-ui uses, which is worth keeping on
+// purpose: an operator moving between panels should not have to hunt for the
+// page they already know the position of. What we have and it does not goes in
+// beside the thing it is about, rather than appended where it would read as
+// something else — Sharing reports on customers, so it sits with Customers,
+// not between Routing and Settings where it looked like an admin page.
 const nav = [
   { to: '/', key: 'nav.overview', icon: 'dashboard', exact: true },
   { to: '/interfaces', key: 'nav.interfaces', icon: 'inbound' },
   { to: '/clients', key: 'nav.clients', icon: 'users' },
+  { to: '/sharing', key: 'nav.sharing', icon: 'eye' },
   { to: '/groups', key: 'nav.groups', icon: 'tag' },
   { to: '/nodes', key: 'nav.nodes', icon: 'hdd' },
   { to: '/hosts', key: 'nav.hosts', icon: 'globe' },
   { to: '/outbounds', key: 'nav.outbounds', icon: 'outbound' },
   { to: '/routing', key: 'nav.routing', icon: 'route' },
-  { to: '/sharing', key: 'nav.sharing', icon: 'eye' },
   {
     key: 'nav.settings',
     icon: 'settings',
