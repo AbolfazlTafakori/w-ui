@@ -266,6 +266,12 @@ func maskToken(in service.PanelSettings) service.PanelSettings {
 	if in.NotifyBotToken != "" {
 		in.NotifyBotToken = service.TokenPlaceholder
 	}
+	// The mail password is the same kind of thing and gets the same treatment.
+	// It is often an account password rather than one issued for this, so
+	// handing it back on every page load would be worse, not better.
+	if in.MailPassword != "" {
+		in.MailPassword = service.TokenPlaceholder
+	}
 	return in
 }
 
@@ -285,6 +291,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// operator who has just fixed their token can test it straight away.
 	if s.notifier != nil {
 		s.notifier.SetConfig(s.settings.Notify(r.Context()))
+		s.notifier.SetMail(s.settings.Mail(r.Context()))
 	}
 
 	writeJSON(w, http.StatusOK, panelSettingsResponse{
@@ -303,6 +310,25 @@ func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) 
 
 	cfg := s.settings.Notify(r.Context())
 	if err := s.notifier.Test(r.Context(), cfg); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleTestMail sends one message by SMTP and reports what happened.
+//
+// Separate from the Telegram test on purpose: an operator with both set up
+// needs to know which one is broken, and a single button that says "failed"
+// would not tell them.
+func (s *Server) handleTestMail(w http.ResponseWriter, r *http.Request) {
+	if s.notifier == nil {
+		fail(w, s.log, fmt.Errorf("notifications are not available"))
+		return
+	}
+
+	cfg := s.settings.Mail(r.Context())
+	if err := s.notifier.TestMail(r.Context(), cfg); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}

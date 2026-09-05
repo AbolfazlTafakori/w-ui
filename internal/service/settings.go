@@ -42,6 +42,16 @@ const (
 	keyNotifyKinds     = "notify.kinds"
 	keyBackupEvery     = "backup.everyHours"
 	keyBackupKeep      = "backup.keep"
+	keyMailEnabled     = "mail.enabled"
+	keyMailHost        = "mail.host"
+	keyMailPort        = "mail.port"
+	keyMailUsername    = "mail.username"
+	keyMailPassword    = "mail.password"
+	keyMailFrom        = "mail.from"
+	keyMailFromName    = "mail.fromName"
+	keyMailTo          = "mail.to"
+	keyMailEncryption  = "mail.encryption"
+	keyMailKinds       = "mail.kinds"
 	maxSessionHours    = 24 * 30
 	maxDeviceLimit     = 64
 	maxExpiryDays      = 365 * 10
@@ -70,6 +80,23 @@ type PanelSettings struct {
 
 	BackupEveryHours int `json:"backupEveryHours"`
 	BackupKeep       int `json:"backupKeep"`
+
+	// Mail is the second way an event can reach an operator, and it carries
+	// its own list of what to send: the point of a second channel is that it
+	// can be set to carry less.
+	MailEnabled    bool     `json:"mailEnabled"`
+	MailHost       string   `json:"mailHost"`
+	MailPort       int      `json:"mailPort"`
+	MailUsername   string   `json:"mailUsername"`
+	MailFrom       string   `json:"mailFrom"`
+	MailFromName   string   `json:"mailFromName"`
+	MailTo         string   `json:"mailTo"`
+	MailEncryption string   `json:"mailEncryption"`
+	MailKinds      []string `json:"mailKinds"`
+	// MailPassword is write-only, like the bot token: returned as a
+	// placeholder so the page can show one is set without handing it back on
+	// every page load.
+	MailPassword string `json:"mailPassword"`
 }
 
 // TokenPlaceholder is what the API returns in place of a stored bot token.
@@ -108,6 +135,9 @@ func (s *Settings) Defaults() PanelSettings {
 		NotifyKinds:        []string{},
 		BackupEveryHours:   24,
 		BackupKeep:         7,
+		MailPort:           587,
+		MailEncryption:     string(notify.EncryptionStartTLS),
+		MailKinds:          []string{},
 	}
 }
 
@@ -157,6 +187,21 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	out.BackupEveryHours = intOr(stored[keyBackupEvery], out.BackupEveryHours)
 	out.BackupKeep = intOr(stored[keyBackupKeep], out.BackupKeep)
 
+	out.MailEnabled = stored[keyMailEnabled] == "true"
+	out.MailHost = stored[keyMailHost]
+	out.MailPort = intOr(stored[keyMailPort], out.MailPort)
+	out.MailUsername = stored[keyMailUsername]
+	out.MailPassword = stored[keyMailPassword]
+	out.MailFrom = stored[keyMailFrom]
+	out.MailFromName = stored[keyMailFromName]
+	out.MailTo = stored[keyMailTo]
+	if v := strings.TrimSpace(stored[keyMailEncryption]); v != "" {
+		out.MailEncryption = v
+	}
+	if v := strings.TrimSpace(stored[keyMailKinds]); v != "" {
+		out.MailKinds = strings.Split(v, ",")
+	}
+
 	s.mu.Lock()
 	s.cache, s.loaded = &out, true
 	s.mu.Unlock()
@@ -184,6 +229,15 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 		keyNotifyKinds:    strings.Join(in.NotifyKinds, ","),
 		keyBackupEvery:    strconv.Itoa(in.BackupEveryHours),
 		keyBackupKeep:     strconv.Itoa(in.BackupKeep),
+		keyMailEnabled:    strconv.FormatBool(in.MailEnabled),
+		keyMailHost:       in.MailHost,
+		keyMailPort:       strconv.Itoa(in.MailPort),
+		keyMailUsername:   in.MailUsername,
+		keyMailFrom:       in.MailFrom,
+		keyMailFromName:   in.MailFromName,
+		keyMailTo:         in.MailTo,
+		keyMailEncryption: in.MailEncryption,
+		keyMailKinds:      strings.Join(in.MailKinds, ","),
 	}
 
 	// The placeholder means the operator did not retype the token, so the
@@ -191,6 +245,9 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 	// notifications the next time they saved any unrelated setting.
 	if in.NotifyBotToken != TokenPlaceholder {
 		values[keyNotifyToken] = in.NotifyBotToken
+	}
+	if in.MailPassword != TokenPlaceholder {
+		values[keyMailPassword] = in.MailPassword
 	}
 
 	// One transaction: a half-saved settings page would leave the panel in a
@@ -235,6 +292,26 @@ func (s *Settings) validate(in *PanelSettings) error {
 	default:
 		return fmt.Errorf("%w: unknown reset cycle %q", ErrInvalid, in.DefaultResetCycle)
 	}
+	switch notify.Encryption(in.MailEncryption) {
+	case "", notify.EncryptionStartTLS, notify.EncryptionTLS, notify.EncryptionNone:
+	default:
+		return fmt.Errorf("%w: unknown mail encryption %q", ErrInvalid, in.MailEncryption)
+	}
+	if in.MailPort < 0 || in.MailPort > 65535 {
+		return fmt.Errorf("%w: mail port %d is out of range", ErrInvalid, in.MailPort)
+	}
+	// Checked when it is switched on rather than when it is filled in, so a
+	// half-completed form can still be saved and come back to.
+	if in.MailEnabled {
+		switch {
+		case strings.TrimSpace(in.MailHost) == "":
+			return fmt.Errorf("%w: a mail server is required to send email", ErrInvalid)
+		case strings.TrimSpace(in.MailFrom) == "":
+			return fmt.Errorf("%w: a from address is required to send email", ErrInvalid)
+		case strings.TrimSpace(in.MailTo) == "":
+			return fmt.Errorf("%w: at least one recipient is required to send email", ErrInvalid)
+		}
+	}
 	if in.BackupEveryHours < 0 || in.BackupEveryHours > 24*30 {
 		return fmt.Errorf("%w: backup interval must be between 0 and %d hours",
 			ErrInvalid, 24*30)
@@ -265,6 +342,32 @@ func (s *Settings) Notify(ctx context.Context) notify.Config {
 		BotToken: got.NotifyBotToken,
 		ChatID:   got.NotifyChatID,
 		Kinds:    kinds,
+	}
+}
+
+// Mail is the email half of the notification settings.
+func (s *Settings) Mail(ctx context.Context) notify.MailConfig {
+	got, err := s.Get(ctx)
+	if err != nil {
+		return notify.MailConfig{}
+	}
+	kinds := make(map[string]bool, len(got.MailKinds))
+	for _, k := range got.MailKinds {
+		if k = strings.TrimSpace(k); k != "" {
+			kinds[k] = true
+		}
+	}
+	return notify.MailConfig{
+		Enabled:    got.MailEnabled,
+		Host:       got.MailHost,
+		Port:       got.MailPort,
+		Username:   got.MailUsername,
+		Password:   got.MailPassword,
+		From:       got.MailFrom,
+		FromName:   got.MailFromName,
+		To:         got.MailTo,
+		Encryption: notify.Encryption(got.MailEncryption),
+		Kinds:      kinds,
 	}
 }
 

@@ -34,10 +34,19 @@ const nav = [
     key: 'nav.settings',
     icon: 'settings',
     children: [
+      // The order 3x-ui uses, because an operator who has run one panel should
+      // not have to learn where things moved to. Our own pages are placed
+      // inside it rather than appended: customer defaults belong next to the
+      // panel's own settings, and backups and system are the ones you go
+      // looking for last.
       { to: '/settings/general', key: 'settings.tab.general', icon: 'settings' },
       { to: '/settings/security', key: 'settings.tab.security', icon: 'lock' },
       { to: '/settings/clients', key: 'settings.tab.clients', icon: 'users' },
-      { to: '/settings/notify', key: 'settings.tab.notify', icon: 'alert' },
+      { to: '/settings/notify', key: 'settings.tab.notify', icon: 'send' },
+      { to: '/settings/email', key: 'settings.tab.email', icon: 'mail' },
+      // Was reachable only by typing the address: the page existed and nothing
+      // linked to it.
+      { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'link' },
       { to: '/settings/backups', key: 'settings.tab.backups', icon: 'database' },
       { to: '/settings/system', key: 'settings.tab.system', icon: 'server' },
     ],

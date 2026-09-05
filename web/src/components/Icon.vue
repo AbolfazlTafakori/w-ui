@@ -32,6 +32,9 @@ const paths = {
   refresh: 'M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5',
   power: 'M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10',
   alert: 'M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
+  // A paper plane, for the Telegram bot, and an envelope for mail.
+  send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+  mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 7l-10 6L2 7',
   chevronDown: 'M6 9l6 6 6-6',
   // Arrows into and out of a box: what arrives at this server, and what leaves
   // it. Mirrored rather than reused, so the two are distinguishable at 16px.

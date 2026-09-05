@@ -83,6 +83,7 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/clients/reset-all":                true,
 		"POST /api/backups":                          true,
 		"POST /api/settings/notify/test":             true,
+		"POST /api/settings/mail/test":               true, // uses the saved settings
 		"POST /api/auth/totp/start":                  true,
 		"POST /api/nodes/{id}/probe":                 true, // asks a node; nothing to send
 		"POST /api/interfaces/{id}/restart":          true,

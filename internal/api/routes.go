@@ -400,6 +400,11 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/settings/notify/test", Group: "Settings", Auth: true,
 			Summary: "Send one test notification and report what happened.",
 			handler: s.handleTestNotification},
+		{Method: "POST", Path: "/api/settings/mail/test", Group: "Settings", Auth: true,
+			Summary: "Send one test email and report what happened.",
+			Note: "Uses the saved settings, so save before testing. A wrong password " +
+				"is reported here rather than the night the server has a problem.",
+			handler: s.handleTestMail},
 		{Method: "GET", Path: "/api/system/history", Group: "Server", Auth: true,
 			Summary: "This server's readings over time, at decreasing resolution.",
 			Note: "Takes range: 5m, 1h, 6h, 24h, 48h or 7d. Kept across restarts, " +

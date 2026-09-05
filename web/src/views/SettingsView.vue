@@ -66,13 +66,18 @@ const pw = ref({ current: '', next: '', confirm: '' })
 const pwBusy = ref(false)
 const pwError = ref('')
 
+// The same order as the menu, which is 3x-ui's with our own pages placed
+// inside it. The tabs along the top and the links down the side have to agree:
+// they are two ways to the same pages, and an operator who learns one order
+// should not meet another.
 const tabs = [
   { key: 'general', icon: 'settings', label: 'settings.tab.general' },
-  { key: 'clients', icon: 'users', label: 'settings.tab.clients' },
   { key: 'security', icon: 'lock', label: 'settings.tab.security' },
-  { key: 'notify', icon: 'alert', label: 'settings.tab.notify' },
-  { key: 'backups', icon: 'database', label: 'settings.tab.backups' },
+  { key: 'clients', icon: 'users', label: 'settings.tab.clients' },
+  { key: 'notify', icon: 'send', label: 'settings.tab.notify' },
+  { key: 'email', icon: 'mail', label: 'settings.tab.email' },
   { key: 'subscription', icon: 'link', label: 'settings.tab.subscription' },
+  { key: 'backups', icon: 'database', label: 'settings.tab.backups' },
   { key: 'engine', icon: 'shield', label: 'settings.tab.engine' },
   { key: 'logs', icon: 'info', label: 'settings.tab.logs' },
   { key: 'system', icon: 'server', label: 'settings.tab.system' },
@@ -357,10 +362,41 @@ async function testNotification() {
 }
 
 function toggleKind(kind, on) {
-  const set = new Set(form.value.notifyKinds || [])
+  form.value.notifyKinds = withKind(form.value.notifyKinds, kind, on)
+}
+
+function toggleMailKind(kind, on) {
+  form.value.mailKinds = withKind(form.value.mailKinds, kind, on)
+}
+
+function withKind(list, kind, on) {
+  const set = new Set(list || [])
   if (on) set.add(kind)
   else set.delete(kind)
-  form.value.notifyKinds = [...set]
+  return [...set]
+}
+
+// The mail test is its own button and its own result.
+//
+// An operator with both channels set up needs to know which one is broken, and
+// one button reporting "failed" would not tell them. It saves first, because
+// the server tests what is stored rather than what is on screen — testing an
+// unsaved server address would report on the old one.
+const mailTesting = ref(false)
+const mailResult = ref(null)
+
+async function testMail() {
+  mailResult.value = null
+  mailTesting.value = true
+  try {
+    if (dirty.value) await save()
+    const res = await api.post('/api/settings/mail/test')
+    mailResult.value = res.ok ? { ok: true } : { ok: false, error: res.error }
+  } catch (e) {
+    mailResult.value = { ok: false, error: e.message }
+  } finally {
+    mailTesting.value = false
+  }
 }
 
 // Two-factor enrolment. The secret is held here only until it is confirmed:
@@ -984,6 +1020,140 @@ async function changePassword() {
             <button class="btn ghost" @click="testNotification">{{ t('settings.sendTest') }}</button>
             <p v-if="testResult" class="test-result" :class="testResult.ok ? 'ok' : 'bad'">
               {{ testResult.ok ? t('settings.testOk') : testResult.error }}
+            </p>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── Email ── -->
+      <template v-else-if="active === 'email'">
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailEnabled') }}</div>
+            <p class="setting-desc">{{ t('settings.mailEnabledDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <label class="switch">
+              <input v-model="form.mailEnabled" type="checkbox" />
+              <span>{{ form.mailEnabled ? t('settings.on') : t('settings.off') }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailHost') }}</div>
+            <p class="setting-desc">{{ t('settings.mailHostDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.mailHost" type="text" class="ltr" spellcheck="false" placeholder="smtp.example.com" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailPort') }}</div>
+            <p class="setting-desc">{{ t('settings.mailPortDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model.number="form.mailPort" type="number" min="1" max="65535" step="1" class="ltr" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailEncryption') }}</div>
+            <p class="setting-desc">{{ t('settings.mailEncryptionDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <select v-model="form.mailEncryption">
+              <option value="starttls">{{ t('settings.mailStartTLS') }}</option>
+              <option value="tls">{{ t('settings.mailTLS') }}</option>
+              <option value="none">{{ t('settings.mailNoTLS') }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailUsername') }}</div>
+            <p class="setting-desc">{{ t('settings.mailUsernameDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.mailUsername" type="text" class="ltr" autocomplete="off" spellcheck="false" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailPassword') }}</div>
+            <p class="setting-desc">{{ t('settings.mailPasswordDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.mailPassword" type="password" autocomplete="off" spellcheck="false" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailFrom') }}</div>
+            <p class="setting-desc">{{ t('settings.mailFromDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.mailFrom" type="email" class="ltr" autocomplete="off" spellcheck="false" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailFromName') }}</div>
+            <p class="setting-desc">{{ t('settings.mailFromNameDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.mailFromName" type="text" placeholder="W-UI" />
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailTo') }}</div>
+            <p class="setting-desc">{{ t('settings.mailToDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <input v-model="form.mailTo" type="text" class="ltr" autocomplete="off" spellcheck="false" />
+          </div>
+        </div>
+
+        <div class="setting-row block">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.mailKinds') }}</div>
+            <p class="setting-desc">{{ t('settings.mailKindsDesc') }}</p>
+          </div>
+          <div class="setting-control">
+            <div class="check-list">
+              <label v-for="k in NOTIFY_KINDS" :key="k" class="check">
+                <input
+                  type="checkbox"
+                  :checked="(form.mailKinds || []).includes(k)"
+                  @change="toggleMailKind(k, $event.target.checked)"
+                />
+                <span>{{ t(`settings.kind.${k}`) }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-meta">
+            <div class="setting-title">{{ t('settings.testMail') }}</div>
+            <p class="setting-desc">{{ t('settings.testMailDesc') }}</p>
+          </div>
+          <div class="setting-control stack-end">
+            <button class="btn ghost" :disabled="mailTesting" @click="testMail">
+              <span v-if="mailTesting" class="spin sm"></span>{{ t('settings.sendTest') }}
+            </button>
+            <p v-if="mailResult" class="test-result" :class="mailResult.ok ? 'ok' : 'bad'">
+              {{ mailResult.ok ? t('settings.testOk') : mailResult.error }}
             </p>
           </div>
         </div>

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -85,8 +86,9 @@ type Notifier struct {
 	log    *slog.Logger
 	client *http.Client
 
-	mu  sync.RWMutex
-	cfg Config
+	mu   sync.RWMutex
+	cfg  Config
+	mail MailConfig
 
 	queue chan Event
 
@@ -125,7 +127,10 @@ func (n *Notifier) Config() Config {
 // Send queues an event. It never blocks and never returns an error: a
 // notification failing must not fail the thing being notified about.
 func (n *Notifier) Send(e Event) {
-	if !n.Config().Wants(e.Kind) {
+	// Either channel wanting it is enough. Asking only Telegram would mean an
+	// operator who set up mail alone never received anything, with nothing to
+	// say why.
+	if !n.Config().Wants(e.Kind) && !n.Mail().Wants(e.Kind) {
 		return
 	}
 	if e.At.IsZero() {
@@ -184,8 +189,26 @@ func (n *Notifier) Test(ctx context.Context, c Config) error {
 	return n.post(ctx, c, "*W-UI*\nNotifications are working.")
 }
 
+// deliver sends one event down every channel that asked for it.
+//
+// The channels are independent on purpose: a revoked bot token must not stop
+// the mail, and a mail server that is down must not stop Telegram. Both errors
+// are reported, because a caller that is told about one failure and not the
+// other would go looking in the wrong place.
 func (n *Notifier) deliver(ctx context.Context, e Event) error {
-	return n.post(ctx, n.Config(), format(e))
+	var errs []error
+
+	if cfg := n.Config(); cfg.Wants(e.Kind) {
+		if err := n.post(ctx, cfg, format(e)); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if mail := n.Mail(); mail.Wants(e.Kind) {
+		if err := n.sendMail(ctx, mail, e); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // format renders an event for Telegram's markdown.

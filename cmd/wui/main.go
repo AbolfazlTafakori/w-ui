@@ -164,6 +164,7 @@ func run() error {
 	routes := service.NewRouting(db, log)
 	notifier := notify.New(log)
 	notifier.SetConfig(settings.Notify(context.Background()))
+	notifier.SetMail(settings.Mail(context.Background()))
 
 	backups := backup.New(backup.Options{
 		DataDir: cfg.DataDir,
