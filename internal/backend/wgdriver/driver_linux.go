@@ -516,6 +516,14 @@ func (d *Driver) output(ctx context.Context, name string, args ...string) (strin
 	cmd.Stderr = &errBuf
 
 	if err := cmd.Run(); err != nil {
+		// A command we ran out of patience with reports "signal: killed",
+		// which reads as though something went wrong with the tool. It says
+		// nothing about the deadline that actually ended it, and sends an
+		// operator looking for a crash that did not happen.
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("%s %s: no answer within %s",
+				name, strings.Join(args, " "), cmdTimeout)
+		}
 		msg := strings.TrimSpace(errBuf.String())
 		if msg == "" {
 			msg = err.Error()
