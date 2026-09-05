@@ -386,6 +386,11 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/settings/notify/test", Group: "Settings", Auth: true,
 			Summary: "Send one test notification and report what happened.",
 			handler: s.handleTestNotification},
+		{Method: "GET", Path: "/api/system/history", Group: "Server", Auth: true,
+			Summary: "This server's readings over time, at decreasing resolution.",
+			Note: "Takes range: 5m, 1h, 6h, 24h, 48h or 7d. Kept across restarts, " +
+				"exactly for the last hour and averaged beyond it.",
+			handler: s.handleHistory},
 		{Method: "POST", Path: "/api/tunnels/restart", Group: "Server", Auth: true,
 			Summary: "Reopen every tunnel on this server.",
 			Note: "Touches no records: allowances, dates and standing are unchanged, " +

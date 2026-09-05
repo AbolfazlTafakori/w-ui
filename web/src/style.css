@@ -3703,3 +3703,97 @@ tbody tr.decided .step {
   white-space: nowrap;
 }
 
+/* ══════════ system history ══════════ */
+.hs-ranges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.hs-range {
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+.hs-range:hover {
+  color: var(--ink);
+}
+.hs-range.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hs-note {
+  font-size: var(--t-xs);
+  color: var(--faint);
+}
+
+.hs-body {
+  max-height: 66vh;
+  overflow-y: auto;
+}
+/* Wider than the log, because these are read side by side: a spike in the
+   network at the same moment as one in the processor is the answer, and two
+   charts a scroll apart do not show it. */
+.hsmodal {
+  width: min(1200px, 96vw);
+}
+/* Two or three across when there is room, one when there is not. */
+.hs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.hs-chart {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.hs-chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.hs-legend {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hs-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.hs-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+/* The ends of the window and the highest point in it. Without the times a
+   chart says the shape but not when, which is the half being asked for. */
+.hs-chart-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: var(--t-xs);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.hs-peak {
+  color: var(--muted);
+}

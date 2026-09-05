@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -241,7 +242,37 @@ func run() error {
 	}
 
 	sys := sysinfo.New(cfg.DataDir, cfg.CollectInterval, log)
+
+	// The long history: exact for the last hour, averaged out to a week, and
+	// kept on disk so a restart does not erase the very thing somebody restarted
+	// the panel to go and look at.
+	history := sysinfo.NewStore(filepath.Join(cfg.DataDir, "history.gob"))
+	if err := history.Load(); err != nil {
+		// Starting without it is a much smaller problem than not starting.
+		log.Warn("could not read the stored history; starting a new one", "error", err)
+	}
+	sys.UseStore(history)
 	sys.Start(ctx)
+
+	// Written periodically, because a panel does not always get to shut down
+	// tidily — and the run that ends in a kill is the one whose history is
+	// worth having. The shutdown write is done below, in the shutdown path
+	// itself: a goroutine woken by ctx.Done() races the process exiting and
+	// loses it about as often as it wins.
+	go func() {
+		t := time.NewTicker(historySaveInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := history.Save(); err != nil {
+					log.Warn("could not write the history", "error", err)
+				}
+			}
+		}
+	}()
 
 	notifier.Start(ctx)
 
@@ -329,6 +360,14 @@ func run() error {
 		return fmt.Errorf("http server: %w", err)
 	case <-ctx.Done():
 		log.Info("shutting down")
+	}
+
+	// Before the server is asked to stop, and on this goroutine rather than
+	// another: an hour of readings is what somebody restarted the panel to go
+	// and look at, and losing it on every tidy shutdown would make the whole
+	// store worth only as much as the few minutes held in memory.
+	if err := history.Save(); err != nil {
+		log.Warn("could not write the history on the way out", "error", err)
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -585,3 +624,11 @@ func openPool(ctx context.Context, db *gorm.DB, nodeID uint, log *slog.Logger) (
 	pool.Sync(ctx, interfaces)
 	return pool, nil
 }
+
+// historySaveInterval is how often the long history is written to disk.
+//
+// Five minutes: often enough that a machine that is killed loses only a few
+// points, rare enough that an idle panel is not writing a file all day. The
+// finest tier holds an hour, so nothing older than the last write is ever at
+// risk.
+const historySaveInterval = 5 * time.Minute

@@ -148,6 +148,11 @@ type Collector struct {
 	lastTCP     int
 	lastUDP     int
 	staticSetUp bool
+
+	// store keeps the long history, at decreasing resolution, across restarts.
+	// The window above answers "what is it doing now"; this answers "was it
+	// like this last night", which is the question people actually arrive with.
+	store *Store
 }
 
 // New builds a collector. diskPath selects the filesystem to report; it should
@@ -269,9 +274,18 @@ func (c *Collector) sample(ctx context.Context) {
 	c.hist.Down = push(c.hist.Down, s.Network.RecvRate)
 	c.hist.TCP = push(c.hist.TCP, s.Network.TCPConns)
 	c.hist.UDP = push(c.hist.UDP, s.Network.UDPConns)
+
 	s.History = c.hist
 	c.snap = s
+	store := c.store
 	c.mu.Unlock()
+
+	// Outside the lock. record used to be called from inside it and reached
+	// back for the same mutex to read this field — a read lock taken while the
+	// write lock is held, which does not queue behind it but deadlocks against
+	// it. The panel started, collected one sample, and hung before it ever
+	// listened; the log simply stopped mid-startup.
+	c.recordTo(store, s)
 }
 
 func (c *Collector) sampleNetwork(ctx context.Context, s *Snapshot) {
@@ -343,4 +357,61 @@ func localAddresses() (v4, v6 []string) {
 		}
 	}
 	return v4, v6
+}
+
+// ── the long history ────────────────────────────────────────────────────────
+
+// UseStore attaches a long-term store, which the collector then feeds on every
+// sample. Optional: without one the panel behaves exactly as it did, with the
+// short in-memory window and nothing else.
+func (c *Collector) UseStore(s *Store) {
+	c.mu.Lock()
+	c.store = s
+	c.mu.Unlock()
+}
+
+// Store returns the attached store, or nil.
+func (c *Collector) Store() *Store {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.store
+}
+
+// MetricKeys are the series kept. Named here rather than at each call site so
+// the API and the page agree on what exists.
+var MetricKeys = []string{
+	"cpu", "memory", "swap", "disk",
+	"netUp", "netDown", "tcp", "udp",
+	"load1", "load5", "load15",
+	"panelMemory", "panelTasks",
+}
+
+// recordTo feeds one sample into the long store.
+//
+// The store is passed in rather than read from the collector: the caller has
+// just released the lock that guards it, and reaching back for it here is what
+// deadlocked the panel at startup.
+//
+// Rates rather than totals for the network, because a chart of bytes-since-boot
+// is a line that only goes up and says nothing. Percentages stay percentages so
+// a week and a minute can be read on the same axis.
+func (c *Collector) recordTo(store *Store, s Snapshot) {
+	if store == nil {
+		return
+	}
+	at := s.SampledAt
+
+	store.Add("cpu", at, s.CPU.Percent)
+	store.Add("memory", at, s.Memory.Percent)
+	store.Add("swap", at, s.Swap.Percent)
+	store.Add("disk", at, s.Disk.Percent)
+	store.Add("netUp", at, float64(s.Network.SentRate))
+	store.Add("netDown", at, float64(s.Network.RecvRate))
+	store.Add("tcp", at, float64(s.Network.TCPConns))
+	store.Add("udp", at, float64(s.Network.UDPConns))
+	store.Add("load1", at, s.CPU.Load1)
+	store.Add("load5", at, s.CPU.Load5)
+	store.Add("load15", at, s.CPU.Load15)
+	store.Add("panelMemory", at, float64(s.Panel.MemoryBytes))
+	store.Add("panelTasks", at, float64(s.Panel.Threads))
 }
