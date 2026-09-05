@@ -335,6 +335,15 @@ type Admin struct {
 	Locale       string     `gorm:"size:8;not null;default:en" json:"locale"`
 	LastLoginAt  *time.Time `json:"lastLoginAt"`
 	LastLoginIP  string     `gorm:"size:45" json:"lastLoginIp"`
+
+	// SessionEpoch is what makes a session endable.
+	//
+	// A signed token is valid until it expires, and nothing an operator can do
+	// changes that — so discovering a break-in, changing the password and
+	// finding the intruder still working for the rest of the day was the state
+	// of things. Every token carries the epoch it was issued under; raising it
+	// makes every one of them stop at once.
+	SessionEpoch int `gorm:"not null;default:1" json:"-"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -167,13 +168,28 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, fmt.Errorf("hash password: %w", err))
 		return
 	}
-	if err := s.db.WithContext(r.Context()).Model(admin).
-		Update("password_hash", string(hash)).Error; err != nil {
+	// The generation moves with the password. Somebody changes it because they
+	// think a session is not theirs, and a signed token that outlives the change
+	// means the intruder keeps working for the rest of the day while the
+	// operator believes they have just shut the door.
+	//
+	// Written in one statement with the hash, so a failure cannot leave the
+	// password changed and the old sessions alive.
+	if err := s.db.WithContext(r.Context()).Model(admin).Updates(map[string]any{
+		"password_hash": string(hash),
+		"session_epoch": gorm.Expr("session_epoch + 1"),
+	}).Error; err != nil {
 		fail(w, s.log, fmt.Errorf("store password: %w", err))
 		return
 	}
 
-	s.log.Info("admin password changed", "username", admin.Username, "ip", clientIP(r))
+	// Including this one. Signing the operator out of the browser they just
+	// used is the honest behaviour: every other session ended, and leaving
+	// theirs alive would mean the change was not quite what it said.
+	clearBindCookie(w, r)
+
+	s.log.Info("admin password changed; all sessions ended",
+		"username", admin.Username, "ip", clientIP(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -120,6 +120,11 @@ async function send(method, path, body) {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      // Half the session lives in a cookie the server marks HttpOnly, so that a
+      // token read out of this page is not a session on its own. This is
+      // fetch's default for a same-origin request; it is written out because
+      // sign-in stops working the day somebody changes it without knowing that.
+      credentials: 'same-origin',
       signal: abort.signal,
     })
   } catch (err) {

@@ -123,7 +123,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expires := time.Now().Add(s.sessionTTL(r.Context()))
-	token, err := s.issueToken(&admin, expires)
+	token, err := s.issueToken(w, r, &admin, expires)
 	if err != nil {
 		fail(w, s.log, err)
 		return
@@ -149,17 +149,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, loginResponse{Token: token, ExpiresAt: expires, Admin: &admin})
 }
 
-func (s *Server) issueToken(admin *model.Admin, expires time.Time) (string, error) {
-	claims := jwt.RegisteredClaims{
-		Subject:   fmt.Sprint(admin.ID),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(expires),
-		Issuer:    "w-ui",
+// issueToken mints a session and the cookie half that has to come with it.
+//
+// The cookie is set here rather than by the caller so that a token carrying a
+// binding can never be handed out without the browser being given the other
+// half — which would be an operator signed in and immediately refused.
+func (s *Server) issueToken(w http.ResponseWriter, r *http.Request, admin *model.Admin, expires time.Time) (string, error) {
+	value, fingerprint, err := newBinding()
+	if err != nil {
+		return "", err
+	}
+
+	claims := sessionClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   fmt.Sprint(admin.ID),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(expires),
+			Issuer:    "w-ui",
+		},
+		Bind:  fingerprint,
+		Epoch: max(admin.SessionEpoch, 1),
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.jwtSecret)
 	if err != nil {
 		return "", fmt.Errorf("api: sign token: %w", err)
 	}
+
+	setBindCookie(w, r, value, expires)
 	return token, nil
 }
 
@@ -185,7 +201,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		claims := &jwt.RegisteredClaims{}
+		claims := &sessionClaims{}
 		_, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
 			// Pinning the algorithm is what stops a token signed with "none",
 			// or with the public half of an asymmetric key, from being accepted.
@@ -199,9 +215,24 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// The token alone is not a session. Without the cookie it names, this is
+		// a token that left the browser it was issued to.
+		if !bindingHolds(r, claims) {
+			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
+			return
+		}
+
 		var admin model.Admin
 		if err := s.db.WithContext(r.Context()).First(&admin, claims.Subject).Error; err != nil {
 			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
+			return
+		}
+
+		// Signed out everywhere since this was issued — by a password change, or
+		// deliberately.
+		if !epochHolds(&admin, claims) {
+			clearBindCookie(w, r)
+			writeError(w, http.StatusUnauthorized, "you were signed out everywhere; sign in again")
 			return
 		}
 
