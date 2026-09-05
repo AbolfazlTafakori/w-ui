@@ -225,6 +225,46 @@ async function submitClone() {
   }
 }
 
+// Zeroing what everyone on a tunnel has used.
+//
+// A customer on three tunnels has one total, so this clears all of it for them
+// — which is on the confirmation rather than discovered from a customer who
+// suddenly has their whole allowance back.
+function resetUsage(iface) {
+  ask.value = {
+    title: t('interface.resetUsageTitle'),
+    subject: iface.name,
+    body: t('interface.resetUsageBody'),
+    confirmLabel: t('action.resetTraffic'),
+    run: async () => {
+      const res = await api.post(`/api/interfaces/${iface.id}/reset-usage`)
+      notify(`${t('interface.resetUsageDone')} — ${res?.customers ?? 0}`, 'success')
+      await load()
+    },
+  }
+}
+
+// Emptying a tunnel, which is what has to happen before it can be removed.
+function clearTunnel(iface) {
+  ask.value = {
+    title: t('interface.clearTitle'),
+    subject: iface.name,
+    body: t('interface.clearBody'),
+    confirmLabel: t('interface.clear'),
+    danger: true,
+    run: async () => {
+      const res = await api.post(`/api/interfaces/${iface.id}/clear`)
+      const failed = Object.entries(res?.failures || {})
+      if (failed.length) {
+        notify(failed.map(([name, why]) => `${name}: ${why}`).join('\n'), 'error')
+      } else {
+        notify(`${t('interface.clearDone')} — ${res?.changed ?? 0}`, 'success')
+      }
+      await load()
+    },
+  }
+}
+
 async function restart(iface) {
   hold(iface.id)
   try {
@@ -531,6 +571,16 @@ async function submitForm(input) {
                      same MTU, another port, because the first one is being
                      blocked. Retyping all of it is how the copy ends up subtly
                      different from the original. -->
+                <!-- For traffic nobody should have been charged for, and for
+                     emptying a tunnel before it is removed. Both are asked for
+                     first: one changes what customers are billed, the other
+                     takes them off a server. -->
+                <button class="act" :title="t('interface.resetUsage')" @click="resetUsage(i)">
+                  <Icon name="clock" :size="16" />
+                </button>
+                <button class="act danger" :title="t('interface.clear')" @click="clearTunnel(i)">
+                  <Icon name="swap" :size="16" />
+                </button>
                 <button class="act" :title="t('interface.clone')" @click="openClone(i)">
                   <Icon name="copy" :size="16" />
                 </button>

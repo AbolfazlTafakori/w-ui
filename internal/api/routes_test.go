@@ -94,6 +94,8 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/backups/{name}/restore":           true, // acts on the name in the path
 		"POST /api/backups/upload":                   true, // a file, not JSON; the Note says so
 		"POST /api/tunnels/restart":                  true, // acts on this server; nothing to send
+		"POST /api/interfaces/{id}/reset-usage":      true, // the tunnel is the whole request
+		"POST /api/interfaces/{id}/clear":            true,
 		"POST /api/tunnels/stop":                     true,
 		"POST /api/tunnels/start":                    true,
 	}

@@ -3850,3 +3850,8 @@ tbody tr.decided .step {
   flex: 1;
   min-width: 0;
 }
+
+/* A chevron used as an up arrow. One icon, two directions. */
+.flip {
+  transform: rotate(180deg);
+}

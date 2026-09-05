@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -180,5 +181,69 @@ func TestATunnelBelongingToAnotherPanelIsNotCopied(t *testing.T) {
 		Name: "wg10", ListenPort: 51830, Subnet: "10.70.0.0/24",
 	}); err == nil {
 		t.Fatal("a tunnel owned by another panel was copied")
+	}
+}
+
+// Resetting a tunnel is for traffic nobody should have been charged for — a
+// test, a misconfiguration, a month being written off. The customers themselves
+// must come through it untouched: their allowance, their date and their
+// standing are not what was wrong.
+func TestResettingATunnelClearsUsageAndNothingElse(t *testing.T) {
+	db := testDB(t)
+	svc, src := seedAmnezia(t, db)
+
+	expires := time.Now().Add(72 * time.Hour).UTC()
+	c := model.Client{
+		Name: "Roya", Protocol: model.ProtocolWireGuard, Status: model.StatusActive,
+		QuotaBytes: 10 << 30, UsedBytes: 6 << 30, UpBytes: 2 << 30, DownBytes: 4 << 30,
+		ExpiresAt: &expires, DeviceLimit: 2,
+	}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.Account{
+		ClientID: c.ID, InterfaceID: src.ID, DeviceName: "phone", IP: "10.66.0.2",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := svc.ResetTunnelUsage(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("ResetTunnelUsage: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("reset %d customers, want 1", n)
+	}
+
+	var got model.Client
+	if err := db.First(&got, c.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.UsedBytes != 0 || got.UpBytes != 0 || got.DownBytes != 0 {
+		t.Errorf("usage was not cleared: used=%d up=%d down=%d",
+			got.UsedBytes, got.UpBytes, got.DownBytes)
+	}
+	if got.QuotaBytes != 10<<30 {
+		t.Errorf("the allowance was changed: %d", got.QuotaBytes)
+	}
+	if got.Status != model.StatusActive {
+		t.Errorf("the customer's standing was changed: %s", got.Status)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(expires) {
+		t.Errorf("the expiry date was changed: %v", got.ExpiresAt)
+	}
+}
+
+// A tunnel nobody is on resets to nothing rather than failing.
+func TestResettingAnEmptyTunnelIsNotAnError(t *testing.T) {
+	db := testDB(t)
+	svc, src := seedAmnezia(t, db)
+
+	n, err := svc.ResetTunnelUsage(context.Background(), src.ID)
+	if err != nil {
+		t.Fatalf("ResetTunnelUsage on an empty tunnel: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("reset %d customers on an empty tunnel", n)
 	}
 }

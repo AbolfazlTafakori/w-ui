@@ -67,6 +67,42 @@ onMounted(load)
 // status column is only ever as current as the last read of it.
 useLive(load, { every: 15_000, busy: () => !!formFor.value || !!ask.value })
 
+// Reordering the addresses of one tunnel.
+//
+// The whole order for that tunnel is sent, because a move is only meaningful
+// against the list as it stands and two half-moves race into a third order.
+const reordering = ref(false)
+
+function siblings(h) {
+  return (hosts.value || [])
+    .filter((x) => x.interfaceId === h.interfaceId)
+    .slice()
+    .sort((a, b) => (a.priority || 0) - (b.priority || 0))
+}
+
+const isFirst = (h) => siblings(h)[0]?.id === h.id
+const isLast = (h) => siblings(h).slice(-1)[0]?.id === h.id
+
+async function move(h, delta) {
+  const list = siblings(h)
+  const at = list.findIndex((x) => x.id === h.id)
+  const to = at + delta
+  if (at < 0 || to < 0 || to >= list.length) return
+
+  const order = list.map((x) => x.id)
+  order.splice(to, 0, order.splice(at, 1)[0])
+
+  reordering.value = true
+  try {
+    await api.post('/api/hosts/reorder', { ids: order })
+    await load()
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    reordering.value = false
+  }
+}
+
 async function check(h) {
   hold(h.id)
   try {
@@ -230,6 +266,17 @@ async function runConfirmed() {
                   >
                     <span v-if="isPending(h.id)" class="spin sm"></span>
                     <Icon v-else name="zap" :size="16" />
+                  </button>
+                  <!-- Which address a customer is handed first. Moving one is
+                       sending the whole order, not a nudge: two nudges racing
+                       each other land in an order neither operator asked for. -->
+                  <button class="act" :title="t('host.moveUp')"
+                          :disabled="reordering || isFirst(h)" @click="move(h, -1)">
+                    <Icon name="chevronDown" :size="16" class="flip" />
+                  </button>
+                  <button class="act" :title="t('host.moveDown')"
+                          :disabled="reordering || isLast(h)" @click="move(h, 1)">
+                    <Icon name="chevronDown" :size="16" />
                   </button>
                   <button class="act" :title="t('action.edit')" @click="formFor = { host: h }">
                     <Icon name="edit" :size="16" />
