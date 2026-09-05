@@ -16,6 +16,7 @@ const activeId = ref(null)
 const profile = ref(null)
 const qr = ref('')
 const loading = ref(true)
+const showConfig = ref(false)
 
 // The size the code has to be shown at, which comes from the code: see lib/qr.
 const qrSize = ref(340)
@@ -40,6 +41,8 @@ async function select(id) {
   activeId.value = id
   qr.value = ''
   profile.value = null
+  // Asking to see one device's key is not asking to see the next one's.
+  showConfig.value = false
   try {
     const p = await api.profile(id)
     profile.value = p
@@ -145,7 +148,20 @@ async function copy(text, label) {
               <span class="spacer mono small muted">{{ active?.ip }}</span>
             </div>
 
-            <pre class="config">{{ profile.body }}</pre>
+            <!-- Not on screen unless somebody deliberately asks for it.
+                 The body is a private key with some routing around it: it is
+                 handed over by QR or by the download button, and putting it in
+                 front of whoever is looking at the panel -- over a shoulder, in
+                 a screen share, in a screenshot of something else -- gives away
+                 the tunnel to anyone who can read it. -->
+            <div class="secret">
+              <button class="btn sm ghost" @click="showConfig = !showConfig">
+                <Icon :name="showConfig ? 'eyeOff' : 'eye'" :size="14" />
+                {{ showConfig ? t('device.hideConfig') : t('device.revealConfig') }}
+              </button>
+              <p v-if="!showConfig" class="muted small">{{ t('device.configHidden') }}</p>
+              <pre v-else class="config">{{ profile.body }}</pre>
+            </div>
           </div>
         </template>
       </div>
@@ -214,6 +230,12 @@ async function copy(text, label) {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.secret {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 .qr {
   display: flex;

@@ -17,6 +17,7 @@ const profile = ref(null)
 const qr = ref('')
 // The size the code must be shown at, which comes from the code: see lib/qr.
 const qrSize = ref(340)
+const showConfig = ref(false)
 const newDevice = ref('')
 const busy = ref(false)
 const downloading = ref(false)
@@ -95,6 +96,8 @@ async function showProfile(account) {
     const p = await api.profile(account.id)
     profile.value = { ...p, account }
     qr.value = ''
+    // Opening another device is not asking to see its key.
+    showConfig.value = false
     // WireGuard clients import a tunnel by camera, so the QR is the primary
     // delivery path on mobile. OpenVPN clients cannot, so it is skipped there.
     if (client.value.protocol === 'wireguard') {
@@ -398,7 +401,20 @@ async function copy(text) {
             </div>
           </div>
 
-          <pre class="config">{{ profile.body }}</pre>
+            <!-- Not on screen unless somebody deliberately asks for it.
+                 The body is a private key with some routing around it: it is
+                 handed over by QR or by the download button, and putting it in
+                 front of whoever is looking at the panel -- over a shoulder, in
+                 a screen share, in a screenshot of something else -- gives away
+                 the tunnel to anyone who can read it. -->
+            <div class="secret">
+              <button class="btn sm ghost" @click="showConfig = !showConfig">
+                <Icon :name="showConfig ? 'eyeOff' : 'eye'" :size="14" />
+                {{ showConfig ? t('device.hideConfig') : t('device.revealConfig') }}
+              </button>
+              <p v-if="!showConfig" class="muted small">{{ t('device.configHidden') }}</p>
+              <pre v-else class="config">{{ profile.body }}</pre>
+            </div>
         </div>
 
         <div class="modal-foot">
@@ -442,6 +458,12 @@ async function copy(text) {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.secret {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 .qr {
   display: flex;
