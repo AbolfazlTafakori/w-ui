@@ -329,6 +329,132 @@ install_wireguard() {
   fi
 }
 
+# AmneziaWG without a kernel module.
+#
+# The obfuscation lives in a fork of the WireGuard kernel module, and that fork
+# is packaged only for the distributions its project has caught up with. On a
+# release that is newer than those packages there is no module and no way to
+# build one, and the panel would be left offering plain WireGuard on exactly the
+# networks where plain WireGuard is what gets blocked.
+#
+# amneziawg-go speaks the same protocol over a TUN device in userspace. It costs
+# some throughput and nothing else: no headers, no DKMS, and no tunnel that dies
+# the next time the machine takes a kernel upgrade and reboots.
+AMNEZIA_TOOLS_TAG="v3.1.20260812"
+GO_BOOTSTRAP_VERSION="1.25.1"
+
+install_amnezia_userspace() {
+  warn "falling back to userspace AmneziaWG (amneziawg-go)"
+
+  local tmp
+  tmp="$(mktemp -d)" || { AMNEZIA_OK=0; return 0; }
+
+  if ! amnezia_build_tools "$tmp" || ! amnezia_build_go "$tmp"; then
+    rm -rf "$tmp"
+    AMNEZIA_OK=0
+    warn "AmneziaWG is unavailable; the panel will still serve standard WireGuard"
+    warn "  obfuscated tunnels will refuse to start and say why"
+    return 0
+  fi
+  rm -rf "$tmp"
+
+  AMNEZIA_OK=1
+  ok "awg $(awg --version 2>/dev/null | awk '{print $2}') (userspace)"
+  ok "amneziawg-go installed; obfuscated tunnels run without a kernel module"
+}
+
+# amnezia_build_tools builds awg and awg-quick, the userspace half that is
+# needed whichever way the device itself is provided.
+amnezia_build_tools() {
+  local tmp="$1"
+  have awg && return 0
+
+  case "$FAMILY" in
+    debian) pkg_install git make gcc libc6-dev || return 1 ;;
+    rhel)   pkg_install git make gcc glibc-devel || return 1 ;;
+  esac
+
+  git clone --depth 1 -b "$AMNEZIA_TOOLS_TAG" \
+    https://github.com/amnezia-vpn/amneziawg-tools.git "$tmp/tools" >/dev/null 2>&1 || {
+    warn "could not fetch amneziawg-tools"
+    return 1
+  }
+  make -C "$tmp/tools/src" -j"$(nproc 2>/dev/null || echo 2)" >/dev/null 2>&1 || {
+    warn "amneziawg-tools did not build here"
+    return 1
+  }
+  make -C "$tmp/tools/src" install >/dev/null 2>&1 || return 1
+  have awg
+}
+
+# amnezia_build_go builds the daemon that provides the device.
+#
+# The project publishes no binaries, so this needs a Go toolchain. The one in
+# the distribution is used when it is new enough, and otherwise an official
+# toolchain is unpacked into a temporary directory and thrown away afterwards
+# rather than installed onto the machine.
+amnezia_build_go() {
+  local tmp="$1"
+  have amneziawg-go && return 0
+
+  local go=""
+  if have go && go_is_recent_enough; then
+    go="$(command -v go)"
+  else
+    go="$(amnezia_fetch_go "$tmp")" || {
+      warn "no Go toolchain to build amneziawg-go with"
+      return 1
+    }
+  fi
+
+  git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-go.git \
+    "$tmp/go-src" >/dev/null 2>&1 || {
+    warn "could not fetch amneziawg-go"
+    return 1
+  }
+
+  ( cd "$tmp/go-src" \
+    && GOFLAGS=-mod=mod GOPATH="$tmp/gopath" GOCACHE="$tmp/gocache" CGO_ENABLED=0 \
+       "$go" build -trimpath -ldflags "-s -w" -o "$tmp/amneziawg-go" . ) >/dev/null 2>&1 || {
+    warn "amneziawg-go did not build here"
+    return 1
+  }
+
+  install -m755 "$tmp/amneziawg-go" /usr/local/bin/amneziawg-go || return 1
+  have amneziawg-go
+}
+
+# go_is_recent_enough compares the installed toolchain against what the source
+# asks for. A Go too old fails deep inside the build with a message about a
+# language feature, which is a bad way to find out.
+go_is_recent_enough() {
+  local v
+  v="$(go env GOVERSION 2>/dev/null | sed 's/^go//')" || return 1
+  [[ -n "$v" ]] || return 1
+  local major minor
+  major="${v%%.*}"
+  minor="${v#*.}"
+  minor="${minor%%.*}"
+  (( major > 1 )) || (( minor >= 25 ))
+}
+
+# amnezia_fetch_go unpacks an official toolchain into tmp and prints its path.
+amnezia_fetch_go() {
+  local tmp="$1" arch
+  case "$(uname -m)" in
+    x86_64)  arch=amd64 ;;
+    aarch64) arch=arm64 ;;
+    armv7l)  arch=armv6l ;;
+    *) return 1 ;;
+  esac
+
+  local url="https://go.dev/dl/go${GO_BOOTSTRAP_VERSION}.linux-${arch}.tar.gz"
+  curl -fsSL --max-time 300 "$url" -o "$tmp/go.tgz" 2>/dev/null || return 1
+  tar -xzf "$tmp/go.tgz" -C "$tmp" 2>/dev/null || return 1
+  [[ -x "$tmp/go/bin/go" ]] || return 1
+  printf '%s' "$tmp/go/bin/go"
+}
+
 install_amnezia() {
   step "Installing AmneziaWG (anti-DPI)"
 
@@ -337,9 +463,8 @@ install_amnezia() {
   case "$FAMILY" in
     debian)
       if ! pkg_install "linux-headers-$KERNEL"; then
-        warn "no headers for kernel $KERNEL; skipping AmneziaWG"
-        warn "standard WireGuard still works — install headers and re-run to add it"
-        AMNEZIA_OK=0
+        warn "no headers for kernel $KERNEL; the AmneziaWG module cannot be built"
+        install_amnezia_userspace
         return 0
       fi
       # Asked before it is added. A PPA that publishes nothing for this
@@ -347,35 +472,34 @@ install_amnezia() {
       # apt operation afterwards, including this installer's own on the next
       # run. Ubuntu releases routinely ship before their PPAs catch up.
       if ! ppa_publishes_for_this_release; then
-        warn "AmneziaWG has no packages for ${OS_CODENAME:-this release} yet; skipping"
-        warn "standard WireGuard is unaffected — re-run later to add it"
-        AMNEZIA_OK=0
+        warn "AmneziaWG has no packages for ${OS_CODENAME:-this release} yet"
+        install_amnezia_userspace
         return 0
       fi
 
       pkg_install software-properties-common
       if ! add-apt-repository -y ppa:amnezia/ppa >/dev/null 2>&1; then
-        warn "could not add ppa:amnezia/ppa; skipping AmneziaWG"
-        AMNEZIA_OK=0
+        warn "could not add ppa:amnezia/ppa"
+        install_amnezia_userspace
         return 0
       fi
       pkg_refresh
       if ! pkg_install amneziawg; then
-        warn "amneziawg failed to build against kernel $KERNEL; skipping"
-        AMNEZIA_OK=0
+        warn "amneziawg failed to build against kernel $KERNEL"
+        install_amnezia_userspace
         return 0
       fi
       ;;
     rhel)
       pkg_install "kernel-devel-$KERNEL" dnf-plugins-core || true
       dnf copr enable -y amneziavpn/amneziawg >/dev/null 2>&1 || {
-        warn "could not enable the AmneziaWG COPR; skipping"
-        AMNEZIA_OK=0
+        warn "could not enable the AmneziaWG COPR"
+        install_amnezia_userspace
         return 0
       }
       pkg_install amneziawg-dkms amneziawg-tools || {
-        warn "amneziawg failed to build; skipping"
-        AMNEZIA_OK=0
+        warn "amneziawg failed to build against kernel $KERNEL"
+        install_amnezia_userspace
         return 0
       }
       ;;
@@ -386,12 +510,19 @@ install_amnezia() {
     ok "awg $(awg --version 2>/dev/null | awk '{print $2}')"
     if [[ -r /sys/module/amneziawg/version ]]; then
       ok "kernel module $(cat /sys/module/amneziawg/version)"
+    elif modprobe amneziawg 2>/dev/null && [[ -r /sys/module/amneziawg/version ]]; then
+      ok "kernel module $(cat /sys/module/amneziawg/version)"
     else
-      warn "awg installed but the module is not loaded yet; a reboot may be needed"
+      # The tools are here but nothing can make the device. Rather than leave
+      # that to be discovered when the first obfuscated tunnel refuses to start,
+      # the userspace daemon is installed now.
+      warn "the amneziawg module is not available on this kernel"
+      install_amnezia_userspace
+      return 0
     fi
   else
-    AMNEZIA_OK=0
-    warn "awg not found after install; AmneziaWG unavailable"
+    warn "awg not found after install"
+    install_amnezia_userspace
   fi
 }
 
@@ -1525,6 +1656,21 @@ WorkingDirectory=$DATA_DIR
 
 Restart=always
 RestartSec=3
+
+# Only the panel is stopped, not everything it started.
+#
+# Where there is no amneziawg kernel module the tunnel is carried by an
+# amneziawg-go process the panel launches, and that process has to outlive it.
+# The default here kills the whole control group, which would turn every panel
+# restart -- including an automatic one after an update -- into a disconnection
+# for every customer on an obfuscated tunnel.
+KillMode=process
+
+# The socket amneziawg-go answers on. Preserved across restarts for the same
+# reason: removing it would orphan a tunnel that is still carrying traffic.
+RuntimeDirectory=amneziawg
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 
 # The panel needs the network and its own data directory, nothing else.
 ProtectSystem=strict

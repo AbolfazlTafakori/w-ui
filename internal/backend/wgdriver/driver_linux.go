@@ -113,12 +113,23 @@ func (d *Driver) ensureLink(ctx context.Context, iface *model.Interface) error {
 			return err
 		}
 	} else {
-		if err := d.run(ctx, "ip", "link", "add", "dev", iface.Name,
-			"type", linkType(iface)); err != nil {
+		err := d.run(ctx, "ip", "link", "add", "dev", iface.Name,
+			"type", linkType(iface))
+		switch {
+		case err == nil:
+			d.log.Info("created interface", "interface", iface.Name, "type", linkType(iface))
+		case iface.Mode == model.ModeAmnezia:
+			// No amneziawg module on this kernel. There is a userspace
+			// implementation for exactly this, and refusing here would leave
+			// the panel unable to offer obfuscation on any machine whose
+			// kernel is newer than the module's packages.
+			if err := d.startUserspace(ctx, iface, err); err != nil {
+				return err
+			}
+		default:
 			return fmt.Errorf("%w: creating %s (%s): %v",
 				ErrLinkFailed, iface.Name, linkType(iface), err)
 		}
-		d.log.Info("created interface", "interface", iface.Name, "type", linkType(iface))
 	}
 
 	gw, bits, err := wgconf.Gateway(iface.Subnet)

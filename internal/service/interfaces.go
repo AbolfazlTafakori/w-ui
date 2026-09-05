@@ -515,6 +515,10 @@ func (s *Interfaces) PoolUsage(id uint) (Usage, error) {
 	return Usage{InterfaceID: id, Allocated: alloc.InUse(), Capacity: alloc.Capacity()}, nil
 }
 
+// handshakeLengthGap is the difference between an initiation packet and a
+// response packet, 148 - 92. Padding that closes it makes the two the same size.
+const handshakeLengthGap = 56
+
 // NewAWGParams generates an AmneziaWG obfuscation profile.
 //
 // S1-S4 and H1-H4 are interface-wide: every client of this interface must carry
@@ -528,6 +532,19 @@ func NewAWGParams() model.AWGParams {
 	between := func(lo, hi int) int { return lo + rand.Intn(hi-lo+1) }
 
 	jmin := between(40, 89)
+
+	// A handshake initiation is 148 bytes and a response is 92, so padding them
+	// by S1 and S2 makes the pair the same length whenever S2 - S1 is 56. The
+	// two packets then become indistinguishable by size, which is the property
+	// the padding exists to destroy, and AmneziaWG rejects the combination
+	// outright. Roughly one profile in two hundred lands on it by chance, so it
+	// is ruled out here rather than discovered by a customer whose tunnel will
+	// not start.
+	s1, s2 := between(15, 150), between(15, 150)
+	for s2-s1 == handshakeLengthGap {
+		s2 = between(15, 150)
+	}
+
 	return model.AWGParams{
 		Jc:   between(3, 6),
 		Jmin: jmin,
@@ -536,8 +553,8 @@ func NewAWGParams() model.AWGParams {
 		// Kept at or above 12 bytes so AmneziaWG 3.x header protection, which
 		// draws its nonce from the first 12 bytes of this padding, can be
 		// switched on later without regenerating every client config.
-		S1: between(15, 150),
-		S2: between(15, 150),
+		S1: s1,
+		S2: s2,
 		S3: between(12, 55),
 		S4: between(12, 27),
 
