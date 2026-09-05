@@ -93,6 +93,9 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/node/usage":                       true, // drains counters; nothing to send
 		"POST /api/backups/{name}/restore":           true, // acts on the name in the path
 		"POST /api/backups/upload":                   true, // a file, not JSON; the Note says so
+		"POST /api/tunnels/restart":                  true, // acts on this server; nothing to send
+		"POST /api/tunnels/stop":                     true,
+		"POST /api/tunnels/start":                    true,
 	}
 	for _, r := range newRouteServer().routes() {
 		if r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodPut {

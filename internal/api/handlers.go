@@ -89,6 +89,12 @@ type interfaceView struct {
 	NodeName  string `json:"nodeName"`
 	NodeLocal bool   `json:"nodeLocal"`
 	NodeUp    bool   `json:"nodeUp"`
+
+	// Running is whether a driver is actually open for this tunnel, which is a
+	// different question from whether the row is enabled. A tunnel switched on
+	// whose port was taken, or whose tool is missing, is enabled and carrying
+	// nobody — and telling those apart is the whole of "is this server up".
+	Running bool `json:"running"`
 }
 
 // redactKeys strips the server's own key material from an interface before it
@@ -155,6 +161,14 @@ func (s *Server) interfaceViews(r *http.Request) ([]interfaceView, error) {
 		}
 		if l, ok := loads[list[i].ID]; ok {
 			v.Clients, v.Devices, v.UsedBytes = l.Clients, l.Devices, l.UsedBytes
+		}
+		// A tunnel on another node is that node's to run, and this panel has no
+		// driver for it: reported as running when the node itself is answering,
+		// which is as much as can be known from here.
+		if v.NodeLocal || v.NodeName == "" {
+			_, v.Running = s.pool.Get(list[i].ID)
+		} else {
+			v.Running = v.NodeUp && list[i].Enabled
 		}
 		out = append(out, v)
 	}

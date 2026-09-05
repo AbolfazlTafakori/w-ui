@@ -3693,3 +3693,13 @@ tbody tr.decided .step {
   pointer-events: none;
 }
 
+/* The panel's own version, beside the state it describes. Quiet, because it is
+   the first thing anybody is asked for when reporting a problem and of no
+   interest at all the rest of the time. */
+.ov-version {
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  color: var(--faint);
+  white-space: nowrap;
+}
+

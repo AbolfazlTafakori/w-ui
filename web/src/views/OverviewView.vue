@@ -8,6 +8,7 @@ import { bytes } from '../lib/format.js'
 import Sparkline from '../components/Sparkline.vue'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const data = ref(null)
 const loading = ref(true)
@@ -401,6 +402,41 @@ async function importBackup(event) {
   }
 }
 
+// How much of this server is actually carrying traffic, which is the state an
+// operator wants at a glance and the thing the two controls below act on.
+const tunnelsUp = computed(() => ifaces.value.filter((i) => i.enabled && i.running).length)
+
+const planeBusy = ref(false)
+const confirmStop = ref(false)
+
+async function tunnelAction(path, message) {
+  planeBusy.value = true
+  try {
+    const res = await api.post(`/api/tunnels/${path}`)
+    // A tunnel that would not come up is the whole content of the answer, so it
+    // is said rather than folded into a count that looks like success.
+    const failed = Object.entries(res?.failures || {})
+    if (failed.length) {
+      notify(failed.map(([name, why]) => `${name}: ${why}`).join('\n'), 'error')
+    } else {
+      notify(message.replace('{n}', res?.interfaces ?? 0), 'ok')
+    }
+    await load(true)
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    planeBusy.value = false
+  }
+}
+
+const restartTunnels = () => tunnelAction('restart', t('overview.restartedAll'))
+const startTunnels = () => tunnelAction('start', t('overview.startedAll'))
+
+function stopTunnels() {
+  confirmStop.value = false
+  return tunnelAction('stop', t('overview.stoppedAll'))
+}
+
 const ipv4 = computed(() => (sys.value?.ipv4 || [])[0] || '—')
 const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 </script>
@@ -445,11 +481,27 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
            were all a page away before, which is one page too many when
            something is wrong. -->
       <div class="spacer row ov-actions">
-        <span class="tag" :class="panel.enforcementActive ? 'active' : 'exhausted'">
-          <i v-if="panel.enforcementActive" class="dot"></i>
-          {{ t('overview.enforcement') }}:
-          {{ panel.enforcementActive ? t('overview.running') : t('overview.stopped') }}
+        <!-- What this server is actually doing, and the two controls for it.
+             A state that cannot be acted on from where it is shown sends an
+             operator to an SSH session to do the obvious thing. -->
+        <span class="tag" :class="tunnelsUp ? 'active' : 'exhausted'" :title="t('overview.tunnelsHint')">
+          <i v-if="tunnelsUp" class="dot"></i>
+          {{ t('overview.tunnels') }}: {{ tunnelsUp }} / {{ ifaces.length }}
         </span>
+        <span class="ov-version ltr" :title="t('overview.panelVersion')">{{ panel.version }}</span>
+
+        <button class="btn sm ghost" :title="t('overview.restartAllHint')"
+                :disabled="planeBusy || !ifaces.length" @click="restartTunnels">
+          <Icon name="refresh" :size="14" /><span class="lbl">{{ t('overview.restartAll') }}</span>
+        </button>
+        <button v-if="tunnelsUp" class="btn sm ghost" :title="t('overview.stopAllHint')"
+                :disabled="planeBusy" @click="confirmStop = true">
+          <Icon name="power" :size="14" /><span class="lbl">{{ t('overview.stopAll') }}</span>
+        </button>
+        <button v-else-if="ifaces.length" class="btn sm ghost" :title="t('overview.startAllHint')"
+                :disabled="planeBusy" @click="startTunnels">
+          <Icon name="power" :size="14" /><span class="lbl">{{ t('overview.startAll') }}</span>
+        </button>
 
         <button class="btn sm ghost" :title="t('overview.viewLogs')" @click="openLogs">
           <Icon name="info" :size="14" /><span class="lbl">{{ t('settings.tab.logs') }}</span>
@@ -728,6 +780,20 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
       </div>
     </article>
   </div>
+
+  <!-- Stopping every tunnel takes every customer offline at once, so it is
+       asked for. Restarting is not: it changes no records and the worst case is
+       a few seconds of reconnecting. -->
+  <ConfirmDialog
+    :open="confirmStop"
+    :title="t('overview.stopAllTitle')"
+    :body="t('overview.stopAllBody')"
+    :confirm-label="t('overview.stopAll')"
+    :danger="true"
+    :busy="planeBusy"
+    @confirm="stopTunnels"
+    @cancel="confirmStop = false"
+  />
 
   <!-- Backup, on the page an operator is already looking at. Taking one is the
        least of it: the reasons to open this are to get the archive off the
