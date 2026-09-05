@@ -3,6 +3,7 @@ package logger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -16,9 +17,13 @@ import (
 // the panel someone is already looking at. The recent past is kept in memory:
 // enough to answer "what just happened", not a substitute for the real log.
 
-// ringSize is how many entries are kept. A few hundred covers the minutes
-// around an incident without letting an idle panel hold megabytes of text.
-const ringSize = 500
+// ringSize is how many entries are kept.
+//
+// A thousand, because searching is only as good as what there is to search: a
+// filter that can only see the last two hundred lines finds nothing from the
+// hour the problem started. Still under a megabyte, and still not a substitute
+// for the real log — see the journal source for that.
+const ringSize = 1000
 
 // Entry is one log line, already parsed.
 type Entry struct {
@@ -56,8 +61,13 @@ func (r *Ring) Add(e Entry) {
 	r.mu.Unlock()
 }
 
-// Recent returns up to n entries, newest first, optionally filtered by level.
-func (r *Ring) Recent(n int, minLevel string) []Entry {
+// Recent returns up to n entries, newest first, optionally filtered.
+//
+// query matches anywhere in the message or in a field, case insensitively.
+// Applied before the count rather than after: a search that could only look at
+// the last twenty lines would answer "not found" for something that is there,
+// which is worse than no search at all.
+func (r *Ring) Recent(n int, minLevel, query string) []Entry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -65,6 +75,7 @@ func (r *Ring) Recent(n int, minLevel string) []Entry {
 		n = len(r.entries)
 	}
 	threshold := levelRank(minLevel)
+	needle := strings.ToLower(strings.TrimSpace(query))
 
 	out := make([]Entry, 0, n)
 	// Walk backwards from the newest so the caller does not have to reverse a
@@ -82,9 +93,33 @@ func (r *Ring) Recent(n int, minLevel string) []Entry {
 		if levelRank(e.Level) < threshold {
 			continue
 		}
+		if needle != "" && !matches(e, needle) {
+			continue
+		}
 		out = append(out, e)
 	}
 	return out
+}
+
+// matches reports whether an entry contains the needle, which is already lower
+// case.
+//
+// The fields are searched as well as the message, because what an operator
+// actually types is a customer's name, an interface, or an address — and those
+// are values, not words in the sentence.
+func matches(e Entry, needle string) bool {
+	if strings.Contains(strings.ToLower(e.Message), needle) {
+		return true
+	}
+	for k, v := range e.Fields {
+		if strings.Contains(strings.ToLower(k), needle) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(fmt.Sprint(v)), needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // levelRank orders levels so a filter can be a comparison. An unknown level

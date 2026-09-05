@@ -1105,7 +1105,11 @@ tbody tr:hover {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
-  z-index: 50;
+  /* Above the floating menu button, which is fixed at 1100 and was landing on
+     top of every dialog's title and close button on a phone — a dialog you
+     cannot read the heading of or close by its own control. Below the drawer's
+     own scrim at 1200, so the menu still wins if both are ever open. */
+  z-index: 1150;
 }
 .modal {
   background: var(--surface);
@@ -2260,50 +2264,219 @@ textarea.bad:focus {
   max-width: 900px;
   width: 92vw;
 }
-.log-body {
-  max-height: 62vh;
-  overflow-y: auto;
+.logmodal {
+  width: min(980px, 96vw);
 }
+
+/* Everything an operator reaches for while reading a log, on one row. Wraps on
+   a narrow screen rather than scrolling sideways, because a toolbar you have to
+   scroll to reach is a toolbar you stop using. */
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+/* Sized to their contents rather than inheriting the full-width rule every
+   other form control here wants. A toolbar of four stacked full-width selects
+   is four rows of chrome above a log that then has no room left. */
+.log-toolbar select {
+  width: auto;
+  flex: 0 0 auto;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 26px 0 8px;
+  font-size: var(--t-xs);
+}
+.log-toolbar select[aria-label] {
+  max-width: 150px;
+}
+.log-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 200px;
+  min-width: 150px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+}
+.log-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-xs);
+}
+.log-search input:focus {
+  outline: none;
+}
+.log-follow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.log-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 0;
+}
+.log-notice {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: var(--t-xs);
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+.log-body .muted {
+  padding: 24px 16px;
+  margin: 0;
+}
+
+/*
+ * A log is machine output and is laid out left to right whatever the interface
+ * around it is doing.
+ *
+ * Under `dir="rtl"` a grid lays its columns out right to left, so the timestamp
+ * ended up on the right with the message to its left — every line in the
+ * opposite order from the file on the server. Inside a line the bidirectional
+ * algorithm then moved the neutral characters: the colons in a timestamp, the
+ * dots and slashes in an address, the equals signs between a field and its
+ * value. The result reads as a mirrored, scrambled version of text that is
+ * perfectly ordinary in the log itself, and looks like a fault in the panel.
+ *
+ * Isolating the whole block is the fix. Not each span: neighbouring isolated
+ * runs still get placed right to left by the container, which is half the
+ * problem still there.
+ */
+.ltr-block {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+
 .loglist {
   list-style: none;
   margin: 0;
   padding: 0;
   font-family: var(--mono);
   font-size: var(--t-xs);
-  line-height: 1.6;
+  line-height: 1.65;
 }
 .loglist li {
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: auto 58px 1fr;
   gap: 10px;
-  padding: 6px 8px;
+  padding: 5px 16px;
   border-bottom: 1px solid var(--line-soft);
-  /* The message can be long and the fields longer; neither should widen the
-     dialog, so each row wraps within its own column. */
+  /* A message can be long and a field longer; neither widens the dialog. */
   overflow-wrap: anywhere;
 }
 .loglist li:last-child {
   border-bottom: 0;
 }
+.loglist li:hover {
+  background: var(--surface-2);
+}
 .log-time {
   color: var(--faint);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
+/* The level reads as a badge so a wall of lines can be scanned down the second
+   column rather than read. Fixed width, or the message column would start in a
+   different place on every line. */
 .log-level {
-  font-weight: 600;
-  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  align-self: start;
+  padding: 1px 0;
+  border-radius: var(--r-sm);
   color: var(--muted);
+  background: var(--surface-3, var(--surface-2));
 }
-.lvl-warn .log-level { color: var(--warn); }
-.lvl-error .log-level { color: var(--bad); }
-.lvl-error { background: var(--bad-soft); }
-.lvl-warn { background: var(--warn-soft); }
+.log-text {
+  min-width: 0;
+}
 .log-msg {
   color: var(--ink);
 }
-.log-fields {
-  grid-column: 3;
+/* Fields are the values an operator searches for, so they are set apart from
+   the sentence rather than run on from it. */
+.log-field {
+  display: inline-block;
+  margin-inline-start: 10px;
   color: var(--faint);
+}
+.log-field b {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.lvl-debug .log-level {
+  color: var(--faint);
+}
+.lvl-warn .log-level {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.lvl-error .log-level {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+.lvl-error .log-msg {
+  color: var(--bad);
+}
+/* The severity is carried by the badge and a rule down the side, not by
+   colouring the whole line: a screen of warnings has to stay readable. */
+.lvl-warn,
+.lvl-error {
+  border-inline-start: 2px solid transparent;
+}
+.lvl-warn {
+  border-inline-start-color: var(--warn);
+}
+.lvl-error {
+  border-inline-start-color: var(--bad);
+}
+
+/* On a phone the three columns cannot hold. The line becomes a card: time and
+   level on one row, the message under it, which is what 3x-ui does and is the
+   only thing that fits. */
+@media (max-width: 640px) {
+  .loglist li {
+    grid-template-columns: auto 1fr;
+    gap: 4px 8px;
+    padding: 8px 12px;
+  }
+  .log-level {
+    justify-self: start;
+    padding: 1px 6px;
+  }
+  .log-text {
+    grid-column: 1 / -1;
+  }
+  .log-field {
+    margin-inline-start: 0;
+    margin-inline-end: 10px;
+  }
 }
 
 /* ══════════ motion ══════════ */

@@ -652,14 +652,38 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 // journalctl, on a different machine from the panel already open in front of
 // whoever is looking.
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
 	limit := 200
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000 {
 			limit = n
 		}
 	}
+	level, search := q.Get("level"), q.Get("q")
+
+	// The journal is the same panel's lines, kept by the system rather than by
+	// this process — which is the only place they survive a restart, and a
+	// restart is usually what an operator is asking about.
+	if q.Get("source") == "journal" {
+		entries, err := logger.Journal(r.Context(), limit, level, search)
+		if err != nil {
+			// Not a failure of the request. The page asked for a source this
+			// server cannot offer, and should say so rather than show nothing.
+			writeJSON(w, http.StatusOK, map[string]any{
+				"entries": []logger.Entry{},
+				"source":  "journal",
+				"notice":  err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"entries": entries, "source": "journal"})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"entries": logger.Recent.Recent(limit, r.URL.Query().Get("level")),
+		"entries": logger.Recent.Recent(limit, level, search),
+		"source":  "panel",
 	})
 }
 
