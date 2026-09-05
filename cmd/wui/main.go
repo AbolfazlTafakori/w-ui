@@ -79,6 +79,15 @@ func run() error {
 	}
 	reportLocaleDrift(catalog, log)
 
+	// Before the database is opened, and that is the point: a restore replaces
+	// the file it would be opened against, and SQLite's write-ahead log belongs
+	// to whichever file was open when it was written. Applying a restore under
+	// a running process means the log is checkpointed back over it and the
+	// restore quietly undoes itself.
+	if archive, ok := backup.ApplyPending(cfg.DataDir, log); ok {
+		log.Info("this panel is running on data restored from a backup", "archive", archive)
+	}
+
 	db, err := database.Open(cfg, log)
 	if err != nil {
 		return err

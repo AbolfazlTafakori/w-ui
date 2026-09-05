@@ -96,7 +96,16 @@ func (s *Service) Dir() string { return s.dir }
 func (s *Service) Create(ctx context.Context) (Archive, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.createLocked(ctx)
+}
 
+// createLocked is Create with the lock already held.
+//
+// Restore needs a backup of what it is about to replace, and it holds the lock
+// for the whole operation — so it cannot call Create without deadlocking on
+// itself. Splitting it is the alternative to a restore that quietly skips its
+// own safety copy.
+func (s *Service) createLocked(ctx context.Context) (Archive, error) {
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return Archive{}, fmt.Errorf("backup: create %s: %w", s.dir, err)
 	}

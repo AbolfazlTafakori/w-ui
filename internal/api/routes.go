@@ -396,6 +396,17 @@ func (s *Server) routes() []Route {
 			handler: s.handleDownloadBackup},
 		{Method: "DELETE", Path: "/api/backups/{name}", Group: "Settings", Auth: true,
 			Summary: "Delete an archive.", handler: s.handleDeleteBackup},
+		{Method: "POST", Path: "/api/backups/upload", Group: "Settings", Auth: true,
+			Summary: "Upload an archive taken on another server.",
+			Note: "Sent as multipart/form-data with the archive in a field named " +
+				"\"archive\", not as JSON. Checked before it is kept, and not " +
+				"restored until you ask.",
+			handler: s.handleUploadBackup},
+		{Method: "POST", Path: "/api/backups/{name}/restore", Group: "Settings", Auth: true,
+			Summary: "Replace everything with the contents of an archive.",
+			Note: "The current state is saved first, so this can be undone. " +
+				"The panel restarts itself; under systemd it comes straight back.",
+			handler: s.handleRestoreBackup},
 	}
 }
 

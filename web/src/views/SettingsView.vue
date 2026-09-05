@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
-import { api, apiURL } from '../lib/api.js'
+import { api, apiURL, getToken } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
 import { store, t, loadMessages, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
@@ -270,17 +270,76 @@ async function removeBackup(name) {
 async function downloadBackup(name) {
   try {
     const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(name)}`), {
-      headers: { Authorization: `Bearer ${localStorage.getItem('wui.token')}` },
+      headers: { Authorization: `Bearer ${getToken()}` },
+      // Half the session is an HttpOnly cookie the server sets at sign-in, and
+      // the token alone is refused without it.
+      credentials: 'same-origin',
     })
     if (!res.ok) throw new Error(await res.text())
     const url = URL.createObjectURL(await res.blob())
     const a = document.createElement('a')
     a.href = url
     a.download = name
+    // Attached to the document, and the URL released on the next turn of the
+    // loop. A detached anchor's click does nothing in Firefox, and revoking
+    // immediately can cancel a download that has not started.
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
   } catch (e) {
     notify(e.message, 'error')
+  }
+}
+
+// Restoring, which is the half that makes the rest worth having.
+//
+// Asked for twice: once as a dialog explaining what goes and what is kept, and
+// once by making the operator watch the panel go away and come back. A backup
+// restored by a stray click is worse than no restore button.
+const restoring = ref(null)
+const uploading = ref(false)
+// Which archive the confirmation is about, or null.
+const ask = ref(null)
+
+async function restoreBackup(name) {
+  restoring.value = name
+  try {
+    const res = await api.post(`/api/backups/${encodeURIComponent(name)}/restore`)
+    notify(t('settings.restoreStarted', { n: res?.safetyCopy || '' }), 'success')
+    // The panel is on its way out. Waiting and then reloading is what turns
+    // "the page stopped working" into "it came back with the old data".
+    setTimeout(() => window.location.reload(), 6000)
+  } catch (e) {
+    restoring.value = null
+    notify(e.message, 'error')
+  }
+}
+
+// Taking one in from another server, which is how a panel moves house.
+async function uploadBackup(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  uploading.value = true
+  try {
+    const body = new FormData()
+    body.append('archive', file)
+    const res = await fetch(apiURL('/api/backups/upload'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      credentials: 'same-origin',
+      body,
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(data?.error || t('settings.uploadFailed'))
+    await loadBackups()
+    notify(t('settings.uploaded'), 'success')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    uploading.value = false
   }
 }
 
@@ -453,6 +512,20 @@ async function changePassword() {
     <!-- Everything worth saying about this server, in one place. Two stacked
          warning boxes read as two unrelated problems and get skimmed. -->
     <SecurityWarnings :listen="info?.listen" />
+
+    <!-- Restoring replaces the database, every key and every certificate, so
+         it is asked for rather than done. The safety copy is named in the body
+         because knowing it exists is what makes the answer an easy one. -->
+    <ConfirmDialog
+      :open="!!ask"
+      :title="t('settings.restoreTitle')"
+      :body="t('settings.restoreBody')"
+      :confirm-label="t('settings.restoreConfirm')"
+      :danger="true"
+      :busy="!!restoring"
+      @confirm="() => { const n = ask; ask = null; restoreBackup(n) }"
+      @cancel="ask = null"
+    />
 
     <!-- Raised when a link is clicked with an unsaved edit on the page. -->
     <ConfirmDialog
@@ -923,12 +996,24 @@ async function changePassword() {
                 <button class="linkbtn" @click="downloadBackup(b.name)">
                   {{ t('settings.download') }}
                 </button>
-                <button class="linkbtn danger" @click="removeBackup(b.name)">
+                <button class="linkbtn" :disabled="!!restoring" @click="ask = b.name">
+                  {{ t('settings.restore') }}
+                </button>
+                <button class="linkbtn danger" :disabled="!!restoring" @click="removeBackup(b.name)">
                   {{ t('common.delete') }}
                 </button>
               </li>
             </ul>
             <p v-else class="muted">{{ t('settings.noBackups') }}</p>
+
+            <!-- How a panel moves to another server: take the archive off the
+                 old one, put it on the new one, restore it. -->
+            <label class="btn ghost upload-btn">
+              <Icon name="upload" :size="15" />
+              <span>{{ uploading ? t('settings.uploading') : t('settings.uploadBackup') }}</span>
+              <input type="file" accept=".gz,.tar.gz,application/gzip"
+                     :disabled="uploading || !!restoring" @change="uploadBackup" />
+            </label>
           </div>
         </div>
       </template>

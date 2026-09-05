@@ -3578,3 +3578,24 @@ tbody tr.decided .step {
   border-color: var(--accent);
   color: var(--accent-ink);
 }
+
+/* A file input styled as a button. The input itself is unstyleable across
+   browsers, so the label is the control and the input is hidden inside it —
+   which keeps the keyboard and the screen reader working, unlike hiding it
+   with display:none and clicking it from script. */
+.upload-btn {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.upload-btn input[type='file'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.upload-btn input[type='file']:disabled {
+  cursor: not-allowed;
+}
