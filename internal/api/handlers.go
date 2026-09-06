@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
@@ -258,12 +259,89 @@ func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
 		Sort:     q.Get("sort"),
 		Page:     page,
 		PerPage:  perPage,
+
+		// The filter drawer's fields. Repeatable ones arrive comma-separated so
+		// the query string stays readable in a log and copyable from one.
+		Buckets:      csv(q.Get("buckets")),
+		Protocols:    protocols(csv(q.Get("protocols"))),
+		InterfaceIDs: ids(csv(q.Get("interfaceIds"))),
+		Groups:       csv(q.Get("groups")),
+		ExpiryFrom:   whenParam(q.Get("expiryFrom")),
+		ExpiryTo:     whenParam(q.Get("expiryTo")),
+		UsedFrom:     gigabytesParam(q.Get("usedFromGB")),
+		UsedTo:       gigabytesParam(q.Get("usedToGB")),
+		Renews:       q.Get("renews"),
+		HasNote:      q.Get("hasNote"),
 	})
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// Parsing the filter drawer's query string.
+//
+// Every one of these ignores what it cannot read rather than failing the
+// request. A filter is a narrowing, and a narrowing nobody can parse should
+// leave the list alone -- returning 400 because one value in a saved URL went
+// stale would be worse than showing everything.
+
+func csv(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func protocols(in []string) []model.Protocol {
+	var out []model.Protocol
+	for _, v := range in {
+		if p := model.Protocol(v); p.Valid() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func ids(in []string) []uint {
+	var out []uint
+	for _, v := range in {
+		if n, err := strconv.ParseUint(v, 10, 32); err == nil && n > 0 {
+			out = append(out, uint(n))
+		}
+	}
+	return out
+}
+
+// whenParam reads a date the browser's date input produces, and treats it as
+// the whole of that day rather than its first instant.
+func whenParam(v string) *time.Time {
+	if v == "" {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", v)
+	if err != nil {
+		if t, err = time.Parse(time.RFC3339, v); err != nil {
+			return nil
+		}
+	}
+	return &t
+}
+
+func gigabytesParam(v string) *uint64 {
+	if v == "" {
+		return nil
+	}
+	gb, err := strconv.ParseFloat(v, 64)
+	if err != nil || gb < 0 {
+		return nil
+	}
+	bytes := uint64(gb * 1024 * 1024 * 1024)
+	return &bytes
 }
 
 func (s *Server) handleCreateClient(w http.ResponseWriter, r *http.Request) {

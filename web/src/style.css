@@ -1371,6 +1371,34 @@ pre.config {
   border-start-start-radius: 0;
   border-start-end-radius: 0;
 }
+/* The filter button's count: how many categories are narrowing the list. */
+.filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+}
+.btn.ctl.on {
+  border-color: var(--accent-line, var(--accent));
+  background: var(--accent-soft);
+}
+/* An outlined danger button, for Clear all. */
+.btn.danger-ghost {
+  border-color: var(--accent-line, var(--accent));
+  background: none;
+  color: var(--accent);
+}
+.btn.danger-ghost:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
 /* A small table inside a settings row: a handful of rows with a control on
    each, not the full data table the list pages use. */
 .mini-table {

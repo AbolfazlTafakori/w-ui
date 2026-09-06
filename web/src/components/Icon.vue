@@ -33,6 +33,7 @@ const paths = {
   power: 'M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10',
   alert: 'M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
   // A paper plane, for the Telegram bot, and an envelope for mail.
+  filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z',
   send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
   mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 7l-10 6L2 7',
   chevronDown: 'M6 9l6 6 6-6',

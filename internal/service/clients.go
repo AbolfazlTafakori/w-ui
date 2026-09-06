@@ -494,6 +494,53 @@ type ListFilter struct {
 	Sort     string
 	Page     int
 	PerPage  int
+
+	// The filter drawer's fields. Every one of them is a set or a range, so
+	// each narrows the list and none of them replaces another: a customer has
+	// to satisfy all of the categories the operator filled in, and any of the
+	// values within one.
+	Buckets      []string
+	Protocols    []model.Protocol
+	InterfaceIDs []uint
+	Groups       []string
+	ExpiryFrom   *time.Time
+	ExpiryTo     *time.Time
+	UsedFrom     *uint64
+	UsedTo       *uint64
+	// Renews and HasNote are three-state: empty asks nothing.
+	Renews  string // "" | "on" | "off"
+	HasNote string // "" | "yes" | "no"
+}
+
+// onlineWithin is how recently a device must have handshaken to count as
+// present. It matches the window WireGuard itself treats a session as live
+// for, and the overview counter uses the same one.
+const onlineWithin = 3 * time.Minute
+
+// bucketWhere renders one status bucket as a condition.
+//
+// They are not all statuses. "depleting" is an active customer far enough
+// through their allowance to be worth offering a renewal to, and "online" is a
+// fact about their devices rather than about them -- which is why it reaches
+// into accounts instead of comparing a column.
+func bucketWhere(bucket string) (string, []any) {
+	switch bucket {
+	case "active":
+		return "status = ?", []any{model.StatusActive}
+	case "disabled":
+		return "status = ?", []any{model.StatusDisabled}
+	case "expired":
+		return "status = ?", []any{model.StatusExpired}
+	case "exhausted":
+		return "status = ?", []any{model.StatusExhausted}
+	case "depleting":
+		return "status = ? AND quota_bytes > 0 AND used_bytes * 100 >= quota_bytes * ?",
+			[]any{model.StatusActive, depletingPercent}
+	case "online":
+		return "id IN (SELECT client_id FROM accounts WHERE last_handshake > ?)",
+			[]any{time.Now().UTC().Add(-onlineWithin)}
+	}
+	return "", nil
 }
 
 // orderBy maps a sort key to a SQL clause. Unknown keys fall back to newest
@@ -551,6 +598,59 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	}
 	if f.Group != "" {
 		q = q.Where(`"group" = ?`, f.Group)
+	}
+
+	// Several buckets ticked means any of them, so they are OR-ed together and
+	// the group as a whole is AND-ed with everything else.
+	if len(f.Buckets) > 0 {
+		any := s.db.Session(&gorm.Session{NewDB: true})
+		matched := false
+		for _, b := range f.Buckets {
+			where, args := bucketWhere(b)
+			if where == "" {
+				continue // an unknown bucket narrows nothing rather than erroring
+			}
+			any = any.Or(where, args...)
+			matched = true
+		}
+		if matched {
+			q = q.Where(any)
+		}
+	}
+	if len(f.Protocols) > 0 {
+		q = q.Where("protocol IN ?", f.Protocols)
+	}
+	if len(f.Groups) > 0 {
+		q = q.Where(`"group" IN ?`, f.Groups)
+	}
+	// A customer is on a server through their devices, so this asks about those
+	// rather than about the customer row.
+	if len(f.InterfaceIDs) > 0 {
+		q = q.Where("id IN (SELECT client_id FROM accounts WHERE interface_id IN ?)", f.InterfaceIDs)
+	}
+	if f.ExpiryFrom != nil {
+		q = q.Where("expires_at IS NOT NULL AND expires_at >= ?", *f.ExpiryFrom)
+	}
+	if f.ExpiryTo != nil {
+		q = q.Where("expires_at IS NOT NULL AND expires_at <= ?", *f.ExpiryTo)
+	}
+	if f.UsedFrom != nil {
+		q = q.Where("used_bytes >= ?", *f.UsedFrom)
+	}
+	if f.UsedTo != nil {
+		q = q.Where("used_bytes <= ?", *f.UsedTo)
+	}
+	switch f.Renews {
+	case "on":
+		q = q.Where("reset_cycle <> ?", model.ResetNone)
+	case "off":
+		q = q.Where("reset_cycle = ?", model.ResetNone)
+	}
+	switch f.HasNote {
+	case "yes":
+		q = q.Where("note <> ''")
+	case "no":
+		q = q.Where("note = ''")
 	}
 
 	var total int64

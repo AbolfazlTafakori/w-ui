@@ -10,6 +10,7 @@ import ShareDialog from '../components/ShareDialog.vue'
 import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import FilterDrawer, { emptyFilters, activeFilterCount } from '../components/FilterDrawer.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -38,6 +39,35 @@ const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
 // `quiet` marks a poll: no spinner, no progress bar, and a failure that is not
 // worth a toast — the page keeps showing what it had and tries again shortly.
+// The filter drawer's state. Kept beside the search box rather than inside the
+// drawer so the list can be narrowed while it is shut, and so the button can
+// say how many categories are doing the narrowing.
+const filterOpen = ref(false)
+const filters = ref(emptyFilters())
+const filterCount = computed(() => activeFilterCount(filters.value))
+
+// Sent only when set, so an untouched filter leaves the query string as short
+// as it was before any of this existed.
+function filterParams() {
+  const f = filters.value
+  const out = {}
+  if (f.buckets.length) out.buckets = f.buckets.join(',')
+  if (f.protocols.length) out.protocols = f.protocols.join(',')
+  if (f.interfaceIds.length) out.interfaceIds = f.interfaceIds.join(',')
+  if (f.groups.length) out.groups = f.groups.join(',')
+  if (f.expiryFrom) out.expiryFrom = f.expiryFrom
+  if (f.expiryTo) out.expiryTo = f.expiryTo
+  if (f.usedFromGB !== '') out.usedFromGB = f.usedFromGB
+  if (f.usedToGB !== '') out.usedToGB = f.usedToGB
+  if (f.renews) out.renews = f.renews
+  if (f.hasNote) out.hasNote = f.hasNote
+  return out
+}
+
+// A narrowed list is a different list: staying on page four of the old one
+// would show an empty table and look like the filter matched nothing.
+watch(filters, () => { currentPage.value = 1; load() }, { deep: true })
+
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
@@ -50,6 +80,7 @@ async function load(quiet = false) {
           sort: sort.value,
           page: currentPage.value,
           perPage: 25,
+          ...filterParams(),
         },
         { background: quiet },
       ),
@@ -588,6 +619,14 @@ async function submitForm(input) {
 </script>
 
 <template>
+  <FilterDrawer
+    v-model="filters"
+    :open="filterOpen"
+    :interfaces="interfaces"
+    :groups="groupNames"
+    @close="filterOpen = false"
+  />
+
   <div class="page-head">
     <div>
       <h1>{{ t('nav.clients') }}</h1>
@@ -677,6 +716,13 @@ async function submitForm(input) {
         <Icon name="search" :size="15" />
         <input v-model="search" type="search" :placeholder="t('client.searchHint')" />
       </div>
+      <!-- Beside the search box, the way 3x-ui places it, with a count of
+           how many categories are narrowing the list. -->
+      <button class="btn ctl" :class="{ on: filterCount > 0 }" @click="filterOpen = true">
+        <Icon name="filter" :size="14" />
+        {{ t('filter.button') }}
+        <span v-if="filterCount" class="filter-count">{{ filterCount }}</span>
+      </button>
       <select v-model="statusFilter" class="ctl">
         <option value="">{{ t('filter.allStatuses') }}</option>
         <option value="active">{{ t('status.active') }}</option>
