@@ -81,6 +81,8 @@
   "client.selectAll": "All",
   "client.clearAll": "None",
   "client.planGroup": "What they get",
+  "client.quotaHint": "Total data across every server this customer uses. Empty means unlimited.",
+  "client.delayedStart": "Delayed start",
   "client.presets": "Presets",
   "client.notePlaceholder": "Contact, plan, anything you need to remember",
   "client.create": "Add client",

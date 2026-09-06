@@ -2311,6 +2311,13 @@ textarea.bad:focus {
   }
 }
 
+/* 720, the width 3x-ui gives this dialog, with its body capped the same way. */
+.modal.cf-modal {
+  max-width: 720px;
+}
+.modal.cf-modal > .card-body {
+  max-height: calc(100vh - 200px);
+}
 .modal.wide {
   max-width: 900px;
   width: 92vw;

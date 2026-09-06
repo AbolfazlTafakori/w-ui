@@ -81,6 +81,8 @@
   "client.selectAll": "همه",
   "client.clearAll": "هیچ‌کدام",
   "client.planGroup": "چه چیزی می‌گیرد",
+  "client.quotaHint": "مجموع حجم روی همه‌ی سرورهایی که این مشتری استفاده می‌کند. خالی یعنی نامحدود.",
+  "client.delayedStart": "شروع تأخیری",
   "client.presets": "آماده",
   "client.notePlaceholder": "شماره تماس، نوع پلن، هرچه لازم داری یادت بماند",
   "client.create": "کلاینت جدید",

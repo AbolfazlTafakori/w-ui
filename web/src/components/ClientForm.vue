@@ -4,6 +4,7 @@ import { api } from '../lib/api.js'
 import { t } from '../lib/store.js'
 import { bytesToGigabytes } from '../lib/format.js'
 import Icon from './Icon.vue'
+import Toggle from './Toggle.vue'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -167,7 +168,7 @@ async function submit() {
 
 <template>
   <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+    <div class="modal cf-modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
       <div class="card-head">
         <Icon :name="editing ? 'edit' : 'plus'" :size="17" />
         <h2 id="cf-title">{{ editing ? t('client.edit') : t('client.create') }}</h2>
@@ -191,59 +192,158 @@ async function submit() {
           </button>
         </div>
 
-        <!-- Who they are. Two short text fields and a note, on one line. -->
-        <div class="cf-grid">
-          <div class="field">
-            <label for="cf-name"><span class="req">*</span>{{ t('client.name') }}</label>
-            <input id="cf-name" v-model="form.name" required autofocus />
+        <!-- A half-width field leading a row of quarters, which is the shape
+             3x-ui uses: the one thing you type sits beside the numbers that
+             qualify it, and the fourth number wraps to its own line. -->
+        <div class="row">
+          <div class="col-12">
+            <div class="field">
+              <label for="cf-name"><span class="req">*</span>{{ t('client.name') }}</label>
+              <input id="cf-name" v-model="form.name" required autofocus />
+            </div>
           </div>
 
-          <div class="field">
-            <label for="cf-group">{{ t('client.group') }}</label>
-            <input
-              id="cf-group"
-              v-model="form.group"
-              list="cf-groups"
-              :placeholder="t('client.groupPlaceholder')"
-            />
-            <datalist id="cf-groups">
-              <option v-for="g in groupNames" :key="g" :value="g" />
-            </datalist>
+          <div class="col-6">
+            <div class="field">
+              <!-- The unit sits in the field rather than the label. "Data
+                   allowance (GB)" wrapped to two lines in a quarter column and
+                   pushed its own input out of the row's alignment. -->
+              <label for="cf-quota">
+                {{ t('client.quota') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.quotaHint')" />
+              </label>
+              <div class="unit-field">
+                <input
+                  id="cf-quota"
+                  v-model="form.quotaGB"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  :placeholder="t('client.unlimited')"
+                />
+                <span class="unit">GB</span>
+              </div>
+            </div>
           </div>
 
-          <div class="field">
-            <label for="cf-note">{{ t('client.note') }}</label>
-            <input id="cf-note" v-model="form.note" :placeholder="t('client.notePlaceholder')" />
+          <div class="col-6">
+            <div class="field">
+              <label for="cf-days">{{ t('client.expiresInDays') }}</label>
+              <input
+                id="cf-days"
+                v-model="form.expiresInDays"
+                type="number"
+                min="0"
+                :placeholder="t('client.neverExpires')"
+              />
+            </div>
+          </div>
+
+          <div class="col-6">
+            <div class="field">
+              <label for="cf-devices">
+                <span class="req">*</span>{{ t('client.deviceLimit') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.deviceLimitHint')" />
+              </label>
+              <input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" required />
+            </div>
           </div>
         </div>
 
-        <!-- Which servers. Every one this customer may use, on one plan: when
-             one is blocked the others keep working on the same purchase, which
-             is the whole reason to sell more than one.
+        <div class="row">
+          <div class="col-6">
+            <div class="field">
+              <label for="cf-rate">
+                {{ t('client.rate') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.rateHint')" />
+              </label>
+              <div class="unit-field">
+                <input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" placeholder="0" />
+                <span class="unit">Mbit/s</span>
+              </div>
+            </div>
+          </div>
 
-             They wrap and the group grows. A box that scrolled inside a dialog
-             which also scrolled meant an operator with six tunnels could not
-             see what they had ticked without finding the right scrollbar. -->
-        <fieldset class="cf-group">
-          <legend>
-            <span class="req">*</span>{{ t('client.chooseServers') }}
-            <span class="cf-count" :class="{ none: !form.interfaceIds.length }">
-              {{ form.interfaceIds.length }}/{{ interfaces.length }}
-            </span>
-            <span class="spacer cf-bulk">
-              <button type="button" class="btn sm ghost" :disabled="allChosen" @click="chooseAll">
-                {{ t('client.selectAll') }}
-              </button>
-              <button
-                type="button"
-                class="btn sm ghost"
-                :disabled="!form.interfaceIds.length"
-                @click="chooseNone"
-              >
-                {{ t('client.clearAll') }}
-              </button>
-            </span>
-          </legend>
+          <div class="col-6">
+            <div class="field">
+              <label for="cf-reset">{{ t('client.resetCycle') }}</label>
+              <select id="cf-reset" v-model="form.resetCycle">
+                <option value="none">{{ t('reset.none') }}</option>
+                <option value="daily">{{ t('reset.daily') }}</option>
+                <option value="weekly">{{ t('reset.weekly') }}</option>
+                <option value="monthly">{{ t('reset.monthly') }}</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- A switch under its own label, the way 3x-ui puts "Start After
+               First Use" in the row rather than as a stray tickbox below it. -->
+          <div class="col-6">
+            <div class="field">
+              <label>
+                {{ t('client.delayedStart') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.startOnFirstUseHint')" />
+              </label>
+              <Toggle v-model="form.startOnFirstUse" :label="t('client.startOnFirstUse')" />
+            </div>
+          </div>
+
+          <div v-if="form.startOnFirstUse" class="col-6">
+            <div class="field">
+              <label for="cf-duration">{{ t('client.durationDays') }}</label>
+              <div class="unit-field">
+                <input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" />
+                <span class="unit">{{ t('settings.days') }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-12">
+            <div class="field">
+              <label for="cf-note">{{ t('client.note') }}</label>
+              <input id="cf-note" v-model="form.note" :placeholder="t('client.notePlaceholder')" />
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="field">
+              <label for="cf-group">
+                {{ t('client.group') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.groupHint')" />
+              </label>
+              <input
+                id="cf-group"
+                v-model="form.group"
+                list="cf-groups"
+                :placeholder="t('client.groupPlaceholder')"
+              />
+              <datalist id="cf-groups">
+                <option v-for="g in groupNames" :key="g" :value="g" />
+              </datalist>
+            </div>
+          </div>
+        </div>
+
+        <!-- Full width, with the two bulk buttons directly above the control,
+             which is where 3x-ui puts Select all / Clear all. -->
+        <div class="field">
+          <label><span class="req">*</span>{{ t('client.chooseServers') }}</label>
+          <div class="bulk">
+            <button type="button" class="btn sm" :disabled="allChosen" @click="chooseAll">
+              {{ t('client.selectAll') }}
+            </button>
+            <button
+              type="button"
+              class="btn sm ghost"
+              :disabled="!form.interfaceIds.length"
+              @click="chooseNone"
+            >
+              {{ t('client.clearAll') }}
+            </button>
+            <span class="bulk-count">{{ form.interfaceIds.length }} / {{ interfaces.length }}</span>
+          </div>
 
           <div class="server-grid">
             <label
@@ -273,86 +373,9 @@ async function submit() {
             {{ t('interface.addressesLeft') }}:
             <span class="num ltr">{{ poolLeft.toLocaleString() }}</span>
           </span>
-        </fieldset>
+        </div>
 
-        <!-- What they get. Five short numbers that belong to one decision, so
-             they sit on one row rather than down a column. -->
-        <fieldset class="cf-group">
-          <legend>{{ t('client.planGroup') }}</legend>
-
-          <div class="cf-grid tight">
-            <div class="field">
-              <label for="cf-quota">{{ t('client.quota') }} <span class="unit-note">GB</span></label>
-              <input
-                id="cf-quota"
-                v-model="form.quotaGB"
-                type="number"
-                min="0"
-                step="0.5"
-                :placeholder="t('client.unlimited')"
-              />
-            </div>
-
-            <div class="field">
-              <label for="cf-days">{{ t('client.expiresInDays') }}</label>
-              <input
-                id="cf-days"
-                v-model="form.expiresInDays"
-                type="number"
-                min="0"
-                :placeholder="t('client.neverExpires')"
-              />
-            </div>
-
-            <div class="field">
-              <label for="cf-devices">
-                <span class="req">*</span>{{ t('client.deviceLimit') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.deviceLimitHint')" />
-              </label>
-              <input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" required />
-            </div>
-
-            <div class="field">
-              <label for="cf-rate">
-                {{ t('client.rate') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.rateHint')" />
-              </label>
-              <div class="unit-field">
-                <input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" placeholder="0" />
-                <span class="unit">Mbit/s</span>
-              </div>
-            </div>
-
-            <div class="field">
-              <label for="cf-reset">{{ t('client.resetCycle') }}</label>
-              <select id="cf-reset" v-model="form.resetCycle">
-                <option value="none">{{ t('reset.none') }}</option>
-                <option value="daily">{{ t('reset.daily') }}</option>
-                <option value="weekly">{{ t('reset.weekly') }}</option>
-                <option value="monthly">{{ t('reset.monthly') }}</option>
-              </select>
-            </div>
-
-            <!-- Only meaningful once the plan is deferred, so it appears with
-                 that choice rather than sitting empty beforehand. -->
-            <div v-if="form.startOnFirstUse" class="field">
-              <label for="cf-duration">{{ t('client.durationDays') }}</label>
-              <div class="unit-field">
-                <input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" />
-                <span class="unit">{{ t('settings.days') }}</span>
-              </div>
-            </div>
-          </div>
-
-          <label class="check cf-defer">
-            <input v-model="form.startOnFirstUse" type="checkbox" />
-            <span>
-              {{ t('client.startOnFirstUse') }}
-              <span class="hint">{{ t('client.startOnFirstUseHint') }}</span>
-            </span>
-          </label>
-          <span v-if="editing" class="hint">{{ t('client.expiryResetHint') }}</span>
-        </fieldset>
+        <span v-if="editing" class="hint">{{ t('client.expiryResetHint') }}</span>
       </form>
 
       <div class="modal-foot">
@@ -369,10 +392,16 @@ async function submit() {
 </template>
 
 <style scoped>
+/* The geometry is 3x-ui's, read from its source rather than from a screenshot:
+   a 720px dialog, Ant Design's 24-column grid at gutter 16, a label above its
+   control with 8px between them, and 24px between rows. Ant Design's own
+   defaults supply the rest, because 3x-ui overrides only colour tokens and
+   leaves sizing alone. */
+
 .card-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 0;
 }
 .card-head svg {
   color: var(--muted);
@@ -382,63 +411,88 @@ async function submit() {
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
-  padding-bottom: 14px;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
   border-bottom: 1px solid var(--line-soft);
 }
 
-/* Fields sit side by side and wrap when there is no room, rather than stacking
-   at every width. The plan numbers are short, so they get a smaller floor and
-   five of them fit on one line. */
-.cf-grid {
+/* gutter={16}: 8px of padding on each column, pulled back off the row so the
+   first and last columns still line up with everything else in the dialog. */
+/* Their 24-column grid, as a grid rather than as flex percentages. Flex bases
+   of 50% and 25% resolve to fractions on an odd row width, round up, overflow
+   by less than a pixel, and drop the third column onto its own line -- which
+   is exactly what happened: 342 + 171 + 171 into 683. Grid tracks divide the
+   row exactly and cannot. */
+.row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px 16px;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  margin-inline: -8px;
 }
-.cf-grid.tight {
-  grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
+.row > [class^='col-'] {
+  /* gutter={16}: 8px each side, pulled back off the row so the outer columns
+     still line up with everything else in the dialog. */
+  padding-inline: 8px;
+  /* Form.Item's own margin-bottom, which is the gap between rows as much as
+     between fields. */
+  margin-bottom: 24px;
+  min-width: 0;
+}
+.col-12 {
+  grid-column: span 12;
+}
+.col-6 {
+  grid-column: span 6;
 }
 
-/* A named group rather than a card. Nesting a card inside a dialog would put
-   three surfaces on top of each other to say one thing: these belong together.
-   A rule and a label say it with none. */
-.cf-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-top: 1px solid var(--line-soft);
-  padding-top: 16px;
+/* xs={24}: everything is full width on a phone, which is what their Col does
+   below the md breakpoint. */
+@media (max-width: 768px) {
+  .col-12,
+  .col-6 {
+    grid-column: 1 / -1;
+  }
 }
-.cf-group > legend {
+
+/* Their label: normal weight at body size, sitting 8px above its control,
+   rather than the small bold caps this panel uses elsewhere. */
+.field > label {
+  font-size: var(--t-base);
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.field {
+  gap: 6px;
+}
+
+/* The question mark beside a label, which is where their tooltips live. It
+   replaced two paragraphs that made the dialog a screen taller. */
+.help {
+  color: var(--faint);
+  cursor: help;
+  vertical-align: -1px;
+}
+.help:hover {
+  color: var(--ink-2);
+}
+
+/* Select all / Clear all sit directly above the control they act on. */
+.bulk {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  padding: 0;
-  margin-bottom: 2px;
-  font-size: var(--t-xs);
-  font-weight: 600;
-  color: var(--ink-2);
+  margin-bottom: 8px;
 }
-.cf-count {
+.bulk-count {
+  margin-inline-start: auto;
+  font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
-  font-weight: 500;
-}
-.cf-count.none {
-  color: var(--danger, var(--accent));
-}
-.cf-bulk {
-  display: flex;
-  gap: 6px;
-  margin-inline-start: auto;
 }
 
-/* The servers wrap and the group grows with them. It used to be a box with its
-   own scrollbar inside a dialog that also scrolled, so choosing the fourth
-   tunnel meant finding the right scrollbar first. */
+/* The tunnels wrap and the group grows with them. It was a box with its own
+   scrollbar inside a dialog that also scrolled, so choosing the fourth tunnel
+   meant finding the right scrollbar first. */
 .server-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
@@ -461,8 +515,6 @@ async function submit() {
 .server:hover {
   border-color: color-mix(in srgb, var(--line) 50%, var(--accent) 30%);
 }
-/* Chosen is carried by the border and the ground, not by a coloured bar down
-   one side. */
 .server.on {
   border-color: var(--accent-line, var(--accent));
   background: var(--accent-soft);
@@ -473,9 +525,8 @@ async function submit() {
   flex: none;
   cursor: pointer;
 }
-/* The tags give way, not the name. Truncating the name first left a tunnel
-   showing one character, and the name is the only part an operator recognises;
-   the protocol is already obvious from the tag's colour. */
+/* The tags give way, not the name: truncating the name first left a tunnel
+   showing one character, and the name is the part an operator recognises. */
 .server-name {
   flex: 1 1 auto;
   min-width: 5ch;
@@ -491,43 +542,12 @@ async function submit() {
   margin-inline-start: auto;
 }
 
-/* The paragraph that explained deferred plans used to sit under the tickbox and
-   make the dialog a screen taller. It reads beside its own control now. */
-.cf-defer {
-  align-items: flex-start;
-  gap: 9px;
-}
-.cf-defer .hint {
-  display: block;
-  margin-top: 3px;
-}
-.cf-grid .unit-field {
+.cf-grid .unit-field,
+.cf-grid .unit-field input,
+.unit-field {
   min-width: 0;
 }
-.cf-grid .unit-field input {
+.unit-field input {
   min-width: 0;
-}
-.unit-note {
-  color: var(--muted);
-  font-weight: 500;
-}
-/* Held back until asked for, so five labels stay one line each. */
-.help {
-  color: var(--faint);
-  cursor: help;
-  vertical-align: -1px;
-}
-.help:hover {
-  color: var(--ink-2);
-}
-
-@media (max-width: 640px) {
-  .cf-bulk {
-    width: 100%;
-    margin-inline-start: 0;
-  }
-  .cf-group > legend {
-    flex-wrap: wrap;
-  }
 }
 </style>
