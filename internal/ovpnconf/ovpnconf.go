@@ -149,6 +149,15 @@ func RenderProfile(iface *model.Interface) string {
 	// empty certificate and the server rejects the connection.
 	b.WriteString("auth-user-pass\n")
 
+	// And this says so out loud, for the clients that will not start without
+	// being told. A profile with a <ca> block and no <cert> is ambiguous from
+	// the outside: the official OpenVPN Connect assumes the certificate was
+	// meant to be there and refuses with "Missing external certificate", which
+	// reads to a customer as a broken file rather than as a profile that never
+	// needed one. This is the flag OpenVPN's own Access Server writes into its
+	// username-and-password profiles, and other clients ignore it.
+	b.WriteString("setenv CLIENT_CERT 0\n")
+
 	// Checks that the server's certificate was issued for a server. Dropping
 	// this would let anyone holding any certificate from this authority — that
 	// is, any other customer, if per-client certificates were ever added —

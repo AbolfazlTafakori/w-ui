@@ -373,3 +373,25 @@ func TestSecretsDoNotRepeat(t *testing.T) {
 		seen[s] = true
 	}
 }
+
+// A profile with a CA and no client certificate is ambiguous from the outside,
+// and the official OpenVPN Connect refuses it with "Missing external
+// certificate" — which a customer reads as a broken file. The server is
+// configured with verify-client-cert none, so there is no certificate to add;
+// the profile has to say that.
+func TestProfileSaysNoClientCertificateIsExpected(t *testing.T) {
+	got := RenderProfile(testIface(t))
+
+	if !strings.Contains(got, "setenv CLIENT_CERT 0") {
+		t.Error("the profile does not tell the client that no certificate is used")
+	}
+	// And the reason it must: there is genuinely no client certificate in it.
+	for _, block := range []string{"<cert>", "<key>"} {
+		if strings.Contains(got, block) {
+			t.Errorf("the profile carries a %s block; this tunnel authenticates with credentials", block)
+		}
+	}
+	if !strings.Contains(got, "auth-user-pass") {
+		t.Error("the profile does not ask for a username and password")
+	}
+}
