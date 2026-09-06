@@ -5,6 +5,7 @@ import { t } from '../lib/store.js'
 import { bytesToGigabytes } from '../lib/format.js'
 import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
+import MultiSelect from './MultiSelect.vue'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -108,12 +109,26 @@ const allChosen = computed(
 )
 
 function chooseAll() {
-  form.value.interfaceIds = props.interfaces.map((i) => i.id)
+  form.value.interfaceIds = [
+    ...new Set([...form.value.interfaceIds, ...props.interfaces.map((i) => i.id)]),
+  ]
 }
 
 function chooseNone() {
   form.value.interfaceIds = []
 }
+
+const serverOptions = computed(() =>
+  props.interfaces.map((i) => ({
+    value: i.id,
+    label: i.name,
+    tags: [
+      { text: t(`protocol.${i.protocol}`), kind: 'proto' },
+      ...(i.mode === 'amnezia' ? [{ text: 'AmneziaWG' }] : []),
+    ],
+    note: i.capacity ? (i.capacity - i.allocated).toLocaleString() : '',
+  })),
+)
 
 // The tightest pool among the chosen servers, because that is the one that
 // runs out first and stops the whole customer being created.
@@ -326,45 +341,35 @@ async function submit() {
           </div>
         </div>
 
-        <!-- Full width, with the two bulk buttons directly above the control,
-             which is where 3x-ui puts Select all / Clear all. -->
+        <!-- 3x-ui's Attached inbounds, control for control: two small
+             buttons in a row above, then a multiple select whose chosen items
+             are removable tags. Select all unions with what is already there
+             rather than replacing it, so an id outside the current options is
+             not silently dropped -- their SelectAllClearButtons is careful
+             about the same thing. -->
         <div class="field">
-          <label><span class="req">*</span>{{ t('client.chooseServers') }}</label>
+          <label for="cf-servers"><span class="req">*</span>{{ t('client.chooseServers') }}</label>
+
           <div class="bulk">
             <button type="button" class="btn sm" :disabled="allChosen" @click="chooseAll">
               {{ t('client.selectAll') }}
             </button>
             <button
               type="button"
-              class="btn sm ghost"
+              class="btn sm"
               :disabled="!form.interfaceIds.length"
               @click="chooseNone"
             >
               {{ t('client.clearAll') }}
             </button>
-            <span class="bulk-count">{{ form.interfaceIds.length }} / {{ interfaces.length }}</span>
           </div>
 
-          <div class="server-grid">
-            <label
-              v-for="i in interfaces"
-              :key="i.id"
-              class="server"
-              :class="{ on: form.interfaceIds.includes(i.id) }"
-            >
-              <input
-                type="checkbox"
-                :checked="form.interfaceIds.includes(i.id)"
-                @change="toggleInterface(i.id, $event.target.checked)"
-              />
-              <span class="server-name">{{ i.name }}</span>
-              <span class="tag proto">{{ t(`protocol.${i.protocol}`) }}</span>
-              <span v-if="i.mode === 'amnezia'" class="tag">AmneziaWG</span>
-              <span v-if="i.capacity" class="muted small num ltr spacer">
-                {{ (i.capacity - i.allocated).toLocaleString() }}
-              </span>
-            </label>
-          </div>
+          <MultiSelect
+            v-model="form.interfaceIds"
+            :options="serverOptions"
+            :placeholder="t('client.selectServers')"
+            :invalid="!form.interfaceIds.length"
+          />
 
           <span v-if="!form.interfaceIds.length" class="field-error" role="alert">
             {{ t('client.chooseAtLeastOne') }}
@@ -488,58 +493,6 @@ async function submit() {
   font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
-}
-
-/* The tunnels wrap and the group grows with them. It was a box with its own
-   scrollbar inside a dialog that also scrolled, so choosing the fourth tunnel
-   meant finding the right scrollbar first. */
-.server-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
-  gap: 8px;
-}
-.server {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition:
-    border-color 0.14s var(--ease),
-    background-color 0.14s var(--ease);
-}
-.server:hover {
-  border-color: color-mix(in srgb, var(--line) 50%, var(--accent) 30%);
-}
-.server.on {
-  border-color: var(--accent-line, var(--accent));
-  background: var(--accent-soft);
-}
-.server input {
-  width: auto;
-  margin: 0;
-  flex: none;
-  cursor: pointer;
-}
-/* The tags give way, not the name: truncating the name first left a tunnel
-   showing one character, and the name is the part an operator recognises. */
-.server-name {
-  flex: 1 1 auto;
-  min-width: 5ch;
-  font-weight: 550;
-}
-.server .tag {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.server .spacer {
-  margin-inline-start: auto;
 }
 
 .cf-grid .unit-field,

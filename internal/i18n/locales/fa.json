@@ -83,6 +83,8 @@
   "client.planGroup": "چه چیزی می‌گیرد",
   "client.quotaHint": "مجموع حجم روی همه‌ی سرورهایی که این مشتری استفاده می‌کند. خالی یعنی نامحدود.",
   "client.delayedStart": "شروع تأخیری",
+  "client.selectServers": "یک یا چند سرور انتخاب کن",
+  "common.noResults": "چیزی پیدا نشد",
   "client.presets": "آماده",
   "client.notePlaceholder": "شماره تماس، نوع پلن، هرچه لازم داری یادت بماند",
   "client.create": "کلاینت جدید",
