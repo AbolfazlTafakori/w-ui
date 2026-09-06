@@ -239,8 +239,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 38px;
-  padding: 4px 8px 4px 10px;
+  min-height: 32px;
+  padding: 2px 6px 2px 9px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-2);

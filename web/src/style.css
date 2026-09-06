@@ -108,19 +108,23 @@
   --ring: 0 0 0 2px var(--ground), 0 0 0 4px var(--accent);
   --ring-inset: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
 
-  --radius: 10px;
-  --radius-sm: 7px;
+  --radius: 8px;
+  --radius-sm: 6px;
   --font: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --sidebar-w: 232px;
 
-  /* Type scale */
-  --t-xs: 0.8125rem;  /* 13px — labels, captions. The floor. */
-  --t-sm: 0.875rem;   /* 14px — secondary text, table cells */
-  --t-base: 0.9375rem;/* 15px — body, inputs, buttons */
+  /* Type scale, matched to Ant Design's, which is what 3x-ui runs on: it
+     overrides only colour tokens, so its sizing is Ant's defaults. Everything
+     here was a step larger, and a panel an operator reads all day should not
+     be. fontSize 14, fontSizeSM 12, fontSizeLG 16, fontSizeXL 20, and
+     fontSizeHeading3 24 for a page title. */
+  --t-xs: 0.75rem;    /* 12px — labels, captions. The floor. */
+  --t-sm: 0.8125rem;  /* 13px — secondary text */
+  --t-base: 0.875rem; /* 14px — body, inputs, buttons, table cells */
   --t-md: 1rem;       /* 16px — card titles */
-  --t-lg: 1.3125rem;  /* 21px — metric values */
-  --t-xl: 1.625rem;   /* 26px — page titles */
+  --t-lg: 1.25rem;    /* 20px — metric values */
+  --t-xl: 1.5rem;     /* 24px — page titles */
 }
 
 /*
@@ -258,7 +262,9 @@ body {
   color: var(--ink);
   font-family: var(--font);
   font-size: var(--t-base);
-  line-height: 1.6;
+  /* 22px on 14, which is Ant's lineHeight and what its control heights are
+     built from. 1.6 made every row taller than the control inside it. */
+  line-height: 1.5714285714;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -667,15 +673,15 @@ th.ltr {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 9px 16px;
-  min-height: 38px;
+  gap: 6px;
+  padding: 4px 15px;
+  min-height: 32px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink);
   font: inherit;
-  font-size: var(--t-sm);
+  font-size: var(--t-base);
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -711,10 +717,11 @@ th.ltr {
   background: var(--bad-soft);
   border-color: var(--bad);
 }
+/* controlHeightSM 24, which is what Ant's small button is. */
 .btn.sm {
-  padding: 6px 12px;
-  min-height: 32px;
-  font-size: var(--t-xs);
+  padding: 0 7px;
+  min-height: 24px;
+  font-size: var(--t-sm);
 }
 .btn.icon {
   padding: 0;
@@ -722,16 +729,18 @@ th.ltr {
   min-height: 38px;
 }
 .btn.sm.icon {
-  width: 32px;
-  min-height: 32px;
+  width: 24px;
+  min-height: 24px;
 }
 
 input,
 select,
 textarea {
   width: 100%;
-  padding: 9px 12px;
-  min-height: 38px;
+  /* controlHeight 32: 22px of line, 4px above and below, 1px of border each
+     side. Ours were 38, which is Ant's large. */
+  padding: 4px 11px;
+  min-height: 32px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -921,7 +930,10 @@ table {
 th,
 td {
   text-align: start;
-  padding: 13px 18px;
+  /* 3x-ui renders its client table at size="small", whose cell padding is 8
+     both ways. Ours was 13 by 18, which is why the same number of rows filled
+     half again as much screen. */
+  padding: 8px 12px;
   border-bottom: 1px solid var(--line-soft);
   vertical-align: middle;
 }
@@ -3210,9 +3222,10 @@ pre.code code {
   color: var(--ink-2);
 }
 
+/* Only what this adds. Size lives in the one .btn.sm rule above; setting it
+   again here meant the small button was 31px tall rather than the 24 it was
+   supposed to be, and nothing said so. */
 .btn.sm {
-  padding: 5px 11px;
-  font-size: var(--t-xs);
   flex: none;
   white-space: nowrap;
 }
