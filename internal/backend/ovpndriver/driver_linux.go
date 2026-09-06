@@ -102,6 +102,10 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 // writeInterfaceFiles lays down everything that depends on the interface rather
 // than on its accounts.
 func (d *Driver) writeInterfaceFiles(iface *model.Interface, l ovpnconf.Layout) error {
+	// Its own temp directory, on the real filesystem: see Layout.TempDir.
+	if err := os.MkdirAll(l.TempDir(), 0o700); err != nil {
+		return fmt.Errorf("ovpndriver: temp directory: %w", err)
+	}
 	if err := os.MkdirAll(l.ClientDir(), 0o700); err != nil {
 		return fmt.Errorf("ovpndriver: create %s: %w", l.ClientDir(), err)
 	}
@@ -330,7 +334,7 @@ func (d *Driver) Stats(ctx context.Context) ([]backend.Stat, error) {
 		return nil, backend.ErrNotOpen
 	}
 
-	raw, err := d.management(ctx, l, "status 2\n")
+	raw, err := d.sessionReport(ctx, l)
 	if err != nil {
 		return nil, err
 	}
@@ -425,6 +429,29 @@ func (d *Driver) Close() error {
 	d.iface = nil
 	d.mu.Unlock()
 	return nil
+}
+
+// sessionReport returns the same thing `status 2` does, from the file OpenVPN
+// already writes.
+//
+// The server is told to write its status on a timer, in the same format the
+// management command replies with, so asking over the socket was asking a
+// second time for something already on disk. It was not free: at verb 3 every
+// management connection logs three lines, the collector runs every two
+// seconds, and this one call had written 17.8MB of "Client connected / CMD
+// status 2 / Client disconnected" in twenty hours on a server with no
+// customers on it -- around 8GB a year of noise on a 37GB disk, burying
+// anything that would have been worth reading.
+//
+// The socket stays as the fallback. A server that has only just started has
+// not written the file yet, and answering "no sessions" then would look like
+// every customer had dropped at once.
+func (d *Driver) sessionReport(ctx context.Context, l ovpnconf.Layout) (string, error) {
+	raw, err := os.ReadFile(l.StatusFile())
+	if err == nil && strings.Contains(string(raw), "END") {
+		return string(raw), nil
+	}
+	return d.management(ctx, l, "status 2\n")
 }
 
 // management runs one command against the management socket and returns the

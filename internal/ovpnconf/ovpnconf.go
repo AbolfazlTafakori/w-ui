@@ -51,6 +51,20 @@ func (l Layout) PIDFile() string     { return path.Join(l.Dir, "openvpn.pid") }
 func (l Layout) LogFile() string     { return path.Join(l.Dir, "openvpn.log") }
 func (l Layout) StatusFile() string  { return path.Join(l.Dir, "status") }
 
+// TempDir is where OpenVPN writes the short-lived files its scripts need: the
+// one holding a login's username and password, and the control file a deferred
+// auth writes its answer into.
+//
+// Explicit, rather than the system temp, because the system temp is not stable
+// underneath this process. The panel runs with PrivateTmp, which gives every
+// service start its own /tmp and destroys the previous one, and the OpenVPN
+// server deliberately outlives a panel restart so customers are not
+// disconnected by one. The result was a server holding a /tmp marked deleted,
+// unable to write anything, rejecting every login with "could not create
+// deferred auth control file" -- which reaches the customer as AUTH_FAILED and
+// looks like a wrong password.
+func (l Layout) TempDir() string { return path.Join(l.Dir, "tmp") }
+
 // Network splits a CIDR subnet into the network address and dotted netmask that
 // OpenVPN's `server` directive takes. It does not accept CIDR notation.
 func Network(subnet string) (network, netmask string, err error) {
@@ -252,6 +266,7 @@ func RenderServer(iface *model.Interface, l Layout) (string, error) {
 		fmt.Fprintf(&b, "push \"dhcp-option DNS %s\"\n", dns)
 	}
 
+	fmt.Fprintf(&b, "tmp-dir %s\n", l.TempDir())
 	fmt.Fprintf(&b, "\nmanagement %s unix\n", l.Management())
 	fmt.Fprintf(&b, "status %s 10\n", l.StatusFile())
 	b.WriteString("status-version 2\n")
