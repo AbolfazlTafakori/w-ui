@@ -97,6 +97,23 @@ function toggleInterface(id, on) {
   form.value.interfaceIds = [...next]
 }
 
+// Taking all of them, or none. An operator selling access to every tunnel does
+// it on almost every customer, and ticking six boxes by hand each time is the
+// kind of small tax that a panel is supposed to remove.
+const allChosen = computed(
+  () =>
+    props.interfaces.length > 0 &&
+    form.value.interfaceIds.length === props.interfaces.length,
+)
+
+function chooseAll() {
+  form.value.interfaceIds = props.interfaces.map((i) => i.id)
+}
+
+function chooseNone() {
+  form.value.interfaceIds = []
+}
+
 // The tightest pool among the chosen servers, because that is the one that
 // runs out first and stops the whole customer being created.
 const poolLeft = computed(() => {
@@ -150,7 +167,7 @@ async function submit() {
 
 <template>
   <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="cf-title">
       <div class="card-head">
         <Icon :name="editing ? 'edit' : 'plus'" :size="17" />
         <h2 id="cf-title">{{ editing ? t('client.edit') : t('client.create') }}</h2>
@@ -174,111 +191,13 @@ async function submit() {
           </button>
         </div>
 
-        <div class="grid-2">
+        <!-- Who they are. Two short text fields and a note, on one line. -->
+        <div class="cf-grid">
           <div class="field">
             <label for="cf-name"><span class="req">*</span>{{ t('client.name') }}</label>
             <input id="cf-name" v-model="form.name" required autofocus />
           </div>
 
-          <!-- Every server this customer may use. One plan across all of them:
-               when one is blocked the others keep working on the same
-               purchase, which is the whole reason to sell more than one. -->
-          <div class="field span-2">
-            <label><span class="req">*</span>{{ t('client.chooseServers') }}</label>
-            <div class="server-list">
-              <label v-for="i in interfaces" :key="i.id" class="server">
-                <input
-                  type="checkbox"
-                  :checked="form.interfaceIds.includes(i.id)"
-                  @change="toggleInterface(i.id, $event.target.checked)"
-                />
-                <span class="server-name">{{ i.name }}</span>
-                <span class="tag proto">{{ t(`protocol.${i.protocol}`) }}</span>
-                <span v-if="i.mode === 'amnezia'" class="tag">AmneziaWG</span>
-                <span v-if="i.capacity" class="muted small num ltr spacer">
-                  {{ (i.capacity - i.allocated).toLocaleString() }}
-                </span>
-              </label>
-            </div>
-            <span v-if="!form.interfaceIds.length" class="field-error" role="alert">
-              {{ t('client.chooseAtLeastOne') }}
-            </span>
-            <span v-else class="hint">
-              {{ t('client.serversHint') }}
-              <template v-if="poolLeft !== null">
-                · {{ t('interface.addressesLeft') }}:
-                <span class="num ltr">{{ poolLeft.toLocaleString() }}</span>
-              </template>
-            </span>
-          </div>
-
-          <div class="field">
-            <label for="cf-quota">{{ t('client.quota') }} (GB)</label>
-            <input
-              id="cf-quota"
-              v-model="form.quotaGB"
-              type="number"
-              min="0"
-              step="0.5"
-              :placeholder="t('client.unlimited')"
-            />
-          </div>
-
-          <div class="field">
-            <label for="cf-days">{{ t('client.expiresInDays') }}</label>
-            <input
-              id="cf-days"
-              v-model="form.expiresInDays"
-              type="number"
-              min="0"
-              :placeholder="t('client.neverExpires')"
-            />
-            <span v-if="editing" class="hint">{{ t('client.expiryResetHint') }}</span>
-          </div>
-
-          <div class="field">
-            <label for="cf-devices"><span class="req">*</span>{{ t('client.deviceLimit') }}</label>
-            <input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" required />
-            <span class="hint">{{ t('client.deviceLimitHint') }}</span>
-          </div>
-
-          <div class="field span-2">
-            <label class="check">
-              <input v-model="form.startOnFirstUse" type="checkbox" />
-              <span>{{ t('client.startOnFirstUse') }}</span>
-            </label>
-            <span class="hint">{{ t('client.startOnFirstUseHint') }}</span>
-          </div>
-
-          <div v-if="form.startOnFirstUse" class="field">
-            <label for="cf-duration">{{ t('client.durationDays') }}</label>
-            <div class="unit-field">
-              <input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" />
-              <span class="unit">{{ t('settings.days') }}</span>
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="cf-rate">{{ t('client.rate') }}</label>
-            <div class="unit-field">
-              <input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" placeholder="0" />
-              <span class="unit">Mbit/s</span>
-            </div>
-            <span class="hint">{{ t('client.rateHint') }}</span>
-          </div>
-
-          <div class="field">
-            <label for="cf-reset">{{ t('client.resetCycle') }}</label>
-            <select id="cf-reset" v-model="form.resetCycle">
-              <option value="none">{{ t('reset.none') }}</option>
-              <option value="daily">{{ t('reset.daily') }}</option>
-              <option value="weekly">{{ t('reset.weekly') }}</option>
-              <option value="monthly">{{ t('reset.monthly') }}</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="grid-2">
           <div class="field">
             <label for="cf-group">{{ t('client.group') }}</label>
             <input
@@ -290,7 +209,6 @@ async function submit() {
             <datalist id="cf-groups">
               <option v-for="g in groupNames" :key="g" :value="g" />
             </datalist>
-            <span class="hint">{{ t('client.groupHint') }}</span>
           </div>
 
           <div class="field">
@@ -298,6 +216,143 @@ async function submit() {
             <input id="cf-note" v-model="form.note" :placeholder="t('client.notePlaceholder')" />
           </div>
         </div>
+
+        <!-- Which servers. Every one this customer may use, on one plan: when
+             one is blocked the others keep working on the same purchase, which
+             is the whole reason to sell more than one.
+
+             They wrap and the group grows. A box that scrolled inside a dialog
+             which also scrolled meant an operator with six tunnels could not
+             see what they had ticked without finding the right scrollbar. -->
+        <fieldset class="cf-group">
+          <legend>
+            <span class="req">*</span>{{ t('client.chooseServers') }}
+            <span class="cf-count" :class="{ none: !form.interfaceIds.length }">
+              {{ form.interfaceIds.length }}/{{ interfaces.length }}
+            </span>
+            <span class="spacer cf-bulk">
+              <button type="button" class="btn sm ghost" :disabled="allChosen" @click="chooseAll">
+                {{ t('client.selectAll') }}
+              </button>
+              <button
+                type="button"
+                class="btn sm ghost"
+                :disabled="!form.interfaceIds.length"
+                @click="chooseNone"
+              >
+                {{ t('client.clearAll') }}
+              </button>
+            </span>
+          </legend>
+
+          <div class="server-grid">
+            <label
+              v-for="i in interfaces"
+              :key="i.id"
+              class="server"
+              :class="{ on: form.interfaceIds.includes(i.id) }"
+            >
+              <input
+                type="checkbox"
+                :checked="form.interfaceIds.includes(i.id)"
+                @change="toggleInterface(i.id, $event.target.checked)"
+              />
+              <span class="server-name">{{ i.name }}</span>
+              <span class="tag proto">{{ t(`protocol.${i.protocol}`) }}</span>
+              <span v-if="i.mode === 'amnezia'" class="tag">AmneziaWG</span>
+              <span v-if="i.capacity" class="muted small num ltr spacer">
+                {{ (i.capacity - i.allocated).toLocaleString() }}
+              </span>
+            </label>
+          </div>
+
+          <span v-if="!form.interfaceIds.length" class="field-error" role="alert">
+            {{ t('client.chooseAtLeastOne') }}
+          </span>
+          <span v-else-if="poolLeft !== null" class="hint">
+            {{ t('interface.addressesLeft') }}:
+            <span class="num ltr">{{ poolLeft.toLocaleString() }}</span>
+          </span>
+        </fieldset>
+
+        <!-- What they get. Five short numbers that belong to one decision, so
+             they sit on one row rather than down a column. -->
+        <fieldset class="cf-group">
+          <legend>{{ t('client.planGroup') }}</legend>
+
+          <div class="cf-grid tight">
+            <div class="field">
+              <label for="cf-quota">{{ t('client.quota') }} <span class="unit-note">GB</span></label>
+              <input
+                id="cf-quota"
+                v-model="form.quotaGB"
+                type="number"
+                min="0"
+                step="0.5"
+                :placeholder="t('client.unlimited')"
+              />
+            </div>
+
+            <div class="field">
+              <label for="cf-days">{{ t('client.expiresInDays') }}</label>
+              <input
+                id="cf-days"
+                v-model="form.expiresInDays"
+                type="number"
+                min="0"
+                :placeholder="t('client.neverExpires')"
+              />
+            </div>
+
+            <div class="field">
+              <label for="cf-devices">
+                <span class="req">*</span>{{ t('client.deviceLimit') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.deviceLimitHint')" />
+              </label>
+              <input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" required />
+            </div>
+
+            <div class="field">
+              <label for="cf-rate">
+                {{ t('client.rate') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.rateHint')" />
+              </label>
+              <div class="unit-field">
+                <input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" placeholder="0" />
+                <span class="unit">Mbit/s</span>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="cf-reset">{{ t('client.resetCycle') }}</label>
+              <select id="cf-reset" v-model="form.resetCycle">
+                <option value="none">{{ t('reset.none') }}</option>
+                <option value="daily">{{ t('reset.daily') }}</option>
+                <option value="weekly">{{ t('reset.weekly') }}</option>
+                <option value="monthly">{{ t('reset.monthly') }}</option>
+              </select>
+            </div>
+
+            <!-- Only meaningful once the plan is deferred, so it appears with
+                 that choice rather than sitting empty beforehand. -->
+            <div v-if="form.startOnFirstUse" class="field">
+              <label for="cf-duration">{{ t('client.durationDays') }}</label>
+              <div class="unit-field">
+                <input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" />
+                <span class="unit">{{ t('settings.days') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <label class="check cf-defer">
+            <input v-model="form.startOnFirstUse" type="checkbox" />
+            <span>
+              {{ t('client.startOnFirstUse') }}
+              <span class="hint">{{ t('client.startOnFirstUseHint') }}</span>
+            </span>
+          </label>
+          <span v-if="editing" class="hint">{{ t('client.expiryResetHint') }}</span>
+        </fieldset>
       </form>
 
       <div class="modal-foot">
@@ -317,7 +372,7 @@ async function submit() {
 .card-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 .card-head svg {
   color: var(--muted);
@@ -331,28 +386,86 @@ async function submit() {
   border-bottom: 1px solid var(--line-soft);
 }
 
-/* A scrolling list rather than a growing one: an operator with twenty tunnels
-   should not have the rest of the form pushed off the dialog. */
-.server-list {
+/* Fields sit side by side and wrap when there is no room, rather than stacking
+   at every width. The plan numbers are short, so they get a smaller floor and
+   five of them fit on one line. */
+.cf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px 16px;
+}
+.cf-grid.tight {
+  grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
+}
+
+/* A named group rather than a card. Nesting a card inside a dialog would put
+   three surfaces on top of each other to say one thing: these belong together.
+   A rule and a label say it with none. */
+.cf-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 168px;
-  overflow-y: auto;
-  border: 1px solid var(--edge);
-  border-radius: 8px;
-  padding: 5px;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 16px;
+}
+.cf-group > legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.cf-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-weight: 500;
+}
+.cf-count.none {
+  color: var(--danger, var(--accent));
+}
+.cf-bulk {
+  display: flex;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+
+/* The servers wrap and the group grows with them. It used to be a box with its
+   own scrollbar inside a dialog that also scrolled, so choosing the fourth
+   tunnel meant finding the right scrollbar first. */
+.server-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  gap: 8px;
 }
 .server {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
   cursor: pointer;
+  transition:
+    border-color 0.14s var(--ease),
+    background-color 0.14s var(--ease);
 }
 .server:hover {
-  background: var(--hover, rgba(127, 127, 127, 0.08));
+  border-color: color-mix(in srgb, var(--line) 50%, var(--accent) 30%);
+}
+/* Chosen is carried by the border and the ground, not by a coloured bar down
+   one side. */
+.server.on {
+  border-color: var(--accent-line, var(--accent));
+  background: var(--accent-soft);
 }
 .server input {
   width: auto;
@@ -360,10 +473,61 @@ async function submit() {
   flex: none;
   cursor: pointer;
 }
+/* The tags give way, not the name. Truncating the name first left a tunnel
+   showing one character, and the name is the only part an operator recognises;
+   the protocol is already obvious from the tag's colour. */
 .server-name {
+  flex: 1 1 auto;
+  min-width: 5ch;
   font-weight: 550;
+}
+.server .tag {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .server .spacer {
   margin-inline-start: auto;
+}
+
+/* The paragraph that explained deferred plans used to sit under the tickbox and
+   make the dialog a screen taller. It reads beside its own control now. */
+.cf-defer {
+  align-items: flex-start;
+  gap: 9px;
+}
+.cf-defer .hint {
+  display: block;
+  margin-top: 3px;
+}
+.cf-grid .unit-field {
+  min-width: 0;
+}
+.cf-grid .unit-field input {
+  min-width: 0;
+}
+.unit-note {
+  color: var(--muted);
+  font-weight: 500;
+}
+/* Held back until asked for, so five labels stay one line each. */
+.help {
+  color: var(--faint);
+  cursor: help;
+  vertical-align: -1px;
+}
+.help:hover {
+  color: var(--ink-2);
+}
+
+@media (max-width: 640px) {
+  .cf-bulk {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+  .cf-group > legend {
+    flex-wrap: wrap;
+  }
 }
 </style>
