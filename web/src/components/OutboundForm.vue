@@ -883,6 +883,9 @@ async function submit() {
 .card-body {
   padding: 8px 24px 16px;
 }
+/* The tab strip is one line here, so it must not be a scroll container:
+   the active tab's underline hangs 1px below the strip, and a container
+   with overflow auto turns that pixel into a scrollbar with two arrows. */
 .tabs {
   margin-bottom: 16px;
 }

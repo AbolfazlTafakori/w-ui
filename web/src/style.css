@@ -841,6 +841,11 @@ option {
   font-size: var(--t-md);
   font-weight: 600;
 }
+/* A dialog's close sits at the far end of its header, as Ant's Modal puts
+   it, never beside the title. */
+.modal > .card-head > .act:last-child {
+  margin-inline-start: auto;
+}
 .card-body {
   padding: 18px;
 }
@@ -3111,7 +3116,11 @@ textarea.bad:focus {
   gap: 2px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 16px;
-  overflow-x: auto;
+  /* Not a scroll container: the active tab's underline hangs a pixel below
+     the strip, and overflow auto turned that pixel into a scrollbar with
+     two arrows at the end of the row. Tabs wrap instead when there is no
+     room, which Ant's do too. */
+  flex-wrap: wrap;
 }
 .tab {
   display: inline-flex;
