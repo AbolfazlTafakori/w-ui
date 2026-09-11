@@ -102,6 +102,7 @@
   "filter.bucket.online": "آنلاین",
   "common.all": "همه",
   "common.nothingYet": "هنوز چیزی این‌جا نیست",
+  "host.endpoint": "نقطه‌ی اتصال",
   "client.presets": "آماده",
   "client.notePlaceholder": "شماره تماس، نوع پلن، هرچه لازم داری یادت بماند",
   "client.create": "کلاینت جدید",

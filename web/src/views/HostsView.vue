@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
@@ -41,6 +42,17 @@ const byInterface = computed(() => {
 })
 
 const reachable = computed(() => hosts.value.filter((h) => h.reachable).length)
+const enabledCount = computed(() => hosts.value.filter((h) => h.enabled).length)
+
+// One flat list, the way 3x-ui shows it, kept in an order that still reads:
+// the hosts of one tunnel together, in the order a customer is handed them.
+const ordered = computed(() =>
+  byInterface.value.flatMap((g) => g.rows),
+)
+
+function ifaceOf(h) {
+  return interfaces.value.find((i) => i.id === h.interfaceId) || null
+}
 
 async function load(quiet = false) {
   if (!quiet) loading.value = true
@@ -171,91 +183,87 @@ async function runConfirmed() {
 
 <template>
   <section class="view">
-    <header class="page-head">
-      <div>
-        <h1>{{ t('nav.hosts') }}</h1>
-        <p class="muted">{{ t('host.lede') }}</p>
+    <!-- No page heading. 3x-ui opens on three figures -- total, enabled,
+         disabled -- and its one control lives in the table's card. -->
+    <div class="strip card">
+      <div class="strip-item">
+        <span class="strip-label"><Icon name="globe" :size="14" />{{ t('host.stat.total') }}</span>
+        <span class="strip-value num">{{ hosts.length }}</span>
       </div>
-    </header>
-
-    <div class="statbar">
-      <div class="stat">
-        <span class="stat-label">{{ t('host.stat.total') }}</span>
-        <span class="stat-value">{{ hosts.length }}</span>
+      <div class="strip-item">
+        <span class="strip-label"><Icon name="check" :size="14" />{{ t('table.enabled') }}</span>
+        <span class="strip-value num" style="color: var(--ok)">{{ enabledCount }}</span>
       </div>
-      <div class="stat">
-        <span class="stat-label">{{ t('host.stat.reachable') }}</span>
-        <span class="stat-value">{{ reachable }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">{{ t('host.stat.interfaces') }}</span>
-        <span class="stat-value">{{ interfaces.length }}</span>
+      <div class="strip-item">
+        <span class="strip-label"><Icon name="close" :size="14" />{{ t('status.disabled') }}</span>
+        <span class="strip-value num">{{ hosts.length - enabledCount }}</span>
       </div>
     </div>
 
-    <div class="toolbar">
-      <button class="btn primary" :disabled="!interfaces.length" @click="formFor = {}">
-        <Icon name="plus" :size="16" /> {{ t('host.add') }}
-      </button>
-    </div>
+    <div class="card">
+      <div class="card-toolbar">
+        <button class="btn primary" :disabled="!interfaces.length" @click="formFor = {}">
+          <Icon name="plus" :size="14" />
+          <span>{{ t('host.add') }}</span>
+        </button>
+      </div>
 
-    <div v-if="loadError" class="empty empty-cta">
-      <Icon name="alert" :size="28" />
-      <p>{{ loadError }}</p>
-      <button class="btn" @click="load()">{{ t('action.retry') }}</button>
-    </div>
+      <div v-if="loadError" class="empty empty-cta">
+        <Icon name="alert" :size="28" />
+        <p>{{ loadError }}</p>
+        <button class="btn" @click="load()">{{ t('action.retry') }}</button>
+      </div>
 
-    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
-      <tbody>
-        <tr v-for="n in 4" :key="n">
-          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
-        </tr>
-      </tbody>
-    </table>
-    <div v-else-if="loading" class="empty"></div>
+      <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
+        <tbody>
+          <tr v-for="n in 4" :key="n">
+            <td v-for="c in 7" :key="c"><span class="sk"></span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else-if="loading" class="empty"></div>
 
-    <!-- Nowhere to put a host yet. Pointing at the page that fixes it rather
-         than stating the problem and stopping. -->
-    <div v-else-if="!interfaces.length" class="empty empty-cta">
-      <Icon name="globe" :size="28" />
-      <p>{{ t('host.noInterfaces') }}</p>
-      <RouterLink class="btn primary" to="/interfaces">{{ t('nav.interfaces') }}</RouterLink>
-    </div>
-
-    <div v-else-if="!hosts.length" class="empty empty-cta">
-      <Icon name="globe" :size="28" />
-      <p>{{ t('host.emptyHint') }}</p>
-      <button class="btn primary" @click="formFor = {}">{{ t('host.add') }}</button>
-    </div>
-
-    <template v-else>
-      <div v-for="g in byInterface" :key="g.iface.id" class="card group-card">
-        <div class="card-head">
-          <h2>
-            {{ g.iface.name }}
-            <span class="tag geekblue">{{ g.iface.protocol }}</span>
-          </h2>
-          <span class="muted small">{{ t('host.listensOn') }} {{ g.iface.listenPort }}</span>
-        </div>
-
-        <div v-if="!g.rows.length" class="empty small-empty">
-          <p class="muted">{{ t('host.usingDefault') }} — {{ g.iface.endpointHost }}</p>
-        </div>
-
-        <table v-else class="table">
+      <!-- One flat table, the way theirs is, with the tunnel as a column
+           rather than one card per tunnel. Their columns are Actions, Enable,
+           Remark, Endpoint, Inbounds, Security, Tags; ours carry the same
+           things under our names, and where they show Security and Tags -- an
+           Xray host's TLS settings and labels -- ours show the reachability
+           check and the order a customer is handed the address in, which is
+           what a host here has instead. -->
+      <div v-else class="table-wrap">
+        <table>
           <thead>
             <tr>
               <th class="w-gact">{{ t('table.actions') }}</th>
-              <th>{{ t('table.enabled') }}</th>
+              <th class="w-sm">{{ t('table.enabled') }}</th>
               <th>{{ t('host.name') }}</th>
-              <th>{{ t('host.address') }}</th>
-              <th class="num">{{ t('host.port') }}</th>
-              <th class="num">{{ t('host.priority') }}</th>
-              <th>{{ t('host.status') }}</th>
+              <th>{{ t('host.endpoint') }}</th>
+              <th>{{ t('nav.interfaces') }}</th>
+              <th class="w-md">{{ t('host.status') }}</th>
+              <th class="w-sm num">{{ t('host.priority') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="h in g.rows" :key="h.id">
+            <!-- Nowhere to put a host yet is a different empty state from no
+                 hosts: it points at the page that fixes it. -->
+            <tr v-if="!interfaces.length" class="empty-row">
+              <td colspan="7">
+                <div class="card-empty">
+                  <Icon name="globe" :size="32" />
+                  <div>{{ t('host.noInterfaces') }}</div>
+                  <RouterLink class="btn sm" to="/interfaces">{{ t('nav.interfaces') }}</RouterLink>
+                </div>
+              </td>
+            </tr>
+            <tr v-else-if="!hosts.length" class="empty-row">
+              <td colspan="7">
+                <div class="card-empty">
+                  <Icon name="globe" :size="32" />
+                  <div>{{ t('common.nothingYet') }}</div>
+                </div>
+              </td>
+            </tr>
+            <tr v-for="h in ordered" :key="h.id">
               <td class="w-gact">
                 <div class="actions">
                   <button
@@ -299,9 +307,11 @@ async function runConfirmed() {
                 <strong>{{ h.name }}</strong>
                 <div v-if="h.note" class="muted small">{{ h.note }}</div>
               </td>
-              <td class="ltr">{{ h.address }}</td>
-              <td class="num ltr">{{ h.effectivePort || h.port || '—' }}</td>
-              <td class="num ltr">{{ h.priority }}</td>
+              <td class="ltr num">{{ h.address }}:{{ h.effectivePort || h.port || '—' }}</td>
+              <td>
+                <span class="nodename">{{ ifaceOf(h)?.name || '—' }}</span>
+                <span v-if="ifaceOf(h)" class="tag proto">{{ t(`protocol.${ifaceOf(h).protocol}`) }}</span>
+              </td>
               <td>
                 <span v-if="h.lastError" class="tag red" :title="h.lastError">
                   {{ t('host.unreachable') }}
@@ -309,11 +319,12 @@ async function runConfirmed() {
                 <span v-else-if="h.reachable" class="tag green">{{ t('host.ok') }}</span>
                 <span v-else class="muted">—</span>
               </td>
+              <td class="num ltr">{{ h.priority }}</td>
             </tr>
           </tbody>
         </table>
       </div>
-    </template>
+    </div>
 
     <HostForm
       v-if="formFor"

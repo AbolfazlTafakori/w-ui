@@ -102,6 +102,7 @@
   "filter.bucket.online": "Online",
   "common.all": "All",
   "common.nothingYet": "Nothing here yet",
+  "host.endpoint": "Endpoint",
   "client.presets": "Presets",
   "client.notePlaceholder": "Contact, plan, anything you need to remember",
   "client.create": "Add client",
