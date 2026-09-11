@@ -57,11 +57,16 @@ export function tn(key, n) {
 export async function loadMessages(locale) {
   const res = await api.messages(locale)
   store.locale = locale
-  store.direction = res.direction
   store.messages = res.messages
 
+  // The layout is never mirrored. 3x-ui keeps the same left-to-right page in
+  // Persian -- labels on the left, controls on the right, the sidebar where
+  // it is -- and only the text itself runs right to left, which the browser
+  // does on its own per line. Mirroring the whole page put every control on
+  // the wrong side of the one the operator was comparing against.
+  store.direction = 'ltr'
   document.documentElement.lang = locale
-  document.documentElement.dir = res.direction
+  document.documentElement.dir = 'ltr'
   try {
     localStorage.setItem(LOCALE_KEY, locale)
   } catch {

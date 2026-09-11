@@ -8,11 +8,6 @@ import { initTheme } from './lib/theme.js'
 // Fonts are bundled rather than linked. The panel is often reached from
 // networks where a font CDN is unreachable, and falling back to a system font
 // mid-render is worse for Persian than for Latin.
-import '@fontsource/vazirmatn/400.css'
-import '@fontsource/vazirmatn/500.css'
-import '@fontsource/vazirmatn/600.css'
-import '@fontsource/vazirmatn/700.css'
-import '@fontsource/vazirmatn/800.css'
 import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 

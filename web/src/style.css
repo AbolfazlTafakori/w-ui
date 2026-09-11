@@ -110,7 +110,11 @@
 
   --radius: 8px;
   --radius-sm: 6px;
-  --font: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Ant Design's fontFamily token, which is what 3x-ui renders with in every
+     language: the system's own face, Persian included. */
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji';
   --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --sidebar-w: 232px;
 
