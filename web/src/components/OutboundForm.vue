@@ -889,68 +889,6 @@ async function submit() {
 .tabs {
   margin-bottom: 16px;
 }
-.hform {
-  display: flex;
-  flex-direction: column;
-}
-.hrow {
-  display: grid;
-  grid-template-columns: 33.333% 58.333%;
-  align-items: start;
-  margin-bottom: 24px;
-}
-.hrow > label {
-  padding-inline-end: 8px;
-  padding-top: 5px;
-  text-align: end;
-  font-size: var(--t-base);
-  color: var(--ink);
-  line-height: 22px;
-}
-.hrow > label.req::before {
-  content: '* ';
-  color: var(--bad);
-}
-.hctl {
-  min-width: 0;
-}
-.hctl > input,
-.hctl > select,
-.hctl > textarea,
-.compact > input {
-  width: 100%;
-}
-.hctl > select,
-.hctl > input,
-.compact > input,
-.compact > .btn {
-  height: 32px;
-  min-height: 32px;
-}
-.compact {
-  display: flex;
-  align-items: stretch;
-}
-.compact > input {
-  flex: 1;
-  min-width: 0;
-}
-.compact > .btn:not(:first-child),
-.compact > input:not(:first-child) {
-  margin-inline-start: -1px;
-  border-start-start-radius: 0;
-  border-end-start-radius: 0;
-}
-.compact > input:not(:last-child),
-.compact > .btn:not(:last-child) {
-  border-start-end-radius: 0;
-  border-end-end-radius: 0;
-}
-.btn.addon {
-  width: 32px;
-  padding: 0;
-  flex: none;
-}
 .list-row {
   margin-bottom: 4px;
 }

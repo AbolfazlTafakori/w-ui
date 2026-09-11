@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
+import Toggle from './Toggle.vue'
 
 const props = defineProps({
   rule: { type: Object, default: null },
@@ -19,6 +20,7 @@ const clients = ref([])
 
 const form = ref({
   name: '',
+  enabled: true,
   match: 'domain',
   value: '',
   outboundTag: 'direct',
@@ -98,89 +100,108 @@ async function submit() {
 
 <template>
   <div class="modal-backdrop" @click.self="emit('cancel')">
-    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="rr-title">
+    <div class="modal rr-modal" role="dialog" aria-modal="true" aria-labelledby="rr-title">
       <div class="card-head">
-        <h2 id="rr-title">{{ editing ? t('routing.editRule') : t('routing.addRule') }}</h2>
-        <button class="act" :title="t('action.cancel')" @click="emit('cancel')">
+        <h2 id="rr-title">{{ editing ? `${t('action.edit')} ${t('routing.tab.rules')}` : `+ ${t('routing.tab.rules')}` }}</h2>
+        <button class="act" :title="t('common.close')" @click="emit('cancel')">
           <Icon name="close" :size="16" />
         </button>
       </div>
 
-      <form class="card-body form" @submit.prevent="submit">
+      <div class="card-body">
         <p v-if="formError" class="form-error">{{ formError }}</p>
 
-        <div class="field">
-          <label for="rr-name">{{ t('routing.rule.name') }}</label>
-          <input id="rr-name" v-model="form.name" autocomplete="off" />
-          <p class="hint">{{ t('routing.rule.nameHint') }}</p>
-          <p v-if="fieldError.name" class="field-error">{{ fieldError.name }}</p>
-        </div>
+        <form class="hform" @submit.prevent="submit">
+          <div class="hrow">
+            <label>{{ t('table.enabled') }}</label>
+            <div class="hctl"><Toggle v-model="form.enabled" :label="t('table.enabled')" /></div>
+          </div>
 
-        <div class="field">
-          <label for="rr-match">{{ t('routing.rule.match') }}</label>
-          <select id="rr-match" v-model="form.match">
-            <option v-for="m in matches" :key="m" :value="m">{{ t(`routing.match.${m}`) }}</option>
-          </select>
-          <p v-if="fieldError.match" class="field-error">{{ fieldError.match }}</p>
-        </div>
+          <div class="hrow">
+            <label for="rr-name">{{ t('routing.col.comment') }}</label>
+            <div class="hctl">
+              <input id="rr-name" v-model="form.name" maxlength="200" autocomplete="off" :placeholder="t('routing.col.comment')" />
+              <p v-if="fieldError.name" class="field-error">{{ fieldError.name }}</p>
+            </div>
+          </div>
 
-        <div class="field">
-          <label for="rr-value">{{ t('routing.rule.value') }}</label>
+          <div class="hrow">
+            <label for="rr-match">{{ t('routing.rule.match') }}</label>
+            <div class="hctl">
+              <select id="rr-match" v-model="form.match">
+                <option v-for="m in matches" :key="m" :value="m">{{ t(`routing.match.${m}`) }}</option>
+              </select>
+              <p v-if="fieldError.match" class="field-error">{{ fieldError.match }}</p>
+            </div>
+          </div>
 
-          <select v-if="valueKind === 'protocol'" id="rr-value" v-model="form.value">
-            <option value="tcp">TCP</option>
-            <option value="udp">UDP</option>
-            <option value="icmp">ICMP</option>
-          </select>
+          <div class="hrow">
+            <label for="rr-value" :title="t('routing.rule.useComma')">{{ t(`routing.match.${form.match}`) }}</label>
+            <div class="hctl">
+              <select v-if="valueKind === 'protocol'" id="rr-value" v-model="form.value">
+                <option value="tcp">tcp</option>
+                <option value="udp">udp</option>
+                <option value="icmp">icmp</option>
+              </select>
+              <select v-else-if="valueKind === 'group'" id="rr-value" v-model="form.value">
+                <option value="" disabled>{{ t('form.choose') }}</option>
+                <option v-for="g in groups" :key="g.id || g.name" :value="g.name">{{ g.name }}</option>
+              </select>
+              <select v-else-if="valueKind === 'client'" id="rr-value" v-model="form.value">
+                <option value="" disabled>{{ t('form.choose') }}</option>
+                <option v-for="c in clients" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
+              </select>
+              <input v-else id="rr-value" v-model="form.value" class="ltr" autocomplete="off" :placeholder="placeholder" />
+              <span class="hint">{{ t(`routing.rule.valueHint.${form.match}`) }}</span>
+              <p v-if="fieldError.value" class="field-error">{{ fieldError.value }}</p>
+            </div>
+          </div>
 
-          <select v-else-if="valueKind === 'group'" id="rr-value" v-model="form.value">
-            <option value="" disabled>{{ t('form.choose') }}</option>
-            <option v-for="g in groups" :key="g.id || g.name" :value="g.name">{{ g.name }}</option>
-          </select>
+          <div class="hrow">
+            <label for="rr-ob">{{ t('routing.rule.outboundTag') }}</label>
+            <div class="hctl">
+              <select id="rr-ob" v-model="form.outboundTag">
+                <option v-for="o in outbounds" :key="o.id" :value="o.tag" :disabled="!o.enabled">
+                  {{ o.tag }}<template v-if="!o.enabled"> — {{ t('routing.disabled') }}</template>
+                </option>
+              </select>
+              <p v-if="fieldError.outboundTag" class="field-error">{{ fieldError.outboundTag }}</p>
+            </div>
+          </div>
 
-          <select v-else-if="valueKind === 'client'" id="rr-value" v-model="form.value">
-            <option value="" disabled>{{ t('form.choose') }}</option>
-            <option v-for="c in clients" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
-          </select>
-
-          <input
-            v-else
-            id="rr-value"
-            v-model="form.value"
-            class="ltr"
-            autocomplete="off"
-            :placeholder="placeholder"
-          />
-
-          <p class="hint">{{ t(`routing.rule.valueHint.${form.match}`) }}</p>
-          <p v-if="fieldError.value" class="field-error">{{ fieldError.value }}</p>
-        </div>
-
-        <div class="field">
-          <label for="rr-ob">{{ t('routing.rule.outbound') }}</label>
-          <select id="rr-ob" v-model="form.outboundTag">
-            <option v-for="o in outbounds" :key="o.id" :value="o.tag" :disabled="!o.enabled">
-              {{ o.tag }}<template v-if="!o.enabled"> — {{ t('routing.disabled') }}</template>
-            </option>
-          </select>
-          <p v-if="fieldError.outboundTag" class="field-error">{{ fieldError.outboundTag }}</p>
-        </div>
-
-        <div class="field">
-          <label for="rr-note">{{ t('routing.rule.note') }}</label>
-          <input id="rr-note" v-model="form.note" autocomplete="off" />
-        </div>
-      </form>
+          <div class="hrow">
+            <label for="rr-note">{{ t('routing.rule.note') }}</label>
+            <div class="hctl"><input id="rr-note" v-model="form.note" autocomplete="off" /></div>
+          </div>
+        </form>
+      </div>
 
       <div class="modal-foot">
-        <button type="button" class="btn ghost" @click="emit('cancel')">
-          {{ t('action.cancel') }}
-        </button>
+        <button type="button" class="btn" @click="emit('cancel')">{{ t('common.close') }}</button>
         <button type="button" class="btn primary" :disabled="busy" @click="submit">
           <span v-if="busy" class="spin"></span>
-          <template v-else>{{ t('action.save') }}</template>
+          <template v-else>{{ editing ? t('outbound.form.saveChanges') : t('outbound.form.create') }}</template>
         </button>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.rr-modal {
+  max-width: 780px;
+}
+.card-body {
+  padding: 24px 24px 8px;
+}
+.field-error {
+  margin: 4px 0 0;
+  color: var(--bad);
+  font-size: var(--t-sm);
+}
+.form-error {
+  margin: 0 0 12px;
+  color: var(--bad);
+  font-size: var(--t-sm);
+}
+</style>

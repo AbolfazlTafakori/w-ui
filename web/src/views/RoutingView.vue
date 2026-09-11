@@ -1,21 +1,32 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
-import { t, notify } from '../lib/store.js'
+import { t, notify, tn } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import Toggle from '../components/Toggle.vue'
 import TagInput from '../components/TagInput.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import RoutingRuleForm from '../components/RoutingRuleForm.vue'
 
+// The routing page, laid out the way 3x-ui lays its own out: the Save bar
+// with its warning, then one card with three tabs -- Basic Routing, Routing
+// Rules, Route Tester -- each with the icon theirs carries.
+//
+// Basic Routing is their list of settings rows: title and description on the
+// left half, the control on the right half. Their IPv4 Routing row is not
+// here: it hands chosen domains to an Xray outbound that resolves them over
+// IPv4 only, and this panel routes by address in the kernel, where there is
+// no such knob. Their Balancers and Inbounds columns on the rules table are
+// not here either, for the same reason: this panel has neither.
+
 const route = useRoute()
 const router = useRouter()
 
 const tabs = [
-  { key: 'basic', icon: 'shield' },
-  { key: 'rules', icon: 'route' },
+  { key: 'basic', icon: 'settings' },
+  { key: 'rules', icon: 'menu' },
   { key: 'tester', icon: 'zap' },
 ]
 const tab = computed({
@@ -50,6 +61,11 @@ const basic = ref({
 // What was loaded, so Save can be offered only when something actually changed.
 const clean = ref('')
 const dirty = computed(() => JSON.stringify(basic.value) !== clean.value)
+
+// Their pick-lists, with the names this panel's own address groups go by.
+// A group is a name the router expands; an operator can still type any
+// address or range beside them.
+const ipSuggestions = computed(() => groups.value)
 
 async function load(quiet = false) {
   if (!quiet) loading.value = true
@@ -92,32 +108,16 @@ async function save() {
     notify(t('routing.saved'), 'success')
     await load(true)
   } catch (err) {
-    if (err.field) fieldError.value = { [err.field]: err.message }
-    else notify(err.message, 'error')
+    if (err.field) {
+      fieldError.value = { [err.field]: err.message }
+      tab.value = 'basic'
+    } else notify(err.message, 'error')
   } finally {
     saving.value = false
   }
 }
 
-function revert() {
-  basic.value = JSON.parse(clean.value)
-  fieldError.value = {}
-}
-
 // ── rules ────────────────────────────────────────────────────────────────────
-
-// The position each rule is actually evaluated at.
-//
-// Not the row index: a disabled rule is skipped entirely, so with rule two off,
-// the rule sitting third in the list is the second one the router consults.
-// Showing the row index there would be a number that looks like precedence and
-// is not.
-const evalOrder = computed(() => {
-  const map = {}
-  let n = 0
-  for (const r of rules.value) map[r.id] = r.enabled ? ++n : null
-  return map
-})
 
 // The rule the tester last said would decide. Held so the row can be pointed
 // at: an answer that names a rule and leaves you to find it in a list of
@@ -130,6 +130,16 @@ const busy = ref(false)
 const pending = ref(new Set())
 const isPending = (id) => pending.value.has(id)
 
+// Which of their columns a rule's one criterion belongs in.
+const SOURCE_KINDS = new Set(['client', 'group'])
+const DEST_KINDS = new Set(['domain', 'ip', 'port'])
+function sourceOf(r) {
+  return SOURCE_KINDS.has(r.match) ? r : null
+}
+function destOf(r) {
+  return DEST_KINDS.has(r.match) ? r : null
+}
+
 async function setRuleEnabled(r, on) {
   const was = r.enabled
   if (was === on) return
@@ -141,6 +151,7 @@ async function setRuleEnabled(r, on) {
       match: r.match,
       value: r.value,
       outboundTag: r.outboundTag,
+      note: r.note,
       enabled: on,
     })
     Object.assign(r, updated)
@@ -196,6 +207,122 @@ async function runConfirmed() {
   }
 }
 
+// The row menu their "more" circle opens, and the toolbar's.
+const menu = ref(null) // { rule, idx, x, y }
+const moreOpen = ref(false)
+function openMenuFor(r, idx, event) {
+  if (menu.value?.rule?.id === r.id) {
+    menu.value = null
+    return
+  }
+  const b = event.currentTarget.getBoundingClientRect()
+  const height = 4 * 34 + 10
+  const up = b.bottom + height > window.innerHeight && b.top > height
+  menu.value = { rule: r, idx, x: b.left, y: up ? b.top - height - 4 : b.bottom + 4 }
+}
+function closeMenu() {
+  menu.value = null
+}
+function onDocClick(e) {
+  if (!menu.value && !moreOpen.value) return
+  if (e.target.closest?.('.rowmenu') || e.target.closest?.('.act') || e.target.closest?.('.more-btn')) return
+  closeMenu()
+  moreOpen.value = false
+}
+function onKey(e) {
+  if (e.key === 'Escape') {
+    closeMenu()
+    moreOpen.value = false
+  }
+}
+onMounted(() => {
+  window.addEventListener('click', onDocClick, true)
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('resize', closeMenu)
+  window.addEventListener('scroll', closeMenu, true)
+})
+onUnmounted(() => {
+  window.removeEventListener('click', onDocClick, true)
+  window.removeEventListener('keydown', onKey)
+  window.removeEventListener('resize', closeMenu)
+  window.removeEventListener('scroll', closeMenu, true)
+})
+function menuFor(idx) {
+  return [
+    { key: 'edit', icon: 'edit', label: t('action.edit') },
+    { key: 'up', icon: 'chevronDown', flip: true, label: t('outbound.moveUp'), disabled: idx === 0 },
+    { key: 'down', icon: 'chevronDown', label: t('outbound.moveDown'), disabled: idx === rules.value.length - 1 },
+    { key: 'del', icon: 'trash', label: t('action.delete'), danger: true },
+  ]
+}
+function pick(r, idx, key) {
+  closeMenu()
+  if (key === 'edit') ruleFormFor.value = { rule: r }
+  else if (key === 'up') move(idx, -1)
+  else if (key === 'down') move(idx, 1)
+  else if (key === 'del') removeRule(r)
+}
+
+// Import and export, the way theirs offers them under "more": the rules as
+// a JSON array, in the shape the API takes.
+const importOpen = ref(false)
+const importText = ref('')
+const exportOpen = ref(false)
+const exportText = computed(() =>
+  JSON.stringify(
+    rules.value.map((r) => ({
+      name: r.name,
+      enabled: r.enabled,
+      match: r.match,
+      value: r.value,
+      outboundTag: r.outboundTag,
+      note: r.note || undefined,
+    })),
+    null,
+    2,
+  ),
+)
+async function copyExport() {
+  try {
+    await navigator.clipboard.writeText(exportText.value)
+    notify(t('action.copied'), 'success')
+  } catch {
+    notify(t('action.copyFailed'), 'error')
+  }
+}
+async function runImport() {
+  let parsed
+  try {
+    parsed = JSON.parse(importText.value)
+  } catch {
+    notify(t('outbound.importInvalidJson'), 'error')
+    return
+  }
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.rules) ? parsed.rules : null
+  if (!list) {
+    notify(t('outbound.importInvalidJson'), 'error')
+    return
+  }
+  busy.value = true
+  let added = 0
+  try {
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue
+      await api.post('/api/routing/rules', item)
+      added++
+    }
+    notify(tn('routing.imported', added), 'success')
+    importOpen.value = false
+    importText.value = ''
+    await load()
+  } catch (err) {
+    notify(err.message, 'error')
+    if (added) await load()
+  } finally {
+    busy.value = false
+  }
+}
+
 // ── the tester ───────────────────────────────────────────────────────────────
 
 const probe = ref({ target: '', port: 443, protocol: 'tcp', clientId: 0 })
@@ -228,24 +355,28 @@ async function testRoute() {
 
 <template>
   <section class="view">
-    <header class="page-head">
-      <div>
-        <h1>{{ t('nav.routing') }}</h1>
-        <p class="muted">{{ t('routing.lede') }}</p>
+    <!-- Their header Card: Save on the left, the warning on the right. -->
+    <div class="card save-bar">
+      <div class="save-left">
+        <button class="btn primary" :disabled="!dirty || saving" @click="save">
+          <span v-if="saving" class="spin sm"></span>
+          <span>{{ t('action.save') }}</span>
+        </button>
       </div>
-    </header>
-
-    <!-- Said once, at the top. Without it an operator can block a domain, see
-         it listed, and never learn the kernel here cannot apply any of it. -->
-    <div v-if="inactive" class="banner warn">
-      <Icon name="alert" :size="16" />
-      <span>{{ t('routing.inactive') }} — {{ inactive }}</span>
+      <div class="save-right">
+        <div class="alert warning" role="status">
+          <Icon name="alert" :size="14" />
+          <span>{{ t('outbound.saveHint') }}</span>
+        </div>
+      </div>
     </div>
 
-    <div v-if="loadError" class="empty empty-cta">
-      <Icon name="alert" :size="28" />
-      <p>{{ loadError }}</p>
-      <button class="btn" @click="load()">{{ t('action.retry') }}</button>
+    <div v-if="loadError" class="card">
+      <div class="empty empty-cta">
+        <Icon name="alert" :size="28" />
+        <p>{{ loadError }}</p>
+        <button class="btn" @click="load()">{{ t('action.retry') }}</button>
+      </div>
     </div>
 
     <table v-else-if="showSkeleton" class="skeleton card" aria-hidden="true">
@@ -255,282 +386,284 @@ async function testRoute() {
         </tr>
       </tbody>
     </table>
-    <div v-else-if="loading" class="empty"></div>
 
-    <template v-else>
-      <div class="tabs" role="tablist">
-        <button
-          v-for="x in tabs"
-          :key="x.key"
-          role="tab"
-          class="tab"
-          :class="{ on: tab === x.key }"
-          :aria-selected="tab === x.key"
-          @click="tab = x.key"
-        >
-          <Icon :name="x.icon" :size="15" />
-          {{ t(`routing.tab.${x.key}`) }}
-        </button>
-      </div>
+    <div v-else class="card">
+      <div class="card-body">
+        <div class="tabs" role="tablist">
+          <button
+            v-for="x in tabs"
+            :key="x.key"
+            role="tab"
+            class="tab"
+            :class="{ on: tab === x.key }"
+            :aria-selected="tab === x.key"
+            @click="tab = x.key"
+          >
+            <Icon :name="x.icon" :size="14" />
+            {{ t(`routing.tab.${x.key}`) }}
+          </button>
+        </div>
 
-      <!-- ── basic ─────────────────────────────────────────────────────── -->
-      <div v-if="tab === 'basic'" class="card">
-        <div class="card-body form wide">
-          <p class="notice">{{ t('routing.blockNotice') }}</p>
+        <!-- Said once. Without it an operator can block a domain, see it
+             listed, and never learn the kernel here cannot apply any of it. -->
+        <div v-if="inactive" class="alert warning block mb-12">
+          <Icon name="alert" :size="14" />
+          <span>{{ t('routing.inactive') }} — {{ inactive }}</span>
+        </div>
 
-          <div class="row-field">
-            <div class="row-label">
-              <label>{{ t('routing.blockBitTorrent') }}</label>
-              <p class="hint">{{ t('routing.blockBitTorrentHint') }}</p>
-            </div>
-            <Toggle
-              v-model="basic.blockBitTorrent"
-              :label="t('routing.blockBitTorrent')"
-            />
+        <!-- ── Basic Routing ─────────────────────────────────────────── -->
+        <template v-if="tab === 'basic'">
+          <div class="alert warning block centered mb-12">
+            <Icon name="alert" :size="14" />
+            <span>{{ t('routing.blockNotice') }}</span>
           </div>
 
-          <div class="row-field">
-            <div class="row-label">
-              <label>{{ t('routing.blockIps') }}</label>
-              <p class="hint">{{ t('routing.targetHint') }}</p>
+          <div class="setting-list">
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.defaultOutbound') }}</div>
+                <div class="setting-desc">{{ t('routing.defaultOutboundHint') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <select id="def-ob" v-model="basic.defaultOutbound">
+                  <option v-for="o in outbounds" :key="o.id" :value="o.tag" :disabled="!o.enabled">{{ o.tag }}</option>
+                </select>
+                <p v-if="fieldError.defaultOutbound" class="field-error">{{ fieldError.defaultOutbound }}</p>
+              </div>
             </div>
-            <div class="row-control">
-              <TagInput v-model="basic.blockIps" :suggestions="groups" />
-              <p v-if="fieldError.blockIps" class="field-error">{{ fieldError.blockIps }}</p>
-            </div>
-          </div>
 
-          <div class="row-field">
-            <div class="row-label">
-              <label>{{ t('routing.blockDomains') }}</label>
-              <p class="hint">{{ t('routing.domainHint') }}</p>
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.blockBitTorrent') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <Toggle v-model="basic.blockBitTorrent" :label="t('routing.blockBitTorrent')" />
+              </div>
             </div>
-            <div class="row-control">
-              <TagInput v-model="basic.blockDomains" />
-              <p v-if="fieldError.blockDomains" class="field-error">
-                {{ fieldError.blockDomains }}
-              </p>
-            </div>
-          </div>
 
-          <div class="row-field">
-            <div class="row-label">
-              <label>{{ t('routing.blockPorts') }}</label>
-              <p class="hint">{{ t('routing.portHint') }}</p>
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.blockIps') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <TagInput v-model="basic.blockIps" :suggestions="ipSuggestions" />
+                <p v-if="fieldError.blockIps" class="field-error">{{ fieldError.blockIps }}</p>
+              </div>
             </div>
-            <div class="row-control">
-              <TagInput v-model="basic.blockPorts" />
-              <p v-if="fieldError.blockPorts" class="field-error">{{ fieldError.blockPorts }}</p>
-            </div>
-          </div>
 
-          <p class="notice">{{ t('routing.directNotice') }}</p>
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.blockDomains') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <TagInput v-model="basic.blockDomains" />
+                <p v-if="fieldError.blockDomains" class="field-error">{{ fieldError.blockDomains }}</p>
+              </div>
+            </div>
 
-          <div class="row-field">
-            <div class="row-label">
-              <label>{{ t('routing.directIps') }}</label>
-              <p class="hint">{{ t('routing.targetHint') }}</p>
-            </div>
-            <div class="row-control">
-              <TagInput v-model="basic.directIps" :suggestions="groups" />
-              <p v-if="fieldError.directIps" class="field-error">{{ fieldError.directIps }}</p>
-            </div>
-          </div>
-
-          <div class="row-field">
-            <div class="row-label">
-              <label>{{ t('routing.directDomains') }}</label>
-              <p class="hint">{{ t('routing.domainHint') }}</p>
-            </div>
-            <div class="row-control">
-              <TagInput v-model="basic.directDomains" />
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.blockPorts') }}</div>
+                <div class="setting-desc">{{ t('routing.portHint') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <TagInput v-model="basic.blockPorts" />
+                <p v-if="fieldError.blockPorts" class="field-error">{{ fieldError.blockPorts }}</p>
+              </div>
             </div>
           </div>
 
-          <div class="row-field">
-            <div class="row-label">
-              <label for="def-ob">{{ t('routing.defaultOutbound') }}</label>
-              <p class="hint">{{ t('routing.defaultOutboundHint') }}</p>
+          <div class="alert warning block centered mb-12">
+            <Icon name="alert" :size="14" />
+            <span>{{ t('routing.directNotice') }}</span>
+          </div>
+
+          <div class="setting-list">
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.directIps') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <TagInput v-model="basic.directIps" :suggestions="ipSuggestions" />
+                <p v-if="fieldError.directIps" class="field-error">{{ fieldError.directIps }}</p>
+              </div>
             </div>
-            <div class="row-control">
-              <select id="def-ob" v-model="basic.defaultOutbound">
-                <option v-for="o in outbounds" :key="o.id" :value="o.tag" :disabled="!o.enabled">
-                  {{ o.tag }}
-                </option>
-              </select>
-              <p v-if="fieldError.defaultOutbound" class="field-error">
-                {{ fieldError.defaultOutbound }}
-              </p>
+
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.directDomains') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <TagInput v-model="basic.directDomains" />
+                <p v-if="fieldError.directDomains" class="field-error">{{ fieldError.directDomains }}</p>
+              </div>
             </div>
           </div>
 
-          <p v-if="resolver" class="muted small">
-            {{ t('routing.resolverStatus')
-              .replace('{names}', resolver.names)
-              .replace('{addresses}', resolver.addresses) }}
+          <p v-if="resolver" class="muted small resolver">
+            {{ t('routing.resolverStatus').replace('{names}', resolver.names).replace('{addresses}', resolver.addresses) }}
           </p>
-        </div>
+        </template>
 
-        <!-- The save bar appears only once something has changed, so a page
-             being read never looks like a page with unsaved work on it. -->
-        <div v-if="dirty" class="modal-foot sticky-foot">
-          <span class="muted small">{{ t('form.unsaved') }}</span>
-          <div class="spacer"></div>
-          <button type="button" class="btn ghost" @click="revert">{{ t('action.revert') }}</button>
-          <button type="button" class="btn primary" :disabled="saving" @click="save">
-            <span v-if="saving" class="spin"></span>
-            <template v-else>{{ t('action.save') }}</template>
-          </button>
-        </div>
-      </div>
+        <!-- ── Routing Rules ─────────────────────────────────────────── -->
+        <template v-else-if="tab === 'rules'">
+          <div class="toolbar-group mb-16">
+            <button class="btn primary" @click="ruleFormFor = {}">
+              <Icon name="plus" :size="14" />
+              <span>{{ t('routing.tab.rules') }}</span>
+            </button>
+            <div class="more-wrap">
+              <button class="btn more-btn" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
+                <Icon name="more" :size="14" />
+                <span>{{ t('outbound.more') }}</span>
+              </button>
+              <div v-if="moreOpen" class="rowmenu below" role="menu">
+                <button class="menu-item" role="menuitem" @click="moreOpen = false; importOpen = true">
+                  <Icon name="download" :size="14" />{{ t('routing.importRules') }}
+                </button>
+                <button class="menu-item" role="menuitem" :disabled="!rules.length" @click="moreOpen = false; exportOpen = true">
+                  <Icon name="upload" :size="14" />{{ t('routing.exportRules') }}
+                </button>
+              </div>
+            </div>
+          </div>
 
-      <!-- ── rules ─────────────────────────────────────────────────────── -->
-      <div v-else-if="tab === 'rules'" class="card">
-        <div class="toolbar">
-          <button class="btn primary" @click="ruleFormFor = {}">
-            <Icon name="plus" :size="16" /> {{ t('routing.addRule') }}
-          </button>
-          <div class="spacer"></div>
-          <span class="muted small">{{ t('routing.firstMatchWins') }}</span>
-        </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="w-num center">#</th>
+                  <th class="w-act2">{{ t('table.actions') }}</th>
+                  <th class="w-sm">{{ t('table.enabled') }}</th>
+                  <th>{{ t('routing.col.source') }}</th>
+                  <th>{{ t('routing.col.comment') }}</th>
+                  <th class="w-sm">{{ t('routing.col.network') }}</th>
+                  <th>{{ t('routing.col.dest') }}</th>
+                  <th>{{ t('nav.outbounds') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!rules.length" class="empty-row">
+                  <td colspan="8">
+                    <div class="card-empty">
+                      <Icon name="route" :size="32" />
+                      <div>{{ t('common.nothingYet') }}</div>
+                    </div>
+                  </td>
+                </tr>
+                <tr
+                  v-for="(r, i) in rules"
+                  :key="r.id"
+                  :class="{ decided: decidedBy === r.id, off: !r.enabled }"
+                >
+                  <td class="w-num">
+                    <div class="rownum">
+                      <Icon name="menu" :size="13" class="drag" :title="t('routing.dragToReorder')" />
+                      <span class="num row-index">{{ i + 1 }}</span>
+                    </div>
+                  </td>
+                  <td class="w-act2">
+                    <div class="action-buttons start">
+                      <button class="act round" :aria-label="t('action.edit')" :title="t('action.edit')" @click="ruleFormFor = { rule: r }">
+                        <Icon name="edit" :size="13" />
+                      </button>
+                      <button class="act round" :aria-label="t('action.more')" :title="t('action.more')" :aria-expanded="menu?.rule?.id === r.id" @click="openMenuFor(r, i, $event)">
+                        <Icon name="more" :size="13" />
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    <Toggle :model-value="r.enabled" :label="r.name" :loading="isPending(r.id)" @update:model-value="(v) => setRuleEnabled(r, v)" />
+                  </td>
+                  <td>
+                    <template v-if="sourceOf(r)">
+                      <span class="tag geekblue">{{ t(`routing.match.${r.match}`) }}</span>
+                      <span class="ltr small"> {{ r.value }}</span>
+                    </template>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td>
+                    <strong>{{ r.name }}</strong>
+                    <div v-if="r.note" class="muted small">{{ r.note }}</div>
+                  </td>
+                  <td>
+                    <span v-if="r.match === 'protocol'" class="tag">{{ r.value }}</span>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td>
+                    <template v-if="destOf(r)">
+                      <span class="tag geekblue">{{ t(`routing.match.${r.match}`) }}</span>
+                      <span class="ltr small"> {{ r.value }}</span>
+                    </template>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td>
+                    <span class="tag" :class="r.outboundTag === 'blocked' ? 'red' : 'green'">{{ r.outboundTag }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
 
-        <table v-if="rules.length" class="table">
-          <thead>
-            <tr>
-              <th class="w-gact">{{ t('table.actions') }}</th>
-              <th class="w-step">#</th>
-              <th>{{ t('table.enabled') }}</th>
-              <th>{{ t('routing.rule.name') }}</th>
-              <th>{{ t('routing.rule.match') }}</th>
-              <th>{{ t('routing.rule.value') }}</th>
-              <th>{{ t('routing.rule.outbound') }}</th>
-              <th class="right">{{ t('routing.rule.order') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(r, i) in rules"
-              :key="r.id"
-              :class="{ decided: decidedBy === r.id, off: !r.enabled }"
-            >
-              <td class="w-gact">
-                <div class="actions">
-                  <button class="act" :title="t('action.edit')" @click="ruleFormFor = { rule: r }">
-                    <Icon name="edit" :size="16" />
-                  </button>
-                  <button class="act danger" :title="t('action.delete')" @click="removeRule(r)">
-                    <Icon name="trash" :size="16" />
-                  </button>
-                </div>
-              </td>
-              <!-- Where this rule sits in the order the router consults them.
-                   A rule that is switched off is not consulted at all, so it
-                   has no place in the sequence rather than a greyed-out one. -->
-              <td class="w-step num">
-                <span v-if="evalOrder[r.id]" class="step">{{ evalOrder[r.id] }}</span>
-                <span v-else class="muted" :title="t('routing.disabled')">—</span>
-              </td>
-              <td>
-                <Toggle
-                  :model-value="r.enabled"
-                  :label="r.name"
-                  :loading="isPending(r.id)"
-                  @update:model-value="(v) => setRuleEnabled(r, v)"
-                />
-              </td>
-              <td>
-                <strong>{{ r.name }}</strong>
-                <div v-if="r.note" class="muted small">{{ r.note }}</div>
-              </td>
-              <td><span class="tag geekblue">{{ t(`routing.match.${r.match}`) }}</span></td>
-              <td class="ltr small">{{ r.value }}</td>
-              <td>
-                <span class="tag" :class="r.outboundTag === 'blocked' ? 'red' : 'green'">
-                  {{ r.outboundTag }}
-                </span>
-              </td>
-              <td class="right">
-                <div class="actions">
-                  <button
-                    class="act"
-                    :title="t('routing.moveUp')"
-                    :disabled="i === 0"
-                    @click="move(i, -1)"
-                  >
-                    <Icon name="chevronUp" :size="15" />
-                  </button>
-                  <button
-                    class="act"
-                    :title="t('routing.moveDown')"
-                    :disabled="i === rules.length - 1"
-                    @click="move(i, 1)"
-                  >
-                    <Icon name="chevronDown" :size="15" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div v-else class="empty empty-cta">
-          <Icon name="route" :size="28" />
-          <p>{{ t('routing.noRules') }}</p>
-          <button class="btn primary" @click="ruleFormFor = {}">{{ t('routing.addRule') }}</button>
-        </div>
-      </div>
-
-      <!-- ── tester ────────────────────────────────────────────────────── -->
-      <div v-else class="card">
-        <div class="card-body">
-          <p class="notice info">{{ t('routing.testerNotice') }}</p>
+        <!-- ── Route Tester ──────────────────────────────────────────── -->
+        <template v-else>
+          <div class="alert info block mb-12">
+            <Icon name="info" :size="14" />
+            <span>{{ t('routing.testerNotice') }}</span>
+          </div>
 
           <form class="tester-row" @submit.prevent="testRoute">
-            <input
-              v-model="probe.target"
-              class="ltr"
-              :placeholder="t('routing.testTarget')"
-              :aria-label="t('routing.testTarget')"
-            />
-            <input
-              v-model.number="probe.port"
-              class="ltr narrow"
-              type="number"
-              :aria-label="t('routing.testPort')"
-            />
-            <select v-model="probe.protocol" :aria-label="t('routing.testProtocol')">
+            <input v-model="probe.target" class="ltr grow" :placeholder="t('routing.testTarget')" :aria-label="t('routing.testTarget')" />
+            <input v-model.number="probe.port" class="ltr port" type="number" min="1" max="65535" :placeholder="t('routing.testPort')" :aria-label="t('routing.testPort')" />
+            <select v-model="probe.protocol" class="net" :aria-label="t('routing.testProtocol')">
               <option value="tcp">TCP</option>
               <option value="udp">UDP</option>
               <option value="icmp">ICMP</option>
             </select>
             <button class="btn primary" type="submit" :disabled="testing || !probe.target">
-              <span v-if="testing" class="spin"></span>
-              <template v-else>{{ t('routing.testRoute') }}</template>
+              <span v-if="testing" class="spin sm"></span>
+              <Icon v-else name="zap" :size="14" />
+              <span>{{ t('routing.testRoute') }}</span>
             </button>
           </form>
 
           <p v-if="testError" class="field-error">{{ testError }}</p>
 
           <div v-if="answer" class="answer">
-            <div class="answer-head">
-              <span class="muted">{{ t('routing.wouldUse') }}</span>
-              <span class="tag lg" :class="answer.blocked ? 'red' : 'green'">
-                {{ answer.outbound }}
-              </span>
+            <div v-if="answer.ruleId || answer.blocked" class="answer-head">
+              <span>{{ t('routing.matchedOutbound') }}:</span>
+              <span class="tag lg" :class="answer.blocked ? 'red' : 'green'">{{ answer.outbound }}</span>
+              <button v-if="decidedBy" type="button" class="btn sm" @click="showDecidingRule">{{ t('routing.showRule') }}</button>
             </div>
-            <p class="muted">{{ answer.reason }}</p>
-            <!-- Closes the loop: the answer names a rule, and this is the way
-                 to the row it names. -->
-            <button v-if="decidedBy" type="button" class="btn sm" @click="showDecidingRule">
-              {{ t('routing.showRule') }}
-            </button>
+            <div v-else class="alert warning block">
+              <Icon name="alert" :size="14" />
+              <span>{{ t('routing.noRuleMatched') }} <span class="tag green">{{ answer.outbound }}</span></span>
+            </div>
+            <p class="muted small">{{ answer.reason }}</p>
             <ul v-if="answer.steps?.length" class="steps">
               <li v-for="(s, i) in answer.steps" :key="i">{{ s }}</li>
             </ul>
           </div>
-        </div>
+        </template>
       </div>
-    </template>
+    </div>
+
+    <Teleport to="body">
+      <div v-if="menu" class="rowmenu" role="menu" :style="{ top: menu.y + 'px', left: menu.x + 'px' }">
+        <button
+          v-for="m in menuFor(menu.idx)"
+          :key="m.key"
+          class="menu-item"
+          :class="{ danger: m.danger }"
+          :disabled="m.disabled"
+          role="menuitem"
+          @click="pick(menu.rule, menu.idx, m.key)"
+        >
+          <Icon :name="m.icon" :size="14" :class="{ flip: m.flip }" />{{ m.label }}
+        </button>
+      </div>
+    </Teleport>
 
     <RoutingRuleForm
       v-if="ruleFormFor"
@@ -539,6 +672,41 @@ async function testRoute() {
       @saved="((ruleFormFor = null), load())"
       @cancel="ruleFormFor = null"
     />
+
+    <div v-if="importOpen" class="modal-backdrop" @click.self="importOpen = false">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rr-import-title">
+        <div class="card-head">
+          <h2 id="rr-import-title">{{ t('routing.importRules') }}</h2>
+          <button class="act" :aria-label="t('common.close')" @click="importOpen = false"><Icon name="close" :size="16" /></button>
+        </div>
+        <div class="card-body">
+          <div class="field"><textarea v-model="importText" class="ltr mono" rows="12" spellcheck="false" placeholder="[ { ... } ]"></textarea></div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn" @click="importOpen = false">{{ t('common.close') }}</button>
+          <button class="btn primary" :disabled="busy || !importText.trim()" @click="runImport">
+            <span v-if="busy" class="spin"></span>
+            <template v-else>{{ t('routing.importRules') }}</template>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="exportOpen" class="modal-backdrop" @click.self="exportOpen = false">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rr-export-title">
+        <div class="card-head">
+          <h2 id="rr-export-title">{{ t('routing.exportRules') }}</h2>
+          <button class="act" :aria-label="t('common.close')" @click="exportOpen = false"><Icon name="close" :size="16" /></button>
+        </div>
+        <div class="card-body">
+          <div class="field"><textarea class="ltr mono" rows="12" readonly spellcheck="false" :value="exportText"></textarea></div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn" @click="exportOpen = false">{{ t('common.close') }}</button>
+          <button class="btn primary" @click="copyExport"><Icon name="copy" :size="14" /><span>{{ t('action.copy') }}</span></button>
+        </div>
+      </div>
+    </div>
 
     <ConfirmDialog
       :open="!!ask"
@@ -552,3 +720,130 @@ async function testRoute() {
     />
   </section>
 </template>
+
+<style scoped>
+.card-body {
+  padding: 24px;
+}
+.mb-12 {
+  margin-bottom: 12px;
+}
+.mb-16 {
+  margin-bottom: 16px;
+}
+/* Their Alert: a full-width band; the hint ones centre their text. */
+.alert.block {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+.alert.centered {
+  justify-content: center;
+}
+.alert.centered > span {
+  flex: 1;
+  text-align: center;
+}
+.alert.info {
+  background: rgba(22, 119, 255, 0.12);
+  border-color: rgba(22, 119, 255, 0.45);
+}
+.alert.info svg {
+  color: #1677ff;
+  flex: none;
+}
+
+/* Their SettingListItem with paddings="small": title and description on
+   the left half, the control on the right half, 10px 20px of padding and a
+   hairline between rows. */
+.setting-list {
+  display: flex;
+  flex-direction: column;
+}
+.setting-item {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 8px;
+  align-items: center;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.setting-list .setting-item:last-child {
+  border-bottom: 0;
+}
+.setting-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.setting-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.setting-desc {
+  font-size: 14px;
+  line-height: 1.5715;
+  color: var(--faint);
+}
+.setting-ctl > select {
+  width: 100%;
+}
+.resolver {
+  margin: 12px 0 0;
+}
+@media (max-width: 992px) {
+  .setting-item {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Rules table: their '#' cell with the drag handle, and the two circles. */
+.w-act2 {
+  width: 1%;
+  white-space: nowrap;
+}
+.action-buttons.start {
+  justify-content: flex-start;
+  margin-inline-start: 0;
+}
+.drag {
+  color: var(--faint);
+  cursor: grab;
+}
+tr.decided td {
+  background: var(--accent-soft);
+}
+
+/* Tester: one row, the way their Row gutter lays it out. */
+.tester-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.tester-row .grow {
+  flex: 1 1 240px;
+}
+.tester-row .port {
+  width: 120px;
+}
+.tester-row .net {
+  width: 110px;
+}
+.answer {
+  margin-top: 16px;
+}
+.answer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.steps {
+  margin: 8px 0 0;
+  padding-inline-start: 18px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+</style>
