@@ -223,6 +223,8 @@ func run() error {
 		LocalNodeID: local.ID,
 	})
 	rec.Start(ctx)
+	// Outbound subscriptions are fetched on their own intervals.
+	go service.NewOutboundSubs(db, outbounds, log).Run(ctx)
 
 	if err := shp.Health(ctx); err != nil {
 		log.Warn("rate limiting inactive: speed limits are recorded but not applied", "reason", err)

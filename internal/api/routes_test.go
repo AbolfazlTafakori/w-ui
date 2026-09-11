@@ -91,6 +91,14 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/outbounds/check":                  true,
 		"POST /api/outbounds/{id}/reset":             true, // acts on the id in the path
 		"POST /api/outbounds/reset":                  true,
+		"POST /api/routing/apply":                    true, // there is nothing to choose
+		"POST /api/outbound-subs/{id}/refresh":       true, // acts on the id in the path
+		"POST /api/outbound-subs/refresh":            true,
+		"POST /api/providers/warp/register":          true, // the panel makes the key
+		"POST /api/providers/warp/change-ip":         true,
+		"POST /api/providers/warp/outbound":          true,
+		"POST /api/providers/nord/countries":         true, // asks the provider; nothing to send
+		"POST /api/providers/pia/regions":            true,
 		"POST /api/hosts/{id}/check":                 true,
 		"POST /api/clients/{id}/subscription/rotate": true, // acts on the id in the path
 		"POST /api/node/usage":                       true, // drains counters; nothing to send

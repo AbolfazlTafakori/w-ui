@@ -426,6 +426,7 @@ func AllModels() []any {
 		&Group{},
 		&AccountEndpoint{},
 		&Outbound{},
+		&OutboundSub{},
 		&RoutingRule{},
 		&Host{},
 		&Setting{},

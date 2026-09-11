@@ -160,7 +160,7 @@ function remove(h) {
     body: t('host.removeBody'),
     confirmLabel: t('action.delete'),
     run: async () => {
-      await api.delete(`/api/hosts/${h.id}`)
+      await api.del(`/api/hosts/${h.id}`)
       notify(t('host.removed'), 'success')
       await load()
     },

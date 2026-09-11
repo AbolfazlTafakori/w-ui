@@ -1564,6 +1564,42 @@ td.center { text-align: center; }
 .traffic .up { color: #008771; }
 .traffic .down { color: #3c89e8; }
 
+/* The Save bar over the outbounds page: their header Card, the button on
+   the left and the warning Alert on the right. */
+.save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.save-right {
+  display: flex;
+  justify-content: flex-end;
+  flex: 1;
+}
+/* Ant's Alert type="warning" showIcon: a filled band with the icon at the
+   start of the text. */
+.alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--t-base);
+}
+.alert.warning {
+  background: var(--warn-soft, rgba(250, 173, 20, 0.12));
+  border-color: var(--warn-line, rgba(250, 173, 20, 0.45));
+}
+.alert.warning svg {
+  color: var(--warn, #faad14);
+  flex: none;
+}
+
 /* The "more" dropdown under the toolbar button, and the row menu. The row
    one is fixed and rendered outside the table so the wrapper's overflow does
    not clip it. */
@@ -4388,7 +4424,11 @@ button.ov-version:hover {
    second click arrived mid-exit. The banner above is not re-created by a
    navigation, so it stays where it is. */
 .main > * {
-  animation: rise-in 0.22s var(--ease-enter) both;
+  /* Fill mode is backwards, not both: with both, the finished animation keeps
+     a transform on the page for good, and a transform makes the page the
+     containing block for every position: fixed dialog and menu inside it --
+     they then sit relative to the page, not the window. */
+  animation: rise-in 0.22s var(--ease-enter) backwards;
 }
 
 /* ── things arriving in the order they are read ──────────────────────────── */
@@ -4397,7 +4437,7 @@ button.ov-version:hover {
    at the eighth: past that a cascade stops reading as sequence and starts
    reading as the page being slow. */
 .main .card {
-  animation: rise-in 0.26s var(--ease-enter) both;
+  animation: rise-in 0.26s var(--ease-enter) backwards;
 }
 .main .card:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
 .main .card:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }

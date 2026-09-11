@@ -109,6 +109,15 @@ type Outbound struct {
 	EgressIP      string `gorm:"size:64" json:"egressIp"`
 	EgressCountry string `gorm:"size:8" json:"egressCountry"`
 
+	// Provider names the integration that made this outbound -- warp, nord or
+	// pia -- so its dialog can find it again, and ProviderRef is the server
+	// within that provider. Both empty for one an operator typed in.
+	Provider    string `gorm:"size:16;index" json:"provider"`
+	ProviderRef string `gorm:"size:128" json:"providerRef"`
+	// SubID is the subscription this outbound was fetched from; 0 when typed
+	// in. Everything with the same SubID is replaced together on a refresh.
+	SubID uint `gorm:"index;not null;default:0" json:"subId"`
+
 	// Counters for what has left through here.
 	TxBytes uint64 `gorm:"not null;default:0" json:"txBytes"`
 	RxBytes uint64 `gorm:"not null;default:0" json:"rxBytes"`
@@ -119,6 +128,33 @@ type Outbound struct {
 
 // Removable reports whether an operator may delete this outbound.
 func (o *Outbound) Removable() bool { return !o.Builtin }
+
+// OutboundSub is a URL that lists outbounds. It is fetched on its interval and
+// the outbounds it produced last time are replaced with what it says now.
+type OutboundSub struct {
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	Remark    string `gorm:"size:64" json:"remark"`
+	URL       string `gorm:"type:text;not null" json:"url"`
+	TagPrefix string `gorm:"size:32" json:"tagPrefix"`
+	// IntervalMin is how often to fetch, in minutes.
+	IntervalMin int  `gorm:"not null;default:10" json:"intervalMin"`
+	Enabled     bool `gorm:"not null;default:true" json:"enabled"`
+	// AllowPrivate lets the URL point at a private or loopback address, which
+	// is refused by default so a panel cannot be made to fetch its own network.
+	AllowPrivate bool `gorm:"not null;default:false" json:"allowPrivate"`
+	// Prepend lists this subscription's outbounds before the manual ones.
+	Prepend  bool `gorm:"not null;default:false" json:"prepend"`
+	Position int  `gorm:"not null;default:0;index" json:"position"`
+
+	LastFetchAt *time.Time `json:"lastFetchAt"`
+	LastError   string     `gorm:"size:512" json:"lastError"`
+	// Count is how many outbounds the last successful fetch produced.
+	Count int `gorm:"not null;default:0" json:"count"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
 
 // RouteMatchKind is what a routing rule looks at.
 type RouteMatchKind string

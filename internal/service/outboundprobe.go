@@ -102,7 +102,12 @@ func transportFor(ob *model.Outbound) (*http.Transport, error) {
 		if err != nil {
 			return nil, err
 		}
-		tr.DialContext = d.DialContext
+		// The hop carries IPv4 only, and so does the rule that steers marked
+		// packets into it. A v6 connection would take the server's own route
+		// out and report the server's own address as the hop's.
+		tr.DialContext = func(ctx context.Context, _, addr string) (net.Conn, error) {
+			return d.DialContext(ctx, "tcp4", addr)
+		}
 
 	case model.OutboundSOCKS:
 		var auth *proxy.Auth

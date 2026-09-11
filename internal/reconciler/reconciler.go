@@ -512,6 +512,18 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	return d.clients, d.accounts, nil
 }
 
+// ApplyRouting does the routing part of a tick now, for the Save button on
+// the outbounds page, and reports how it went.
+func (r *Reconciler) ApplyRouting(ctx context.Context) error {
+	r.applyRouting(ctx)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.lastRouteErr != "" {
+		return fmt.Errorf("routing: %s", r.lastRouteErr)
+	}
+	return nil
+}
+
 // applyRouting brings the hops up and pushes the policy to the kernel.
 //
 // Failures here are logged once and never fatal. A panel that stopped enforcing

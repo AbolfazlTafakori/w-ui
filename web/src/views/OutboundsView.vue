@@ -7,6 +7,10 @@ import { bytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import OutboundForm from '../components/OutboundForm.vue'
+import OutboundSubsDialog from '../components/OutboundSubsDialog.vue'
+import WarpDialog from '../components/WarpDialog.vue'
+import NordDialog from '../components/NordDialog.vue'
+import PiaDialog from '../components/PiaDialog.vue'
 
 // Where traffic leaves. Two rows always exist and cannot be removed, so a
 // routing rule always has somewhere to point.
@@ -19,6 +23,32 @@ const busy = ref(false)
 const mode = ref('tcp')
 const checkingAll = ref(false)
 const showEgressIp = ref(false)
+
+// The Save bar theirs has over every Xray page. Here a change is written the
+// moment it is made and the panel pushes it into the kernel on its next tick;
+// Save does that push now, and is only enabled once something has changed
+// since the last one.
+const dirty = ref(false)
+const saving = ref(false)
+async function saveAll() {
+  saving.value = true
+  try {
+    await api.post('/api/routing/apply')
+    dirty.value = false
+    notify(t('outbound.saved'), 'success')
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+// Which dialog is open: 'subs', 'warp', 'nord', 'pia', or null.
+const dialog = ref(null)
+function onDialogChanged() {
+  dirty.value = true
+  load(true)
+}
 
 // Rows mid-request, so probing one hop does not freeze the controls on another.
 const pending = ref(new Set())
@@ -140,6 +170,7 @@ async function setEnabled(o, on) {
       enabled: on,
     })
     Object.assign(o, updated)
+    dirty.value = true
   } catch (err) {
     o.enabled = was
     notify(err.message, 'error')
@@ -238,6 +269,7 @@ async function reorder(from, to) {
   ids.splice(to, 0, id)
   try {
     outbounds.value = await api.post('/api/outbounds/order', { ids })
+    dirty.value = true
   } catch (err) {
     notify(err.message, 'error')
   }
@@ -275,8 +307,9 @@ function remove(o) {
     consequences: [t('outbound.removeConsequence')],
     confirmLabel: t('action.delete'),
     run: async () => {
-      await api.delete(`/api/outbounds/${o.id}`)
+      await api.del(`/api/outbounds/${o.id}`)
       notify(t('outbound.removed'), 'success')
+      dirty.value = true
       await load()
     },
   }
@@ -297,6 +330,7 @@ async function runConfirmed() {
 
 async function onSaved() {
   formFor.value = null
+  dirty.value = true
   await load()
 }
 
@@ -365,6 +399,7 @@ async function runImport() {
     notify(tn('outbound.imported', added), 'success')
     importOpen.value = false
     importText.value = ''
+    dirty.value = true
     await load()
   } catch (err) {
     notify(err.message, 'error')
@@ -377,8 +412,23 @@ async function runImport() {
 
 <template>
   <section class="view">
-    <!-- Their page: a toolbar row with space-between, then the table. No
-         heading and no figures. -->
+    <!-- Their page: the Save bar every Xray page has, then a card with a
+         toolbar row -- space-between -- and the table. No heading, no figures. -->
+    <div class="card save-bar">
+      <div class="save-left">
+        <button class="btn primary" :disabled="!dirty || saving" @click="saveAll">
+          <span v-if="saving" class="spin sm"></span>
+          <span>{{ t('action.save') }}</span>
+        </button>
+      </div>
+      <div class="save-right">
+        <div class="alert warning" role="status">
+          <Icon name="alert" :size="14" />
+          <span>{{ t('outbound.saveHint') }}</span>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-toolbar spread wrap">
         <div class="toolbar-group">
@@ -386,12 +436,26 @@ async function runImport() {
             <Icon name="plus" :size="14" />
             <span>{{ t('nav.outbounds') }}</span>
           </button>
+          <button class="btn" @click="dialog = 'subs'">
+            <Icon name="globe" :size="14" />
+            <span>{{ t('outbound.sub.manage') }}</span>
+          </button>
           <div class="more-wrap">
             <button class="btn more-btn" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
               <Icon name="more" :size="14" />
-              <span>{{ t('action.more') }}</span>
+              <span>{{ t('outbound.more') }}</span>
             </button>
             <div v-if="moreOpen" class="rowmenu below" role="menu">
+              <button class="menu-item" role="menuitem" @click="moreOpen = false; dialog = 'warp'">
+                <Icon name="globe" :size="14" />WARP
+              </button>
+              <button class="menu-item" role="menuitem" @click="moreOpen = false; dialog = 'nord'">
+                <Icon name="link" :size="14" />NordVPN
+              </button>
+              <button class="menu-item" role="menuitem" @click="moreOpen = false; dialog = 'pia'">
+                <Icon name="link" :size="14" />{{ t('outbound.pia.menu') }}
+              </button>
+              <hr class="menu-divider" />
               <button class="menu-item" role="menuitem" @click="moreOpen = false; importOpen = true">
                 <Icon name="download" :size="14" />{{ t('outbound.import') }}
               </button>
@@ -615,6 +679,11 @@ async function runImport() {
       </template>
     </div>
     </Teleport>
+
+    <OutboundSubsDialog v-if="dialog === 'subs'" @close="dialog = null" @changed="onDialogChanged" />
+    <WarpDialog v-if="dialog === 'warp'" @close="dialog = null" @changed="onDialogChanged" />
+    <NordDialog v-if="dialog === 'nord'" @close="dialog = null" @changed="onDialogChanged" />
+    <PiaDialog v-if="dialog === 'pia'" @close="dialog = null" @changed="onDialogChanged" />
 
     <OutboundForm
       v-if="formFor"

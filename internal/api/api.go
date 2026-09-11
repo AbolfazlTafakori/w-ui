@@ -53,6 +53,8 @@ type Server struct {
 	hosts     *service.Hosts
 	router    *routing.Applier
 	subs      *service.Subscriptions
+	obSubs    *service.OutboundSubs
+	providers *service.Providers
 	audit     *service.Audit
 	pool      *backend.Pool
 	nodeSync  *service.NodeSync
@@ -119,6 +121,8 @@ func New(o Options) *Server {
 		hosts:     service.NewHosts(o.DB, o.Logger),
 		router:    o.Router,
 		subs:      o.Subs,
+		obSubs:    service.NewOutboundSubs(o.DB, o.Outbounds, o.Logger),
+		providers: service.NewProviders(o.DB, o.Outbounds, o.Logger),
 		pool:      o.Pool,
 		nodeSync:  service.NewNodeSync(o.DB, o.Logger),
 		// Falls back to the first node, which is this one on every install that

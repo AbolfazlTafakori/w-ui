@@ -176,7 +176,7 @@ function removeRule(r) {
     body: t('routing.removeRuleBody'),
     confirmLabel: t('action.delete'),
     run: async () => {
-      await api.delete(`/api/routing/rules/${r.id}`)
+      await api.del(`/api/routing/rules/${r.id}`)
       notify(t('routing.ruleRemoved'), 'success')
       await load()
     },

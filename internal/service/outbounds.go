@@ -439,6 +439,40 @@ func (s *Outbounds) recordCheck(ctx context.Context, id uint, ms int, errText st
 		})
 }
 
+// SetOrigin records where an outbound came from: a provider integration, a
+// subscription, or (all empty) an operator. Kept off OutboundInput so the API
+// cannot be used to claim an outbound belongs to a subscription it does not.
+func (s *Outbounds) SetOrigin(ctx context.Context, id uint, provider, ref string, subID uint) error {
+	err := s.db.WithContext(ctx).Model(&model.Outbound{}).Where("id = ?", id).
+		Updates(map[string]any{"provider": provider, "provider_ref": ref, "sub_id": subID}).Error
+	if err != nil {
+		return fmt.Errorf("service: set outbound origin: %w", err)
+	}
+	return nil
+}
+
+// ByProvider lists the outbounds one integration made.
+func (s *Outbounds) ByProvider(ctx context.Context, provider string) ([]model.Outbound, error) {
+	var rows []model.Outbound
+	err := s.db.WithContext(ctx).Where("provider = ?", provider).
+		Order("position, id").Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("service: list %s outbounds: %w", provider, err)
+	}
+	return rows, nil
+}
+
+// BySub lists the outbounds a subscription produced.
+func (s *Outbounds) BySub(ctx context.Context, subID uint) ([]model.Outbound, error) {
+	var rows []model.Outbound
+	err := s.db.WithContext(ctx).Where("sub_id = ?", subID).
+		Order("position, id").Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("service: list subscription outbounds: %w", err)
+	}
+	return rows, nil
+}
+
 // ResetTraffic zeroes one outbound's counters, or every outbound's when id is 0.
 func (s *Outbounds) ResetTraffic(ctx context.Context, id uint) error {
 	q := s.db.WithContext(ctx).Model(&model.Outbound{})
