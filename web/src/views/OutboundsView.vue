@@ -158,177 +158,165 @@ async function onSaved() {
 
 <template>
   <section class="view">
-    <header class="page-head">
-      <div>
-        <h1>{{ t('nav.outbounds') }}</h1>
-        <p class="muted">{{ t('outbound.lede') }}</p>
-      </div>
-    </header>
+    <!-- No page heading and no figures. 3x-ui opens this page on the toolbar:
+         the controls on the left add and manage, the ones on the right test.
+         The row is justify-content: space-between, the way theirs is. -->
+    <div class="card">
+      <div class="card-toolbar spread wrap">
+        <div class="toolbar-group">
+          <button class="btn primary" @click="formFor = {}">
+            <Icon name="plus" :size="14" />
+            <span>{{ t('nav.outbounds') }}</span>
+          </button>
+        </div>
 
-    <div class="statbar">
-      <div class="stat">
-        <span class="stat-label">{{ t('outbound.stat.total') }}</span>
-        <span class="stat-value">{{ outbounds.length }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">{{ t('outbound.stat.hops') }}</span>
-        <span class="stat-value">{{ hops.length }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">{{ t('outbound.stat.traffic') }}</span>
-        <span class="stat-value">{{ bytes(totalTraffic) }}</span>
-      </div>
-    </div>
+        <div class="toolbar-group">
+          <!-- How to measure. Their Radio.Group buttonStyle="solid"
+               size="small": one joined control, the chosen mode filled. -->
+          <div class="seg sm" role="group" :aria-label="t('outbound.checkMode')">
+            <button
+              type="button"
+              class="seg-btn"
+              :class="{ on: mode === 'tcp' }"
+              :aria-pressed="mode === 'tcp'"
+              @click="mode = 'tcp'"
+            >
+              TCP
+            </button>
+            <button
+              type="button"
+              class="seg-btn"
+              :class="{ on: mode === 'http' }"
+              :aria-pressed="mode === 'http'"
+              @click="mode = 'http'"
+            >
+              HTTP
+            </button>
+          </div>
 
-    <div class="toolbar">
-      <button class="btn primary" @click="formFor = {}">
-        <Icon name="plus" :size="16" /> {{ t('outbound.add') }}
-      </button>
-
-      <div class="spacer"></div>
-
-      <!-- How to measure. A segmented control rather than a dropdown: there are
-           two choices and the current one should be readable without opening
-           anything. -->
-      <div class="segmented" role="group" :aria-label="t('outbound.checkMode')">
-        <button
-          type="button"
-          :class="{ on: mode === 'tcp' }"
-          :aria-pressed="mode === 'tcp'"
-          @click="mode = 'tcp'"
-        >
-          TCP
-        </button>
-        <button
-          type="button"
-          :class="{ on: mode === 'http' }"
-          :aria-pressed="mode === 'http'"
-          @click="mode = 'http'"
-        >
-          HTTP
-        </button>
+          <button class="btn primary" :disabled="checkingAll" @click="checkAll">
+            <span v-if="checkingAll" class="spin sm"></span>
+            <Icon v-else name="play" :size="14" />
+            <span>{{ t('outbound.checkAll') }}</span>
+          </button>
+        </div>
       </div>
 
-      <button class="btn" :disabled="checkingAll" @click="checkAll">
-        <span v-if="checkingAll" class="spin sm"></span>
-        <Icon v-else name="refresh" :size="16" />
-        {{ t('outbound.checkAll') }}
-      </button>
-    </div>
+      <div v-if="loadError" class="empty empty-cta">
+        <Icon name="alert" :size="28" />
+        <p>{{ loadError }}</p>
+        <button class="btn" @click="load()">{{ t('action.retry') }}</button>
+      </div>
 
-    <div v-if="loadError" class="empty empty-cta">
-      <Icon name="alert" :size="28" />
-      <p>{{ loadError }}</p>
-      <button class="btn" @click="load()">{{ t('action.retry') }}</button>
-    </div>
-
-    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
-      <tbody>
-        <tr v-for="n in 4" :key="n">
-          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
-        </tr>
-      </tbody>
-    </table>
-    <div v-else-if="loading" class="empty"></div>
-
-    <div v-else class="card">
-      <table class="table">
-        <thead>
-          <tr>
-            <th class="w-gact">{{ t('table.actions') }}</th>
-            <th>{{ t('table.enabled') }}</th>
-            <th>{{ t('outbound.tag') }}</th>
-            <th>{{ t('outbound.address') }}</th>
-            <th class="num">{{ t('outbound.traffic') }}</th>
-            <th class="num">{{ t('outbound.latency') }}</th>
-            <th class="right">{{ t('outbound.check') }}</th>
-          </tr>
-        </thead>
+      <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
         <tbody>
-          <tr v-for="o in outbounds" :key="o.id">
-            <td class="w-gact">
-              <div class="actions">
-                <button
-                  class="act"
-                  :title="t('action.edit')"
-                  :disabled="isPending(o.id)"
-                  @click="formFor = { outbound: o }"
-                >
-                  <Icon name="edit" :size="16" />
-                </button>
-                <button
-                  class="act danger"
-                  :title="o.builtin ? t('outbound.builtinLocked') : t('action.delete')"
-                  :disabled="o.builtin || isPending(o.id)"
-                  @click="remove(o)"
-                >
-                  <Icon name="trash" :size="16" />
-                </button>
-              </div>
-            </td>
-
-            <td>
-              <input
-                type="checkbox"
-                :checked="o.enabled"
-                :disabled="o.builtin || isPending(o.id)"
-                :aria-label="o.tag"
-                @change="setEnabled(o, $event.target.checked)"
-              />
-            </td>
-
-            <td>
-              <div class="stack">
-                <strong>{{ o.tag }}</strong>
-                <span class="tag" :class="o.builtin ? 'geekblue' : 'green'">
-                  {{ kindLabel(o) }}
-                </span>
-              </div>
-              <div v-if="o.note" class="muted small">{{ o.note }}</div>
-            </td>
-
-            <td class="ltr">
-              <span v-if="o.address">{{ o.address }}</span>
-              <span v-else class="muted">—</span>
-            </td>
-
-            <td class="num ltr">
-              <span v-if="o.txBytes || o.rxBytes">
-                ↑ {{ bytes(o.txBytes) }} ↓ {{ bytes(o.rxBytes) }}
-              </span>
-              <span v-else class="muted">—</span>
-            </td>
-
-            <td class="num ltr">
-              <template v-if="o.lastError">
-                <span class="tag red" :title="o.lastError">{{ t('outbound.failed') }}</span>
-              </template>
-              <template v-else-if="o.latencyMs">
-                <span class="tag green">{{ o.latencyMs }} ms</span>
-                <div class="muted small">{{ checkedAgo(o) }}</div>
-              </template>
-              <span v-else class="muted">—</span>
-            </td>
-
-            <td class="right">
-              <button
-                class="act"
-                :title="t('outbound.checkOne')"
-                :disabled="isPending(o.id)"
-                @click="check(o)"
-              >
-                <span v-if="isPending(o.id)" class="spin sm"></span>
-                <Icon v-else name="zap" :size="16" />
-              </button>
-            </td>
+          <tr v-for="n in 4" :key="n">
+            <td v-for="c in 7" :key="c"><span class="sk"></span></td>
           </tr>
         </tbody>
       </table>
+      <div v-else-if="loading" class="empty"></div>
 
-      <div v-if="!hops.length" class="empty empty-cta">
-        <Icon name="outbound" :size="28" />
-        <p>{{ t('outbound.emptyHint') }}</p>
-        <button class="btn primary" @click="formFor = {}">{{ t('outbound.add') }}</button>
+      <!-- Their columns: a number with the row's controls beside it, then
+           the tag with its kind under it, address, traffic, latency, and the
+           one-off check at the end. Egress and Country are what an Xray
+           outbound reports about where it exits; ours have no equivalent, and
+           a column that is always a dash is worse than no column. -->
+      <div v-else class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="w-num">#</th>
+              <th>{{ t('outbound.tag') }}</th>
+              <th>{{ t('outbound.address') }}</th>
+              <th class="w-md">{{ t('outbound.traffic') }}</th>
+              <th class="w-sm">{{ t('outbound.latency') }}</th>
+              <th class="w-sm right">{{ t('outbound.check') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(o, idx) in outbounds" :key="o.id" :class="{ off: !o.enabled }">
+              <!-- The number, and beside it what can be done to the row --
+                 which is how theirs puts edit and the menu inside the '#'
+                 column rather than giving actions a column of their own. -->
+              <td class="w-num">
+                <div class="rownum">
+                  <span class="num">{{ idx + 1 }}</span>
+                  <button
+                    class="act"
+                    :title="t('action.edit')"
+                    :disabled="isPending(o.id)"
+                    @click="formFor = { outbound: o }"
+                  >
+                    <Icon name="edit" :size="15" />
+                  </button>
+                  <button
+                    class="act"
+                    :title="o.enabled ? t('action.disable') : t('action.enable')"
+                    :disabled="o.builtin || isPending(o.id)"
+                    @click="setEnabled(o, !o.enabled)"
+                  >
+                    <Icon :name="o.enabled ? 'pause' : 'play'" :size="15" />
+                  </button>
+                  <button
+                    class="act danger"
+                    :title="o.builtin ? t('outbound.builtinLocked') : t('action.delete')"
+                    :disabled="o.builtin || isPending(o.id)"
+                    @click="remove(o)"
+                  >
+                    <Icon name="trash" :size="15" />
+                  </button>
+                </div>
+              </td>
+
+              <td>
+                <div class="stack">
+                  <strong>{{ o.tag }}</strong>
+                  <span class="tag" :class="o.builtin ? 'geekblue' : 'green'">
+                    {{ kindLabel(o) }}
+                  </span>
+                </div>
+                <div v-if="o.note" class="muted small">{{ o.note }}</div>
+              </td>
+
+              <td class="ltr">
+                <span v-if="o.address">{{ o.address }}</span>
+                <span v-else class="muted">—</span>
+              </td>
+
+              <td class="num ltr">
+                <span v-if="o.txBytes || o.rxBytes" class="traffic">
+                  <span class="up">↑ {{ bytes(o.txBytes) }}</span>
+                  <span class="down">↓ {{ bytes(o.rxBytes) }}</span>
+                </span>
+                <span v-else class="muted">—</span>
+              </td>
+
+              <td class="num ltr">
+                <template v-if="o.lastError">
+                  <span class="tag red" :title="o.lastError">{{ t('outbound.failed') }}</span>
+                </template>
+                <template v-else-if="o.latencyMs">
+                  <span class="tag green">{{ o.latencyMs }} ms</span>
+                  <div class="muted small">{{ checkedAgo(o) }}</div>
+                </template>
+                <span v-else class="muted">—</span>
+              </td>
+
+              <td class="right">
+                <button
+                  class="act round"
+                  :title="t('outbound.checkOne')"
+                  :disabled="isPending(o.id)"
+                  @click="check(o)"
+                >
+                  <span v-if="isPending(o.id)" class="spin sm"></span>
+                  <Icon v-else name="zap" :size="15" />
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

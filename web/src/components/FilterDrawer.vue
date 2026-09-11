@@ -318,36 +318,6 @@ export function activeFilterCount(f) {
   color: var(--faint);
 }
 
-/* Their Radio.Group with optionType="button": one joined control, the chosen
-   segment filled rather than outlined. */
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.seg-btn {
-  padding: 8px 16px;
-  border: 0;
-  border-inline-end: 1px solid var(--line);
-  background: var(--surface-2);
-  color: var(--ink-2);
-  font: inherit;
-  font-size: var(--t-sm);
-  cursor: pointer;
-  transition: background-color 0.14s var(--ease), color 0.14s var(--ease);
-}
-.seg-btn:last-child {
-  border-inline-end: 0;
-}
-.seg-btn:hover:not(.on) {
-  background: var(--surface-3);
-}
-.seg-btn.on {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
 .fd-foot {
   display: flex;
   justify-content: space-between;

@@ -1397,6 +1397,94 @@ pre.config {
 .card-toolbar.spread {
   justify-content: space-between;
 }
+.card-toolbar.wrap {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+/* One side of a split toolbar: the buttons that belong together. */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Their '#' column on outbounds: the row's number with its controls beside it,
+   rather than an Actions column of its own. */
+.w-num {
+  width: 1%;
+  white-space: nowrap;
+}
+.rownum {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rownum .num {
+  min-width: 1.5em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* A round icon button, as their Check column has. */
+.act.round {
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+}
+/* Traffic in its two directions, tinted so a glance tells them apart. */
+.traffic {
+  display: inline-flex;
+  gap: 8px;
+  font-size: var(--t-sm);
+}
+.traffic .up {
+  color: var(--accent);
+}
+.traffic .down {
+  color: var(--ok);
+}
+/* A segmented control, their Radio.Group with optionType="button" and
+   buttonStyle="solid": one joined control, the chosen segment filled. It
+   was scoped to the filter drawer and the outbounds toolbar needs the same
+   one, so it lives here. */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.seg-btn {
+  padding: 8px 16px;
+  border: 0;
+  border-inline-end: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: background-color 0.14s var(--ease), color 0.14s var(--ease);
+}
+.seg-btn:last-child {
+  border-inline-end: 0;
+}
+.seg-btn:hover:not(.on) {
+  background: var(--surface-3);
+}
+.seg-btn.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* The small segmented control, size="small" in their Radio.Group. */
+.seg.sm .seg-btn {
+  padding: 3px 10px;
+  font-size: var(--t-xs);
+}
+/* A row that is switched off recedes rather than disappearing. */
+tr.off td {
+  opacity: 0.55;
+}
 
 /* Their Table empty state: an icon and one line, sitting inside the table's
    body under the real header so the page keeps its shape. */
