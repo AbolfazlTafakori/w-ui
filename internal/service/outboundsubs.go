@@ -528,8 +528,15 @@ func cleanTag(tag string) string {
 			b.WriteByte('-')
 		}
 	}
-	if b.Len() > 64 {
-		return b.String()[:64]
+	// Runs of dashes left by emoji and spaces collapse, and none lead or
+	// trail: "🇩🇪 Germany" becomes "Germany", not "---Germany".
+	out := b.String()
+	for strings.Contains(out, "--") {
+		out = strings.ReplaceAll(out, "--", "-")
 	}
-	return b.String()
+	out = strings.Trim(out, "-")
+	if len(out) > 64 {
+		out = out[:64]
+	}
+	return out
 }
