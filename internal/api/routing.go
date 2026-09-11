@@ -106,10 +106,33 @@ func (s *Server) handleCheckAllOutbounds(w http.ResponseWriter, r *http.Request)
 // rather than erroring: a probe is a convenience, and refusing to run one over
 // a query string is not worth an error page.
 func checkMode(r *http.Request) string {
-	if strings.EqualFold(r.URL.Query().Get("mode"), "http") {
-		return "http"
+	switch strings.ToLower(r.URL.Query().Get("mode")) {
+	case service.ModeHTTP:
+		return service.ModeHTTP
+	case service.ModeReal:
+		return service.ModeReal
 	}
-	return "tcp"
+	return service.ModeTCP
+}
+
+func (s *Server) handleResetOutboundTraffic(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.outbounds.ResetTraffic(r.Context(), id); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleResetAllOutboundTraffic(w http.ResponseWriter, r *http.Request) {
+	if err := s.outbounds.ResetTraffic(r.Context(), 0); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── routing ──────────────────────────────────────────────────────────────────

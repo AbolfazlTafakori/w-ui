@@ -265,6 +265,12 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/outbounds/check", Group: "Outbounds", Auth: true,
 			Summary: "Measure every outbound at once.",
 			handler: s.handleCheckAllOutbounds},
+		{Method: "POST", Path: "/api/outbounds/{id}/reset", Group: "Outbounds", Auth: true,
+			Summary: "Zero one outbound's traffic counters.",
+			handler: s.handleResetOutboundTraffic},
+		{Method: "POST", Path: "/api/outbounds/reset", Group: "Outbounds", Auth: true,
+			Summary: "Zero every outbound's traffic counters.",
+			handler: s.handleResetAllOutboundTraffic},
 
 		// ── Routing ──
 		{Method: "GET", Path: "/api/routing", Group: "Routing", Auth: true,

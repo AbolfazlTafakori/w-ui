@@ -288,11 +288,28 @@ func (s *Outbounds) Reorder(ctx context.Context, ids []uint) error {
 
 // CheckResult is one latency measurement.
 type CheckResult struct {
-	Tag       string `json:"tag"`
-	OK        bool   `json:"ok"`
-	LatencyMS int    `json:"latencyMs"`
-	Error     string `json:"error,omitempty"`
+	Tag       string  `json:"tag"`
+	OK        bool    `json:"ok"`
+	LatencyMS int     `json:"latencyMs"`
+	Error     string  `json:"error,omitempty"`
+	Egress    *Egress `json:"egress,omitempty"`
 }
+
+// Egress is where traffic through an outbound comes out, as the far side sees
+// it. Only an HTTP probe learns this; a TCP connect never sends a request.
+type Egress struct {
+	IPv4    string `json:"ipv4,omitempty"`
+	Country string `json:"country,omitempty"`
+}
+
+// Check modes. TCP times only the connect. HTTP times a request through the
+// outbound once the connection is up, and Real is the whole thing including
+// the connection -- the figure a customer actually waits for.
+const (
+	ModeTCP  = "tcp"
+	ModeHTTP = "http"
+	ModeReal = "real"
+)
 
 // Check measures how long one outbound takes to answer.
 //
@@ -315,9 +332,12 @@ func (s *Outbounds) Check(ctx context.Context, id uint, mode string) (*CheckResu
 		s.recordCheck(ctx, ob.ID, 0, "")
 		return res, nil
 	case model.OutboundDirect:
+		if mode != ModeTCP {
+			return s.finishProbe(ctx, ob, res, probeThrough(ctx, ob, mode)), nil
+		}
 		// Times the server's own path to the internet, which is the thing
 		// `direct` actually uses.
-		d, err := dialLatency(ctx, "1.1.1.1:443", mode)
+		d, err := dialLatency(ctx, "1.1.1.1:443")
 		return s.finishCheck(ctx, ob, res, d, err), nil
 	}
 
@@ -325,6 +345,9 @@ func (s *Outbounds) Check(ctx context.Context, id uint, mode string) (*CheckResu
 	if target == "" {
 		res.Error = "this outbound has no address to reach"
 		return res, nil
+	}
+	if mode != ModeTCP {
+		return s.finishProbe(ctx, ob, res, probeThrough(ctx, ob, mode)), nil
 	}
 	// A WireGuard endpoint is UDP and will not answer a TCP connect, so what is
 	// measured is whether the host is routable at all rather than whether the
@@ -337,7 +360,7 @@ func (s *Outbounds) Check(ctx context.Context, id uint, mode string) (*CheckResu
 		}
 	}
 
-	d, err := dialLatency(ctx, target, mode)
+	d, err := dialLatency(ctx, target)
 	return s.finishCheck(ctx, ob, res, d, err), nil
 }
 
@@ -385,6 +408,27 @@ func (s *Outbounds) finishCheck(
 	return res
 }
 
+func (s *Outbounds) finishProbe(
+	ctx context.Context, ob *model.Outbound, res *CheckResult, p probeResult,
+) *CheckResult {
+	if p.err != nil {
+		res.OK = false
+		res.Error = friendlyDialError(p.err)
+		s.recordCheck(ctx, ob.ID, 0, res.Error)
+		return res
+	}
+	res.OK = true
+	res.LatencyMS = int(p.latency.Milliseconds())
+	res.Egress = &p.egress
+	s.recordCheck(ctx, ob.ID, res.LatencyMS, "")
+	s.db.WithContext(ctx).Model(&model.Outbound{}).Where("id = ?", ob.ID).
+		Updates(map[string]any{
+			"egress_ip":      p.egress.IPv4,
+			"egress_country": p.egress.Country,
+		})
+	return res
+}
+
 func (s *Outbounds) recordCheck(ctx context.Context, id uint, ms int, errText string) {
 	now := time.Now().UTC()
 	s.db.WithContext(ctx).Model(&model.Outbound{}).Where("id = ?", id).
@@ -393,6 +437,20 @@ func (s *Outbounds) recordCheck(ctx context.Context, id uint, ms int, errText st
 			"last_check_at": now,
 			"last_error":    errText,
 		})
+}
+
+// ResetTraffic zeroes one outbound's counters, or every outbound's when id is 0.
+func (s *Outbounds) ResetTraffic(ctx context.Context, id uint) error {
+	q := s.db.WithContext(ctx).Model(&model.Outbound{})
+	if id != 0 {
+		q = q.Where("id = ?", id)
+	} else {
+		q = q.Where("1 = 1")
+	}
+	if err := q.Updates(map[string]any{"tx_bytes": 0, "rx_bytes": 0}).Error; err != nil {
+		return fmt.Errorf("service: reset outbound traffic: %w", err)
+	}
+	return nil
 }
 
 func (s *Outbounds) byID(ctx context.Context, id uint) (*model.Outbound, error) {
@@ -553,7 +611,7 @@ func checkHostPort(addr string) error {
 }
 
 // dialLatency times a TCP connection.
-func dialLatency(ctx context.Context, addr, mode string) (time.Duration, error) {
+func dialLatency(ctx context.Context, addr string) (time.Duration, error) {
 	timeout := 5 * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

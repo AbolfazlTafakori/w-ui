@@ -195,7 +195,7 @@ func (s *Hosts) Check(ctx context.Context, id uint) (*CheckResult, error) {
 	// the tunnel is up. The message says so rather than letting a green tick be
 	// read as more than it is.
 	addr := net.JoinHostPort(h.Address, fmt.Sprint(port))
-	d, err := dialLatency(ctx, addr, "tcp")
+	d, err := dialLatency(ctx, addr)
 
 	now := time.Now().UTC()
 	if err != nil {

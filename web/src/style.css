@@ -1409,41 +1409,208 @@ pre.config {
   flex-wrap: wrap;
 }
 
-/* Their '#' column on outbounds: the row's number with its controls beside it,
-   rather than an Actions column of its own. */
-.w-num {
-  width: 1%;
-  white-space: nowrap;
-}
+/* Outbounds table, with the widths their columns are given: # 100, Egress
+   210, Country 160, Traffic 200, Latency 140, Check 80. */
+.w-num { width: 100px; white-space: nowrap; }
+.w-egress { width: 210px; }
+.w-country { width: 160px; }
+.w-traffic { width: 200px; }
+.w-latency { width: 140px; }
+.w-check { width: 80px; }
+th.center,
+td.center { text-align: center; }
+
+/* Their '#' cell: the number on the left, the two circles pushed to the
+   right of the cell. */
 .rownum {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
-.rownum .num {
-  min-width: 1.5em;
-  color: var(--muted);
+.row-index {
+  min-width: 18px;
+  font-weight: 500;
+  opacity: 0.7;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
-/* A round icon button, as their Check column has. */
+.action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+/* Their Button shape="circle" size="small": 24px round with a border, and
+   the primary one filled -- the Check column's. */
 .act.round {
+  width: 24px;
+  height: 24px;
   border: 1px solid var(--line);
   border-radius: 50%;
-  width: 30px;
-  height: 30px;
+  background: var(--surface);
+  color: var(--ink);
 }
-/* Traffic in its two directions, tinted so a glance tells them apart. */
+.act.round:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface);
+}
+.act.round.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.act.round.primary:hover:not(:disabled) {
+  background: var(--accent-hover, var(--accent));
+  color: #fff;
+  filter: brightness(1.1);
+}
+.act.round .spin.sm {
+  width: 12px;
+  height: 12px;
+}
+
+.identity-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tag-name {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.protocol-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.address-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.address-pill {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  font-size: 11px;
+}
+
+/* Egress: the address blurred until the eye in the header is pressed. */
+.egress-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ip-toggle {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.65;
+}
+.ip-toggle:hover { opacity: 1; }
+.egress-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.egress-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.egress-family {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.egress-ip {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.address-hidden {
+  filter: blur(5px);
+  transition: filter 0.2s ease;
+}
+.address-visible { filter: none; }
+.country-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  line-height: 20px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Traffic in its two directions, their colours. */
 .traffic {
   display: inline-flex;
+  gap: 4px;
+  font-size: 12px;
+}
+.traffic .up { color: #008771; }
+.traffic .down { color: #3c89e8; }
+
+/* The "more" dropdown under the toolbar button, and the row menu. The row
+   one is fixed and rendered outside the table so the wrapper's overflow does
+   not clip it. */
+.more-wrap { position: relative; }
+.rowmenu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+.rowmenu.below {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  font-size: var(--t-sm);
+  padding: 5px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-base);
+  text-align: start;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.traffic .up {
-  color: var(--accent);
+.menu-item:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
 }
-.traffic .down {
-  color: var(--ok);
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
+.menu-item.danger { color: var(--bad); }
+.menu-item.danger:hover:not(:disabled) { background: var(--bad-soft); }
 /* A segmented control, their Radio.Group with optionType="button" and
    buttonStyle="solid": one joined control, the chosen segment filled. It
    was scoped to the filter drawer and the outbounds toolbar needs the same

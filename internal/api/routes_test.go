@@ -89,6 +89,8 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/interfaces/{id}/restart":          true,
 		"POST /api/outbounds/{id}/check":             true, // measures; nothing to send
 		"POST /api/outbounds/check":                  true,
+		"POST /api/outbounds/{id}/reset":             true, // acts on the id in the path
+		"POST /api/outbounds/reset":                  true,
 		"POST /api/hosts/{id}/check":                 true,
 		"POST /api/clients/{id}/subscription/rotate": true, // acts on the id in the path
 		"POST /api/node/usage":                       true, // drains counters; nothing to send

@@ -105,6 +105,9 @@ type Outbound struct {
 	LatencyMS   int        `gorm:"not null;default:0" json:"latencyMs"`
 	LastCheckAt *time.Time `json:"lastCheckAt"`
 	LastError   string     `gorm:"size:512" json:"lastError"`
+	// Where an HTTP probe last came out. Empty until one has been run.
+	EgressIP      string `gorm:"size:64" json:"egressIp"`
+	EgressCountry string `gorm:"size:8" json:"egressCountry"`
 
 	// Counters for what has left through here.
 	TxBytes uint64 `gorm:"not null;default:0" json:"txBytes"`

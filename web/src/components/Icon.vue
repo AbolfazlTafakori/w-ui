@@ -36,6 +36,7 @@ const paths = {
   filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z',
   // A play triangle and a pause pair, for a row that can be run or held.
   play: 'M6 4l14 8-14 8z',
+  zap: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
   pause: 'M7 4h3v16H7zM14 4h3v16h-3z',
   send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
   mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 7l-10 6L2 7',
