@@ -101,6 +101,7 @@
   "filter.bucket.disabled": "Disabled",
   "filter.bucket.online": "Online",
   "common.all": "All",
+  "common.nothingYet": "Nothing here yet",
   "client.presets": "Presets",
   "client.notePlaceholder": "Contact, plan, anything you need to remember",
   "client.create": "Add client",

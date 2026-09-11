@@ -342,18 +342,9 @@ function viewMembers(g) {
 </script>
 
 <template>
-  <div class="page-head">
-    <div>
-      <h1>{{ t('nav.groups') }}</h1>
-      <p>{{ t('group.subtitle') }}</p>
-    </div>
-    <div class="page-actions">
-      <button class="btn" @click="openCreate">
-        <Icon name="plus" :size="15" />
-        <span>{{ t('group.add') }}</span>
-      </button>
-    </div>
-  </div>
+  <!-- No page title and no lede. 3x-ui opens this page straight on the
+       figures, and the one control it has lives inside the table's card,
+       where the thing it acts on is. -->
 
   <div class="strip card">
     <div class="strip-item">
@@ -376,12 +367,18 @@ function viewMembers(g) {
     </div>
   </div>
 
-  <div class="banner">
-    <Icon name="info" :size="16" />
-    <span>{{ t('group.howTo') }}</span>
-  </div>
-
   <div class="card">
+    <!-- Their Card title: a toolbar holding the primary button, top-left,
+         above the table it adds to. It was next to the page heading here and
+         again in the middle of the empty state -- two buttons for one action,
+         neither of them where the table is. -->
+    <div class="card-toolbar">
+      <button class="btn primary" @click="openCreate">
+        <Icon name="plus" :size="14" />
+        <span>{{ t('group.add') }}</span>
+      </button>
+    </div>
+
     <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
 
     <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
@@ -393,15 +390,10 @@ function viewMembers(g) {
     </table>
     <div v-else-if="loading" class="empty"></div>
 
-    <div v-else-if="!items.length" class="empty empty-cta">
-      <p>{{ t('group.none') }}</p>
-      <p class="small muted">{{ t('group.noneHint') }}</p>
-      <button class="btn" @click="openCreate">
-        <Icon name="plus" :size="15" />
-        <span>{{ t('group.add') }}</span>
-      </button>
-    </div>
-
+    <!-- The header row stays when there is nothing under it, the way their
+         Table keeps its columns and puts the empty state inside the body. A
+         table that vanishes when empty makes the page a different shape
+         depending on the data. -->
     <div v-else class="table-wrap">
       <table>
         <thead>
@@ -415,6 +407,14 @@ function viewMembers(g) {
           </tr>
         </thead>
         <tbody>
+          <tr v-if="!items.length" class="empty-row">
+            <td colspan="6">
+              <div class="card-empty">
+                <Icon name="tag" :size="32" />
+                <div>{{ t('common.nothingYet') }}</div>
+              </div>
+            </td>
+          </tr>
           <tr v-for="g in items" :key="g.name">
             <!-- Two controls, as theirs has: the whole menu behind one
                  button, and rename lifted out of it because it is the one an

@@ -1383,6 +1383,35 @@ pre.config {
   border-start-start-radius: 0;
   border-start-end-radius: 0;
 }
+/* A card's toolbar: 3x-ui's Card title slot holding the page's one primary
+   button, top-left, above the table it acts on. */
+.card-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+/* Their Table empty state: an icon and one line, sitting inside the table's
+   body under the real header so the page keeps its shape. */
+.empty-row td {
+  padding: 0;
+  border-bottom: 0;
+}
+.card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 36px 16px 40px;
+  color: var(--muted);
+  font-size: var(--t-base);
+}
+.card-empty svg {
+  color: var(--faint);
+}
+
 /* The filter button's count: how many categories are narrowing the list. */
 .filter-count {
   display: inline-flex;
