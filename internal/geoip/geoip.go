@@ -28,8 +28,8 @@ import (
 // Source is where a country's list comes from; the two are fetched
 // separately because the lists are published that way.
 var (
-	sourceV4 = "https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/master/ipv4/%s.cidr"
-	sourceV6 = "https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/master/ipv6/%s.cidr"
+	sourceV4 = "https://raw.githubusercontent.com/ipverse/country-ip-blocks/master/country/%s/ipv4-aggregated.txt"
+	sourceV6 = "https://raw.githubusercontent.com/ipverse/country-ip-blocks/master/country/%s/ipv6-aggregated.txt"
 )
 
 // refreshAfter is how old a list may be before it is fetched again.
