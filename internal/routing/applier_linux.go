@@ -96,6 +96,7 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 			return fmt.Errorf("routing: could not %s: %w", s.Describe, err)
 		}
 	}
+	a.pruneRules(ctx, p.Hops)
 
 	a.mu.Lock()
 	a.appliedP = fp
@@ -103,6 +104,48 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 	a.lastErr = nil
 	a.mu.Unlock()
 	return nil
+}
+
+// pruneRules removes the ip rules left behind by hops that no longer
+// exist. The plan only knows the hops it was given; a hop deleted from the
+// panel is in no plan, so its rule -- one of our marks, pointing at an
+// emptied table -- would otherwise stay until reboot, sending anything that
+// still carried that mark into nothing.
+func (a *Applier) pruneRules(ctx context.Context, hops []Hop) {
+	out, err := a.runIP(ctx, "rule", "show")
+	if err != nil {
+		return
+	}
+	want := map[uint32]bool{}
+	for _, h := range hops {
+		want[h.Mark] = true
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		// "20011:	from all fwmark 0xa7000b lookup 47011"
+		f := strings.Fields(line)
+		mark, table := "", ""
+		for i := 0; i+1 < len(f); i++ {
+			switch f[i] {
+			case "fwmark":
+				mark = f[i+1]
+			case "lookup":
+				table = f[i+1]
+			}
+		}
+		if mark == "" || table == "" {
+			continue
+		}
+		var m uint64
+		if _, err := fmt.Sscanf(strings.SplitN(mark, "/", 2)[0], "0x%x", &m); err != nil {
+			continue
+		}
+		if !OwnsMark(uint32(m)) || want[uint32(m)] {
+			continue
+		}
+		_, _ = a.runIP(ctx, "rule", "del", "fwmark", mark, "table", table)
+		_, _ = a.runIP(ctx, "route", "flush", "table", table)
+		a.log.Info("stale routing rule removed", "mark", mark, "table", table)
+	}
 }
 
 // applyNAT rewrites the source address of traffic leaving a tunnel.
