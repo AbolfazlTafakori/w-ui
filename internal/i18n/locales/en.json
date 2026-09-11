@@ -162,7 +162,7 @@
   "node.spent": "allowance spent",
   "node.spentHint": "This server has carried more than its host allows this period. Customers are off it until the allowance starts again.",
   "node.transfer": "Transfer",
-  "interface.clone": "Make a copy",
+  "interface.clone": "Clone",
   "interface.cloneHint": "The same protocol, MTU, DNS and mode. Its own name, port, address range and keys, no customers, and — for AmneziaWG — a fresh obfuscation profile, so one blocking rule cannot take both down.",
   "interface.cloneTitle": "Copy this tunnel",
   "interface.cloned": "Copy created.",
@@ -732,7 +732,7 @@
   "logs.sourcePanel": "Panel buffer",
   "logs.none": "Nothing logged yet.",
   "settings.backup": "Backup",
-  "interface.restart": "Restart this tunnel",
+  "interface.restart": "Restart",
   "interface.restarted": "Tunnel restarted.",
   "interface.restartFailed": "It would not come up: {error}",
   "settings.nothingToSave": "Nothing has changed.",
@@ -1192,5 +1192,6 @@
   "iface.menu.attachExisting": "Attach Existing Clients…",
   "iface.menu.attach": "Attach",
   "iface.menu.detachClients": "Detach Clients",
-  "iface.menu.delAllClients": "Delete All Clients"
+  "iface.menu.delAllClients": "Delete All Clients",
+  "iface.menu.search": "Search"
 }

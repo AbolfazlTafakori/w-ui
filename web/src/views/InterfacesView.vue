@@ -659,7 +659,7 @@ async function submitForm(input) {
         </div>
         <div class="search">
           <Icon name="search" :size="14" />
-          <input v-model="search" type="search" :placeholder="t('action.search')" :aria-label="t('action.search')" />
+          <input v-model="search" type="search" :placeholder="t('iface.menu.search')" :aria-label="t('iface.menu.search')" />
         </div>
         <template v-if="selected.size">
           <span class="tag blue selchip">

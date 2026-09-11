@@ -162,7 +162,7 @@
   "node.spent": "ترافیک تمام شد",
   "node.spentHint": "این سرور بیشتر از سقف ماهانه‌اش ترافیک داده است. تا شروع دوره‌ی بعد مشتری‌ها روی آن نیستند.",
   "node.transfer": "ترافیک",
-  "interface.clone": "ساخت کپی",
+  "interface.clone": "شبیه‌سازی",
   "interface.cloneHint": "همان پروتکل، MTU، DNS و حالت. نام، پورت، محدوده‌ی آدرس و کلید خودش، بدون مشتری، و برای AmneziaWG یک پروفایل مبهم‌سازی تازه — تا یک قانون بلاک نتواند هر دو را با هم بخواباند.",
   "interface.cloneTitle": "کپی این تونل",
   "interface.cloned": "کپی ساخته شد.",
@@ -732,7 +732,7 @@
   "logs.sourcePanel": "حافظه‌ی پنل",
   "logs.none": "هنوز چیزی ثبت نشده.",
   "settings.backup": "بکاپ",
-  "interface.restart": "راه‌اندازی دوبارهٔ این تونل",
+  "interface.restart": "راه‌اندازی مجدد",
   "interface.restarted": "تونل دوباره راه‌اندازی شد.",
   "interface.restartFailed": "بالا نیامد: {error}",
   "settings.nothingToSave": "چیزی تغییر نکرده.",
@@ -1192,5 +1192,6 @@
   "iface.menu.attachExisting": "الصاق کاربران موجود…",
   "iface.menu.attach": "الصاق",
   "iface.menu.detachClients": "جداسازی کاربران",
-  "iface.menu.delAllClients": "حذف همه کلاینت‌ها"
+  "iface.menu.delAllClients": "حذف همه کلاینت‌ها",
+  "iface.menu.search": "جستجو"
 }
