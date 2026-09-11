@@ -81,6 +81,12 @@ type interfaceView struct {
 	Clients   int64  `json:"clients"`
 	Devices   int64  `json:"devices"`
 	UsedBytes uint64 `json:"usedBytes"`
+	UpBytes   uint64 `json:"upBytes"`
+	DownBytes uint64 `json:"downBytes"`
+	Active    int64  `json:"active"`
+	Disabled  int64  `json:"disabled"`
+	Depleted  int64  `json:"depleted"`
+	Online    int64  `json:"online"`
 
 	// Which server this tunnel runs on, and whether that server is answering.
 	//
@@ -162,6 +168,8 @@ func (s *Server) interfaceViews(r *http.Request) ([]interfaceView, error) {
 		}
 		if l, ok := loads[list[i].ID]; ok {
 			v.Clients, v.Devices, v.UsedBytes = l.Clients, l.Devices, l.UsedBytes
+			v.UpBytes, v.DownBytes = l.UpBytes, l.DownBytes
+			v.Active, v.Disabled, v.Depleted, v.Online = l.Active, l.Disabled, l.Depleted, l.Online
 		}
 		// A tunnel on another node is that node's to run, and this panel has no
 		// driver for it: reported as running when the node itself is answering,

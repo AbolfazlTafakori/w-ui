@@ -1,11 +1,11 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, apiURL, getToken } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes } from '../lib/format.js'
+import { bytes, relative, dateTime } from '../lib/format.js'
 import InterfaceForm from '../components/InterfaceForm.vue'
 import InterfaceDetail from '../components/InterfaceDetail.vue'
 import Toggle from '../components/Toggle.vue'
@@ -31,6 +31,206 @@ const detailFor = ref(null)
 const selected = ref(new Set())
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
+
+// Their search box beside the buttons: name, port, protocol.
+const search = ref('')
+const visible = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return interfaces.value
+  return interfaces.value.filter((i) =>
+    [i.name, String(i.listenPort), i.protocol, i.endpointHost, i.nodeName].some((v) => String(v || '').toLowerCase().includes(q)),
+  )
+})
+const hasNodes = computed(() => interfaces.value.some((i) => i.nodeName && !i.nodeLocal))
+
+// ── the two menus: General Actions on the toolbar, and each row's ──
+const generalOpen = ref(false)
+const rowMenu = ref(null) // { iface, x, y }
+function openRowMenu(i, e) {
+  if (rowMenu.value?.iface?.id === i.id) {
+    rowMenu.value = null
+    return
+  }
+  const r = e.currentTarget.getBoundingClientRect()
+  const height = 8 * 34 + 10
+  const up = r.bottom + height > window.innerHeight && r.top > height
+  rowMenu.value = { iface: i, x: r.left, y: up ? r.top - height - 4 : r.bottom + 4 }
+}
+function closeMenus() {
+  rowMenu.value = null
+  generalOpen.value = false
+}
+function onDocClick(e) {
+  if (!rowMenu.value && !generalOpen.value) return
+  if (e.target.closest?.('.rowmenu') || e.target.closest?.('.act') || e.target.closest?.('.more-btn')) return
+  closeMenus()
+}
+function onKey(e) {
+  if (e.key === 'Escape') closeMenus()
+}
+onMounted(() => {
+  window.addEventListener('click', onDocClick, true)
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('scroll', closeMenus, true)
+})
+onUnmounted(() => {
+  window.removeEventListener('click', onDocClick, true)
+  window.removeEventListener('keydown', onKey)
+  window.removeEventListener('scroll', closeMenus, true)
+})
+
+// Their row menu, in their order. Attach/Detach/Add-to-group take the
+// customers on this tunnel; Delete All Clients removes them from it.
+function rowItems(i) {
+  const many = i.clients > 0
+  const items = [
+    { key: 'info', icon: 'info', label: t('iface.menu.info') },
+    { key: 'export', icon: 'copy', label: t('iface.menu.exportInbound') },
+    { key: 'reset', icon: 'refresh', label: t('outbound.resetTraffic') },
+    { key: 'clone', icon: 'copy', label: t('interface.clone') },
+    { key: 'restart', icon: 'power', label: t('interface.restart') },
+    { key: 'attachExisting', icon: 'users', label: t('iface.menu.attachExisting') },
+  ]
+  if (many) {
+    items.push(
+      { key: 'detach', icon: 'users', label: t('iface.menu.detachClients') },
+      { divider: true },
+      { key: 'delAll', icon: 'users', label: t('iface.menu.delAllClients'), danger: true },
+    )
+  } else {
+    items.push({ divider: true })
+  }
+  items.push({ key: 'delete', icon: 'trash', label: t('action.delete'), danger: true })
+  if (i.protocol === 'openvpn') items.splice(1, 0, { key: 'profile', icon: 'download', label: t('interface.downloadProfile') })
+  return items
+}
+function pickRow(i, key) {
+  rowMenu.value = null
+  switch (key) {
+    case 'info': return (detailFor.value = i)
+    case 'export': return exportOne(i)
+    case 'profile': return downloadProfile(i)
+    case 'reset': return resetUsage(i)
+    case 'clone': return openClone(i)
+    case 'restart': return restart(i)
+    case 'attachExisting': return openAttach(i)
+    case 'detach':
+    case 'delAll': return clearTunnel(i)
+    case 'delete': return removeOne(i)
+  }
+}
+
+// Export: the tunnel as the JSON the API creates one from -- what
+// "Import an Inbound" reads back.
+const textModal = ref(null) // { title, text }
+function exportable(i) {
+  return {
+    name: i.name, protocol: i.protocol, listenPort: i.listenPort, subnet: i.subnet,
+    endpointHost: i.endpointHost, mtu: i.mtu, dns: i.dns, natInterface: i.natInterface,
+    mode: i.mode, awg: i.awg || undefined, openvpn: i.openvpn || undefined,
+  }
+}
+function exportOne(i) {
+  textModal.value = { title: `${t('iface.menu.exportInbound')} — ${i.name}`, text: JSON.stringify(exportable(i), null, 2) }
+}
+function exportAll() {
+  textModal.value = { title: t('iface.menu.exportAll'), text: JSON.stringify(interfaces.value.map(exportable), null, 2) }
+}
+async function copyText() {
+  try {
+    await navigator.clipboard.writeText(textModal.value.text)
+    notify(t('action.copied'), 'success')
+  } catch {
+    notify(t('action.copyFailed'), 'error')
+  }
+}
+const importOpen = ref(false)
+const importText = ref('')
+async function runImport() {
+  let parsed
+  try {
+    parsed = JSON.parse(importText.value)
+  } catch {
+    notify(t('outbound.importInvalidJson'), 'error')
+    return
+  }
+  const list = Array.isArray(parsed) ? parsed : [parsed]
+  busy.value = true
+  let n = 0
+  try {
+    for (const it of list) {
+      await api.post('/api/interfaces', it)
+      n++
+    }
+    notify(`${t('iface.menu.import')}: ${nf(n)}`, 'success')
+    importOpen.value = false
+    importText.value = ''
+    await load()
+  } catch (err) {
+    notify(err.message, 'error')
+    if (n) await load()
+  } finally {
+    busy.value = false
+  }
+}
+function pickGeneral(key) {
+  generalOpen.value = false
+  if (key === 'import') importOpen.value = true
+  else if (key === 'export') exportAll()
+  else if (key === 'resetAll') resetAllUsage()
+}
+function resetAllUsage() {
+  ask.value = {
+    title: t('iface.menu.resetAll'),
+    body: t('interface.resetUsageBody'),
+    subject: tn('interface.nTunnels', interfaces.value.length),
+    confirmLabel: t('outbound.reset'),
+    run: async () => {
+      for (const i of interfaces.value) await api.post(`/api/interfaces/${i.id}/reset-usage`)
+      await load()
+    },
+  }
+}
+
+// Attach Existing Clients: pick customers not yet on this tunnel.
+const attach = ref(null) // { iface, list, chosen: Set }
+async function openAttach(i) {
+  try {
+    const cs = await api.get('/api/clients?perPage=500', { background: true })
+    const items = (cs.items || cs || []).filter((c) => !(c.accounts || []).some((a) => a.interfaceId === i.id))
+    attach.value = { iface: i, list: items, chosen: new Set(), q: '' }
+  } catch (err) {
+    notify(err.message, 'error')
+  }
+}
+async function submitAttach() {
+  const a = attach.value
+  if (!a.chosen.size) return
+  busy.value = true
+  try {
+    const res = await api.post('/api/clients/servers/attach', { ids: [...a.chosen], interfaceIds: [a.iface.id] })
+    const failed = Object.entries(res?.failures || {})
+    if (failed.length) notify(failed.map(([n, why]) => `${n}: ${why}`).join('\n'), 'error')
+    else notify(`${t('iface.menu.attachExisting')} — ${nf(res?.changed || 0)}`, 'success')
+    attach.value = null
+    await load()
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+function toggleAttach(id) {
+  const next = new Set(attach.value.chosen)
+  next.has(id) ? next.delete(id) : next.add(id)
+  attach.value.chosen = next
+}
+
+// Their traffic tag colour: by how much of the limit is used; ours have
+// no limit, so it is the calm one.
+function expiryOf(i) {
+  return null
+}
 
 async function load(quiet = false) {
   if (!quiet) loading.value = true
@@ -80,6 +280,8 @@ const totals = computed(() => {
   const list = interfaces.value
   return {
     used: list.reduce((a, i) => a + (i.usedBytes || 0), 0),
+    up: list.reduce((a, i) => a + (i.upBytes || 0), 0),
+    down: list.reduce((a, i) => a + (i.downBytes || 0), 0),
     clients: list.reduce((a, i) => a + (i.clients || 0), 0),
     devices: list.reduce((a, i) => a + (i.devices || 0), 0),
     allocated: list.reduce((a, i) => a + (i.allocated || 0), 0),
@@ -413,211 +615,226 @@ async function submitForm(input) {
 </script>
 
 <template>
-  <div class="page-head">
-    <div>
-      <h1>{{ t('nav.interfaces') }}</h1>
-      <p>{{ t('interface.subtitle') }}</p>
+  <!-- Their summary Card: three figures. -->
+  <div class="card summary-card">
+    <div class="summary-grid three">
+      <div class="stat">
+        <div class="stat-title">{{ t('iface.stat.totalDownUp') }}</div>
+        <div class="stat-value num ltr">
+          <Icon name="upload" :size="16" class="stat-icon" /> {{ bytes(totals.up, store.locale) }}
+          <span class="sep">/</span>
+          <Icon name="download" :size="16" class="stat-icon" /> {{ bytes(totals.down, store.locale) }}
+        </div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">{{ t('iface.stat.totalUsage') }}</div>
+        <div class="stat-value num ltr"><Icon name="dashboard" :size="18" class="stat-icon" />{{ bytes(totals.used, store.locale) }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">{{ t('iface.stat.count') }}</div>
+        <div class="stat-value num"><Icon name="menu" :size="18" class="stat-icon" />{{ nf(totals.count) }}</div>
+      </div>
     </div>
-  </div>
-
-  <div class="strip card">
-    <div class="strip-item">
-      <span class="strip-label"><Icon name="swap" :size="14" />{{ t('interface.totalTraffic') }}</span>
-      <span class="strip-value num ltr">{{ bytes(totals.used, store.locale) }}</span>
-    </div>
-    <div class="strip-item">
-      <span class="strip-label"><Icon name="users" :size="14" />{{ t('nav.clients') }}</span>
-      <span class="strip-value num ltr">{{ nf(totals.clients) }} · {{ nf(totals.devices) }}</span>
-    </div>
-    <div class="strip-item">
-      <span class="strip-label"><Icon name="server" :size="14" />{{ t('interface.total') }}</span>
-      <span class="strip-value num">{{ nf(totals.count) }}</span>
-    </div>
-    <div class="strip-item">
-      <span class="strip-label"><Icon name="globe" :size="14" />{{ t('interface.capacity') }}</span>
-      <span class="strip-value num ltr">{{ nf(totals.allocated) }} / {{ nf(totals.capacity) }}</span>
-    </div>
-  </div>
-
-  <div class="actionbar">
-    <button class="btn primary" @click="formFor = {}">
-      <Icon name="plus" :size="15" />{{ t('interface.create') }}
-    </button>
-    <template v-if="selected.size">
-      <span class="selcount small">{{ t('action.selected') }}: {{ nf(selected.size) }}</span>
-      <button class="btn sm danger" @click="bulkDelete">{{ t('action.delete') }}</button>
-    </template>
   </div>
 
   <div class="card">
-    <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
-
-    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
-      <tbody>
-        <tr v-for="n in 5" :key="n">
-          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
-        </tr>
-      </tbody>
-    </table>
-    <div v-else-if="loading" class="empty"></div>
-
-    <div v-else-if="!interfaces.length" class="empty empty-cta">
-      <p>{{ t('interface.noneYet') }}</p>
-      <p class="small muted">{{ t('interface.noneYetHint') }}</p>
-      <button class="btn" @click="formFor = {}">
-        <Icon name="plus" :size="15" />
-        <span>{{ t('interface.create') }}</span>
-      </button>
+    <!-- Their Card title: Add Inbound, General Actions, the search, and --
+         with rows picked -- the count and a Delete. -->
+    <div class="card-head">
+      <div class="card-toolbar">
+        <button class="btn primary" @click="formFor = {}">
+          <Icon name="plus" :size="14" />
+          <span>{{ t('iface.menu.add') }}</span>
+        </button>
+        <div class="more-wrap">
+          <button class="btn primary more-btn" :aria-expanded="generalOpen" @click="generalOpen = !generalOpen">
+            <Icon name="menu" :size="14" />
+            <span>{{ t('iface.menu.general') }}</span>
+          </button>
+          <div v-if="generalOpen" class="rowmenu below" role="menu">
+            <button class="menu-item" role="menuitem" @click="pickGeneral('import')"><Icon name="download" :size="14" />{{ t('iface.menu.import') }}</button>
+            <button class="menu-item" role="menuitem" @click="pickGeneral('export')"><Icon name="upload" :size="14" />{{ t('iface.menu.exportAll') }}</button>
+            <button class="menu-item" role="menuitem" @click="pickGeneral('resetAll')"><Icon name="refresh" :size="14" />{{ t('iface.menu.resetAll') }}</button>
+          </div>
+        </div>
+        <div class="search">
+          <Icon name="search" :size="14" />
+          <input v-model="search" type="search" :placeholder="t('action.search')" :aria-label="t('action.search')" />
+        </div>
+        <template v-if="selected.size">
+          <span class="tag blue selchip">
+            {{ t('client.menu.selectedCount').replace('{count}', nf(selected.size)) }}
+            <button type="button" class="chip-x" :aria-label="t('action.cancel')" @click="selected = new Set()"><Icon name="close" :size="11" /></button>
+          </span>
+          <button class="btn danger-ghost" @click="bulkDelete">
+            <Icon name="trash" :size="14" />
+            <span>{{ t('action.delete') }}</span>
+          </button>
+        </template>
+      </div>
     </div>
 
-    <div v-else class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th class="tick">
-              <input
-                type="checkbox"
-                :checked="allSelected"
-                :aria-label="t('action.selectAll')"
-                @change="toggleAll($event.target.checked)"
-              />
-            </th>
-            <!-- Name first, as on every other table here. The row's own id is
-                 a database detail and reads as noise in front of it. -->
-            <th>{{ t('interface.name') }}</th>
-            <th>{{ t('interface.port') }}</th>
-            <th>{{ t('client.protocol') }}</th>
-            <th>{{ t('nav.clients') }}</th>
-            <th>{{ t('client.traffic') }}</th>
-            <th style="min-width: 190px">{{ t('interface.capacity') }}</th>
-            <th>{{ t('table.enabled') }}</th>
-            <th class="right">{{ t('table.actions') }}</th>
-          </tr>
-        </thead>
+    <div class="card-body ifaces-body">
+      <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
+
+      <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
         <tbody>
-          <tr v-for="i in interfaces" :key="i.id" :class="{ picked: selected.has(i.id) }">
-            <td class="tick">
-              <input
-                type="checkbox"
-                :checked="selected.has(i.id)"
-                :aria-label="i.name"
-                @change="toggleOne(i.id, $event.target.checked)"
-              />
-            </td>
-
-            <td class="mono name" :title="`#${i.id}`">{{ i.name }}</td>
-            <td class="mono num">{{ i.listenPort }}</td>
-
-            <td>
-              <div class="tags">
-                <span class="tag proto">{{ i.protocol }}</span>
-                <span v-if="i.mode === 'amnezia'" class="tag active">
-                  <Icon name="shield" :size="11" />AmneziaWG
-                </span>
-                <!-- Only for tunnels that are not on this machine. Naming the
-                     local server on every row would be noise on the panels that
-                     have no nodes at all, which is most of them. -->
-                <span
-                  v-if="i.nodeName && !i.nodeLocal"
-                  class="tag"
-                  :class="i.nodeUp ? '' : 'red'"
-                  :title="i.nodeUp ? '' : t('node.unreachableHint')"
-                >
-                  <Icon name="server" :size="11" />{{ i.nodeName }}
-                </span>
-              </div>
-            </td>
-
-            <td>
-              <button class="linkish" @click="router.push('/clients')">
-                <Icon name="users" :size="14" />
-                <span class="num ltr">{{ nf(i.clients) }} · {{ nf(i.devices) }}</span>
-              </button>
-            </td>
-
-            <td>
-              <span class="tag disabled num ltr">
-                {{ bytes(i.usedBytes, store.locale) }} / ∞
-              </span>
-            </td>
-
-            <td>
-              <div class="meter" style="margin-bottom: 6px">
-                <span
-                  :class="poolPercent(i) > 90 ? 'bad' : poolPercent(i) > 75 ? 'warn' : ''"
-                  :style="{ width: Math.max(poolPercent(i), 1) + '%' }"
-                ></span>
-              </div>
-              <span class="muted small num ltr">
-                {{ nf(i.allocated) }} / {{ nf(i.capacity) }}
-              </span>
-            </td>
-
-            <td>
-              <Toggle
-                :model-value="i.enabled"
-                :label="i.name"
-                :loading="isPending(i.id)"
-                @update:model-value="(v) => setEnabled(i, v)"
-              />
-            </td>
-
-            <td class="right">
-              <div class="actions">
-                <button class="act" :title="t('action.edit')" @click="formFor = { iface: i }">
-                  <Icon name="edit" :size="16" />
-                </button>
-                <!-- A second tunnel is rarely a new decision: same protocol,
-                     same MTU, another port, because the first one is being
-                     blocked. Retyping all of it is how the copy ends up subtly
-                     different from the original. -->
-                <!-- For traffic nobody should have been charged for, and for
-                     emptying a tunnel before it is removed. Both are asked for
-                     first: one changes what customers are billed, the other
-                     takes them off a server. -->
-                <button class="act" :title="t('interface.resetUsage')" @click="resetUsage(i)">
-                  <Icon name="clock" :size="16" />
-                </button>
-                <button class="act danger" :title="t('interface.clear')" @click="clearTunnel(i)">
-                  <Icon name="swap" :size="16" />
-                </button>
-                <button class="act" :title="t('interface.clone')" @click="openClone(i)">
-                  <Icon name="copy" :size="16" />
-                </button>
-                <button
-                  class="act"
-                  :title="t('interface.restart')"
-                  :disabled="isPending(i.id)"
-                  @click="restart(i)"
-                >
-                  <span v-if="isPending(i.id)" class="spin sm"></span>
-                  <Icon v-else name="refresh" :size="16" />
-                </button>
-                <!-- OpenVPN only. Its profile is the tunnel's and is the same
-                     for everyone on it, so it is downloaded from here once;
-                     a WireGuard profile belongs to a device and comes from
-                     that device instead. -->
-                <button
-                  v-if="i.protocol === 'openvpn'"
-                  class="act"
-                  :title="t('interface.downloadProfile')"
-                  :disabled="downloadingProfile === i.id"
-                  @click="downloadProfile(i)"
-                >
-                  <span v-if="downloadingProfile === i.id" class="spin sm"></span>
-                  <Icon v-else name="download" :size="16" />
-                </button>
-                <button class="act" :title="t('action.details')" @click="detailFor = i">
-                  <Icon name="info" :size="16" />
-                </button>
-                <button class="act danger" :title="t('action.delete')" @click="removeOne(i)">
-                  <Icon name="trash" :size="16" />
-                </button>
-              </div>
-            </td>
+          <tr v-for="n in 5" :key="n">
+            <td v-for="c in 10" :key="c"><span class="sk"></span></td>
           </tr>
         </tbody>
       </table>
+      <div v-else-if="loading" class="empty"></div>
+
+      <div v-else class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="tick">
+                <input type="checkbox" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" />
+              </th>
+              <th class="w-id right">ID</th>
+              <th class="w-menu center">{{ t('iface.col.menu') }}</th>
+              <th class="w-enable center">{{ t('table.enabled') }}</th>
+              <th class="w-remark center">{{ t('iface.col.remark') }}</th>
+              <th v-if="hasNodes" class="w-node center">{{ t('iface.col.node') }}</th>
+              <th class="w-port center">{{ t('interface.port') }}</th>
+              <th class="w-proto">{{ t('client.protocol') }}</th>
+              <th class="w-clients">{{ t('nav.clients') }}</th>
+              <th class="w-itraffic center">{{ t('client.traffic') }}</th>
+              <th class="w-speed center">{{ t('client.speed') }}</th>
+              <th class="w-dur center">{{ t('iface.col.duration') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!visible.length" class="empty-row">
+              <td :colspan="hasNodes ? 12 : 11">
+                <div class="card-empty">
+                  <Icon name="server" :size="32" />
+                  <div>{{ t('common.nothingYet') }}</div>
+                  <button v-if="!interfaces.length" class="btn sm primary" @click="formFor = {}">{{ t('iface.menu.add') }}</button>
+                </div>
+              </td>
+            </tr>
+            <tr v-for="i in visible" :key="i.id" :class="{ picked: selected.has(i.id), off: !i.enabled }">
+              <td class="tick">
+                <input type="checkbox" :checked="selected.has(i.id)" :aria-label="i.name" @change="toggleOne(i.id, $event.target.checked)" />
+              </td>
+              <td class="right num">{{ i.id }}</td>
+              <td class="center">
+                <div class="action-buttons center">
+                  <button class="act text" :title="t('action.edit')" @click="formFor = { iface: i }"><Icon name="edit" :size="16" /></button>
+                  <button class="act text" :title="t('action.more')" :aria-expanded="rowMenu?.iface?.id === i.id" @click="openRowMenu(i, $event)"><Icon name="more" :size="16" /></button>
+                </div>
+              </td>
+              <td class="center">
+                <Toggle :model-value="i.enabled" :label="i.name" :loading="isPending(i.id)" @update:model-value="(v) => setEnabled(i, v)" />
+              </td>
+              <td class="center"><span class="remark">{{ i.name }}</span></td>
+              <td v-if="hasNodes" class="center">
+                <span v-if="i.nodeName && !i.nodeLocal" class="tag" :class="i.nodeUp ? 'blue' : 'red'">{{ i.nodeName }}</span>
+                <span v-else class="tag">{{ t('iface.col.localPanel') }}</span>
+              </td>
+              <td class="center num">{{ i.listenPort }}</td>
+              <td>
+                <div class="protocol-tags">
+                  <span class="tag purple">{{ i.protocol }}</span>
+                  <span class="tag green">{{ i.protocol === 'openvpn' ? (i.openvpn?.transport || 'udp').toUpperCase() : 'UDP' }}</span>
+                  <span v-if="i.mode === 'amnezia'" class="tag blue">AmneziaWG</span>
+                </div>
+              </td>
+              <td>
+                <span class="tag count" :title="t('nav.clients')"><Icon name="users" :size="12" /> {{ nf(i.clients) }}</span>
+                <span class="tag green count" :title="t('status.active')">{{ nf(i.active) }}</span>
+                <span v-if="i.disabled" class="tag count" :title="t('status.disabled')">{{ nf(i.disabled) }}</span>
+                <span v-if="i.depleted" class="tag red count" :title="t('stat.depleted')">{{ nf(i.depleted) }}</span>
+                <span v-if="i.online" class="tag blue count" :title="t('status.online')">{{ nf(i.online) }}</span>
+              </td>
+              <td class="center">
+                <span class="tag green num ltr" :title="`↑ ${bytes(i.upBytes || 0, store.locale)}  ↓ ${bytes(i.downBytes || 0, store.locale)}`">
+                  {{ bytes(i.usedBytes, store.locale) }} / ∞
+                </span>
+              </td>
+              <td class="center"><span class="tag num ltr speed-tag">—</span></td>
+              <td class="center"><span class="tag purple">∞</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <Teleport to="body">
+    <div v-if="rowMenu" class="rowmenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
+      <template v-for="(m, idx) in rowItems(rowMenu.iface)" :key="m.key || `d${idx}`">
+        <hr v-if="m.divider" class="menu-divider" />
+        <button v-else class="menu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickRow(rowMenu.iface, m.key)">
+          <Icon :name="m.icon" :size="14" />{{ m.label }}
+        </button>
+      </template>
+    </div>
+  </Teleport>
+
+  <div v-if="textModal" class="modal-backdrop" @click.self="textModal = null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tx-title">
+      <div class="card-head">
+        <h2 id="tx-title">{{ textModal.title }}</h2>
+        <button class="act" :aria-label="t('common.close')" @click="textModal = null"><Icon name="close" :size="16" /></button>
+      </div>
+      <div class="card-body"><div class="field"><textarea class="ltr mono" rows="14" readonly spellcheck="false" :value="textModal.text"></textarea></div></div>
+      <div class="modal-foot">
+        <button type="button" class="btn" @click="textModal = null">{{ t('common.close') }}</button>
+        <button class="btn primary" @click="copyText"><Icon name="copy" :size="14" /><span>{{ t('action.copy') }}</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="importOpen" class="modal-backdrop" @click.self="importOpen = false">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="im-title">
+      <div class="card-head">
+        <h2 id="im-title">{{ t('iface.menu.import') }}</h2>
+        <button class="act" :aria-label="t('common.close')" @click="importOpen = false"><Icon name="close" :size="16" /></button>
+      </div>
+      <div class="card-body"><div class="field"><textarea v-model="importText" class="ltr mono" rows="14" spellcheck="false" placeholder="{ ... }"></textarea></div></div>
+      <div class="modal-foot">
+        <button type="button" class="btn" @click="importOpen = false">{{ t('common.close') }}</button>
+        <button class="btn primary" :disabled="busy || !importText.trim()" @click="runImport">
+          <span v-if="busy" class="spin"></span>
+          <template v-else>{{ t('iface.menu.importBtn') }}</template>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="attach" class="modal-backdrop" @click.self="attach = null">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="at-title">
+      <div class="card-head">
+        <h2 id="at-title">{{ t('iface.menu.attachExisting') }} — {{ attach.iface.name }}</h2>
+        <button class="act" :aria-label="t('common.close')" @click="attach = null"><Icon name="close" :size="16" /></button>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <input v-model="attach.q" :placeholder="t('action.search')" />
+        </div>
+        <ul class="picklist">
+          <li v-for="c in attach.list.filter((x) => !attach.q || x.name.toLowerCase().includes(attach.q.toLowerCase()))" :key="c.id">
+            <label class="pick">
+              <input type="checkbox" :checked="attach.chosen.has(c.id)" @change="toggleAttach(c.id)" />
+              <span class="pick-name">{{ c.name }}</span>
+              <span v-if="c.group" class="tag geekblue">{{ c.group }}</span>
+              <span class="muted small ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
+            </label>
+          </li>
+          <li v-if="!attach.list.length" class="muted small pick">{{ t('common.nothingYet') }}</li>
+        </ul>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" @click="attach = null">{{ t('common.close') }}</button>
+        <button class="btn primary" :disabled="busy || !attach.chosen.size" @click="submitAttach">
+          <span v-if="busy" class="spin"></span>
+          <template v-else>{{ t('iface.menu.attach') }}</template>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -691,6 +908,119 @@ async function submitForm(input) {
 </template>
 
 <style scoped>
+.summary-card {
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+.summary-grid.three {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 16px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-title {
+  font-size: 14px;
+  color: var(--muted);
+}
+.stat-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 24px;
+  line-height: 32px;
+}
+.stat-icon { color: var(--muted); }
+.sep { color: var(--faint); }
+@media (max-width: 760px) { .summary-grid.three { grid-template-columns: 1fr 1fr; } }
+
+.card-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 6px 0;
+}
+.card-toolbar .search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 200px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--faint);
+}
+.card-toolbar .search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+}
+.card-toolbar .search input:focus { outline: none; box-shadow: none; }
+.selchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip-x {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.ifaces-body { padding: 16px; }
+
+/* Their columns and widths. */
+.w-id { width: 60px; }
+.w-menu { width: 70px; }
+.w-enable { width: 80px; }
+.w-remark { width: 90px; }
+.w-node { width: 130px; }
+.w-port { width: 80px; }
+.w-proto { width: 190px; }
+.w-clients { width: 200px; }
+.w-itraffic { width: 140px; }
+.w-speed { width: 110px; }
+.w-dur { width: 100px; }
+th.center, td.center { text-align: center; }
+th.right, td.right { text-align: end; }
+.action-buttons.center {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+.act.text {
+  width: 24px;
+  height: 24px;
+  color: var(--ink);
+}
+.remark { font-weight: 500; }
+.protocol-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tag.count {
+  margin: 0 4px 0 0;
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+.speed-tag { min-width: 72px; }
+tr.off td { opacity: 0.6; }
+
 .strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

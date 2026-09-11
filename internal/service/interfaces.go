@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"net/netip"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -331,6 +332,15 @@ type Load struct {
 	Clients   int64  `json:"clients"`
 	Devices   int64  `json:"devices"`
 	UsedBytes uint64 `json:"usedBytes"`
+	UpBytes   uint64 `json:"upBytes"`
+	DownBytes uint64 `json:"downBytes"`
+	// How the customers on it are doing, the way 3x-ui counts them beside
+	// an inbound: enabled, switched off, out of traffic or time, and seen
+	// in the last few minutes.
+	Active   int64 `json:"active"`
+	Disabled int64 `json:"disabled"`
+	Depleted int64 `json:"depleted"`
+	Online   int64 `json:"online"`
 }
 
 // Loads returns per-interface totals, keyed by interface id.
@@ -362,12 +372,21 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 	var usage []struct {
 		InterfaceID uint
 		Used        uint64
+		Up          uint64
+		Down        uint64
+		Active      int64
+		Disabled    int64
+		Depleted    int64
 	}
 	err = s.db.WithContext(ctx).
 		Table("(?) AS a", s.db.Model(&model.Account{}).
 			Select("DISTINCT client_id, interface_id")).
 		Joins("JOIN clients c ON c.id = a.client_id").
-		Select("a.interface_id AS interface_id, COALESCE(SUM(c.used_bytes), 0) AS used").
+		Select("a.interface_id AS interface_id, COALESCE(SUM(c.used_bytes), 0) AS used, " +
+			"COALESCE(SUM(c.up_bytes), 0) AS up, COALESCE(SUM(c.down_bytes), 0) AS down, " +
+			"SUM(CASE WHEN c.status = 'active' THEN 1 ELSE 0 END) AS active, " +
+			"SUM(CASE WHEN c.status = 'disabled' THEN 1 ELSE 0 END) AS disabled, " +
+			"SUM(CASE WHEN c.status IN ('expired','exhausted') THEN 1 ELSE 0 END) AS depleted").
 		Group("a.interface_id").
 		Scan(&usage).Error
 	if err != nil {
@@ -375,8 +394,27 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 	}
 	for _, u := range usage {
 		l := out[u.InterfaceID]
-		l.UsedBytes = u.Used
+		l.UsedBytes, l.UpBytes, l.DownBytes = u.Used, u.Up, u.Down
+		l.Active, l.Disabled, l.Depleted = u.Active, u.Disabled, u.Depleted
 		out[u.InterfaceID] = l
+	}
+
+	var online []struct {
+		InterfaceID uint
+		N           int64
+	}
+	since := time.Now().Add(-3 * time.Minute)
+	err = s.db.WithContext(ctx).Model(&model.Account{}).
+		Select("interface_id, COUNT(DISTINCT client_id) AS n").
+		Where("last_handshake > ?", since).
+		Group("interface_id").Scan(&online).Error
+	if err != nil {
+		return nil, fmt.Errorf("service: count online: %w", err)
+	}
+	for _, o := range online {
+		l := out[o.InterfaceID]
+		l.Online = o.N
+		out[o.InterfaceID] = l
 	}
 	return out, nil
 }
