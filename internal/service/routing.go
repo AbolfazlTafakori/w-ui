@@ -91,10 +91,52 @@ func (s *Routing) Basic(ctx context.Context) (BasicRouting, error) {
 	out.DirectIPs = splitList(stored[keyDirectIPs])
 	out.DirectDomains = splitList(stored[keyDirectDomains])
 	out.IPv4Domains = splitList(stored[keyIPv4Domains])
-	if v := strings.TrimSpace(stored[keyDefaultOutbound]); v != "" {
-		out.DefaultOutbound = v
-	}
+	// The default is the first outbound in the list, as Xray's is: moving a
+	// hop to the top of the outbounds page makes it carry everything not
+	// matched by a rule. Nothing is stored for it; the order is the setting.
+	out.DefaultOutbound = s.firstOutbound(ctx)
 	return out, nil
+}
+
+// firstOutbound is the tag at the top of the outbounds list -- the default.
+func (s *Routing) firstOutbound(ctx context.Context) string {
+	var ob model.Outbound
+	err := s.db.WithContext(ctx).Order("position, id").Limit(1).Find(&ob).Error
+	if err != nil || ob.ID == 0 {
+		return TagDirect
+	}
+	return ob.Tag
+}
+
+// makeFirst moves an outbound to the top of the list, which is how the
+// default is chosen. A balancer cannot be moved there; it is not a row on
+// that page.
+func (s *Routing) makeFirst(ctx context.Context, tag string) error {
+	var rows []model.Outbound
+	if err := s.db.WithContext(ctx).Order("position, id").Find(&rows).Error; err != nil {
+		return fmt.Errorf("service: read outbounds: %w", err)
+	}
+	ids := make([]uint, 0, len(rows))
+	var chosen uint
+	for _, o := range rows {
+		if o.Tag == tag {
+			chosen = o.ID
+			continue
+		}
+		ids = append(ids, o.ID)
+	}
+	if chosen == 0 {
+		return invalidField("defaultOutbound", "%q is a balancer; the default has to be an outbound. Point a rule at the balancer instead", tag)
+	}
+	ids = append([]uint{chosen}, ids...)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i, id := range ids {
+			if err := tx.Model(&model.Outbound{}).Where("id = ?", id).Update("position", i).Error; err != nil {
+				return fmt.Errorf("service: reorder outbounds: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // SaveBasic validates and stores it.
@@ -154,6 +196,12 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 		return nil
 	}); err != nil {
 		return BasicRouting{}, fmt.Errorf("service: save routing settings: %w", err)
+	}
+	// Choosing the default is moving that outbound to the top of the list.
+	if tag != s.firstOutbound(ctx) {
+		if err := s.makeFirst(ctx, tag); err != nil {
+			return BasicRouting{}, err
+		}
 	}
 
 	s.namesChanged(ctx)

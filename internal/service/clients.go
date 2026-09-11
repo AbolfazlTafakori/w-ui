@@ -549,12 +549,20 @@ func (f ListFilter) orderBy() string {
 	switch f.Sort {
 	case "oldest":
 		return "id ASC"
+	case "updated":
+		return "updated_at DESC"
+	case "online":
+		// The freshest handshake on any of the customer's accounts.
+		return "(SELECT MAX(last_handshake) FROM accounts WHERE accounts.client_id = clients.id) DESC"
 	case "name":
 		return "name ASC"
 	case "name_desc":
 		return "name DESC"
 	case "traffic":
 		return "used_bytes DESC"
+	case "remaining":
+		// Unlimited first, then whoever has the most left.
+		return "CASE WHEN quota_bytes = 0 THEN 1 ELSE 0 END DESC, (quota_bytes - used_bytes) DESC"
 	case "expiry":
 		// Clients with no expiry sort last: an operator scanning by expiry is
 		// looking for what runs out soonest, not for what never will.
@@ -1112,16 +1120,30 @@ func (s *Clients) ResetAllTraffic(ctx context.Context) (int64, error) {
 // DeleteByStatus removes every client in a given state, which is how an
 // operator clears out the customers who never renewed.
 func (s *Clients) DeleteByStatus(ctx context.Context, status model.ClientStatus) (int64, error) {
+	var ids []uint
 	switch status {
 	case model.StatusExhausted, model.StatusExpired, model.StatusDisabled:
+		if err := s.db.WithContext(ctx).Model(&model.Client{}).
+			Where("status = ?", status).Pluck("id", &ids).Error; err != nil {
+			return 0, fmt.Errorf("service: list %s clients: %w", status, err)
+		}
+	case "depleted":
+		// 3x-ui's "depleted": out of traffic or out of time, either one.
+		if err := s.db.WithContext(ctx).Model(&model.Client{}).
+			Where("status IN ?", []model.ClientStatus{model.StatusExhausted, model.StatusExpired}).
+			Pluck("id", &ids).Error; err != nil {
+			return 0, fmt.Errorf("service: list depleted clients: %w", err)
+		}
+	case "unattached":
+		// Customers on no server at all: nothing to hand them, nothing to
+		// bill. What 3x-ui calls orphans.
+		if err := s.db.WithContext(ctx).Model(&model.Client{}).
+			Where("NOT EXISTS (SELECT 1 FROM accounts WHERE accounts.client_id = clients.id)").
+			Pluck("id", &ids).Error; err != nil {
+			return 0, fmt.Errorf("service: list unattached clients: %w", err)
+		}
 	default:
 		return 0, fmt.Errorf("%w: refusing to bulk delete %q clients", ErrInvalid, status)
-	}
-
-	var ids []uint
-	if err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("status = ?", status).Pluck("id", &ids).Error; err != nil {
-		return 0, fmt.Errorf("service: list %s clients: %w", status, err)
 	}
 	if len(ids) == 0 {
 		return 0, nil
