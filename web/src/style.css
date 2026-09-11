@@ -1392,6 +1392,11 @@ pre.config {
   padding: 12px 12px 12px;
   border-bottom: 1px solid var(--line-soft);
 }
+/* Their .toolbar on the nodes page: justify-content: space-between, so the
+   primary sits left and the secondary at the far end. */
+.card-toolbar.spread {
+  justify-content: space-between;
+}
 
 /* Their Table empty state: an icon and one line, sitting inside the table's
    body under the real header so the page keeps its shape. */

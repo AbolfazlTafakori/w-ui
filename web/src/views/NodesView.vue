@@ -338,23 +338,11 @@ function latencyTone(ms) {
 </script>
 
 <template>
-  <div class="page-head">
-    <div>
-      <h1>{{ t('nav.nodes') }}</h1>
-      <p class="lede">{{ t('node.lede') }}</p>
-    </div>
-    <div class="page-actions">
-      <button class="btn ghost" @click="openIssue">
-        <Icon name="key" :size="15" />
-        <span>{{ t('node.issueToken') }}</span>
-      </button>
-      <button class="btn" @click="openAdd">
-        <Icon name="plus" :size="15" />
-        <span>{{ t('node.add') }}</span>
-      </button>
-    </div>
-  </div>
-
+  <!-- No page heading. 3x-ui opens this page straight on the figures, and
+       both controls live in the table's card, where the rows they act on are.
+       Add node takes the primary spot on the left; the token button sits at
+       the far end the way their Node mTLS does -- both are how a node proves
+       itself to this panel, and that is the position they gave that. -->
   <div class="strip card">
     <div class="strip-item">
       <span class="strip-label"><Icon name="server" :size="14" />{{ t('node.total') }}</span>
@@ -376,35 +364,58 @@ function latencyTone(ms) {
     </div>
   </div>
 
-  <table v-if="showSkeleton" class="skeleton card" aria-hidden="true">
-    <tbody>
-      <tr v-for="n in 3" :key="n">
-        <td v-for="c in 8" :key="c"><span class="sk"></span></td>
-      </tr>
-    </tbody>
-  </table>
-  <p v-else-if="loading" class="muted"></p>
-  <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
+  <div class="card">
+    <div class="card-toolbar spread">
+      <button class="btn primary" @click="openAdd">
+        <Icon name="plus" :size="14" />
+        <span>{{ t('node.add') }}</span>
+      </button>
+      <button class="btn" @click="openIssue">
+        <Icon name="key" :size="14" />
+        <span>{{ t('node.issueToken') }}</span>
+      </button>
+    </div>
 
-  <div v-else class="card table-wrap">
+    <table v-if="showSkeleton" class="skeleton" aria-hidden="true">
+      <tbody>
+        <tr v-for="n in 3" :key="n">
+          <td v-for="c in 8" :key="c"><span class="sk"></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-else-if="loading" class="empty"></div>
+    <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
+
+    <!-- Their column order. Enabled is the second column, a switch beside
+         the actions; the readings run left to right from status to heartbeat.
+         The header row stays when there is nothing under it. -->
+    <div v-else class="table-wrap">
     <table>
       <thead>
         <tr>
           <th class="w-gact">{{ t('table.actions') }}</th>
+          <th class="w-sm">{{ t('table.enabled') }}</th>
           <th>{{ t('node.name') }}</th>
           <th>{{ t('node.address') }}</th>
-          <th class="w-md">{{ t('node.transfer') }}</th>
           <th class="w-md">{{ t('node.status') }}</th>
-          <th class="w-sm">{{ t('node.latency') }}</th>
           <th class="w-sm">{{ t('node.cpu') }}</th>
           <th class="w-sm">{{ t('node.mem') }}</th>
-          <th class="w-md">{{ t('node.uptime') }}</th>
-          <th class="w-md">{{ t('node.lastSeen') }}</th>
           <th class="w-md">{{ t('node.version') }}</th>
-          <th class="w-sm">{{ t('table.enabled') }}</th>
+          <th class="w-md">{{ t('node.uptime') }}</th>
+          <th class="w-md">{{ t('node.transfer') }}</th>
+          <th class="w-sm">{{ t('node.latency') }}</th>
+          <th class="w-md">{{ t('node.lastSeen') }}</th>
         </tr>
       </thead>
       <tbody>
+        <tr v-if="!nodes.length" class="empty-row">
+          <td colspan="12">
+            <div class="card-empty">
+              <Icon name="hdd" :size="32" />
+              <div>{{ t('common.nothingYet') }}</div>
+            </div>
+          </td>
+        </tr>
         <tr v-for="n in nodes" :key="n.id">
           <td class="w-gact">
             <div class="actions">
@@ -448,6 +459,16 @@ function latencyTone(ms) {
           </td>
 
           <td>
+            <input
+              type="checkbox"
+              :checked="n.enabled"
+              :disabled="n.kind === 'local' || isPending(n.id)"
+              :aria-label="n.name"
+              @change="toggle(n, $event.target.checked)"
+            />
+          </td>
+
+          <td>
             <span class="nodename">{{ n.name }}</span>
             <!-- The panel's own row is marked, because everything else on it
                  behaves differently and an operator should not wonder why. -->
@@ -476,13 +497,6 @@ function latencyTone(ms) {
 
           <td class="muted small ltr">{{ n.address || '—' }}</td>
 
-          <td class="muted small ltr">
-            <template v-if="n.dataLimitBytes">
-              {{ bytes(n.usedBytes || 0, store.locale) }} / {{ bytes(n.dataLimitBytes, store.locale) }}
-            </template>
-            <template v-else>{{ bytes(n.usedBytes || 0, store.locale) }}</template>
-          </td>
-
           <td>
             <span v-if="n.kind === 'local'" class="tag green"><i class="dot"></i>{{ t('node.running') }}</span>
             <span v-else-if="!n.enabled" class="tag grey">{{ t('status.disabled') }}</span>
@@ -492,37 +506,26 @@ function latencyTone(ms) {
             <span v-else class="tag red" :title="n.lastError">{{ t('node.offline') }}</span>
           </td>
 
+          <td class="num ltr">{{ n.cpuPercent ? n.cpuPercent.toFixed(0) + '%' : '—' }}</td>
+          <td class="num ltr">{{ n.memPercent ? n.memPercent.toFixed(0) + '%' : '—' }}</td>
+          <td class="muted small ltr">{{ n.version || '—' }}</td>
+          <td class="muted small ltr">{{ uptime(n.uptimeSec) }}</td>
+          <td class="muted small ltr">
+            <template v-if="n.dataLimitBytes">
+              {{ bytes(n.usedBytes || 0, store.locale) }} / {{ bytes(n.dataLimitBytes, store.locale) }}
+            </template>
+            <template v-else>{{ bytes(n.usedBytes || 0, store.locale) }}</template>
+          </td>
+
           <td>
             <span v-if="n.kind === 'local'" class="muted">—</span>
             <span v-else class="tag num ltr" :class="latencyTone(n.latencyMs)">{{ n.latencyMs || 0 }} ms</span>
           </td>
 
-          <td class="num ltr">{{ n.cpuPercent ? n.cpuPercent.toFixed(0) + '%' : '—' }}</td>
-          <td class="num ltr">{{ n.memPercent ? n.memPercent.toFixed(0) + '%' : '—' }}</td>
-          <td class="muted small ltr">{{ uptime(n.uptimeSec) }}</td>
           <td class="muted small">{{ n.kind === 'local' ? t('node.justNow') : ago(n.lastSeenAt) }}</td>
-          <td class="muted small ltr">{{ n.version || '—' }}</td>
-
-          <td>
-            <input
-              type="checkbox"
-              :checked="n.enabled"
-              :disabled="n.kind === 'local' || isPending(n.id)"
-              :aria-label="n.name"
-              @change="toggle(n, $event.target.checked)"
-            />
-          </td>
         </tr>
       </tbody>
     </table>
-
-    <div v-if="!remote.length" class="empty empty-cta">
-      <p>{{ t('node.none') }}</p>
-      <p class="small muted">{{ t('node.noneHint') }}</p>
-      <button class="btn" @click="openAdd">
-        <Icon name="plus" :size="15" />
-        <span>{{ t('node.add') }}</span>
-      </button>
     </div>
   </div>
 
