@@ -1102,5 +1102,9 @@
   "outbound.kind.vmess": "vmess",
   "outbound.kind.trojan": "trojan",
   "outbound.kind.shadowsocks": "shadowsocks",
-  "outbound.kind.hysteria": "hysteria2"
+  "outbound.kind.hysteria": "hysteria2",
+  "outbound.form.configFile": "Config file",
+  "outbound.form.uploadConf": "Upload .conf",
+  "outbound.form.uploadConfHint": "A wg-quick file: [Interface] and [Peer]. Fills in everything below.",
+  "outbound.form.uploadOvpn": "Upload .ovpn"
 }

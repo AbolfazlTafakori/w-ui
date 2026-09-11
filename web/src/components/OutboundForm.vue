@@ -742,7 +742,7 @@ async function submit() {
               <div class="hctl">
                 <textarea id="ob-profile" v-model="form.profile" class="ltr mono" rows="10" spellcheck="false" :placeholder="'client\ndev tun\nproto udp\nremote vpn.example.com 1194\n...'"></textarea>
                 <div class="under">
-                  <button type="button" class="btn sm" @click="pickFile"><Icon name="upload" :size="13" /><span>{{ t('outbound.form.uploadFile') }}</span></button>
+                  <button type="button" class="btn" @click="pickFile"><Icon name="upload" :size="14" /><span>{{ t('outbound.form.uploadOvpn') }}</span></button>
                 </div>
                 <p v-if="fieldError.config" class="field-error">{{ fieldError.config }}</p>
               </div>
@@ -757,8 +757,16 @@ async function submit() {
             </div>
           </template>
 
-          <!-- WireGuard: their wireguard block, field for field -->
+          <!-- WireGuard: their wireguard block, field for field, with the
+               .conf upload first: most people have the file, not the fields -->
           <template v-if="isWireGuard">
+            <div class="hrow">
+              <label>{{ t('outbound.form.configFile') }}</label>
+              <div class="hctl">
+                <button type="button" class="btn" @click="pickFile"><Icon name="upload" :size="14" /><span>{{ t('outbound.form.uploadConf') }}</span></button>
+                <span class="hint">{{ t('outbound.form.uploadConfHint') }}</span>
+              </div>
+            </div>
             <div class="hrow">
               <label for="ob-hopaddr">{{ t('outbound.address') }}</label>
               <div class="hctl">

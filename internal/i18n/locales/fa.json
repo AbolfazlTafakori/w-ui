@@ -1102,5 +1102,9 @@
   "outbound.kind.vmess": "vmess",
   "outbound.kind.trojan": "trojan",
   "outbound.kind.shadowsocks": "shadowsocks",
-  "outbound.kind.hysteria": "hysteria2"
+  "outbound.kind.hysteria": "hysteria2",
+  "outbound.form.configFile": "فایل کانفیگ",
+  "outbound.form.uploadConf": "بارگذاری .conf",
+  "outbound.form.uploadConfHint": "فایل wg-quick با [Interface] و [Peer]؛ همه‌ی فیلدهای پایین را پر می‌کند.",
+  "outbound.form.uploadOvpn": "بارگذاری .ovpn"
 }
