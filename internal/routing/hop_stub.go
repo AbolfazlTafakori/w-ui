@@ -17,6 +17,8 @@ type HopSpec struct {
 	Endpoint     string
 	Address      string
 	MTU          int
+	AllowedIPs   []string
+	Keepalive    int
 }
 
 // HopManager is the non-Linux stand-in. WireGuard interfaces are a Linux

@@ -84,6 +84,12 @@ type Outbound struct {
 	PrivateKey   string `gorm:"size:64" json:"-"`
 	PeerPubKey   string `gorm:"size:64" json:"peerPubKey"`
 	PresharedKey string `gorm:"size:64" json:"-"`
+	// AllowedIPs is what the peer is allowed to send us, and so what we
+	// route into it: comma-separated prefixes. Empty means everything.
+	AllowedIPs string `gorm:"size:512" json:"allowedIps"`
+	// Keepalive is the PersistentKeepalive interval in seconds; 0 means
+	// the default of 25, which a hop behind NAT needs.
+	Keepalive int `gorm:"not null;default:0" json:"keepalive"`
 	// HopAddress is the address this server takes inside the upstream tunnel,
 	// as issued by whoever runs it.
 	HopAddress string `gorm:"size:64" json:"hopAddress"`

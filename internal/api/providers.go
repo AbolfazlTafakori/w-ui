@@ -1,9 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
 // ── outbound subscriptions ───────────────────────────────────────────────────
@@ -335,6 +338,43 @@ func (s *Server) handlePIAOutbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"outbound": ob, "renewed": renewed})
+}
+
+// ── keys ─────────────────────────────────────────────────────────────────────
+
+// handleWGKey hands the outbound form a key pair, or the public half of a
+// private key it already has. The private key is echoed back only when it
+// was generated here; one typed in is never repeated by the server.
+func (s *Server) handleWGKey(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		PrivateKey string `json:"privateKey"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.PrivateKey) == "" {
+		pair, err := wgkey.NewPair()
+		if err != nil {
+			fail(w, s.log, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"privateKey": pair.Private.String(),
+			"publicKey":  pair.Public.String(),
+		})
+		return
+	}
+	k, err := wgkey.Parse(strings.TrimSpace(in.PrivateKey))
+	if err != nil {
+		fail(w, s.log, fmt.Errorf("%w: that is not a WireGuard key", service.ErrInvalid))
+		return
+	}
+	pub, err := k.Public()
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"publicKey": pub.String()})
 }
 
 // ── apply ────────────────────────────────────────────────────────────────────

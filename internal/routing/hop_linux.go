@@ -31,6 +31,10 @@ type HopSpec struct {
 	// Address is what the upstream issued this server, with a prefix.
 	Address string
 	MTU     int
+	// AllowedIPs is the peer's allowed prefixes; empty means everything.
+	AllowedIPs []string
+	// Keepalive is the PersistentKeepalive interval; 0 means 25.
+	Keepalive int
 }
 
 // HopManager brings upstream tunnels up and takes them down.
@@ -112,8 +116,13 @@ func (m *HopManager) bring(ctx context.Context, s HopSpec) error {
 		return fmt.Errorf("routing: configure %s: %w", s.Device, err)
 	}
 
-	if s.Address != "" {
-		if _, err := run(ctx, ipBinary, "", "addr", "replace", s.Address,
+	// One address per family is the usual shape; a hop may carry several.
+	for _, addr := range strings.Split(s.Address, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		if _, err := run(ctx, ipBinary, "", "addr", "replace", addr,
 			"dev", s.Device); err != nil {
 			return fmt.Errorf("routing: address %s: %w", s.Device, err)
 		}
@@ -184,8 +193,9 @@ func (m *HopManager) Teardown(ctx context.Context) {
 
 // wgQuickConf renders the tunnel configuration.
 //
-// AllowedIPs is 0.0.0.0/0 because a hop is an exit: everything sent into it
-// should go. The routing rule decides what is sent, not this.
+// AllowedIPs defaults to 0.0.0.0/0 and ::/0 because a hop is an exit:
+// everything sent into it should go. The routing rule decides what is sent,
+// not this; narrowing it is for an upstream that only serves some prefixes.
 //
 // FwMark is the hop's own mark. Without it the encrypted packets this interface
 // emits would match the very routing rule that steers traffic into it, and the
@@ -203,11 +213,19 @@ func (s HopSpec) wgQuickConf() string {
 		fmt.Fprintf(&b, "PresharedKey = %s\n", s.PresharedKey)
 	}
 	fmt.Fprintf(&b, "Endpoint = %s\n", s.Endpoint)
-	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
+	allowed := "0.0.0.0/0, ::/0"
+	if len(s.AllowedIPs) > 0 {
+		allowed = strings.Join(s.AllowedIPs, ", ")
+	}
+	fmt.Fprintf(&b, "AllowedIPs = %s\n", allowed)
 	// A hop usually sits behind NAT at our end. Without a keepalive the far
 	// side's mapping expires and inbound packets stop arriving, which looks
 	// like the exit working for a minute and then dying.
-	b.WriteString("PersistentKeepalive = 25\n")
+	keepalive := s.Keepalive
+	if keepalive <= 0 {
+		keepalive = 25
+	}
+	fmt.Fprintf(&b, "PersistentKeepalive = %d\n", keepalive)
 	return b.String()
 }
 
@@ -215,6 +233,7 @@ func (s HopSpec) fingerprint() string {
 	return strings.Join([]string{
 		s.Device, s.PeerPubKey, s.Endpoint, s.Address,
 		fmt.Sprint(s.MTU), fmt.Sprintf("%08x", s.Mark),
+		strings.Join(s.AllowedIPs, ","), fmt.Sprint(s.Keepalive),
 		// The private and preshared keys are hashed into the fingerprint by
 		// length alone. Their value must not sit in memory in a second place,
 		// and a length change is enough to notice a rotation.

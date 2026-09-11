@@ -276,6 +276,11 @@ func (s *Server) routes() []Route {
 			Note:    "The panel does this on its own every few seconds; this is the same job, done at once.",
 			handler: s.handleApplyRouting},
 
+		{Method: "POST", Path: "/api/wgkey", Group: "Outbounds", Auth: true,
+			Summary: "Make a WireGuard key pair, or derive the public key of a private one.",
+			Body:    `{"privateKey":""}`,
+			handler: s.handleWGKey},
+
 		// ── Outbound subscriptions ──
 		{Method: "GET", Path: "/api/outbound-subs", Group: "Outbounds", Auth: true,
 			Summary: "List the outbound subscriptions.",

@@ -688,6 +688,7 @@ async function runImport() {
     <OutboundForm
       v-if="formFor"
       :outbound="formFor.outbound"
+      :existing-tags="outbounds.map((o) => o.tag)"
       @saved="onSaved"
       @cancel="formFor = null"
     />

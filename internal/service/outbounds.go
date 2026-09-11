@@ -110,6 +110,10 @@ type OutboundInput struct {
 	HopAddress   string `json:"hopAddress"`
 	HopDNS       string `json:"hopDns"`
 	HopMTU       int    `json:"hopMtu"`
+	// AllowedIPs are the peer's prefixes, comma-separated; empty is all.
+	AllowedIPs string `json:"allowedIps"`
+	// Keepalive is the PersistentKeepalive in seconds; 0 is the default.
+	Keepalive int `json:"keepalive"`
 }
 
 // Create adds an outbound.
@@ -139,6 +143,8 @@ func (s *Outbounds) Create(ctx context.Context, in OutboundInput) (*model.Outbou
 		HopAddress:   in.HopAddress,
 		HopDNS:       in.HopDNS,
 		HopMTU:       in.HopMTU,
+		AllowedIPs:   in.AllowedIPs,
+		Keepalive:    in.Keepalive,
 		Note:         in.Note,
 	}
 	if ob.HopMTU == 0 {
@@ -200,6 +206,8 @@ func (s *Outbounds) Update(ctx context.Context, id uint, in OutboundInput) (*mod
 		"peer_pub_key": in.PeerPubKey,
 		"hop_address":  in.HopAddress,
 		"hop_dns":      in.HopDNS,
+		"allowed_ips":  in.AllowedIPs,
+		"keepalive":    in.Keepalive,
 		"note":         strings.TrimSpace(in.Note),
 		"updated_at":   time.Now().UTC(),
 	}
@@ -601,13 +609,43 @@ func (s *Outbounds) validateWireGuard(in *OutboundInput, selfID uint) error {
 		return invalidField("hopAddress",
 			"a WireGuard hop needs the address the upstream issued this server, such as 10.2.0.2/32")
 	}
-	if _, err := netip.ParsePrefix(in.HopAddress); err != nil {
-		if a, aerr := netip.ParseAddr(in.HopAddress); aerr == nil {
-			in.HopAddress = netip.PrefixFrom(a, a.BitLen()).String()
-		} else {
-			return invalidField("hopAddress",
-				"%q is not an address or range; it should look like 10.2.0.2/32", in.HopAddress)
+	// Comma-separated, one per family at most in practice. Each is stored
+	// with its prefix length so `ip addr` gets what it expects.
+	var addrs []string
+	for _, raw := range strings.Split(in.HopAddress, ",") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
 		}
+		if _, err := netip.ParsePrefix(raw); err == nil {
+			addrs = append(addrs, raw)
+			continue
+		}
+		a, err := netip.ParseAddr(raw)
+		if err != nil {
+			return invalidField("hopAddress",
+				"%q is not an address or range; it should look like 10.2.0.2/32", raw)
+		}
+		addrs = append(addrs, netip.PrefixFrom(a, a.BitLen()).String())
+	}
+	in.HopAddress = strings.Join(addrs, ", ")
+
+	if strings.TrimSpace(in.AllowedIPs) != "" {
+		var allowed []string
+		for _, raw := range strings.Split(in.AllowedIPs, ",") {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			if _, err := netip.ParsePrefix(raw); err != nil {
+				return invalidField("allowedIps", "%q is not a range; it should look like 0.0.0.0/0", raw)
+			}
+			allowed = append(allowed, raw)
+		}
+		in.AllowedIPs = strings.Join(allowed, ", ")
+	}
+	if in.Keepalive < 0 || in.Keepalive > 65535 {
+		return invalidField("keepalive", "a keepalive of %d seconds is outside 0 to 65535", in.Keepalive)
 	}
 	if in.HopMTU != 0 && (in.HopMTU < 576 || in.HopMTU > 1500) {
 		return invalidField("hopMtu", "an MTU of %d is outside the usable range of 576 to 1500", in.HopMTU)
@@ -718,6 +756,8 @@ func (s *Outbounds) HopSpecs(ctx context.Context) ([]routing.HopSpec, error) {
 			Endpoint:     o.Address,
 			Address:      o.HopAddress,
 			MTU:          o.HopMTU,
+			AllowedIPs:   splitList(o.AllowedIPs),
+			Keepalive:    o.Keepalive,
 		})
 	}
 	return out, nil
