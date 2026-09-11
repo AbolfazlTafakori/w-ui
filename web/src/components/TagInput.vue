@@ -21,9 +21,22 @@ const emit = defineEmits(['update:modelValue'])
 const draft = ref('')
 const input = ref(null)
 
+// A suggestion is a value, or { value, label } when the value is something
+// like "geoip:ir" and the label the flag and name people know it by.
+function valueOf(s) {
+  return typeof s === 'object' && s !== null ? s.value : s
+}
+function labelOf(s) {
+  return typeof s === 'object' && s !== null ? s.label : s
+}
 const unused = computed(() =>
-  props.suggestions.filter((s) => !props.modelValue.includes(s)),
+  props.suggestions.filter((s) => !props.modelValue.includes(valueOf(s))),
 )
+// The label a chosen value is shown with, when a suggestion carries one.
+function chipLabel(v) {
+  const s = props.suggestions.find((x) => valueOf(x) === v)
+  return s ? labelOf(s) : v
+}
 
 function add(value) {
   const v = String(value ?? draft.value).trim()
@@ -72,7 +85,7 @@ async function focusInput() {
   <div class="taginput" @click="focusInput">
     <div class="chips">
       <span v-for="(v, i) in modelValue" :key="v" class="chip">
-        <span class="ltr">{{ v }}</span>
+        <span class="ltr" :title="v">{{ chipLabel(v) }}</span>
         <button
           type="button"
           class="chip-x"
@@ -100,12 +113,12 @@ async function focusInput() {
       <span class="muted small">{{ t('form.orPick') }}</span>
       <button
         v-for="s in unused"
-        :key="s"
+        :key="valueOf(s)"
         type="button"
         class="chip ghost"
-        @click.stop="add(s)"
+        @click.stop="add(valueOf(s))"
       >
-        <Icon name="plus" :size="11" /> {{ s }}
+        <Icon name="plus" :size="11" /> {{ labelOf(s) }}
       </button>
     </div>
   </div>

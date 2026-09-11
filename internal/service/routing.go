@@ -27,6 +27,7 @@ const (
 	keyDirectIPs       = "routing.directIps"
 	keyDirectDomains   = "routing.directDomains"
 	keyDefaultOutbound = "routing.defaultOutbound"
+	keyIPv4Domains     = "routing.ipv4Domains"
 )
 
 // domainRefresh is how often blocked and pinned names are looked up again.
@@ -46,6 +47,9 @@ type BasicRouting struct {
 	BlockPorts      []string `json:"blockPorts"`
 	DirectIPs       []string `json:"directIps"`
 	DirectDomains   []string `json:"directDomains"`
+	// IPv4Domains are names resolved over IPv4 only and sent direct -- the
+	// row 3x-ui calls IPv4 Routing, for services that misbehave over v6.
+	IPv4Domains     []string `json:"ipv4Domains"`
 	DefaultOutbound string   `json:"defaultOutbound"`
 }
 
@@ -86,6 +90,7 @@ func (s *Routing) Basic(ctx context.Context) (BasicRouting, error) {
 	out.BlockPorts = splitList(stored[keyBlockPorts])
 	out.DirectIPs = splitList(stored[keyDirectIPs])
 	out.DirectDomains = splitList(stored[keyDirectDomains])
+	out.IPv4Domains = splitList(stored[keyIPv4Domains])
 	if v := strings.TrimSpace(stored[keyDefaultOutbound]); v != "" {
 		out.DefaultOutbound = v
 	}
@@ -108,7 +113,7 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 	if _, err := routing.ParsePorts(in.BlockPorts); err != nil {
 		return BasicRouting{}, fieldWrap("blockPorts", err)
 	}
-	for _, d := range append(append([]string{}, in.BlockDomains...), in.DirectDomains...) {
+	for _, d := range append(append(append([]string{}, in.BlockDomains...), in.DirectDomains...), in.IPv4Domains...) {
 		if err := checkDomain(d); err != nil {
 			return BasicRouting{}, err
 		}
@@ -118,16 +123,12 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 	if tag == "" {
 		tag = TagDirect
 	}
-	var ob model.Outbound
-	if err := s.db.WithContext(ctx).Where("tag = ?", tag).Limit(1).
-		Find(&ob).Error; err != nil {
-		return BasicRouting{}, fmt.Errorf("service: check default outbound: %w", err)
-	}
-	if ob.ID == 0 {
+	if enabled, ok, err := s.targetExists(ctx, tag); err != nil {
+		return BasicRouting{}, err
+	} else if !ok {
 		return BasicRouting{}, invalidField("defaultOutbound",
-			"there is no outbound called %q", tag)
-	}
-	if !ob.Enabled {
+			"there is no outbound or balancer called %q", tag)
+	} else if !enabled {
 		return BasicRouting{}, invalidField("defaultOutbound",
 			"%q is switched off; everything not matched by a rule would stop working", tag)
 	}
@@ -139,6 +140,7 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 		keyBlockPorts:      joinList(in.BlockPorts),
 		keyDirectIPs:       joinList(in.DirectIPs),
 		keyDirectDomains:   joinList(in.DirectDomains),
+		keyIPv4Domains:     joinList(in.IPv4Domains),
 		keyDefaultOutbound: tag,
 	}
 
@@ -189,12 +191,38 @@ func (s *Routing) ListRules(ctx context.Context) ([]model.RoutingRule, error) {
 
 // RuleInput is what the form collects.
 type RuleInput struct {
-	Name        string               `json:"name"`
-	Enabled     *bool                `json:"enabled"`
-	Match       model.RouteMatchKind `json:"match"`
-	Value       string               `json:"value"`
-	OutboundTag string               `json:"outboundTag"`
-	Note        string               `json:"note"`
+	Name        string `json:"name"`
+	Enabled     *bool  `json:"enabled"`
+	SourceIPs   string `json:"sourceIps"`
+	SourcePorts string `json:"sourcePorts"`
+	Network     string `json:"network"`
+	DestIPs     string `json:"destIps"`
+	Domains     string `json:"domains"`
+	Ports       string `json:"ports"`
+	Clients     string `json:"clients"`
+	Groups      string `json:"groups"`
+	Interfaces  string `json:"interfaces"`
+	OutboundTag string `json:"outboundTag"`
+	Note        string `json:"note"`
+}
+
+func (in RuleInput) columns() map[string]any {
+	return map[string]any{
+		"name":         in.Name,
+		"source_ips":   in.SourceIPs,
+		"source_ports": in.SourcePorts,
+		"network":      in.Network,
+		"dest_ips":     in.DestIPs,
+		"domains":      in.Domains,
+		"ports":        in.Ports,
+		"clients":      in.Clients,
+		"groups":       in.Groups,
+		"interfaces":   in.Interfaces,
+		"outbound_tag": in.OutboundTag,
+		"note":         strings.TrimSpace(in.Note),
+		"match":        "",
+		"value":        "",
+	}
 }
 
 // CreateRule adds a rule at the end of the list.
@@ -213,8 +241,15 @@ func (s *Routing) CreateRule(ctx context.Context, in RuleInput) (*model.RoutingR
 		Name:        in.Name,
 		Enabled:     in.Enabled == nil || *in.Enabled,
 		Position:    last.Position + 1,
-		Match:       in.Match,
-		Value:       in.Value,
+		SourceIPs:   in.SourceIPs,
+		SourcePorts: in.SourcePorts,
+		Network:     in.Network,
+		DestIPs:     in.DestIPs,
+		Domains:     in.Domains,
+		Ports:       in.Ports,
+		Clients:     in.Clients,
+		Groups:      in.Groups,
+		Interfaces:  in.Interfaces,
 		OutboundTag: in.OutboundTag,
 		Note:        strings.TrimSpace(in.Note),
 	}
@@ -238,14 +273,8 @@ func (s *Routing) UpdateRule(ctx context.Context, id uint, in RuleInput) (*model
 		return nil, err
 	}
 
-	updates := map[string]any{
-		"name":         in.Name,
-		"match":        in.Match,
-		"value":        in.Value,
-		"outbound_tag": in.OutboundTag,
-		"note":         strings.TrimSpace(in.Note),
-		"updated_at":   time.Now().UTC(),
-	}
+	updates := in.columns()
+	updates["updated_at"] = time.Now().UTC()
 	if in.Enabled != nil {
 		updates["enabled"] = *in.Enabled
 	}
@@ -286,69 +315,131 @@ func (s *Routing) ReorderRules(ctx context.Context, ids []uint) error {
 	})
 }
 
+// MigrateRules moves rules stored in the old one-criterion form into the
+// fields. Run once at start; a rule already in the new form is untouched.
+func (s *Routing) MigrateRules(ctx context.Context) error {
+	var rows []model.RoutingRule
+	if err := s.db.WithContext(ctx).Where("match <> ''").Find(&rows).Error; err != nil {
+		return fmt.Errorf("service: read old rules: %w", err)
+	}
+	for _, r := range rows {
+		col := map[model.RouteMatchKind]string{
+			model.MatchDomain:   "domains",
+			model.MatchIP:       "dest_ips",
+			model.MatchPort:     "ports",
+			model.MatchProtocol: "network",
+			model.MatchClient:   "clients",
+			model.MatchGroup:    "groups",
+		}[r.Match]
+		if col == "" {
+			continue
+		}
+		err := s.db.WithContext(ctx).Model(&r).Updates(map[string]any{col: r.Value, "match": "", "value": ""}).Error
+		if err != nil {
+			return fmt.Errorf("service: migrate rule %d: %w", r.ID, err)
+		}
+	}
+	if len(rows) > 0 {
+		s.log.Info("routing rules migrated to the criteria form", "rules", len(rows))
+	}
+	return nil
+}
+
 func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 	in.Name = strings.TrimSpace(in.Name)
-	in.Value = strings.TrimSpace(in.Value)
 	in.OutboundTag = strings.TrimSpace(in.OutboundTag)
+	in.Network = strings.ToLower(strings.TrimSpace(in.Network))
+	for _, f := range []*string{&in.SourceIPs, &in.SourcePorts, &in.DestIPs, &in.Domains, &in.Ports, &in.Clients, &in.Groups, &in.Interfaces} {
+		*f = joinList(splitList(*f))
+	}
 
 	if in.Name == "" {
-		return invalidField("name", "give the rule a name so the list can be read later")
+		return invalidField("name", "give the rule a comment so the list can be read later")
 	}
-	if !in.Match.Valid() {
-		return invalidField("match", "%q is not something a rule can match on", in.Match)
-	}
-	if in.Value == "" {
-		return invalidField("value", "the rule matches nothing as written")
+	if in.SourceIPs == "" && in.SourcePorts == "" && in.Network == "" && in.DestIPs == "" &&
+		in.Domains == "" && in.Ports == "" && in.Clients == "" && in.Groups == "" && in.Interfaces == "" {
+		return invalidField("destIps", "the rule matches nothing as written; fill in at least one criterion")
 	}
 
-	switch in.Match {
-	case model.MatchIP:
-		if _, err := routing.ParseTargets(splitList(in.Value)); err != nil {
-			return fieldWrap("value", err)
+	if _, err := routing.ParseTargets(splitList(in.SourceIPs)); err != nil {
+		return fieldWrap("sourceIps", err)
+	}
+	if _, err := routing.ParseTargets(splitList(in.DestIPs)); err != nil {
+		return fieldWrap("destIps", err)
+	}
+	if _, err := routing.ParsePorts(splitList(in.SourcePorts)); err != nil {
+		return fieldWrap("sourcePorts", err)
+	}
+	if _, err := routing.ParsePorts(splitList(in.Ports)); err != nil {
+		return fieldWrap("ports", err)
+	}
+	switch in.Network {
+	case "", "tcp", "udp", "icmp":
+	default:
+		return invalidField("network", "%q is not a network the router matches; use tcp, udp or icmp", in.Network)
+	}
+	if in.Network == "icmp" && (in.Ports != "" || in.SourcePorts != "") {
+		return invalidField("network", "icmp has no ports; drop the ports or pick tcp or udp")
+	}
+	for _, d := range splitList(in.Domains) {
+		if err := checkDomain(d); err != nil {
+			return fieldWrap("domains", err)
 		}
-	case model.MatchPort:
-		if _, err := routing.ParsePorts(splitList(in.Value)); err != nil {
-			return fieldWrap("value", err)
+	}
+	for _, c := range splitList(in.Clients) {
+		if _, err := strconv.ParseUint(c, 10, 64); err != nil {
+			return invalidField("clients", "a client is named by id here, and %q is not one", c)
 		}
-	case model.MatchProtocol:
-		switch strings.ToLower(in.Value) {
-		case "tcp", "udp", "icmp":
-		default:
-			return invalidField("value", "%q is not a protocol the router matches; use tcp, udp or icmp", in.Value)
-		}
-	case model.MatchDomain:
-		for _, d := range splitList(in.Value) {
-			if err := checkDomain(d); err != nil {
-				return err
-			}
-		}
-	case model.MatchClient:
-		if _, err := strconv.ParseUint(in.Value, 10, 64); err != nil {
-			return invalidField("value", "this rule matches one client by id, and %q is not one", in.Value)
-		}
-	case model.MatchGroup:
-		// A group is a label carried by the client rather than a row of its
-		// own, so the rule stores the name. Checked against what exists so a
-		// typo is caught here rather than becoming a rule that never fires.
+	}
+	for _, g := range splitList(in.Groups) {
 		var n int64
-		if err := s.db.WithContext(ctx).Model(&model.Group{}).
-			Where("name = ?", in.Value).Count(&n).Error; err != nil {
+		if err := s.db.WithContext(ctx).Model(&model.Group{}).Where("name = ?", g).Count(&n).Error; err != nil {
 			return fmt.Errorf("service: check group: %w", err)
 		}
 		if n == 0 {
-			return invalidField("value", "there is no group called %q", in.Value)
+			return invalidField("groups", "there is no group called %q", g)
+		}
+	}
+	for _, i := range splitList(in.Interfaces) {
+		id, err := strconv.ParseUint(i, 10, 64)
+		if err != nil {
+			return invalidField("interfaces", "an inbound is named by id here, and %q is not one", i)
+		}
+		var n int64
+		if err := s.db.WithContext(ctx).Model(&model.Interface{}).Where("id = ?", id).Count(&n).Error; err != nil {
+			return fmt.Errorf("service: check interface: %w", err)
+		}
+		if n == 0 {
+			return invalidField("interfaces", "there is no inbound with id %s", i)
 		}
 	}
 
-	var ob model.Outbound
-	if err := s.db.WithContext(ctx).Where("tag = ?", in.OutboundTag).Limit(1).
-		Find(&ob).Error; err != nil {
-		return fmt.Errorf("service: check rule outbound: %w", err)
-	}
-	if ob.ID == 0 {
-		return invalidField("outboundTag", "there is no outbound called %q", in.OutboundTag)
+	if _, ok, err := s.targetExists(ctx, in.OutboundTag); err != nil {
+		return err
+	} else if !ok {
+		return invalidField("outboundTag", "there is no outbound or balancer called %q", in.OutboundTag)
 	}
 	return nil
+}
+
+// targetExists reports whether a tag names an outbound or a balancer, and
+// whether that one is enabled.
+func (s *Routing) targetExists(ctx context.Context, tag string) (enabled, ok bool, err error) {
+	var ob model.Outbound
+	if err := s.db.WithContext(ctx).Where("tag = ?", tag).Limit(1).Find(&ob).Error; err != nil {
+		return false, false, fmt.Errorf("service: check rule outbound: %w", err)
+	}
+	if ob.ID != 0 {
+		return ob.Enabled, true, nil
+	}
+	var bl model.Balancer
+	if err := s.db.WithContext(ctx).Where("tag = ?", tag).Limit(1).Find(&bl).Error; err != nil {
+		return false, false, fmt.Errorf("service: check rule balancer: %w", err)
+	}
+	if bl.ID != 0 {
+		return bl.Enabled, true, nil
+	}
+	return false, false, nil
 }
 
 // ── building the policy ──────────────────────────────────────────────────────
@@ -381,6 +472,16 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	for _, d := range basic.DirectDomains {
 		p.DirectAddrs = append(p.DirectAddrs, s.resolved[d]...)
 	}
+	// IPv4 Routing: those names' IPv4 addresses go direct, so a service
+	// that misbehaves over IPv6 reaches the customer over the server's own
+	// v4 address.
+	for _, d := range basic.IPv4Domains {
+		for _, pfx := range s.resolved[d] {
+			if pfx.Addr().Is4() {
+				p.DirectAddrs = append(p.DirectAddrs, pfx)
+			}
+		}
+	}
 	s.mu.RUnlock()
 
 	db := s.db.WithContext(ctx)
@@ -402,9 +503,18 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	if err := db.Order("position, id").Find(&outbounds).Error; err != nil {
 		return p, fmt.Errorf("service: read outbounds: %w", err)
 	}
-	byTag := make(map[string]model.Outbound, len(outbounds))
+	// Where a tag sends traffic: the mark to set, whether it drops, and
+	// whether it is switched on. Outbounds and balancers share the space.
+	type target struct {
+		mark    uint32
+		drop    bool
+		enabled bool
+	}
+	byTag := make(map[string]target, len(outbounds))
+	byOutbound := make(map[string]model.Outbound, len(outbounds))
 	for _, o := range outbounds {
-		byTag[o.Tag] = o
+		byOutbound[o.Tag] = o
+		byTag[o.Tag] = target{mark: o.Mark, drop: o.Kind == model.OutboundBlock, enabled: o.Enabled}
 		if o.Kind.NeedsHop() && o.Mark != 0 {
 			_, table, err := routing.AllocateMark(o.ID)
 			if err != nil {
@@ -420,8 +530,29 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 		}
 	}
 
-	if def, ok := byTag[basic.DefaultOutbound]; ok && def.Enabled {
-		p.DefaultMark = def.Mark
+	var balancers []model.Balancer
+	if err := db.Order("id").Find(&balancers).Error; err != nil {
+		return p, fmt.Errorf("service: read balancers: %w", err)
+	}
+	for _, b := range balancers {
+		if b.Mark == 0 {
+			continue
+		}
+		_, table, err := routing.AllocateMark(balancerMarkID(b.ID))
+		if err != nil {
+			continue
+		}
+		hop := routing.Hop{Tag: b.Tag, Mark: b.Mark, Table: table, Enabled: b.Enabled}
+		hop.Nexthops = s.balancerDevices(b, byOutbound)
+		if len(hop.Nexthops) == 1 {
+			hop.Device, hop.Nexthops = hop.Nexthops[0], nil
+		}
+		p.Hops = append(p.Hops, hop)
+		byTag[b.Tag] = target{mark: b.Mark, enabled: b.Enabled && (hop.Device != "" || len(hop.Nexthops) > 0)}
+	}
+
+	if def, ok := byTag[basic.DefaultOutbound]; ok && def.enabled {
+		p.DefaultMark = def.mark
 	}
 
 	rules, err := s.ListRules(ctx)
@@ -432,16 +563,16 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 		if !r.Enabled {
 			continue
 		}
-		ob, ok := byTag[r.OutboundTag]
-		if !ok || !ob.Enabled {
+		tg, ok := byTag[r.OutboundTag]
+		if !ok || !tg.enabled {
 			// A rule pointing at an outbound that is gone or switched off is
 			// skipped rather than applied as a drop. Silently discarding a
 			// customer's traffic because an operator disabled a hop is the
 			// worst of the available behaviours.
 			continue
 		}
-		mr := routing.MarkRule{Mark: ob.Mark, Drop: ob.Kind == model.OutboundBlock}
-		if !s.fillMatch(ctx, &mr, r) {
+		mr := routing.MarkRule{Mark: tg.mark, Drop: tg.drop}
+		if !s.fillMatch(ctx, &mr, r, ifaces) {
 			continue
 		}
 		p.Rules = append(p.Rules, mr)
@@ -450,35 +581,103 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	return p, nil
 }
 
-// fillMatch turns a stored rule into a kernel match. It reports whether the
-// rule ended up matching anything at all.
-func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.RoutingRule) bool {
-	switch r.Match {
-	case model.MatchIP:
-		mr.Addrs, _ = routing.ParseTargets(splitList(r.Value))
-		return len(mr.Addrs) > 0
+// balancerDevices is the devices a balancer's traffic may leave through:
+// its enabled members that have one, or -- for leastPing -- only the one
+// that answered the last check fastest.
+func (s *Routing) balancerDevices(b model.Balancer, byOutbound map[string]model.Outbound) []string {
+	var devs []string
+	var best *model.Outbound
+	for _, tag := range splitList(b.Members) {
+		o, ok := byOutbound[tag]
+		if !ok || !o.Enabled || hopDevice(o) == "" || o.LastError != "" {
+			continue
+		}
+		if b.Strategy == model.BalancerLeastPing {
+			if o.LatencyMS > 0 && (best == nil || o.LatencyMS < best.LatencyMS) {
+				oc := o
+				best = &oc
+			}
+			continue
+		}
+		devs = append(devs, hopDevice(o))
+	}
+	if b.Strategy == model.BalancerLeastPing && best != nil {
+		return []string{hopDevice(*best)}
+	}
+	return devs
+}
 
-	case model.MatchDomain:
+// balancerMarkID keeps balancer marks clear of outbound marks: the two
+// share one 16-bit space, so balancers live in its upper half.
+func balancerMarkID(id uint) uint { return 0x8000 + id }
+
+// fillMatch turns a stored rule into a kernel match. It reports whether the
+// rule ended up matching anything at all: a criterion that names something
+// which resolves to nothing -- a domain the resolver has not seen, a group
+// with no customers -- makes the whole rule match nothing, rather than
+// being dropped from the conjunction and widening it.
+func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.RoutingRule, ifaces []model.Interface) bool {
+	if r.DestIPs != "" {
+		mr.Addrs, _ = routing.ParseTargets(splitList(r.DestIPs))
+		if len(mr.Addrs) == 0 {
+			return false
+		}
+	}
+	if r.Domains != "" {
 		s.mu.RLock()
-		for _, d := range splitList(r.Value) {
-			mr.Addrs = append(mr.Addrs, s.resolved[d]...)
+		var got []netip.Prefix
+		for _, d := range splitList(r.Domains) {
+			got = append(got, s.resolved[d]...)
 		}
 		s.mu.RUnlock()
-		return len(mr.Addrs) > 0
-
-	case model.MatchPort:
-		mr.Ports, _ = routing.ParsePorts(splitList(r.Value))
-		return len(mr.Ports) > 0
-
-	case model.MatchProtocol:
-		mr.Protocol = strings.ToLower(r.Value)
-		return mr.Protocol != ""
-
-	case model.MatchClient, model.MatchGroup:
-		mr.Sources = s.addressesFor(ctx, r)
-		return len(mr.Sources) > 0
+		if len(got) == 0 {
+			return false
+		}
+		mr.Addrs = append(mr.Addrs, got...)
 	}
-	return false
+	if r.Ports != "" {
+		mr.Ports, _ = routing.ParsePorts(splitList(r.Ports))
+		if len(mr.Ports) == 0 {
+			return false
+		}
+	}
+	if r.SourcePorts != "" {
+		mr.SourcePorts, _ = routing.ParsePorts(splitList(r.SourcePorts))
+		if len(mr.SourcePorts) == 0 {
+			return false
+		}
+	}
+	mr.Protocol = strings.ToLower(r.Network)
+	if r.SourceIPs != "" {
+		mr.Sources, _ = routing.ParseTargets(splitList(r.SourceIPs))
+		if len(mr.Sources) == 0 {
+			return false
+		}
+	}
+	if r.Clients != "" || r.Groups != "" {
+		addrs := s.addressesFor(ctx, r)
+		if len(addrs) == 0 {
+			return false
+		}
+		for _, a := range addrs {
+			mr.Sources = append(mr.Sources, netip.PrefixFrom(a, a.BitLen()))
+		}
+	}
+	if r.Interfaces != "" {
+		byID := map[string]string{}
+		for _, i := range ifaces {
+			byID[strconv.FormatUint(uint64(i.ID), 10)] = i.Name
+		}
+		for _, id := range splitList(r.Interfaces) {
+			if name := byID[id]; name != "" {
+				mr.Inbounds = append(mr.Inbounds, name)
+			}
+		}
+		if len(mr.Inbounds) == 0 {
+			return false
+		}
+	}
+	return !mr.Empty()
 }
 
 // addressesFor resolves a client or group rule to the tunnel addresses it
@@ -487,14 +686,18 @@ func (s *Routing) addressesFor(ctx context.Context, r model.RoutingRule) []netip
 	q := s.db.WithContext(ctx).Model(&model.Account{}).
 		Joins("JOIN clients ON clients.id = accounts.client_id")
 
-	if r.Match == model.MatchClient {
-		id, err := strconv.ParseUint(r.Value, 10, 64)
-		if err != nil {
-			return nil
-		}
-		q = q.Where("accounts.client_id = ?", id)
-	} else {
-		q = q.Where("clients.\"group\" = ?", r.Value)
+	// Customers named directly, or through a group -- either way in.
+	ids := splitList(r.Clients)
+	groups := splitList(r.Groups)
+	switch {
+	case len(ids) > 0 && len(groups) > 0:
+		q = q.Where("accounts.client_id IN ? OR clients.\"group\" IN ?", ids, groups)
+	case len(ids) > 0:
+		q = q.Where("accounts.client_id IN ?", ids)
+	case len(groups) > 0:
+		q = q.Where("clients.\"group\" IN ?", groups)
+	default:
+		return nil
 	}
 
 	var addrs []string
@@ -557,13 +760,13 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 	}
 
 	names := map[string]bool{}
-	for _, d := range append(append([]string{}, basic.BlockDomains...), basic.DirectDomains...) {
+	for _, d := range append(append(append([]string{}, basic.BlockDomains...), basic.DirectDomains...), basic.IPv4Domains...) {
 		names[d] = true
 	}
 	if rules, err := s.ListRules(ctx); err == nil {
 		for _, r := range rules {
-			if r.Match == model.MatchDomain && r.Enabled {
-				for _, d := range splitList(r.Value) {
+			if r.Enabled {
+				for _, d := range splitList(r.Domains) {
 					names[d] = true
 				}
 			}
@@ -656,6 +859,10 @@ type RouteTest struct {
 	Port     int    `json:"port"`
 	Protocol string `json:"protocol"`
 	ClientID uint   `json:"clientId"`
+	// InterfaceID is the inbound the connection arrives on, when it matters.
+	InterfaceID uint `json:"interfaceId"`
+	// SourceIP is the customer's tunnel address, when known.
+	SourceIP string `json:"sourceIp"`
 }
 
 // RouteAnswer is what the router would decide, and why.
@@ -670,6 +877,9 @@ type RouteAnswer struct {
 	// rather than left to the page to find by name: two rules may share a name,
 	// and the one the operator needs to look at is a particular row.
 	RuleID uint `json:"ruleId,omitempty"`
+	// Balancer is set when the outbound is one, with the member it would
+	// pick for this flow -- the fastest for leastPing, else one of them.
+	Balancer string `json:"balancer,omitempty"`
 }
 
 // TestRoute answers where a connection would be sent, without sending one.
@@ -766,6 +976,7 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 			ans.Blocked = r.OutboundTag == TagBlocked
 			ans.RuleID = r.ID
 			note("first matching rule: %s", r.Name)
+			s.resolveBalancer(ctx, ans)
 			return ans, nil
 		}
 	}
@@ -773,46 +984,120 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 	// 5. Whatever carries the rest.
 	ans.Outbound = basic.DefaultOutbound
 	ans.Reason = "no rule matched, so the default outbound carries it"
+	s.resolveBalancer(ctx, ans)
 	return ans, nil
+}
+
+// resolveBalancer, when the answer names a balancer, says which member it
+// would send this flow to.
+func (s *Routing) resolveBalancer(ctx context.Context, ans *RouteAnswer) {
+	var b model.Balancer
+	if err := s.db.WithContext(ctx).Where("tag = ?", ans.Outbound).Limit(1).Find(&b).Error; err != nil || b.ID == 0 {
+		return
+	}
+	var outbounds []model.Outbound
+	_ = s.db.WithContext(ctx).Find(&outbounds).Error
+	byOutbound := map[string]model.Outbound{}
+	byDevice := map[string]string{}
+	for _, o := range outbounds {
+		byOutbound[o.Tag] = o
+		if d := hopDevice(o); d != "" {
+			byDevice[d] = o.Tag
+		}
+	}
+	devs := s.balancerDevices(b, byOutbound)
+	ans.Balancer = b.Tag
+	if len(devs) == 0 {
+		ans.Outbound = ""
+		ans.Reason += "; the balancer has no member that is up"
+		return
+	}
+	ans.Outbound = byDevice[devs[0]]
+	if len(devs) > 1 {
+		ans.Steps = append(ans.Steps, fmt.Sprintf("balancer %s spreads flows over %s", b.Tag, strings.Join(devs, ", ")))
+	}
 }
 
 func (s *Routing) ruleMatches(
 	ctx context.Context, r model.RoutingRule, addrs []netip.Addr, in RouteTest,
 ) bool {
-	switch r.Match {
-	case model.MatchIP:
-		ps, _ := routing.ParseTargets(splitList(r.Value))
-		_, hit := firstMatch(addrs, ps)
-		return hit
-	case model.MatchDomain:
-		s.mu.RLock()
+	if r.DestIPs != "" || r.Domains != "" {
 		var ps []netip.Prefix
-		for _, d := range splitList(r.Value) {
+		if r.DestIPs != "" {
+			ps, _ = routing.ParseTargets(splitList(r.DestIPs))
+		}
+		s.mu.RLock()
+		for _, d := range splitList(r.Domains) {
 			ps = append(ps, s.resolved[d]...)
 		}
 		s.mu.RUnlock()
-		_, hit := firstMatch(addrs, ps)
-		return hit
-	case model.MatchPort:
-		ports, _ := routing.ParsePorts(splitList(r.Value))
-		return in.Port > 0 && portMatches(ports, in.Port)
-	case model.MatchProtocol:
-		return in.Protocol != "" && strings.EqualFold(r.Value, in.Protocol)
-	case model.MatchClient:
-		id, err := strconv.ParseUint(r.Value, 10, 64)
-		return err == nil && in.ClientID != 0 && uint(id) == in.ClientID
-	case model.MatchGroup:
+		if _, hit := firstMatch(addrs, ps); !hit {
+			return false
+		}
+	}
+	if r.Ports != "" {
+		ports, _ := routing.ParsePorts(splitList(r.Ports))
+		if in.Port <= 0 || !portMatches(ports, in.Port) {
+			return false
+		}
+	}
+	if r.SourcePorts != "" {
+		// The tester has no source port to offer; a rule that needs one
+		// cannot be shown to match here.
+		return false
+	}
+	if r.Network != "" && !strings.EqualFold(r.Network, in.Protocol) {
+		return false
+	}
+	if r.SourceIPs != "" {
+		src, err := netip.ParseAddr(strings.TrimSpace(in.SourceIP))
+		if err != nil {
+			return false
+		}
+		ps, _ := routing.ParseTargets(splitList(r.SourceIPs))
+		if _, hit := firstMatch([]netip.Addr{src.Unmap()}, ps); !hit {
+			return false
+		}
+	}
+	if r.Clients != "" || r.Groups != "" {
 		if in.ClientID == 0 {
 			return false
 		}
-		var c model.Client
-		if err := s.db.WithContext(ctx).Select("\"group\"").
-			First(&c, in.ClientID).Error; err != nil {
+		ok := false
+		for _, c := range splitList(r.Clients) {
+			if id, err := strconv.ParseUint(c, 10, 64); err == nil && uint(id) == in.ClientID {
+				ok = true
+			}
+		}
+		if !ok && r.Groups != "" {
+			var c model.Client
+			if err := s.db.WithContext(ctx).Select("\"group\"").First(&c, in.ClientID).Error; err == nil {
+				for _, g := range splitList(r.Groups) {
+					if c.Group != "" && c.Group == g {
+						ok = true
+					}
+				}
+			}
+		}
+		if !ok {
 			return false
 		}
-		return c.Group != "" && c.Group == r.Value
 	}
-	return false
+	if r.Interfaces != "" {
+		if in.InterfaceID == 0 {
+			return false
+		}
+		ok := false
+		for _, i := range splitList(r.Interfaces) {
+			if id, err := strconv.ParseUint(i, 10, 64); err == nil && uint(id) == in.InterfaceID {
+				ok = true
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // ── small helpers ────────────────────────────────────────────────────────────

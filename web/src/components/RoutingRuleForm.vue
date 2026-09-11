@@ -4,10 +4,21 @@ import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
+import MultiSelect from './MultiSelect.vue'
+
+// The rule dialog, laid out the way 3x-ui's is: a 780px horizontal form
+// with Enabled, Comment, then the criteria in their order -- Source IPs,
+// Source Port, Network, IPs, Domains, User, Port, Inbound tags -- and where
+// it goes: Outbound tag or Balancer. Every criterion filled in has to
+// match, which is how an Xray rule reads.
+//
+// Their VLESS Route, sniffed Protocol and Attributes are not here: those
+// read fields inside the connection that a kernel router never sees.
 
 const props = defineProps({
   rule: { type: Object, default: null },
   outbounds: { type: Array, default: () => [] },
+  balancers: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['saved', 'cancel'])
 
@@ -17,76 +28,110 @@ const fieldError = ref({})
 const formError = ref('')
 const groups = ref([])
 const clients = ref([])
+const interfaces = ref([])
 
 const form = ref({
   name: '',
   enabled: true,
-  match: 'domain',
-  value: '',
-  outboundTag: 'direct',
+  sourceIps: '',
+  sourcePorts: '',
+  network: '',
+  destIps: '',
+  domains: '',
+  ports: '',
+  clients: [],
+  groups: [],
+  interfaces: [],
+  outboundTag: '',
+  balancerTag: '',
   note: '',
 })
 
-const matches = ['domain', 'ip', 'port', 'protocol', 'client', 'group']
+const NETWORKS = ['', 'tcp', 'udp', 'icmp']
 
-// What the value field should look like depends entirely on what is being
-// matched. One generic text box for all six would make four of them guesswork.
-const valueKind = computed(() => {
-  switch (form.value.match) {
-    case 'protocol':
-      return 'protocol'
-    case 'client':
-      return 'client'
-    case 'group':
-      return 'group'
-    default:
-      return 'text'
-  }
-})
-
-const placeholder = computed(
-  () =>
-    ({
-      domain: 'netflix.com, example.org',
-      ip: '8.8.8.0/24, private',
-      port: '443, 6881-6889',
-    })[form.value.match] || '',
-)
+const split = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean)
 
 onMounted(async () => {
-  if (props.rule) Object.assign(form.value, props.rule)
-
-  // Only fetched for the two matches that need a list to pick from.
+  if (props.rule) {
+    const r = props.rule
+    const isBalancer = props.balancers.some((b) => b.tag === r.outboundTag)
+    Object.assign(form.value, {
+      name: r.name,
+      enabled: r.enabled,
+      sourceIps: r.sourceIps || '',
+      sourcePorts: r.sourcePorts || '',
+      network: r.network || '',
+      destIps: r.destIps || '',
+      domains: r.domains || '',
+      ports: r.ports || '',
+      clients: split(r.clients),
+      groups: split(r.groups),
+      interfaces: split(r.interfaces),
+      outboundTag: isBalancer ? '' : r.outboundTag,
+      balancerTag: isBalancer ? r.outboundTag : '',
+      note: r.note || '',
+    })
+  } else if (props.outbounds.length) {
+    form.value.outboundTag = props.outbounds[0].tag
+  }
   try {
-    const [g, c] = await Promise.all([
+    const [g, c, i] = await Promise.all([
       api.get('/api/groups', { background: true }).catch(() => []),
-      api.get('/api/clients?limit=500', { background: true }).catch(() => null),
+      api.get('/api/clients?perPage=500', { background: true }).catch(() => ({ items: [] })),
+      api.get('/api/interfaces', { background: true }).catch(() => []),
     ])
-    groups.value = Array.isArray(g) ? g : g?.groups || []
-    clients.value = c?.clients || (Array.isArray(c) ? c : [])
+    groups.value = Array.isArray(g) ? g : g.items || []
+    clients.value = Array.isArray(c) ? c : c.items || []
+    interfaces.value = Array.isArray(i) ? i : i.items || []
   } catch {
-    // The fields fall back to free text, so this failing is survivable.
+    /* the lists are a convenience; typing still works */
   }
 })
 
 watch(
-  () => form.value.match,
+  () => ({ ...form.value }),
   () => {
-    // A value written for one kind of match is meaningless for another, so it
-    // is cleared rather than carried over and rejected on save.
-    if (!editing.value || form.value.match !== props.rule?.match) form.value.value = ''
     fieldError.value = {}
+    formError.value = ''
   },
+  { deep: true },
 )
+
+const clientOptions = computed(() => clients.value.map((c) => ({ value: String(c.id), label: c.name })))
+const groupOptions = computed(() => groups.value.map((g) => ({ value: g.name, label: g.name })))
+const interfaceOptions = computed(() =>
+  interfaces.value.map((i) => ({ value: String(i.id), label: i.name, tags: [{ text: t(`protocol.${i.protocol}`), kind: 'proto' }] })),
+)
+
+// Outbound and balancer are one target: picking one clears the other, the
+// way theirs treats them.
+watch(() => form.value.balancerTag, (v) => { if (v) form.value.outboundTag = '' })
+watch(() => form.value.outboundTag, (v) => { if (v) form.value.balancerTag = '' })
 
 async function submit() {
   busy.value = true
   fieldError.value = {}
   formError.value = ''
+  const f = form.value
+  const body = {
+    name: f.name,
+    enabled: f.enabled,
+    sourceIps: f.sourceIps,
+    sourcePorts: f.sourcePorts,
+    network: f.network,
+    destIps: f.destIps,
+    domains: f.domains,
+    ports: f.ports,
+    clients: f.clients.join(', '),
+    groups: f.groups.join(', '),
+    interfaces: f.interfaces.join(', '),
+    outboundTag: f.balancerTag || f.outboundTag,
+    note: f.note,
+  }
   try {
     const saved = props.rule
-      ? await api.patch(`/api/routing/rules/${props.rule.id}`, form.value)
-      : await api.post('/api/routing/rules', form.value)
+      ? await api.patch(`/api/routing/rules/${props.rule.id}`, body)
+      : await api.post('/api/routing/rules', body)
     notify(editing.value ? t('routing.ruleUpdated') : t('routing.ruleCreated'), 'success')
     emit('saved', saved)
   } catch (err) {
@@ -116,7 +161,6 @@ async function submit() {
             <label>{{ t('table.enabled') }}</label>
             <div class="hctl"><Toggle v-model="form.enabled" :label="t('table.enabled')" /></div>
           </div>
-
           <div class="hrow">
             <label for="rr-name">{{ t('routing.col.comment') }}</label>
             <div class="hctl">
@@ -126,41 +170,75 @@ async function submit() {
           </div>
 
           <div class="hrow">
-            <label for="rr-match">{{ t('routing.rule.match') }}</label>
+            <label for="rr-src" :title="t('routing.rule.useComma')">{{ t('routing.rule.sourceIps') }} <Icon name="info" :size="12" /></label>
             <div class="hctl">
-              <select id="rr-match" v-model="form.match">
-                <option v-for="m in matches" :key="m" :value="m">{{ t(`routing.match.${m}`) }}</option>
-              </select>
-              <p v-if="fieldError.match" class="field-error">{{ fieldError.match }}</p>
+              <input id="rr-src" v-model="form.sourceIps" class="ltr" placeholder="0.0.0.0/8, fc00::/7, geoip:ir" autocomplete="off" spellcheck="false" />
+              <p v-if="fieldError.sourceIps" class="field-error">{{ fieldError.sourceIps }}</p>
             </div>
           </div>
-
           <div class="hrow">
-            <label for="rr-value" :title="t('routing.rule.useComma')">{{ t(`routing.match.${form.match}`) }}</label>
+            <label for="rr-sport" :title="t('routing.rule.useComma')">{{ t('routing.rule.sourcePort') }} <Icon name="info" :size="12" /></label>
             <div class="hctl">
-              <select v-if="valueKind === 'protocol'" id="rr-value" v-model="form.value">
-                <option value="tcp">tcp</option>
-                <option value="udp">udp</option>
-                <option value="icmp">icmp</option>
-              </select>
-              <select v-else-if="valueKind === 'group'" id="rr-value" v-model="form.value">
-                <option value="" disabled>{{ t('form.choose') }}</option>
-                <option v-for="g in groups" :key="g.id || g.name" :value="g.name">{{ g.name }}</option>
-              </select>
-              <select v-else-if="valueKind === 'client'" id="rr-value" v-model="form.value">
-                <option value="" disabled>{{ t('form.choose') }}</option>
-                <option v-for="c in clients" :key="c.id" :value="String(c.id)">{{ c.name }}</option>
-              </select>
-              <input v-else id="rr-value" v-model="form.value" class="ltr" autocomplete="off" :placeholder="placeholder" />
-              <span class="hint">{{ t(`routing.rule.valueHint.${form.match}`) }}</span>
-              <p v-if="fieldError.value" class="field-error">{{ fieldError.value }}</p>
+              <input id="rr-sport" v-model="form.sourcePorts" class="ltr" placeholder="53,443,1000-2000" autocomplete="off" spellcheck="false" />
+              <p v-if="fieldError.sourcePorts" class="field-error">{{ fieldError.sourcePorts }}</p>
             </div>
           </div>
-
+          <div class="hrow">
+            <label for="rr-net">{{ t('routing.col.network') }}</label>
+            <div class="hctl">
+              <select id="rr-net" v-model="form.network">
+                <option v-for="n in NETWORKS" :key="n" :value="n">{{ n || '(any)' }}</option>
+              </select>
+              <p v-if="fieldError.network" class="field-error">{{ fieldError.network }}</p>
+            </div>
+          </div>
+          <div class="hrow">
+            <label for="rr-dest" :title="t('routing.rule.useComma')">IP <Icon name="info" :size="12" /></label>
+            <div class="hctl">
+              <input id="rr-dest" v-model="form.destIps" class="ltr" placeholder="0.0.0.0/8, fc00::/7, geoip:ir" autocomplete="off" spellcheck="false" />
+              <p v-if="fieldError.destIps" class="field-error">{{ fieldError.destIps }}</p>
+            </div>
+          </div>
+          <div class="hrow">
+            <label for="rr-dom" :title="t('routing.rule.useComma')">{{ t('routing.rule.domain') }} <Icon name="info" :size="12" /></label>
+            <div class="hctl">
+              <input id="rr-dom" v-model="form.domains" class="ltr" placeholder="google.com, example.org" autocomplete="off" spellcheck="false" />
+              <p v-if="fieldError.domains" class="field-error">{{ fieldError.domains }}</p>
+            </div>
+          </div>
+          <div class="hrow">
+            <label :title="t('routing.rule.useComma')">{{ t('routing.rule.user') }} <Icon name="info" :size="12" /></label>
+            <div class="hctl">
+              <MultiSelect v-model="form.clients" :options="clientOptions" :placeholder="t('routing.rule.userPlaceholder')" />
+              <p v-if="fieldError.clients" class="field-error">{{ fieldError.clients }}</p>
+            </div>
+          </div>
+          <div class="hrow">
+            <label>{{ t('client.group') }}</label>
+            <div class="hctl">
+              <MultiSelect v-model="form.groups" :options="groupOptions" :placeholder="t('client.group')" />
+              <p v-if="fieldError.groups" class="field-error">{{ fieldError.groups }}</p>
+            </div>
+          </div>
+          <div class="hrow">
+            <label for="rr-port" :title="t('routing.rule.useComma')">{{ t('outbound.form.port') }} <Icon name="info" :size="12" /></label>
+            <div class="hctl">
+              <input id="rr-port" v-model="form.ports" class="ltr" placeholder="53,443,1000-2000" autocomplete="off" spellcheck="false" />
+              <p v-if="fieldError.ports" class="field-error">{{ fieldError.ports }}</p>
+            </div>
+          </div>
+          <div class="hrow">
+            <label>{{ t('routing.rule.inboundTags') }}</label>
+            <div class="hctl">
+              <MultiSelect v-model="form.interfaces" :options="interfaceOptions" :placeholder="t('routing.rule.inboundTags')" />
+              <p v-if="fieldError.interfaces" class="field-error">{{ fieldError.interfaces }}</p>
+            </div>
+          </div>
           <div class="hrow">
             <label for="rr-ob">{{ t('routing.rule.outboundTag') }}</label>
             <div class="hctl">
               <select id="rr-ob" v-model="form.outboundTag">
+                <option value="">(none)</option>
                 <option v-for="o in outbounds" :key="o.id" :value="o.tag" :disabled="!o.enabled">
                   {{ o.tag }}<template v-if="!o.enabled"> — {{ t('routing.disabled') }}</template>
                 </option>
@@ -168,7 +246,15 @@ async function submit() {
               <p v-if="fieldError.outboundTag" class="field-error">{{ fieldError.outboundTag }}</p>
             </div>
           </div>
-
+          <div class="hrow">
+            <label for="rr-bal" :title="t('routing.rule.balancerTagTooltip')">{{ t('routing.rule.balancer') }} <Icon name="info" :size="12" /></label>
+            <div class="hctl">
+              <select id="rr-bal" v-model="form.balancerTag">
+                <option value="">(none)</option>
+                <option v-for="b in balancers" :key="b.id" :value="b.tag" :disabled="!b.enabled">{{ b.tag }}</option>
+              </select>
+            </div>
+          </div>
           <div class="hrow">
             <label for="rr-note">{{ t('routing.rule.note') }}</label>
             <div class="hctl"><input id="rr-note" v-model="form.note" autocomplete="off" /></div>
@@ -193,6 +279,10 @@ async function submit() {
 }
 .card-body {
   padding: 24px 24px 8px;
+}
+.hrow > label svg {
+  vertical-align: -2px;
+  opacity: 0.6;
 }
 .field-error {
   margin: 4px 0 0;

@@ -92,13 +92,20 @@ func ExpandGroup(name string) ([]netip.Prefix, bool) {
 	return out, true
 }
 
+// GeoIP resolves a country code to its ranges, for "geoip:ir" entries. Set
+// by main; nil means such entries are refused.
+var GeoIP func(cc string) ([]netip.Prefix, error)
+
+// GeoIPPrefix is what a country entry starts with, as 3x-ui writes one.
+const GeoIPPrefix = "geoip:"
+
 // ParseTarget turns one entry an operator typed into prefixes.
 //
-// It accepts a group name, a CIDR, or a bare address, so the same field takes
-// "private", "10.0.0.0/8" and "1.1.1.1" without the operator having to know
-// which form the panel wanted. Anything else is reported with the text that was
-// not understood, because "invalid input" on a list of forty entries tells
-// nobody which one to fix.
+// It accepts a group name, a country as "geoip:xx", a CIDR, or a bare
+// address, so the same field takes "private", "geoip:ir", "10.0.0.0/8" and
+// "1.1.1.1" without the operator having to know which form the panel wanted.
+// Anything else is reported with the text that was not understood, because
+// "invalid input" on a list of forty entries tells nobody which one to fix.
 func ParseTarget(s string) ([]netip.Prefix, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -107,6 +114,22 @@ func ParseTarget(s string) ([]netip.Prefix, error) {
 
 	if p, ok := ExpandGroup(s); ok {
 		return p, nil
+	}
+	if strings.HasPrefix(strings.ToLower(s), GeoIPPrefix) {
+		cc := strings.ToLower(strings.TrimPrefix(strings.ToLower(s), GeoIPPrefix))
+		// 3x-ui spells the private ranges as a country too.
+		if cc == "private" {
+			p, _ := ExpandGroup(GroupPrivate)
+			return p, nil
+		}
+		if GeoIP == nil {
+			return nil, fmt.Errorf("%w: country lists are not available on this panel", ErrInvalidPolicy)
+		}
+		ps, err := GeoIP(cc)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidPolicy, err)
+		}
+		return ps, nil
 	}
 
 	if p, err := netip.ParsePrefix(s); err == nil {

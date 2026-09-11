@@ -102,6 +102,59 @@ func (s *Server) handleCheckAllOutbounds(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"results": res})
 }
 
+// ── balancers ────────────────────────────────────────────────────────────────
+
+func (s *Server) handleListBalancers(w http.ResponseWriter, r *http.Request) {
+	list, err := s.balancers.List(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) handleCreateBalancer(w http.ResponseWriter, r *http.Request) {
+	var in service.BalancerInput
+	if !decode(w, r, &in) {
+		return
+	}
+	b, err := s.balancers.Create(r.Context(), in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, b)
+}
+
+func (s *Server) handleUpdateBalancer(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in service.BalancerInput
+	if !decode(w, r, &in) {
+		return
+	}
+	b, err := s.balancers.Update(r.Context(), id, in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, b)
+}
+
+func (s *Server) handleDeleteBalancer(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.balancers.Delete(r.Context(), id); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // checkMode reads how to measure. Anything unrecognised falls back to TCP
 // rather than erroring: a probe is a convenience, and refusing to run one over
 // a query string is not worth an error page.
@@ -159,11 +212,18 @@ func (s *Server) handleGetRouting(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	balancers, err := s.balancers.List(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"basic":    basic,
-		"rules":    rules,
-		"groups":   routing.GroupNames(),
-		"resolver": s.routing.ResolverStatus(),
+		"basic":     basic,
+		"rules":     rules,
+		"balancers": balancers,
+		"groups":    routing.GroupNames(),
+		"resolver":  s.routing.ResolverStatus(),
 		// Empty when routing is working. The page shows it as a banner, so an
 		// operator cannot configure an exit and never learn it is inert.
 		"inactive": health,

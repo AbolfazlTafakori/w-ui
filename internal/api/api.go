@@ -54,6 +54,7 @@ type Server struct {
 	router    *routing.Applier
 	subs      *service.Subscriptions
 	obSubs    *service.OutboundSubs
+	balancers *service.Balancers
 	providers *service.Providers
 	audit     *service.Audit
 	pool      *backend.Pool
@@ -122,6 +123,7 @@ func New(o Options) *Server {
 		router:    o.Router,
 		subs:      o.Subs,
 		obSubs:    service.NewOutboundSubs(o.DB, o.Outbounds, o.Logger),
+		balancers: service.NewBalancers(o.DB, o.Logger),
 		providers: service.NewProviders(o.DB, o.Outbounds, o.Logger),
 		pool:      o.Pool,
 		nodeSync:  service.NewNodeSync(o.DB, o.Logger),

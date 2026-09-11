@@ -29,6 +29,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/geoip"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/logger"
@@ -207,7 +208,15 @@ func run() error {
 	}
 	// Names in the policy are resolved on a timer; the first pass runs now so
 	// the opening tick is not applied with empty sets.
+	if err := routes.MigrateRules(ctx); err != nil {
+		return err
+	}
 	routes.StartResolver(ctx)
+	// Country lists for "geoip:xx" entries, kept under the data directory.
+	geo := geoip.New(filepath.Join(cfg.DataDir, "geoip"), log)
+	routing.GeoIP = geo.Prefixes
+	go geo.Run(ctx)
+	go service.NewBalancers(db, log).RunChecks(ctx, outbounds)
 
 	rec := reconciler.New(reconciler.Options{
 		DB:          db,

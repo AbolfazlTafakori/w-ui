@@ -9,17 +9,16 @@ import Toggle from '../components/Toggle.vue'
 import TagInput from '../components/TagInput.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import RoutingRuleForm from '../components/RoutingRuleForm.vue'
+import BalancerForm from '../components/BalancerForm.vue'
 
 // The routing page, laid out the way 3x-ui lays its own out: the Save bar
-// with its warning, then one card with three tabs -- Basic Routing, Routing
-// Rules, Route Tester -- each with the icon theirs carries.
+// with its warning, then one card with the tabs -- Basic Routing, Routing
+// Rules, Route Tester -- each with the icon theirs carries, plus Balancers,
+// which theirs keeps on another page and this panel keeps beside the rules
+// that use them.
 //
 // Basic Routing is their list of settings rows: title and description on the
-// left half, the control on the right half. Their IPv4 Routing row is not
-// here: it hands chosen domains to an Xray outbound that resolves them over
-// IPv4 only, and this panel routes by address in the kernel, where there is
-// no such knob. Their Balancers and Inbounds columns on the rules table are
-// not here either, for the same reason: this panel has neither.
+// left half, the control on the right half.
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +26,7 @@ const router = useRouter()
 const tabs = [
   { key: 'basic', icon: 'settings' },
   { key: 'rules', icon: 'menu' },
+  { key: 'balancers', icon: 'swap' },
   { key: 'tester', icon: 'zap' },
 ]
 const tab = computed({
@@ -42,6 +42,8 @@ const groups = ref([])
 const resolver = ref(null)
 const rules = ref([])
 const outbounds = ref([])
+const balancers = ref([])
+const interfaces = ref([])
 const fieldError = ref({})
 
 // Declared after `rules`, not above it: useDelayed watches with `immediate` and
@@ -56,16 +58,42 @@ const basic = ref({
   blockPorts: [],
   directIps: [],
   directDomains: [],
+  ipv4Domains: [],
   defaultOutbound: 'direct',
 })
 // What was loaded, so Save can be offered only when something actually changed.
 const clean = ref('')
 const dirty = computed(() => JSON.stringify(basic.value) !== clean.value)
 
-// Their pick-lists, with the names this panel's own address groups go by.
-// A group is a name the router expands; an operator can still type any
-// address or range beside them.
-const ipSuggestions = computed(() => groups.value)
+// Their pick-lists. The countries are "geoip:xx", fetched as address lists
+// the first time one is used; the rest are this panel's own named groups.
+// Anything else -- an address, a range -- can still be typed.
+const COUNTRIES = [
+  { value: 'geoip:private', label: 'Private IPs' },
+  { value: 'geoip:ir', label: '🇮🇷 Iran' },
+  { value: 'geoip:cn', label: '🇨🇳 China' },
+  { value: 'geoip:ru', label: '🇷🇺 Russia' },
+  { value: 'geoip:vn', label: '🇻🇳 Vietnam' },
+  { value: 'geoip:es', label: '🇪🇸 Spain' },
+  { value: 'geoip:id', label: '🇮🇩 Indonesia' },
+  { value: 'geoip:ua', label: '🇺🇦 Ukraine' },
+  { value: 'geoip:tr', label: '🇹🇷 Türkiye' },
+  { value: 'geoip:br', label: '🇧🇷 Brazil' },
+]
+const ipSuggestions = computed(() => [
+  ...COUNTRIES,
+  ...groups.value.filter((g) => g !== 'private').map((g) => ({ value: g, label: g })),
+])
+const SERVICE_SUGGESTIONS = [
+  { value: 'apple.com', label: 'Apple' },
+  { value: 'meta.com', label: 'Meta' },
+  { value: 'google.com', label: 'Google' },
+  { value: 'openai.com', label: 'OpenAI' },
+  { value: 'spotify.com', label: 'Spotify' },
+  { value: 'netflix.com', label: 'Netflix' },
+  { value: 'reddit.com', label: 'Reddit' },
+  { value: 'speedtest.net', label: 'Speedtest' },
+]
 
 async function load(quiet = false) {
   if (!quiet) loading.value = true
@@ -74,6 +102,7 @@ async function load(quiet = false) {
     basic.value = data.basic
     clean.value = JSON.stringify(data.basic)
     rules.value = data.rules || []
+    balancers.value = data.balancers || []
     groups.value = data.groups || []
     resolver.value = data.resolver
     inactive.value = data.inactive || ''
@@ -88,6 +117,11 @@ async function load(quiet = false) {
 async function loadOutbounds() {
   try {
     outbounds.value = await api.get('/api/outbounds', { background: true })
+    interfaces.value = await api.get('/api/interfaces', { background: true })
+    const cs = await api.get('/api/clients?perPage=500', { background: true })
+    const names = {}
+    for (const c of cs.items || cs || []) names[String(c.id)] = c.name
+    clientNames.value = names
   } catch {
     // The rule form falls back to a free-text tag if this fails, so a failure
     // here is not worth interrupting the page for.
@@ -130,14 +164,33 @@ const busy = ref(false)
 const pending = ref(new Set())
 const isPending = (id) => pending.value.has(id)
 
-// Which of their columns a rule's one criterion belongs in.
-const SOURCE_KINDS = new Set(['client', 'group'])
-const DEST_KINDS = new Set(['domain', 'ip', 'port'])
+// What each of their columns shows for a rule: the criteria that belong
+// there, each as a small tag, the way theirs renders them.
 function sourceOf(r) {
-  return SOURCE_KINDS.has(r.match) ? r : null
+  const out = []
+  for (const v of split(r.sourceIps)) out.push({ kind: 'ip', text: v })
+  for (const v of split(r.sourcePorts)) out.push({ kind: 'port', text: v })
+  for (const v of split(r.clients)) out.push({ kind: 'user', text: clientName(v) })
+  for (const v of split(r.groups)) out.push({ kind: 'group', text: v })
+  return out
 }
 function destOf(r) {
-  return DEST_KINDS.has(r.match) ? r : null
+  const out = []
+  for (const v of split(r.destIps)) out.push({ kind: 'ip', text: v })
+  for (const v of split(r.domains)) out.push({ kind: 'domain', text: v })
+  for (const v of split(r.ports)) out.push({ kind: 'port', text: v })
+  return out
+}
+function inboundsOf(r) {
+  return split(r.interfaces).map((id) => interfaces.value.find((i) => String(i.id) === id)?.name || `#${id}`)
+}
+const split = (s) => (s || '').split(',').map((x) => x.trim()).filter(Boolean)
+const clientNames = ref({})
+function clientName(id) {
+  return clientNames.value[id] || `#${id}`
+}
+function isBalancer(tag) {
+  return balancers.value.some((b) => b.tag === tag)
 }
 
 async function setRuleEnabled(r, on) {
@@ -148,8 +201,15 @@ async function setRuleEnabled(r, on) {
   try {
     const updated = await api.patch(`/api/routing/rules/${r.id}`, {
       name: r.name,
-      match: r.match,
-      value: r.value,
+      sourceIps: r.sourceIps,
+      sourcePorts: r.sourcePorts,
+      network: r.network,
+      destIps: r.destIps,
+      domains: r.domains,
+      ports: r.ports,
+      clients: r.clients,
+      groups: r.groups,
+      interfaces: r.interfaces,
       outboundTag: r.outboundTag,
       note: r.note,
       enabled: on,
@@ -273,8 +333,15 @@ const exportText = computed(() =>
     rules.value.map((r) => ({
       name: r.name,
       enabled: r.enabled,
-      match: r.match,
-      value: r.value,
+      sourceIps: r.sourceIps || undefined,
+      sourcePorts: r.sourcePorts || undefined,
+      network: r.network || undefined,
+      destIps: r.destIps || undefined,
+      domains: r.domains || undefined,
+      ports: r.ports || undefined,
+      clients: r.clients || undefined,
+      groups: r.groups || undefined,
+      interfaces: r.interfaces || undefined,
       outboundTag: r.outboundTag,
       note: r.note || undefined,
     })),
@@ -325,7 +392,33 @@ async function runImport() {
 
 // ── the tester ───────────────────────────────────────────────────────────────
 
-const probe = ref({ target: '', port: 443, protocol: 'tcp', clientId: 0 })
+const probe = ref({ target: '', port: 443, protocol: 'tcp', clientId: 0, interfaceId: 0 })
+
+// ── balancers ────────────────────────────────────────────────────────────────
+const balancerFormFor = ref(null)
+async function setBalancerEnabled(b, on) {
+  const was = b.enabled
+  b.enabled = on
+  try {
+    await api.patch(`/api/balancers/${b.id}`, { tag: b.tag, strategy: b.strategy, members: b.memberList, note: b.note, enabled: on })
+  } catch (err) {
+    b.enabled = was
+    notify(err.message, 'error')
+  }
+}
+function removeBalancer(b) {
+  ask.value = {
+    title: t('routing.removeBalancerTitle'),
+    subject: b.tag,
+    body: t('routing.removeBalancerBody'),
+    confirmLabel: t('action.delete'),
+    run: async () => {
+      await api.del(`/api/balancers/${b.id}`)
+      notify(t('routing.balancerRemoved'), 'success')
+      await load()
+    },
+  }
+}
 const answer = ref(null)
 const testing = ref(false)
 const testError = ref('')
@@ -498,6 +591,17 @@ async function testRoute() {
                 <p v-if="fieldError.directDomains" class="field-error">{{ fieldError.directDomains }}</p>
               </div>
             </div>
+
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.ipv4Routing') }}</div>
+                <div class="setting-desc">{{ t('routing.ipv4RoutingDesc') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <TagInput v-model="basic.ipv4Domains" :suggestions="SERVICE_SUGGESTIONS" />
+                <p v-if="fieldError.ipv4Domains" class="field-error">{{ fieldError.ipv4Domains }}</p>
+              </div>
+            </div>
           </div>
 
           <p v-if="resolver" class="muted small resolver">
@@ -539,12 +643,14 @@ async function testRoute() {
                   <th>{{ t('routing.col.comment') }}</th>
                   <th class="w-sm">{{ t('routing.col.network') }}</th>
                   <th>{{ t('routing.col.dest') }}</th>
+                  <th>{{ t('nav.interfaces') }}</th>
                   <th>{{ t('nav.outbounds') }}</th>
+                  <th>{{ t('routing.tab.balancers') }}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!rules.length" class="empty-row">
-                  <td colspan="8">
+                  <td colspan="10">
                     <div class="card-empty">
                       <Icon name="route" :size="32" />
                       <div>{{ t('common.nothingYet') }}</div>
@@ -576,10 +682,9 @@ async function testRoute() {
                     <Toggle :model-value="r.enabled" :label="r.name" :loading="isPending(r.id)" @update:model-value="(v) => setRuleEnabled(r, v)" />
                   </td>
                   <td>
-                    <template v-if="sourceOf(r)">
-                      <span class="tag geekblue">{{ t(`routing.match.${r.match}`) }}</span>
-                      <span class="ltr small"> {{ r.value }}</span>
-                    </template>
+                    <div v-if="sourceOf(r).length" class="crit">
+                      <span v-for="(c, k) in sourceOf(r)" :key="k" class="tag ltr" :class="c.kind === 'user' || c.kind === 'group' ? 'geekblue' : ''">{{ c.text }}</span>
+                    </div>
                     <span v-else class="muted">—</span>
                   </td>
                   <td>
@@ -587,19 +692,78 @@ async function testRoute() {
                     <div v-if="r.note" class="muted small">{{ r.note }}</div>
                   </td>
                   <td>
-                    <span v-if="r.match === 'protocol'" class="tag">{{ r.value }}</span>
+                    <span v-if="r.network" class="tag">{{ r.network }}</span>
                     <span v-else class="muted">—</span>
                   </td>
                   <td>
-                    <template v-if="destOf(r)">
-                      <span class="tag geekblue">{{ t(`routing.match.${r.match}`) }}</span>
-                      <span class="ltr small"> {{ r.value }}</span>
-                    </template>
+                    <div v-if="destOf(r).length" class="crit">
+                      <span v-for="(c, k) in destOf(r)" :key="k" class="tag ltr" :class="c.kind === 'domain' ? 'geekblue' : ''">{{ c.text }}</span>
+                    </div>
                     <span v-else class="muted">—</span>
                   </td>
                   <td>
-                    <span class="tag" :class="r.outboundTag === 'blocked' ? 'red' : 'green'">{{ r.outboundTag }}</span>
+                    <div v-if="inboundsOf(r).length" class="crit">
+                      <span v-for="n in inboundsOf(r)" :key="n" class="tag">{{ n }}</span>
+                    </div>
+                    <span v-else class="muted">—</span>
                   </td>
+                  <td>
+                    <span v-if="!isBalancer(r.outboundTag)" class="tag" :class="r.outboundTag === 'blocked' ? 'red' : 'green'">{{ r.outboundTag }}</span>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td>
+                    <span v-if="isBalancer(r.outboundTag)" class="tag purple">{{ r.outboundTag }}</span>
+                    <span v-else class="muted">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <!-- ── Balancers ─────────────────────────────────────────────── -->
+        <template v-else-if="tab === 'balancers'">
+          <div class="toolbar-group mb-16">
+            <button class="btn primary" @click="balancerFormFor = {}">
+              <Icon name="plus" :size="14" />
+              <span>{{ t('routing.tab.balancers') }}</span>
+            </button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="w-act2">{{ t('table.actions') }}</th>
+                  <th class="w-sm">{{ t('table.enabled') }}</th>
+                  <th>{{ t('outbound.tag') }}</th>
+                  <th>{{ t('routing.balancer.strategy') }}</th>
+                  <th>{{ t('nav.outbounds') }}</th>
+                  <th>{{ t('routing.rule.note') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!balancers.length" class="empty-row">
+                  <td colspan="6">
+                    <div class="card-empty">
+                      <Icon name="swap" :size="32" />
+                      <div>{{ t('common.nothingYet') }}</div>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-for="b in balancers" :key="b.id" :class="{ off: !b.enabled }">
+                  <td class="w-act2">
+                    <div class="action-buttons start">
+                      <button class="act round" :aria-label="t('action.edit')" :title="t('action.edit')" @click="balancerFormFor = { balancer: b }"><Icon name="edit" :size="13" /></button>
+                      <button class="act round" :aria-label="t('action.delete')" :title="t('action.delete')" @click="removeBalancer(b)"><Icon name="trash" :size="13" /></button>
+                    </div>
+                  </td>
+                  <td><Toggle :model-value="b.enabled" :label="b.tag" @update:model-value="(v) => setBalancerEnabled(b, v)" /></td>
+                  <td><span class="tag purple">{{ b.tag }}</span></td>
+                  <td>{{ b.strategy }}</td>
+                  <td>
+                    <div class="crit"><span v-for="m in b.memberList" :key="m" class="tag green">{{ m }}</span></div>
+                  </td>
+                  <td class="muted small">{{ b.note }}</td>
                 </tr>
               </tbody>
             </table>
@@ -621,6 +785,10 @@ async function testRoute() {
               <option value="udp">UDP</option>
               <option value="icmp">ICMP</option>
             </select>
+            <select v-model.number="probe.interfaceId" class="inb" :aria-label="t('routing.testInbound')">
+              <option :value="0">{{ t('routing.testInbound') }}</option>
+              <option v-for="i in interfaces" :key="i.id" :value="i.id">{{ i.name }}</option>
+            </select>
             <button class="btn primary" type="submit" :disabled="testing || !probe.target">
               <span v-if="testing" class="spin sm"></span>
               <Icon v-else name="zap" :size="14" />
@@ -633,7 +801,11 @@ async function testRoute() {
           <div v-if="answer" class="answer">
             <div v-if="answer.ruleId || answer.blocked" class="answer-head">
               <span>{{ t('routing.matchedOutbound') }}:</span>
-              <span class="tag lg" :class="answer.blocked ? 'red' : 'green'">{{ answer.outbound }}</span>
+              <span class="tag lg" :class="answer.blocked ? 'red' : 'green'">{{ answer.outbound || '—' }}</span>
+              <template v-if="answer.balancer">
+                <span class="muted">{{ t('routing.viaBalancer') }}:</span>
+                <span class="tag purple">{{ answer.balancer }}</span>
+              </template>
               <button v-if="decidedBy" type="button" class="btn sm" @click="showDecidingRule">{{ t('routing.showRule') }}</button>
             </div>
             <div v-else class="alert warning block">
@@ -669,8 +841,16 @@ async function testRoute() {
       v-if="ruleFormFor"
       :rule="ruleFormFor.rule"
       :outbounds="outbounds"
+      :balancers="balancers"
       @saved="((ruleFormFor = null), load())"
       @cancel="ruleFormFor = null"
+    />
+    <BalancerForm
+      v-if="balancerFormFor"
+      :balancer="balancerFormFor.balancer"
+      :outbounds="outbounds"
+      @saved="((balancerFormFor = null), load())"
+      @cancel="balancerFormFor = null"
     />
 
     <div v-if="importOpen" class="modal-backdrop" @click.self="importOpen = false">
@@ -830,6 +1010,14 @@ tr.decided td {
 }
 .tester-row .net {
   width: 110px;
+}
+.tester-row .inb {
+  width: 160px;
+}
+.crit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 .answer {
   margin-top: 16px;

@@ -281,6 +281,19 @@ func (s *Outbounds) Delete(ctx context.Context, id uint) error {
 		return fmt.Errorf("%w: %d routing rule(s) still send traffic to %q; change or remove them first",
 			ErrInvalid, rules, ob.Tag)
 	}
+	// A balancer that lists it would be left spreading traffic over a member
+	// that is gone; it has to be taken out of the balancer first.
+	var balancers []model.Balancer
+	if err := db.Find(&balancers).Error; err == nil {
+		for _, b := range balancers {
+			for _, m := range splitList(b.Members) {
+				if m == ob.Tag {
+					return fmt.Errorf("%w: balancer %q still includes %q; remove it from the balancer first",
+						ErrInvalid, b.Tag, ob.Tag)
+				}
+			}
+		}
+	}
 
 	if err := db.Delete(&ob).Error; err != nil {
 		return fmt.Errorf("service: delete outbound: %w", err)

@@ -222,10 +222,26 @@ type RoutingRule struct {
 	Enabled  bool   `gorm:"not null;default:true" json:"enabled"`
 	Position int    `gorm:"not null;default:0;index" json:"position"`
 
-	Match RouteMatchKind `gorm:"size:16;not null" json:"match"`
-	// Value is what to match: a domain suffix, a CIDR, a port or range, a
-	// protocol name, or a numeric id for client and group matches.
-	Value string `gorm:"size:512;not null" json:"value"`
+	// Match and Value are the one-criterion form rules had before they
+	// grew the fields below. Kept so an older database reads; migrated
+	// into the fields on start and then left empty.
+	Match RouteMatchKind `gorm:"size:16" json:"-"`
+	Value string         `gorm:"size:512" json:"-"`
+
+	// The criteria, each a comma-separated list, all of which have to
+	// match -- an Xray rule's shape. Empty means "any".
+	SourceIPs   string `gorm:"type:text" json:"sourceIps"`
+	SourcePorts string `gorm:"size:256" json:"sourcePorts"`
+	// Network is "tcp", "udp", "icmp" or empty for any.
+	Network string `gorm:"size:8" json:"network"`
+	DestIPs string `gorm:"type:text" json:"destIps"`
+	Domains string `gorm:"type:text" json:"domains"`
+	Ports   string `gorm:"size:256" json:"ports"`
+	// Clients are customer ids; Groups group names; Interfaces are the
+	// tunnels (inbounds) the traffic has to arrive on, by id.
+	Clients    string `gorm:"size:1024" json:"clients"`
+	Groups     string `gorm:"size:1024" json:"groups"`
+	Interfaces string `gorm:"size:256" json:"interfaces"`
 
 	// OutboundTag names where matching traffic goes.
 	OutboundTag string `gorm:"size:64;not null;index" json:"outboundTag"`
@@ -239,6 +255,32 @@ type RoutingRule struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+// Balancer spreads traffic over several outbounds under one tag, which a
+// rule or the default can point at like any outbound.
+type Balancer struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Tag     string `gorm:"size:64;uniqueIndex;not null" json:"tag"`
+	Enabled bool   `gorm:"not null;default:true" json:"enabled"`
+	// Strategy is "random" (each flow to one member, by hash, so the
+	// spread is even and a connection stays put), or "leastPing" (every
+	// flow to the member that answered the last check fastest).
+	Strategy string `gorm:"size:16;not null;default:random" json:"strategy"`
+	// Members are outbound tags, comma-separated.
+	Members string `gorm:"type:text" json:"members"`
+	Note    string `gorm:"size:256" json:"note"`
+	// Mark is the routing mark, allocated on creation like an outbound's.
+	Mark uint32 `gorm:"not null;default:0;index" json:"mark"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// Balancer strategies.
+const (
+	BalancerRandom    = "random"
+	BalancerLeastPing = "leastPing"
+)
 
 // Host is one public address customers can be handed for an interface.
 //

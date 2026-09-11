@@ -3,6 +3,7 @@ package routing
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // AllocateMark returns the mark and routing table for an outbound.
@@ -88,10 +89,10 @@ func BuildPlan(hops []Hop) Plan {
 			Describe: fmt.Sprintf("clear the old routing rule for %q", h.Tag),
 		})
 
-		if !h.Enabled || h.Device == "" {
-			// A proxy hop needs no route: the connection is made in userspace
-			// and leaves through whatever the main table says. Removing the
-			// rule is the whole job.
+		if !h.Enabled || (h.Device == "" && len(h.Nexthops) == 0) {
+			// Nothing to route into: the rule is removed and the table
+			// emptied, so the mark falls through to the main table rather
+			// than into a black hole.
 			p.Remove = append(p.Remove, Statement{
 				Args:     []string{"route", "flush", "table", tableArg},
 				Describe: fmt.Sprintf("empty the routing table for %q", h.Tag),
@@ -99,10 +100,27 @@ func BuildPlan(hops []Hop) Plan {
 			continue
 		}
 
+		routeArgs := []string{"route", "replace", "default"}
+		if len(h.Nexthops) > 0 {
+			// A balancer: one route with several next hops of equal weight.
+			// The kernel hashes each flow onto one of them, so a connection
+			// keeps the exit it started on.
+			for _, dev := range h.Nexthops {
+				routeArgs = append(routeArgs, "nexthop", "dev", dev, "weight", "1")
+			}
+		} else {
+			routeArgs = append(routeArgs, "dev", h.Device)
+		}
+		routeArgs = append(routeArgs, "table", tableArg)
+		where := h.Device
+		if len(h.Nexthops) > 0 {
+			where = strings.Join(h.Nexthops, " + ")
+		}
+
 		p.Add = append(p.Add,
 			Statement{
-				Args:     []string{"route", "replace", "default", "dev", h.Device, "table", tableArg},
-				Describe: fmt.Sprintf("point %q at %s", h.Tag, h.Device),
+				Args:     routeArgs,
+				Describe: fmt.Sprintf("point %q at %s", h.Tag, where),
 			},
 			Statement{
 				// The priority keeps our rules together and below the kernel's

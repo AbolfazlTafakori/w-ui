@@ -69,10 +69,13 @@ type Hop struct {
 	Mark uint32
 	// Table is the routing table id holding this hop's default route.
 	Table int
-	// Device is the interface the hop's traffic leaves through, for a
-	// WireGuard hop. Empty for a proxy, which is dialled in userspace and
-	// needs no route of its own.
+	// Device is the interface the hop's traffic leaves through. Empty when
+	// there is nothing to route into, in which case the hop's rule is removed.
 	Device string
+	// Nexthops, when set, spread the hop's traffic over several devices --
+	// a balancer. The kernel picks one per flow by hash, so a connection
+	// stays on the device it started on. Device is ignored when these are set.
+	Nexthops []string
 	// Enabled hops are installed; disabled ones are torn down.
 	Enabled bool
 }
@@ -135,6 +138,9 @@ func (p PortRange) String() string {
 }
 
 // MarkRule sends matching traffic to a particular outbound.
+//
+// Every criterion that is set has to match -- the rule is their conjunction,
+// the way an Xray routing rule is. A rule with none set matches nothing.
 type MarkRule struct {
 	// Mark is the outbound's mark, or zero to force the traffic direct.
 	Mark uint32
@@ -142,11 +148,23 @@ type MarkRule struct {
 	// the blocked outbound.
 	Drop bool
 
-	// Exactly one of these selects the traffic.
-	Addrs    []netip.Prefix
-	Ports    []PortRange
-	Protocol string       // "tcp", "udp", "icmp"
-	Sources  []netip.Addr // customer addresses, for a per-client rule
+	// Addrs are destinations; Ports destination ports.
+	Addrs []netip.Prefix
+	Ports []PortRange
+	// Protocol is "tcp", "udp" or "icmp".
+	Protocol string
+	// Sources are the customers this rule is about, as their tunnel
+	// addresses or ranges; SourcePorts their source ports.
+	Sources     []netip.Prefix
+	SourcePorts []PortRange
+	// Inbounds are the tunnel devices the traffic has to arrive on.
+	Inbounds []string
+}
+
+// Empty reports whether nothing at all is being matched.
+func (r MarkRule) Empty() bool {
+	return len(r.Addrs) == 0 && len(r.Ports) == 0 && r.Protocol == "" &&
+		len(r.Sources) == 0 && len(r.SourcePorts) == 0 && len(r.Inbounds) == 0
 }
 
 // bittorrentPorts are the ports BitTorrent clients use by default.
@@ -307,56 +325,69 @@ func counterName(mark uint32) string { return fmt.Sprintf("ob_%08x", mark) }
 func CounterName(mark uint32) string { return counterName(mark) }
 
 func writeMarkRule(b *strings.Builder, r MarkRule) error {
+	if r.Empty() {
+		return errors.New("matches nothing")
+	}
+
+	// Destinations of both families need two statements: an nftables rule
+	// is one family. Written twice rather than one family silently dropped.
+	if v4s, v6s := v4(r.Addrs), v6(r.Addrs); len(v4s) > 0 && len(v6s) > 0 {
+		if err := writeMarkRule(b, cloneWith(r, v4s)); err != nil {
+			return err
+		}
+		return writeMarkRule(b, cloneWith(r, v6s))
+	}
+
 	var match []string
 
-	switch {
-	case len(r.Addrs) > 0:
-		v4s, v6s := v4(r.Addrs), v6(r.Addrs)
-		if len(v4s) > 0 && len(v6s) > 0 {
-			// Written as two statements rather than one so neither family is
-			// silently dropped from the match.
-			if err := writeMarkRule(b, cloneWith(r, v4s)); err != nil {
-				return err
-			}
-			return writeMarkRule(b, cloneWith(r, v6s))
+	// Customers are IPv4 here; a source list that names none is a rule
+	// about nobody, and is left out rather than written as "everyone".
+	if len(r.Sources) > 0 {
+		v4src := v4(r.Sources)
+		if len(v4src) == 0 {
+			return nil
 		}
-		if len(v4s) > 0 {
-			match = append(match, "ip daddr { "+prefixList(v4s)+" }")
-		} else {
+		match = append(match, "ip saddr { "+prefixList(v4src)+" }")
+	}
+	if len(r.Inbounds) > 0 {
+		names := append([]string(nil), r.Inbounds...)
+		sort.Strings(names)
+		match = append(match, "iifname { "+quoted(names)+" }")
+	}
+	if len(r.Addrs) > 0 {
+		if v6s := v6(r.Addrs); len(v6s) > 0 {
 			match = append(match, "ip6 daddr { "+prefixList(v6s)+" }")
+		} else {
+			match = append(match, "ip daddr { "+prefixList(v4(r.Addrs))+" }")
 		}
-
-	case len(r.Ports) > 0:
-		for _, p := range r.Ports {
-			if !p.Valid() {
-				return fmt.Errorf("port range %q is not usable", p)
-			}
-		}
-		match = append(match, "meta l4proto { tcp, udp } th dport { "+portList(r.Ports)+" }")
-
-	case r.Protocol != "":
+	}
+	if r.Protocol != "" {
 		switch r.Protocol {
 		case "tcp", "udp", "icmp":
 			match = append(match, "meta l4proto "+r.Protocol)
 		default:
 			return fmt.Errorf("protocol %q is not one the router matches", r.Protocol)
 		}
-
-	case len(r.Sources) > 0:
-		var v4addrs []string
-		for _, a := range r.Sources {
-			if a.Unmap().Is4() {
-				v4addrs = append(v4addrs, a.Unmap().String())
-			}
+	}
+	for _, p := range append(append([]PortRange(nil), r.Ports...), r.SourcePorts...) {
+		if !p.Valid() {
+			return fmt.Errorf("port range %q is not usable", p)
 		}
-		if len(v4addrs) == 0 {
-			return nil // nothing addressable; not an error, just an empty rule
+	}
+	// A port only exists on TCP and UDP; with no protocol named the match
+	// says so, and with one named the port sits behind it.
+	if len(r.Ports) > 0 || len(r.SourcePorts) > 0 {
+		if r.Protocol == "" {
+			match = append(match, "meta l4proto { tcp, udp }")
+		} else if r.Protocol == "icmp" {
+			return errors.New("icmp has no ports to match")
 		}
-		sort.Strings(v4addrs)
-		match = append(match, "ip saddr { "+strings.Join(v4addrs, ", ")+" }")
-
-	default:
-		return errors.New("matches nothing")
+		if len(r.SourcePorts) > 0 {
+			match = append(match, "th sport { "+portList(r.SourcePorts)+" }")
+		}
+		if len(r.Ports) > 0 {
+			match = append(match, "th dport { "+portList(r.Ports)+" }")
+		}
 	}
 
 	stmt := strings.Join(match, " ")
