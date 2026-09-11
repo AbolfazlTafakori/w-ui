@@ -100,7 +100,9 @@ func BuildPlan(hops []Hop) Plan {
 			continue
 		}
 
-		routeArgs := []string{"route", "replace", "default"}
+		// The table comes before the next hops: iproute2 reads everything
+		// after the first "nexthop" as hop attributes.
+		routeArgs := []string{"route", "replace", "default", "table", tableArg}
 		if len(h.Nexthops) > 0 {
 			// A balancer: one route with several next hops of equal weight.
 			// The kernel hashes each flow onto one of them, so a connection
@@ -111,7 +113,6 @@ func BuildPlan(hops []Hop) Plan {
 		} else {
 			routeArgs = append(routeArgs, "dev", h.Device)
 		}
-		routeArgs = append(routeArgs, "table", tableArg)
 		where := h.Device
 		if len(h.Nexthops) > 0 {
 			where = strings.Join(h.Nexthops, " + ")
