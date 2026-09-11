@@ -594,6 +594,14 @@ async function submit() {
   border-start-end-radius: 0;
   border-end-end-radius: 0;
 }
+/* Everything in a row is Ant's controlHeight, 32, the addon included. */
+.hctl > select,
+.hctl > input,
+.compact > input,
+.compact > .btn {
+  height: 32px;
+  min-height: 32px;
+}
 .btn.addon {
   width: 32px;
   padding: 0;
