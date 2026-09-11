@@ -340,6 +340,36 @@ func (s *Server) handlePIAOutbound(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"outbound": ob, "renewed": renewed})
 }
 
+// ── import ───────────────────────────────────────────────────────────────────
+
+func (s *Server) handleParseOutbound(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Text string `json:"text"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	out, err := service.ParseOutbound(in.Text)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleOutboundConfig(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	cfg, err := s.outbounds.Config(r.Context(), id)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"config": cfg})
+}
+
 // ── keys ─────────────────────────────────────────────────────────────────────
 
 // handleWGKey hands the outbound form a key pair, or the public half of a

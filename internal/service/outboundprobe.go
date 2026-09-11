@@ -9,7 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
-	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,7 +94,7 @@ func transportFor(ob *model.Outbound) (*http.Transport, error) {
 	case model.OutboundDirect:
 		tr.DialContext = base.DialContext
 
-	case model.OutboundWireGuard:
+	case model.OutboundWireGuard, model.OutboundOpenVPN:
 		if ob.Mark == 0 {
 			return nil, errors.New("this hop has no routing mark yet")
 		}
@@ -109,12 +109,13 @@ func transportFor(ob *model.Outbound) (*http.Transport, error) {
 			return d.DialContext(ctx, "tcp4", addr)
 		}
 
-	case model.OutboundSOCKS:
-		var auth *proxy.Auth
-		if ob.Username != "" {
-			auth = &proxy.Auth{User: ob.Username, Password: ob.Password}
+	default:
+		if !ob.Kind.IsXray() {
+			return nil, fmt.Errorf("nothing to send through a %s outbound", ob.Kind)
 		}
-		pd, err := proxy.SOCKS5("tcp", ob.Address, auth, base)
+		// Through the xray process that runs this outbound, on its loopback
+		// SOCKS port: what a customer's packet goes through, minus the tun.
+		pd, err := proxy.SOCKS5("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(XraySocksPort(*ob))), nil, base)
 		if err != nil {
 			return nil, err
 		}
@@ -123,17 +124,6 @@ func transportFor(ob *model.Outbound) (*http.Transport, error) {
 			return nil, errors.New("socks dialer does not take a context")
 		}
 		tr.DialContext = cd.DialContext
-
-	case model.OutboundHTTP:
-		u := &url.URL{Scheme: "http", Host: ob.Address}
-		if ob.Username != "" {
-			u.User = url.UserPassword(ob.Username, ob.Password)
-		}
-		tr.Proxy = http.ProxyURL(u)
-		tr.DialContext = base.DialContext
-
-	default:
-		return nil, fmt.Errorf("nothing to send through a %s outbound", ob.Kind)
 	}
 	return tr, nil
 }

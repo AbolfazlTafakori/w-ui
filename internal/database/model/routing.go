@@ -15,16 +15,27 @@ const (
 	// OutboundWireGuard forwards through an upstream WireGuard peer, giving the
 	// customer a second hop and an exit address in another place.
 	OutboundWireGuard OutboundKind = "wireguard"
-	// OutboundSOCKS forwards through a SOCKS5 proxy.
-	OutboundSOCKS OutboundKind = "socks"
-	// OutboundHTTP forwards through an HTTP CONNECT proxy.
-	OutboundHTTP OutboundKind = "http"
+	// OutboundOpenVPN forwards through an upstream OpenVPN server, from a
+	// client profile the operator pastes in. An openvpn process owns the
+	// device.
+	OutboundOpenVPN OutboundKind = "openvpn"
+	// The Xray family. Each is an Xray outbound object stored verbatim, the
+	// way 3x-ui keeps one, run by an xray process behind a tun device.
+	OutboundSOCKS       OutboundKind = "socks"
+	OutboundHTTP        OutboundKind = "http"
+	OutboundVLESS       OutboundKind = "vless"
+	OutboundVMess       OutboundKind = "vmess"
+	OutboundTrojan      OutboundKind = "trojan"
+	OutboundShadowsocks OutboundKind = "shadowsocks"
+	OutboundHysteria    OutboundKind = "hysteria"
 )
 
 // Valid reports whether k is a kind the panel knows how to route through.
 func (k OutboundKind) Valid() bool {
 	switch k {
-	case OutboundDirect, OutboundBlock, OutboundWireGuard, OutboundSOCKS, OutboundHTTP:
+	case OutboundDirect, OutboundBlock, OutboundWireGuard, OutboundOpenVPN,
+		OutboundSOCKS, OutboundHTTP, OutboundVLESS, OutboundVMess,
+		OutboundTrojan, OutboundShadowsocks, OutboundHysteria:
 		return true
 	}
 	return false
@@ -33,10 +44,17 @@ func (k OutboundKind) Valid() bool {
 func (k OutboundKind) String() string { return string(k) }
 
 // NeedsHop reports whether this kind reaches the internet through something
-// else that has to be dialled, configured and health-checked.
+// else that has to be dialled, configured and health-checked -- everything
+// but the two built-ins.
 func (k OutboundKind) NeedsHop() bool {
+	return k.Valid() && k != OutboundDirect && k != OutboundBlock
+}
+
+// IsXray reports whether an xray process carries this kind.
+func (k OutboundKind) IsXray() bool {
 	switch k {
-	case OutboundWireGuard, OutboundSOCKS, OutboundHTTP:
+	case OutboundSOCKS, OutboundHTTP, OutboundVLESS, OutboundVMess,
+		OutboundTrojan, OutboundShadowsocks, OutboundHysteria:
 		return true
 	}
 	return false
@@ -87,6 +105,11 @@ type Outbound struct {
 	// AllowedIPs is what the peer is allowed to send us, and so what we
 	// route into it: comma-separated prefixes. Empty means everything.
 	AllowedIPs string `gorm:"size:512" json:"allowedIps"`
+
+	// Config is the material a process-backed hop runs from: the OpenVPN
+	// client profile, or the Xray outbound object as JSON. Secrets live in
+	// it, so it is not listed; the form fetches it on its own.
+	Config string `gorm:"type:text" json:"-"`
 	// Keepalive is the PersistentKeepalive interval in seconds; 0 means
 	// the default of 25, which a hop behind NAT needs.
 	Keepalive int `gorm:"not null;default:0" json:"keepalive"`

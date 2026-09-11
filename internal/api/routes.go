@@ -276,6 +276,13 @@ func (s *Server) routes() []Route {
 			Note:    "The panel does this on its own every few seconds; this is the same job, done at once.",
 			handler: s.handleApplyRouting},
 
+		{Method: "POST", Path: "/api/outbounds/parse", Group: "Outbounds", Auth: true,
+			Summary: "Read a share link, a WireGuard .conf, an OpenVPN profile or an Xray outbound JSON into an outbound.",
+			Body:    `{"text":"vless://..."}`,
+			handler: s.handleParseOutbound},
+		{Method: "GET", Path: "/api/outbounds/{id}/config", Group: "Outbounds", Auth: true,
+			Summary: "The profile or Xray outbound object an outbound runs from.",
+			handler: s.handleOutboundConfig},
 		{Method: "POST", Path: "/api/wgkey", Group: "Outbounds", Auth: true,
 			Summary: "Make a WireGuard key pair, or derive the public key of a private one.",
 			Body:    `{"privateKey":""}`,

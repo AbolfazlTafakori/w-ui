@@ -519,14 +519,14 @@ func (s *Routing) addressesFor(ctx context.Context, r model.RoutingRule) []netip
 }
 
 func hopDevice(o model.Outbound) string {
-	if o.Kind != model.OutboundWireGuard {
-		// A proxy is dialled in userspace and has no interface of its own.
+	if !o.Kind.NeedsHop() {
 		return ""
 	}
 	return fmt.Sprintf("wuih%d", o.ID)
 }
 
-// HopDevice is the interface name a WireGuard outbound uses.
+// HopDevice is the interface name an outbound's hop uses: a WireGuard
+// device, or the tun an openvpn or xray process owns.
 func HopDevice(o model.Outbound) string { return hopDevice(o) }
 
 // ── name resolution ──────────────────────────────────────────────────────────

@@ -4,6 +4,8 @@ package routing
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -35,6 +37,19 @@ type HopSpec struct {
 	AllowedIPs []string
 	// Keepalive is the PersistentKeepalive interval; 0 means 25.
 	Keepalive int
+
+	// Kind is "wireguard", "openvpn" or "xray"; it decides what owns the
+	// device.
+	Kind string
+	// Config is the OpenVPN profile or the Xray outbound JSON.
+	Config string
+	// Username and Password are an OpenVPN profile's credentials.
+	Username string
+	Password string
+	// SocksPort is the loopback port an Xray hop's xray listens on, and
+	// TunAddress the address its tun carries.
+	SocksPort  int
+	TunAddress string
 }
 
 // HopManager brings upstream tunnels up and takes them down.
@@ -46,6 +61,8 @@ type HopManager struct {
 	// not torn down and rebuilt every tick — which would drop every customer
 	// using it, every two seconds.
 	up map[string]string
+	// procs are the processes behind the hops that have one.
+	procs map[string]*hopProc
 }
 
 // NewHopManager builds a manager.
@@ -78,7 +95,12 @@ func (m *HopManager) Sync(ctx context.Context, specs []HopSpec) error {
 	for dev, spec := range want {
 		fp := spec.fingerprint()
 		if live[dev] == fp {
-			continue // unchanged; leave the customers on it alone
+			if spec.Kind == "" || spec.Kind == "wireguard" || m.procAlive(dev) {
+				continue // unchanged; leave the customers on it alone
+			}
+			// The process behind it died. Brought up again, with the
+			// failure said once rather than every tick.
+			m.log.Warn("outbound hop process died; restarting", "device", dev)
 		}
 		if err := m.bring(ctx, spec); err != nil {
 			m.log.Error("could not bring up an outbound hop",
@@ -99,6 +121,14 @@ func (m *HopManager) Sync(ctx context.Context, specs []HopSpec) error {
 func (m *HopManager) bring(ctx context.Context, s HopSpec) error {
 	if err := m.assertSafe(ctx, s.Device); err != nil {
 		return err
+	}
+	switch s.Kind {
+	case "openvpn":
+		m.stopProcs(s.Device)
+		return m.bringOpenVPN(ctx, s)
+	case "xray":
+		m.stopProcs(s.Device)
+		return m.bringXray(ctx, s)
 	}
 
 	if _, err := run(ctx, ipBinary, "", "link", "show", "dev", s.Device); err != nil {
@@ -148,6 +178,7 @@ func (m *HopManager) down(ctx context.Context, dev string) {
 		// to be in the map.
 		return
 	}
+	m.stopProcs(dev)
 	_, _ = run(ctx, ipBinary, "", "link", "del", "dev", dev)
 
 	m.mu.Lock()
@@ -169,9 +200,9 @@ func (m *HopManager) assertSafe(ctx context.Context, dev string) error {
 	if err != nil {
 		return nil // does not exist yet, which is the normal case
 	}
-	if !strings.Contains(string(out), "wireguard") {
+	if !strings.Contains(string(out), "wireguard") && !strings.Contains(string(out), "tun") {
 		return fmt.Errorf(
-			"routing: %s already exists on this machine and is not a WireGuard device; "+
+			"routing: %s already exists on this machine and is neither a WireGuard nor a tun device; "+
 				"it belongs to something else and will not be touched", dev)
 	}
 	return nil
@@ -229,11 +260,23 @@ func (s HopSpec) wgQuickConf() string {
 	return b.String()
 }
 
+// hashText keeps a config's identity in the fingerprint without keeping the
+// config itself there.
+func hashText(s string) string {
+	if s == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:8])
+}
+
 func (s HopSpec) fingerprint() string {
 	return strings.Join([]string{
 		s.Device, s.PeerPubKey, s.Endpoint, s.Address,
 		fmt.Sprint(s.MTU), fmt.Sprintf("%08x", s.Mark),
 		strings.Join(s.AllowedIPs, ","), fmt.Sprint(s.Keepalive),
+		s.Kind, fmt.Sprint(len(s.Config)), s.Username, fmt.Sprint(len(s.Password)),
+		fmt.Sprint(s.SocksPort), s.TunAddress, hashText(s.Config),
 		// The private and preshared keys are hashed into the fingerprint by
 		// length alone. Their value must not sit in memory in a second place,
 		// and a length change is enough to notice a rotation.

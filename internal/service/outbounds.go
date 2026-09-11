@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -114,6 +115,9 @@ type OutboundInput struct {
 	AllowedIPs string `json:"allowedIps"`
 	// Keepalive is the PersistentKeepalive in seconds; 0 is the default.
 	Keepalive int `json:"keepalive"`
+	// Config is the OpenVPN profile, or the Xray outbound object as JSON.
+	// Empty on edit means "keep what is stored".
+	Config string `json:"config"`
 }
 
 // Create adds an outbound.
@@ -145,6 +149,7 @@ func (s *Outbounds) Create(ctx context.Context, in OutboundInput) (*model.Outbou
 		HopMTU:       in.HopMTU,
 		AllowedIPs:   in.AllowedIPs,
 		Keepalive:    in.Keepalive,
+		Config:       in.Config,
 		Note:         in.Note,
 	}
 	if ob.HopMTU == 0 {
@@ -227,6 +232,9 @@ func (s *Outbounds) Update(ctx context.Context, id uint, in OutboundInput) (*mod
 	}
 	if strings.TrimSpace(in.PresharedKey) != "" {
 		updates["preshared_key"] = in.PresharedKey
+	}
+	if strings.TrimSpace(in.Config) != "" {
+		updates["config"] = in.Config
 	}
 
 	// A tag that changes has to take its rules with it, or every rule pointing
@@ -357,11 +365,11 @@ func (s *Outbounds) Check(ctx context.Context, id uint, mode string) (*CheckResu
 	if mode != ModeTCP {
 		return s.finishProbe(ctx, ob, res, probeThrough(ctx, ob, mode)), nil
 	}
-	// A WireGuard endpoint is UDP and will not answer a TCP connect, so what is
-	// measured is whether the host is routable at all rather than whether the
-	// tunnel is up. Said plainly in the result so nobody reads a green tick as
-	// proof the hop works.
-	if ob.Kind == model.OutboundWireGuard {
+	// A WireGuard or OpenVPN endpoint is UDP and will not answer a TCP
+	// connect, so what is measured is whether the host is routable at all
+	// rather than whether the tunnel is up. Said plainly in the result so
+	// nobody reads a green tick as proof the hop works.
+	if ob.Kind == model.OutboundWireGuard || ob.Kind == model.OutboundOpenVPN {
 		host, _, splitErr := net.SplitHostPort(target)
 		if splitErr == nil {
 			target = net.JoinHostPort(host, "443")
@@ -481,6 +489,16 @@ func (s *Outbounds) BySub(ctx context.Context, subID uint) ([]model.Outbound, er
 	return rows, nil
 }
 
+// Config hands the form what an outbound runs from, which the listing
+// leaves out because it can carry secrets.
+func (s *Outbounds) Config(ctx context.Context, id uint) (string, error) {
+	ob, err := s.byID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return ob.Config, nil
+}
+
 // ResetTraffic zeroes one outbound's counters, or every outbound's when id is 0.
 func (s *Outbounds) ResetTraffic(ctx context.Context, id uint) error {
 	q := s.db.WithContext(ctx).Model(&model.Outbound{})
@@ -562,20 +580,107 @@ func (s *Outbounds) validate(ctx context.Context, in *OutboundInput, selfID uint
 		return invalidField("tag", "an outbound called %q already exists", in.Tag)
 	}
 
-	if in.Address == "" {
-		return invalidField("address", "an outbound of this kind needs an address to reach")
-	}
-	if err := checkHostPort(in.Address); err != nil {
-		return invalidField("address", "%v", err)
-	}
+	in.Config = strings.TrimSpace(in.Config)
 
 	switch in.Kind {
 	case model.OutboundWireGuard:
+		if err := requireHostPort(in.Address); err != nil {
+			return err
+		}
 		return s.validateWireGuard(in, selfID)
+
+	case model.OutboundOpenVPN:
+		// The profile is the configuration; the address is read out of it
+		// for the table. On edit an empty profile keeps the stored one.
+		if in.Config == "" && selfID == 0 {
+			return invalidField("config", "an OpenVPN outbound needs the client profile (.ovpn)")
+		}
+		if in.Config != "" {
+			parsed, err := parseOpenVPNProfile(in.Config)
+			if err != nil {
+				return invalidField("config", "%v", err)
+			}
+			if in.Address == "" {
+				in.Address = parsed.Address
+			}
+		}
+		if in.Address != "" {
+			if err := checkHostPort(in.Address); err != nil {
+				return invalidField("address", "%v", err)
+			}
+		}
+		if in.Username == "" && in.Password != "" {
+			return invalidField("username", "a password was given with no username")
+		}
+		return nil
+
 	case model.OutboundSOCKS, model.OutboundHTTP:
 		if in.Username == "" && in.Password != "" {
 			return invalidField("username", "a password was given with no username")
 		}
+		// Typed-in fields win over a pasted object: what the form shows is
+		// what runs. With no address the pasted object is taken as it is.
+		if in.Address != "" {
+			if err := requireHostPort(in.Address); err != nil {
+				return err
+			}
+			if in.Password == "" && selfID != 0 && in.Username != "" {
+				// The password is not echoed to the form; an edit that keeps
+				// it must build the object from the stored one.
+				var stored model.Outbound
+				if err := s.db.First(&stored, selfID).Error; err == nil {
+					in.Password = stored.Password
+				}
+			}
+			cfg, err := xrayFromProxyFields(*in)
+			if err != nil {
+				return invalidField("address", "%v", err)
+			}
+			in.Config = cfg
+			return nil
+		}
+		if in.Config == "" {
+			return invalidField("address", "an outbound of this kind needs an address to reach")
+		}
+		cfg, err := xrayConfigValid(in.Kind, in.Config)
+		if err != nil {
+			return invalidField("config", "%v", err)
+		}
+		in.Config = cfg
+		return nil
+
+	default:
+		// The rest of the Xray family: the object is the configuration.
+		if in.Config == "" && selfID == 0 {
+			return invalidField("config", "a %s outbound needs its outbound object; paste the JSON or a share link", in.Kind)
+		}
+		if in.Config != "" {
+			cfg, err := xrayConfigValid(in.Kind, in.Config)
+			if err != nil {
+				return invalidField("config", "%v", err)
+			}
+			in.Config = cfg
+			var ob map[string]any
+			_ = json.Unmarshal([]byte(cfg), &ob)
+			if addr, port := xrayTarget(ob); addr != "" && port > 0 {
+				in.Address = net.JoinHostPort(addr, strconv.Itoa(port))
+			}
+		}
+		if in.Address != "" {
+			if err := checkHostPort(in.Address); err != nil {
+				return invalidField("address", "%v", err)
+			}
+		}
+		return nil
+	}
+}
+
+func requireHostPort(addr string) error {
+	if addr == "" {
+		return invalidField("address", "an outbound of this kind needs an address to reach")
+	}
+	if err := checkHostPort(addr); err != nil {
+		return invalidField("address", "%v", err)
 	}
 	return nil
 }
@@ -724,17 +829,15 @@ func friendlyDialError(err error) string {
 	return err.Error()
 }
 
-// HopSpecs describes the upstream tunnels that should be up.
-//
-// Only WireGuard outbounds appear: a proxy hop is dialled per connection in
-// userspace and has no interface to bring up. A hop missing its keys is skipped
-// rather than attempted, because `wg setconf` with an empty key leaves the
-// device up and carrying nothing, which looks to a customer exactly like an
-// exit that works and drops every packet.
+// HopSpecs describes the upstream tunnels that should be up: every enabled
+// outbound that is not a built-in. A WireGuard hop missing its keys is
+// skipped rather than attempted, because `wg setconf` with an empty key
+// leaves the device up and carrying nothing, which looks to a customer
+// exactly like an exit that works and drops every packet.
 func (s *Outbounds) HopSpecs(ctx context.Context) ([]routing.HopSpec, error) {
 	var rows []model.Outbound
 	err := s.db.WithContext(ctx).
-		Where("kind = ? AND enabled = ?", model.OutboundWireGuard, true).
+		Where("builtin = ? AND enabled = ?", false, true).
 		Order("position, id").Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("service: read hops: %w", err)
@@ -742,23 +845,58 @@ func (s *Outbounds) HopSpecs(ctx context.Context) ([]routing.HopSpec, error) {
 
 	out := make([]routing.HopSpec, 0, len(rows))
 	for _, o := range rows {
-		if o.PrivateKey == "" || o.PeerPubKey == "" || o.Address == "" {
-			s.log.Warn("outbound hop is not fully configured and will not be brought up",
-				"tag", o.Tag)
+		if !o.Kind.NeedsHop() || o.Mark == 0 {
 			continue
 		}
-		out = append(out, routing.HopSpec{
-			Device:       HopDevice(o),
-			Mark:         o.Mark,
-			PrivateKey:   o.PrivateKey,
-			PeerPubKey:   o.PeerPubKey,
-			PresharedKey: o.PresharedKey,
-			Endpoint:     o.Address,
-			Address:      o.HopAddress,
-			MTU:          o.HopMTU,
-			AllowedIPs:   splitList(o.AllowedIPs),
-			Keepalive:    o.Keepalive,
-		})
+		spec := routing.HopSpec{
+			Device:   HopDevice(o),
+			Mark:     o.Mark,
+			Endpoint: o.Address,
+			MTU:      o.HopMTU,
+		}
+		switch {
+		case o.Kind == model.OutboundWireGuard:
+			if o.PrivateKey == "" || o.PeerPubKey == "" || o.Address == "" {
+				s.log.Warn("outbound hop is not fully configured and will not be brought up", "tag", o.Tag)
+				continue
+			}
+			spec.Kind = "wireguard"
+			spec.PrivateKey = o.PrivateKey
+			spec.PeerPubKey = o.PeerPubKey
+			spec.PresharedKey = o.PresharedKey
+			spec.Address = o.HopAddress
+			spec.AllowedIPs = splitList(o.AllowedIPs)
+			spec.Keepalive = o.Keepalive
+		case o.Kind == model.OutboundOpenVPN:
+			if o.Config == "" {
+				continue
+			}
+			spec.Kind = "openvpn"
+			spec.Config = o.Config
+			spec.Username = o.Username
+			spec.Password = o.Password
+		case o.Kind.IsXray():
+			if o.Config == "" {
+				continue
+			}
+			spec.Kind = "xray"
+			spec.Config = o.Config
+			spec.SocksPort = XraySocksPort(o)
+			spec.TunAddress = xrayTunAddress(o)
+		default:
+			continue
+		}
+		out = append(out, spec)
 	}
 	return out, nil
+}
+
+// XraySocksPort is the loopback port an Xray hop's xray listens on.
+func XraySocksPort(o model.Outbound) int { return 20000 + int(o.ID%40000) }
+
+// xrayTunAddress is the /30 a hop's tun carries: one per outbound, in a
+// range nothing else on the server uses.
+func xrayTunAddress(o model.Outbound) string {
+	n := int(o.ID % 16000)
+	return fmt.Sprintf("172.31.%d.%d/30", (n*4)/256, (n*4)%256+1)
 }

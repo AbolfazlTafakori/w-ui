@@ -157,6 +157,7 @@ func run() error {
 	defer shp.Close()
 
 	router := routing.NewApplier(log)
+	routing.HopWorkDir = filepath.Join(cfg.DataDir, "hops")
 	hops := routing.NewHopManager(log)
 
 	settings := service.NewSettings(db, cfg.DefaultLocale)

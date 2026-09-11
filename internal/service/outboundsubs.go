@@ -488,10 +488,17 @@ func parseSubscription(body []byte) ([]OutboundInput, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		in, ok := parseProxyLink(line, i+1)
-		if ok {
-			out = append(out, in)
+		// Every link kind the form takes, the subscription takes: a list of
+		// vless or vmess links becomes real exits, not skipped lines.
+		in, err := parseShareLink(line)
+		if err != nil {
+			continue
 		}
+		if in.Tag == "" {
+			in.Tag = fmt.Sprintf("%s-%d", in.Kind, i+1)
+		}
+		in.Tag = cleanTag(in.Tag)
+		out = append(out, *in)
 	}
 	return out, nil
 }
@@ -510,28 +517,9 @@ func parseSubscriptionJSON(text string) ([]OutboundInput, error) {
 	return obj.Outbounds, nil
 }
 
-// parseProxyLink reads socks5://user:pass@host:port#tag or http://... . Links
-// of kinds this panel has no outbound for -- vless, vmess, trojan -- are
-// skipped rather than rejected, so a mixed list still yields what it can.
-func parseProxyLink(line string, n int) (OutboundInput, bool) {
-	u, err := url.Parse(line)
-	if err != nil || u.Host == "" {
-		return OutboundInput{}, false
-	}
-	var kind model.OutboundKind
-	switch strings.ToLower(u.Scheme) {
-	case "socks", "socks5", "socks5h":
-		kind = model.OutboundSOCKS
-	case "http", "https":
-		kind = model.OutboundHTTP
-	default:
-		return OutboundInput{}, false
-	}
-	tag := strings.TrimSpace(u.Fragment)
-	if tag == "" {
-		tag = fmt.Sprintf("%s-%d", kind, n)
-	}
-	// Anything a tag may not contain becomes a dash.
+// cleanTag turns anything a link's remark may carry into a tag the panel
+// accepts: letters, digits, - and _.
+func cleanTag(tag string) string {
 	var b strings.Builder
 	for _, r := range tag {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
@@ -540,10 +528,8 @@ func parseProxyLink(line string, n int) (OutboundInput, bool) {
 			b.WriteByte('-')
 		}
 	}
-	in := OutboundInput{Tag: b.String(), Kind: kind, Address: u.Host}
-	if u.User != nil {
-		in.Username = u.User.Username()
-		in.Password, _ = u.User.Password()
+	if b.Len() > 64 {
+		return b.String()[:64]
 	}
-	return in, true
+	return b.String()
 }
