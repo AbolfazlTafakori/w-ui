@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ type Applier struct {
 	mu         sync.Mutex
 	applied    string // last nft program written
 	appliedNAT string // last masquerade program written
+	prunedKey  string // the hop set the stale rules were last swept for
 	appliedP   string // fingerprint of the last routing plan
 	lastErr    error
 	ready      bool
@@ -73,9 +75,18 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 	plan := BuildPlan(p.Hops)
 	fp := planFingerprint(plan)
 
+	// Rules of hops that are gone are swept whenever the set of hops
+	// changes -- including to none, which no plan expresses -- and once on
+	// the first apply after a start, for whatever the last run left.
+	hopsKey := hopsFingerprint(p.Hops)
 	a.mu.Lock()
 	samePlan := fp == a.appliedP
+	prune := hopsKey != a.prunedKey
+	a.prunedKey = hopsKey
 	a.mu.Unlock()
+	if prune {
+		a.pruneRules(ctx, p.Hops)
+	}
 	if samePlan {
 		return nil
 	}
@@ -96,7 +107,6 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 			return fmt.Errorf("routing: could not %s: %w", s.Describe, err)
 		}
 	}
-	a.pruneRules(ctx, p.Hops)
 
 	a.mu.Lock()
 	a.appliedP = fp
@@ -285,6 +295,15 @@ func missingTable(err error) bool {
 // planFingerprint reduces a plan to a string so an unchanged plan is not
 // re-applied. Re-adding the same ip rule every tick would work, but it would
 // also mean every tick spawns processes for nothing.
+func hopsFingerprint(hops []Hop) string {
+	marks := make([]string, 0, len(hops))
+	for _, h := range hops {
+		marks = append(marks, fmt.Sprintf("%08x", h.Mark))
+	}
+	sort.Strings(marks)
+	return "hops:" + strings.Join(marks, ",")
+}
+
 func planFingerprint(p Plan) string {
 	var b strings.Builder
 	for _, s := range p.Add {
