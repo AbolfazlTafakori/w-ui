@@ -866,7 +866,7 @@ async function submitForm(input) {
         <button v-if="filterCount || search || statusFilter || groupFilter" class="btn" @click="clearFilters">
           {{ t('client.menu.clearAllFilters') }}
         </button>
-        <span v-if="page" class="muted small filter-count">
+        <span v-if="page" class="muted small shown-count">
           {{ t('client.menu.showingCount').replace('{shown}', nf(page.items.length)).replace('{total}', nf(page.total)) }}
         </span>
       </div>
@@ -1339,6 +1339,8 @@ async function submitForm(input) {
 }
 .filter-bar .search input:focus { outline: none; box-shadow: none; }
 .filter-bar .sort {
+  flex: 0 0 auto;
+  width: auto;
   min-width: 200px;
   height: 32px;
 }
@@ -1360,7 +1362,7 @@ async function submitForm(input) {
   line-height: 16px;
   text-align: center;
 }
-.filter-count {
+.shown-count {
   margin-inline-start: auto;
 }
 .chips {
