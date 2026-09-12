@@ -41,6 +41,10 @@ const (
 type Prober struct {
 	db  *gorm.DB
 	log *slog.Logger
+
+	// OnChange is told when a node stops answering or starts again; nil
+	// means nobody is listening.
+	OnChange func(node model.Node, reachable bool, detail string)
 }
 
 func New(db *gorm.DB, log *slog.Logger) *Prober {
@@ -148,8 +152,14 @@ func (p *Prober) ProbeOne(ctx context.Context, node model.Node) Snapshot {
 	// fills its log with the same line twice a minute forever.
 	if err != nil && node.Reachable {
 		p.log.Warn("node became unreachable", "node", node.Name, "error", err)
+		if p.OnChange != nil {
+			p.OnChange(node, false, err.Error())
+		}
 	} else if err == nil && !node.Reachable {
 		p.log.Info("node is reachable", "node", node.Name, "latency_ms", snap.LatencyMS)
+		if p.OnChange != nil {
+			p.OnChange(node, true, fmt.Sprintf("%d ms", snap.LatencyMS))
+		}
 	}
 	return snap
 }

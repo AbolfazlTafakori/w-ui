@@ -10,10 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -131,6 +133,35 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	// What the settings page saved for this start is laid over the
+	// environment now, before anything listens or schedules. Empty values
+	// change nothing, which is how a fresh install keeps running on its
+	// environment alone.
+	settings := service.NewSettings(db, cfg.DefaultLocale)
+	if ov := settings.Overrides(context.Background()); ov != (service.Overrides{}) {
+		if ov.Listen != "" {
+			cfg.Listen = ov.Listen
+		}
+		if ov.BasePath != "" {
+			cfg.BasePath = ov.BasePath
+		}
+		if ov.TLSCert != "" && ov.TLSKey != "" {
+			cfg.TLSCert, cfg.TLSKey = ov.TLSCert, ov.TLSKey
+		}
+		if ov.TrustedProxies != "" {
+			cfg.TrustedProxies = ov.TrustedProxies
+		}
+		if ov.TimeLocation != "" {
+			if loc, err := time.LoadLocation(ov.TimeLocation); err == nil {
+				time.Local = loc
+			} else {
+				log.Warn("ignoring the saved time zone", "zone", ov.TimeLocation, "error", err)
+			}
+		}
+		log.Info("settings from the panel applied over the environment",
+			"listen", cfg.Listen, "basePath", cfg.BasePath, "tls", cfg.TLS())
+	}
 	if password != "" {
 		printFirstRunCredentials(password)
 	}
@@ -161,12 +192,24 @@ func run() error {
 	routing.HopWorkDir = filepath.Join(cfg.DataDir, "hops")
 	hops := routing.NewHopManager(log)
 
-	settings := service.NewSettings(db, cfg.DefaultLocale)
 	outbounds := service.NewOutbounds(db, log)
 	routes := service.NewRouting(db, log)
 	notifier := notify.New(log)
 	notifier.SetConfig(settings.Notify(context.Background()))
 	notifier.SetMail(settings.Mail(context.Background()))
+	if got, err := settings.Get(context.Background()); err == nil {
+		routes.SetPanelOutbound(got.PanelOutbound)
+	}
+
+	// An outbound judged down, or back: the bot's outbound events.
+	outbounds.DownThreshold = func() int { return notifier.Config().Thresholds.OutboundDown }
+	outbounds.OnStatus = func(tag string, up bool, detail string) {
+		kind, title := notify.KindOutboundDown, "Outbound down"
+		if up {
+			kind, title = notify.KindOutboundUp, "Outbound up"
+		}
+		notifier.Send(notify.Event{Kind: kind, Title: title, Body: tag + " — " + detail})
+	}
 
 	backups := backup.New(backup.Options{
 		DataDir: cfg.DataDir,
@@ -303,10 +346,27 @@ func run() error {
 	}()
 
 	notifier.Start(ctx)
+	// The host's own load, for the CPU and memory events.
+	notifier.RunSystemMonitor(ctx, func() (float64, float64) {
+		snap := sys.Snapshot()
+		return snap.CPU.Percent, snap.Memory.Percent
+	})
+	// The periodic report, on the schedule the Telegram page sets.
+	clientsSvc := service.NewClients(db, pools, log)
+	notifier.RunReports(ctx, service.NewReporter(db, clientsSvc, settings, backups, version).Build)
+	// Traffic handed to an outside system, when one is configured.
+	service.NewInformer(db, settings, log).Run(ctx, cfg.CollectInterval)
 
 	// Watching the other servers. Started before the HTTP listener so the nodes
 	// page has answers the first time it is opened rather than an empty table.
 	prober := nodes.New(db, log)
+	prober.OnChange = func(node model.Node, reachable bool, detail string) {
+		kind, title := notify.KindNodeDown, "Node unreachable"
+		if reachable {
+			kind, title = notify.KindNodeUp, "Node reachable"
+		}
+		notifier.Send(notify.Event{Kind: kind, Title: title, Body: node.Name + " — " + detail})
+	}
 	prober.Start(ctx)
 
 	// Carrying this panel's decisions out to the servers that terminate tunnels,
@@ -352,13 +412,49 @@ func run() error {
 		Body:  fmt.Sprintf("W-UI %s on %s", version, cfg.Listen),
 	})
 
-	srv, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
-		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, local.ID, log)
+	srv, subOnly, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
+		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, local.ID, log,
+		// Restart is a tidy stop: the service manager is set to bring the
+		// panel back, and this run's history is saved on the way out.
+		func() { stop() })
 	if err != nil {
 		return err
 	}
 
 	errc := make(chan error, 1)
+
+	// The subscription service on its own address, when the settings ask
+	// for one that is not the panel's. Customers' apps then never touch the
+	// panel's listener at all.
+	var subSrv *http.Server
+	if sc, err := subs.Settings(ctx); err == nil && sc.Port > 0 {
+		addr := net.JoinHostPort(sc.Listen, strconv.Itoa(sc.Port))
+		if addr != cfg.Listen {
+			subSrv = &http.Server{
+				Addr:              addr,
+				TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+				Handler:           subOnly,
+				ReadHeaderTimeout: 10 * time.Second,
+				ReadTimeout:       30 * time.Second,
+				WriteTimeout:      60 * time.Second,
+				IdleTimeout:       120 * time.Second,
+			}
+			go func() {
+				log.Info("subscription service listening", "address", addr, "tls", sc.CertFile != "")
+				var err error
+				if sc.CertFile != "" && sc.KeyFile != "" {
+					err = subSrv.ListenAndServeTLS(sc.CertFile, sc.KeyFile)
+				} else {
+					err = subSrv.ListenAndServe()
+				}
+				if err != nil && !errors.Is(err, http.ErrServerClosed) {
+					// Its own failure is logged, not fatal: the panel still
+					// serves subscriptions on its own listener.
+					log.Error("subscription listener failed", "address", addr, "error", err)
+				}
+			}()
+		}
+	}
 	go func() {
 		log.Info("listening",
 			"address", cfg.Listen,
@@ -400,6 +496,9 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if subSrv != nil {
+		_ = subSrv.Shutdown(shutdownCtx)
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
@@ -429,7 +528,8 @@ func buildServer(
 	pool *backend.Pool,
 	localNodeID uint,
 	log *slog.Logger,
-) (*http.Server, error) {
+	restart func(),
+) (*http.Server, http.Handler, error) {
 	// Who may speak for somebody else. Done before anything serves, so no
 	// request is ever handled with the wrong idea of where it came from.
 	if bad := api.SetTrustedProxies(strings.Split(cfg.TrustedProxies, ",")); len(bad) > 0 {
@@ -438,35 +538,40 @@ func buildServer(
 	}
 
 	apiSrv := api.New(api.Options{
-		DB:          db,
-		Clients:     service.NewClients(db, pools, log),
-		Interfaces:  service.NewInterfaces(db, pools, log),
-		Catalog:     catalog,
-		Enforcer:    enforcer,
-		Shaper:      shp,
-		Settings:    settings,
-		Notifier:    notifier,
-		Backups:     backups,
-		Prober:      prober,
-		JWTSecret:   jwtSecret,
-		Logger:      log,
-		Version:     version,
-		Listen:      cfg.Listen,
-		DBDriver:    string(cfg.DBDriver),
-		DBSource:    cfg.DBSource,
-		SysInfo:     sys,
-		Outbounds:   outbounds,
-		Routing:     routes,
-		Router:      router,
-		Subs:        subs,
-		Pool:        pool,
-		LocalNodeID: localNodeID,
-		Reconciler:  rec,
+		DB:             db,
+		Clients:        service.NewClients(db, pools, log),
+		Interfaces:     service.NewInterfaces(db, pools, log),
+		Catalog:        catalog,
+		Enforcer:       enforcer,
+		Shaper:         shp,
+		Settings:       settings,
+		Notifier:       notifier,
+		Backups:        backups,
+		Prober:         prober,
+		JWTSecret:      jwtSecret,
+		Logger:         log,
+		Version:        version,
+		Listen:         cfg.Listen,
+		DBDriver:       string(cfg.DBDriver),
+		DBSource:       cfg.DBSource,
+		SysInfo:        sys,
+		Outbounds:      outbounds,
+		Routing:        routes,
+		Router:         router,
+		Subs:           subs,
+		Pool:           pool,
+		LocalNodeID:    localNodeID,
+		Reconciler:     rec,
+		Restart:        restart,
+		BasePath:       cfg.BasePath,
+		TLSCert:        cfg.TLSCert,
+		TLSKey:         cfg.TLSKey,
+		TrustedProxies: cfg.TrustedProxies,
 	})
 
 	frontend, err := web.Handler(cfg.BasePath)
 	if err != nil {
-		return nil, fmt.Errorf("frontend: %w", err)
+		return nil, nil, fmt.Errorf("frontend: %w", err)
 	}
 
 	root := http.NewServeMux()
@@ -484,6 +589,9 @@ func buildServer(
 	// single-page fallback swallows the request as a route.
 	handler := apiSrv.SubscriptionRouter(app)
 
+	// The subscription service alone, for a listener of its own.
+	subOnly := api.LogRequests(log, api.SecureHeaders(apiSrv.SubscriptionRouter(http.NotFoundHandler())))
+
 	return &http.Server{
 		Addr: cfg.Listen,
 		// Nothing below TLS 1.2 is offered. The clients that need less are
@@ -494,7 +602,7 @@ func buildServer(
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
-	}, nil
+	}, subOnly, nil
 }
 
 // registerBackends links the available protocol drivers.

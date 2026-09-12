@@ -40,12 +40,31 @@ const (
 	KindLogin     Kind = "login"     // someone signed in to the panel
 	KindPanel     Kind = "panel"     // the panel started, stopped, or degraded
 	KindBackup    Kind = "backup"    // a backup was taken
+
+	// The event bus 3x-ui's bot subscribes to, kind for kind.
+	KindOutboundDown Kind = "outbound.down" // an outbound stopped answering
+	KindOutboundUp   Kind = "outbound.up"   // and came back
+	KindNodeDown     Kind = "node.down"     // a node stopped answering
+	KindNodeUp       Kind = "node.up"       // and came back
+	KindCPUHigh      Kind = "cpu.high"      // the host is over its CPU threshold
+	KindMemoryHigh   Kind = "memory.high"   // or its memory threshold
 )
 
 // AllKinds is every event, in the order the settings page lists them.
 func AllKinds() []Kind {
 	return []Kind{KindExhausted, KindExpired, KindExpiring, KindSharing,
-		KindLogin, KindPanel, KindBackup}
+		KindLogin, KindPanel, KindBackup,
+		KindOutboundDown, KindOutboundUp, KindNodeDown, KindNodeUp,
+		KindCPUHigh, KindMemoryHigh}
+}
+
+// Thresholds are the numbers behind the events that have one.
+type Thresholds struct {
+	CPU          int // percent
+	Memory       int // percent
+	OutboundDown int // percent of probes failed
+	ExpireDays   int // a customer with fewer days left is "expiring"
+	TrafficGB    int // a customer with fewer GB left is "running out"
 }
 
 // Config is what the settings page stores.
@@ -54,6 +73,30 @@ type Config struct {
 	BotToken string          `json:"botToken"`
 	ChatID   string          `json:"chatId"`
 	Kinds    map[string]bool `json:"kinds"`
+	// Lang is the language the bot writes in.
+	Lang string `json:"lang"`
+	// APIServer replaces https://api.telegram.org, for hosts that cannot
+	// reach it directly. Empty is Telegram's own.
+	APIServer string `json:"apiServer"`
+	// RunTime is when the periodic report goes; see ParseSchedule.
+	RunTime string `json:"runTime"`
+	// Backup attaches the database to the report.
+	Backup     bool       `json:"backup"`
+	Thresholds Thresholds `json:"thresholds"`
+}
+
+// apiBase is where this configuration talks to Telegram.
+func (c Config) apiBase() string {
+	if v := strings.TrimRight(strings.TrimSpace(c.APIServer), "/"); v != "" {
+		return v
+	}
+	return "https://api.telegram.org"
+}
+
+// ready reports whether messages can be sent at all: the report and the
+// tests need the channel, not a kind.
+func (c Config) ready() bool {
+	return c.Enabled && c.BotToken != "" && c.ChatID != ""
 }
 
 // Wants reports whether this kind should be sent.
@@ -248,8 +291,7 @@ func (n *Notifier) post(ctx context.Context, c Config, text string) error {
 		return fmt.Errorf("notify: encode message: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage",
-		url.PathEscape(c.BotToken))
+	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", c.apiBase(), url.PathEscape(c.BotToken))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("notify: build request: %w", err)

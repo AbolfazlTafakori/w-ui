@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -28,6 +29,14 @@ const (
 	keySubTitle    = "sub.title"
 	keySubInterval = "sub.updateHours"
 	keySubProxyURI = "sub.reverseProxyUri"
+	keySubListen   = "sub.listen"
+	keySubPort     = "sub.port"
+	keySubCertFile = "sub.certFile"
+	keySubKeyFile  = "sub.keyFile"
+	keySubEncode   = "sub.encode"
+	keySubSupport  = "sub.supportUrl"
+	keySubProfile  = "sub.profileUrl"
+	keySubAnnounce = "sub.announce"
 )
 
 // DefaultSubPath is where the subscription service answers when nothing else
@@ -73,6 +82,21 @@ type SubSettings struct {
 	UpdateHours int `json:"updateHours"`
 	// ReverseProxyURI is the public prefix when the panel sits behind one.
 	ReverseProxyURI string `json:"reverseProxyUri"`
+
+	// Listen and Port put the service on a listener of its own, with its
+	// own certificate; empty keeps it on the panel's. Applied at start.
+	Listen   string `json:"listen"`
+	Port     int    `json:"port"`
+	CertFile string `json:"certFile"`
+	KeyFile  string `json:"keyFile"`
+	// Encode returns text subscriptions base64-encoded, which some apps
+	// insist on.
+	Encode bool `json:"encode"`
+	// What the customer's app shows beside the profile: a support link, a
+	// web page, and a notice.
+	SupportURL string `json:"supportUrl"`
+	ProfileURL string `json:"profileUrl"`
+	Announce   string `json:"announce"`
 }
 
 // SubDefaults is the shape a panel that has never been configured has.
@@ -109,6 +133,14 @@ func (s *Subscriptions) Settings(ctx context.Context) (SubSettings, error) {
 	}
 	out.UpdateHours = intOr(stored[keySubInterval], out.UpdateHours)
 	out.ReverseProxyURI = strings.TrimSpace(stored[keySubProxyURI])
+	out.Listen = strings.TrimSpace(stored[keySubListen])
+	out.Port = intOr(stored[keySubPort], 0)
+	out.CertFile = strings.TrimSpace(stored[keySubCertFile])
+	out.KeyFile = strings.TrimSpace(stored[keySubKeyFile])
+	out.Encode = stored[keySubEncode] == "true"
+	out.SupportURL = strings.TrimSpace(stored[keySubSupport])
+	out.ProfileURL = strings.TrimSpace(stored[keySubProfile])
+	out.Announce = stored[keySubAnnounce]
 	return out, nil
 }
 
@@ -130,6 +162,25 @@ func (s *Subscriptions) SaveSettings(ctx context.Context, in SubSettings) (SubSe
 		return SubSettings{}, invalidField("reverseProxyUri",
 			"this should be the full public address, beginning with http:// or https://")
 	}
+	if in.Port < 0 || in.Port > 65535 {
+		return SubSettings{}, invalidField("port", "port %d is out of range", in.Port)
+	}
+	if v := strings.TrimSpace(in.Listen); v != "" {
+		if _, err := netip.ParseAddr(v); err != nil {
+			return SubSettings{}, invalidField("listen", "%q is not an IP address", v)
+		}
+	}
+	if (in.CertFile == "") != (in.KeyFile == "") {
+		return SubSettings{}, invalidField("certFile", "a certificate and its key go together")
+	}
+	for name, u := range map[string]string{"supportUrl": in.SupportURL, "profileUrl": in.ProfileURL} {
+		if u = strings.TrimSpace(u); u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return SubSettings{}, invalidField(name, "this should be a full address, beginning with http:// or https://")
+		}
+	}
+	if len(in.Announce) > 1000 {
+		return SubSettings{}, invalidField("announce", "that notice is too long")
+	}
 
 	writes := map[string]string{
 		keySubEnabled:  strconv.FormatBool(in.Enabled),
@@ -138,6 +189,14 @@ func (s *Subscriptions) SaveSettings(ctx context.Context, in SubSettings) (SubSe
 		keySubTitle:    in.Title,
 		keySubInterval: strconv.Itoa(in.UpdateHours),
 		keySubProxyURI: strings.TrimRight(in.ReverseProxyURI, "/"),
+		keySubListen:   strings.TrimSpace(in.Listen),
+		keySubPort:     strconv.Itoa(in.Port),
+		keySubCertFile: strings.TrimSpace(in.CertFile),
+		keySubKeyFile:  strings.TrimSpace(in.KeyFile),
+		keySubEncode:   strconv.FormatBool(in.Encode),
+		keySubSupport:  strings.TrimSpace(in.SupportURL),
+		keySubProfile:  strings.TrimSpace(in.ProfileURL),
+		keySubAnnounce: strings.TrimSpace(in.Announce),
 	}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for k, v := range writes {

@@ -23,7 +23,29 @@ export const store = reactive({
   ready: false,
   toast: null,
   navigating: false,
+  // The few panel settings the rest of the pages consult: how many rows a
+  // table page holds, which calendar dates are shown in, and how close to
+  // the line a customer has to be before they are coloured as running out.
+  panel: { pageSize: 25, datepicker: 'gregorian', expireDiff: 3, trafficDiff: 1 },
 })
+
+// loadPanelSettings refreshes store.panel from the server. Quiet on failure:
+// the defaults are right for most installs, and a page must not stop
+// rendering because a settings read did not.
+export async function loadPanelSettings() {
+  try {
+    const res = await api.get('/api/settings', { background: true })
+    const s = res?.settings || {}
+    store.panel = {
+      pageSize: Number.isFinite(s.pageSize) ? s.pageSize : 25,
+      datepicker: s.datepicker || 'gregorian',
+      expireDiff: s.expireDiff ?? 3,
+      trafficDiff: s.trafficDiff ?? 1,
+    }
+  } catch {
+    /* keep the defaults */
+  }
+}
 
 // t resolves a message key. The catalog comes from the Go binary, so the
 // backend and frontend can never disagree about what a string says, and a key
@@ -81,6 +103,7 @@ export async function bootstrap() {
   if (getToken()) {
     try {
       store.admin = await api.me()
+      loadPanelSettings()
     } catch {
       store.admin = null
     }
@@ -97,6 +120,7 @@ export async function signIn(username, password, code) {
 
   setToken(res.token)
   store.admin = res.admin
+  loadPanelSettings()
   if (res.admin?.locale && res.admin.locale !== store.locale) {
     await loadMessages(res.admin.locale)
   }

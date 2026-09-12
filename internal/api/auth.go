@@ -27,7 +27,7 @@ func (s *Server) sessionTTL(ctx context.Context) time.Duration {
 	if s.settings == nil {
 		return defaultSessionTTL
 	}
-	return time.Duration(s.settings.SessionTTLHours(ctx)) * time.Hour
+	return s.settings.SessionTTL(ctx)
 }
 
 type ctxKey int
@@ -326,6 +326,7 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 
 type totpDisableRequest struct {
 	Password string `json:"password"`
+	Code     string `json:"code"`
 }
 
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
@@ -348,8 +349,14 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
-	if bcrypt.CompareHashAndPassword([]byte(stored.PasswordHash), []byte(req.Password)) != nil {
-		writeError(w, http.StatusUnauthorized, "that password is not right")
+	// Either proof will do: the password, or a code from the app being
+	// removed, which is what 3x-ui asks for and what an operator holding the
+	// phone has to hand.
+	switch {
+	case req.Password != "" && bcrypt.CompareHashAndPassword([]byte(stored.PasswordHash), []byte(req.Password)) == nil:
+	case req.Code != "" && stored.TOTPSecret != "" && totp.Validate(stored.TOTPSecret, req.Code, time.Now()):
+	default:
+		writeError(w, http.StatusUnauthorized, "that password or code is not right")
 		return
 	}
 

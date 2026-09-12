@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -135,7 +136,23 @@ func (s *Server) buildSystemInfo(r *http.Request) systemInfo {
 
 type changePasswordRequest struct {
 	CurrentPassword string `json:"currentPassword"`
+	NewUsername     string `json:"newUsername"`
 	NewPassword     string `json:"newPassword"`
+}
+
+// handleRestartPanel ends the process so the service manager brings it back
+// with the saved listen address, path and certificates. Answered before the
+// exit, so the page learns the restart was accepted rather than losing the
+// connection with no word.
+func (s *Server) handleRestartPanel(w http.ResponseWriter, r *http.Request) {
+	s.log.Info("panel restart requested from the settings page")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		if s.restart != nil {
+			s.restart()
+		}
+	}()
 }
 
 // handleChangePassword updates the signed-in operator's password.
@@ -154,8 +171,17 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	if len(req.NewPassword) < 8 {
+	req.NewUsername = strings.TrimSpace(req.NewUsername)
+	if req.NewPassword == "" && (req.NewUsername == "" || req.NewUsername == admin.Username) {
+		writeError(w, http.StatusBadRequest, "give a new username, a new password, or both")
+		return
+	}
+	if req.NewPassword != "" && len(req.NewPassword) < 8 {
 		writeError(w, http.StatusBadRequest, "the new password must be at least 8 characters")
+		return
+	}
+	if req.NewUsername != "" && len(req.NewUsername) > 64 {
+		writeError(w, http.StatusBadRequest, "the username can be at most 64 characters")
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.CurrentPassword)) != nil {
@@ -163,10 +189,17 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
-	if err != nil {
-		fail(w, s.log, fmt.Errorf("hash password: %w", err))
-		return
+	updates := map[string]any{"session_epoch": gorm.Expr("session_epoch + 1")}
+	if req.NewUsername != "" {
+		updates["username"] = req.NewUsername
+	}
+	if req.NewPassword != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+		if err != nil {
+			fail(w, s.log, fmt.Errorf("hash password: %w", err))
+			return
+		}
+		updates["password_hash"] = string(hash)
 	}
 	// The generation moves with the password. Somebody changes it because they
 	// think a session is not theirs, and a signed token that outlives the change
@@ -175,11 +208,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	//
 	// Written in one statement with the hash, so a failure cannot leave the
 	// password changed and the old sessions alive.
-	if err := s.db.WithContext(r.Context()).Model(admin).Updates(map[string]any{
-		"password_hash": string(hash),
-		"session_epoch": gorm.Expr("session_epoch + 1"),
-	}).Error; err != nil {
-		fail(w, s.log, fmt.Errorf("store password: %w", err))
+	if err := s.db.WithContext(r.Context()).Model(admin).Updates(updates).Error; err != nil {
+		fail(w, s.log, fmt.Errorf("store credentials: %w", err))
 		return
 	}
 
@@ -252,9 +282,37 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, panelSettingsResponse{
-		Settings: maskToken(current),
-		Defaults: s.settings.Defaults(),
+		Settings: s.withEffective(maskToken(current)),
+		Defaults: s.withEffective(s.settings.Defaults()),
 	})
+}
+
+// withEffective fills the fields that are empty until an operator saves
+// them with what the process is actually running with, so the page shows
+// the real listen address and path rather than blanks -- and marks them as
+// the default, which for these means "from the environment".
+func (s *Server) withEffective(in service.PanelSettings) service.PanelSettings {
+	host, port, err := net.SplitHostPort(s.listen)
+	if err == nil {
+		if in.WebListen == "" {
+			in.WebListen = host
+		}
+		if in.WebPort == 0 {
+			if n, err := strconv.Atoi(port); err == nil {
+				in.WebPort = n
+			}
+		}
+	}
+	if in.WebBasePath == "" {
+		in.WebBasePath = s.basePath
+	}
+	if in.WebCertFile == "" && in.WebKeyFile == "" {
+		in.WebCertFile, in.WebKeyFile = s.tlsCert, s.tlsKey
+	}
+	if in.TrustedProxyCIDRs == "" {
+		in.TrustedProxyCIDRs = s.proxies
+	}
+	return in
 }
 
 // maskToken keeps the bot token out of every settings response.
@@ -292,6 +350,9 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if s.notifier != nil {
 		s.notifier.SetConfig(s.settings.Notify(r.Context()))
 		s.notifier.SetMail(s.settings.Mail(r.Context()))
+	}
+	if s.routing != nil {
+		s.routing.SetPanelOutbound(saved.PanelOutbound)
 	}
 
 	writeJSON(w, http.StatusOK, panelSettingsResponse{

@@ -75,6 +75,18 @@ const sorted = computed(() => {
   return dir === 'desc' ? rows.reverse() : rows
 })
 
+// Their pagination: the size from the settings page, and no bar at all when
+// everything fits on one page.
+const page = ref(1)
+const pageSize = computed(() => (store.panel.pageSize > 0 ? store.panel.pageSize : sorted.value.length || 1))
+const pageCount = computed(() => Math.max(1, Math.ceil(sorted.value.length / pageSize.value)))
+const paged = computed(() => {
+  if (page.value > pageCount.value) page.value = pageCount.value
+  const start = (page.value - 1) * pageSize.value
+  return sorted.value.slice(start, start + pageSize.value)
+})
+const pageNumbers = computed(() => Array.from({ length: pageCount.value }, (_, i) => i + 1))
+
 // ── the two menus: General Actions on the toolbar, and each row's ──
 const generalOpen = ref(false)
 const rowMenu = ref(null) // { iface, x, y }
@@ -737,7 +749,7 @@ async function submitForm(input) {
 </script>
 
 <template>
-  <div class="inbounds">
+  <div class="antpage inbounds">
   <!-- Their summary Card: size="small", three Statistics. -->
   <div class="acard small summary-card">
     <div class="acard-body">
@@ -854,7 +866,7 @@ async function submitForm(input) {
                 </div>
               </td>
             </tr>
-            <tr v-for="i in sorted" :key="i.id" :class="{ picked: selected.has(i.id) }">
+            <tr v-for="i in paged" :key="i.id" :class="{ picked: selected.has(i.id) }">
               <td class="sel">
                 <input type="checkbox" class="acheck" :checked="selected.has(i.id)" :aria-label="i.name" @change="toggleOne(i.id, $event.target.checked)" />
               </td>
@@ -898,6 +910,11 @@ async function submitForm(input) {
             </tr>
           </tbody>
         </table>
+        <ul v-if="pageCount > 1" class="apagination">
+          <li><button class="apage" :disabled="page <= 1" :aria-label="t('action.previous')" @click="page--">‹</button></li>
+          <li v-for="n in pageNumbers" :key="n"><button class="apage" :class="{ active: n === page }" @click="page = n">{{ n }}</button></li>
+          <li><button class="apage" :disabled="page >= pageCount" :aria-label="t('action.next')" @click="page++">›</button></li>
+        </ul>
       </div>
     </div>
   </div>
@@ -1099,328 +1116,6 @@ async function submitForm(input) {
 </template>
 
 <style scoped>
-/* Everything below is Ant Design's default geometry -- what 3x-ui gets by
-   using Ant without overriding a size -- so the page measures the same as
-   theirs: 14px text on a 22px line, 32px controls, 8px table cells, tags of
-   12px on a 20px line. Colour comes from the panel's tokens. */
-.inbounds {
-  display: flex;
-  flex-direction: column;
-  gap: 12px; /* Row gutter [16, 12] */
-  font-size: 14px;
-  line-height: 1.5714285714285714;
-}
-
-/* Card */
-.acard {
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  transition: box-shadow 0.2s, border-color 0.2s;
-}
-.acard:hover { box-shadow: var(--shadow); border-color: transparent; } /* hoverable */
-.acard-head {
-  display: flex;
-  align-items: center;
-  min-height: 56px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.acard-body { padding: 24px; }
-.acard.small .acard-body { padding: 12px; }
-
-/* Row/Col gutter [16, 12] with md=8 columns */
-.arow {
-  display: flex;
-  flex-wrap: wrap;
-  margin: -6px -8px;
-}
-.acol {
-  flex: 0 0 33.3333%;
-  max-width: 33.3333%;
-  padding: 6px 8px;
-  box-sizing: border-box;
-}
-@media (max-width: 767px) {
-  .acol { flex: 0 0 50%; max-width: 50%; }
-  .acol:last-child { flex: 0 0 100%; max-width: 100%; }
-}
-
-/* Statistic */
-.stat-title {
-  margin-bottom: 4px;
-  font-size: 14px;
-  color: var(--muted);
-}
-.stat-content {
-  display: flex;
-  align-items: center;
-  font-size: 24px;
-  color: var(--ink);
-}
-.stat-prefix { display: inline-block; margin-inline-end: 4px; }
-
-/* Space, size small */
-.aspace {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Button */
-.abtn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 32px;
-  padding: 4px 15px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  font-weight: 400;
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-.abtn:hover { color: var(--accent-hover); border-color: var(--accent-hover); }
-.abtn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  box-shadow: 0 2px 0 var(--accent-ring, rgba(0, 0, 0, 0.04));
-}
-.abtn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
-.abtn.danger { border-color: var(--bad); color: var(--bad); }
-.abtn.danger:hover { border-color: var(--bad); color: var(--bad); opacity: 0.8; }
-.abtn.text {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  color: var(--ink);
-}
-.abtn.text:hover { background: var(--surface-3); color: var(--ink); }
-.abtn.sm {
-  height: 24px;
-  padding: 0 7px;
-  border-radius: 4px;
-  font-size: 16px; /* their style={{ fontSize: 16 }} on the icon buttons */
-}
-
-/* Input with a prefix and allowClear */
-.ainput {
-  display: inline-flex;
-  align-items: center;
-  width: 200px;
-  height: 32px;
-  padding: 4px 11px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  transition: all 0.2s;
-}
-.ainput:hover, .ainput:focus-within { border-color: var(--accent-hover); }
-.ainput:focus-within { box-shadow: 0 0 0 2px var(--accent-ring); }
-.ainput-prefix { display: flex; margin-inline-end: 4px; color: var(--ink); }
-.ainput input {
-  flex: 1;
-  min-width: 0;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-}
-.ainput input:focus { outline: none; box-shadow: none; }
-.ainput input::placeholder { color: var(--faint); }
-.ainput-clear {
-  display: flex;
-  margin-inline-start: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--faint);
-  font-size: 12px;
-  cursor: pointer;
-}
-.ainput-clear:hover { color: var(--muted); }
-
-/* Tag */
-.atag {
-  display: inline-block;
-  height: auto;
-  margin-inline-end: 8px;
-  padding-inline: 7px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface-3);
-  color: var(--ink);
-  font-size: 12px;
-  line-height: 20px;
-  white-space: nowrap;
-  box-sizing: border-box;
-  font-variant-numeric: tabular-nums;
-}
-.atag .anticon { font-size: 12px; }
-.atag.green { background: var(--tag-green-bg); border-color: var(--tag-green-line); color: var(--tag-green-ink); }
-.atag.red { background: var(--tag-red-bg); border-color: var(--tag-red-line); color: var(--tag-red-ink); }
-.atag.purple { background: var(--tag-purple-bg); border-color: var(--tag-purple-line); color: var(--tag-purple-ink); }
-.atag.blue { background: var(--tag-blue-bg); border-color: var(--tag-blue-line); color: var(--tag-blue-ink); }
-.atag.closable { display: inline-flex; align-items: center; margin-inline-end: 0; }
-.atag-close {
-  display: inline-flex;
-  margin-inline-start: 3px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font-size: 10px;
-  opacity: 0.45;
-  cursor: pointer;
-}
-.atag-close:hover { opacity: 1; }
-.atag.count { margin: 0 4px 0 0; padding: 0 2px; }
-.atag.count.last { margin-right: 0; }
-.protocol-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
-.protocol-tags .atag { margin-inline-end: 0; }
-td.center > .atag, .speed-tag { margin-inline-end: 0; }
-.speed-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 200px;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.infinity { font-size: 14px; line-height: 1; vertical-align: -0.05em; }
-
-/* Dropdown menu */
-.amenu {
-  position: fixed;
-  z-index: 40;
-  min-width: 120px;
-  padding: 4px;
-  border-radius: 8px;
-  background: var(--surface-2);
-  box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-}
-.amenu.below { position: absolute; top: calc(100% + 4px); inset-inline-start: 0; }
-.more-wrap { position: relative; }
-.amenu-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  text-align: start;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.amenu-item:hover { background: var(--surface-3); }
-.amenu-item.danger { color: var(--bad); }
-.amenu-item.danger:hover { background: var(--bad); color: #fff; }
-.amenu-item .anticon { font-size: 14px; }
-.amenu-divider { margin: 4px 0; border: 0; border-top: 1px solid var(--line-soft); }
-
-/* Table, size="small", marginTop 10, rounded 8 and clipped */
-.atable-wrap {
-  margin-top: 10px;
-  border-radius: 8px;
-  overflow: auto;
-}
-.atable {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: fixed;
-  font-size: 14px;
-}
-.atable th, .atable td {
-  padding: 8px 8px;
-  border-bottom: 1px solid var(--line-soft);
-  text-align: start;
-  vertical-align: middle;
-  overflow-wrap: break-word;
-  transition: background 0.2s;
-}
-.atable thead th {
-  position: relative;
-  background: var(--surface-2);
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--line-soft);
-}
-.atable thead th:not(:last-child):not(.sel)::before {
-  position: absolute;
-  top: 50%;
-  inset-inline-end: 0;
-  width: 1px;
-  height: 1.6em;
-  background: var(--line-soft);
-  transform: translateY(-50%);
-  content: '';
-}
-.atable thead th.sortable { cursor: pointer; }
-.atable thead th.sortable:hover { background: var(--surface-3); }
-.atable thead tr:first-child > *:first-child { border-start-start-radius: 8px; }
-.atable thead tr:first-child > *:last-child { border-start-end-radius: 8px; }
-.atable tbody tr:last-child > td { border-bottom: 0; }
-.atable tbody tr:hover > td { background: var(--surface-2); }
-.atable tbody tr.picked > td { background: var(--accent-soft); }
-.sorters { display: flex; align-items: center; justify-content: space-between; }
-.sorters .title { flex: 1; }
-th.center .sorters .title { text-align: center; }
-th.right .sorters .title { text-align: end; }
-.sorter {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  margin-inline-start: 4px;
-  color: var(--faint);
-  font-size: 0;
-}
-.sorter .anticon { font-size: 11px; }
-.sorter .down { margin-top: -0.3em; }
-th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); }
-
-/* Selection column: 32px, checkbox 16 */
-.atable th.sel, .atable td.sel { width: 32px; text-align: center; padding: 8px; }
-.acheck {
-  width: 16px;
-  height: 16px;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  vertical-align: middle;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
 /* Their column widths, exactly */
 .w-id { width: 60px; }
 .w-menu { width: 70px; }

@@ -10,12 +10,14 @@ defineProps({
   // and spins, rather than sitting still until the server answers — a control
   // that does not move when clicked reads as broken, and gets clicked again.
   loading: { type: Boolean, default: false },
+  // Ant's size="small": 28 by 16 with a 12px handle.
+  small: { type: Boolean, default: false },
 })
 defineEmits(['update:modelValue'])
 </script>
 
 <template>
-  <label class="toggle" :class="{ on: modelValue, disabled: disabled || loading, busy: loading }">
+  <label class="toggle" :class="{ on: modelValue, disabled: disabled || loading, busy: loading, small }">
     <input
       type="checkbox"
       :checked="modelValue"
@@ -154,4 +156,7 @@ input:focus-visible + .track {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+.toggle.small .track { width: 28px; height: 16px; }
+.toggle.small .knob { width: 12px; height: 12px; top: 1px; inset-inline-start: 1px; }
+.toggle.small.on .knob { transform: translateX(12px); }
 </style>

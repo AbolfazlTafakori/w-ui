@@ -81,7 +81,22 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	h.Set("Subscription-Userinfo", bundle.UserInfo)
 	h.Set("Profile-Update-Interval", fmt.Sprint(bundle.UpdateHours))
 	h.Set("Profile-Title", "base64:"+b64(bundle.Title))
+	// The optional ones client apps show beside the profile, as 3x-ui sends
+	// them; each only when set.
+	if cfg.SupportURL != "" {
+		h.Set("Support-Url", cfg.SupportURL)
+	}
+	if cfg.ProfileURL != "" {
+		h.Set("Profile-Web-Page-Url", cfg.ProfileURL)
+	}
+	if cfg.Announce != "" {
+		h.Set("Announce", "base64:"+b64(cfg.Announce))
+	}
 	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", bundle.Filename))
+	body := bundle.Body
+	if cfg.Encode && strings.HasPrefix(bundle.ContentType, "text/") {
+		body = []byte(base64.StdEncoding.EncodeToString(bundle.Body))
+	}
 	// A link a customer's app polls should not be cached by anything between
 	// them and here, or a customer who has just been given a new device keeps
 	// getting yesterday's answer.
@@ -90,7 +105,7 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(bundle.Body)
+	_, _ = w.Write(body)
 }
 
 // ── the authenticated side ───────────────────────────────────────────────────

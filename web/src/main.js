@@ -12,6 +12,7 @@ import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 
 import './style.css'
+import './ant.css'
 
 import LoginView from './views/LoginView.vue'
 import OverviewView from './views/OverviewView.vue'
@@ -54,6 +55,7 @@ const router = createRouter({
     // The menu links straight to a settings section. Each is the same page with
     // its tab already chosen, so a bookmark lands where it was taken from.
     { path: '/settings/:tab', name: 'settings-tab', component: SettingsView, props: true },
+    { path: '/settings/notify', redirect: '/settings/telegram' },
     { path: '/configs/:tab', name: 'configs', component: ConfigsView, props: true },
     { path: '/configs', redirect: '/configs/engine' },
     // Shown rather than redirected: silently swallowing a typo leaves the

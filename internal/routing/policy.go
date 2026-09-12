@@ -111,6 +111,15 @@ type Policy struct {
 	// cannot produce a program whose behaviour depends on map iteration.
 	Rules []MarkRule
 
+	// PanelMark sends the panel's own traffic -- its probes, its bot, its
+	// talks with other panels -- through an outbound, the way 3x-ui's "panel
+	// outbound" does. Zero leaves it on the server's own address. The process
+	// is told apart by PanelUID; PanelExclude are the hop endpoints, which
+	// must never be reached through the hop they carry.
+	PanelMark    uint32
+	PanelUID     int
+	PanelExclude []netip.Prefix
+
 	// Hops are the outbounds with a routing table of their own.
 	Hops []Hop
 
@@ -284,10 +293,44 @@ func BuildRuleset(p Policy) (string, error) {
 	}
 	b.WriteString("\t}\n")
 
+	writePanelChain(&b, p)
 	writeCounters(&b, p)
 
 	b.WriteString("}\n")
 	return b.String(), nil
+}
+
+// writePanelChain marks what the panel process itself sends, so it leaves
+// through the chosen outbound. Locally generated packets are marked at the
+// output hook with a route chain, which is what makes the kernel look up the
+// route again after the mark.
+//
+// Three things are left alone, in this order: replies to connections made to
+// the panel (an operator's browser must be answered on the path it came in
+// on), the hop endpoints themselves (the tunnel's own packets and a proxy
+// hop's process, which runs as the same user, would otherwise chase their own
+// tail), and flows already marked by an earlier packet.
+func writePanelChain(b *strings.Builder, p Policy) {
+	if p.PanelMark == 0 || p.PanelUID < 0 {
+		return
+	}
+	writeSet(b, "panel_direct4", "ipv4_addr", v4(p.PanelExclude))
+	writeSet(b, "panel_direct6", "ipv6_addr", v6(p.PanelExclude))
+	b.WriteString("\n\tchain wui_panel {\n")
+	fmt.Fprintf(b, "\t\ttype route hook output priority %d; policy accept;\n", markPriority)
+	b.WriteString("\t\toifname \"lo\" accept\n")
+	fmt.Fprintf(b, "\t\tmeta skuid != %d accept\n", p.PanelUID)
+	b.WriteString("\t\tct direction reply accept\n")
+	if len(v4(p.PanelExclude)) > 0 {
+		b.WriteString("\t\tip daddr @panel_direct4 accept\n")
+	}
+	if len(v6(p.PanelExclude)) > 0 {
+		b.WriteString("\t\tip6 daddr @panel_direct6 accept\n")
+	}
+	fmt.Fprintf(b, "\t\tct mark and 0x%08x == 0x%08x meta mark set ct mark accept\n",
+		MarkMask, MarkBase&MarkMask)
+	fmt.Fprintf(b, "\t\tmeta mark set 0x%08x ct mark set meta mark\n", p.PanelMark)
+	b.WriteString("\t}\n")
 }
 
 // writeCounters emits one counter per hop so the panel can show what each

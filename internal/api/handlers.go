@@ -928,6 +928,24 @@ func (s *Server) handleIssueToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, issued)
 }
 
+func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := s.nodes.SetTokenEnabled(r.Context(), id, in.Enabled); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {

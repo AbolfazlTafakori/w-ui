@@ -44,6 +44,10 @@ type Server struct {
 	log       *slog.Logger
 	version   string
 	listen    string
+	basePath  string
+	tlsCert   string
+	tlsKey    string
+	proxies   string
 	dbDriver  string
 	dbSource  string
 	sys       *sysinfo.Collector
@@ -62,6 +66,8 @@ type Server struct {
 	// localNodeID is which node this panel is, for the state another panel
 	// pushes here.
 	localNodeID uint
+
+	restart func()
 }
 
 // Options configures a Server.
@@ -92,6 +98,18 @@ type Options struct {
 	// LocalNodeID is this panel's own node row, used when another panel is
 	// driving this one as a node.
 	LocalNodeID uint
+
+	// Restart ends the process so the service manager brings it back. Nil
+	// means the settings page cannot offer a restart.
+	Restart func()
+
+	// What the process is running with, so the settings page can show the
+	// effective listen address, path and certificates when nothing has been
+	// saved over them.
+	BasePath       string
+	TLSCert        string
+	TLSKey         string
+	TrustedProxies string
 }
 
 // New builds the API server.
@@ -130,6 +148,11 @@ func New(o Options) *Server {
 		// Falls back to the first node, which is this one on every install that
 		// has never added a second.
 		localNodeID: maxUint(o.LocalNodeID, 1),
+		restart:     o.Restart,
+		basePath:    o.BasePath,
+		tlsCert:     o.TLSCert,
+		tlsKey:      o.TLSKey,
+		proxies:     o.TrustedProxies,
 	}
 
 	// Built last because it asks the server which engines are running, and that

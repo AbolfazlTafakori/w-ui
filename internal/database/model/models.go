@@ -114,6 +114,9 @@ type APIToken struct {
 	Name   string `gorm:"size:64;not null" json:"name"`
 	Hash   string `gorm:"size:128;uniqueIndex;not null" json:"-"`
 	Prefix string `gorm:"size:12;not null" json:"prefix"`
+	// Disabled keeps a token on the list but refuses it, so access can be
+	// paused without the token having to be reissued afterwards.
+	Disabled bool `gorm:"not null;default:false" json:"disabled"`
 
 	LastUsedAt *time.Time `json:"lastUsedAt"`
 	CreatedAt  time.Time  `json:"createdAt"`

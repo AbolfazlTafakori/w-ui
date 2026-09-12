@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -16,53 +18,110 @@ import (
 
 // Panel settings live in the database rather than in the environment.
 //
-// The process-level configuration — where to listen, where the data lives — is
-// deliberately not editable here. The panel runs unprivileged with a read-only
-// filesystem apart from its own data directory, so it cannot write the file
-// systemd reads; a form that appeared to change those and silently did not would
-// be worse than no form. Those are shown read-only and changed with `w-ui`.
-//
-// What is editable is what the panel itself consults while running: how long a
-// session lasts, and the values a new customer starts from.
+// The environment still says where to listen and where the data lives, and it
+// still wins on a fresh install; what an operator saves here is read once at
+// start and laid over it, which is why the page says to restart the panel to
+// apply. Everything else -- how long a session lasts, what a new customer
+// starts from, where to send a notification -- is consulted live.
 
 // Setting keys. They are namespaced so an operator reading the table can tell
 // what a row belongs to.
 const (
-	keySessionHours    = "panel.sessionHours"
-	keyDefaultLocale   = "panel.defaultLocale"
-	keyDefQuotaBytes   = "client.defaultQuotaBytes"
-	keyDefExpiryDays   = "client.defaultExpiryDays"
-	keyDefDeviceLimit  = "client.defaultDeviceLimit"
-	keyDefRateBits     = "client.defaultRateBitsPerSec"
-	keyDefResetCycle   = "client.defaultResetCycle"
-	keyDefInterfaceID  = "client.defaultInterfaceId"
+	keyWebListen      = "panel.listen"
+	keyWebDomain      = "panel.domain"
+	keyWebPort        = "panel.port"
+	keyWebBasePath    = "panel.basePath"
+	keySessionHours   = "panel.sessionHours" // the old unit, read for migration
+	keySessionMinutes = "panel.sessionMinutes"
+	keyTrustedProxies = "panel.trustedProxies"
+	keyPanelOutbound  = "panel.outbound"
+	keyPageSize       = "panel.pageSize"
+	keyDefaultLocale  = "panel.defaultLocale"
+	keyWebCertFile    = "panel.certFile"
+	keyWebKeyFile     = "panel.keyFile"
+	keyTimeLocation   = "panel.timeLocation"
+	keyDatepicker     = "panel.datepicker"
+	keyExpireDiff     = "panel.expireDiffDays"
+	keyTrafficDiff    = "panel.trafficDiffGB"
+	keyInformEnable   = "panel.informEnable"
+	keyInformURI      = "panel.informURI"
+
+	keyDefQuotaBytes  = "client.defaultQuotaBytes"
+	keyDefExpiryDays  = "client.defaultExpiryDays"
+	keyDefDeviceLimit = "client.defaultDeviceLimit"
+	keyDefRateBits    = "client.defaultRateBitsPerSec"
+	keyDefResetCycle  = "client.defaultResetCycle"
+	keyDefInterfaceID = "client.defaultInterfaceId"
+
 	keyNotifyEnabled   = "notify.enabled"
 	keyNotifyToken     = "notify.botToken"
 	keyNotifyChat      = "notify.chatId"
 	keyNotifyKinds     = "notify.kinds"
-	keyBackupEvery     = "backup.everyHours"
-	keyBackupKeep      = "backup.keep"
-	keyMailEnabled     = "mail.enabled"
-	keyMailHost        = "mail.host"
-	keyMailPort        = "mail.port"
-	keyMailUsername    = "mail.username"
-	keyMailPassword    = "mail.password"
-	keyMailFrom        = "mail.from"
-	keyMailFromName    = "mail.fromName"
-	keyMailTo          = "mail.to"
-	keyMailEncryption  = "mail.encryption"
-	keyMailKinds       = "mail.kinds"
-	maxSessionHours    = 24 * 30
+	keyNotifyLang      = "notify.lang"
+	keyNotifyAPIServer = "notify.apiServer"
+	keyNotifyRunTime   = "notify.runTime"
+	keyNotifyBackup    = "notify.backup"
+	keyNotifyCPU       = "notify.cpuThreshold"
+	keyNotifyMemory    = "notify.memoryThreshold"
+	keyNotifyOutDown   = "notify.outboundDownThreshold"
+
+	keyBackupEvery = "backup.everyHours"
+	keyBackupKeep  = "backup.keep"
+
+	keyMailEnabled    = "mail.enabled"
+	keyMailHost       = "mail.host"
+	keyMailPort       = "mail.port"
+	keyMailUsername   = "mail.username"
+	keyMailPassword   = "mail.password"
+	keyMailFrom       = "mail.from"
+	keyMailFromName   = "mail.fromName"
+	keyMailTo         = "mail.to"
+	keyMailEncryption = "mail.encryption"
+	keyMailKinds      = "mail.kinds"
+
+	maxSessionMinutes  = 60 * 24 * 365
 	maxDeviceLimit     = 64
 	maxExpiryDays      = 365 * 10
-	defaultSessionHrs  = 12
+	defaultSessionMins = 12 * 60
 	defaultDeviceLimit = 1
+	defaultPageSize    = 25
 )
 
 // PanelSettings is everything the settings page can change.
 type PanelSettings struct {
-	SessionHours  int    `json:"sessionHours"`
+	// Where the panel answers. Applied at the next start; empty leaves the
+	// environment's value alone.
+	WebListen   string `json:"webListen"`
+	WebDomain   string `json:"webDomain"`
+	WebPort     int    `json:"webPort"`
+	WebBasePath string `json:"webBasePath"`
+	WebCertFile string `json:"webCertFile"`
+	WebKeyFile  string `json:"webKeyFile"`
+	// TrustedProxyCIDRs is who may set forwarded headers, comma separated.
+	TrustedProxyCIDRs string `json:"trustedProxyCIDRs"`
+
+	// SessionMaxAge is how long a sign-in lasts, in minutes.
+	SessionMaxAge int    `json:"sessionMaxAge"`
 	DefaultLocale string `json:"defaultLocale"`
+	// PanelOutbound is the outbound the panel's own traffic leaves through;
+	// empty is direct.
+	PanelOutbound string `json:"panelOutbound"`
+	// PageSize is how many rows a table page holds; 0 shows everything.
+	PageSize int `json:"pageSize"`
+
+	// TimeLocation is the zone scheduled work runs in; Datepicker the
+	// calendar dates are shown in.
+	TimeLocation string `json:"timeLocation"`
+	Datepicker   string `json:"datepicker"`
+
+	// ExpireDiff and TrafficDiff are the thresholds -- days and GB left --
+	// at which a customer counts as running out.
+	ExpireDiff  int `json:"expireDiff"`
+	TrafficDiff int `json:"trafficDiff"`
+
+	// External traffic informing: each collection is POSTed to the URI.
+	ExternalTrafficInformEnable bool   `json:"externalTrafficInformEnable"`
+	ExternalTrafficInformURI    string `json:"externalTrafficInformURI"`
 
 	DefaultQuotaBytes     uint64 `json:"defaultQuotaBytes"`
 	DefaultExpiryDays     int    `json:"defaultExpiryDays"`
@@ -77,6 +136,18 @@ type PanelSettings struct {
 	// NotifyBotToken is write-only. It is returned as a placeholder so the page
 	// can show that one is set without handing it back on every page load.
 	NotifyBotToken string `json:"notifyBotToken"`
+	NotifyLang     string `json:"notifyLang"`
+	// NotifyAPIServer replaces api.telegram.org; empty is Telegram's own.
+	NotifyAPIServer string `json:"notifyAPIServer"`
+	// NotifyRunTime is when the periodic report goes: a crontab line, or one
+	// of @hourly, @daily, @weekly, @monthly, @every 30m.
+	NotifyRunTime string `json:"notifyRunTime"`
+	// NotifyBackup attaches the database to the report.
+	NotifyBackup bool `json:"notifyBackup"`
+	// Thresholds, in percent, for the system and outbound events.
+	NotifyCPUThreshold          int `json:"notifyCPUThreshold"`
+	NotifyMemoryThreshold       int `json:"notifyMemoryThreshold"`
+	NotifyOutboundDownThreshold int `json:"notifyOutboundDownThreshold"`
 
 	BackupEveryHours int `json:"backupEveryHours"`
 	BackupKeep       int `json:"backupKeep"`
@@ -128,16 +199,25 @@ func NewSettings(db *gorm.DB, locale string) *Settings {
 // simply what it ships as".
 func (s *Settings) Defaults() PanelSettings {
 	return PanelSettings{
-		SessionHours:       defaultSessionHrs,
-		DefaultLocale:      s.locale,
-		DefaultDeviceLimit: defaultDeviceLimit,
-		DefaultResetCycle:  string(model.ResetNone),
-		NotifyKinds:        []string{},
-		BackupEveryHours:   24,
-		BackupKeep:         7,
-		MailPort:           587,
-		MailEncryption:     string(notify.EncryptionStartTLS),
-		MailKinds:          []string{},
+		SessionMaxAge:               defaultSessionMins,
+		DefaultLocale:               s.locale,
+		PageSize:                    defaultPageSize,
+		Datepicker:                  "gregorian",
+		ExpireDiff:                  3,
+		TrafficDiff:                 1,
+		DefaultDeviceLimit:          defaultDeviceLimit,
+		DefaultResetCycle:           string(model.ResetNone),
+		NotifyKinds:                 []string{},
+		NotifyLang:                  "en",
+		NotifyRunTime:               "@daily",
+		NotifyCPUThreshold:          80,
+		NotifyMemoryThreshold:       80,
+		NotifyOutboundDownThreshold: 50,
+		BackupEveryHours:            24,
+		BackupKeep:                  7,
+		MailPort:                    587,
+		MailEncryption:              string(notify.EncryptionStartTLS),
+		MailKinds:                   []string{},
 	}
 }
 
@@ -162,13 +242,46 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	for _, r := range rows {
 		stored[r.Key] = r.Value
 	}
+	str := func(key string, dst *string) {
+		if v, ok := stored[key]; ok {
+			*dst = v
+		}
+	}
+	list := func(key string, dst *[]string) {
+		if v := strings.TrimSpace(stored[key]); v != "" {
+			*dst = strings.Split(v, ",")
+		}
+	}
 
 	// A stored value that will not parse is ignored rather than fatal. One bad
 	// row must not stop the panel from starting.
-	out.SessionHours = intOr(stored[keySessionHours], out.SessionHours)
+	str(keyWebListen, &out.WebListen)
+	str(keyWebDomain, &out.WebDomain)
+	out.WebPort = intOr(stored[keyWebPort], out.WebPort)
+	str(keyWebBasePath, &out.WebBasePath)
+	str(keyWebCertFile, &out.WebCertFile)
+	str(keyWebKeyFile, &out.WebKeyFile)
+	str(keyTrustedProxies, &out.TrustedProxyCIDRs)
+	// Minutes, or the hours a panel from before this unit had saved.
+	if _, ok := stored[keySessionMinutes]; ok {
+		out.SessionMaxAge = intOr(stored[keySessionMinutes], out.SessionMaxAge)
+	} else if h := intOr(stored[keySessionHours], 0); h > 0 {
+		out.SessionMaxAge = h * 60
+	}
 	if v := strings.TrimSpace(stored[keyDefaultLocale]); v != "" {
 		out.DefaultLocale = v
 	}
+	str(keyPanelOutbound, &out.PanelOutbound)
+	out.PageSize = intOr(stored[keyPageSize], out.PageSize)
+	str(keyTimeLocation, &out.TimeLocation)
+	if v := strings.TrimSpace(stored[keyDatepicker]); v != "" {
+		out.Datepicker = v
+	}
+	out.ExpireDiff = intOr(stored[keyExpireDiff], out.ExpireDiff)
+	out.TrafficDiff = intOr(stored[keyTrafficDiff], out.TrafficDiff)
+	out.ExternalTrafficInformEnable = stored[keyInformEnable] == "true"
+	str(keyInformURI, &out.ExternalTrafficInformURI)
+
 	out.DefaultQuotaBytes = uintOr(stored[keyDefQuotaBytes], out.DefaultQuotaBytes)
 	out.DefaultExpiryDays = intOr(stored[keyDefExpiryDays], out.DefaultExpiryDays)
 	out.DefaultDeviceLimit = intOr(stored[keyDefDeviceLimit], out.DefaultDeviceLimit)
@@ -179,28 +292,36 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	out.DefaultInterfaceID = uint(uintOr(stored[keyDefInterfaceID], uint64(out.DefaultInterfaceID)))
 
 	out.NotifyEnabled = stored[keyNotifyEnabled] == "true"
-	out.NotifyChatID = stored[keyNotifyChat]
-	out.NotifyBotToken = stored[keyNotifyToken]
-	if v := strings.TrimSpace(stored[keyNotifyKinds]); v != "" {
-		out.NotifyKinds = strings.Split(v, ",")
+	str(keyNotifyChat, &out.NotifyChatID)
+	str(keyNotifyToken, &out.NotifyBotToken)
+	list(keyNotifyKinds, &out.NotifyKinds)
+	if v := strings.TrimSpace(stored[keyNotifyLang]); v != "" {
+		out.NotifyLang = v
 	}
+	str(keyNotifyAPIServer, &out.NotifyAPIServer)
+	if v := strings.TrimSpace(stored[keyNotifyRunTime]); v != "" {
+		out.NotifyRunTime = v
+	}
+	out.NotifyBackup = stored[keyNotifyBackup] == "true"
+	out.NotifyCPUThreshold = intOr(stored[keyNotifyCPU], out.NotifyCPUThreshold)
+	out.NotifyMemoryThreshold = intOr(stored[keyNotifyMemory], out.NotifyMemoryThreshold)
+	out.NotifyOutboundDownThreshold = intOr(stored[keyNotifyOutDown], out.NotifyOutboundDownThreshold)
+
 	out.BackupEveryHours = intOr(stored[keyBackupEvery], out.BackupEveryHours)
 	out.BackupKeep = intOr(stored[keyBackupKeep], out.BackupKeep)
 
 	out.MailEnabled = stored[keyMailEnabled] == "true"
-	out.MailHost = stored[keyMailHost]
+	str(keyMailHost, &out.MailHost)
 	out.MailPort = intOr(stored[keyMailPort], out.MailPort)
-	out.MailUsername = stored[keyMailUsername]
-	out.MailPassword = stored[keyMailPassword]
-	out.MailFrom = stored[keyMailFrom]
-	out.MailFromName = stored[keyMailFromName]
-	out.MailTo = stored[keyMailTo]
+	str(keyMailUsername, &out.MailUsername)
+	str(keyMailPassword, &out.MailPassword)
+	str(keyMailFrom, &out.MailFrom)
+	str(keyMailFromName, &out.MailFromName)
+	str(keyMailTo, &out.MailTo)
 	if v := strings.TrimSpace(stored[keyMailEncryption]); v != "" {
 		out.MailEncryption = v
 	}
-	if v := strings.TrimSpace(stored[keyMailKinds]); v != "" {
-		out.MailKinds = strings.Split(v, ",")
-	}
+	list(keyMailKinds, &out.MailKinds)
 
 	s.mu.Lock()
 	s.cache, s.loaded = &out, true
@@ -216,38 +337,65 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 
 	db := s.db.WithContext(ctx)
 	values := map[string]string{
-		keySessionHours:   strconv.Itoa(in.SessionHours),
-		keyDefaultLocale:  in.DefaultLocale,
-		keyDefQuotaBytes:  strconv.FormatUint(in.DefaultQuotaBytes, 10),
-		keyDefExpiryDays:  strconv.Itoa(in.DefaultExpiryDays),
-		keyDefDeviceLimit: strconv.Itoa(in.DefaultDeviceLimit),
-		keyDefRateBits:    strconv.FormatUint(in.DefaultRateBitsPerSec, 10),
-		keyDefResetCycle:  in.DefaultResetCycle,
-		keyDefInterfaceID: strconv.FormatUint(uint64(in.DefaultInterfaceID), 10),
-		keyNotifyEnabled:  strconv.FormatBool(in.NotifyEnabled),
-		keyNotifyChat:     in.NotifyChatID,
-		keyNotifyKinds:    strings.Join(in.NotifyKinds, ","),
-		keyBackupEvery:    strconv.Itoa(in.BackupEveryHours),
-		keyBackupKeep:     strconv.Itoa(in.BackupKeep),
-		keyMailEnabled:    strconv.FormatBool(in.MailEnabled),
-		keyMailHost:       in.MailHost,
-		keyMailPort:       strconv.Itoa(in.MailPort),
-		keyMailUsername:   in.MailUsername,
-		keyMailFrom:       in.MailFrom,
-		keyMailFromName:   in.MailFromName,
-		keyMailTo:         in.MailTo,
-		keyMailEncryption: in.MailEncryption,
-		keyMailKinds:      strings.Join(in.MailKinds, ","),
+		keyWebListen:       strings.TrimSpace(in.WebListen),
+		keyWebDomain:       strings.TrimSpace(in.WebDomain),
+		keyWebPort:         strconv.Itoa(in.WebPort),
+		keyWebBasePath:     in.WebBasePath,
+		keyWebCertFile:     strings.TrimSpace(in.WebCertFile),
+		keyWebKeyFile:      strings.TrimSpace(in.WebKeyFile),
+		keyTrustedProxies:  in.TrustedProxyCIDRs,
+		keySessionMinutes:  strconv.Itoa(in.SessionMaxAge),
+		keyDefaultLocale:   in.DefaultLocale,
+		keyPanelOutbound:   strings.TrimSpace(in.PanelOutbound),
+		keyPageSize:        strconv.Itoa(in.PageSize),
+		keyTimeLocation:    strings.TrimSpace(in.TimeLocation),
+		keyDatepicker:      in.Datepicker,
+		keyExpireDiff:      strconv.Itoa(in.ExpireDiff),
+		keyTrafficDiff:     strconv.Itoa(in.TrafficDiff),
+		keyInformEnable:    strconv.FormatBool(in.ExternalTrafficInformEnable),
+		keyInformURI:       strings.TrimSpace(in.ExternalTrafficInformURI),
+		keyDefQuotaBytes:   strconv.FormatUint(in.DefaultQuotaBytes, 10),
+		keyDefExpiryDays:   strconv.Itoa(in.DefaultExpiryDays),
+		keyDefDeviceLimit:  strconv.Itoa(in.DefaultDeviceLimit),
+		keyDefRateBits:     strconv.FormatUint(in.DefaultRateBitsPerSec, 10),
+		keyDefResetCycle:   in.DefaultResetCycle,
+		keyDefInterfaceID:  strconv.FormatUint(uint64(in.DefaultInterfaceID), 10),
+		keyNotifyEnabled:   strconv.FormatBool(in.NotifyEnabled),
+		keyNotifyChat:      in.NotifyChatID,
+		keyNotifyKinds:     strings.Join(in.NotifyKinds, ","),
+		keyNotifyLang:      in.NotifyLang,
+		keyNotifyAPIServer: strings.TrimSpace(in.NotifyAPIServer),
+		keyNotifyRunTime:   strings.TrimSpace(in.NotifyRunTime),
+		keyNotifyBackup:    strconv.FormatBool(in.NotifyBackup),
+		keyNotifyCPU:       strconv.Itoa(in.NotifyCPUThreshold),
+		keyNotifyMemory:    strconv.Itoa(in.NotifyMemoryThreshold),
+		keyNotifyOutDown:   strconv.Itoa(in.NotifyOutboundDownThreshold),
+		keyBackupEvery:     strconv.Itoa(in.BackupEveryHours),
+		keyBackupKeep:      strconv.Itoa(in.BackupKeep),
+		keyMailEnabled:     strconv.FormatBool(in.MailEnabled),
+		keyMailHost:        in.MailHost,
+		keyMailPort:        strconv.Itoa(in.MailPort),
+		keyMailUsername:    in.MailUsername,
+		keyMailFrom:        in.MailFrom,
+		keyMailFromName:    in.MailFromName,
+		keyMailTo:          in.MailTo,
+		keyMailEncryption:  in.MailEncryption,
+		keyMailKinds:       strings.Join(in.MailKinds, ","),
 	}
 
 	// The placeholder means the operator did not retype the token, so the
 	// stored one stays. Writing the placeholder itself would silently break
 	// notifications the next time they saved any unrelated setting.
+	cur, _ := s.Get(ctx)
 	if in.NotifyBotToken != TokenPlaceholder {
 		values[keyNotifyToken] = in.NotifyBotToken
+	} else {
+		in.NotifyBotToken = cur.NotifyBotToken
 	}
 	if in.MailPassword != TokenPlaceholder {
 		values[keyMailPassword] = in.MailPassword
+	} else {
+		in.MailPassword = cur.MailPassword
 	}
 
 	// One transaction: a half-saved settings page would leave the panel in a
@@ -271,14 +419,59 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 }
 
 func (s *Settings) validate(in *PanelSettings) error {
-	if in.SessionHours <= 0 || in.SessionHours > maxSessionHours {
-		return fmt.Errorf("%w: session length must be between 1 and %d hours",
-			ErrInvalid, maxSessionHours)
+	if in.SessionMaxAge <= 0 || in.SessionMaxAge > maxSessionMinutes {
+		return fmt.Errorf("%w: session duration must be between 1 and %d minutes",
+			ErrInvalid, maxSessionMinutes)
+	}
+	if in.WebPort < 0 || in.WebPort > 65535 {
+		return fmt.Errorf("%w: panel port %d is out of range", ErrInvalid, in.WebPort)
+	}
+	if v := strings.TrimSpace(in.WebListen); v != "" {
+		if _, err := netip.ParseAddr(v); err != nil {
+			return fmt.Errorf("%w: listen IP %q is not an address", ErrInvalid, v)
+		}
+	}
+	in.WebBasePath = normalizeBasePath(in.WebBasePath)
+	if inner := strings.Trim(in.WebBasePath, "/"); strings.Contains(inner, "/") {
+		return fmt.Errorf("%w: the URI path is one segment, like /panel/", ErrInvalid)
+	}
+	for _, e := range strings.Split(in.TrustedProxyCIDRs, ",") {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if _, err := netip.ParsePrefix(e); err != nil {
+			if _, err := netip.ParseAddr(e); err != nil {
+				return fmt.Errorf("%w: trusted proxy %q is not an address or a CIDR", ErrInvalid, e)
+			}
+		}
 	}
 	switch in.DefaultLocale {
 	case "en", "fa":
 	default:
 		return fmt.Errorf("%w: unknown language %q", ErrInvalid, in.DefaultLocale)
+	}
+	if in.PageSize < 0 || in.PageSize > 1000 {
+		return fmt.Errorf("%w: page size must be between 0 and 1000", ErrInvalid)
+	}
+	if v := strings.TrimSpace(in.TimeLocation); v != "" {
+		if _, err := time.LoadLocation(v); err != nil {
+			return fmt.Errorf("%w: unknown time zone %q", ErrInvalid, v)
+		}
+	}
+	switch in.Datepicker {
+	case "", "gregorian", "jalalian":
+	default:
+		return fmt.Errorf("%w: unknown calendar %q", ErrInvalid, in.Datepicker)
+	}
+	if in.ExpireDiff < 0 || in.TrafficDiff < 0 {
+		return fmt.Errorf("%w: notification thresholds cannot be negative", ErrInvalid)
+	}
+	if in.ExternalTrafficInformEnable {
+		u := strings.TrimSpace(in.ExternalTrafficInformURI)
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return fmt.Errorf("%w: the external traffic URI must begin with http:// or https://", ErrInvalid)
+		}
 	}
 	if in.DefaultDeviceLimit < 1 || in.DefaultDeviceLimit > maxDeviceLimit {
 		return fmt.Errorf("%w: device limit must be between 1 and %d",
@@ -306,7 +499,7 @@ func (s *Settings) validate(in *PanelSettings) error {
 		switch {
 		case strings.TrimSpace(in.MailHost) == "":
 			return fmt.Errorf("%w: a mail server is required to send email", ErrInvalid)
-		case strings.TrimSpace(in.MailFrom) == "":
+		case strings.TrimSpace(in.MailFrom) == "" && strings.TrimSpace(in.MailUsername) == "":
 			return fmt.Errorf("%w: a from address is required to send email", ErrInvalid)
 		case strings.TrimSpace(in.MailTo) == "":
 			return fmt.Errorf("%w: at least one recipient is required to send email", ErrInvalid)
@@ -322,7 +515,36 @@ func (s *Settings) validate(in *PanelSettings) error {
 	if in.NotifyEnabled && strings.TrimSpace(in.NotifyChatID) == "" {
 		return fmt.Errorf("%w: notifications need a chat id", ErrInvalid)
 	}
+	switch in.NotifyLang {
+	case "", "en", "fa":
+	default:
+		return fmt.Errorf("%w: unknown bot language %q", ErrInvalid, in.NotifyLang)
+	}
+	if v := strings.TrimSpace(in.NotifyAPIServer); v != "" &&
+		!strings.HasPrefix(v, "http://") && !strings.HasPrefix(v, "https://") {
+		return fmt.Errorf("%w: the Telegram API server must begin with http:// or https://", ErrInvalid)
+	}
+	if v := strings.TrimSpace(in.NotifyRunTime); v != "" {
+		if _, err := notify.ParseSchedule(v); err != nil {
+			return fmt.Errorf("%w: notification time: %v", ErrInvalid, err)
+		}
+	}
+	for _, p := range []int{in.NotifyCPUThreshold, in.NotifyMemoryThreshold, in.NotifyOutboundDownThreshold} {
+		if p < 0 || p > 100 {
+			return fmt.Errorf("%w: a threshold is a percentage, 0 to 100", ErrInvalid)
+		}
+	}
 	return nil
+}
+
+// normalizeBasePath makes a path begin and end with a slash, the way 3x-ui
+// keeps its URI path. Empty stays empty, which means the environment's.
+func normalizeBasePath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || p == "/" {
+		return ""
+	}
+	return "/" + strings.Trim(p, "/") + "/"
 }
 
 // Notify projects the stored settings into what the notifier takes.
@@ -338,10 +560,21 @@ func (s *Settings) Notify(ctx context.Context) notify.Config {
 		}
 	}
 	return notify.Config{
-		Enabled:  got.NotifyEnabled,
-		BotToken: got.NotifyBotToken,
-		ChatID:   got.NotifyChatID,
-		Kinds:    kinds,
+		Enabled:   got.NotifyEnabled,
+		BotToken:  got.NotifyBotToken,
+		ChatID:    got.NotifyChatID,
+		Kinds:     kinds,
+		Lang:      got.NotifyLang,
+		APIServer: got.NotifyAPIServer,
+		RunTime:   got.NotifyRunTime,
+		Backup:    got.NotifyBackup,
+		Thresholds: notify.Thresholds{
+			CPU:          got.NotifyCPUThreshold,
+			Memory:       got.NotifyMemoryThreshold,
+			OutboundDown: got.NotifyOutboundDownThreshold,
+			ExpireDays:   got.ExpireDiff,
+			TrafficGB:    got.TrafficDiff,
+		},
 	}
 }
 
@@ -371,13 +604,55 @@ func (s *Settings) Mail(ctx context.Context) notify.MailConfig {
 	}
 }
 
-// SessionTTLHours is the hot path used on every sign-in.
-func (s *Settings) SessionTTLHours(ctx context.Context) int {
+// SessionTTL is the hot path used on every sign-in.
+func (s *Settings) SessionTTL(ctx context.Context) time.Duration {
 	got, err := s.Get(ctx)
-	if err != nil || got.SessionHours <= 0 {
-		return defaultSessionHrs
+	if err != nil || got.SessionMaxAge <= 0 {
+		return defaultSessionMins * time.Minute
 	}
-	return got.SessionHours
+	return time.Duration(got.SessionMaxAge) * time.Minute
+}
+
+// Overrides is what the saved settings lay over the process configuration at
+// start. Every field is empty when the operator has not chosen one.
+type Overrides struct {
+	Listen         string
+	BasePath       string
+	TLSCert        string
+	TLSKey         string
+	TrustedProxies string
+	TimeLocation   string
+}
+
+// Overrides reads what an operator saved for the next start.
+func (s *Settings) Overrides(ctx context.Context) Overrides {
+	got, err := s.Get(ctx)
+	if err != nil {
+		return Overrides{}
+	}
+	var o Overrides
+	if got.WebListen != "" || got.WebPort > 0 {
+		host := got.WebListen
+		port := got.WebPort
+		if port == 0 {
+			port = 2096
+		}
+		o.Listen = netJoin(host, port)
+	}
+	o.BasePath = got.WebBasePath
+	if got.WebCertFile != "" && got.WebKeyFile != "" {
+		o.TLSCert, o.TLSKey = got.WebCertFile, got.WebKeyFile
+	}
+	o.TrustedProxies = got.TrustedProxyCIDRs
+	o.TimeLocation = got.TimeLocation
+	return o
+}
+
+func netJoin(host string, port int) string {
+	if strings.Contains(host, ":") {
+		return "[" + host + "]:" + strconv.Itoa(port)
+	}
+	return host + ":" + strconv.Itoa(port)
 }
 
 func intOr(raw string, fallback int) int {

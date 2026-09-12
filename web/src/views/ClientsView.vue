@@ -93,7 +93,7 @@ async function load(quiet = false) {
           group: groupFilter.value,
           sort: sort.value,
           page: currentPage.value,
-          perPage: 25,
+          perPage: store.panel.pageSize > 0 ? store.panel.pageSize : 500,
           ...filterParams(),
         },
         { background: quiet },

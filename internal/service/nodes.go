@@ -350,6 +350,19 @@ func (s *Nodes) RevokeToken(ctx context.Context, id uint) error {
 	return nil
 }
 
+// SetTokenEnabled pauses or resumes a token without reissuing it.
+func (s *Nodes) SetTokenEnabled(ctx context.Context, id uint, enabled bool) error {
+	res := s.db.WithContext(ctx).Model(&model.APIToken{}).Where("id = ?", id).
+		Update("disabled", !enabled)
+	if res.Error != nil {
+		return fmt.Errorf("service: update token: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // VerifyToken reports whether a presented token is one of ours.
 func (s *Nodes) VerifyToken(ctx context.Context, presented string) bool {
 	if !strings.HasPrefix(presented, "wui_") {
@@ -361,7 +374,7 @@ func (s *Nodes) VerifyToken(ctx context.Context, presented string) bool {
 	// no loop whose duration leaks how many exist.
 	var row model.APIToken
 	err := s.db.WithContext(ctx).Where("hash = ?", hashToken(presented)).First(&row).Error
-	if err != nil {
+	if err != nil || row.Disabled {
 		return false
 	}
 

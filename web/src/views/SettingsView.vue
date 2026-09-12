@@ -1,106 +1,38 @@
 <script setup>
+// The settings page, laid out the way 3x-ui lays its own out: a card with
+// Save and Restart Panel and the standing warning, then a card holding the
+// category the sidebar chose -- General, Authentication, Telegram Bot, Email,
+// Subscription -- each a row of tabs over lists of setting rows.
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { api, apiURL, getToken } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
+import { makeQR } from '../lib/qr.js'
 import { relative } from '../lib/format.js'
-import { store, t, loadMessages, notify } from '../lib/store.js'
+import { store, t, loadMessages, loadPanelSettings, notify, signOut } from '../lib/store.js'
+import AntIcon from '../components/AntIcon.vue'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
-import SecurityWarnings from '../components/SecurityWarnings.vue'
 import Toggle from '../components/Toggle.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const router = useRouter()
 
-// The subscription service is stored separately from the panel settings, so it
-// loads and saves on its own rather than riding along with a form that has
-// nothing to do with it.
-const sub = ref({
-  enabled: false,
-  path: '/subscribe/',
-  host: '',
-  title: '',
-  updateHours: 12,
-  reverseProxyUri: '',
-})
-const subBusy = ref(false)
-const subError = ref({})
-
-async function loadSub() {
-  try {
-    sub.value = await api.get('/api/subscription', { background: true })
-  } catch {
-    // Leaves the defaults in place. The page is still usable, and saving will
-    // report anything genuinely wrong.
-  }
-}
-
-async function saveSub() {
-  subBusy.value = true
-  subError.value = {}
-  try {
-    sub.value = await api.put('/api/subscription', sub.value)
-    notify(t('sub.saved'), 'success')
-  } catch (err) {
-    if (err.field) subError.value = { [err.field]: err.message }
-    else notify(err.message, 'error')
-  } finally {
-    subBusy.value = false
-  }
-}
-
-const info = ref(null)
-const loading = ref(true)
-const loadError = ref(null)
-
-// `saved` is what the server last confirmed; `form` is what is on screen. The
-// save button is enabled by the difference between them, so an operator can
-// always tell whether there is anything outstanding.
-const saved = ref(null)
-const defaults = ref(null)
-const form = ref(null)
-const showWait = useDelayed(computed(() => loading.value && !form.value))
-const busy = ref(false)
-
-const pw = ref({ current: '', next: '', confirm: '' })
-const pwBusy = ref(false)
-const pwError = ref('')
-
-// The same five as the menu, in the same order. The tabs along the top and the
-// links down the side are two ways to the same pages: an operator who learns
-// one order must not meet another.
-const tabs = [
-  { key: 'general', icon: 'settings', label: 'settings.tab.general' },
-  { key: 'security', icon: 'lock', label: 'settings.tab.security' },
-  { key: 'notify', icon: 'send', label: 'settings.tab.notify' },
-  { key: 'email', icon: 'mail', label: 'settings.tab.email' },
-  { key: 'subscription', icon: 'link', label: 'settings.tab.subscription' },
-]
-
-// Pages this view still renders that are not part of that menu. They are
-// reached from Maintenance, and showing the settings tabs above them would
-// offer a row where nothing is selected.
+// ── which page ──────────────────────────────────────────────────────────────
+const categories = ['general', 'security', 'telegram', 'email', 'subscription']
+// Pages this view still renders that are not in the settings menu: reached
+// from Maintenance and the overview.
 const asideTabs = ['backups', 'engine', 'logs', 'system']
-// The section can be named two ways: as a path, which is what the menu links
-// to, or as a hash, which is what older links and bookmarks carry. Both are
-// honoured so neither form breaks.
 const props = defineProps({ tab: { type: String, default: '' } })
 
-const active = ref(known(props.tab) || tabFromHash())
-
 function known(slug) {
-  return tabs.some((x) => x.key === slug) || asideTabs.includes(slug) ? slug : ''
+  if (slug === 'notify') slug = 'telegram' // the old name of the page
+  return categories.includes(slug) || asideTabs.includes(slug) ? slug : ''
 }
-
-// Whether the row of settings tabs belongs above this page.
-const inSettingsMenu = computed(() => tabs.some((x) => x.key === active.value))
 function tabFromHash() {
   return known((location.hash || '').replace(/^#/, '')) || 'general'
 }
-
-// Arriving from the menu while already on this page changes the parameter
-// rather than remounting, so the tab has to follow it.
+const active = ref(known(props.tab) || tabFromHash())
 watch(
   () => props.tab,
   (v) => {
@@ -111,30 +43,55 @@ watch(
     }
   },
 )
+window.addEventListener('hashchange', () => {
+  if (!props.tab) active.value = tabFromHash()
+})
 
-function selectTab(key) {
-  active.value = key
-  if (key === 'logs') loadLogs()
-  // Kept in the address bar so a section can be linked to, and so a reload does
-  // not throw the operator back to the first tab.
-  if (props.tab) router.replace(`/settings/${key}`)
-  else history.replaceState(null, '', `#${key}`)
-}
+// The tab inside each category, as theirs: each remembers its own.
+const inner = ref({ general: '1', security: '1', telegram: '1', email: '1', subscription: '1' })
+
+// ── the settings themselves ─────────────────────────────────────────────────
+const info = ref(null)
+const loading = ref(true)
+const loadError = ref(null)
+// `saved` is what the server last confirmed; `form` is what is on screen.
+const saved = ref(null)
+const defaults = ref(null)
+const form = ref(null)
+const showWait = useDelayed(computed(() => loading.value && !form.value))
+const busy = ref(false)
+
+// The subscription service is stored on its own; it rides along with the
+// one Save so the page has one button, as theirs has.
+const sub = ref(null)
+const subSaved = ref(null)
+const subError = ref({})
+
+const outboundTags = ref([])
+const balancerTags = ref([])
 
 onMounted(() => {
   load()
-  loadSub()
   loadTokens()
+  loadTargets()
 })
 
 async function load() {
   loading.value = true
   try {
-    const [sys, cfg] = await Promise.all([api.get('/api/system'), api.get('/api/settings')])
+    const [sys, cfg, subCfg] = await Promise.all([
+      api.get('/api/system'),
+      api.get('/api/settings'),
+      api.get('/api/subscription', { background: true }).catch(() => null),
+    ])
     info.value = sys
     saved.value = cfg.settings
     defaults.value = cfg.defaults
-    form.value = { ...cfg.settings, notifyKinds: [...(cfg.settings.notifyKinds || [])] }
+    form.value = clone(cfg.settings)
+    if (subCfg) {
+      subSaved.value = subCfg
+      sub.value = clone(subCfg)
+    }
     await loadBackups()
     await loadMe()
     loadError.value = null
@@ -146,54 +103,112 @@ async function load() {
   }
 }
 
-const dirty = computed(() => {
-  if (!form.value || !saved.value) return false
-  return JSON.stringify(form.value) !== JSON.stringify(saved.value)
-})
+async function loadTargets() {
+  try {
+    const obs = await api.get('/api/outbounds', { background: true })
+    outboundTags.value = (obs.items || obs || []).filter((o) => o.kind !== 'block').map((o) => o.tag)
+  } catch {
+    outboundTags.value = []
+  }
+  try {
+    const bs = await api.get('/api/balancers', { background: true })
+    balancerTags.value = (bs.items || bs || []).map((b) => b.tag)
+  } catch {
+    balancerTags.value = []
+  }
+}
+
+const clone = (v) => JSON.parse(JSON.stringify(v))
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+const panelDirty = computed(() => !!form.value && !!saved.value && !same(form.value, saved.value))
+const subDirty = computed(() => !!sub.value && !!subSaved.value && !same(sub.value, subSaved.value))
+const dirty = computed(() => panelDirty.value || subDirty.value)
+
+function num(v, fallback = 0) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
 
 async function save() {
   busy.value = true
+  subError.value = {}
   try {
-    const res = await api.put('/api/settings', {
-      ...form.value,
-      sessionHours: Number(form.value.sessionHours) || 12,
-      defaultQuotaBytes: Number(form.value.defaultQuotaBytes) || 0,
-      defaultExpiryDays: Number(form.value.defaultExpiryDays) || 0,
-      defaultDeviceLimit: Number(form.value.defaultDeviceLimit) || 1,
-      defaultRateBitsPerSec: Number(form.value.defaultRateBitsPerSec) || 0,
-      backupEveryHours: Number(form.value.backupEveryHours) || 0,
-      backupKeep: Number(form.value.backupKeep) || 0,
-    })
-    saved.value = res.settings
-    defaults.value = res.defaults
-    form.value = { ...res.settings, notifyKinds: [...(res.settings.notifyKinds || [])] }
+    if (panelDirty.value) {
+      const f = form.value
+      const res = await api.put('/api/settings', {
+        ...f,
+        webPort: num(f.webPort),
+        sessionMaxAge: num(f.sessionMaxAge, 720),
+        pageSize: num(f.pageSize, 25),
+        expireDiff: num(f.expireDiff),
+        trafficDiff: num(f.trafficDiff),
+        defaultQuotaBytes: num(f.defaultQuotaBytes),
+        defaultExpiryDays: num(f.defaultExpiryDays),
+        defaultDeviceLimit: num(f.defaultDeviceLimit, 1),
+        defaultRateBitsPerSec: num(f.defaultRateBitsPerSec),
+        backupEveryHours: num(f.backupEveryHours),
+        backupKeep: num(f.backupKeep),
+        mailPort: num(f.mailPort),
+        notifyCPUThreshold: num(f.notifyCPUThreshold),
+        notifyMemoryThreshold: num(f.notifyMemoryThreshold),
+        notifyOutboundDownThreshold: num(f.notifyOutboundDownThreshold),
+      })
+      saved.value = res.settings
+      defaults.value = res.defaults
+      form.value = clone(res.settings)
+      loadPanelSettings()
+      if (res.settings.defaultLocale !== store.locale) await loadMessages(res.settings.defaultLocale)
+    }
+    if (subDirty.value) {
+      const s = sub.value
+      const res = await api.put('/api/subscription', { ...s, port: num(s.port), updateHours: num(s.updateHours, 12) })
+      subSaved.value = res
+      sub.value = clone(res)
+    }
     notify(t('settings.saved'), 'success')
-    if (res.settings.defaultLocale !== store.locale) await loadMessages(res.settings.defaultLocale)
   } catch (e) {
+    if (e.field) subError.value = { [e.field]: e.message }
     notify(e.message, 'error')
   } finally {
     busy.value = false
   }
 }
 
-const pendingRoute = ref(null)
-// Set while we are deliberately going, so the guard does not stop the very
-// navigation it just authorised.
-const leaving = ref(false)
+// Restart Panel: only when nothing is unsaved, as theirs -- a restart
+// applies what was saved, so it would otherwise throw away the edit.
+const askRestart = ref(false)
+const restarting = ref(false)
+async function restartPanel() {
+  askRestart.value = false
+  restarting.value = true
+  try {
+    await api.post('/api/panel/restart')
+  } catch (e) {
+    restarting.value = false
+    notify(e.message, 'error')
+    return
+  }
+  // Wait for it to come back, then reload onto whatever address it now has.
+  const started = Date.now()
+  const probe = async () => {
+    try {
+      await api.get('/api/meta', { background: true })
+      window.location.reload()
+    } catch {
+      if (Date.now() - started < 60000) setTimeout(probe, 1500)
+      else restarting.value = false
+    }
+  }
+  setTimeout(probe, 2500)
+}
 
-// Settings are a form you fill in and then leave, and clicking a link in the
-// sidebar is how you leave. Without this, an edit made and not saved is gone
-// with no word: measured before adding it, a value changed from 0 to 5 was 0
-// again on returning, and nothing had asked.
-//
-// A dialog rather than the browser's own confirm: the panel does not use that
-// anywhere else, and this one can name what is unsaved.
+const pendingRoute = ref(null)
+const leaving = ref(false)
 onBeforeRouteLeave((to) => {
   if (!dirty.value || leaving.value) return true
   pendingRoute.value = to.fullPath
   return false
 })
-
 async function discardAndGo() {
   leaving.value = true
   const to = pendingRoute.value
@@ -201,22 +216,13 @@ async function discardAndGo() {
   await router.push(to)
   leaving.value = false
 }
-
 async function saveAndGo() {
   await save()
-  // Only leave if the save actually took: a validation failure should keep the
-  // operator on the page with their edit and the message, not send them away
-  // having lost both.
   if (!dirty.value) await discardAndGo()
   else pendingRoute.value = null
 }
 
-function revert() {
-  form.value = { ...saved.value }
-}
-
-// A value equal to what the panel ships as is marked, so an operator can tell
-// what they chose from what merely came that way.
+// A value equal to what the panel ships as gets their "Default" tag.
 function isDefault(key) {
   if (!form.value || !defaults.value) return false
   return form.value[key] === defaults.value[key]
@@ -236,11 +242,303 @@ const rateMbit = computed({
   },
 })
 
-const NOTIFY_KINDS = ['exhausted', 'expired', 'expiring', 'sharing', 'login', 'panel', 'backup']
+// URI paths begin and end with a slash, as theirs sanitise them.
+function sanitizePath(v) {
+  v = String(v || '').replace(/[^A-Za-z0-9_\-/]/g, '')
+  return v
+}
 
+// ── security warnings ────────────────────────────────────────────────────────
+const alertVisible = ref(true)
+const warnings = ref([])
+onMounted(async () => {
+  try {
+    const res = await api.get('/api/security/warnings', { background: true })
+    warnings.value = (res.warnings || []).map((w) => w.title || w.detail || String(w))
+  } catch {
+    warnings.value = []
+  }
+})
+
+// ── secrets: theirs show "configured" and offer Clear ────────────────────────
+const PLACEHOLDER = '********'
+function secretConfigured(key) {
+  return saved.value?.[key] === PLACEHOLDER && form.value?.[key] === PLACEHOLDER
+}
+function secretClearArmed(key) {
+  return saved.value?.[key] === PLACEHOLDER && form.value?.[key] === ''
+}
+function toggleClear(key) {
+  form.value[key] = secretClearArmed(key) ? PLACEHOLDER : ''
+}
+const showSecret = ref({})
+
+// ── event notifications, in their card grid ─────────────────────────────────
+// Each group is a card; each event a checkbox, some with a threshold beside.
+const eventGroups = [
+  { icon: 'TeamOutlined', title: 'set.eventGroupClients', events: [
+    { key: 'exhausted', label: 'set.eventExhausted' },
+    { key: 'expired', label: 'set.eventExpired' },
+    { key: 'expiring', label: 'set.eventExpiring', setting: 'expireDiff', min: 0, max: 3650 },
+    { key: 'sharing', label: 'set.eventSharing' },
+  ] },
+  { icon: 'CloudServerOutlined', title: 'set.eventGroupOutbound', events: [
+    { key: 'outbound.down', label: 'set.eventOutboundDown', setting: 'notifyOutboundDownThreshold', min: 1, max: 100 },
+    { key: 'outbound.up', label: 'set.eventOutboundUp' },
+  ] },
+  { icon: 'ThunderboltOutlined', title: 'set.eventGroupPanel', events: [
+    { key: 'panel', label: 'set.eventPanel' },
+    { key: 'backup', label: 'set.eventBackup' },
+  ] },
+  { icon: 'DesktopOutlined', title: 'set.eventGroupNode', events: [
+    { key: 'node.down', label: 'set.eventNodeDown' },
+    { key: 'node.up', label: 'set.eventNodeUp' },
+  ] },
+  { icon: 'DashboardOutlined', title: 'set.eventGroupSystem', events: [
+    { key: 'cpu.high', label: 'set.eventCPUHigh', setting: 'notifyCPUThreshold', min: 0, max: 100 },
+    { key: 'memory.high', label: 'set.eventMemoryHigh', setting: 'notifyMemoryThreshold', min: 0, max: 100 },
+  ] },
+  { icon: 'SafetyOutlined', title: 'set.eventGroupSecurity', events: [
+    { key: 'login', label: 'set.eventLoginAttempt' },
+  ] },
+]
+function kindsOf(field) {
+  return form.value?.[field] || []
+}
+function hasKind(field, key) {
+  return kindsOf(field).includes(key)
+}
+function toggleKind(field, key) {
+  const set = new Set(kindsOf(field))
+  set.has(key) ? set.delete(key) : set.add(key)
+  form.value[field] = [...set]
+}
+function groupCount(field, g) {
+  return g.events.filter((e) => hasKind(field, e.key)).length
+}
+function toggleGroup(field, g) {
+  const keys = g.events.map((e) => e.key)
+  const all = keys.every((k) => hasKind(field, k))
+  const set = new Set(kindsOf(field))
+  keys.forEach((k) => (all ? set.delete(k) : set.add(k)))
+  form.value[field] = [...set]
+}
+
+// ── notification time: their preset select, interval or crontab ─────────────
+const notifyMode = computed({
+  get: () => {
+    const v = form.value?.notifyRunTime || ''
+    if (v.startsWith('@every ')) return 'every'
+    if (['@hourly', '@daily', '@weekly', '@monthly'].includes(v)) return v
+    return 'custom'
+  },
+  set: (m) => {
+    if (m === 'every') form.value.notifyRunTime = '@every 30m'
+    else if (m === 'custom') form.value.notifyRunTime = '0 30 8 * * *'
+    else form.value.notifyRunTime = m
+  },
+})
+const everyNum = computed({
+  get: () => Number((form.value?.notifyRunTime || '').replace('@every ', '').replace(/[a-z]+$/, '')) || 1,
+  set: (n) => {
+    form.value.notifyRunTime = `@every ${Math.max(1, Math.round(Number(n) || 1))}${everyUnit.value}`
+  },
+})
+const everyUnit = computed({
+  get: () => (form.value?.notifyRunTime || '').replace('@every ', '').replace(/^\d+/, '') || 'm',
+  set: (u) => {
+    form.value.notifyRunTime = `@every ${everyNum.value}${u}`
+  },
+})
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// Saved first, because the server tests what it has stored.
+const testLoading = ref(false)
+const testResult = ref(null)
+async function testTgBot() {
+  testLoading.value = true
+  testResult.value = null
+  try {
+    if (dirty.value) await save()
+    const res = await api.post('/api/settings/notify/test')
+    testResult.value = { success: !!res.ok, msg: res.ok ? t('settings.testOk') : res.error }
+  } catch (e) {
+    testResult.value = { success: false, msg: e.message }
+  } finally {
+    testLoading.value = false
+  }
+}
+const mailTesting = ref(false)
+const mailResult = ref(null)
+async function testMail() {
+  mailTesting.value = true
+  mailResult.value = null
+  try {
+    if (dirty.value) await save()
+    const res = await api.post('/api/settings/mail/test')
+    mailResult.value = { success: !!res.ok, msg: res.ok ? t('settings.testOk') : res.error }
+  } catch (e) {
+    mailResult.value = { success: false, msg: e.message }
+  } finally {
+    mailTesting.value = false
+  }
+}
+
+// ── security: credentials ────────────────────────────────────────────────────
+const user = ref({ oldUsername: '', oldPassword: '', newUsername: '', newPassword: '' })
+const updating = ref(false)
+async function updateUser() {
+  const u = user.value
+  if (!u.oldPassword || (!u.newUsername && !u.newPassword)) {
+    notify(t('settings.fillCredentials'), 'error')
+    return
+  }
+  updating.value = true
+  try {
+    await api.post('/api/auth/password', {
+      currentPassword: u.oldPassword,
+      newUsername: u.newUsername,
+      newPassword: u.newPassword,
+    })
+    notify(t('set.credentialsChanged'), 'success')
+    signOut()
+    router.push('/login')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    updating.value = false
+  }
+}
+
+// ── security: two-factor, in their modal ─────────────────────────────────────
+const twoFactor = ref(false)
+const tfa = ref(null) // { type: 'set'|'delete', token, uri, qr, code }
+async function loadMe() {
+  try {
+    const me = await api.get('/api/auth/me')
+    twoFactor.value = !!me.twoFactor
+  } catch {
+    /* the page is still usable without it */
+  }
+}
+async function toggleTwoFactor() {
+  if (twoFactor.value) {
+    tfa.value = { type: 'delete', code: '' }
+    return
+  }
+  try {
+    const res = await api.post('/api/auth/totp/start')
+    const qr = await makeQR(res.uri)
+    tfa.value = { type: 'set', token: res.secret, uri: res.uri, qr, code: '' }
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+async function confirmTfa() {
+  const m = tfa.value
+  try {
+    if (m.type === 'set') {
+      await api.post('/api/auth/totp/confirm', { secret: m.token, code: m.code })
+      twoFactor.value = true
+      notify(t('settings.twoFactorEnabled'), 'success')
+    } else {
+      await api.post('/api/auth/totp/disable', { code: m.code, password: m.password || '' })
+      twoFactor.value = false
+      notify(t('settings.twoFactorDisabled'), 'success')
+    }
+    tfa.value = null
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    notify(t('action.copied'), 'success')
+  } catch {
+    notify(t('share.copyFailed'), 'error')
+  }
+}
+
+// ── security: API tokens ─────────────────────────────────────────────────────
+const tokens = ref([])
+const tokensLoading = ref(false)
+const createOpen = ref(false)
+const createName = ref('')
+const creating = ref(false)
+const createdToken = ref(null)
+const revoking = ref(null)
+
+async function loadTokens() {
+  tokensLoading.value = true
+  try {
+    tokens.value = await api.get('/api/tokens')
+  } catch {
+    tokens.value = []
+  } finally {
+    tokensLoading.value = false
+  }
+}
+async function confirmCreateToken() {
+  if (!createName.value.trim()) return
+  creating.value = true
+  try {
+    const res = await api.post('/api/tokens', { name: createName.value.trim() })
+    createdToken.value = res
+    createOpen.value = false
+    createName.value = ''
+    await loadTokens()
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    creating.value = false
+  }
+}
+async function toggleTokenEnabled(tk) {
+  try {
+    await api.patch(`/api/tokens/${tk.id}`, { enabled: !!tk.disabled })
+    await loadTokens()
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+async function doRevoke() {
+  const tk = revoking.value
+  revoking.value = null
+  try {
+    await api.del(`/api/tokens/${tk.id}`)
+    notify(t('settings.tokenRevoked', { n: tk.name }), 'success')
+    await loadTokens()
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+function tokenDate(iso) {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(store.locale)
+}
+
+// ── mTLS trust for this panel as a node ──────────────────────────────────────
+const mtlsTrust = ref('')
+const mtlsBusy = ref(false)
+async function saveMtlsTrust() {
+  mtlsBusy.value = true
+  try {
+    const res = await api.post('/api/nodes/mtls/trust', { caCert: mtlsTrust.value.trim() })
+    notify(res?.required ? t('settings.mtlsTrustSaved') : t('settings.mtlsTrustCleared'), 'ok')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    mtlsBusy.value = false
+  }
+}
+
+// ── the pages outside the menu: backups, engine, logs, system ────────────────
 const backups = ref([])
 const backupBusy = ref(false)
-const testResult = ref(null)
+const restoring = ref(null)
+const uploading = ref(false)
+const ask = ref(null)
 
 async function loadBackups() {
   try {
@@ -249,7 +547,6 @@ async function loadBackups() {
     backups.value = []
   }
 }
-
 async function makeBackup() {
   backupBusy.value = true
   try {
@@ -262,26 +559,20 @@ async function makeBackup() {
     backupBusy.value = false
   }
 }
-
 async function removeBackup(name) {
   try {
     await api.del(`/api/backups/${encodeURIComponent(name)}`)
     await loadBackups()
-    await loadMe()
   } catch (e) {
     notify(e.message, 'error')
   }
 }
-
 // The archive holds every key and credential, so it is fetched with the
-// session token rather than linked: a plain link carries no Authorization
-// header and would either fail or force the file to be served unauthenticated.
+// session token rather than linked.
 async function downloadBackup(name) {
   try {
     const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(name)}`), {
       headers: { Authorization: `Bearer ${getToken()}` },
-      // Half the session is an HttpOnly cookie the server sets at sign-in, and
-      // the token alone is refused without it.
       credentials: 'same-origin',
     })
     if (!res.ok) throw new Error(await res.text())
@@ -289,9 +580,6 @@ async function downloadBackup(name) {
     const a = document.createElement('a')
     a.href = url
     a.download = name
-    // Attached to the document, and the URL released on the next turn of the
-    // loop. A detached anchor's click does nothing in Firefox, and revoking
-    // immediately can cancel a download that has not started.
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -300,71 +588,21 @@ async function downloadBackup(name) {
     notify(e.message, 'error')
   }
 }
-
-// Restoring, which is the half that makes the rest worth having.
-//
-// Asked for twice: once as a dialog explaining what goes and what is kept, and
-// once by making the operator watch the panel go away and come back. A backup
-// restored by a stray click is worse than no restore button.
-const restoring = ref(null)
-const uploading = ref(false)
-// Which archive the confirmation is about, or null.
-const ask = ref(null)
-
-// Machine access to this panel.
-//
-// A token here can do everything an administrator can, so the list is on the
-// page about ways in rather than only on the page where one happens to be
-// issued. Revoking is immediate and cannot be undone, which is why it asks.
-const tokens = ref([])
-const revoking = ref(null)
-
-async function loadTokens() {
-  try {
-    tokens.value = await api.get('/api/tokens')
-  } catch {
-    // Not worth a message on a settings page that is showing other things
-    // successfully; the empty line says as much as an error would.
-    tokens.value = []
-  }
-}
-
-function revokeToken(tk) {
-  revoking.value = tk
-}
-
-async function doRevoke() {
-  const tk = revoking.value
-  revoking.value = null
-  try {
-    await api.del(`/api/tokens/${tk.id}`)
-    notify(t('settings.tokenRevoked', { n: tk.name }), 'success')
-    await loadTokens()
-  } catch (e) {
-    notify(e.message, 'error')
-  }
-}
-
 async function restoreBackup(name) {
   restoring.value = name
   try {
     const res = await api.post(`/api/backups/${encodeURIComponent(name)}/restore`)
     notify(t('settings.restoreStarted', { n: res?.safetyCopy || '' }), 'success')
-    // The panel is on its way out. Waiting and then reloading is what turns
-    // "the page stopped working" into "it came back with the old data".
     setTimeout(() => window.location.reload(), 6000)
   } catch (e) {
     restoring.value = null
     notify(e.message, 'error')
   }
 }
-
-// Taking one in from another server, which is how a panel moves house.
 async function uploadBackup(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file) return
-
   uploading.value = true
   try {
     const body = new FormData()
@@ -386,134 +624,9 @@ async function uploadBackup(event) {
   }
 }
 
-// Saved first, because the server tests what it has stored rather than what is
-// on screen — otherwise an operator would test a token they had not saved.
-async function testNotification() {
-  testResult.value = null
-  if (dirty.value) await save()
-  try {
-    const res = await api.post('/api/settings/notify/test')
-    testResult.value = res.ok ? { ok: true } : { ok: false, error: res.error }
-  } catch (e) {
-    testResult.value = { ok: false, error: e.message }
-  }
-}
-
-function toggleKind(kind, on) {
-  form.value.notifyKinds = withKind(form.value.notifyKinds, kind, on)
-}
-
-function toggleMailKind(kind, on) {
-  form.value.mailKinds = withKind(form.value.mailKinds, kind, on)
-}
-
-function withKind(list, kind, on) {
-  const set = new Set(list || [])
-  if (on) set.add(kind)
-  else set.delete(kind)
-  return [...set]
-}
-
-// The mail test is its own button and its own result.
-//
-// An operator with both channels set up needs to know which one is broken, and
-// one button reporting "failed" would not tell them. It saves first, because
-// the server tests what is stored rather than what is on screen — testing an
-// unsaved server address would report on the old one.
-const mailTesting = ref(false)
-const mailResult = ref(null)
-
-async function testMail() {
-  mailResult.value = null
-  mailTesting.value = true
-  try {
-    if (dirty.value) await save()
-    const res = await api.post('/api/settings/mail/test')
-    mailResult.value = res.ok ? { ok: true } : { ok: false, error: res.error }
-  } catch (e) {
-    mailResult.value = { ok: false, error: e.message }
-  } finally {
-    mailTesting.value = false
-  }
-}
-
-// Two-factor enrolment. The secret is held here only until it is confirmed:
-// it is stored on the server after the operator's app has produced a correct
-// code, never before, so a scan their app silently rejected cannot lock them
-// out of their own panel.
-const twoFactor = ref(false)
-const enrol = ref(null)
-const enrolCode = ref('')
-const enrolError = ref('')
-const disablePw = ref('')
-const disabling = ref(false)
-
-// The authority of the panel that manages this one, when this panel is being
-// used as a node. Empty means the token alone, which is what an operator who
-// has not set this up is relying on.
-const mtlsTrust = ref('')
-const mtlsBusy = ref(false)
-
-async function saveMtlsTrust() {
-  mtlsBusy.value = true
-  try {
-    const res = await api.post('/api/nodes/mtls/trust', { caCert: mtlsTrust.value.trim() })
-    notify(res?.required ? t('settings.mtlsTrustSaved') : t('settings.mtlsTrustCleared'), 'ok')
-  } catch (e) {
-    notify(e.message, 'error')
-  } finally {
-    mtlsBusy.value = false
-  }
-}
-
-async function loadMe() {
-  try {
-    const me = await api.get('/api/auth/me')
-    twoFactor.value = !!me.twoFactor
-  } catch {
-    /* the page is still usable without it */
-  }
-}
-
-async function startEnrol() {
-  enrolError.value = ''
-  enrolCode.value = ''
-  try {
-    enrol.value = await api.post('/api/auth/totp/start')
-  } catch (e) {
-    notify(e.message, 'error')
-  }
-}
-
-async function confirmEnrol() {
-  enrolError.value = ''
-  try {
-    await api.post('/api/auth/totp/confirm', { secret: enrol.value.secret, code: enrolCode.value })
-    enrol.value = null
-    twoFactor.value = true
-    notify(t('settings.twoFactorEnabled'), 'success')
-  } catch (e) {
-    enrolError.value = e.message
-  }
-}
-
-async function disableTwoFactor() {
-  enrolError.value = ''
-  try {
-    await api.post('/api/auth/totp/disable', { password: disablePw.value })
-    disablePw.value = ''
-    disabling.value = false
-    twoFactor.value = false
-    notify(t('settings.twoFactorDisabled'), 'success')
-  } catch (e) {
-    enrolError.value = e.message
-  }
-}
-
 const logs = ref([])
 const logLevel = ref('')
 const logsBusy = ref(false)
-
 async function loadLogs() {
   logsBusy.value = true
   try {
@@ -525,22 +638,16 @@ async function loadLogs() {
     logsBusy.value = false
   }
 }
-
 function logTime(iso) {
   const d = new Date(iso)
-  return d.toLocaleTimeString(undefined, { hour12: false }) + '.' +
-    String(d.getMilliseconds()).padStart(3, '0')
+  return d.toLocaleTimeString(undefined, { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0')
 }
-
-// Fields are shown inline rather than hidden behind a toggle: the field is
-// usually the answer — which interface, which customer, which error.
 function logFields(e) {
   if (!e.fields) return ''
   return Object.entries(e.fields)
     .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
     .join('  ')
 }
-
 function humanBytes(n) {
   if (!n) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -551,7 +658,6 @@ function humanBytes(n) {
   }
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
-
 const uptime = computed(() => {
   const s = info.value?.uptimeSec ?? 0
   const d = Math.floor(s / 86400)
@@ -559,65 +665,644 @@ const uptime = computed(() => {
   const m = Math.floor((s % 3600) / 60)
   return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`
 })
-
-async function changePassword() {
-  pwError.value = ''
-  if (pw.value.next.length < 8) {
-    pwError.value = t('settings.passwordTooShort')
-    return
-  }
-  if (pw.value.next !== pw.value.confirm) {
-    pwError.value = t('settings.passwordMismatch')
-    return
-  }
-  pwBusy.value = true
-  try {
-    await api.post('/api/auth/password', {
-      currentPassword: pw.value.current,
-      newPassword: pw.value.next,
-    })
-    pw.value = { current: '', next: '', confirm: '' }
-    notify(t('settings.passwordChanged'), 'success')
-  } catch (e) {
-    pwError.value = e.message
-  } finally {
-    pwBusy.value = false
-  }
-}
 </script>
 
 <template>
-  <div class="page-head">
-    <div>
-      <h1>{{ t('nav.settings') }}</h1>
-      <p class="lede">{{ t('settings.lede') }}</p>
-    </div>
-  </div>
-
-
-  <!-- Settings rows are a label with a description on the left and a control
-       on the right, and that is what stands in for them. -->
-  <section v-if="showWait" class="card sk-rows" aria-hidden="true">
-    <div v-for="n in 6" :key="n" class="sk-row">
-      <div class="sk-row-meta">
-        <span class="sk" :style="{ width: 34 + ((n * 7) % 22) + '%' }"></span>
-        <span class="sk" :style="{ width: 62 + ((n * 5) % 26) + '%' }"></span>
+  <div class="antpage settings-page">
+    <!-- Their security-warnings Alert: error, with a bold lead and the list. -->
+    <div v-if="warnings.length && alertVisible" class="aalert error with-desc conf-alert">
+      <AntIcon name="CloseCircleFilled" />
+      <div class="aalert-body">
+        <span class="aalert-title">{{ t('set.securityWarnings') }}</span>
+        <span class="aalert-desc">
+          <b>{{ t('set.panelExposed') }}</b>
+          <ul><li v-for="(w, i) in warnings" :key="i">{{ w }}</li></ul>
+        </span>
       </div>
-      <span class="sk sk-lg sk-row-control"></span>
+      <button type="button" class="aalert-close" :aria-label="t('common.close')" @click="alertVisible = false"><AntIcon name="CloseOutlined" /></button>
     </div>
-  </section>
-  <div v-else-if="loading" class="empty"></div>
 
-  <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
+    <section v-if="showWait" class="acard sk-rows" aria-hidden="true">
+      <div v-for="n in 6" :key="n" class="sk-row">
+        <div class="sk-row-meta">
+          <span class="sk" :style="{ width: 34 + ((n * 7) % 22) + '%' }"></span>
+          <span class="sk" :style="{ width: 62 + ((n * 5) % 26) + '%' }"></span>
+        </div>
+        <span class="sk sk-lg sk-row-control"></span>
+      </div>
+    </section>
+    <div v-else-if="loading" class="empty"></div>
+    <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
 
-  <template v-else-if="form">
-    <!-- Everything worth saying about this server, in one place. Two stacked
-         warning boxes read as two unrelated problems and get skimmed. -->
-    <SecurityWarnings :listen="info?.listen" />
+    <template v-else-if="form">
+      <!-- Their header card: Save, Restart Panel, and the standing note. -->
+      <div class="acard">
+        <div class="acard-body">
+          <div class="header-row">
+            <div class="header-actions">
+              <div class="aspace">
+                <button class="abtn primary" :disabled="!dirty || busy" @click="save">{{ t('set.save') }}</button>
+                <button class="abtn primary danger-primary" :disabled="dirty || busy || restarting" @click="askRestart = true">
+                  {{ restarting ? t('set.restarting') : t('set.restartPanel') }}
+                </button>
+              </div>
+            </div>
+            <div class="header-info">
+              <div class="aalert warning">
+                <AntIcon name="ExclamationCircleFilled" />
+                <div class="aalert-body"><span class="aalert-title">{{ t('set.infoDesc') }}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <!-- Restoring replaces the database, every key and every certificate, so
-         it is asked for rather than done. The safety copy is named in the body
-         because knowing it exists is what makes the answer an easy one. -->
+      <div class="acard">
+        <div class="acard-body">
+          <!-- ══ General ══ -->
+          <template v-if="active === 'general'">
+            <div class="atabs-nav"><div class="atabs-list">
+              <button class="atab" :class="{ active: inner.general === '1' }" @click="inner.general = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.panelSettings') }}</span></button>
+              <button class="atab" :class="{ active: inner.general === '2' }" @click="inner.general = '2'"><AntIcon name="BellOutlined" /><span>{{ t('set.notifications') }}</span></button>
+              <button class="atab" :class="{ active: inner.general === '3' }" @click="inner.general = '3'"><AntIcon name="SafetyCertificateOutlined" /><span>{{ t('set.certs') }}</span></button>
+              <button class="atab" :class="{ active: inner.general === '4' }" @click="inner.general = '4'"><AntIcon name="GlobalOutlined" /><span>{{ t('set.externalTraffic') }}</span></button>
+              <button class="atab" :class="{ active: inner.general === '5' }" @click="inner.general = '5'"><AntIcon name="ClockCircleOutlined" /><span>{{ t('set.dateAndTime') }}</span></button>
+              <button class="atab" :class="{ active: inner.general === '6' }" @click="inner.general = '6'"><AntIcon name="TeamOutlined" /><span>{{ t('set.customerDefaults') }}</span></button>
+            </div></div>
+
+            <template v-if="inner.general === '1'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelListeningIP') }}</div><div class="setting-list-description">{{ t('set.panelListeningIPDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.webListen" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelListeningDomain') }}</div><div class="setting-list-description">{{ t('set.panelListeningDomainDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.webDomain" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelPort') }}<span v-if="isDefault('webPort')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.panelPortDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="form.webPort" type="number" min="1" max="65535" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelUrlPath') }}</div><div class="setting-list-description">{{ t('set.panelUrlPathDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input :value="form.webBasePath" class="ltr" @input="form.webBasePath = sanitizePath($event.target.value)" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.sessionMaxAge') }}<span v-if="isDefault('sessionMaxAge')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.sessionMaxAgeDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="form.sessionMaxAge" type="number" min="60" max="525600" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.trustedProxyCidrs') }}</div><div class="setting-list-description">{{ t('set.trustedProxyCidrsDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.trustedProxyCIDRs" class="ltr" placeholder="127.0.0.1/32,::1/128" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelOutbound') }}</div><div class="setting-list-description">{{ t('set.panelOutboundDesc') }}</div></div></div>
+                <div class="acol"><div class="aselect"><select v-model="form.panelOutbound">
+                  <option value="">{{ t('set.panelOutboundPh') }}</option>
+                  <optgroup v-if="balancerTags.length" :label="t('nav.outbounds')"><option v-for="tag in outboundTags" :key="tag" :value="tag">{{ tag }}</option></optgroup>
+                  <template v-else><option v-for="tag in outboundTags" :key="tag" :value="tag">{{ tag }}</option></template>
+                  <optgroup v-if="balancerTags.length" :label="t('routing.tab.balancers')"><option v-for="tag in balancerTags" :key="tag" :value="tag">{{ tag }}</option></optgroup>
+                </select></div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.pageSize') }}<span v-if="isDefault('pageSize')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.pageSizeDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="form.pageSize" type="number" min="0" max="1000" step="5" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.language') }}</div></div></div>
+                <div class="acol"><div class="aselect"><select v-model="form.defaultLocale">
+                  <option value="en">🇬🇧&nbsp;&nbsp;English</option>
+                  <option value="fa">🇮🇷&nbsp;&nbsp;فارسی</option>
+                </select></div></div>
+              </div></div>
+            </template>
+
+            <template v-else-if="inner.general === '2'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.expireTimeDiff') }}<span v-if="isDefault('expireDiff')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.expireTimeDiffDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="form.expireDiff" type="number" min="0" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.trafficDiff') }}<span v-if="isDefault('trafficDiff')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.trafficDiffDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="form.trafficDiff" type="number" min="0" max="100" class="ltr" /></label></div>
+              </div></div>
+            </template>
+
+            <template v-else-if="inner.general === '3'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.publicKeyPath') }}</div><div class="setting-list-description">{{ t('set.publicKeyPathDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.webCertFile" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.privateKeyPath') }}</div><div class="setting-list-description">{{ t('set.privateKeyPathDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.webKeyFile" class="ltr" /></label></div>
+              </div></div>
+            </template>
+
+            <template v-else-if="inner.general === '4'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.externalTrafficInformEnable') }}</div><div class="setting-list-description">{{ t('set.externalTrafficInformEnableDesc') }}</div></div></div>
+                <div class="acol"><Toggle v-model="form.externalTrafficInformEnable" :label="t('set.externalTrafficInformEnable')" /></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.externalTrafficInformURI') }}</div><div class="setting-list-description">{{ t('set.externalTrafficInformURIDesc') }} {{ t('set.informBody') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.externalTrafficInformURI" class="ltr" placeholder="(http|https)://domain[:port]/path/" /></label></div>
+              </div></div>
+            </template>
+
+            <template v-else-if="inner.general === '5'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.timeZone') }}</div><div class="setting-list-description">{{ t('set.timeZoneDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.timeLocation" class="ltr" placeholder="Asia/Tehran" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.datepicker') }}</div><div class="setting-list-description">{{ t('set.datepickerDescription') }}</div></div></div>
+                <div class="acol"><div class="aselect"><select v-model="form.datepicker">
+                  <option value="gregorian">{{ t('set.calendarGregorian') }}</option>
+                  <option value="jalalian">{{ t('set.calendarJalalian') }}</option>
+                </select></div></div>
+              </div></div>
+            </template>
+
+            <template v-else>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defQuota') }}<span v-if="isDefault('defaultQuotaBytes')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defQuotaDesc') }}</div></div></div>
+                <div class="acol"><div class="acompact"><label class="ainput number"><input v-model.number="quotaGB" type="number" min="0" class="ltr" /></label><span class="abtn addon">GB</span></div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defExpiry') }}<span v-if="isDefault('defaultExpiryDays')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defExpiryDesc') }}</div></div></div>
+                <div class="acol"><div class="acompact"><label class="ainput number"><input v-model.number="form.defaultExpiryDays" type="number" min="0" class="ltr" /></label><span class="abtn addon">{{ t('settings.days') }}</span></div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defDevices') }}<span v-if="isDefault('defaultDeviceLimit')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defDevicesDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="form.defaultDeviceLimit" type="number" min="1" max="64" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defRate') }}<span v-if="isDefault('defaultRateBitsPerSec')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defRateDesc') }}</div></div></div>
+                <div class="acol"><div class="acompact"><label class="ainput number"><input v-model.number="rateMbit" type="number" min="0" class="ltr" /></label><span class="abtn addon">Mbit/s</span></div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defReset') }}<span v-if="isDefault('defaultResetCycle')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defResetDesc') }}</div></div></div>
+                <div class="acol"><div class="aselect"><select v-model="form.defaultResetCycle">
+                  <option value="none">{{ t('reset.none') }}</option>
+                  <option value="daily">{{ t('reset.daily') }}</option>
+                  <option value="weekly">{{ t('reset.weekly') }}</option>
+                  <option value="monthly">{{ t('reset.monthly') }}</option>
+                </select></div></div>
+              </div></div>
+            </template>
+          </template>
+
+          <!-- ══ Authentication ══ -->
+          <template v-else-if="active === 'security'">
+            <div class="atabs-nav"><div class="atabs-list">
+              <button class="atab" :class="{ active: inner.security === '1' }" @click="inner.security = '1'"><AntIcon name="UserOutlined" /><span>{{ t('set.security.admin') }}</span></button>
+              <button class="atab" :class="{ active: inner.security === '2' }" @click="inner.security = '2'"><AntIcon name="SafetyOutlined" /><span>{{ t('set.security.twoFactor') }}</span></button>
+              <button class="atab" :class="{ active: inner.security === '3' }" @click="inner.security = '3'"><AntIcon name="ApiOutlined" /><span>{{ t('set.nodes.apiToken') }}</span></button>
+            </div></div>
+
+            <template v-if="inner.security === '1'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.oldUsername') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="user.oldUsername" autocomplete="username" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.currentPassword') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="user.oldPassword" :type="showSecret.old ? 'text' : 'password'" autocomplete="current-password" /><button type="button" class="ainput-clear" @click="showSecret.old = !showSecret.old"><AntIcon :name="showSecret.old ? 'EyeOutlined' : 'EyeInvisibleOutlined'" /></button></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.newUsername') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="user.newUsername" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.newPassword') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="user.newPassword" :type="showSecret.new ? 'text' : 'password'" autocomplete="new-password" /><button type="button" class="ainput-clear" @click="showSecret.new = !showSecret.new"><AntIcon :name="showSecret.new ? 'EyeOutlined' : 'EyeInvisibleOutlined'" /></button></label></div>
+              </div></div>
+              <div class="security-actions"><div class="aspace" style="padding: 0 20px">
+                <button class="abtn primary" :disabled="updating" @click="updateUser"><span v-if="updating" class="spin sm"></span>{{ t('set.confirm') }}</button>
+              </div></div>
+            </template>
+
+            <template v-else-if="inner.security === '2'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.security.twoFactorEnable') }}</div><div class="setting-list-description">{{ t('set.security.twoFactorEnableDesc') }}</div></div></div>
+                <div class="acol"><Toggle :model-value="twoFactor" :label="t('set.security.twoFactorEnable')" @update:model-value="toggleTwoFactor" /></div>
+              </div></div>
+              <!-- This panel as a node: which panel may drive it. -->
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.mtlsTrust') }}</div><div class="setting-list-description">{{ t('settings.mtlsTrustHint') }}</div></div></div>
+                <div class="acol"><div class="aspace-v">
+                  <label class="ainput block area"><textarea v-model="mtlsTrust" rows="4" class="ltr mono" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+                  <div><button class="abtn" :disabled="mtlsBusy" @click="saveMtlsTrust"><span v-if="mtlsBusy" class="spin sm"></span>{{ t('set.save') }}</button></div>
+                </div></div>
+              </div></div>
+            </template>
+
+            <template v-else>
+              <div class="api-token-section">
+                <div class="api-token-header">
+                  <p class="api-token-hint">{{ t('set.nodes.apiTokenHint') }}</p>
+                  <button class="abtn primary sm" @click="createOpen = true">+ {{ t('set.security.apiTokenNew') }}</button>
+                </div>
+                <div v-if="!tokens.length && !tokensLoading" class="aempty"><AntIcon name="InboxOutlined" />{{ t('set.security.apiTokenEmpty') }}</div>
+                <div v-for="tk in tokens" :key="tk.id" class="api-token-row" :class="{ disabled: tk.disabled }">
+                  <div class="api-token-row-head">
+                    <div class="api-token-name-wrap">
+                      <span class="api-token-name">{{ tk.name }}</span>
+                      <span class="api-token-created">{{ tokenDate(tk.createdAt) }} · <code class="ltr">{{ tk.prefix }}…</code> · {{ tk.lastUsedAt ? relative(tk.lastUsedAt, store.locale) : t('settings.tokenNeverUsed') }}</span>
+                    </div>
+                    <div class="api-token-actions">
+                      <Toggle :model-value="!tk.disabled" small :label="tk.name" @update:model-value="toggleTokenEnabled(tk)" />
+                      <button class="abtn text sm danger-text" @click="revoking = tk">{{ t('set.delete') }}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+
+          <!-- ══ Telegram Bot ══ -->
+          <template v-else-if="active === 'telegram'">
+            <div class="atabs-nav"><div class="atabs-list">
+              <button class="atab" :class="{ active: inner.telegram === '1' }" @click="inner.telegram = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.panelSettings') }}</span></button>
+              <button class="atab" :class="{ active: inner.telegram === '2' }" @click="inner.telegram = '2'"><AntIcon name="BellOutlined" /><span>{{ t('set.notifications') }}</span></button>
+            </div></div>
+
+            <template v-if="inner.telegram === '1'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramBotEnable') }}</div><div class="setting-list-description">{{ t('set.telegramBotEnableDesc') }}</div></div></div>
+                <div class="acol"><Toggle v-model="form.notifyEnabled" :label="t('set.telegramBotEnable')" /></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramToken') }}</div><div class="setting-list-description">{{ secretConfigured('notifyBotToken') ? t('set.telegramTokenConfigured') : t('set.telegramTokenDesc') }}</div></div></div>
+                <div class="acol"><div class="acompact">
+                  <label class="ainput"><input :value="form.notifyBotToken === PLACEHOLDER ? '' : form.notifyBotToken" :type="showSecret.tg ? 'text' : 'password'" autocomplete="off" spellcheck="false" class="ltr" :placeholder="secretConfigured('notifyBotToken') ? t('set.telegramTokenPlaceholder') : ''" @input="form.notifyBotToken = $event.target.value" /><button type="button" class="ainput-clear" @click="showSecret.tg = !showSecret.tg"><AntIcon :name="showSecret.tg ? 'EyeOutlined' : 'EyeInvisibleOutlined'" /></button></label>
+                  <button v-if="saved.notifyBotToken === PLACEHOLDER" type="button" class="abtn" :class="{ danger: secretClearArmed('notifyBotToken') }" @click="toggleClear('notifyBotToken')">{{ secretClearArmed('notifyBotToken') ? t('set.secretClearUndo') : t('set.secretClear') }}</button>
+                </div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramChatId') }}</div><div class="setting-list-description">{{ t('set.telegramChatIdDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.notifyChatId" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramBotLanguage') }}</div></div></div>
+                <div class="acol"><div class="aselect"><select v-model="form.notifyLang">
+                  <option value="en">🇬🇧&nbsp;&nbsp;English</option>
+                  <option value="fa">🇮🇷&nbsp;&nbsp;فارسی</option>
+                </select></div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramAPIServer') }}</div><div class="setting-list-description">{{ t('set.telegramAPIServerDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.notifyAPIServer" class="ltr" placeholder="https://api.example.com" /></label></div>
+              </div></div>
+              <div class="aspace-v" style="margin-top: 16px">
+                <div><button class="abtn primary" :disabled="testLoading" @click="testTgBot"><span v-if="testLoading" class="spin sm"></span><AntIcon v-else name="SendOutlined" /><span>{{ t('set.testTgBot') }}</span></button></div>
+                <div v-if="testResult" class="aalert" :class="testResult.success ? 'success' : 'error'">
+                  <AntIcon :name="testResult.success ? 'CheckCircleFilled' : 'CloseCircleFilled'" />
+                  <div class="aalert-body"><span class="aalert-title">{{ testResult.msg }}</span></div>
+                  <button type="button" class="aalert-close" @click="testResult = null"><AntIcon name="CloseOutlined" /></button>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramNotifyTime') }}</div><div class="setting-list-description">{{ t('set.telegramNotifyTimeDesc') }}</div></div></div>
+                <div class="acol"><div class="aspace-v">
+                  <div class="aselect"><select v-model="notifyMode">
+                    <option value="every">{{ t('set.notifyTime.every') }}</option>
+                    <option value="@hourly">{{ t('set.notifyTime.hourly') }}</option>
+                    <option value="@daily">{{ t('set.notifyTime.daily') }}</option>
+                    <option value="@weekly">{{ t('set.notifyTime.weekly') }}</option>
+                    <option value="@monthly">{{ t('set.notifyTime.monthly') }}</option>
+                    <option value="custom">{{ t('set.notifyTime.custom') }}</option>
+                  </select></div>
+                  <div v-if="notifyMode === 'every'" class="acompact">
+                    <label class="ainput number"><input v-model.number="everyNum" type="number" min="1" class="ltr" :aria-label="t('set.notifyTime.interval')" /></label>
+                    <div class="aselect"><select v-model="everyUnit" :aria-label="t('set.notifyTime.unit')">
+                      <option value="s">{{ t('set.notifyTime.seconds') }}</option>
+                      <option value="m">{{ t('set.notifyTime.minutes') }}</option>
+                      <option value="h">{{ t('set.notifyTime.hours') }}</option>
+                    </select></div>
+                  </div>
+                  <label v-if="notifyMode === 'custom'" class="ainput block"><input v-model="form.notifyRunTime" class="ltr" placeholder="0 30 8 * * *" /></label>
+                </div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgNotifyBackup') }}</div><div class="setting-list-description">{{ t('set.tgNotifyBackupDesc') }}</div></div></div>
+                <div class="acol"><Toggle v-model="form.notifyBackup" :label="t('set.tgNotifyBackup')" /></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgEventBusNotify') }}</div><div class="setting-list-description">{{ t('set.tgEventBusNotifyDesc') }}</div></div></div>
+                <div class="acol">
+                  <div class="notif-grid">
+                    <div v-for="g in eventGroups" :key="g.title" class="acard small notif-card">
+                      <div class="acard-head small">
+                        <span class="notif-title"><AntIcon :name="g.icon" /> {{ t(g.title) }}</span>
+                        <span class="notif-extra"><span class="atag">{{ groupCount('notifyKinds', g) }}/{{ g.events.length }}</span><input type="checkbox" class="acheck" :checked="groupCount('notifyKinds', g) === g.events.length" :indeterminate.prop="groupCount('notifyKinds', g) > 0 && groupCount('notifyKinds', g) < g.events.length" @change="toggleGroup('notifyKinds', g)" /></span>
+                      </div>
+                      <div class="acard-body"><div class="aspace-v">
+                        <div v-for="e in g.events" :key="e.key">
+                          <label class="acheckbox"><input type="checkbox" :checked="hasKind('notifyKinds', e.key)" @change="toggleKind('notifyKinds', e.key)" />{{ t(e.label) }}</label>
+                          <div v-if="e.setting && hasKind('notifyKinds', e.key)" style="padding-left: 24px; margin-top: 4px">
+                            <label class="ainput number sm" style="width: 80px"><input v-model.number="form[e.setting]" type="number" :min="e.min" :max="e.max" class="ltr" /></label>
+                          </div>
+                        </div>
+                      </div></div>
+                    </div>
+                  </div>
+                </div>
+              </div></div>
+            </template>
+          </template>
+
+          <!-- ══ Email ══ -->
+          <template v-else-if="active === 'email'">
+            <div class="atabs-nav"><div class="atabs-list">
+              <button class="atab" :class="{ active: inner.email === '1' }" @click="inner.email = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.smtpSettings') }}</span></button>
+              <button class="atab" :class="{ active: inner.email === '2' }" @click="inner.email = '2'"><AntIcon name="MailOutlined" /><span>{{ t('set.emailNotifications') }}</span></button>
+            </div></div>
+
+            <template v-if="inner.email === '1'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpEnable') }}</div><div class="setting-list-description">{{ t('set.smtpEnableDesc') }}</div></div></div>
+                <div class="acol"><Toggle v-model="form.mailEnabled" :label="t('set.smtpEnable')" /></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpHost') }}</div><div class="setting-list-description">{{ t('set.smtpHostDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.mailHost" class="ltr" placeholder="smtp.gmail.com" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpPort') }}<span v-if="isDefault('mailPort')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.smtpPortDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="form.mailPort" type="number" min="1" max="65535" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpUsername') }}</div><div class="setting-list-description">{{ t('set.smtpUsernameDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.mailUsername" class="ltr" placeholder="user@gmail.com" autocomplete="off" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpPassword') }}</div><div class="setting-list-description">{{ secretConfigured('mailPassword') ? t('set.smtpPasswordConfigured') : t('set.smtpPasswordDesc') }}</div></div></div>
+                <div class="acol"><div class="acompact">
+                  <label class="ainput"><input :value="form.mailPassword === PLACEHOLDER ? '' : form.mailPassword" :type="showSecret.mail ? 'text' : 'password'" autocomplete="off" class="ltr" :placeholder="secretConfigured('mailPassword') ? t('set.smtpPasswordPlaceholder') : ''" @input="form.mailPassword = $event.target.value" /><button type="button" class="ainput-clear" @click="showSecret.mail = !showSecret.mail"><AntIcon :name="showSecret.mail ? 'EyeOutlined' : 'EyeInvisibleOutlined'" /></button></label>
+                  <button v-if="saved.mailPassword === PLACEHOLDER" type="button" class="abtn" :class="{ danger: secretClearArmed('mailPassword') }" @click="toggleClear('mailPassword')">{{ secretClearArmed('mailPassword') ? t('set.secretClearUndo') : t('set.secretClear') }}</button>
+                </div></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpFrom') }}</div><div class="setting-list-description">{{ t('set.smtpFromDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.mailFrom" class="ltr" placeholder="user@gmail.com" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpFromName') }}</div><div class="setting-list-description">{{ t('set.smtpFromNameDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.mailFromName" placeholder="W-UI" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpTo') }}</div><div class="setting-list-description">{{ t('set.smtpToDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="form.mailTo" class="ltr" placeholder="admin@example.com, ops@example.com" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpEncryption') }}</div><div class="setting-list-description">{{ t('set.smtpEncryptionDesc') }}</div></div></div>
+                <div class="acol"><div class="aselect"><select v-model="form.mailEncryption">
+                  <option value="none">{{ t('set.smtpEncryptionNone') }}</option>
+                  <option value="starttls">{{ t('set.smtpEncryptionStartTLS') }}</option>
+                  <option value="tls">{{ t('set.smtpEncryptionTLS') }}</option>
+                </select></div></div>
+              </div></div>
+              <div class="aspace-v" style="margin-top: 16px">
+                <div><button class="abtn primary" :disabled="mailTesting" @click="testMail"><span v-if="mailTesting" class="spin sm"></span><AntIcon v-else name="SendOutlined" /><span>{{ t('set.testSmtp') }}</span></button></div>
+                <div v-if="mailResult" class="aalert" :class="mailResult.success ? 'success' : 'error'">
+                  <AntIcon :name="mailResult.success ? 'CheckCircleFilled' : 'CloseCircleFilled'" />
+                  <div class="aalert-body"><span class="aalert-title">{{ mailResult.msg }}</span></div>
+                  <button type="button" class="aalert-close" @click="mailResult = null"><AntIcon name="CloseOutlined" /></button>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpEventBusNotify') }}</div><div class="setting-list-description">{{ t('set.smtpEventBusNotifyDesc') }}</div></div></div>
+                <div class="acol">
+                  <div class="notif-grid">
+                    <div v-for="g in eventGroups" :key="g.title" class="acard small notif-card">
+                      <div class="acard-head small">
+                        <span class="notif-title"><AntIcon :name="g.icon" /> {{ t(g.title) }}</span>
+                        <span class="notif-extra"><span class="atag">{{ groupCount('mailKinds', g) }}/{{ g.events.length }}</span><input type="checkbox" class="acheck" :checked="groupCount('mailKinds', g) === g.events.length" :indeterminate.prop="groupCount('mailKinds', g) > 0 && groupCount('mailKinds', g) < g.events.length" @change="toggleGroup('mailKinds', g)" /></span>
+                      </div>
+                      <div class="acard-body"><div class="aspace-v">
+                        <div v-for="e in g.events" :key="e.key">
+                          <label class="acheckbox"><input type="checkbox" :checked="hasKind('mailKinds', e.key)" @change="toggleKind('mailKinds', e.key)" />{{ t(e.label) }}</label>
+                          <div v-if="e.setting && hasKind('mailKinds', e.key)" style="padding-left: 24px; margin-top: 4px">
+                            <label class="ainput number sm" style="width: 80px"><input v-model.number="form[e.setting]" type="number" :min="e.min" :max="e.max" class="ltr" /></label>
+                          </div>
+                        </div>
+                      </div></div>
+                    </div>
+                  </div>
+                </div>
+              </div></div>
+            </template>
+          </template>
+
+          <!-- ══ Subscription ══ -->
+          <template v-else-if="active === 'subscription' && sub">
+            <div class="atabs-nav"><div class="atabs-list">
+              <button class="atab" :class="{ active: inner.subscription === '1' }" @click="inner.subscription = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.panelSettings') }}</span></button>
+              <button class="atab" :class="{ active: inner.subscription === '2' }" @click="inner.subscription = '2'"><AntIcon name="InfoCircleOutlined" /><span>{{ t('set.information') }}</span></button>
+              <button class="atab" :class="{ active: inner.subscription === '3' }" @click="inner.subscription = '3'"><AntIcon name="IdcardOutlined" /><span>{{ t('set.profile') }}</span></button>
+              <button class="atab" :class="{ active: inner.subscription === '4' }" @click="inner.subscription = '4'"><AntIcon name="SafetyCertificateOutlined" /><span>{{ t('set.certs') }}</span></button>
+            </div></div>
+
+            <template v-if="inner.subscription === '1'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subEnable') }}</div><div class="setting-list-description">{{ t('set.subEnableDesc') }}</div></div></div>
+                <div class="acol"><Toggle v-model="sub.enabled" :label="t('set.subEnable')" /></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subListen') }}</div><div class="setting-list-description">{{ t('set.subListenDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.listen" class="ltr" /></label><p v-if="subError.listen" class="field-error">{{ subError.listen }}</p></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subDomain') }}</div><div class="setting-list-description">{{ t('set.subDomainDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.host" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subPort') }}<span v-if="!sub.port" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.subPortDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="sub.port" type="number" min="0" max="65535" class="ltr" /></label><p v-if="subError.port" class="field-error">{{ subError.port }}</p></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subPath') }}</div><div class="setting-list-description">{{ t('set.subPathDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input :value="sub.path" class="ltr" placeholder="/sub/" @input="sub.path = sanitizePath($event.target.value)" /></label><p v-if="subError.path" class="field-error">{{ subError.path }}</p></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subURI') }}</div><div class="setting-list-description">{{ t('set.subURIDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.reverseProxyUri" class="ltr" placeholder="(http|https)://domain[:port]/path/" /></label><p v-if="subError.reverseProxyUri" class="field-error">{{ subError.reverseProxyUri }}</p></div>
+              </div></div>
+            </template>
+
+            <template v-else-if="inner.subscription === '2'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subEncrypt') }}</div><div class="setting-list-description">{{ t('set.subEncryptDescWG') }}</div></div></div>
+                <div class="acol"><Toggle v-model="sub.encode" :label="t('set.subEncrypt')" /></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subUpdates') }}<span v-if="sub.updateHours === 12" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.subUpdatesDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput number"><input v-model.number="sub.updateHours" type="number" min="1" max="168" class="ltr" /></label><p v-if="subError.updateHours" class="field-error">{{ subError.updateHours }}</p></div>
+              </div></div>
+            </template>
+
+            <template v-else-if="inner.subscription === '3'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subTitle') }}</div><div class="setting-list-description">{{ t('set.subTitleDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.title" /></label><p v-if="subError.title" class="field-error">{{ subError.title }}</p></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subSupportUrl') }}</div><div class="setting-list-description">{{ t('set.subSupportUrlDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.supportUrl" class="ltr" placeholder="https://example.com" /></label><p v-if="subError.supportUrl" class="field-error">{{ subError.supportUrl }}</p></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subProfileUrl') }}</div><div class="setting-list-description">{{ t('set.subProfileUrlDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.profileUrl" class="ltr" placeholder="https://example.com" /></label><p v-if="subError.profileUrl" class="field-error">{{ subError.profileUrl }}</p></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subAnnounce') }}</div><div class="setting-list-description">{{ t('set.subAnnounceDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block area"><textarea v-model="sub.announce" rows="3"></textarea></label><p v-if="subError.announce" class="field-error">{{ subError.announce }}</p></div>
+              </div></div>
+            </template>
+
+            <template v-else>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subCertPath') }}</div><div class="setting-list-description">{{ t('set.subCertPathDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.certFile" class="ltr" /></label></div>
+              </div></div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subKeyPath') }}</div><div class="setting-list-description">{{ t('set.subKeyPathDesc') }}</div></div></div>
+                <div class="acol"><label class="ainput block"><input v-model="sub.keyFile" class="ltr" /></label><p v-if="subError.certFile" class="field-error">{{ subError.certFile }}</p></div>
+              </div></div>
+            </template>
+          </template>
+
+          <!-- ══ Backups ══ (reached from Maintenance) -->
+          <template v-else-if="active === 'backups'">
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.backupEvery') }}</div><div class="setting-list-description">{{ t('settings.backupEveryDesc') }}</div></div></div>
+              <div class="acol"><div class="acompact"><label class="ainput number"><input v-model.number="form.backupEveryHours" type="number" min="0" max="720" class="ltr" /></label><span class="abtn addon">{{ t('settings.hours') }}</span></div></div>
+            </div></div>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.backupKeep') }}</div><div class="setting-list-description">{{ t('settings.backupKeepDesc') }}</div></div></div>
+              <div class="acol"><label class="ainput number"><input v-model.number="form.backupKeep" type="number" min="0" max="365" class="ltr" /></label></div>
+            </div></div>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.backupsOnDisk') }}</div><div class="setting-list-description">{{ t('settings.backupsWarning') }}</div></div></div>
+              <div class="acol"><div class="aspace-v">
+                <div><button class="abtn primary" :disabled="backupBusy" @click="makeBackup">{{ backupBusy ? t('settings.backingUp') : t('settings.backupNow') }}</button></div>
+                <ul v-if="backups.length" class="backup-list">
+                  <li v-for="b in backups" :key="b.name">
+                    <span class="backup-name ltr">{{ b.name }}</span>
+                    <span class="backup-size ltr">{{ humanBytes(b.size) }}</span>
+                    <button class="linkbtn" @click="downloadBackup(b.name)">{{ t('settings.download') }}</button>
+                    <button class="linkbtn" :disabled="!!restoring" @click="ask = b.name">{{ t('settings.restore') }}</button>
+                    <button class="linkbtn danger" :disabled="!!restoring" @click="removeBackup(b.name)">{{ t('common.delete') }}</button>
+                  </li>
+                </ul>
+                <p v-else class="muted">{{ t('settings.noBackups') }}</p>
+                <label class="abtn upload-btn">
+                  <Icon name="upload" :size="15" />
+                  <span>{{ uploading ? t('settings.uploading') : t('settings.uploadBackup') }}</span>
+                  <input type="file" accept=".gz,.tar.gz,application/gzip" :disabled="uploading || !!restoring" @change="uploadBackup" />
+                </label>
+              </div></div>
+            </div></div>
+          </template>
+
+          <!-- ══ Engine ══ -->
+          <template v-else-if="active === 'engine'">
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.quotaEngine') }}</div><div class="setting-list-description">{{ info?.enforcementActive ? t('settings.quotaEngineOn') : info?.enforcementMessage }}</div></div></div>
+              <div class="acol"><span class="atag" :class="info?.enforcementActive ? 'green' : 'red'">{{ info?.enforcementActive ? t('settings.active') : t('settings.inactive') }}</span></div>
+            </div></div>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.shaping') }}</div><div class="setting-list-description">{{ info?.shapingActive ? t('settings.shapingOn') : info?.shapingMessage || t('settings.shapingOff') }}</div></div></div>
+              <div class="acol"><span class="atag" :class="info?.shapingActive ? 'green' : 'red'">{{ info?.shapingActive ? t('settings.active') : t('settings.inactive') }}</span></div>
+            </div></div>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.reconciler') }}</div><div class="setting-list-description">{{ t('settings.reconcilerDesc') }}</div></div></div>
+              <div class="acol"><dl class="kv">
+                <dt>{{ t('settings.ticks') }}</dt><dd class="ltr">{{ info?.reconciler?.ticks ?? 0 }}</dd>
+                <dt>{{ t('settings.lastRun') }}</dt><dd class="ltr">{{ info?.reconciler?.lastDuration || '—' }}</dd>
+                <dt>{{ t('settings.counted') }}</dt><dd class="ltr">{{ info?.reconciler?.bytesCounted ?? 0 }}</dd>
+              </dl></div>
+            </div></div>
+          </template>
+
+          <!-- ══ Logs ══ -->
+          <template v-else-if="active === 'logs'">
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.recentLog') }}</div><div class="setting-list-description">{{ t('settings.recentLogDesc') }}</div></div></div>
+              <div class="acol"><div class="aspace">
+                <div class="aselect" style="width: 160px"><select v-model="logLevel" @change="loadLogs">
+                  <option value="">{{ t('settings.logAll') }}</option>
+                  <option value="INFO">{{ t('settings.logInfo') }}</option>
+                  <option value="WARN">{{ t('settings.logWarn') }}</option>
+                  <option value="ERROR">{{ t('settings.logError') }}</option>
+                </select></div>
+                <button class="abtn" :disabled="logsBusy" @click="loadLogs"><AntIcon name="ReloadOutlined" /><span>{{ t('common.refresh') }}</span></button>
+              </div></div>
+            </div></div>
+            <div class="log-view">
+              <p v-if="!logs.length" class="muted">{{ t('settings.logEmpty') }}</p>
+              <ol v-else class="log-lines">
+                <li v-for="(e, i) in logs" :key="i" :class="`lvl-${(e.level || '').toLowerCase()}`">
+                  <span class="log-time ltr">{{ logTime(e.time) }}</span>
+                  <span class="log-level ltr">{{ e.level }}</span>
+                  <span class="log-msg">{{ e.message }}</span>
+                  <span v-if="logFields(e)" class="log-fields ltr">{{ logFields(e) }}</span>
+                </li>
+              </ol>
+            </div>
+          </template>
+
+          <!-- ══ System ══ -->
+          <template v-else>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.version') }}</div><div class="setting-list-description">{{ t('settings.versionDesc') }}</div></div></div>
+              <div class="acol"><dl class="kv">
+                <dt>W-UI</dt><dd class="ltr">{{ info?.version }}</dd>
+                <dt>Go</dt><dd class="ltr">{{ info?.goVersion }}</dd>
+                <dt>{{ t('settings.platform') }}</dt><dd class="ltr">{{ info?.platform }}</dd>
+                <dt>{{ t('settings.uptime') }}</dt><dd class="ltr">{{ uptime }}</dd>
+              </dl></div>
+            </div></div>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.storage') }}</div><div class="setting-list-description">{{ t('settings.storageDesc') }}</div></div></div>
+              <div class="acol"><dl class="kv">
+                <dt>{{ t('settings.driver') }}</dt><dd class="ltr">{{ info?.dbDriver }}</dd>
+                <dt>{{ t('nav.interfaces') }}</dt><dd class="ltr">{{ info?.interfaces ?? 0 }}</dd>
+                <dt>{{ t('nav.clients') }}</dt><dd class="ltr">{{ info?.clients ?? 0 }}</dd>
+                <dt>{{ t('settings.devices') }}</dt><dd class="ltr">{{ info?.accounts ?? 0 }}</dd>
+              </dl></div>
+            </div></div>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.listen') }}</div><div class="setting-list-description">{{ t('settings.listenDesc') }}</div></div></div>
+              <div class="acol"><code class="readonly ltr">{{ info?.listen }}</code></div>
+            </div></div>
+            <div class="setting-list-item"><div class="arow">
+              <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.dataDir') }}</div><div class="setting-list-description">{{ t('settings.dataDirDesc') }}</div></div></div>
+              <div class="acol"><code class="readonly ltr">{{ info?.dbSource || '—' }}</code></div>
+            </div></div>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- ── modals ── -->
+    <ConfirmDialog
+      :open="askRestart"
+      :title="t('set.restartPanel')"
+      :body="t('set.restartConfirm')"
+      :confirm-label="t('set.restartPanel')"
+      :danger="true"
+      @confirm="restartPanel"
+      @cancel="askRestart = false"
+    />
     <ConfirmDialog
       :open="!!ask"
       :title="t('settings.restoreTitle')"
@@ -628,20 +1313,15 @@ async function changePassword() {
       @confirm="() => { const n = ask; ask = null; restoreBackup(n) }"
       @cancel="ask = null"
     />
-
-    <!-- Revoking is immediate: whatever was using that token stops working the
-         moment this is confirmed, and there is no undoing it. -->
     <ConfirmDialog
       :open="!!revoking"
       :title="t('settings.revokeTitle')"
       :body="t('settings.revokeBody', { n: revoking?.name || '' })"
-      :confirm-label="t('action.revoke')"
+      :confirm-label="t('set.delete')"
       :danger="true"
       @confirm="doRevoke"
       @cancel="revoking = null"
     />
-
-    <!-- Raised when a link is clicked with an unsaved edit on the page. -->
     <ConfirmDialog
       :open="!!pendingRoute"
       :title="t('settings.leaveTitle')"
@@ -653,815 +1333,118 @@ async function changePassword() {
       @cancel="discardAndGo"
     />
 
-    <!-- The save bar sits above the tabs: it applies to all of them, and a
-         change made on one tab must not look lost when another is opened. -->
-    <section class="card savebar">
-      <div class="savebar-actions">
-        <button class="btn primary"
-          :disabled="!dirty || busy"
-          :title="!dirty ? t('settings.nothingToSave') : ''"
-          @click="save">
-          <span v-if="busy">{{ t('common.saving') }}</span>
-          <span v-else>{{ t('common.save') }}</span>
-        </button>
-        <button class="btn ghost"
-          :disabled="!dirty || busy"
-          :title="!dirty ? t('settings.nothingToRevert') : ''"
-          @click="revert">
-          {{ t('common.revert') }}
-        </button>
+    <!-- New API token: their Modal with one required Name. -->
+    <div v-if="createOpen" class="amodal-backdrop" @click.self="createOpen = false">
+      <div class="amodal" role="dialog" aria-modal="true">
+        <div class="amodal-head"><h2 class="amodal-title">{{ t('set.security.apiTokenNew') }}</h2><button type="button" class="amodal-close" :aria-label="t('common.close')" @click="createOpen = false"><AntIcon name="CloseOutlined" /></button></div>
+        <div class="amodal-body">
+          <div class="aform-item"><label class="aform-label required" for="tk-name">{{ t('set.security.apiTokenName') }}</label>
+            <label class="ainput block"><input id="tk-name" v-model="createName" maxlength="64" :placeholder="t('set.security.apiTokenNamePlaceholder')" @keydown.enter="confirmCreateToken" /></label></div>
+        </div>
+        <div class="amodal-foot">
+          <button class="abtn" @click="createOpen = false">{{ t('set.cancel') }}</button>
+          <button class="abtn primary" :disabled="creating || !createName.trim()" @click="confirmCreateToken"><span v-if="creating" class="spin sm"></span>{{ t('set.confirm') }}</button>
+        </div>
       </div>
-      <p class="savebar-note">
-        <Icon name="info" :size="14" />
-        <span>{{ dirty ? t('settings.unsaved') : t('settings.note') }}</span>
-      </p>
-    </section>
+    </div>
 
-    <nav v-if="inSettingsMenu" class="cat-tabs" role="tablist">
-      <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="cat-tab"
-        role="tab"
-        :class="{ active: active === tab.key }"
-        :aria-selected="active === tab.key"
-        :title="t(tab.label)"
-        @click="selectTab(tab.key)"
-      >
-        <Icon :name="tab.icon" :size="16" />
-        <span class="cat-tab-text">{{ t(tab.label) }}</span>
-      </button>
-    </nav>
+    <!-- The token, once. -->
+    <div v-if="createdToken" class="amodal-backdrop" @click.self="createdToken = null">
+      <div class="amodal" role="dialog" aria-modal="true">
+        <div class="amodal-head"><h2 class="amodal-title">{{ t('set.security.apiTokenCreatedTitle') }}</h2><button type="button" class="amodal-close" :aria-label="t('common.close')" @click="createdToken = null"><AntIcon name="CloseOutlined" /></button></div>
+        <div class="amodal-body">
+          <p class="api-token-created-notice">{{ t('set.security.apiTokenCreatedNotice') }}</p>
+          <div class="api-token-value-wrap">
+            <code class="api-token-value ltr">{{ createdToken.token }}</code>
+            <button class="abtn primary sm" @click="copyText(createdToken.token)">{{ t('set.copy') }}</button>
+          </div>
+        </div>
+        <div class="amodal-foot"><button class="abtn primary" @click="createdToken = null">{{ t('set.done') }}</button></div>
+      </div>
+    </div>
 
-    <section class="card settings-list">
-      <!-- ── General ── -->
-      <template v-if="active === 'general'">
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.language') }}
-              <span v-if="isDefault('defaultLocale')" class="tag grey">{{ t('settings.default') }}</span>
+    <!-- Two-factor: their modal, steps and QR and code. -->
+    <div v-if="tfa" class="amodal-backdrop" @click.self="tfa = null">
+      <div class="amodal" role="dialog" aria-modal="true">
+        <div class="amodal-head"><h2 class="amodal-title">{{ tfa.type === 'set' ? t('set.twoFactorModalSetTitle') : t('set.twoFactorModalDeleteTitle') }}</h2><button type="button" class="amodal-close" :aria-label="t('common.close')" @click="tfa = null"><AntIcon name="CloseOutlined" /></button></div>
+        <div class="amodal-body">
+          <template v-if="tfa.type === 'set'">
+            <p>{{ t('set.twoFactorModalSteps') }}</p>
+            <hr class="adivider" />
+            <p>{{ t('set.twoFactorModalFirstStep') }}</p>
+            <div class="qr-wrap" role="button" tabindex="0" :aria-label="t('set.copy')" @click="copyText(tfa.token)" @keydown.enter="copyText(tfa.token)">
+              <img class="qr-code" :src="tfa.qr.dataUrl" width="180" height="180" alt="" />
+              <span class="qr-token ltr">{{ tfa.token }}</span>
             </div>
-            <p class="setting-desc">{{ t('settings.languageDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <select v-model="form.defaultLocale">
-              <option value="en">English</option>
-              <option value="fa">فارسی</option>
-            </select>
-          </div>
+            <hr class="adivider" />
+            <p>{{ t('set.twoFactorModalSecondStep') }}</p>
+            <label class="ainput block"><input v-model="tfa.code" inputmode="numeric" maxlength="6" class="ltr" :aria-label="t('set.twoFactorCode')" @keydown.enter="confirmTfa" /></label>
+          </template>
+          <template v-else>
+            <p>{{ t('set.twoFactorModalDeleteDesc') }}</p>
+            <label class="ainput block"><input v-model="tfa.code" class="ltr" :placeholder="t('set.twoFactorCode')" :aria-label="t('set.twoFactorCode')" /></label>
+            <label class="ainput block" style="margin-top: 8px"><input v-model="tfa.password" type="password" autocomplete="current-password" :placeholder="t('set.password')" /></label>
+          </template>
         </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.listen') }}</div>
-            <p class="setting-desc">{{ t('settings.listenDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <code class="readonly ltr">{{ info?.listen }}</code>
-          </div>
+        <div class="amodal-foot">
+          <button class="abtn" @click="tfa = null">{{ t('set.cancel') }}</button>
+          <button class="abtn primary" :disabled="tfa.type === 'set' ? !/^\d{6}$/.test(tfa.code || '') : !(tfa.code || tfa.password)" @click="confirmTfa">{{ t('set.confirm') }}</button>
         </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.dataDir') }}</div>
-            <p class="setting-desc">{{ t('settings.dataDirDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <code class="readonly ltr">{{ info?.dbSource || '—' }}</code>
-          </div>
-        </div>
-
-        <!-- What a new customer starts with. Its own page before, which made
-             the settings menu longer than it needed to be for three fields
-             that are read once and rarely changed. -->
-        <h3 class="setting-group">{{ t('settings.tab.clients') }}</h3>
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.defQuota') }}
-              <span v-if="isDefault('defaultQuotaBytes')" class="tag grey">{{ t('settings.default') }}</span>
-            </div>
-            <p class="setting-desc">{{ t('settings.defQuotaDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="unit-field">
-              <input v-model.number="quotaGB" type="number" min="0" step="1" />
-              <span class="unit">GB</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.defExpiry') }}
-              <span v-if="isDefault('defaultExpiryDays')" class="tag grey">{{ t('settings.default') }}</span>
-            </div>
-            <p class="setting-desc">{{ t('settings.defExpiryDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="unit-field">
-              <input v-model.number="form.defaultExpiryDays" type="number" min="0" step="1" />
-              <span class="unit">{{ t('settings.days') }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.defDevices') }}
-              <span v-if="isDefault('defaultDeviceLimit')" class="tag grey">{{ t('settings.default') }}</span>
-            </div>
-            <p class="setting-desc">{{ t('settings.defDevicesDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model.number="form.defaultDeviceLimit" type="number" min="1" max="64" step="1" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.defRate') }}
-              <span v-if="isDefault('defaultRateBitsPerSec')" class="tag grey">{{ t('settings.default') }}</span>
-            </div>
-            <p class="setting-desc">{{ t('settings.defRateDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="unit-field">
-              <input v-model.number="rateMbit" type="number" min="0" step="1" />
-              <span class="unit">Mbit/s</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.defReset') }}
-              <span v-if="isDefault('defaultResetCycle')" class="tag grey">{{ t('settings.default') }}</span>
-            </div>
-            <p class="setting-desc">{{ t('settings.defResetDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <select v-model="form.defaultResetCycle">
-              <option value="none">{{ t('reset.none') }}</option>
-              <option value="daily">{{ t('reset.daily') }}</option>
-              <option value="weekly">{{ t('reset.weekly') }}</option>
-              <option value="monthly">{{ t('reset.monthly') }}</option>
-            </select>
-          </div>
-        </div>
-      </template>
-
-
-
-      <!-- ── Subscription ── -->
-      <template v-else-if="active === 'subscription'">
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('sub.enabled') }}</div>
-            <p class="setting-desc">{{ t('sub.enabledDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <Toggle v-model="sub.enabled" :label="t('sub.enabled')" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('sub.path') }}</div>
-            <p class="setting-desc">{{ t('sub.pathDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="sub.path" class="ltr" autocomplete="off" placeholder="/subscribe/" />
-            <p v-if="subError.path" class="field-error">{{ subError.path }}</p>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('sub.title') }}</div>
-            <p class="setting-desc">{{ t('sub.titleDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="sub.title" autocomplete="off" />
-            <p v-if="subError.title" class="field-error">{{ subError.title }}</p>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('sub.host') }}</div>
-            <p class="setting-desc">{{ t('sub.hostDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="sub.host" class="ltr" autocomplete="off" :placeholder="t('sub.hostPlaceholder')" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('sub.interval') }}</div>
-            <p class="setting-desc">{{ t('sub.intervalDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="unit-field">
-              <input v-model.number="sub.updateHours" type="number" min="1" max="168" />
-              <span class="unit">{{ t('settings.hours') }}</span>
-            </div>
-            <p v-if="subError.updateHours" class="field-error">{{ subError.updateHours }}</p>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('sub.proxy') }}</div>
-            <p class="setting-desc">{{ t('sub.proxyDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="sub.reverseProxyUri" class="ltr" autocomplete="off" placeholder="https://vpn.example.com" />
-            <p v-if="subError.reverseProxyUri" class="field-error">{{ subError.reverseProxyUri }}</p>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta"></div>
-          <div class="setting-control">
-            <button class="btn primary" :disabled="subBusy" @click="saveSub">
-              <span v-if="subBusy" class="spin"></span>
-              <template v-else>{{ t('action.save') }}</template>
-            </button>
-          </div>
-        </div>
-      </template>
-
-      <!-- ── Security ── -->
-      <template v-else-if="active === 'security'">
-        <!-- Machine access to this panel. It was only on the Nodes page, where
-             it was reachable while adding a node and nowhere else: a credential
-             that can do everything an administrator can belongs with the other
-             ways in, so it can be looked at and revoked without a reason. -->
-        <div class="setting-row block">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.apiTokens') }}</div>
-            <p class="setting-desc">{{ t('settings.apiTokensDesc') }}</p>
-          </div>
-          <div class="setting-control wide">
-            <table v-if="tokens.length" class="mini-table">
-              <thead>
-                <tr>
-                  <th>{{ t('node.tokenName') }}</th>
-                  <th class="ltr">{{ t('settings.tokenPrefix') }}</th>
-                  <th>{{ t('settings.tokenLastUsed') }}</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="tk in tokens" :key="tk.id">
-                  <td>{{ tk.name }}</td>
-                  <td><code class="ltr">{{ tk.prefix }}…</code></td>
-                  <!-- A token that has never been used is worth seeing: it is
-                       either not wired up yet, or it was forgotten. -->
-                  <td class="muted small">
-                    {{ tk.lastUsedAt ? relative(tk.lastUsedAt) : t('settings.tokenNeverUsed') }}
-                  </td>
-                  <td class="right">
-                    <button class="btn sm ghost danger" @click="revokeToken(tk)">
-                      {{ t('action.revoke') }}
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else class="muted small">{{ t('settings.noTokens') }}</p>
-          </div>
-        </div>
-        <!-- This panel as a node: which panel is allowed to manage it. The
-             token says the caller knows a secret and travels in every request;
-             a certificate says which machine it is and its key never moves. -->
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mtlsTrust') }}</div>
-            <p class="setting-desc">{{ t('settings.mtlsTrustHint') }}</p>
-          </div>
-          <div class="setting-control wide">
-            <textarea v-model="mtlsTrust" rows="4" class="ltr mono"
-                      placeholder="-----BEGIN CERTIFICATE-----"></textarea>
-            <button class="btn sm" :disabled="mtlsBusy" @click="saveMtlsTrust">
-              <span v-if="mtlsBusy" class="spin sm"></span>
-              <span v-else>{{ t('action.save') }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.session') }}
-              <span v-if="isDefault('sessionHours')" class="tag grey">{{ t('settings.default') }}</span>
-            </div>
-            <p class="setting-desc">{{ t('settings.sessionDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="unit-field">
-              <input v-model.number="form.sessionHours" type="number" min="1" max="720" step="1" />
-              <span class="unit">{{ t('settings.hours') }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row block">
-          <div class="setting-meta">
-            <div class="setting-title">
-              {{ t('settings.twoFactor') }}
-              <span class="tag" :class="twoFactor ? 'green' : 'grey'">
-                {{ twoFactor ? t('settings.twoFactorOn') : t('settings.twoFactorOff') }}
-              </span>
-            </div>
-            <p class="setting-desc">{{ t('settings.twoFactorDesc') }}</p>
-          </div>
-          <div class="setting-control stack-end">
-            <!-- Off, and not being set up. -->
-            <button v-if="!twoFactor && !enrol" class="btn primary" @click="startEnrol">
-              {{ t('settings.enableTwoFactor') }}
-            </button>
-
-            <!-- Mid-enrolment: the key is shown once, here. -->
-            <div v-else-if="enrol" class="enrol">
-              <p class="setting-desc">{{ t('settings.scanThis') }}</p>
-              <div class="enrol-uri ltr">{{ enrol.uri }}</div>
-              <p class="setting-desc">{{ t('settings.orEnterKey') }}</p>
-              <code class="readonly ltr">{{ enrol.secret }}</code>
-              <div class="enrol-confirm">
-                <input
-                  v-model="enrolCode"
-                  inputmode="numeric"
-                  maxlength="6"
-                  placeholder="000000"
-                  class="ltr code-input"
-                />
-                <button class="btn primary" @click="confirmEnrol">{{ t('settings.confirmCode') }}</button>
-                <button class="btn ghost" @click="enrol = null">{{ t('common.cancel') }}</button>
-              </div>
-              <p v-if="enrolError" class="test-result bad">{{ enrolError }}</p>
-            </div>
-
-            <!-- On. Turning it off asks for the password again, because a
-                 borrowed open session is exactly what it exists to survive. -->
-            <div v-else class="enrol">
-              <template v-if="disabling">
-                <p class="setting-desc">{{ t('settings.confirmPasswordToDisable') }}</p>
-                <div class="enrol-confirm">
-                  <input v-model="disablePw" type="password" autocomplete="current-password" />
-                  <button class="btn danger" @click="disableTwoFactor">
-                    {{ t('settings.disableTwoFactor') }}
-                  </button>
-                  <button class="btn ghost" @click="disabling = false">{{ t('common.cancel') }}</button>
-                </div>
-                <p v-if="enrolError" class="test-result bad">{{ enrolError }}</p>
-              </template>
-              <button v-else class="btn ghost" @click="disabling = true">
-                {{ t('settings.disableTwoFactor') }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row block">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.changePassword') }}</div>
-            <p class="setting-desc">{{ t('settings.changePasswordDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <form class="pw-form" @submit.prevent="changePassword">
-              <label>
-                <span>{{ t('settings.currentPassword') }}</span>
-                <input v-model="pw.current" type="password" autocomplete="current-password" required />
-              </label>
-              <label>
-                <span>{{ t('settings.newPassword') }}</span>
-                <input v-model="pw.next" type="password" autocomplete="new-password" required />
-              </label>
-              <label>
-                <span>{{ t('settings.confirmPassword') }}</span>
-                <input v-model="pw.confirm" type="password" autocomplete="new-password" required />
-              </label>
-              <p v-if="pwError" class="field-error">{{ pwError }}</p>
-              <button class="btn primary" type="submit" :disabled="pwBusy">
-                <span v-if="pwBusy">{{ t('common.saving') }}</span>
-                <span v-else>{{ t('settings.updatePassword') }}</span>
-              </button>
-            </form>
-          </div>
-        </div>
-      </template>
-
-      <!-- ── Notifications ── -->
-      <template v-else-if="active === 'notify'">
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.notifyEnabled') }}</div>
-            <p class="setting-desc">{{ t('settings.notifyEnabledDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <label class="switch">
-              <input v-model="form.notifyEnabled" type="checkbox" />
-              <span>{{ form.notifyEnabled ? t('settings.on') : t('settings.off') }}</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.botToken') }}</div>
-            <p class="setting-desc">{{ t('settings.botTokenDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.notifyBotToken" type="password" autocomplete="off" spellcheck="false" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.chatId') }}</div>
-            <p class="setting-desc">{{ t('settings.chatIdDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.notifyChatId" type="text" inputmode="numeric" class="ltr" />
-          </div>
-        </div>
-
-        <div class="setting-row block">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.notifyKinds') }}</div>
-            <p class="setting-desc">{{ t('settings.notifyKindsDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="check-list">
-              <label v-for="k in NOTIFY_KINDS" :key="k" class="check">
-                <input
-                  type="checkbox"
-                  :checked="(form.notifyKinds || []).includes(k)"
-                  @change="toggleKind(k, $event.target.checked)"
-                />
-                <span>{{ t(`settings.kind.${k}`) }}</span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.testNotify') }}</div>
-            <p class="setting-desc">{{ t('settings.testNotifyDesc') }}</p>
-          </div>
-          <div class="setting-control stack-end">
-            <button class="btn ghost" @click="testNotification">{{ t('settings.sendTest') }}</button>
-            <p v-if="testResult" class="test-result" :class="testResult.ok ? 'ok' : 'bad'">
-              {{ testResult.ok ? t('settings.testOk') : testResult.error }}
-            </p>
-          </div>
-        </div>
-      </template>
-
-      <!-- ── Email ── -->
-      <template v-else-if="active === 'email'">
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailEnabled') }}</div>
-            <p class="setting-desc">{{ t('settings.mailEnabledDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <label class="switch">
-              <input v-model="form.mailEnabled" type="checkbox" />
-              <span>{{ form.mailEnabled ? t('settings.on') : t('settings.off') }}</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailHost') }}</div>
-            <p class="setting-desc">{{ t('settings.mailHostDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.mailHost" type="text" class="ltr" spellcheck="false" placeholder="smtp.example.com" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailPort') }}</div>
-            <p class="setting-desc">{{ t('settings.mailPortDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model.number="form.mailPort" type="number" min="1" max="65535" step="1" class="ltr" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailEncryption') }}</div>
-            <p class="setting-desc">{{ t('settings.mailEncryptionDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <select v-model="form.mailEncryption">
-              <option value="starttls">{{ t('settings.mailStartTLS') }}</option>
-              <option value="tls">{{ t('settings.mailTLS') }}</option>
-              <option value="none">{{ t('settings.mailNoTLS') }}</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailUsername') }}</div>
-            <p class="setting-desc">{{ t('settings.mailUsernameDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.mailUsername" type="text" class="ltr" autocomplete="off" spellcheck="false" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailPassword') }}</div>
-            <p class="setting-desc">{{ t('settings.mailPasswordDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.mailPassword" type="password" autocomplete="off" spellcheck="false" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailFrom') }}</div>
-            <p class="setting-desc">{{ t('settings.mailFromDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.mailFrom" type="email" class="ltr" autocomplete="off" spellcheck="false" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailFromName') }}</div>
-            <p class="setting-desc">{{ t('settings.mailFromNameDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.mailFromName" type="text" placeholder="W-UI" />
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailTo') }}</div>
-            <p class="setting-desc">{{ t('settings.mailToDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model="form.mailTo" type="text" class="ltr" autocomplete="off" spellcheck="false" />
-          </div>
-        </div>
-
-        <div class="setting-row block">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.mailKinds') }}</div>
-            <p class="setting-desc">{{ t('settings.mailKindsDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="check-list">
-              <label v-for="k in NOTIFY_KINDS" :key="k" class="check">
-                <input
-                  type="checkbox"
-                  :checked="(form.mailKinds || []).includes(k)"
-                  @change="toggleMailKind(k, $event.target.checked)"
-                />
-                <span>{{ t(`settings.kind.${k}`) }}</span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.testMail') }}</div>
-            <p class="setting-desc">{{ t('settings.testMailDesc') }}</p>
-          </div>
-          <div class="setting-control stack-end">
-            <button class="btn ghost" :disabled="mailTesting" @click="testMail">
-              <span v-if="mailTesting" class="spin sm"></span>{{ t('settings.sendTest') }}
-            </button>
-            <p v-if="mailResult" class="test-result" :class="mailResult.ok ? 'ok' : 'bad'">
-              {{ mailResult.ok ? t('settings.testOk') : mailResult.error }}
-            </p>
-          </div>
-        </div>
-      </template>
-
-      <!-- ── Backups ── -->
-      <template v-else-if="active === 'backups'">
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.backupEvery') }}</div>
-            <p class="setting-desc">{{ t('settings.backupEveryDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="unit-field">
-              <input v-model.number="form.backupEveryHours" type="number" min="0" max="720" step="1" />
-              <span class="unit">{{ t('settings.hours') }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.backupKeep') }}</div>
-            <p class="setting-desc">{{ t('settings.backupKeepDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <input v-model.number="form.backupKeep" type="number" min="0" max="365" step="1" />
-          </div>
-        </div>
-
-        <div class="setting-row block">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.backupsOnDisk') }}</div>
-            <p class="setting-desc">{{ t('settings.backupsWarning') }}</p>
-          </div>
-          <div class="setting-control stack-end">
-            <button class="btn primary" :disabled="backupBusy" @click="makeBackup">
-              <span v-if="backupBusy">{{ t('settings.backingUp') }}</span>
-              <span v-else>{{ t('settings.backupNow') }}</span>
-            </button>
-
-            <ul v-if="backups.length" class="backup-list">
-              <li v-for="b in backups" :key="b.name">
-                <span class="backup-name ltr">{{ b.name }}</span>
-                <span class="backup-size ltr">{{ humanBytes(b.size) }}</span>
-                <button class="linkbtn" @click="downloadBackup(b.name)">
-                  {{ t('settings.download') }}
-                </button>
-                <button class="linkbtn" :disabled="!!restoring" @click="ask = b.name">
-                  {{ t('settings.restore') }}
-                </button>
-                <button class="linkbtn danger" :disabled="!!restoring" @click="removeBackup(b.name)">
-                  {{ t('common.delete') }}
-                </button>
-              </li>
-            </ul>
-            <p v-else class="muted">{{ t('settings.noBackups') }}</p>
-
-            <!-- How a panel moves to another server: take the archive off the
-                 old one, put it on the new one, restore it. -->
-            <label class="btn ghost upload-btn">
-              <Icon name="upload" :size="15" />
-              <span>{{ uploading ? t('settings.uploading') : t('settings.uploadBackup') }}</span>
-              <input type="file" accept=".gz,.tar.gz,application/gzip"
-                     :disabled="uploading || !!restoring" @change="uploadBackup" />
-            </label>
-          </div>
-        </div>
-      </template>
-
-      <!-- ── Engine ── -->
-      <template v-else-if="active === 'engine'">
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.quotaEngine') }}</div>
-            <p class="setting-desc">
-              {{ info?.enforcementActive ? t('settings.quotaEngineOn') : info?.enforcementMessage }}
-            </p>
-          </div>
-          <div class="setting-control">
-            <span class="tag" :class="info?.enforcementActive ? 'green' : 'red'">
-              {{ info?.enforcementActive ? t('settings.active') : t('settings.inactive') }}
-            </span>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.shaping') }}</div>
-            <p class="setting-desc">
-              {{ info?.shapingActive ? t('settings.shapingOn') : info?.shapingMessage || t('settings.shapingOff') }}
-            </p>
-          </div>
-          <div class="setting-control">
-            <span class="tag" :class="info?.shapingActive ? 'green' : 'red'">
-              {{ info?.shapingActive ? t('settings.active') : t('settings.inactive') }}
-            </span>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.reconciler') }}</div>
-            <p class="setting-desc">{{ t('settings.reconcilerDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <dl class="kv">
-              <dt>{{ t('settings.ticks') }}</dt>
-              <dd class="ltr">{{ info?.reconciler?.ticks ?? 0 }}</dd>
-              <dt>{{ t('settings.lastRun') }}</dt>
-              <dd class="ltr">{{ info?.reconciler?.lastDuration || '—' }}</dd>
-              <dt>{{ t('settings.counted') }}</dt>
-              <dd class="ltr">{{ info?.reconciler?.bytesCounted ?? 0 }}</dd>
-            </dl>
-          </div>
-        </div>
-      </template>
-
-      <!-- ── Logs ── -->
-      <template v-else-if="active === 'logs'">
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.recentLog') }}</div>
-            <p class="setting-desc">{{ t('settings.recentLogDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <div class="log-controls">
-              <select v-model="logLevel" @change="loadLogs">
-                <option value="">{{ t('settings.logAll') }}</option>
-                <option value="INFO">{{ t('settings.logInfo') }}</option>
-                <option value="WARN">{{ t('settings.logWarn') }}</option>
-                <option value="ERROR">{{ t('settings.logError') }}</option>
-              </select>
-              <button class="btn ghost" :disabled="logsBusy" @click="loadLogs">
-                <Icon name="refresh" :size="15" />
-                <span>{{ t('common.refresh') }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="setting-row block">
-          <div class="log-view">
-            <p v-if="!logs.length" class="muted">{{ t('settings.logEmpty') }}</p>
-            <ol v-else class="log-lines">
-              <li v-for="(e, i) in logs" :key="i" :class="`lvl-${(e.level || '').toLowerCase()}`">
-                <span class="log-time ltr">{{ logTime(e.time) }}</span>
-                <span class="log-level ltr">{{ e.level }}</span>
-                <span class="log-msg">{{ e.message }}</span>
-                <span v-if="logFields(e)" class="log-fields ltr">{{ logFields(e) }}</span>
-              </li>
-            </ol>
-          </div>
-        </div>
-      </template>
-
-      <!-- ── System ── -->
-      <template v-else>
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.version') }}</div>
-            <p class="setting-desc">{{ t('settings.versionDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <dl class="kv">
-              <dt>W-UI</dt>
-              <dd class="ltr">{{ info?.version }}</dd>
-              <dt>Go</dt>
-              <dd class="ltr">{{ info?.goVersion }}</dd>
-              <dt>{{ t('settings.platform') }}</dt>
-              <dd class="ltr">{{ info?.platform }}</dd>
-              <dt>{{ t('settings.uptime') }}</dt>
-              <dd class="ltr">{{ uptime }}</dd>
-            </dl>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.storage') }}</div>
-            <p class="setting-desc">{{ t('settings.storageDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <dl class="kv">
-              <dt>{{ t('settings.driver') }}</dt>
-              <dd class="ltr">{{ info?.dbDriver }}</dd>
-              <dt>{{ t('nav.interfaces') }}</dt>
-              <dd class="ltr">{{ info?.interfaces ?? 0 }}</dd>
-              <dt>{{ t('nav.clients') }}</dt>
-              <dd class="ltr">{{ info?.clients ?? 0 }}</dd>
-              <dt>{{ t('settings.devices') }}</dt>
-              <dd class="ltr">{{ info?.accounts ?? 0 }}</dd>
-            </dl>
-          </div>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-meta">
-            <div class="setting-title">{{ t('settings.processConfig') }}</div>
-            <p class="setting-desc">{{ t('settings.processConfigDesc') }}</p>
-          </div>
-          <div class="setting-control">
-            <code class="readonly ltr">w-ui</code>
-          </div>
-        </div>
-      </template>
-    </section>
-  </template>
+      </div>
+    </div>
+  </div>
 </template>
+
+<style scoped>
+/* Their header row: actions in a 10/24 column, the note in the other 14/24,
+   flushed to its end. */
+.header-row { display: flex; flex-wrap: wrap; align-items: center; }
+.header-actions { flex: 0 0 41.6667%; max-width: 41.6667%; padding: 4px; }
+.header-info { flex: 0 0 58.3333%; max-width: 58.3333%; display: flex; justify-content: flex-end; }
+@media (max-width: 575px) {
+  .header-actions, .header-info { flex: 0 0 100%; max-width: 100%; }
+  .header-info { justify-content: flex-start; margin-top: 8px; }
+}
+.conf-alert { margin-bottom: 10px; }
+.abtn.danger-primary { background: var(--bad); border-color: var(--bad); color: #fff; }
+.abtn.danger-primary:hover:not(:disabled) { opacity: 0.85; }
+.abtn:disabled { color: var(--faint); background: var(--surface-2); border-color: var(--line); box-shadow: none; cursor: not-allowed; }
+.abtn.text.danger-text { color: var(--bad); }
+.abtn.text.danger-text:hover { background: var(--bad-soft); color: var(--bad); }
+.abtn.addon { flex: none; background: var(--surface-2); color: var(--muted); cursor: default; }
+.security-actions { padding: 12px 0; display: flex; align-items: center; }
+
+/* Their API token list. */
+.api-token-section { padding: 8px 20px 16px; display: flex; flex-direction: column; gap: 12px; }
+.api-token-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.api-token-hint { margin: 0; font-size: 12.5px; opacity: 0.7; flex: 1; min-width: 200px; }
+.api-token-row { border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; transition: opacity 0.15s; }
+.api-token-row.disabled { opacity: 0.55; }
+.api-token-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.api-token-name-wrap { display: flex; flex-direction: column; gap: 2px; }
+.api-token-name { font-weight: 600; font-size: 13.5px; }
+.api-token-created { font-size: 11px; opacity: 0.55; }
+.api-token-actions { display: flex; align-items: center; gap: 8px; }
+.api-token-value-wrap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.api-token-value { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 4px 8px; background: var(--surface-3); border-radius: 4px; word-break: break-all; }
+.api-token-created-notice { margin: 0 0 12px; font-size: 13px; }
+
+/* Their notification cards: a grid of small outlined Cards. */
+.notif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.notif-card { border-width: 1px; }
+.notif-card:hover { box-shadow: none; border-color: var(--line-soft); }
+.acard-head.small { min-height: 38px; padding: 0 12px; font-size: 14px; font-weight: 600; justify-content: space-between; }
+.notif-title { display: inline-flex; align-items: center; gap: 4px; }
+.notif-extra { display: inline-flex; align-items: center; gap: 8px; }
+.notif-extra .atag { margin: 0; }
+
+/* Their two-factor modal. */
+.adivider { margin: 24px 0; border: 0; border-top: 1px solid var(--line-soft); }
+.amodal-body p { margin: 0 0 1em; }
+.qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; cursor: pointer; }
+.qr-code { display: block; border-radius: 4px; background: #fff; }
+.qr-token { font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; word-break: break-all; text-align: center; }
+
+.field-error { margin: 4px 0 0; color: var(--bad); font-size: 12px; }
+.log-view { padding: 10px 20px; }
+</style>

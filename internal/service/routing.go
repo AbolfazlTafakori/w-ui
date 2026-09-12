@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,6 +65,9 @@ type Routing struct {
 	// briefly unreachable does not empty the sets.
 	resolved    map[string][]netip.Prefix
 	lastResolve time.Time
+	// panelTag is the outbound carrying the panel's own traffic; empty is
+	// direct.
+	panelTag string
 }
 
 func NewRouting(db *gorm.DB, log *slog.Logger) *Routing {
@@ -603,6 +607,19 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 		p.DefaultMark = def.mark
 	}
 
+	// The panel's own traffic. Only a hop with a device can carry it; the
+	// endpoints of every hop stay direct so no tunnel is built through itself.
+	p.PanelUID = -1
+	if tag := s.panelOutbound(); tag != "" {
+		if tg, ok := byTag[tag]; ok && tg.enabled && tg.mark != 0 && !tg.drop {
+			p.PanelMark = tg.mark
+			p.PanelUID = os.Getuid()
+			for _, o := range outbounds {
+				p.PanelExclude = append(p.PanelExclude, s.endpointPrefixes(o.Address)...)
+			}
+		}
+	}
+
 	rules, err := s.ListRules(ctx)
 	if err != nil {
 		return p, err
@@ -627,6 +644,41 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	}
 
 	return p, nil
+}
+
+// SetPanelOutbound tells the policy which outbound carries the panel's own
+// traffic. Read by the settings page's save, so it takes effect on the next
+// tick without a restart.
+func (s *Routing) SetPanelOutbound(tag string) {
+	s.mu.Lock()
+	s.panelTag = strings.TrimSpace(tag)
+	s.mu.Unlock()
+}
+
+func (s *Routing) panelOutbound() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.panelTag
+}
+
+// endpointPrefixes turns an outbound's address into the prefixes that must
+// stay direct: the address itself, or -- for a name -- whatever the resolver
+// last found for it.
+func (s *Routing) endpointPrefixes(address string) []netip.Prefix {
+	host := strings.TrimSpace(address)
+	if host == "" {
+		return nil
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return []netip.Prefix{netip.PrefixFrom(addr, addr.BitLen())}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resolved[host]
 }
 
 // balancerDevices is the devices a balancer's traffic may leave through:
@@ -816,6 +868,22 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 			if r.Enabled {
 				for _, d := range splitList(r.Domains) {
 					names[d] = true
+				}
+			}
+		}
+	}
+	// Hop endpoints given as names, so the panel-outbound chain can keep
+	// them direct.
+	var obs []model.Outbound
+	if err := s.db.WithContext(ctx).Find(&obs).Error; err == nil {
+		for _, o := range obs {
+			host := strings.TrimSpace(o.Address)
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if host != "" {
+				if _, err := netip.ParseAddr(strings.Trim(host, "[]")); err != nil {
+					names[host] = true
 				}
 			}
 		}

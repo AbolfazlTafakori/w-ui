@@ -41,7 +41,7 @@ const nav = [
       // rather than being a line in the menu as well.
       { to: '/settings/general', key: 'settings.tab.general', icon: 'settings' },
       { to: '/settings/security', key: 'settings.tab.security', icon: 'lock' },
-      { to: '/settings/notify', key: 'settings.tab.notify', icon: 'send' },
+      { to: '/settings/telegram', key: 'settings.tab.notify', icon: 'send' },
       { to: '/settings/email', key: 'settings.tab.email', icon: 'mail' },
       { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'link' },
     ],

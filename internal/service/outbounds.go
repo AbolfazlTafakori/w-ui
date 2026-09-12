@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -30,6 +31,68 @@ const (
 type Outbounds struct {
 	db  *gorm.DB
 	log *slog.Logger
+
+	// OnStatus is told when an outbound is judged down or back up; nil
+	// means nobody is listening. DownThreshold is the share of the last ten
+	// probes, in percent, that have to fail before it counts as down.
+	OnStatus      func(tag string, up bool, detail string)
+	DownThreshold func() int
+
+	probeMu sync.Mutex
+	probes  map[uint]*probeTrack
+}
+
+// probeTrack is one outbound's recent probe results and what was last said
+// about it.
+type probeTrack struct {
+	recent []bool // true is a success
+	down   bool
+}
+
+// noteProbe records a result and raises the up/down event on a change.
+func (s *Outbounds) noteProbe(ob *model.Outbound, ok bool, detail string) {
+	if s.OnStatus == nil {
+		return
+	}
+	threshold := 50
+	if s.DownThreshold != nil {
+		if t := s.DownThreshold(); t > 0 {
+			threshold = t
+		}
+	}
+	s.probeMu.Lock()
+	if s.probes == nil {
+		s.probes = map[uint]*probeTrack{}
+	}
+	tr := s.probes[ob.ID]
+	if tr == nil {
+		tr = &probeTrack{}
+		s.probes[ob.ID] = tr
+	}
+	tr.recent = append(tr.recent, ok)
+	if len(tr.recent) > 10 {
+		tr.recent = tr.recent[len(tr.recent)-10:]
+	}
+	failed := 0
+	for _, r := range tr.recent {
+		if !r {
+			failed++
+		}
+	}
+	var fire *bool
+	if !tr.down && failed*100 >= threshold*len(tr.recent) && failed > 0 {
+		tr.down = true
+		f := false
+		fire = &f
+	} else if tr.down && ok {
+		tr.down = false
+		f := true
+		fire = &f
+	}
+	s.probeMu.Unlock()
+	if fire != nil {
+		s.OnStatus(ob.Tag, *fire, detail)
+	}
 }
 
 func NewOutbounds(db *gorm.DB, log *slog.Logger) *Outbounds {
@@ -444,10 +507,12 @@ func (s *Outbounds) finishProbe(
 		res.OK = false
 		res.Error = friendlyDialError(p.err)
 		s.recordCheck(ctx, ob.ID, 0, res.Error)
+		s.noteProbe(ob, false, res.Error)
 		return res
 	}
 	res.OK = true
 	res.LatencyMS = int(p.latency.Milliseconds())
+	s.noteProbe(ob, true, fmt.Sprintf("%d ms", res.LatencyMS))
 	res.Egress = &p.egress
 	s.recordCheck(ctx, ob.ID, res.LatencyMS, "")
 	s.db.WithContext(ctx).Model(&model.Outbound{}).Where("id = ?", ob.ID).

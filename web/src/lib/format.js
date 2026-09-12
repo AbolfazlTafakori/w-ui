@@ -1,3 +1,4 @@
+import { store } from './store.js'
 // Formatting helpers. All of them take the active locale so Persian renders
 // with its own digits and calendar conventions.
 
@@ -45,18 +46,30 @@ export function bytesToGigabytes(b) {
   return v === 0 ? '' : +(v / 1024 ** 3).toFixed(2)
 }
 
+// calendarLocale is the locale dates are written in: the interface language,
+// with the Persian calendar attached when the settings ask for it.
+export function calendarLocale(locale = 'en') {
+  let picker = 'gregorian'
+  try {
+    picker = store.panel?.datepicker || 'gregorian'
+  } catch {
+    /* the store is not up yet */
+  }
+  return picker === 'jalalian' ? 'fa-IR-u-ca-persian-nu-latn' : locale
+}
+
 export function date(value, locale = 'en') {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(calendarLocale(locale), { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 export function dateTime(value, locale = 'en') {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString(locale, {
+  return d.toLocaleString(calendarLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

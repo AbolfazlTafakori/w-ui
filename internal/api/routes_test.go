@@ -111,6 +111,7 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 		"POST /api/interfaces/{id}/clear":            true,
 		"POST /api/tunnels/stop":                     true,
 		"POST /api/tunnels/start":                    true,
+		"POST /api/panel/restart":                    true, // acts on this process; nothing to send
 	}
 	for _, r := range newRouteServer().routes() {
 		if r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodPut {
