@@ -302,10 +302,10 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   padding: 1px;
   background: linear-gradient(
     145deg,
-    rgba(60, 137, 232, 0.55),
+    rgba(242, 64, 79, 0.55),
     rgba(255, 255, 255, 0.08) 40%,
     rgba(255, 255, 255, 0.03) 70%,
-    rgba(60, 137, 232, 0.3)
+    rgba(242, 64, 79, 0.3)
   );
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
@@ -331,7 +331,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   height: 3px;
   border-radius: 2px;
   margin-top: 10px;
-  background: linear-gradient(90deg, var(--accent), rgba(60, 137, 232, 0.15));
+  background: linear-gradient(90deg, var(--accent), rgba(242, 64, 79, 0.15));
 }
 
 .welcome {
@@ -421,7 +421,7 @@ form {
   display: grid;
   place-items: center;
   transition: filter 0.15s, transform 0.08s;
-  box-shadow: 0 6px 20px -8px rgba(22, 104, 220, 0.8);
+  box-shadow: 0 6px 20px -8px rgba(224, 46, 61, 0.8);
 }
 .submit:hover:not(:disabled) {
   filter: brightness(1.1);

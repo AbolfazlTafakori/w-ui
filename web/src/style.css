@@ -11,32 +11,31 @@
 :root {
   color-scheme: dark;
 
-  /* Ant's dark algorithm with 3x-ui's own backgrounds: layout #1a1b1f,
-     container #23252b, elevated #2d2f37, the sider #15161a. */
-  --ground: #1a1b1f;
-  --surface: #23252b;
-  --surface-2: #292b32;
-  --surface-3: #33353d;
-  --surface-elev: #2d2f37;
-  --sider: #15161a;
-  --sider-sub: #1a1b1f;
-  --line: #424242;
-  --line-soft: rgba(255, 255, 255, 0.06);
+  --ground: #0a090a;
+  --surface: #141215;
+  --surface-2: #1c191d;
+  --surface-3: #262227;
+  --surface-elev: #1f1b20;
+  /* The rail and the ground under an open submenu, as 3x-ui keeps them a
+     step darker than the cards. */
+  --sider: #0f0d10;
+  --sider-sub: #0a090a;
+  --line: #302a31;
+  --line-soft: #241f25;
 
   /* Neutrals carry a faint red bias so they sit with the accent instead of
      reading as untouched greys. --muted holds ~5.5:1 on --surface, which is
      what lets labels stay grey without becoming decoration. */
-  --ink: rgba(255, 255, 255, 0.85);
-  --ink-2: rgba(255, 255, 255, 0.75);
-  --muted: rgba(255, 255, 255, 0.65);
-  --faint: rgba(255, 255, 255, 0.45);
+  --ink: #f4f1f2;
+  --ink-2: #d2cbce;
+  --muted: #a1959b;
+  --faint: #746a71;
 
-  /* The primary: Ant's dark blue, as 3x-ui has it. */
-  --accent: #1668dc;
-  --accent-hover: #3c89e8;
+  --accent: #e02e3d;
+  --accent-hover: #f2404f;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(22, 104, 220, 0.2);
-  --accent-line: #15325b;
+  --accent-soft: #2c1217;
+  --accent-line: #55202a;
 
   /* Status hues stay distinct from the accent: red already means "brand" and
      "destructive", so a failing quota uses a lighter red and never competes
@@ -71,22 +70,22 @@
 
   /* Anything tinted by the accent or painted over the page, so a theme can
      move them together with everything else. */
-  --accent-glow: rgba(22, 104, 220, 0.6);
-  --accent-ring: rgba(22, 104, 220, 0.2);
+  --accent-glow: rgba(224, 46, 61, 0.6);
+  --accent-ring: rgba(224, 46, 61, 0.16);
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-ink: #ffffff;
   --rail-shadow: rgba(0, 0, 0, 0.45);
   --modal-scrim: rgba(0, 0, 0, 0.72);
 
   /* The sign-in page paints its own scenery. */
-  --auth-wash: #0d1320;
-  --auth-blob-1: rgba(22, 104, 220, 0.5);
-  --auth-blob-2: rgba(9, 88, 217, 0.45);
-  --auth-blob-3: rgba(60, 137, 232, 0.28);
-  --auth-blob-4: rgba(7, 62, 168, 0.5);
-  --auth-blob-5: rgba(22, 104, 220, 0.22);
+  --auth-wash: #1a0d11;
+  --auth-blob-1: rgba(224, 46, 61, 0.5);
+  --auth-blob-2: rgba(160, 26, 42, 0.45);
+  --auth-blob-3: rgba(242, 64, 79, 0.28);
+  --auth-blob-4: rgba(120, 18, 30, 0.5);
+  --auth-blob-5: rgba(224, 46, 61, 0.22);
   --auth-grid: rgba(255, 255, 255, 0.045);
-  --auth-card: rgba(35, 37, 43, 0.72);
+  --auth-card: rgba(20, 18, 21, 0.72);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(0, 0, 0, 0.9);
@@ -151,14 +150,14 @@
    it rather than glowing off a background with nothing behind it. */
 :root[data-theme='ultra-dark'] {
   --ground: #000000;
-  --surface: #101013;
-  --surface-2: #17171b;
-  --surface-3: #1f1f24;
-  --surface-elev: #1a1a1e;
+  --surface: #0a0a0c;
+  --surface-2: #121215;
+  --surface-3: #1a1a1e;
+  --surface-elev: #151518;
   --sider: #050507;
   --sider-sub: #000000;
-  --line: #303030;
-  --line-soft: rgba(255, 255, 255, 0.04);
+  --line: #26262b;
+  --line-soft: #17171b;
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.7), 0 16px 40px -16px rgba(0, 0, 0, 1);
 }
 
@@ -174,32 +173,32 @@ body.light {
   --ring-inset: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
   color-scheme: light;
 
-  --ground: #e6e8ec;
+  --ground: #eceef1;
   --surface: #ffffff;
-  --surface-2: #fafafa;
-  --surface-3: #f0f0f0;
+  --surface-2: #f4f5f7;
+  --surface-3: #e9eaee;
   --surface-elev: #ffffff;
   --sider: #ffffff;
-  --sider-sub: rgba(0, 0, 0, 0.02);
-  --line: #d9d9d9;
-  --line-soft: #f0f0f0;
+  --sider-sub: #f4f5f7;
+  --line: #dcdee3;
+  --line-soft: #eaebef;
 
   /* Inverted with the same faint red bias, so grey text still belongs to this
      palette rather than looking borrowed from a different one. --muted holds
      about 5.4:1 on white, which is the same reading it had on the dark
      surface. */
-  --ink: rgba(0, 0, 0, 0.88);
-  --ink-2: rgba(0, 0, 0, 0.75);
-  --muted: rgba(0, 0, 0, 0.58);
-  --faint: rgba(0, 0, 0, 0.45);
+  --ink: #141113;
+  --ink-2: #3d363b;
+  --muted: #6b6169;
+  --faint: #8d838a;
 
   /* The accent darkens: the light one was chosen to carry against near-black
      and drops to roughly 3:1 on white, which is not enough for text. */
-  --accent: #0958d9;
-  --accent-hover: #2468e5;
+  --accent: #c81f2e;
+  --accent-hover: #a81826;
   --accent-ink: #ffffff;
-  --accent-soft: #e6f4ff;
-  --accent-line: #91caff;
+  --accent-soft: #fdeaec;
+  --accent-line: #f3c3c8;
 
   --ok: #1a7f3c;
   --ok-soft: #e6f4ea;
@@ -230,8 +229,8 @@ body.light {
   --tag-geek-line: #c6cff2;
   --tag-geek-ink: #2f4bb8;
 
-  --accent-glow: rgba(9, 88, 217, 0.35);
-  --accent-ring: rgba(9, 88, 217, 0.18);
+  --accent-glow: rgba(200, 31, 46, 0.35);
+  --accent-ring: rgba(200, 31, 46, 0.18);
   --scrim: rgba(24, 20, 22, 0.42);
   --scrim-ink: #ffffff;
   --rail-shadow: rgba(16, 12, 15, 0.18);
@@ -239,12 +238,12 @@ body.light {
 
   /* Far weaker on a pale page: the same wash that reads as depth on near-black
      reads as a stain on white. */
-  --auth-wash: #e9f0fb;
-  --auth-blob-1: rgba(9, 88, 217, 0.16);
-  --auth-blob-2: rgba(7, 62, 168, 0.12);
-  --auth-blob-3: rgba(36, 104, 229, 0.10);
-  --auth-blob-4: rgba(7, 62, 168, 0.10);
-  --auth-blob-5: rgba(9, 88, 217, 0.08);
+  --auth-wash: #fbe9eb;
+  --auth-blob-1: rgba(200, 31, 46, 0.16);
+  --auth-blob-2: rgba(160, 26, 42, 0.12);
+  --auth-blob-3: rgba(242, 64, 79, 0.10);
+  --auth-blob-4: rgba(120, 18, 30, 0.10);
+  --auth-blob-5: rgba(200, 31, 46, 0.08);
   /* The grid is drawn in ink rather than light: white lines on a white page
      are not a faint grid, they are nothing at all. */
   --auth-grid: rgba(20, 17, 19, 0.05);
