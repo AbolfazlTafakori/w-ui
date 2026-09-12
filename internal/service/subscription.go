@@ -37,6 +37,7 @@ const (
 	keySubSupport  = "sub.supportUrl"
 	keySubProfile  = "sub.profileUrl"
 	keySubAnnounce = "sub.announce"
+	keySubTemplate = "sub.template"
 )
 
 // DefaultSubPath is where the subscription service answers when nothing else
@@ -97,6 +98,21 @@ type SubSettings struct {
 	SupportURL string `json:"supportUrl"`
 	ProfileURL string `json:"profileUrl"`
 	Announce   string `json:"announce"`
+	// Template is the look of the page a customer sees in a browser: one of
+	// SubTemplates. The owner picks it; every customer's page follows.
+	Template string `json:"template"`
+}
+
+// SubTemplates are the looks the subscription page can wear.
+var SubTemplates = []string{"classic", "aurora", "waves", "network", "minimal", "midnight"}
+
+func validSubTemplate(v string) bool {
+	for _, t := range SubTemplates {
+		if t == v {
+			return true
+		}
+	}
+	return false
 }
 
 // SubDefaults is the shape a panel that has never been configured has.
@@ -106,6 +122,7 @@ func (s *Subscriptions) Defaults() SubSettings {
 		Path:        DefaultSubPath,
 		Title:       "W-UI",
 		UpdateHours: 12,
+		Template:    "classic",
 	}
 }
 
@@ -141,6 +158,9 @@ func (s *Subscriptions) Settings(ctx context.Context) (SubSettings, error) {
 	out.SupportURL = strings.TrimSpace(stored[keySubSupport])
 	out.ProfileURL = strings.TrimSpace(stored[keySubProfile])
 	out.Announce = stored[keySubAnnounce]
+	if v := strings.TrimSpace(stored[keySubTemplate]); validSubTemplate(v) {
+		out.Template = v
+	}
 	return out, nil
 }
 
@@ -178,6 +198,13 @@ func (s *Subscriptions) SaveSettings(ctx context.Context, in SubSettings) (SubSe
 			return SubSettings{}, invalidField(name, "this should be a full address, beginning with http:// or https://")
 		}
 	}
+	in.Template = strings.TrimSpace(in.Template)
+	if in.Template == "" {
+		in.Template = "classic"
+	}
+	if !validSubTemplate(in.Template) {
+		return SubSettings{}, invalidField("template", "%q is not a template; choose one of %s", in.Template, strings.Join(SubTemplates, ", "))
+	}
 	if len(in.Announce) > 1000 {
 		return SubSettings{}, invalidField("announce", "that notice is too long")
 	}
@@ -197,6 +224,7 @@ func (s *Subscriptions) SaveSettings(ctx context.Context, in SubSettings) (SubSe
 		keySubSupport:  strings.TrimSpace(in.SupportURL),
 		keySubProfile:  strings.TrimSpace(in.ProfileURL),
 		keySubAnnounce: strings.TrimSpace(in.Announce),
+		keySubTemplate: in.Template,
 	}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for k, v := range writes {
@@ -503,6 +531,7 @@ type SubPage struct {
 	Status    string
 	Protocol  string
 	Locale    string
+	Template  string
 	UpdatedAt time.Time
 
 	QuotaBytes uint64
@@ -579,6 +608,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 
 	page := &SubPage{
 		Title:      cfg.Title,
+		Template:   cfg.Template,
 		Name:       c.Name,
 		Status:     string(c.Status),
 		Protocol:   string(c.Protocol),

@@ -191,6 +191,11 @@ func (s *Server) SubscriptionRouter(next http.Handler) http.Handler {
 			return
 		}
 
+		// A template preview the settings page just asked for.
+		if s.serveSubPreview(w, r) {
+			return
+		}
+
 		cfg, err := s.subs.Settings(r.Context())
 		if err != nil || !cfg.Enabled || cfg.Path == "" || cfg.Path == "/" {
 			next.ServeHTTP(w, r)

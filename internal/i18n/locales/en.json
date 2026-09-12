@@ -1548,5 +1548,20 @@
   "iface.col.updatedAt": "Updated",
   "action.prev": "Previous page",
   "action.download": "Download",
-  "common.copied": "Copied"
+  "common.copied": "Copied",
+  "set.subTemplate": "Template",
+  "set.subTemplateDesc": "The look of the page a customer sees when they open their subscription link in a browser. Every customer's page follows the one chosen here.",
+  "set.subTplPreview": "Preview",
+  "set.subTpl.classic": "Classic",
+  "set.subTpl.classicDesc": "The panel's own card: figures, usage bar, links and configs, in black and red.",
+  "set.subTpl.aurora": "Aurora",
+  "set.subTpl.auroraDesc": "Coloured light drifting behind a glass card, with a hero and three gauges.",
+  "set.subTpl.waves": "Waves",
+  "set.subTpl.wavesDesc": "A night sky with two slow tides and a gradient banner.",
+  "set.subTpl.network": "Network",
+  "set.subTpl.networkDesc": "A slow constellation behind a monospace, sharp-cornered card.",
+  "set.subTpl.minimal": "Minimal",
+  "set.subTpl.minimalDesc": "Paper and ink: no backgrounds, big numbers, nothing else.",
+  "set.subTpl.midnight": "Midnight",
+  "set.subTpl.midnightDesc": "Pure black under a faint grid, the card edged in red light."
 }

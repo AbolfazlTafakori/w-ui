@@ -58,6 +58,7 @@ type Server struct {
 	hosts     *service.Hosts
 	router    *routing.Applier
 	subs      *service.Subscriptions
+	previews  subPreviews
 	obSubs    *service.OutboundSubs
 	balancers *service.Balancers
 	providers *service.Providers

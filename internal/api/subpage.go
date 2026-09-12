@@ -51,6 +51,10 @@ type subPageView struct {
 	Strings    template.JS // the two dictionaries, for the language button
 	Lang       string
 	Icons      map[string]template.HTML
+	// Template is the look, one of service.SubTemplates; Preview marks a
+	// page rendered from sample figures for the settings page.
+	Template string
+	Preview  bool
 }
 
 type subPageDevice struct {
@@ -84,10 +88,19 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 		return true
 	}
 
+	s.renderSubPage(w, page, token, false)
+	return true
+}
+
+// renderSubPage writes the page for one customer -- or, for a preview, for
+// nobody in particular.
+func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, token string, preview bool) {
 	v := subPageView{
 		Page:     page,
 		Nonce:    newNonce(),
 		SubID:    token,
+		Template: page.Template,
+		Preview:  preview,
 		HasQuota: page.QuotaBytes > 0,
 		Used:     humanBytes(page.UsedBytes),
 		Lang:     page.Locale,
@@ -95,6 +108,9 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 	}
 	if v.Lang != "fa" {
 		v.Lang = "en"
+	}
+	if v.Template == "" {
+		v.Template = "classic"
 	}
 	for name, paths := range antIconPaths {
 		var b strings.Builder
@@ -176,7 +192,7 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 	if err := subPageTemplate.Execute(&buf, v); err != nil {
 		s.log.Error("could not render the subscription page", "error", err)
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
-		return true
+		return
 	}
 
 	h := w.Header()
@@ -196,7 +212,6 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 	h.Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
-	return true
 }
 
 // subPageStrings are the page's words in both languages, keyed as 3x-ui's
@@ -315,7 +330,7 @@ var subPageFuncs = template.FuncMap{
 }
 
 var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).Parse(`<!doctype html>
-<html lang="{{ .Lang }}" dir="ltr" data-lang="{{ .Lang }}">
+<html lang="{{ .Lang }}" dir="ltr" data-lang="{{ .Lang }}" data-layout="{{ .Template }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -477,9 +492,100 @@ a.row-title:hover { text-decoration: underline; }
 .toast { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 9; padding: 9px 12px; border-radius: 8px; background: var(--surface-3); color: var(--ink); font-size: 14px; box-shadow: 0 6px 16px rgba(0,0,0,.2); opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
 .hidden { display: none !important; }
+
+/* ── The templates. The same page in six looks; the owner picks one. ── */
+.preview-bar { position: sticky; top: 0; z-index: 30; padding: 6px 12px; background: var(--accent); color: #fff; font-size: 13px; text-align: center; }
+.live-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: none; }
+.content { position: relative; z-index: 1; }
+.hero { display: none; }
+.quick { display: none; }
+
+/* aurora: soft coloured light drifting behind a glass card */
+[data-layout="aurora"] { --ground: #07111f; --surface: rgba(16, 26, 44, 0.72); --surface-2: rgba(255,255,255,0.05); --surface-3: rgba(255,255,255,0.09); --line: rgba(255,255,255,0.14); --line-soft: rgba(255,255,255,0.1); --ink: #eef4ff; --muted: #a9b7cc; --faint: #7a889c; --row-bg: rgba(255,255,255,0.04); --row-line: rgba(255,255,255,0.1); --row-bg-h: rgba(255,255,255,0.07); --row-line-h: rgba(255,255,255,0.2); }
+[data-layout="aurora"] .live-bg { display: block; background: radial-gradient(1200px 600px at 20% -10%, rgba(224,46,61,.25), transparent 60%), #07111f; }
+[data-layout="aurora"] .orb { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; animation: drift 18s ease-in-out infinite alternate; }
+[data-layout="aurora"] .orb.one { width: 46vw; height: 46vw; left: -10vw; top: -12vw; background: #e02e3d; }
+[data-layout="aurora"] .orb.two { width: 40vw; height: 40vw; right: -12vw; top: 20vh; background: #3a5bff; animation-delay: -6s; }
+[data-layout="aurora"] .orb.three { width: 36vw; height: 36vw; left: 30vw; bottom: -14vw; background: #17b3a6; animation-delay: -12s; }
+@keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(6vw, 5vh) scale(1.12); } }
+[data-layout="aurora"] .card { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-radius: 16px; border-color: rgba(255,255,255,.12); box-shadow: 0 30px 80px -30px rgba(0,0,0,.8); }
+[data-layout="aurora"] .card:hover { border-color: rgba(255,255,255,.2); }
+[data-layout="aurora"] .hero, [data-layout="aurora"] .quick { display: flex; }
+[data-layout="aurora"] .desc, [data-layout="aurora"] .usage, [data-layout="aurora"] .cfg, [data-layout="aurora"] .row { border-radius: 12px; }
+
+/* waves: a gradient sky with two slow tides */
+[data-layout="waves"] { --ground: #0b1220; --surface: #111a2b; --surface-2: #17233a; --surface-3: #1f2d47; --line: #2a3a58; --line-soft: #1f2d47; --ink: #eaf0ff; --muted: #a5b3cf; --faint: #74829e; --row-bg: rgba(255,255,255,0.04); --row-line: rgba(255,255,255,0.1); --row-bg-h: rgba(255,255,255,0.07); --row-line-h: rgba(255,255,255,0.2); }
+[data-layout="waves"] .live-bg { display: block; background: linear-gradient(180deg, #0b1220 0%, #12203a 60%, #0b1220 100%); }
+[data-layout="waves"] .wave { position: absolute; left: -50%; width: 200%; height: 46vh; bottom: -12vh; border-radius: 45%; opacity: .35; animation: tide 14s linear infinite; }
+[data-layout="waves"] .wave.one { background: linear-gradient(90deg, #e02e3d, #7a1f2b); }
+[data-layout="waves"] .wave.two { background: linear-gradient(90deg, #2f6df6, #17b3a6); bottom: -18vh; opacity: .25; animation-duration: 22s; animation-direction: reverse; }
+@keyframes tide { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+[data-layout="waves"] .card { border-radius: 14px; overflow: hidden; }
+[data-layout="waves"] .card-head { background: linear-gradient(90deg, rgba(224,46,61,.35), rgba(47,109,246,.25)); border-bottom-color: rgba(255,255,255,.1); }
+[data-layout="waves"] .hero, [data-layout="waves"] .quick { display: flex; }
+
+/* network: a black screen with a slow constellation behind it */
+[data-layout="network"] { --ground: #050608; --surface: #0c0e12; --surface-2: #12151b; --surface-3: #1a1e26; --line: #232833; --line-soft: #1a1e26; --ink: #e9edf3; --muted: #97a3b3; --faint: #66717f; --row-bg: rgba(255,255,255,0.03); --row-line: rgba(255,255,255,0.08); --row-bg-h: rgba(255,255,255,0.06); --row-line-h: rgba(255,255,255,0.16); }
+[data-layout="network"] .live-bg { display: block; background: #050608; }
+[data-layout="network"] canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .9; }
+[data-layout="network"] .card { border-radius: 6px; border-color: #232833; box-shadow: 0 0 0 1px rgba(224,46,61,.15), 0 30px 60px -30px rgba(0,0,0,.9); }
+[data-layout="network"] .card-head { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .5px; }
+[data-layout="network"] .desc td, [data-layout="network"] .usage-labels, [data-layout="network"] .stat-v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+[data-layout="network"] .desc, [data-layout="network"] .usage, [data-layout="network"] .cfg, [data-layout="network"] .row, [data-layout="network"] .btn, [data-layout="network"] .tag, [data-layout="network"] .quick > div { border-radius: 4px; }
+[data-layout="network"] .hero, [data-layout="network"] .quick { display: flex; }
+
+/* minimal: paper, ink, and nothing else */
+[data-layout="minimal"] { color-scheme: light; --ground: #fafafa; --surface: #fff; --surface-2: #f5f5f5; --surface-3: #ececec; --line: #e2e2e2; --line-soft: #ededed; --ink: #111; --muted: #666; --faint: #999; --accent: #c81f2e; --accent-hover: #a81826; --ok: #1a7f3c; --warn: #8a6206; --bad: #c62f28; --tag-green-bg: #f6ffed; --tag-green-line: #b7eb8f; --tag-green-ink: #389e0d; --tag-red-bg: #fff2f0; --tag-red-line: #ffccc7; --tag-red-ink: #cf1322; --tag-orange-bg: #fff7e6; --tag-orange-line: #ffd591; --tag-orange-ink: #d46b08; --tag-purple-bg: #f9f0ff; --tag-purple-line: #d3adf7; --tag-purple-ink: #531dab; --tag-blue-bg: #e6f4ff; --tag-blue-line: #91caff; --tag-blue-ink: #0958d9; --tag-cyan-bg: #e6fffb; --tag-cyan-line: #87e8de; --tag-cyan-ink: #08979c; --row-bg: #fff; --row-line: #e8e8e8; --row-bg-h: #fafafa; --row-line-h: #d0d0d0; }
+[data-layout="minimal"] .card { border: 0; box-shadow: none; background: transparent; }
+[data-layout="minimal"] .card:hover { box-shadow: none; }
+[data-layout="minimal"] .card-head { padding-inline: 0; border-bottom: 2px solid var(--ink); font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+[data-layout="minimal"] .card-body { padding-inline: 0; }
+[data-layout="minimal"] .desc { border: 0; border-radius: 0; }
+[data-layout="minimal"] .desc th { background: transparent; border-inline-end: 0; padding-inline-start: 0; }
+[data-layout="minimal"] .desc th, [data-layout="minimal"] .desc td { border-bottom-color: var(--line-soft); }
+[data-layout="minimal"] .usage { background: transparent; border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding-inline: 0; }
+[data-layout="minimal"] .usage-used { font-size: 28px; }
+[data-layout="minimal"] .toolbar-btn { border: 0; background: transparent; }
+[data-layout="minimal"] .row { border-radius: 0; border-inline: 0; border-top: 0; padding-inline: 0; }
+[data-layout="minimal"] .row:first-child { border-top: 1px solid var(--row-line); }
+[data-layout="minimal"] .cfg { border-radius: 0; background: transparent; }
+[data-layout="minimal"] .btn.lg.primary { border-radius: 0; }
+[data-layout="minimal"] .divider { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+
+/* midnight: pure black under a faint grid, the panel's own red glowing */
+[data-layout="midnight"] { --ground: #000; --surface: #0a0a0c; --surface-2: #121215; --surface-3: #1a1a1e; --line: #26262b; --line-soft: #17171b; }
+[data-layout="midnight"] .live-bg { display: block; background: radial-gradient(900px 500px at 50% -10%, rgba(224,46,61,.28), transparent 65%), #000; }
+[data-layout="midnight"] .grid { position: absolute; inset: 0; background-image: linear-gradient(to right, rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.045) 1px, transparent 1px); background-size: 40px 40px; mask-image: radial-gradient(ellipse at 50% 0%, #000 30%, transparent 75%); -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 30%, transparent 75%); }
+[data-layout="midnight"] .card { border-radius: 14px; border-color: rgba(224,46,61,.3); box-shadow: 0 0 0 1px rgba(224,46,61,.12), 0 0 60px -10px rgba(224,46,61,.35), 0 40px 80px -40px #000; }
+[data-layout="midnight"] .card-head { border-bottom-color: rgba(224,46,61,.25); }
+[data-layout="midnight"] .hero, [data-layout="midnight"] .quick { display: flex; }
+[data-layout="midnight"] .quick > div { border-color: rgba(224,46,61,.2); }
+
+/* The hero and quick stats the non-classic looks open with. */
+.hero { align-items: center; gap: 14px; margin-bottom: 16px; }
+.hero-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, var(--accent), var(--accent-hover)); color: #fff; font-size: 24px; box-shadow: 0 10px 24px -10px var(--accent); flex: none; }
+.hero-copy { min-width: 0; flex: 1; }
+.hero-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.hero-live { display: inline-flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: 0; color: var(--ok); }
+.hero-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: blink 1.4s ease-in-out infinite; }
+.hero-live.off, .hero-live.off i { color: var(--faint); background: var(--faint); animation: none; }
+@keyframes blink { 50% { opacity: .35; } }
+.hero h1 { margin: 2px 0 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.hero p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.quick { gap: 10px; margin-bottom: 16px; }
+.quick > div { flex: 1 1 0; min-width: 0; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface-2); display: flex; align-items: center; gap: 12px; }
+.ring { --p: 0; --c: var(--accent); position: relative; width: 48px; height: 48px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--surface-3) 0); flex: none; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+.ring::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--surface-2); }
+.ring span { position: relative; }
+.stat-k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.stat-v { font-size: 16px; font-weight: 700; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-s { font-size: 12px; color: var(--faint); }
+@media (max-width: 575px) { .quick { flex-direction: column; } }
 </style>
 </head>
 <body>
+{{ if .Preview }}<div class="preview-bar">Preview — {{ .Template }} — sample figures, not a customer</div>{{ end }}
+<div class="live-bg" aria-hidden="true"><span class="orb one"></span><span class="orb two"></span><span class="orb three"></span><span class="wave one"></span><span class="wave two"></span><span class="grid"></span><canvas id="net"></canvas></div>
 <div class="content"><div class="col">
   <div class="card">
     <div class="card-head">
@@ -500,6 +606,28 @@ a.row-title:hover { text-decoration: underline; }
       </div>
     </div>
     <div class="card-body">
+      <div class="hero">
+        <div class="hero-icon"><span class="anticon">{{ index .Icons "ThunderboltOutlined" }}</span></div>
+        <div class="hero-copy">
+          <div class="hero-meta"><span data-i="subSettings">Subscription</span><span class="hero-live{{ if not .Active }} off{{ end }}"><i></i>{{ if .Active }}Live{{ else }}Off{{ end }}</span></div>
+          <h1>{{ .Page.Title }}</h1>
+          <p>{{ .Page.Name }}</p>
+        </div>
+      </div>
+      <div class="quick">
+        <div>
+          <div class="ring" style="--p: 100; --c: {{ if .Active }}var(--ok){{ else }}var(--bad){{ end }}"><span>{{ len .Devices }}</span></div>
+          <div><div class="stat-k" data-i="status">Status</div><div class="stat-v">{{ if eq .StatusKey "inactive" }}<span data-i="inactive">Inactive</span>{{ else if eq .StatusKey "unlimited" }}<span data-i="unlimited">Unlimited</span>{{ else }}<span data-i="active">Active</span>{{ end }}</div><div class="stat-s">{{ len .Devices }} configs</div></div>
+        </div>
+        <div>
+          <div class="ring" style="--p: {{ if .HasQuota }}{{ .PercentTxt }}{{ else }}100{{ end }}; --c: {{ if ge .Percent 90.0 }}var(--bad){{ else if ge .Percent 75.0 }}var(--warn){{ else }}var(--ok){{ end }}"><span dir="ltr">{{ if .HasQuota }}{{ .PercentTxt }}%{{ else }}∞{{ end }}</span></div>
+          <div><div class="stat-k" data-i="usage">Data</div><div class="stat-v" dir="ltr">{{ if .HasQuota }}{{ .Remained }}{{ else }}{{ .Used }}{{ end }}</div><div class="stat-s" dir="ltr">{{ if .HasQuota }}{{ .Used }} / {{ .Total }}{{ else }}<span data-i="unlimited">Unlimited</span>{{ end }}</div></div>
+        </div>
+        <div>
+          <div class="ring" style="--p: {{ if .ExpiryChip }}100{{ else }}100{{ end }}; --c: {{ if eq .ExpiryCls "red" }}var(--bad){{ else if eq .ExpiryCls "orange" }}var(--warn){{ else }}var(--accent){{ end }}"><span class="anticon">{{ index .Icons "ClockCircleOutlined" }}</span></div>
+          <div><div class="stat-k" data-i="expiry">Time</div><div class="stat-v" dir="ltr">{{ if .ExpiryChip }}{{ if eq .ExpiryChip "expired" }}<span data-i="expired">Expired</span>{{ else }}{{ .ExpiryChip }}{{ end }}{{ else }}∞{{ end }}</div><div class="stat-s" dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</div></div>
+        </div>
+      </div>
       <table class="desc">
         <tr><th data-i="subId">Subscription ID</th><td dir="ltr">{{ .SubID }}</td></tr>
         <tr><th data-i="email">Email</th><td>{{ .Page.Name }}</td></tr>
@@ -658,6 +786,28 @@ a.row-title:hover { text-decoration: underline; }
   $('.pop').forEach(function (p) { p.addEventListener('click', function (e) { if (e.target === p) closeMenus(); }); });
   $('.pop-card').forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); }); });
   document.addEventListener('click', closeMenus);
+
+  // The network look: a slow constellation drawn behind the page. Nothing
+  // when the visitor asked for less motion.
+  if (html.getAttribute('data-layout') === 'network' && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var cv = document.getElementById('net'), ctx = cv.getContext('2d'), pts = [], W, H;
+    function size() { W = cv.width = innerWidth; H = cv.height = innerHeight; }
+    size(); addEventListener('resize', size);
+    for (var i = 0; i < 70; i++) pts.push({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, vx: (Math.random() - .5) * .25, vy: (Math.random() - .5) * .25 });
+    (function frame() {
+      ctx.clearRect(0, 0, W, H);
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i]; p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > W) p.vx *= -1; if (p.y < 0 || p.y > H) p.vy *= -1;
+        for (var j = i + 1; j < pts.length; j++) {
+          var q = pts[j], dx = p.x - q.x, dy = p.y - q.y, d = dx * dx + dy * dy;
+          if (d < 140 * 140) { ctx.strokeStyle = 'rgba(224,46,61,' + (0.35 * (1 - d / (140 * 140))) + ')'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
+        }
+        ctx.fillStyle = 'rgba(233,237,243,.7)'; ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2); ctx.fill();
+      }
+      requestAnimationFrame(frame);
+    })();
+  }
 })();
 </script>
 </body>

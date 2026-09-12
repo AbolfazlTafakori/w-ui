@@ -68,6 +68,20 @@ const sub = ref(null)
 const subSaved = ref(null)
 const subError = ref({})
 
+// The looks the customer's page can wear. Chosen here; every customer's
+// page follows on its next opening.
+const SUB_TEMPLATES = ['classic', 'aurora', 'waves', 'network', 'minimal', 'midnight']
+// A one-time link, opened in a new tab: the page is served without the
+// panel's session, so the tab cannot carry it.
+async function previewTemplate(key) {
+  try {
+    const res = await api.post('/api/subscription/preview', { template: key })
+    window.open(res.url, '_blank', 'noopener')
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+
 const outboundTags = ref([])
 const balancerTags = ref([])
 
@@ -1102,6 +1116,7 @@ const uptime = computed(() => {
               <button class="atab" :class="{ active: inner.subscription === '2' }" @click="inner.subscription = '2'"><AntIcon name="InfoCircleOutlined" /><span>{{ t('set.information') }}</span></button>
               <button class="atab" :class="{ active: inner.subscription === '3' }" @click="inner.subscription = '3'"><AntIcon name="IdcardOutlined" /><span>{{ t('set.profile') }}</span></button>
               <button class="atab" :class="{ active: inner.subscription === '4' }" @click="inner.subscription = '4'"><AntIcon name="SafetyCertificateOutlined" /><span>{{ t('set.certs') }}</span></button>
+              <button class="atab" :class="{ active: inner.subscription === '5' }" @click="inner.subscription = '5'"><AntIcon name="PictureOutlined" /><span>{{ t('set.subTemplate') }}</span></button>
             </div></div>
 
             <template v-if="inner.subscription === '1'">
@@ -1159,6 +1174,28 @@ const uptime = computed(() => {
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subAnnounce') }}</div><div class="setting-list-description">{{ t('set.subAnnounceDesc') }}</div></div></div>
                 <div class="acol"><label class="ainput block area"><textarea v-model="sub.announce" rows="3"></textarea></label><p v-if="subError.announce" class="field-error">{{ subError.announce }}</p></div>
               </div></div>
+            </template>
+
+            <template v-else-if="inner.subscription === '5'">
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subTemplate') }}</div><div class="setting-list-description">{{ t('set.subTemplateDesc') }}</div></div></div>
+                <div class="acol"></div>
+              </div></div>
+              <div class="tpl-grid">
+                <label v-for="tp in SUB_TEMPLATES" :key="tp" class="tpl-card" :class="{ on: sub.template === tp }">
+                  <input v-model="sub.template" type="radio" name="sub-template" :value="tp" class="tpl-radio" />
+                  <div class="tpl-swatch" :class="tp">
+                    <span class="tpl-sw-head"></span>
+                    <span class="tpl-sw-row"></span><span class="tpl-sw-row short"></span>
+                    <span class="tpl-sw-bar"></span>
+                  </div>
+                  <div class="tpl-meta">
+                    <div class="tpl-name">{{ t(`set.subTpl.${tp}`) }}<span v-if="tp === 'classic'" class="atag">{{ t('set.defaultTag') }}</span></div>
+                    <div class="tpl-desc">{{ t(`set.subTpl.${tp}Desc`) }}</div>
+                    <button type="button" class="abtn small" @click.prevent="previewTemplate(tp)"><AntIcon name="EyeOutlined" /><span>{{ t('set.subTplPreview') }}</span></button>
+                  </div>
+                </label>
+              </div>
             </template>
 
             <template v-else>
@@ -1440,4 +1477,27 @@ const uptime = computed(() => {
 
 .field-error { margin: 4px 0 0; color: var(--bad); font-size: 12px; }
 .log-view { padding: 10px 20px; }
+
+/* The template picker: a card per look, its swatch a small drawing of it. */
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 10px 20px; }
+.tpl-card { position: relative; display: flex; gap: 12px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-2); cursor: pointer; transition: border-color .2s, box-shadow .2s; }
+.tpl-card:hover { border-color: var(--accent-hover); }
+.tpl-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
+.tpl-radio { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.tpl-swatch { position: relative; flex: none; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; background: #0a090a; display: flex; flex-direction: column; gap: 5px; padding: 8px; }
+.tpl-sw-head { height: 8px; width: 60%; border-radius: 2px; background: rgba(255,255,255,.35); }
+.tpl-sw-row { height: 5px; width: 80%; border-radius: 2px; background: rgba(255,255,255,.14); }
+.tpl-sw-row.short { width: 55%; }
+.tpl-sw-bar { margin-top: auto; height: 6px; width: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent) 70%, rgba(255,255,255,.12) 70%); }
+.tpl-swatch.aurora { background: radial-gradient(60px 40px at 15% 10%, #e02e3d99, transparent 70%), radial-gradient(60px 40px at 90% 40%, #3a5bff99, transparent 70%), radial-gradient(60px 40px at 40% 110%, #17b3a699, transparent 70%), #07111f; }
+.tpl-swatch.waves { background: linear-gradient(180deg, #0b1220, #12203a); }
+.tpl-swatch.waves::after { content: ''; position: absolute; left: -30%; right: -30%; bottom: -18px; height: 34px; border-radius: 45%; background: linear-gradient(90deg, #e02e3d, #2f6df6); opacity: .5; }
+.tpl-swatch.network { background-color: #050608; background-image: radial-gradient(circle at 20% 30%, #e9edf3 1px, transparent 2px), radial-gradient(circle at 70% 20%, #e9edf3 1px, transparent 2px), radial-gradient(circle at 55% 75%, #e9edf3 1px, transparent 2px), linear-gradient(35deg, transparent 49%, rgba(224,46,61,.35) 50%, transparent 51%); }
+.tpl-swatch.minimal { background: #fff; }
+.tpl-swatch.minimal .tpl-sw-head { background: #111; } .tpl-swatch.minimal .tpl-sw-row { background: #ddd; }
+.tpl-swatch.midnight { background: radial-gradient(70px 40px at 50% -10%, rgba(224,46,61,.45), transparent 70%), #000; box-shadow: inset 0 0 0 1px rgba(224,46,61,.4); }
+.tpl-meta { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.tpl-name { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.tpl-desc { font-size: 12px; color: var(--faint); line-height: 1.5; }
+.tpl-meta .abtn { align-self: flex-start; margin-top: 4px; }
 </style>

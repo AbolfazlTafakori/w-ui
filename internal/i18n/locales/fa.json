@@ -1548,5 +1548,20 @@
   "iface.col.updatedAt": "به‌روزرسانی",
   "action.prev": "صفحه قبل",
   "action.download": "دانلود",
-  "common.copied": "کپی شد"
+  "common.copied": "کپی شد",
+  "set.subTemplate": "قالب",
+  "set.subTemplateDesc": "ظاهر صفحه‌ای که مشتری با باز کردن لینک اشتراک در مرورگر می‌بیند. صفحهٔ همهٔ مشتری‌ها از قالب انتخاب‌شده در اینجا پیروی می‌کند.",
+  "set.subTplPreview": "پیش‌نمایش",
+  "set.subTpl.classic": "کلاسیک",
+  "set.subTpl.classicDesc": "کارت خودِ پنل: ارقام، نوار مصرف، لینک‌ها و کانفیگ‌ها، در سیاه و قرمز.",
+  "set.subTpl.aurora": "شفق",
+  "set.subTpl.auroraDesc": "نور رنگی شناور پشت یک کارت شیشه‌ای، با سرتیتر و سه عقربه.",
+  "set.subTpl.waves": "موج",
+  "set.subTpl.wavesDesc": "آسمان شب با دو موج آرام و یک بنر گرادیانی.",
+  "set.subTpl.network": "شبکه",
+  "set.subTpl.networkDesc": "صورت فلکی آرام پشت کارتی با فونت مونو و گوشه‌های تیز.",
+  "set.subTpl.minimal": "مینیمال",
+  "set.subTpl.minimalDesc": "کاغذ و مرکب: بدون پس‌زمینه، اعداد بزرگ، و دیگر هیچ.",
+  "set.subTpl.midnight": "نیمه‌شب",
+  "set.subTpl.midnightDesc": "سیاه خالص زیر شبکه‌ای کم‌رنگ، لبهٔ کارت با نور قرمز."
 }
