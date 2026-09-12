@@ -1563,5 +1563,7 @@
   "set.subTpl.minimal": "Minimal",
   "set.subTpl.minimalDesc": "Paper and ink: no backgrounds, big numbers, nothing else.",
   "set.subTpl.midnight": "Midnight",
-  "set.subTpl.midnightDesc": "Pure black under a faint grid, the card edged in red light."
+  "set.subTpl.midnightDesc": "Pure black under a faint grid, the card edged in red light.",
+  "login.hello": "Hello",
+  "login.title": "Welcome"
 }

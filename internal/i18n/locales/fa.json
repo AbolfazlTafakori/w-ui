@@ -1563,5 +1563,7 @@
   "set.subTpl.minimal": "مینیمال",
   "set.subTpl.minimalDesc": "کاغذ و مرکب: بدون پس‌زمینه، اعداد بزرگ، و دیگر هیچ.",
   "set.subTpl.midnight": "نیمه‌شب",
-  "set.subTpl.midnightDesc": "سیاه خالص زیر شبکه‌ای کم‌رنگ، لبهٔ کارت با نور قرمز."
+  "set.subTpl.midnightDesc": "سیاه خالص زیر شبکه‌ای کم‌رنگ، لبهٔ کارت با نور قرمز.",
+  "login.hello": "سلام",
+  "login.title": "خوش‌آمدید"
 }
