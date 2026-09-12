@@ -9,6 +9,7 @@ import Sparkline from '../components/Sparkline.vue'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 const data = ref(null)
 const loading = ref(true)
@@ -609,26 +610,7 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
        where the page will be. Only once the load has run long enough to be
        worth admitting to: this reading refreshes every three seconds, and a
        skeleton that flashed on each of them would be unusable. -->
-  <div v-if="showSkeleton" class="ov-page" aria-hidden="true">
-    <div class="ov-vitals">
-      <div v-for="n in 4" :key="n" class="card ov-tile">
-        <span class="sk" style="width: 42%"></span>
-        <span class="sk sk-lg" style="width: 58%"></span>
-        <span class="sk" style="width: 70%"></span>
-        <span class="sk sk-chart"></span>
-      </div>
-    </div>
-    <div class="ov-mid">
-      <div class="card ov-wide">
-        <span class="sk" style="width: 26%"></span>
-        <span class="sk sk-tall"></span>
-      </div>
-      <div class="card ov-side">
-        <span class="sk" style="width: 40%"></span>
-        <span class="sk sk-lg" style="width: 55%"></span>
-      </div>
-    </div>
-  </div>
+  <PageSpin v-if="showSkeleton" />
 
   <div v-else-if="loading" class="ov-page"></div>
 

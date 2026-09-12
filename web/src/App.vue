@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } fro
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
 import { store, t, notify, signOut } from './lib/store.js'
 import Icon from './components/Icon.vue'
+import AntIcon from './components/AntIcon.vue'
 import { themeMode, cycleTheme } from './lib/theme.js'
 
 const router = useRouter()
@@ -21,29 +22,29 @@ const signedIn = computed(() => !!store.admin)
 // something else — Sharing reports on customers, so it sits with Customers,
 // not between Routing and Settings where it looked like an admin page.
 const nav = [
-  { to: '/', key: 'nav.overview', icon: 'dashboard', exact: true },
-  { to: '/interfaces', key: 'nav.interfaces', icon: 'inbound' },
-  { to: '/clients', key: 'nav.clients', icon: 'users' },
-  { to: '/sharing', key: 'nav.sharing', icon: 'eye' },
-  { to: '/groups', key: 'nav.groups', icon: 'tag' },
-  { to: '/nodes', key: 'nav.nodes', icon: 'hdd' },
-  { to: '/hosts', key: 'nav.hosts', icon: 'globe' },
-  { to: '/outbounds', key: 'nav.outbounds', icon: 'outbound' },
-  { to: '/routing', key: 'nav.routing', icon: 'route' },
+  { to: '/', key: 'nav.overview', icon: 'DashboardOutlined', exact: true },
+  { to: '/interfaces', key: 'nav.interfaces', icon: 'ImportOutlined' },
+  { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined' },
+  { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
+  { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined' },
+  { to: '/nodes', key: 'nav.nodes', icon: 'ClusterOutlined' },
+  { to: '/hosts', key: 'nav.hosts', icon: 'GlobalOutlined' },
+  { to: '/outbounds', key: 'nav.outbounds', icon: 'ExportOutlined' },
+  { to: '/routing', key: 'nav.routing', icon: 'SwapOutlined' },
   {
     key: 'nav.settings',
-    icon: 'settings',
+    icon: 'SettingOutlined',
     children: [
       // Exactly 3x-ui's five, in its order. An operator who has run one panel
       // should find these where they left them, and a menu that grows an entry
       // every time something is added stops being a place anyone can find
       // anything. The language is chosen on the General page, as it is there,
       // rather than being a line in the menu as well.
-      { to: '/settings/general', key: 'settings.tab.general', icon: 'settings' },
-      { to: '/settings/security', key: 'settings.tab.security', icon: 'lock' },
-      { to: '/settings/telegram', key: 'settings.tab.notify', icon: 'send' },
-      { to: '/settings/email', key: 'settings.tab.email', icon: 'mail' },
-      { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'link' },
+      { to: '/settings/general', key: 'settings.tab.general', icon: 'SettingOutlined' },
+      { to: '/settings/security', key: 'settings.tab.security', icon: 'SafetyOutlined' },
+      { to: '/settings/telegram', key: 'settings.tab.notify', icon: 'MessageOutlined' },
+      { to: '/settings/email', key: 'settings.tab.email', icon: 'MailOutlined' },
+      { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'CloudServerOutlined' },
     ],
   },
   {
@@ -51,17 +52,17 @@ const nav = [
     // basics, the balancers, DNS and the raw template, then our own
     // generated-config and log pages.
     key: 'nav.engine',
-    icon: 'code',
+    icon: 'ToolOutlined',
     children: [
-      { to: '/engine/basic', key: 'eng.basicTemplate', icon: 'settings' },
-      { to: '/engine/balancer', key: 'eng.balancers', icon: 'swap' },
-      { to: '/engine/dns', key: 'eng.dnsMenu', icon: 'database' },
-      { to: '/engine/advanced', key: 'eng.advancedTemplate', icon: 'code' },
-      { to: '/configs/templates', key: 'nav.configs.templates', icon: 'code' },
-      { to: '/configs/logs', key: 'nav.configs.logs', icon: 'info' },
+      { to: '/engine/basic', key: 'eng.basicTemplate', icon: 'SettingOutlined' },
+      { to: '/engine/balancer', key: 'eng.balancers', icon: 'ClusterOutlined' },
+      { to: '/engine/dns', key: 'eng.dnsMenu', icon: 'DatabaseOutlined' },
+      { to: '/engine/advanced', key: 'eng.advancedTemplate', icon: 'CodeOutlined' },
+      { to: '/configs/templates', key: 'nav.configs.templates', icon: 'FileTextOutlined' },
+      { to: '/configs/logs', key: 'nav.configs.logs', icon: 'InfoCircleOutlined' },
     ],
   },
-  { to: '/api-docs', key: 'nav.api', icon: 'link' },
+  { to: '/api-docs', key: 'nav.api', icon: 'ApiOutlined' },
 ]
 
 // Which collapsible groups are open. A group containing the current page opens
@@ -134,6 +135,48 @@ function togglePinned() {
 }
 
 const expanded = computed(() => pinned.value || hovered.value)
+
+// On the rail a group opens beside it, as Ant's collapsed submenu popup
+// does, rather than in place. Held here so hovering the title and then the
+// popup is one visit.
+const popup = ref(null) // { item, top }
+let popupTimer = null
+function showPopup(item, e) {
+  if (expanded.value) return
+  clearTimeout(popupTimer)
+  const r = e.currentTarget.getBoundingClientRect()
+  popup.value = { item, top: r.top, left: r.right + 4 }
+}
+function hidePopup() {
+  clearTimeout(popupTimer)
+  popupTimer = setTimeout(() => (popup.value = null), 100)
+}
+function keepPopup() {
+  clearTimeout(popupTimer)
+}
+watch(expanded, (v) => {
+  if (v) popup.value = null
+})
+
+// The inline submenu opens and closes with Ant's height motion: measured,
+// then driven from 0 to that height and back.
+function collapseEnter(el) {
+  el.style.height = '0px'
+  requestAnimationFrame(() => {
+    el.style.height = el.scrollHeight + 'px'
+  })
+}
+function collapseAfter(el) {
+  el.style.height = ''
+}
+function collapseLeave(el) {
+  el.style.height = el.scrollHeight + 'px'
+  requestAnimationFrame(() => {
+    el.style.height = '0px'
+  })
+}
+
+const REPO_DOCS = 'https://github.com/AbolfazlTafakori/w-ui#readme'
 
 function onKeydown(event) {
   if (event.key === 'Escape' && drawerOpen.value) drawerOpen.value = false
@@ -216,7 +259,7 @@ function reload() {
       :aria-expanded="drawerOpen"
       @click="drawerOpen = true"
     >
-      <Icon name="menu" :size="18" />
+      <AntIcon name="MenuOutlined" />
     </button>
 
     <aside
@@ -225,159 +268,137 @@ function reload() {
       @mouseenter="hovered = true"
       @mouseleave="hovered = false"
     >
+      <!-- Their brand row: the name, and with the rail open the pin, the docs
+           and the theme. The name toggles the pin too, for a screen with no
+           pointer to hover with. -->
       <div class="sider-brand">
-        <!-- The mark toggles the rail. Hover is the quick way to peek at the
-             labels, but a tablet has no pointer to hover with: without this the
-             rail would be stuck at icon width there, and the buttons below —
-             which only appear once expanded — could never be reached at all. -->
-        <button
-          class="brand-block"
-          type="button"
-          :aria-expanded="expanded"
-          :title="pinned ? t('nav.unpin') : t('nav.pin')"
-          @click="togglePinned"
-        >
-          <span class="brand-mark">W</span>
-          <span v-show="expanded" class="brand-name">{{ t('app.name') }}</span>
+        <button class="brand-block" type="button" :aria-expanded="expanded" :title="pinned ? t('nav.unpin') : t('nav.pin')" @click="togglePinned">
+          <span class="brand-text">{{ expanded ? t('app.name') : 'W' }}</span>
         </button>
-
-        <div v-show="expanded" class="brand-actions">
-          <button
-            class="sidebar-pin"
-            type="button"
-            :title="t(`theme.${themeMode}`)"
-            @click="cycleTheme"
-          >
-            <Icon :name="themeMode === 'light' ? 'sun' : themeMode === 'dark' ? 'moon' : 'moonFilled'" :size="16" />
+        <div v-if="expanded" class="brand-actions">
+          <button class="sidebar-pin" type="button" :class="{ on: pinned }" :aria-pressed="pinned" :title="pinned ? t('nav.unpin') : t('nav.pin')" @click="togglePinned">
+            <AntIcon :name="pinned ? 'PushpinFilled' : 'PushpinOutlined'" />
           </button>
-          <button
-            class="sidebar-pin"
-            type="button"
-            :class="{ on: pinned }"
-            :aria-pressed="pinned"
-            :title="pinned ? t('nav.unpin') : t('nav.pin')"
-            @click="togglePinned"
-          >
-            <Icon :name="pinned ? 'pinFilled' : 'pin'" :size="16" />
+          <a class="sidebar-docs" :href="REPO_DOCS" target="_blank" rel="noopener noreferrer" :title="t('nav.docs')" :aria-label="t('nav.docs')"><AntIcon name="ReadOutlined" /></a>
+          <button class="sidebar-theme-cycle" type="button" :title="t('nav.theme')" :aria-label="t('nav.theme')" @click="cycleTheme">
+            <AntIcon :name="themeMode === 'light' ? 'SunOutlined' : themeMode === 'dark' ? 'MoonOutlined' : 'MoonFilled'" />
           </button>
         </div>
       </div>
 
-      <nav class="sider-nav">
+      <!-- Their inline Menu: items, and two submenus that open in place. -->
+      <ul class="amenu-inline sider-nav" role="menu">
         <template v-for="item in nav" :key="item.key || item.to">
-          <!-- A plain destination. -->
-          <RouterLink
-            v-if="!item.children"
-            :to="item.to"
-            class="navlink"
-            :class="{ active: isActive(item) }"
-            :title="t(item.key)"
-          >
-            <Icon :name="item.icon" :size="16" />
-            <span v-show="expanded" class="label">{{ t(item.key) }}</span>
-          </RouterLink>
-
-          <!-- A group that opens in place, pushing what follows down. -->
-          <template v-else>
-            <button
-              type="button"
-              class="navlink as-button"
-              :class="{ active: groupHasActive(item), open: isGroupOpen(item) }"
-              :title="t(item.key)"
-              :aria-expanded="isGroupOpen(item)"
-              @click="toggleGroup(item)"
-            >
-              <Icon :name="item.icon" :size="16" />
-              <span v-show="expanded" class="label">{{ t(item.key) }}</span>
-              <Icon
-                v-show="expanded"
-                class="chev"
-                :class="{ turned: isGroupOpen(item) }"
-                name="chevronDown"
-                :size="14"
-              />
+          <li v-if="!item.children" role="none">
+            <RouterLink :to="item.to" class="amenu-item" :class="{ selected: isActive(item) }" role="menuitem" :title="expanded ? '' : t(item.key)">
+              <AntIcon :name="item.icon" />
+              <span class="amenu-title">{{ t(item.key) }}</span>
+            </RouterLink>
+          </li>
+          <li v-else class="amenu-submenu" :class="{ open: isGroupOpen(item) && expanded, active: groupHasActive(item) }" role="none" @mouseenter="showPopup(item, $event)" @mouseleave="hidePopup">
+            <button type="button" class="amenu-submenu-title" :aria-expanded="isGroupOpen(item)" :title="expanded ? '' : t(item.key)" @click="toggleGroup(item)">
+              <AntIcon :name="item.icon" />
+              <span class="amenu-title">{{ t(item.key) }}</span>
+              <i class="amenu-submenu-arrow"></i>
             </button>
-
-            <div v-show="isGroupOpen(item) && expanded" class="subnav">
-              <RouterLink
-                v-for="child in item.children"
-                :key="child.to"
-                :to="child.to"
-                class="navlink sub"
-                :class="{ active: route.path.startsWith(child.to) }"
-                :title="t(child.key)"
-              >
-                <Icon :name="child.icon" :size="14" />
-                <span class="label">{{ t(child.key) }}</span>
-              </RouterLink>
-            </div>
-          </template>
+            <Transition name="amenu-collapse" @enter="collapseEnter" @after-enter="collapseAfter" @leave="collapseLeave">
+              <ul v-if="isGroupOpen(item) && expanded" class="amenu-sub" role="menu">
+                <li v-for="child in item.children" :key="child.to" role="none">
+                  <RouterLink :to="child.to" class="amenu-item" :class="{ selected: route.path.startsWith(child.to) }" role="menuitem">
+                    <AntIcon :name="child.icon" />
+                    <span class="amenu-title">{{ t(child.key) }}</span>
+                  </RouterLink>
+                </li>
+              </ul>
+            </Transition>
+          </li>
         </template>
-      </nav>
+      </ul>
 
-      <div class="sider-utility">
-        <button
-          class="navlink as-button"
-          type="button"
-          :title="`${t('auth.signOut')} — ${store.admin?.username}`"
-          @click="handleSignOut"
-        >
-          <Icon name="logout" :size="16" />
-          <span v-show="expanded" class="label">{{ t('auth.signOut') }}</span>
-        </button>
-      </div>
+      <ul class="amenu-inline sider-utility" role="menu">
+        <li role="none">
+          <button class="amenu-item" type="button" role="menuitem" :title="expanded ? '' : `${t('auth.signOut')} — ${store.admin?.username}`" @click="handleSignOut">
+            <AntIcon name="LogoutOutlined" />
+            <span class="amenu-title">{{ t('auth.signOut') }}</span>
+          </button>
+        </li>
+      </ul>
 
       <div class="sider-footer">
-        <a
-          class="sider-version"
-          :href="REPO_URL"
-          target="_blank"
-          rel="noopener noreferrer"
-          :title="`W-UI ${version}`"
-        >
-          <Icon name="github" :size="16" />
-          <span v-show="expanded" class="sider-version-text">{{ version }}</span>
+        <a class="sider-version" :href="REPO_URL" target="_blank" rel="noopener noreferrer" :title="`W-UI ${version}`">
+          <AntIcon name="GithubOutlined" />
+          <span v-if="expanded" class="sider-version-text">{{ version }}</span>
         </a>
       </div>
     </aside>
 
-    <!-- Phone drawer. Same items, laid out for a thumb rather than a pointer. -->
+    <!-- A group's children beside the rail while it is collapsed. -->
+    <Teleport to="body">
+      <ul v-if="popup && !expanded" class="amenu-popup" role="menu" :style="{ top: popup.top + 'px', left: popup.left + 'px' }" @mouseenter="keepPopup" @mouseleave="hidePopup">
+        <li v-for="child in popup.item.children" :key="child.to" role="none">
+          <RouterLink :to="child.to" class="amenu-item" :class="{ selected: route.path.startsWith(child.to) }" role="menuitem" @click="popup = null">
+            <AntIcon :name="child.icon" />
+            <span class="amenu-title">{{ t(child.key) }}</span>
+          </RouterLink>
+        </li>
+      </ul>
+    </Teleport>
+
+    <!-- Phone drawer: their Drawer, with the same menu laid out at 48px rows. -->
     <Transition name="drawer">
       <div v-if="drawerOpen" class="drawer-scrim" @click="drawerOpen = false">
         <aside class="drawer" role="dialog" aria-modal="true" @click.stop>
           <div class="drawer-header">
-            <span class="brand-block">
-              <span class="brand-mark">W</span>
-              <span class="brand-name">{{ t('app.name') }}</span>
-            </span>
-            <button class="drawer-close" type="button" :aria-label="t('common.close')" @click="drawerOpen = false">
-              <Icon name="close" :size="16" />
-            </button>
+            <span class="brand-block"><span class="brand-text">{{ t('app.name') }}</span></span>
+            <div class="drawer-header-actions">
+              <a class="sidebar-docs" :href="REPO_DOCS" target="_blank" rel="noopener noreferrer" :title="t('nav.docs')"><AntIcon name="ReadOutlined" /></a>
+              <button class="sidebar-theme-cycle" type="button" :title="t('nav.theme')" @click="cycleTheme">
+                <AntIcon :name="themeMode === 'light' ? 'SunOutlined' : themeMode === 'dark' ? 'MoonOutlined' : 'MoonFilled'" />
+              </button>
+              <button class="drawer-close" type="button" :aria-label="t('common.close')" @click="drawerOpen = false"><AntIcon name="CloseOutlined" /></button>
+            </div>
           </div>
 
-          <nav class="drawer-menu">
-            <RouterLink
-              v-for="item in nav"
-              :key="item.to"
-              :to="item.to"
-              class="navlink"
-              :class="{ active: isActive(item) }"
-            >
-              <Icon :name="item.icon" :size="16" />
-              <span class="label">{{ t(item.key) }}</span>
-            </RouterLink>
-          </nav>
+          <ul class="amenu-inline drawer-menu" role="menu">
+            <template v-for="item in nav" :key="item.key || item.to">
+              <li v-if="!item.children" role="none">
+                <RouterLink :to="item.to" class="amenu-item" :class="{ selected: isActive(item) }" role="menuitem">
+                  <AntIcon :name="item.icon" />
+                  <span class="amenu-title">{{ t(item.key) }}</span>
+                </RouterLink>
+              </li>
+              <li v-else class="amenu-submenu" :class="{ open: isGroupOpen(item), active: groupHasActive(item) }" role="none">
+                <button type="button" class="amenu-submenu-title" :aria-expanded="isGroupOpen(item)" @click="toggleGroup(item)">
+                  <AntIcon :name="item.icon" />
+                  <span class="amenu-title">{{ t(item.key) }}</span>
+                  <i class="amenu-submenu-arrow"></i>
+                </button>
+                <Transition name="amenu-collapse" @enter="collapseEnter" @after-enter="collapseAfter" @leave="collapseLeave">
+                  <ul v-if="isGroupOpen(item)" class="amenu-sub" role="menu">
+                    <li v-for="child in item.children" :key="child.to" role="none">
+                      <RouterLink :to="child.to" class="amenu-item" :class="{ selected: route.path.startsWith(child.to) }" role="menuitem">
+                        <AntIcon :name="child.icon" />
+                        <span class="amenu-title">{{ t(child.key) }}</span>
+                      </RouterLink>
+                    </li>
+                  </ul>
+                </Transition>
+              </li>
+            </template>
+          </ul>
 
-          <div class="drawer-utility">
-            <button class="navlink as-button" type="button" @click="handleSignOut">
-              <Icon name="logout" :size="16" />
-              <span class="label">{{ t('auth.signOut') }}</span>
-            </button>
-          </div>
+          <ul class="amenu-inline drawer-utility" role="menu">
+            <li role="none">
+              <button class="amenu-item" type="button" role="menuitem" @click="handleSignOut">
+                <AntIcon name="LogoutOutlined" />
+                <span class="amenu-title">{{ t('auth.signOut') }}</span>
+              </button>
+            </li>
+          </ul>
 
           <div class="drawer-footer">
             <a class="sider-version" :href="REPO_URL" target="_blank" rel="noopener noreferrer">
-              <Icon name="github" :size="16" />
+              <AntIcon name="GithubOutlined" />
               <span class="sider-version-text">{{ version }}</span>
             </a>
           </div>

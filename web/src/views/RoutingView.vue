@@ -10,6 +10,7 @@ import TagInput from '../components/TagInput.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import RoutingRuleForm from '../components/RoutingRuleForm.vue'
 import BalancerForm from '../components/BalancerForm.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 // The routing page, laid out the way 3x-ui lays its own out: the Save bar
 // with its warning, then one card with the tabs -- Basic Routing, Routing
@@ -472,13 +473,7 @@ async function testRoute() {
       </div>
     </div>
 
-    <table v-else-if="showSkeleton" class="skeleton card" aria-hidden="true">
-      <tbody>
-        <tr v-for="n in 5" :key="n">
-          <td v-for="c in 7" :key="c"><span class="sk"></span></td>
-        </tr>
-      </tbody>
-    </table>
+    <PageSpin v-else-if="showSkeleton" />
 
     <div v-else class="card">
       <div class="card-body">

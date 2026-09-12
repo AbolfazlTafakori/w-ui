@@ -11,6 +11,7 @@ import OutboundSubsDialog from '../components/OutboundSubsDialog.vue'
 import WarpDialog from '../components/WarpDialog.vue'
 import NordDialog from '../components/NordDialog.vue'
 import PiaDialog from '../components/PiaDialog.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 // Where traffic leaves. Two rows always exist and cannot be removed, so a
 // routing rule always has somewhere to point.
@@ -506,13 +507,7 @@ async function runImport() {
         <button class="btn" @click="load()">{{ t('action.retry') }}</button>
       </div>
 
-      <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
-        <tbody>
-          <tr v-for="n in 4" :key="n">
-            <td v-for="c in 8" :key="c"><span class="sk"></span></td>
-          </tr>
-        </tbody>
-      </table>
+      <PageSpin v-else-if="showSkeleton" />
       <div v-else-if="loading" class="empty"></div>
 
       <!-- Their columns, in their order and with their widths: #, Tag,

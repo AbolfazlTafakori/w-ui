@@ -8,6 +8,7 @@ import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, gigabytesToBytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 const router = useRouter()
 
@@ -381,13 +382,7 @@ function viewMembers(g) {
 
     <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
 
-    <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
-      <tbody>
-        <tr v-for="n in 4" :key="n">
-          <td v-for="c in 6" :key="c"><span class="sk"></span></td>
-        </tr>
-      </tbody>
-    </table>
+    <PageSpin v-else-if="showSkeleton" />
     <div v-else-if="loading" class="empty"></div>
 
     <!-- The header row stays when there is nothing under it, the way their

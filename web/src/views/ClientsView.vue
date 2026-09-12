@@ -11,6 +11,7 @@ import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FilterDrawer, { emptyFilters, activeFilterCount } from '../components/FilterDrawer.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -877,13 +878,7 @@ async function submitForm(input) {
         </span>
       </div>
 
-      <table v-if="showSkeleton" class="skeleton" aria-hidden="true">
-        <tbody>
-          <tr v-for="n in 8" :key="n">
-            <td v-for="c in 10" :key="c"><span class="sk"></span></td>
-          </tr>
-        </tbody>
-      </table>
+      <PageSpin v-if="showSkeleton" />
       <div v-else-if="loading && !page" class="empty"></div>
 
       <template v-else>

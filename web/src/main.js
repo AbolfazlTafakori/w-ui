@@ -13,6 +13,7 @@ import '@fontsource/ibm-plex-mono/500.css'
 
 import './style.css'
 import './ant.css'
+import './sidebar.css'
 
 import LoginView from './views/LoginView.vue'
 import OverviewView from './views/OverviewView.vue'

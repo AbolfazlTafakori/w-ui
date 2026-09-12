@@ -7,6 +7,7 @@ import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import HostForm from '../components/HostForm.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 // The addresses customers are handed. An interface listens once; the name a
 // customer dials may be several.
@@ -214,13 +215,7 @@ async function runConfirmed() {
         <button class="btn" @click="load()">{{ t('action.retry') }}</button>
       </div>
 
-      <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
-        <tbody>
-          <tr v-for="n in 4" :key="n">
-            <td v-for="c in 7" :key="c"><span class="sk"></span></td>
-          </tr>
-        </tbody>
-      </table>
+      <PageSpin v-else-if="showSkeleton" />
       <div v-else-if="loading" class="empty"></div>
 
       <!-- One flat table, the way theirs is, with the tunnel as a column

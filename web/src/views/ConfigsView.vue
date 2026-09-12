@@ -5,6 +5,7 @@ import { api } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 // What the panel is actually asking the machine to do.
 //
@@ -138,10 +139,7 @@ async function copy() {
         <span class="sk" style="width: 54%"></span>
       </div>
     </div>
-    <section v-else-if="showWait" class="card sk-block" aria-hidden="true">
-      <span class="sk sk-lg" style="width: 30%"></span>
-      <span class="sk sk-tall"></span>
-    </section>
+    <PageSpin v-else-if="showWait" />
     <div v-else-if="loading" class="empty"></div>
 
     <!-- ── engine ──────────────────────────────────────────────────────── -->

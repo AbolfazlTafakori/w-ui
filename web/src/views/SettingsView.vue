@@ -15,6 +15,7 @@ import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import Toggle from '../components/Toggle.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 const router = useRouter()
 
@@ -682,15 +683,7 @@ const uptime = computed(() => {
       <button type="button" class="aalert-close" :aria-label="t('common.close')" @click="alertVisible = false"><AntIcon name="CloseOutlined" /></button>
     </div>
 
-    <section v-if="showWait" class="acard sk-rows" aria-hidden="true">
-      <div v-for="n in 6" :key="n" class="sk-row">
-        <div class="sk-row-meta">
-          <span class="sk" :style="{ width: 34 + ((n * 7) % 22) + '%' }"></span>
-          <span class="sk" :style="{ width: 62 + ((n * 5) % 26) + '%' }"></span>
-        </div>
-        <span class="sk sk-lg sk-row-control"></span>
-      </div>
-    </section>
+    <PageSpin v-if="showWait" />
     <div v-else-if="loading" class="empty"></div>
     <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
 

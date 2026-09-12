@@ -302,10 +302,10 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   padding: 1px;
   background: linear-gradient(
     145deg,
-    rgba(242, 64, 79, 0.55),
+    rgba(60, 137, 232, 0.55),
     rgba(255, 255, 255, 0.08) 40%,
     rgba(255, 255, 255, 0.03) 70%,
-    rgba(242, 64, 79, 0.3)
+    rgba(60, 137, 232, 0.3)
   );
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
@@ -320,7 +320,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.01em;
-  background: linear-gradient(135deg, #ffffff 0%, #f2404f 55%, #a01a2a 100%);
+  background: linear-gradient(135deg, #ffffff 0%, var(--accent-hover) 55%, var(--accent) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -331,7 +331,7 @@ const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
   height: 3px;
   border-radius: 2px;
   margin-top: 10px;
-  background: linear-gradient(90deg, var(--accent), rgba(242, 64, 79, 0.15));
+  background: linear-gradient(90deg, var(--accent), rgba(60, 137, 232, 0.15));
 }
 
 .welcome {
@@ -412,7 +412,7 @@ form {
   width: 100%;
   border: none;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--accent), #b8202e);
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent));
   color: #fff;
   font: inherit;
   font-size: var(--t-base);
@@ -421,7 +421,7 @@ form {
   display: grid;
   place-items: center;
   transition: filter 0.15s, transform 0.08s;
-  box-shadow: 0 6px 20px -8px rgba(224, 46, 61, 0.8);
+  box-shadow: 0 6px 20px -8px rgba(22, 104, 220, 0.8);
 }
 .submit:hover:not(:disabled) {
   filter: brightness(1.1);

@@ -12,6 +12,7 @@ import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
 import AntIcon from '../components/AntIcon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 const router = useRouter()
 
@@ -810,13 +811,7 @@ async function submitForm(input) {
     <div class="acard-body">
       <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
 
-      <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
-        <tbody>
-          <tr v-for="n in 5" :key="n">
-            <td v-for="c in 10" :key="c"><span class="sk"></span></td>
-          </tr>
-        </tbody>
-      </table>
+      <PageSpin v-else-if="showSkeleton" />
       <div v-else-if="loading" class="empty"></div>
 
       <div v-else class="atable-wrap">

@@ -1520,5 +1520,7 @@
   "eng.delete": "حذف",
   "eng.more": "بیشتر",
   "eng.confirm": "تایید",
-  "eng.cancel": "انصراف"
+  "eng.cancel": "انصراف",
+  "nav.docs": "مستندات",
+  "nav.theme": "تم"
 }

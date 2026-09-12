@@ -1520,5 +1520,7 @@
   "eng.delete": "Delete",
   "eng.more": "more",
   "eng.confirm": "Confirm",
-  "eng.cancel": "Cancel"
+  "eng.cancel": "Cancel",
+  "nav.docs": "Documentation",
+  "nav.theme": "Theme"
 }

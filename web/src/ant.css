@@ -46,16 +46,16 @@
   .acol:last-child { flex: 0 0 100%; max-width: 100%; }
 }
 
-/* Statistic */
+/* Statistic, with 3x-ui's tokens: an 11px title over 17px content. */
 .stat-title {
   margin-bottom: 4px;
-  font-size: 14px;
+  font-size: 11px;
   color: var(--muted);
 }
 .stat-content {
   display: flex;
   align-items: center;
-  font-size: 24px;
+  font-size: 17px;
   color: var(--ink);
 }
 .stat-prefix { display: inline-block; margin-inline-end: 4px; }
@@ -678,3 +678,57 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .advanced-meta p { margin: 0; opacity: 0.7; font-size: 14px; }
 .hint-alert { text-align: center; }
 .mb-12 { margin-bottom: 12px; }
+
+/* Spin, size="large", with a description: four dots turning in a 32px
+   square at the centre of a spacer the height of the viewport, the way a
+   3x-ui page loads. */
+.aspin-nested { position: relative; }
+.aspin-nested > .loading-spacer { min-height: calc(100vh - 120px); }
+.aspin {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  max-height: 400px;
+  color: var(--accent);
+  font-size: 14px;
+  text-align: center;
+}
+.aspin-dot {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: 50%;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin: -16px;
+  margin-top: -26px;
+  font-size: 32px;
+  transform: rotate(45deg);
+  animation: aspin-rotate 1.2s infinite linear;
+}
+.aspin-dot i {
+  position: absolute;
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 100%;
+  background-color: currentColor;
+  transform: scale(0.75);
+  transform-origin: 50% 50%;
+  opacity: 0.3;
+  animation: aspin-move 1s infinite linear alternate;
+}
+.aspin-dot i:nth-child(1) { top: 0; inset-inline-start: 0; }
+.aspin-dot i:nth-child(2) { top: 0; inset-inline-end: 0; animation-delay: 0.4s; }
+.aspin-dot i:nth-child(3) { inset-inline-end: 0; bottom: 0; animation-delay: 0.8s; }
+.aspin-dot i:nth-child(4) { bottom: 0; inset-inline-start: 0; animation-delay: 1.2s; }
+.aspin-text {
+  position: absolute;
+  top: 50%;
+  width: 100%;
+  padding-top: 11px;
+  font-size: 14px;
+  text-shadow: 0 1px 2px var(--ground);
+}
+@keyframes aspin-move { to { opacity: 1; } }
+@keyframes aspin-rotate { to { transform: rotate(405deg); } }

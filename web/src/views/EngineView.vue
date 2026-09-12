@@ -10,6 +10,7 @@ import Toggle from '../components/Toggle.vue'
 import TagInput from '../components/TagInput.vue'
 import MultiSelect from '../components/MultiSelect.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 // The engine pages: what 3x-ui keeps under "Xray" -- the core's own
 // settings, its balancers, its DNS and the raw template -- laid out the
@@ -347,15 +348,7 @@ onMounted(() => {
 
 <template>
   <div class="antpage engine-page">
-    <section v-if="showWait" class="acard sk-rows" aria-hidden="true">
-      <div v-for="n in 6" :key="n" class="sk-row">
-        <div class="sk-row-meta">
-          <span class="sk" :style="{ width: 34 + ((n * 7) % 22) + '%' }"></span>
-          <span class="sk" :style="{ width: 62 + ((n * 5) % 26) + '%' }"></span>
-        </div>
-        <span class="sk sk-lg sk-row-control"></span>
-      </div>
-    </section>
+    <PageSpin v-if="showWait" />
     <div v-else-if="loading" class="empty"></div>
     <ErrorState v-else-if="loadError && !form" :error="loadError" @retry="load" />
 

@@ -7,6 +7,7 @@ import { bytes, bytesToGigabytes, gigabytesToBytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import PageSpin from '../components/PageSpin.vue'
 
 const nodes = ref([])
 const loading = ref(true)
@@ -376,13 +377,7 @@ function latencyTone(ms) {
       </button>
     </div>
 
-    <table v-if="showSkeleton" class="skeleton" aria-hidden="true">
-      <tbody>
-        <tr v-for="n in 3" :key="n">
-          <td v-for="c in 8" :key="c"><span class="sk"></span></td>
-        </tr>
-      </tbody>
-    </table>
+    <PageSpin v-if="showSkeleton" />
     <div v-else-if="loading" class="empty"></div>
     <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
 

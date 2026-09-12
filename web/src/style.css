@@ -11,26 +11,32 @@
 :root {
   color-scheme: dark;
 
-  --ground: #0a090a;
-  --surface: #141215;
-  --surface-2: #1c191d;
-  --surface-3: #262227;
-  --line: #302a31;
-  --line-soft: #241f25;
+  /* Ant's dark algorithm with 3x-ui's own backgrounds: layout #1a1b1f,
+     container #23252b, elevated #2d2f37, the sider #15161a. */
+  --ground: #1a1b1f;
+  --surface: #23252b;
+  --surface-2: #292b32;
+  --surface-3: #33353d;
+  --surface-elev: #2d2f37;
+  --sider: #15161a;
+  --sider-sub: #1a1b1f;
+  --line: #424242;
+  --line-soft: rgba(255, 255, 255, 0.06);
 
   /* Neutrals carry a faint red bias so they sit with the accent instead of
      reading as untouched greys. --muted holds ~5.5:1 on --surface, which is
      what lets labels stay grey without becoming decoration. */
-  --ink: #f4f1f2;
-  --ink-2: #d2cbce;
-  --muted: #a1959b;
-  --faint: #746a71;
+  --ink: rgba(255, 255, 255, 0.85);
+  --ink-2: rgba(255, 255, 255, 0.75);
+  --muted: rgba(255, 255, 255, 0.65);
+  --faint: rgba(255, 255, 255, 0.45);
 
-  --accent: #e02e3d;
-  --accent-hover: #f2404f;
+  /* The primary: Ant's dark blue, as 3x-ui has it. */
+  --accent: #1668dc;
+  --accent-hover: #3c89e8;
   --accent-ink: #ffffff;
-  --accent-soft: #2c1217;
-  --accent-line: #55202a;
+  --accent-soft: rgba(22, 104, 220, 0.2);
+  --accent-line: #15325b;
 
   /* Status hues stay distinct from the accent: red already means "brand" and
      "destructive", so a failing quota uses a lighter red and never competes
@@ -65,22 +71,22 @@
 
   /* Anything tinted by the accent or painted over the page, so a theme can
      move them together with everything else. */
-  --accent-glow: rgba(224, 46, 61, 0.6);
-  --accent-ring: rgba(224, 46, 61, 0.16);
+  --accent-glow: rgba(22, 104, 220, 0.6);
+  --accent-ring: rgba(22, 104, 220, 0.2);
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-ink: #ffffff;
   --rail-shadow: rgba(0, 0, 0, 0.45);
   --modal-scrim: rgba(0, 0, 0, 0.72);
 
   /* The sign-in page paints its own scenery. */
-  --auth-wash: #1a0d11;
-  --auth-blob-1: rgba(224, 46, 61, 0.5);
-  --auth-blob-2: rgba(160, 26, 42, 0.45);
-  --auth-blob-3: rgba(242, 64, 79, 0.28);
-  --auth-blob-4: rgba(120, 18, 30, 0.5);
-  --auth-blob-5: rgba(224, 46, 61, 0.22);
+  --auth-wash: #0d1320;
+  --auth-blob-1: rgba(22, 104, 220, 0.5);
+  --auth-blob-2: rgba(9, 88, 217, 0.45);
+  --auth-blob-3: rgba(60, 137, 232, 0.28);
+  --auth-blob-4: rgba(7, 62, 168, 0.5);
+  --auth-blob-5: rgba(22, 104, 220, 0.22);
   --auth-grid: rgba(255, 255, 255, 0.045);
-  --auth-card: rgba(20, 18, 21, 0.72);
+  --auth-card: rgba(35, 37, 43, 0.72);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 40px -16px rgba(0, 0, 0, 0.9);
@@ -145,11 +151,14 @@
    it rather than glowing off a background with nothing behind it. */
 :root[data-theme='ultra-dark'] {
   --ground: #000000;
-  --surface: #0a0a0c;
-  --surface-2: #121215;
-  --surface-3: #1a1a1e;
-  --line: #26262b;
-  --line-soft: #17171b;
+  --surface: #101013;
+  --surface-2: #17171b;
+  --surface-3: #1f1f24;
+  --surface-elev: #1a1a1e;
+  --sider: #050507;
+  --sider-sub: #000000;
+  --line: #303030;
+  --line-soft: rgba(255, 255, 255, 0.04);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.7), 0 16px 40px -16px rgba(0, 0, 0, 1);
 }
 
@@ -165,29 +174,32 @@ body.light {
   --ring-inset: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
   color-scheme: light;
 
-  --ground: #eceef1;
+  --ground: #e6e8ec;
   --surface: #ffffff;
-  --surface-2: #f4f5f7;
-  --surface-3: #e9eaee;
-  --line: #dcdee3;
-  --line-soft: #eaebef;
+  --surface-2: #fafafa;
+  --surface-3: #f0f0f0;
+  --surface-elev: #ffffff;
+  --sider: #ffffff;
+  --sider-sub: rgba(0, 0, 0, 0.02);
+  --line: #d9d9d9;
+  --line-soft: #f0f0f0;
 
   /* Inverted with the same faint red bias, so grey text still belongs to this
      palette rather than looking borrowed from a different one. --muted holds
      about 5.4:1 on white, which is the same reading it had on the dark
      surface. */
-  --ink: #141113;
-  --ink-2: #3d363b;
-  --muted: #6b6169;
-  --faint: #8d838a;
+  --ink: rgba(0, 0, 0, 0.88);
+  --ink-2: rgba(0, 0, 0, 0.75);
+  --muted: rgba(0, 0, 0, 0.58);
+  --faint: rgba(0, 0, 0, 0.45);
 
   /* The accent darkens: the light one was chosen to carry against near-black
      and drops to roughly 3:1 on white, which is not enough for text. */
-  --accent: #c81f2e;
-  --accent-hover: #a81826;
+  --accent: #0958d9;
+  --accent-hover: #2468e5;
   --accent-ink: #ffffff;
-  --accent-soft: #fdeaec;
-  --accent-line: #f3c3c8;
+  --accent-soft: #e6f4ff;
+  --accent-line: #91caff;
 
   --ok: #1a7f3c;
   --ok-soft: #e6f4ea;
@@ -218,8 +230,8 @@ body.light {
   --tag-geek-line: #c6cff2;
   --tag-geek-ink: #2f4bb8;
 
-  --accent-glow: rgba(200, 31, 46, 0.35);
-  --accent-ring: rgba(200, 31, 46, 0.18);
+  --accent-glow: rgba(9, 88, 217, 0.35);
+  --accent-ring: rgba(9, 88, 217, 0.18);
   --scrim: rgba(24, 20, 22, 0.42);
   --scrim-ink: #ffffff;
   --rail-shadow: rgba(16, 12, 15, 0.18);
@@ -227,12 +239,12 @@ body.light {
 
   /* Far weaker on a pale page: the same wash that reads as depth on near-black
      reads as a stain on white. */
-  --auth-wash: #fbe9eb;
-  --auth-blob-1: rgba(200, 31, 46, 0.16);
-  --auth-blob-2: rgba(160, 26, 42, 0.12);
-  --auth-blob-3: rgba(242, 64, 79, 0.10);
-  --auth-blob-4: rgba(120, 18, 30, 0.10);
-  --auth-blob-5: rgba(200, 31, 46, 0.08);
+  --auth-wash: #e9f0fb;
+  --auth-blob-1: rgba(9, 88, 217, 0.16);
+  --auth-blob-2: rgba(7, 62, 168, 0.12);
+  --auth-blob-3: rgba(36, 104, 229, 0.10);
+  --auth-blob-4: rgba(7, 62, 168, 0.10);
+  --auth-blob-5: rgba(9, 88, 217, 0.08);
   /* The grid is drawn in ink rather than light: white lines on a white page
      are not a faint grid, they are nothing at all. */
   --auth-grid: rgba(20, 17, 19, 0.05);
@@ -355,305 +367,21 @@ th.ltr {
  * so the width it borrows is only borrowed while it is being read; pinned it
  * takes a column of its own and the content reflows around it once.
  */
-:root {
-  --rail-w: 72px;
-  --rail-open-w: 220px;
-  --rail-row-h: 48px;
-  --rail-brand-h: 58px;
-}
 
 /* Not a grid. The rail is fixed, so it leaves the flow entirely and a grid
    column reserved for it would be filled by the content instead. The content
    is inset by the rail's width instead, which is also what lets the unpinned
    rail widen over the page without reflowing anything. */
-.shell {
-  min-height: 100%;
-}
-.shell > * {
-  min-width: 0;
-}
 
-.sidebar {
-  position: fixed;
-  inset-block: 0;
-  inset-inline-start: 0;
-  z-index: 210;
-  width: var(--rail-w);
-  background: var(--surface);
-  border-inline-end: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: width 0.18s ease;
-}
-.sidebar.expanded {
-  width: var(--rail-open-w);
-}
 /* Only while it is floating. Pinned, it owns its column and a shadow would
    read as a seam down the middle of the page. */
-.shell:not(.rail-pinned) .sidebar.expanded {
-  box-shadow: 0 0 32px var(--rail-shadow);
-}
-
-.sider-brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: var(--rail-brand-h);
-  padding-inline: 16px;
-  border-bottom: 1px solid var(--line);
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.brand-block {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  line-height: 1.1;
-  color: var(--ink);
-}
-.brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: var(--t-base);
-  flex-shrink: 0;
-  box-shadow: 0 2px 12px -2px var(--accent-glow);
-}
-.brand-name {
-  font-size: var(--t-md);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-}
-
-.brand-actions {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.sidebar-pin {
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--faint);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.2s, color 0.2s, transform 0.15s;
-}
-.sidebar-pin:hover,
-.sidebar-pin:focus-visible {
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-  transform: scale(1.08);
-  outline: none;
-}
-.sidebar-pin.on {
-  color: var(--accent-hover);
-}
-
-.sider-nav {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-height: 0;
-  padding-block: 8px;
-}
-.sider-utility {
-  flex: 0 0 auto;
-  border-top: 1px solid var(--line-soft);
-  padding-block: 8px;
-}
-.sider-footer {
-  flex: 0 0 auto;
-  padding: 8px 8px 12px;
-}
-
-.navlink {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: var(--rail-row-h);
-  /* The icon sits at the centre of the collapsed rail, so it does not shift
-     sideways when the label appears beside it. */
-  padding-inline: calc((var(--rail-w) - 16px) / 2 - 1px);
-  color: var(--ink-2);
-  font-size: var(--t-base);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  border: none;
-  background: transparent;
-  width: 100%;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.navlink:hover {
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-}
-.navlink.active {
-  background: var(--accent-soft-strong, var(--accent-soft));
-  color: var(--accent-hover);
-  font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-[dir='rtl'] .navlink.active {
-  box-shadow: inset -3px 0 0 var(--accent);
-}
-.navlink svg {
-  flex-shrink: 0;
-  opacity: 0.9;
-}
-.navlink .label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.navlink.as-select select {
-  background: transparent;
-  border: none;
-  color: inherit;
-  font: inherit;
-  padding: 0;
-  cursor: pointer;
-  width: 100%;
-}
-.navlink.as-button {
-  text-align: start;
-}
-
-.sider-version {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 32px;
-  padding-inline: calc((var(--rail-w) - 16px) / 2 - 9px);
-  color: var(--faint);
-  font-size: var(--t-xs);
-  font-weight: 500;
-  font-family: var(--mono);
-  direction: ltr;
-  unicode-bidi: isolate;
-  white-space: nowrap;
-  transition: color 0.2s;
-}
-.sider-version:hover {
-  color: var(--accent-hover);
-}
 
 /* ── phone drawer ──
    Below the breakpoint the rail is gone entirely and this replaces it. */
-.drawer-handle {
-  position: fixed;
-  top: 12px;
-  inset-inline-start: 12px;
-  z-index: 1100;
-  width: 40px;
-  height: 40px;
-  border: none;
-  border-radius: 50%;
-  background: var(--scrim);
-  backdrop-filter: blur(6px);
-  color: var(--scrim-ink);
-  cursor: pointer;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px var(--rail-shadow);
-}
-
-.drawer-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  background: var(--scrim);
-  display: flex;
-}
-.drawer {
-  width: min(280px, 82vw);
-  height: 100%;
-  background: var(--surface);
-  border-inline-end: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
-}
-.drawer-close {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--faint);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.drawer-close:hover,
-.drawer-close:focus-visible {
-  background: var(--surface-2);
-  color: var(--ink);
-  outline: none;
-}
-.drawer-menu {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  min-height: 0;
-  padding-block: 8px;
-}
-.drawer-utility {
-  flex: 0 0 auto;
-  border-top: 1px solid var(--line-soft);
-  padding-block: 8px;
-}
-.drawer-footer {
-  flex: 0 0 auto;
-  padding: 8px 8px 12px;
-}
-.drawer .navlink,
-.drawer .sider-version {
-  padding-inline: 16px;
-}
 
 /* No width cap. A reading measure belongs on prose, not on a data table — a
    capped main leaves dead space on a wide monitor and squeezes columns that
    have somewhere to go. Only the descriptive text below a heading is limited. */
-.main {
-  padding: 26px 30px 72px;
-  margin-inline-start: var(--rail-w);
-  transition: margin-inline-start 0.18s ease;
-}
-.shell.rail-pinned .main {
-  margin-inline-start: var(--rail-open-w);
-}
 
 .page-head {
   display: flex;
@@ -827,9 +555,8 @@ option {
 /* ══════════ surfaces ══════════ */
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
 }
 .card-head {
   padding: 14px 18px;
@@ -886,47 +613,9 @@ option {
 }
 
 /* ══════════ gauges ══════════ */
-.gauges {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1px;
-  background: var(--line-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  margin-bottom: 18px;
-  overflow: hidden;
-}
-.gauge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 20px 16px;
-  background: var(--surface);
-  text-align: center;
-  min-width: 0;
-}
-.gauge-text {
-  min-width: 0;
-  width: 100%;
-}
-.gauge-label {
-  font-size: var(--t-sm);
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 2px;
-}
+
 /* Wraps rather than truncates: an elided capacity figure is worse than a
    two-line one, since the operator cannot read the number that matters. */
-.gauge-value {
-  font-size: var(--t-xs);
-  color: var(--muted);
-  font-family: var(--mono);
-  direction: ltr;
-  unicode-bidi: isolate;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
 
 /* ══════════ table ══════════ */
 .table-wrap {
@@ -1226,8 +915,8 @@ pre.config {
     animation-duration: 2s;
   }
   *,
-  *::before,
-  *::after {
+*::before,
+*::after {
     transition-duration: 0.01ms !important;
   }
 }
@@ -1238,18 +927,10 @@ pre.config {
 /* Below this the rail is gone entirely and the drawer replaces it, which is
    the same breakpoint the rest of the layout collapses at. */
 @media (max-width: 768px) {
-  .sidebar {
-    display: none;
-  }
-  .drawer-handle {
-    display: inline-flex;
-  }
+  
+  
   /* Room for the floating handle so it never lands on a heading. */
-  .main,
-  .shell.rail-pinned .main {
-    padding: 64px 18px 56px;
-    margin-inline-start: 0;
-  }
+  
 }
 
 /* Phone: everything goes single file and the dialog fills the screen. */
@@ -1257,22 +938,9 @@ pre.config {
   :root {
     --t-xl: 1.4375rem; /* 23px */
   }
-  .navlink {
-    flex: 1;
-    justify-content: center;
-    padding: 8px 6px;
-    font-size: var(--t-sm);
-  }
-  .navlink span.label {
-    display: none;
-  }
-  .main {
-    /* The top stays clear of the floating menu button. This block comes after
-       the one that reserved room for it, so a shorthand here would put the
-       first thing on the page underneath it — on the narrowest screens, where
-       that button is the only way to navigate. */
-    padding: 64px 14px 48px;
-  }
+  
+  
+  
   .page-head {
     gap: 12px;
   }
@@ -1311,19 +979,16 @@ pre.config {
     padding: 14px;
   }
   th,
-  td {
+td {
     padding: 11px 14px;
   }
-  .metrics,
-  .gauges {
+  .metrics {
     grid-template-columns: 1fr 1fr;
   }
   .metric {
     padding: 13px 14px;
   }
-  .gauge {
-    padding: 16px 10px;
-  }
+  
 }
 
 /* ══════════ settings ══════════ */
@@ -1333,67 +998,7 @@ pre.config {
  * narrow screen the two stack, so a control is never squeezed into a column
  * too small to use.
  */
-.savebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 18px;
-  margin-bottom: 12px;
-}
-.savebar-actions {
-  display: flex;
-  gap: 8px;
-}
-.savebar-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: var(--faint);
-  font-size: var(--t-sm);
-}
-.savebar-note svg {
-  flex-shrink: 0;
-}
 
-.cat-tabs {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 0;
-}
-.cat-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--ink-2);
-  font-size: var(--t-base);
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
-}
-.cat-tab:hover {
-  color: var(--ink);
-  background: var(--surface-2);
-}
-.cat-tab.active {
-  color: var(--accent-hover);
-  border-bottom-color: var(--accent);
-}
-
-.settings-list {
-  padding: 0;
-  border-start-start-radius: 0;
-  border-start-end-radius: 0;
-}
 /* A card's toolbar: 3x-ui's Card title slot holding the page's one primary
    button, top-left, above the table it acts on. */
 .card-toolbar {
@@ -1720,19 +1325,7 @@ tr.off td {
 }
 
 /* The filter button's count: how many categories are narrowing the list. */
-.filter-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: var(--t-xs);
-  font-variant-numeric: tabular-nums;
-}
+
 .btn.ctl.on {
   border-color: var(--accent-line, var(--accent));
   background: var(--accent-soft);
@@ -1749,54 +1342,10 @@ tr.off td {
 
 /* A small table inside a settings row: a handful of rows with a control on
    each, not the full data table the list pages use. */
-.mini-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--t-sm);
-}
-.mini-table th {
-  padding: 0 8px 6px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: var(--t-xs);
-  font-weight: 600;
-  text-align: start;
-}
-.mini-table td {
-  padding: 8px;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-}
-.mini-table tr:last-child td {
-  border-bottom: 0;
-}
 
 /* A heading between groups of settings on one page, so a long page reads as
    sections rather than as a list that goes on. */
-.setting-group {
-  margin: 24px 0 0;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-  font-size: var(--t-xs);
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.setting-row:last-child {
-  border-bottom: 0;
-}
-.setting-row.block {
-  align-items: flex-start;
-}
+
 .setting-meta {
   display: flex;
   flex-direction: column;
@@ -1818,22 +1367,10 @@ tr.off td {
   color: var(--faint);
   line-height: 1.55;
 }
-.setting-control {
-  flex: 0 1 44%;
-  min-width: 0;
-  display: flex;
-  justify-content: flex-end;
-}
-.setting-control > * {
-  max-width: 100%;
-}
+
 /* A floor for the fields somebody types into. Checkboxes are excluded: this
    was giving a toggle's hidden control a 180px box, which in right-to-left hung
    off the edge of the page and scrolled every settings page sideways. */
-.setting-control select,
-.setting-control input:not([type='checkbox']) {
-  min-width: 180px;
-}
 
 .unit-field {
   display: flex;
@@ -1880,21 +1417,6 @@ code.readonly {
   text-align: end;
 }
 
-.pw-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  max-width: 320px;
-}
-.pw-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: var(--t-sm);
-  color: var(--ink-2);
-}
-
 .banner.stack {
   display: block;
 }
@@ -1916,19 +1438,9 @@ code.readonly {
   /* Stacked, so the control gets the full width instead of a column it cannot
      use. The tab strip keeps its labels — icons alone would be a guessing game
      on the one screen where a mis-tap costs the most. */
-  .setting-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-  .setting-control {
-    justify-content: flex-start;
-  }
-  .setting-control select,
-  .setting-control input {
-    width: 100%;
-    min-width: 0;
-  }
+  
+  
+  
   .kv {
     justify-content: start;
   }
@@ -1938,17 +1450,7 @@ code.readonly {
 }
 
 /* Settings controls that need more than one line. */
-.setting-control.stack-end {
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-}
-.check-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 8px 16px;
-  width: 100%;
-}
+
 .check,
 .switch {
   display: inline-flex;
@@ -1964,18 +1466,6 @@ code.readonly {
   width: 16px;
   height: 16px;
   cursor: pointer;
-}
-.test-result {
-  margin: 0;
-  font-size: var(--t-sm);
-  text-align: end;
-  overflow-wrap: anywhere;
-}
-.test-result.ok {
-  color: var(--ok, #4ade80);
-}
-.test-result.bad {
-  color: var(--accent-hover);
 }
 
 .backup-list {
@@ -2027,12 +1517,8 @@ code.readonly {
 }
 
 @media (max-width: 768px) {
-  .setting-control.stack-end {
-    align-items: stretch;
-  }
-  .test-result {
-    text-align: start;
-  }
+  
+  
   .backup-list li {
     flex-wrap: wrap;
   }
@@ -2074,16 +1560,8 @@ code.readonly {
   color: var(--accent-hover);
 }
 
-.field.span-2 {
-  grid-column: 1 / -1;
-}
-
 /* Panel log. Monospaced and dense: this is read by scanning, not by reading. */
-.log-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
+
 .log-view {
   width: 100%;
   max-height: 460px;
@@ -2133,19 +1611,7 @@ code.readonly {
 }
 /* The severity is carried by a rule down the side rather than by colouring the
    whole line, so a wall of warnings stays readable. */
-.lvl-warn {
-  border-inline-start-color: var(--warn, #d99e2b);
-}
-.lvl-warn .log-level {
-  color: var(--warn, #d99e2b);
-}
-.lvl-error {
-  border-inline-start-color: var(--accent);
-}
-.lvl-error .log-level,
-.lvl-error .log-msg {
-  color: var(--accent-hover);
-}
+
 .log-view .muted {
   padding: 18px;
   margin: 0;
@@ -2155,43 +1621,6 @@ code.readonly {
   letter-spacing: 0.4em;
   font-family: var(--mono);
   text-align: center;
-}
-
-.enrol {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  width: 100%;
-}
-.enrol-uri {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: var(--t-xs);
-  overflow-wrap: anywhere;
-}
-.enrol-confirm {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.enrol-confirm input {
-  width: 160px;
-}
-@media (max-width: 768px) {
-  .enrol {
-    align-items: stretch;
-  }
-  .enrol-confirm {
-    justify-content: flex-start;
-  }
 }
 
 /* The actions column ends the row, so its buttons sit against the edge. */
@@ -2466,12 +1895,6 @@ body.light .log-view {
 
 /* Without a pointer there is no hover, so the rail stays open once it has been
    opened rather than collapsing to icons the moment a finger lifts. */
-@media (hover: none) {
-  .sidebar:not(.expanded) .navlink .label,
-  .sidebar:not(.expanded) .brand-name {
-    display: none;
-  }
-}
 
 /* Groups table: the widths 3x-ui uses, so the name column takes the slack and
    the numeric ones stay put as figures change. */
@@ -2864,32 +2287,8 @@ textarea.bad:focus {
   color: var(--muted);
 }
 
-.lvl-debug .log-level {
-  color: var(--faint);
-}
-.lvl-warn .log-level {
-  color: var(--warn);
-  background: var(--warn-soft);
-}
-.lvl-error .log-level {
-  color: var(--bad);
-  background: var(--bad-soft);
-}
-.lvl-error .log-msg {
-  color: var(--bad);
-}
 /* The severity is carried by the badge and a rule down the side, not by
    colouring the whole line: a screen of warnings has to stay readable. */
-.lvl-warn,
-.lvl-error {
-  border-inline-start: 2px solid transparent;
-}
-.lvl-warn {
-  border-inline-start-color: var(--warn);
-}
-.lvl-error {
-  border-inline-start-color: var(--bad);
-}
 
 /* On a phone the three columns cannot hold. The line becomes a card: time and
    level on one row, the message under it, which is what 3x-ui does and is the
@@ -2972,7 +2371,6 @@ textarea.bad:focus {
 }
 .btn,
 .act,
-.navlink,
 .strip-item,
 .tag {
   transition:
@@ -2992,13 +2390,13 @@ textarea.bad:focus {
   /* Asked for less, given none. The elements still appear; they simply do not
      travel to get there. */
   .modal-backdrop,
-  .modal-backdrop > .modal,
-  .toast,
-  .table-wrap tbody tr {
+.modal-backdrop > .modal,
+.toast,
+.table-wrap tbody tr {
     animation: none !important;
   }
   .btn:active:not(:disabled),
-  .act:active:not(:disabled) {
+.act:active:not(:disabled) {
     transform: none;
   }
   .meter span {
@@ -3083,27 +2481,6 @@ textarea.bad:focus {
   flex: 1;
 }
 
-.statbar {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1px;
-  background: var(--line-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  margin-bottom: 16px;
-}
-.statbar .stat {
-  background: var(--surface);
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.stat-label {
-  font-size: var(--t-xs);
-  color: var(--muted);
-}
 .stat-value {
   font-size: 1.25rem;
   font-weight: 650;
@@ -3200,50 +2577,12 @@ textarea.bad:focus {
 /* Label and helper on one side, the control on the other. A wide field needs
    its explanation beside it rather than above, or the form turns into a column
    of prose with inputs buried in it. */
-.form.wide .row-field {
-  display: grid;
-  grid-template-columns: minmax(180px, 260px) 1fr;
-  gap: 16px;
-  align-items: start;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line-soft);
-}
-.form.wide .row-field:last-of-type {
-  border-bottom: 0;
-}
-.row-label label {
-  display: block;
-  font-size: var(--t-sm);
-  font-weight: 600;
-  color: var(--ink-2);
-  margin-bottom: 3px;
-}
-.row-label .hint {
-  margin: 0;
-  font-size: var(--t-xs);
-  color: var(--muted);
-}
+
 .row-control {
   min-width: 0;
 }
-@media (max-width: 760px) {
-  .form.wide .row-field {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-}
 
 /* A save bar that appears only when there is something to save. */
-.sticky-foot {
-  position: sticky;
-  bottom: 0;
-  background: var(--surface);
-  border-top: 1px solid var(--line);
-  z-index: 2;
-}
-.sticky-foot .spacer {
-  flex: 1;
-}
 
 /* ── tag input ──────────────────────────────────────────────────────────── */
 
@@ -3413,66 +2752,15 @@ pre.code code {
   color: inherit;
 }
 
-.group-card + .group-card {
-  margin-top: 14px;
-}
-.small-empty {
-  padding: 18px;
-  min-height: 0;
-}
-
 /* ── the menu's collapsible groups ──────────────────────────────────────── */
-
-.navlink .chev {
-  margin-inline-start: auto;
-  opacity: 0.6;
-  transition: transform 0.18s ease;
-}
-[dir='rtl'] .navlink .chev {
-  transform: scaleX(-1);
-}
-.navlink .chev.turned {
-  transform: rotate(180deg);
-}
-[dir='rtl'] .navlink .chev.turned {
-  transform: rotate(180deg) scaleX(-1);
-}
-.navlink.open {
-  color: var(--ink);
-}
 
 /* Children sit in from their parent and carry less weight, so a group reads as
    one block rather than as more top-level entries. */
-.subnav {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 1px 0 3px;
-  padding-inline-start: 14px;
-  border-inline-start: 1px solid var(--line-soft);
-  margin-inline-start: 16px;
-}
-.navlink.sub {
-  padding-block: 6px;
-  font-size: var(--t-xs);
-  color: var(--muted);
-}
-.navlink.sub:hover {
-  color: var(--ink-2);
-}
-.navlink.sub.active {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-.navlink.sub svg {
-  opacity: 0.7;
-}
 
 @media (prefers-reduced-motion: reduce) {
-  .navlink .chev,
   .tab,
-  .segmented button,
-  .taginput {
+.segmented button,
+.taginput {
     transition: none;
   }
 }
@@ -3640,7 +2928,6 @@ pre.code code {
   }
 }
 
-
 /* ── Phase 1: shell and core kit ─────────────────────────────────────────────
 
    What follows is appearance only. Every behaviour the components already had
@@ -3663,53 +2950,32 @@ pre.code code {
    
    `:focus-visible` rather than `:focus`, so clicking a button does not leave a
    ring behind while tabbing to it does. */
-:is(a, button, input, select, textarea, summary, [tabindex]):focus-visible,
+:is(a,
+button,
+input,
+select,
+textarea,
+summary,
+[tabindex]):focus-visible,
 .toggle:focus-within .track {
   outline: none;
   box-shadow: var(--ring);
 }
 /* Inside a card the gap should match the card, not the page behind it. */
-.card :is(input, select, textarea):focus-visible,
-.modal :is(input, select, textarea, .btn):focus-visible {
+.card :is(input,
+select,
+textarea):focus-visible,
+.modal :is(input,
+select,
+textarea,
+.btn):focus-visible {
   box-shadow: var(--ring-inset);
 }
 
 /* ── shell ──────────────────────────────────────────────────────────────── */
 
-.sidebar {
-  /* The rail is a raised surface, not a painted stripe: a lit top edge and a
-     shadow cast onto the content it sits over. */
-  box-shadow: 1px 0 0 var(--line-soft), var(--edge);
-  transition: width var(--t-move) var(--ease);
-}
-
-.main {
-  /* Without a ceiling, a nine-column table on a 2560px monitor stretches until
-     the eye cannot carry a row from the name to the expiry. This is the width
-     past which a table stops being readable, not a number picked to look tidy. */
-  max-width: 1680px;
-  transition: margin-inline-start var(--t-move) var(--ease);
-}
-
-.navlink {
-  transition:
-    background var(--t-quick) linear,
-    color var(--t-quick) linear;
-}
 /* Hover is a wash, not a block: at 48px tall a full-strength fill on every row
    the pointer crosses turns the rail into a flicker. */
-.navlink:hover:not(.active) {
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
-  color: var(--ink);
-}
-.navlink.active {
-  /* The bar is drawn with a shadow rather than a border so it cannot take part
-     in layout and shift the label by three pixels. */
-  box-shadow: inset 3px 0 0 var(--accent), var(--edge);
-}
-[dir='rtl'] .navlink.active {
-  box-shadow: inset -3px 0 0 var(--accent), var(--edge);
-}
 
 /* ── cards ──────────────────────────────────────────────────────────────── */
 
@@ -3803,14 +3069,14 @@ body.light .meter {
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
-  .main,
-  .btn,
-  .act,
-  .meter span {
+.main,
+.btn,
+.act,
+.meter span {
     transition: none;
   }
   .btn:active:not(:disabled),
-  .act:active:not(:disabled) {
+.act:active:not(:disabled) {
     transform: none;
   }
 }
@@ -3947,8 +3213,8 @@ table.skeleton td:nth-child(9) .sk { width: 55%; }
     background: var(--surface-2);
   }
   .table-wrap.stale,
-  tbody tr,
-  button.strip-item {
+tbody tr,
+button.strip-item {
     transition: none;
   }
 }
@@ -4015,26 +3281,19 @@ table.skeleton td:nth-child(9) .sk { width: 55%; }
 .sk-row:nth-child(3n) .sk {
   animation-delay: 0.24s;
 }
-.sk-chart {
-  height: 62px;
-  margin-top: 10px;
-}
+
 .sk-tall {
   height: 180px;
   margin-top: 12px;
 }
 .ov-tile .sk,
-.ov-wide .sk,
-.ov-side .sk {
+.ov-wide .sk {
   margin-bottom: 8px;
 }
 
 /* ── Phase 5: the routing rules ─────────────────────────────────────────────
    The order of this table is the behaviour, so the order is written down. */
 
-.w-step {
-  width: 46px;
-}
 /* The position the router consults this rule at. Numbered because the sequence
    is real information here and not decoration -- rule 1 is asked first and the
    first one that matches ends the search. */
@@ -4357,14 +3616,6 @@ textarea.mono {
 }
 
 /* A setting whose value is a block of text rather than a number or a switch. */
-.setting-control.wide {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  min-width: 320px;
-  flex: 1;
-}
 
 /* The version, which is also the way to an update. A button rather than text,
    with a mark on it only when there is something to install. */
@@ -4425,10 +3676,6 @@ button.ov-version:hover {
 /* An entrance curve with a little overshoot at the end, for things arriving.
    The existing --ease stays what it is: it is used for hover and state, where
    overshoot would read as a wobble. */
-:root {
-  --ease-enter: cubic-bezier(0.16, 0.84, 0.44, 1);
-  --stagger: 26ms;
-}
 
 /* ── one page giving way to the next ─────────────────────────────────────── */
 
@@ -4438,29 +3685,12 @@ button.ov-version:hover {
    exit with an entrance. That coordination is what left the panel blank when a
    second click arrived mid-exit. The banner above is not re-created by a
    navigation, so it stays where it is. */
-.main > * {
-  /* Fill mode is backwards, not both: with both, the finished animation keeps
-     a transform on the page for good, and a transform makes the page the
-     containing block for every position: fixed dialog and menu inside it --
-     they then sit relative to the page, not the window. */
-  animation: rise-in 0.22s var(--ease-enter) backwards;
-}
 
 /* ── things arriving in the order they are read ──────────────────────────── */
 
 /* Cards on a page cascade rather than appearing together. The delay is capped
    at the eighth: past that a cascade stops reading as sequence and starts
    reading as the page being slow. */
-.main .card {
-  animation: rise-in 0.26s var(--ease-enter) backwards;
-}
-.main .card:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
-.main .card:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
-.main .card:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
-.main .card:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
-.main .card:nth-child(6) { animation-delay: calc(var(--stagger) * 5); }
-.main .card:nth-child(7) { animation-delay: calc(var(--stagger) * 6); }
-.main .card:nth-child(n + 8) { animation-delay: calc(var(--stagger) * 7); }
 
 @keyframes rise-in {
   from {
@@ -4519,9 +3749,7 @@ button.card:hover,
 /* The side menu comes in from its own edge on first paint, so the panel
    assembles rather than appearing whole. Once only: it is keyed to the
    element, not to navigation. */
-.sidebar {
-  animation: sider-in 0.3s var(--ease-enter) both;
-}
+
 @keyframes sider-in {
   from {
     opacity: 0;
@@ -4545,14 +3773,14 @@ button.card:hover,
      and nothing waits its turn. A cascade is exactly the kind of motion that
      makes somebody who asked for less feel unwell. */
   .main > *,
-  .main .card,
-  .table-wrap tbody tr,
-  .sidebar {
+.main .card,
+.table-wrap tbody tr,
+.sidebar {
     animation: none;
   }
   a.card:hover,
-  button.card:hover,
-  .ccard:hover {
+button.card:hover,
+.ccard:hover {
     transform: none;
   }
 }
