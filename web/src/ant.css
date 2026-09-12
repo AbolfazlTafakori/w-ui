@@ -591,3 +591,90 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .apage:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .apage.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .apage:disabled { color: var(--faint); cursor: not-allowed; }
+
+/* Radio.Group buttonStyle="solid": a row of 32px segments sharing borders,
+   the chosen one filled with the primary colour. */
+.aradio-group { display: inline-flex; font-size: 14px; line-height: 22px; }
+.aradio-btn {
+  position: relative;
+  height: 32px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-inline-start-width: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 30px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.aradio-btn:first-child { border-inline-start-width: 1px; border-start-start-radius: 6px; border-end-start-radius: 6px; }
+.aradio-btn:last-child { border-start-end-radius: 6px; border-end-end-radius: 6px; }
+.aradio-btn:hover { color: var(--accent); }
+.aradio-btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); z-index: 1; }
+.aradio-btn.active + .aradio-btn { border-inline-start-color: var(--accent); }
+
+/* Button shape="circle" size="small": a 24px disc. */
+.abtn.circle { width: 24px; height: 24px; min-width: 24px; padding: 0; border-radius: 50%; font-size: 14px; }
+.abtn.small { height: 24px; padding: 0 7px; border-radius: 4px; font-size: 14px; }
+.abtn.danger-primary { background: var(--bad); border-color: var(--bad); color: #fff; }
+.abtn.danger-primary:hover { opacity: 0.85; color: #fff; }
+.abtn:disabled { color: var(--faint); background: var(--surface-2); border-color: var(--line); box-shadow: none; cursor: not-allowed; }
+.abtn .anticon.spin { animation: aspin 1s linear infinite; }
+@keyframes aspin { to { transform: rotate(360deg); } }
+
+/* Table bordered */
+.atable.bordered { border: 1px solid var(--line-soft); border-radius: 8px; }
+.atable.bordered th, .atable.bordered td { border-inline-end: 1px solid var(--line-soft); }
+.atable.bordered th:last-child, .atable.bordered td:last-child { border-inline-end: 0; }
+.atable.bordered thead th::before { display: none; }
+.atable .action-cell { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.atable .row-index { font-weight: 500; opacity: 0.7; }
+.atable .action-buttons { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.atable .info-large-tag { margin: 0 4px 0 0; }
+
+/* Select size="small" */
+.aselect.small { height: 24px; border-radius: 4px; }
+.aselect.small select { height: 22px; padding-inline-start: 7px; }
+
+/* Input.TextArea, and the JSON editor: a monospace one sized like their
+   editor, 420px to 720px tall. */
+.atextarea {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  resize: vertical;
+  transition: all 0.2s;
+}
+.atextarea:hover, .atextarea:focus { border-color: var(--accent-hover); outline: none; }
+.atextarea:focus { box-shadow: 0 0 0 2px var(--accent-ring); }
+.atextarea.json {
+  min-height: 420px;
+  max-height: 720px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre;
+  overflow: auto;
+  direction: ltr;
+  text-align: left;
+  tab-size: 2;
+}
+
+/* A hosts row: an input, a tags box and a delete, wrapping. */
+.hosts-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hosts-row > .ainput { flex: 1 1 220px; width: auto; }
+.hosts-row > .tagbox { flex: 2 1 320px; }
+.advanced-meta h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.advanced-meta p { margin: 0; opacity: 0.7; font-size: 14px; }
+.hint-alert { text-align: center; }
+.mb-12 { margin-bottom: 12px; }

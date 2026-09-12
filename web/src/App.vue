@@ -47,10 +47,16 @@ const nav = [
     ],
   },
   {
-    key: 'nav.configs',
+    // 3x-ui's Xray group, for the engine this panel runs instead: the
+    // basics, the balancers, DNS and the raw template, then our own
+    // generated-config and log pages.
+    key: 'nav.engine',
     icon: 'code',
     children: [
-      { to: '/configs/engine', key: 'nav.configs.engine', icon: 'shield' },
+      { to: '/engine/basic', key: 'eng.basicTemplate', icon: 'settings' },
+      { to: '/engine/balancer', key: 'eng.balancers', icon: 'swap' },
+      { to: '/engine/dns', key: 'eng.dnsMenu', icon: 'database' },
+      { to: '/engine/advanced', key: 'eng.advancedTemplate', icon: 'code' },
       { to: '/configs/templates', key: 'nav.configs.templates', icon: 'code' },
       { to: '/configs/logs', key: 'nav.configs.logs', icon: 'info' },
     ],

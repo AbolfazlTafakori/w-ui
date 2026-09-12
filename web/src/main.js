@@ -28,6 +28,7 @@ import HostsView from './views/HostsView.vue'
 import OutboundsView from './views/OutboundsView.vue'
 import RoutingView from './views/RoutingView.vue'
 import ConfigsView from './views/ConfigsView.vue'
+import EngineView from './views/EngineView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 
 // The router's own base, read from the <base> tag the server writes rather
@@ -57,6 +58,10 @@ const router = createRouter({
     { path: '/settings/:tab', name: 'settings-tab', component: SettingsView, props: true },
     { path: '/settings/notify', redirect: '/settings/telegram' },
     { path: '/configs/:tab', name: 'configs', component: ConfigsView, props: true },
+    // The engine: what 3x-ui keeps under Xray. A section per page, and the
+    // hash form 3x-ui's links use is honoured too.
+    { path: '/engine', name: 'engine', component: EngineView },
+    { path: '/engine/:tab', name: 'engine-tab', component: EngineView, props: true },
     { path: '/configs', redirect: '/configs/engine' },
     // Shown rather than redirected: silently swallowing a typo leaves the
     // operator unsure whether they mistyped or the page moved.
