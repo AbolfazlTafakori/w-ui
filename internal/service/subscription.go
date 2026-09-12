@@ -510,6 +510,8 @@ type SubPage struct {
 	UpBytes    uint64
 	DownBytes  uint64
 	ExpiresAt  *time.Time
+	// LastOnline is the freshest handshake on any of the customer's devices.
+	LastOnline *time.Time
 
 	// SubURL is the link itself, for a customer who wants to paste it into a
 	// client app rather than download a file.
@@ -589,6 +591,10 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		SubURL:     subURL,
 	}
 	for _, d := range rendered {
+		if hs := d.Account.LastHandshake; hs != nil && (page.LastOnline == nil || hs.After(*page.LastOnline)) {
+			t := *hs
+			page.LastOnline = &t
+		}
 		page.Devices = append(page.Devices, SubPageDevice{
 			ID:       d.Account.ID,
 			Name:     d.Account.DeviceName,

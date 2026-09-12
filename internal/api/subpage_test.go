@@ -1,6 +1,7 @@
 package api
 
 import (
+	"html/template"
 	"strings"
 	"testing"
 	"time"
@@ -142,8 +143,8 @@ func TestSubPageLoadsNothingExternal(t *testing.T) {
 			QuotaBytes: 1000, UsedBytes: 250, UpBytes: 50, DownBytes: 200,
 			SubURL: "https://example.com/subscribe/tok",
 		},
-		Nonce: "abc", Dir: "ltr", HasQuota: true,
-		StatusTxt: "Active", StatusCls: "good",
+		Nonce: "abc", Lang: "en", HasQuota: true, StatusKey: "active", Used: "250 B", Total: "1000 B",
+		Strings: "{}", Icons: map[string]template.HTML{},
 		Devices: []subPageDevice{{
 			SubPageDevice: service.SubPageDevice{
 				ID: 1, Name: "phone", Address: "10.0.0.2", Filename: "phone.conf",
@@ -184,8 +185,8 @@ func TestSubPageEscapesWhatPeopleTyped(t *testing.T) {
 			Title: `<script>alert(1)</script>`,
 			Name:  `"><img src=x onerror=alert(1)>`,
 		},
-		Nonce: "n", Dir: "ltr",
-		StatusTxt: "Active", StatusCls: "good",
+		Nonce: "n", Lang: "en", StatusKey: "active",
+		Strings: "{}", Icons: map[string]template.HTML{},
 		Devices: []subPageDevice{{
 			SubPageDevice: service.SubPageDevice{
 				ID: 1, Name: `<b>bold</b>`, Config: `</textarea><script>x</script>`,
