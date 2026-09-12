@@ -210,7 +210,7 @@ var subPageStrings = map[string]map[string]string{
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
 		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language",
-		"subSettings": "Subscription",
+		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
 	},
 	"fa": {
 		"title": "اطلاعات سابسکریپشن", "subId": "شناسه اشتراک", "email": "ایمیل", "status": "وضعیت",
@@ -220,7 +220,7 @@ var subPageStrings = map[string]map[string]string{
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
 		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان",
-		"subSettings": "اشتراک",
+		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
 	},
 }
 
@@ -446,9 +446,11 @@ body {
 .row-title { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
 a.row-title:hover { text-decoration: underline; }
 .row-actions { display: flex; gap: 4px; flex-shrink: 0; position: relative; }
-.pop { position: absolute; inset-inline-end: calc(100% + 8px); top: 50%; transform: translateY(-50%); z-index: 5; display: none; flex-direction: column; align-items: center; gap: 6px; padding: 12px; border-radius: 8px; background: var(--surface-3); box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); }
+.pop { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.45); }
 .pop.open { display: flex; }
-.pop img { display: block; background: #fff; border-radius: 4px; }
+.pop-card { display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(100%, 320px); padding: 16px; border-radius: 8px; background: var(--surface); box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); }
+.pop img { display: block; width: 100%; height: auto; max-width: 288px; padding: 8px; background: #fff; border-radius: 4px; }
+.pop-hint { font-size: 12px; color: var(--faint); }
 .qr-tag { width: 100%; text-align: center; margin: 0; }
 
 /* Config block: a one-panel collapse */
@@ -536,7 +538,7 @@ a.row-title:hover { text-decoration: underline; }
           <div class="row-actions">
             <button class="btn sm copy" type="button" data-text="{{ .Page.SubURL }}" data-i-title="copy"><span class="anticon">{{ index .Icons "CopyOutlined" }}</span></button>
             {{ if .SubQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index .Icons "QrcodeOutlined" }}</span></button>
-            <div class="pop"><span class="tag green qr-tag" data-i="subSettings">Subscription</span><img src="{{ .SubQR }}" width="240" height="240" alt="QR"></div>{{ end }}
+            <div class="pop"><div class="pop-card"><span class="tag green qr-tag" data-i="subSettings">Subscription</span><img src="{{ .SubQR }}" width="240" height="240" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
           </div>
         </div>
       </div>
@@ -559,7 +561,7 @@ a.row-title:hover { text-decoration: underline; }
               <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
               <a class="btn sm" href="?device={{ .ID }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
               {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
-              <div class="pop"><span class="tag qr-tag">{{ .Name }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"></div>{{ end }}
+              <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ .Name }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
             </div>
           </div>
           <div class="cfg-body"><code class="cfg-text">{{ .Config }}</code></div>
@@ -653,6 +655,8 @@ a.row-title:hover { text-decoration: underline; }
   $('button.qr').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); var p = b.nextElementSibling; var was = p.classList.contains('open'); closeMenus(); if (!was) p.classList.add('open'); }); });
   $('.cfg-head').forEach(function (h) { h.addEventListener('click', function () { h.parentNode.classList.toggle('open'); }); });
   $('.cfg-head .row-actions').forEach(function (a) { a.addEventListener('click', function (e) { e.stopPropagation(); }); });
+  $('.pop').forEach(function (p) { p.addEventListener('click', function (e) { if (e.target === p) closeMenus(); }); });
+  $('.pop-card').forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); }); });
   document.addEventListener('click', closeMenus);
 })();
 </script>
