@@ -16,3 +16,4 @@ node_modules/
 
 # runtime logs
 *.log
+.claude/launch.json

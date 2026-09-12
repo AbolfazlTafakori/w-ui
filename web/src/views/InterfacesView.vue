@@ -10,6 +10,7 @@ import InterfaceForm from '../components/InterfaceForm.vue'
 import InterfaceDetail from '../components/InterfaceDetail.vue'
 import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
+import AntIcon from '../components/AntIcon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const router = useRouter()
@@ -43,6 +44,37 @@ const visible = computed(() => {
 })
 const hasNodes = computed(() => interfaces.value.some((i) => i.nodeName && !i.nodeLocal))
 
+// Their sortable headers. A click goes ascending, another descending, a
+// third back to the order the server gave, exactly as Ant's Table cycles.
+const sort = ref({ key: '', dir: '' })
+const cmpText = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' })
+const sorters = {
+  id: (a, b) => a.id - b.id,
+  remark: (a, b) => cmpText(a.name, b.name),
+  node: (a, b) => cmpText(a.nodeName, b.nodeName),
+  port: (a, b) => a.listenPort - b.listenPort,
+  protocol: (a, b) => cmpText(a.protocol, b.protocol),
+  clients: (a, b) => (a.clients || 0) - (b.clients || 0),
+  traffic: (a, b) => (a.usedBytes || 0) - (b.usedBytes || 0),
+  speed: () => 0,
+  expiry: () => 0,
+}
+function sortCls(key) {
+  return sort.value.key === key ? `sorted ${sort.value.dir}` : ''
+}
+function sortBy(key) {
+  const cur = sort.value
+  if (cur.key !== key) sort.value = { key, dir: 'asc' }
+  else if (cur.dir === 'asc') sort.value = { key, dir: 'desc' }
+  else sort.value = { key: '', dir: '' }
+}
+const sorted = computed(() => {
+  const { key, dir } = sort.value
+  if (!key || !sorters[key]) return visible.value
+  const rows = [...visible.value].sort(sorters[key])
+  return dir === 'desc' ? rows.reverse() : rows
+})
+
 // ── the two menus: General Actions on the toolbar, and each row's ──
 const generalOpen = ref(false)
 const rowMenu = ref(null) // { iface, x, y }
@@ -52,7 +84,7 @@ function openRowMenu(i, e) {
     return
   }
   const r = e.currentTarget.getBoundingClientRect()
-  const height = 8 * 34 + 10
+  const height = rowItems(i).length * 32 + 8
   const up = r.bottom + height > window.innerHeight && r.top > height
   rowMenu.value = { iface: i, x: r.left, y: up ? r.top - height - 4 : r.bottom + 4 }
 }
@@ -62,7 +94,7 @@ function closeMenus() {
 }
 function onDocClick(e) {
   if (!rowMenu.value && !generalOpen.value) return
-  if (e.target.closest?.('.rowmenu') || e.target.closest?.('.act') || e.target.closest?.('.more-btn')) return
+  if (e.target.closest?.('.amenu') || e.target.closest?.('.abtn.text') || e.target.closest?.('.more-btn')) return
   closeMenus()
 }
 function onKey(e) {
@@ -79,44 +111,120 @@ onUnmounted(() => {
   window.removeEventListener('scroll', closeMenus, true)
 })
 
-// Their row menu, in their order. Attach/Detach/Add-to-group take the
-// customers on this tunnel; Delete All Clients removes them from it.
+// Their row menu, item for item: what 3x-ui shows for an inbound that
+// carries many customers (every one of ours does). Restart is the one
+// addition; a kernel tunnel can be bounced, an Xray inbound cannot.
 function rowItems(i) {
   const many = i.clients > 0
   const items = [
-    { key: 'info', icon: 'info', label: t('iface.menu.info') },
-    { key: 'export', icon: 'copy', label: t('iface.menu.exportInbound') },
-    { key: 'reset', icon: 'refresh', label: t('outbound.resetTraffic') },
-    { key: 'clone', icon: 'copy', label: t('interface.clone') },
-    { key: 'restart', icon: 'power', label: t('interface.restart') },
-    { key: 'attachExisting', icon: 'users', label: t('iface.menu.attachExisting') },
+    { key: 'urls', icon: 'ExportOutlined', label: t('iface.menu.exportUrls') },
+    { key: 'export', icon: 'CopyOutlined', label: t('iface.menu.exportInbound') },
+    { key: 'reset', icon: 'RetweetOutlined', label: t('outbound.resetTraffic') },
+    { key: 'clone', icon: 'BlockOutlined', label: t('interface.clone') },
+    { key: 'restart', icon: 'ReloadOutlined', label: t('interface.restart') },
+    { key: 'attachExisting', icon: 'UsergroupAddOutlined', label: t('iface.menu.attachExisting') },
   ]
+  if (i.protocol === 'openvpn') items.splice(2, 0, { key: 'profile', icon: 'ExportOutlined', label: t('interface.downloadProfile') })
   if (many) {
     items.push(
-      { key: 'detach', icon: 'users', label: t('iface.menu.detachClients') },
+      { key: 'attachTo', icon: 'UsergroupAddOutlined', label: t('iface.menu.attachTo') },
+      { key: 'detach', icon: 'UsergroupDeleteOutlined', label: t('iface.menu.detachClients') },
+      { key: 'group', icon: 'TagsOutlined', label: t('iface.menu.addToGroup') },
       { divider: true },
-      { key: 'delAll', icon: 'users', label: t('iface.menu.delAllClients'), danger: true },
+      { key: 'delAll', icon: 'UsergroupDeleteOutlined', label: t('iface.menu.delAllClients'), danger: true },
     )
   } else {
     items.push({ divider: true })
   }
-  items.push({ key: 'delete', icon: 'trash', label: t('action.delete'), danger: true })
-  if (i.protocol === 'openvpn') items.splice(1, 0, { key: 'profile', icon: 'download', label: t('interface.downloadProfile') })
+  items.push({ key: 'delete', icon: 'DeleteOutlined', label: t('action.delete'), danger: true })
   return items
 }
 function pickRow(i, key) {
   rowMenu.value = null
   switch (key) {
-    case 'info': return (detailFor.value = i)
+    case 'urls': return exportUrls(i)
     case 'export': return exportOne(i)
     case 'profile': return downloadProfile(i)
     case 'reset': return resetUsage(i)
     case 'clone': return openClone(i)
     case 'restart': return restart(i)
     case 'attachExisting': return openAttach(i)
-    case 'detach':
+    case 'attachTo': return openMove(i, 'attach')
+    case 'detach': return openMove(i, 'detach')
+    case 'group': return openGroup(i)
     case 'delAll': return clearTunnel(i)
     case 'delete': return removeOne(i)
+  }
+}
+
+// The customers on one tunnel, for the actions that take all of them.
+async function clientsOn(i) {
+  const cs = await api.get(`/api/clients?perPage=500&interfaceIds=${i.id}`, { background: true })
+  return cs.items || cs || []
+}
+
+// Export All URLs: every customer's subscription link, one per line, the
+// way 3x-ui hands over every client's share link at once.
+async function exportUrls(i) {
+  try {
+    const list = await clientsOn(i)
+    const links = []
+    for (const c of list) {
+      const r = await api.get(`/api/clients/${c.id}/subscription`, { background: true })
+      if (r?.link) links.push(r.link)
+    }
+    textModal.value = { title: `${t('iface.menu.exportUrls')} — ${i.name}`, text: links.join('\n') }
+  } catch (err) {
+    notify(err.message, 'error')
+  }
+}
+
+// Attach Clients To… / Detach Clients: this tunnel's customers put on, or
+// taken off, another tunnel.
+const move = ref(null) // { iface, kind, target }
+async function openMove(i, kind) {
+  move.value = { iface: i, kind, target: null }
+}
+async function submitMove() {
+  const m = move.value
+  if (!m.target) return
+  busy.value = true
+  try {
+    const list = await clientsOn(m.iface)
+    const res = await api.post(`/api/clients/servers/${m.kind}`, { ids: list.map((c) => c.id), interfaceIds: [m.target] })
+    const failed = Object.entries(res?.failures || {})
+    if (failed.length) notify(failed.map(([n, why]) => `${n}: ${why}`).join('\n'), 'error')
+    else notify(`${m.kind === 'attach' ? t('iface.menu.attachTo') : t('iface.menu.detachClients')} — ${nf(res?.changed || 0)}`, 'success')
+    move.value = null
+    await load()
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+// Add Clients To Group…: every customer here gets the group.
+const grouping = ref(null) // { iface, name, names }
+async function openGroup(i) {
+  let names = []
+  try { names = await api.groupNames() } catch { /* the box still takes a new name */ }
+  grouping.value = { iface: i, name: '', names }
+}
+async function submitGroup() {
+  const g = grouping.value
+  if (!g.name.trim()) return
+  busy.value = true
+  try {
+    const list = await clientsOn(g.iface)
+    await api.assignGroup(g.name.trim(), list.map((c) => c.id))
+    notify(`${t('iface.menu.addToGroup')} — ${nf(list.length)}`, 'success')
+    grouping.value = null
+    await load()
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    busy.value = false
   }
 }
 
@@ -132,6 +240,20 @@ function exportable(i) {
 }
 function exportOne(i) {
   textModal.value = { title: `${t('iface.menu.exportInbound')} — ${i.name}`, text: JSON.stringify(exportable(i), null, 2) }
+}
+async function exportAllUrls() {
+  const links = []
+  try {
+    for (const i of interfaces.value) {
+      for (const c of await clientsOn(i)) {
+        const r = await api.get(`/api/clients/${c.id}/subscription`, { background: true })
+        if (r?.link && !links.includes(r.link)) links.push(r.link)
+      }
+    }
+    textModal.value = { title: t('iface.menu.exportUrls'), text: links.join('\n') }
+  } catch (err) {
+    notify(err.message, 'error')
+  }
 }
 function exportAll() {
   textModal.value = { title: t('iface.menu.exportAll'), text: JSON.stringify(interfaces.value.map(exportable), null, 2) }
@@ -176,7 +298,7 @@ async function runImport() {
 function pickGeneral(key) {
   generalOpen.value = false
   if (key === 'import') importOpen.value = true
-  else if (key === 'export') exportAll()
+  else if (key === 'export') exportAllUrls()
   else if (key === 'resetAll') resetAllUsage()
 }
 function resetAllUsage() {
@@ -615,66 +737,65 @@ async function submitForm(input) {
 </script>
 
 <template>
-  <!-- Their summary Card: three figures. -->
-  <div class="card summary-card">
-    <div class="summary-grid three">
-      <div class="stat">
-        <div class="stat-title">{{ t('iface.stat.totalDownUp') }}</div>
-        <div class="stat-value num ltr">
-          <Icon name="upload" :size="16" class="stat-icon" /> {{ bytes(totals.up, store.locale) }}
-          <span class="sep">/</span>
-          <Icon name="download" :size="16" class="stat-icon" /> {{ bytes(totals.down, store.locale) }}
+  <div class="inbounds">
+  <!-- Their summary Card: size="small", three Statistics. -->
+  <div class="acard small summary-card">
+    <div class="acard-body">
+      <div class="arow">
+        <div class="acol">
+          <div class="stat-title">{{ t('iface.stat.totalDownUp') }}</div>
+          <div class="stat-content ltr">
+            <span><AntIcon name="ArrowUpOutlined" /> {{ bytes(totals.up, store.locale) }} / <AntIcon name="ArrowDownOutlined" /> {{ bytes(totals.down, store.locale) }}</span>
+          </div>
         </div>
-      </div>
-      <div class="stat">
-        <div class="stat-title">{{ t('iface.stat.totalUsage') }}</div>
-        <div class="stat-value num ltr"><Icon name="dashboard" :size="18" class="stat-icon" />{{ bytes(totals.used, store.locale) }}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-title">{{ t('iface.stat.count') }}</div>
-        <div class="stat-value num"><Icon name="menu" :size="18" class="stat-icon" />{{ nf(totals.count) }}</div>
+        <div class="acol">
+          <div class="stat-title">{{ t('iface.stat.totalUsage') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="PieChartOutlined" /></span><span>{{ bytes(totals.used, store.locale) }}</span></div>
+        </div>
+        <div class="acol">
+          <div class="stat-title">{{ t('iface.stat.count') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="BarsOutlined" /></span><span>{{ nf(totals.count) }}</span></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <!-- Their Card title: Add Inbound, General Actions, the search, and --
-         with rows picked -- the count and a Delete. -->
-    <div class="card-head">
-      <div class="card-toolbar">
-        <button class="btn primary" @click="formFor = {}">
-          <Icon name="plus" :size="14" />
-          <span>{{ t('iface.menu.add') }}</span>
+  <!-- Their list Card: the title is a Space of Add Inbound, General Actions,
+       the search, and -- with rows picked -- the count and a Delete. -->
+  <div class="acard">
+    <div class="acard-head">
+      <div class="aspace">
+        <button class="abtn primary" @click="formFor = {}">
+          <AntIcon name="PlusOutlined" /><span>{{ t('iface.menu.add') }}</span>
         </button>
         <div class="more-wrap">
-          <button class="btn primary more-btn" :aria-expanded="generalOpen" @click="generalOpen = !generalOpen">
-            <Icon name="menu" :size="14" />
-            <span>{{ t('iface.menu.general') }}</span>
+          <button class="abtn primary more-btn" :aria-expanded="generalOpen" @click="generalOpen = !generalOpen">
+            <AntIcon name="MenuOutlined" /><span>{{ t('iface.menu.general') }}</span>
           </button>
-          <div v-if="generalOpen" class="rowmenu below" role="menu">
-            <button class="menu-item" role="menuitem" @click="pickGeneral('import')"><Icon name="download" :size="14" />{{ t('iface.menu.import') }}</button>
-            <button class="menu-item" role="menuitem" @click="pickGeneral('export')"><Icon name="upload" :size="14" />{{ t('iface.menu.exportAll') }}</button>
-            <button class="menu-item" role="menuitem" @click="pickGeneral('resetAll')"><Icon name="refresh" :size="14" />{{ t('iface.menu.resetAll') }}</button>
+          <div v-if="generalOpen" class="amenu below" role="menu">
+            <button class="amenu-item" role="menuitem" @click="pickGeneral('import')"><AntIcon name="ImportOutlined" /><span>{{ t('iface.menu.import') }}</span></button>
+            <button class="amenu-item" role="menuitem" @click="pickGeneral('export')"><AntIcon name="ExportOutlined" /><span>{{ t('iface.menu.exportUrls') }}</span></button>
+            <button class="amenu-item" role="menuitem" @click="pickGeneral('resetAll')"><AntIcon name="ReloadOutlined" /><span>{{ t('iface.menu.resetAll') }}</span></button>
           </div>
         </div>
-        <div class="search">
-          <Icon name="search" :size="14" />
-          <input v-model="search" type="search" :placeholder="t('iface.menu.search')" :aria-label="t('iface.menu.search')" />
-        </div>
+        <label class="ainput">
+          <span class="ainput-prefix"><AntIcon name="SearchOutlined" /></span>
+          <input v-model="search" type="text" :placeholder="t('iface.menu.search')" :aria-label="t('iface.menu.search')" />
+          <button v-if="search" type="button" class="ainput-clear" :aria-label="t('action.cancel')" @click="search = ''"><AntIcon name="CloseCircleFilled" /></button>
+        </label>
         <template v-if="selected.size">
-          <span class="tag blue selchip">
+          <span class="atag blue closable">
             {{ t('client.menu.selectedCount').replace('{count}', nf(selected.size)) }}
-            <button type="button" class="chip-x" :aria-label="t('action.cancel')" @click="selected = new Set()"><Icon name="close" :size="11" /></button>
+            <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
           </span>
-          <button class="btn danger-ghost" @click="bulkDelete">
-            <Icon name="trash" :size="14" />
-            <span>{{ t('action.delete') }}</span>
+          <button class="abtn danger" @click="bulkDelete">
+            <AntIcon name="DeleteOutlined" /><span>{{ t('action.delete') }}</span>
           </button>
         </template>
       </div>
     </div>
 
-    <div class="card-body ifaces-body">
+    <div class="acard-body">
       <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
 
       <table v-else-if="showSkeleton" class="skeleton" aria-hidden="true">
@@ -686,94 +807,164 @@ async function submitForm(input) {
       </table>
       <div v-else-if="loading" class="empty"></div>
 
-      <div v-else class="table-wrap">
-        <table>
+      <div v-else class="atable-wrap">
+        <table class="atable small" :style="{ minWidth: (hasNodes ? 1366 : 1236) + 'px' }">
           <thead>
             <tr>
-              <th class="tick">
-                <input type="checkbox" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" />
+              <th class="sel">
+                <input type="checkbox" class="acheck" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" />
               </th>
-              <th class="w-id right">ID</th>
+              <th class="w-id right sortable" :class="sortCls('id')" @click="sortBy('id')">
+                <div class="sorters"><span class="title">ID</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
               <th class="w-menu center">{{ t('iface.col.menu') }}</th>
               <th class="w-enable center">{{ t('table.enabled') }}</th>
-              <th class="w-remark center">{{ t('iface.col.remark') }}</th>
-              <th v-if="hasNodes" class="w-node center">{{ t('iface.col.node') }}</th>
-              <th class="w-port center">{{ t('interface.port') }}</th>
-              <th class="w-proto">{{ t('client.protocol') }}</th>
-              <th class="w-clients">{{ t('nav.clients') }}</th>
-              <th class="w-itraffic center">{{ t('client.traffic') }}</th>
-              <th class="w-speed center">{{ t('client.speed') }}</th>
-              <th class="w-dur center">{{ t('iface.col.duration') }}</th>
+              <th class="w-remark center sortable" :class="sortCls('remark')" @click="sortBy('remark')">
+                <div class="sorters"><span class="title">{{ t('iface.col.remark') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
+              <th v-if="hasNodes" class="w-node center sortable" :class="sortCls('node')" @click="sortBy('node')">
+                <div class="sorters"><span class="title">{{ t('iface.col.node') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
+              <th class="w-port center sortable" :class="sortCls('port')" @click="sortBy('port')">
+                <div class="sorters"><span class="title">{{ t('interface.port') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
+              <th class="w-proto sortable" :class="sortCls('protocol')" @click="sortBy('protocol')">
+                <div class="sorters"><span class="title">{{ t('client.protocol') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
+              <th class="w-clients sortable" :class="sortCls('clients')" @click="sortBy('clients')">
+                <div class="sorters"><span class="title">{{ t('nav.clients') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
+              <th class="w-itraffic center sortable" :class="sortCls('traffic')" @click="sortBy('traffic')">
+                <div class="sorters"><span class="title">{{ t('client.traffic') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
+              <th class="w-speed center sortable" :class="sortCls('speed')" @click="sortBy('speed')">
+                <div class="sorters"><span class="title">{{ t('client.speed') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
+              <th class="w-dur center sortable" :class="sortCls('expiry')" @click="sortBy('expiry')">
+                <div class="sorters"><span class="title">{{ t('iface.col.duration') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!visible.length" class="empty-row">
+            <tr v-if="!sorted.length" class="empty-row">
               <td :colspan="hasNodes ? 12 : 11">
                 <div class="card-empty">
-                  <Icon name="server" :size="32" />
+                  <AntIcon name="ImportOutlined" :size="32" />
                   <div>{{ t('common.nothingYet') }}</div>
-                  <button v-if="!interfaces.length" class="btn sm primary" @click="formFor = {}">{{ t('iface.menu.add') }}</button>
                 </div>
               </td>
             </tr>
-            <tr v-for="i in visible" :key="i.id" :class="{ picked: selected.has(i.id), off: !i.enabled }">
-              <td class="tick">
-                <input type="checkbox" :checked="selected.has(i.id)" :aria-label="i.name" @change="toggleOne(i.id, $event.target.checked)" />
+            <tr v-for="i in sorted" :key="i.id" :class="{ picked: selected.has(i.id) }">
+              <td class="sel">
+                <input type="checkbox" class="acheck" :checked="selected.has(i.id)" :aria-label="i.name" @change="toggleOne(i.id, $event.target.checked)" />
               </td>
-              <td class="right num">{{ i.id }}</td>
+              <td class="right">{{ i.id }}</td>
               <td class="center">
-                <div class="action-buttons center">
-                  <button class="act text" :title="t('action.edit')" @click="formFor = { iface: i }"><Icon name="edit" :size="16" /></button>
-                  <button class="act text" :title="t('action.more')" :aria-expanded="rowMenu?.iface?.id === i.id" @click="openRowMenu(i, $event)"><Icon name="more" :size="16" /></button>
+                <div class="action-buttons">
+                  <button class="abtn text sm" :title="t('action.edit')" @click="formFor = { iface: i }"><AntIcon name="EditOutlined" /></button>
+                  <button class="abtn text sm" :title="t('action.more')" :aria-expanded="rowMenu?.iface?.id === i.id" @click="openRowMenu(i, $event)"><AntIcon name="MoreOutlined" /></button>
                 </div>
               </td>
               <td class="center">
                 <Toggle :model-value="i.enabled" :label="i.name" :loading="isPending(i.id)" @update:model-value="(v) => setEnabled(i, v)" />
               </td>
-              <td class="center"><span class="remark">{{ i.name }}</span></td>
+              <td class="center">{{ i.name }}</td>
               <td v-if="hasNodes" class="center">
-                <span v-if="i.nodeName && !i.nodeLocal" class="tag" :class="i.nodeUp ? 'blue' : 'red'">{{ i.nodeName }}</span>
-                <span v-else class="tag">{{ t('iface.col.localPanel') }}</span>
+                <span v-if="i.nodeName && !i.nodeLocal" class="atag" :class="i.nodeUp ? 'blue' : 'red'">{{ i.nodeName }}</span>
+                <span v-else class="atag">{{ t('iface.col.localPanel') }}</span>
               </td>
-              <td class="center num">{{ i.listenPort }}</td>
+              <td class="center">{{ i.listenPort }}</td>
               <td>
                 <div class="protocol-tags">
-                  <span class="tag purple">{{ i.protocol }}</span>
-                  <span class="tag green">{{ i.protocol === 'openvpn' ? (i.openvpn?.transport || 'udp').toUpperCase() : 'UDP' }}</span>
-                  <span v-if="i.mode === 'amnezia'" class="tag blue">AmneziaWG</span>
+                  <span class="atag purple">{{ i.protocol }}</span>
+                  <span class="atag green">{{ i.protocol === 'openvpn' ? (i.openvpn?.transport || 'udp').toUpperCase() : 'UDP' }}</span>
+                  <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
                 </div>
               </td>
               <td>
-                <span class="tag count" :title="t('nav.clients')"><Icon name="users" :size="12" /> {{ nf(i.clients) }}</span>
-                <span class="tag green count" :title="t('status.active')">{{ nf(i.active) }}</span>
-                <span v-if="i.disabled" class="tag count" :title="t('status.disabled')">{{ nf(i.disabled) }}</span>
-                <span v-if="i.depleted" class="tag red count" :title="t('stat.depleted')">{{ nf(i.depleted) }}</span>
-                <span v-if="i.online" class="tag blue count" :title="t('status.online')">{{ nf(i.online) }}</span>
+                <span class="atag count" :title="t('nav.clients')"><AntIcon name="TeamOutlined" /> {{ nf(i.clients) }}</span>
+                <span class="atag green count" :title="t('status.active')">{{ nf(i.active) }}</span>
+                <span v-if="i.disabled" class="atag count" :title="t('status.disabled')">{{ nf(i.disabled) }}</span>
+                <span v-if="i.depleted" class="atag red count" :title="t('stat.depleted')">{{ nf(i.depleted) }}</span>
+                <span v-if="i.online" class="atag blue count last" :title="t('status.online')">{{ nf(i.online) }}</span>
               </td>
               <td class="center">
-                <span class="tag green num ltr" :title="`↑ ${bytes(i.upBytes || 0, store.locale)}  ↓ ${bytes(i.downBytes || 0, store.locale)}`">
-                  {{ bytes(i.usedBytes, store.locale) }} / ∞
+                <span class="atag purple ltr" :title="`↑ ${bytes(i.upBytes || 0, store.locale)}  ↓ ${bytes(i.downBytes || 0, store.locale)}`">
+                  {{ bytes(i.usedBytes, store.locale) }} / <span class="infinity">∞</span>
                 </span>
               </td>
-              <td class="center"><span class="tag num ltr speed-tag">—</span></td>
-              <td class="center"><span class="tag purple">∞</span></td>
+              <td class="center"><span class="atag speed-tag">—</span></td>
+              <td class="center"><span class="atag purple"><span class="infinity">∞</span></span></td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
   </div>
+  </div>
 
   <Teleport to="body">
-    <div v-if="rowMenu" class="rowmenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
+    <div v-if="rowMenu" class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
       <template v-for="(m, idx) in rowItems(rowMenu.iface)" :key="m.key || `d${idx}`">
-        <hr v-if="m.divider" class="menu-divider" />
-        <button v-else class="menu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickRow(rowMenu.iface, m.key)">
-          <Icon :name="m.icon" :size="14" />{{ m.label }}
+        <hr v-if="m.divider" class="amenu-divider" />
+        <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickRow(rowMenu.iface, m.key)">
+          <AntIcon :name="m.icon" /><span>{{ m.label }}</span>
         </button>
       </template>
     </div>
   </Teleport>
+
+  <!-- Attach Clients To… / Detach Clients: a target tunnel to pick. -->
+  <div v-if="move" class="modal-backdrop" @click.self="move = null">
+    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="mv-title">
+      <div class="card-head">
+        <h2 id="mv-title">{{ move.kind === 'attach' ? t('iface.menu.attachTo') : t('iface.menu.detachClients') }} — {{ move.iface.name }}</h2>
+        <button class="act" :aria-label="t('common.close')" @click="move = null"><Icon name="close" :size="16" /></button>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <label for="mv-target">{{ t('iface.menu.targetInbound') }}</label>
+          <select id="mv-target" v-model="move.target">
+            <option :value="null" disabled>—</option>
+            <option v-for="o in interfaces.filter((x) => x.id !== move.iface.id)" :key="o.id" :value="o.id">{{ o.name }} · {{ o.protocol }}:{{ o.listenPort }}</option>
+          </select>
+        </div>
+        <p class="muted small">{{ tn('interface.nClients', move.iface.clients || 0) }}</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" @click="move = null">{{ t('common.close') }}</button>
+        <button class="btn primary" :disabled="busy || !move.target" @click="submitMove">
+          <span v-if="busy" class="spin"></span>
+          <template v-else>{{ move.kind === 'attach' ? t('iface.menu.attach') : t('iface.menu.detach') }}</template>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Clients To Group…: a name, existing or new. -->
+  <div v-if="grouping" class="modal-backdrop" @click.self="grouping = null">
+    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="gr-title">
+      <div class="card-head">
+        <h2 id="gr-title">{{ t('iface.menu.addToGroup') }} — {{ grouping.iface.name }}</h2>
+        <button class="act" :aria-label="t('common.close')" @click="grouping = null"><Icon name="close" :size="16" /></button>
+      </div>
+      <div class="card-body">
+        <div class="field">
+          <label for="gr-name">{{ t('client.group') }}</label>
+          <input id="gr-name" v-model="grouping.name" list="gr-names" autofocus />
+          <datalist id="gr-names"><option v-for="n in grouping.names" :key="n" :value="n" /></datalist>
+        </div>
+        <p class="muted small">{{ tn('interface.nClients', grouping.iface.clients || 0) }}</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" @click="grouping = null">{{ t('common.close') }}</button>
+        <button class="btn primary" :disabled="busy || !grouping.name.trim()" @click="submitGroup">
+          <span v-if="busy" class="spin"></span>
+          <template v-else>{{ t('action.save') }}</template>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <div v-if="textModal" class="modal-backdrop" @click.self="textModal = null">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tx-title">
@@ -908,82 +1099,329 @@ async function submitForm(input) {
 </template>
 
 <style scoped>
-.summary-card {
-  padding: 12px 16px;
-  margin-bottom: 12px;
-}
-.summary-grid.three {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px 16px;
-}
-.stat {
+/* Everything below is Ant Design's default geometry -- what 3x-ui gets by
+   using Ant without overriding a size -- so the page measures the same as
+   theirs: 14px text on a 22px line, 32px controls, 8px table cells, tags of
+   12px on a 20px line. Colour comes from the panel's tokens. */
+.inbounds {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 12px; /* Row gutter [16, 12] */
+  font-size: 14px;
+  line-height: 1.5714285714285714;
 }
+
+/* Card */
+.acard {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.acard:hover { box-shadow: var(--shadow); border-color: transparent; } /* hoverable */
+.acard-head {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.acard-body { padding: 24px; }
+.acard.small .acard-body { padding: 12px; }
+
+/* Row/Col gutter [16, 12] with md=8 columns */
+.arow {
+  display: flex;
+  flex-wrap: wrap;
+  margin: -6px -8px;
+}
+.acol {
+  flex: 0 0 33.3333%;
+  max-width: 33.3333%;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+@media (max-width: 767px) {
+  .acol { flex: 0 0 50%; max-width: 50%; }
+  .acol:last-child { flex: 0 0 100%; max-width: 100%; }
+}
+
+/* Statistic */
 .stat-title {
+  margin-bottom: 4px;
   font-size: 14px;
   color: var(--muted);
 }
-.stat-value {
+.stat-content {
   display: flex;
   align-items: center;
-  gap: 6px;
   font-size: 24px;
-  line-height: 32px;
+  color: var(--ink);
 }
-.stat-icon { color: var(--muted); }
-.sep { color: var(--faint); }
-@media (max-width: 760px) { .summary-grid.three { grid-template-columns: 1fr 1fr; } }
+.stat-prefix { display: inline-block; margin-inline-end: 4px; }
 
-.card-toolbar {
-  display: flex;
+/* Space, size small */
+.aspace {
+  display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  width: 100%;
-  padding: 6px 0;
 }
-.card-toolbar .search {
-  display: flex;
+
+/* Button */
+.abtn {
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 4px 15px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+.abtn:hover { color: var(--accent-hover); border-color: var(--accent-hover); }
+.abtn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 2px 0 var(--accent-ring, rgba(0, 0, 0, 0.04));
+}
+.abtn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
+.abtn.danger { border-color: var(--bad); color: var(--bad); }
+.abtn.danger:hover { border-color: var(--bad); color: var(--bad); opacity: 0.8; }
+.abtn.text {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+}
+.abtn.text:hover { background: var(--surface-3); color: var(--ink); }
+.abtn.sm {
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 16px; /* their style={{ fontSize: 16 }} on the icon buttons */
+}
+
+/* Input with a prefix and allowClear */
+.ainput {
+  display: inline-flex;
+  align-items: center;
   width: 200px;
   height: 32px;
-  padding: 0 11px;
+  padding: 4px 11px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--faint);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  transition: all 0.2s;
 }
-.card-toolbar .search input {
+.ainput:hover, .ainput:focus-within { border-color: var(--accent-hover); }
+.ainput:focus-within { box-shadow: 0 0 0 2px var(--accent-ring); }
+.ainput-prefix { display: flex; margin-inline-end: 4px; color: var(--ink); }
+.ainput input {
   flex: 1;
   min-width: 0;
-  height: 100%;
+  height: 22px;
+  padding: 0;
   border: 0;
   background: none;
   color: var(--ink);
+  font: inherit;
   font-size: 14px;
+  line-height: 22px;
 }
-.card-toolbar .search input:focus { outline: none; box-shadow: none; }
-.selchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.ainput input:focus { outline: none; box-shadow: none; }
+.ainput input::placeholder { color: var(--faint); }
+.ainput-clear {
+  display: flex;
+  margin-inline-start: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 12px;
+  cursor: pointer;
 }
-.chip-x {
+.ainput-clear:hover { color: var(--muted); }
+
+/* Tag */
+.atag {
+  display: inline-block;
+  height: auto;
+  margin-inline-end: 8px;
+  padding-inline: 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+.atag .anticon { font-size: 12px; }
+.atag.green { background: var(--tag-green-bg); border-color: var(--tag-green-line); color: var(--tag-green-ink); }
+.atag.red { background: var(--tag-red-bg); border-color: var(--tag-red-line); color: var(--tag-red-ink); }
+.atag.purple { background: var(--tag-purple-bg); border-color: var(--tag-purple-line); color: var(--tag-purple-ink); }
+.atag.blue { background: var(--tag-blue-bg); border-color: var(--tag-blue-line); color: var(--tag-blue-ink); }
+.atag.closable { display: inline-flex; align-items: center; margin-inline-end: 0; }
+.atag-close {
   display: inline-flex;
+  margin-inline-start: 3px;
   padding: 0;
   border: 0;
   background: none;
   color: inherit;
-  opacity: 0.6;
+  font-size: 10px;
+  opacity: 0.45;
   cursor: pointer;
 }
-.ifaces-body { padding: 16px; }
+.atag-close:hover { opacity: 1; }
+.atag.count { margin: 0 4px 0 0; padding: 0 2px; }
+.atag.count.last { margin-right: 0; }
+.protocol-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.protocol-tags .atag { margin-inline-end: 0; }
+td.center > .atag, .speed-tag { margin-inline-end: 0; }
+.speed-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.infinity { font-size: 14px; line-height: 1; vertical-align: -0.05em; }
 
-/* Their columns and widths. */
+/* Dropdown menu */
+.amenu {
+  position: fixed;
+  z-index: 40;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+}
+.amenu.below { position: absolute; top: calc(100% + 4px); inset-inline-start: 0; }
+.more-wrap { position: relative; }
+.amenu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.amenu-item:hover { background: var(--surface-3); }
+.amenu-item.danger { color: var(--bad); }
+.amenu-item.danger:hover { background: var(--bad); color: #fff; }
+.amenu-item .anticon { font-size: 14px; }
+.amenu-divider { margin: 4px 0; border: 0; border-top: 1px solid var(--line-soft); }
+
+/* Table, size="small", marginTop 10, rounded 8 and clipped */
+.atable-wrap {
+  margin-top: 10px;
+  border-radius: 8px;
+  overflow: auto;
+}
+.atable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 14px;
+}
+.atable th, .atable td {
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: start;
+  vertical-align: middle;
+  overflow-wrap: break-word;
+  transition: background 0.2s;
+}
+.atable thead th {
+  position: relative;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line-soft);
+}
+.atable thead th:not(:last-child):not(.sel)::before {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: 0;
+  width: 1px;
+  height: 1.6em;
+  background: var(--line-soft);
+  transform: translateY(-50%);
+  content: '';
+}
+.atable thead th.sortable { cursor: pointer; }
+.atable thead th.sortable:hover { background: var(--surface-3); }
+.atable thead tr:first-child > *:first-child { border-start-start-radius: 8px; }
+.atable thead tr:first-child > *:last-child { border-start-end-radius: 8px; }
+.atable tbody tr:last-child > td { border-bottom: 0; }
+.atable tbody tr:hover > td { background: var(--surface-2); }
+.atable tbody tr.picked > td { background: var(--accent-soft); }
+.sorters { display: flex; align-items: center; justify-content: space-between; }
+.sorters .title { flex: 1; }
+th.center .sorters .title { text-align: center; }
+th.right .sorters .title { text-align: end; }
+.sorter {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  margin-inline-start: 4px;
+  color: var(--faint);
+  font-size: 0;
+}
+.sorter .anticon { font-size: 11px; }
+.sorter .down { margin-top: -0.3em; }
+th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); }
+
+/* Selection column: 32px, checkbox 16 */
+.atable th.sel, .atable td.sel { width: 32px; text-align: center; padding: 8px; }
+.acheck {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Their column widths, exactly */
 .w-id { width: 60px; }
 .w-menu { width: 70px; }
 .w-enable { width: 80px; }
@@ -993,33 +1431,25 @@ async function submitForm(input) {
 .w-proto { width: 190px; }
 .w-clients { width: 200px; }
 .w-itraffic { width: 140px; }
-.w-speed { width: 110px; }
+.w-speed { width: 216px; }
 .w-dur { width: 100px; }
-th.center, td.center { text-align: center; }
-th.right, td.right { text-align: end; }
-.action-buttons.center {
+.atable th.center, .atable td.center { text-align: center; }
+.atable th.right, .atable td.right { text-align: end; }
+.action-buttons {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 4px;
 }
-.act.text {
-  width: 24px;
-  height: 24px;
-  color: var(--ink);
+.card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 12px;
+  color: var(--muted);
 }
-.remark { font-weight: 500; }
-.protocol-tags {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.tag.count {
-  margin: 0 4px 0 0;
-  padding: 0 4px;
-  font-variant-numeric: tabular-nums;
-}
-.speed-tag { min-width: 72px; }
-tr.off td { opacity: 0.6; }
+.card-empty .anticon { margin-bottom: 8px; }
 
 .strip {
   display: grid;
@@ -1061,24 +1491,6 @@ tr.off td { opacity: 0.6; }
   margin-inline-start: 8px;
 }
 
-th.tick,
-td.tick {
-  width: 42px;
-  padding-inline-end: 0;
-}
-input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  min-height: 0;
-  padding: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-
-tr.picked {
-  background: var(--accent-soft);
-}
 .name {
   color: var(--ink);
   font-weight: 600;

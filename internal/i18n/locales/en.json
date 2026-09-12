@@ -1193,5 +1193,12 @@
   "iface.menu.attach": "Attach",
   "iface.menu.detachClients": "Detach Clients",
   "iface.menu.delAllClients": "Delete All Clients",
-  "iface.menu.search": "Search"
+  "iface.menu.search": "Search",
+  "iface.menu.exportUrls": "Export All URLs",
+  "iface.menu.attachTo": "Attach Clients To…",
+  "iface.menu.addToGroup": "Add Clients To Group…",
+  "iface.menu.targetInbound": "Inbound",
+  "iface.menu.detach": "Detach",
+  "interface.nClients.one": "{n} client",
+  "interface.nClients.other": "{n} clients"
 }

@@ -1193,5 +1193,12 @@
   "iface.menu.attach": "الصاق",
   "iface.menu.detachClients": "جداسازی کاربران",
   "iface.menu.delAllClients": "حذف همه کلاینت‌ها",
-  "iface.menu.search": "جستجو"
+  "iface.menu.search": "جستجو",
+  "iface.menu.exportUrls": "استخراج لینک‌ها",
+  "iface.menu.attachTo": "الصاق کاربران به…",
+  "iface.menu.addToGroup": "افزودن کاربران به گروه…",
+  "iface.menu.targetInbound": "ورودی",
+  "iface.menu.detach": "جداسازی",
+  "interface.nClients.one": "{n} کاربر",
+  "interface.nClients.other": "{n} کاربر"
 }

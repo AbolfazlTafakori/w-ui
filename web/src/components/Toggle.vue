@@ -68,11 +68,11 @@ defineEmits(['update:modelValue'])
   white-space: nowrap;
 }
 .track {
-  width: 40px;
+  width: 44px;
   height: 22px;
   border-radius: 100px;
-  background: var(--surface-3);
-  border: 1px solid var(--line);
+  background: var(--switch-off, var(--surface-3));
+  border: 1px solid transparent;
   position: relative;
   /* Recessed when off, so the knob reads as sitting in a channel. */
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -83,10 +83,10 @@ defineEmits(['update:modelValue'])
 }
 .knob {
   position: absolute;
-  top: 2px;
-  inset-inline-start: 2px;
-  width: 16px;
-  height: 16px;
+  top: 1px;
+  inset-inline-start: 1px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--muted);
   /* The knob is the only part that moves, so it is the only part that carries
@@ -108,7 +108,7 @@ defineEmits(['update:modelValue'])
 }
 .toggle.on .knob {
   background: #fff;
-  transform: translateX(18px);
+  transform: translateX(22px);
 }
 
 /* The knob becomes the spinner rather than gaining one beside it: the switch

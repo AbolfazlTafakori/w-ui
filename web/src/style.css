@@ -52,6 +52,7 @@
   --tag-orange-bg: #2b1d11;
   --tag-orange-line: #593815;
   --tag-orange-ink: #e89a3c;
+  --switch-off: rgba(255, 255, 255, 0.25);
   --tag-purple-bg: #1a1325;
   --tag-purple-line: #3a2a5c;
   --tag-purple-ink: #a878e6;
@@ -206,6 +207,7 @@ body.light {
   --tag-orange-bg: #fdf3dd;
   --tag-orange-line: #f0d9a0;
   --tag-orange-ink: #8a6206;
+  --switch-off: rgba(0, 0, 0, 0.25);
   --tag-purple-bg: #f2ecfd;
   --tag-purple-line: #d8c8f5;
   --tag-purple-ink: #6633b8;
