@@ -6,7 +6,9 @@ import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, relative, dateTime, percent, gigabytesToBytes, isOnline } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
-import ShareDialog from '../components/ShareDialog.vue'
+import ClientQrModal from '../components/ClientQrModal.vue'
+import ClientInfoModal from '../components/ClientInfoModal.vue'
+import AntIcon from '../components/AntIcon.vue'
 import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -40,9 +42,38 @@ const SORT_OPTIONS = [
   { value: 'expiry', key: 'client.sort.expiringSoonest' },
 ]
 const currentPage = ref(1)
+// Their pagination's size changer: the panel's page size to start with, and
+// the sizes Ant offers.
+const PAGE_SIZES = [10, 25, 50, 100, 200]
+const pageSize = ref(store.panel?.pageSize > 0 ? store.panel.pageSize : 25)
+function setPageSize(n) {
+  pageSize.value = Number(n)
+  currentPage.value = 1
+  load()
+}
+function goPage(n) {
+  currentPage.value = n
+  load()
+}
+// The page numbers Ant shows: every one up to seven, else the ends and a
+// window around the current one with jumps between.
+const pageItems = computed(() => {
+  const total = totalPages.value
+  const cur = currentPage.value
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const out = [1]
+  const from = Math.max(2, cur - 2)
+  const to = Math.min(total - 1, cur + 2)
+  if (from > 2) out.push('prev')
+  for (let i = from; i <= to; i++) out.push(i)
+  if (to < total - 1) out.push('next')
+  out.push(total)
+  return out
+})
 
 const formFor = ref(null)
 const shareFor = ref(null)
+const infoFor = ref(null)
 const dialog = ref(null) // { kind }
 const form = ref({ group: '', addDays: '', quotaGB: '', resetCycle: '', prefix: '', count: 10 })
 const selected = ref(new Set())
@@ -94,7 +125,7 @@ async function load(quiet = false) {
           group: groupFilter.value,
           sort: sort.value,
           page: currentPage.value,
-          perPage: store.panel.pageSize > 0 ? store.panel.pageSize : 500,
+          perPage: pageSize.value,
           ...filterParams(),
         },
         { background: quiet },
@@ -246,7 +277,7 @@ function clearChip(chip) {
 
 // The inbounds a customer is on, as their chips: one per server, coloured
 // by protocol, three shown and the rest counted.
-const INBOUND_CHIP_LIMIT = 3
+const INBOUND_CHIP_LIMIT = 1
 function inboundChips(c) {
   const names = []
   const seen = new Set()
@@ -324,6 +355,17 @@ function speedOf(c) {
   return `${bytes((delta * 1000) / (now - prev.at), store.locale)}/s`
 }
 
+// Their traffic bar: green while there is room, orange within the warning
+// band, red when out; a disabled customer's bar is grey; unlimited is a
+// purple wash.
+function barColor(c) {
+  if (c.status === 'disabled') return 'var(--faint)'
+  if (!c.quotaBytes) return 'rgba(114, 46, 209, 0.35)'
+  const p = usedPercent(c) ?? 0
+  if (p >= 100) return 'var(--bad)'
+  if (p >= DEPLETING_AT) return 'var(--warn)'
+  return 'var(--ok)'
+}
 function meterClass(p) {
   if (p == null) return ''
   if (p >= 100) return 'bad'
@@ -571,24 +613,24 @@ function openMore(e) {
 const moreItems = computed(() =>
   selected.value.size
     ? [
-        { key: 'attach', label: t('client.menu.attach'), icon: 'users' },
-        { key: 'detach', label: t('client.menu.detach'), icon: 'users', danger: true },
-        { key: 'group', label: t('client.addToGroup'), icon: 'tag' },
-        { key: 'ungroup', label: t('client.ungroup'), icon: 'tag', danger: true },
+        { key: 'attach', label: t('client.menu.attach'), icon: 'UsergroupAddOutlined' },
+        { key: 'detach', label: t('client.menu.detach'), icon: 'UsergroupDeleteOutlined', danger: true },
+        { key: 'group', label: t('client.addToGroup'), icon: 'TagsOutlined' },
+        { key: 'ungroup', label: t('client.ungroup'), icon: 'UngroupOutlined', danger: true },
         { divider: true },
-        { key: 'enable', label: t('action.enable'), icon: 'check' },
-        { key: 'disable', label: t('action.disable'), icon: 'close', danger: true },
-        { key: 'adjust', label: t('client.adjust'), icon: 'clock' },
-        { key: 'subLinks', label: t('client.menu.subLinks'), icon: 'link' },
+        { key: 'enable', label: t('action.enable'), icon: 'CheckCircleOutlined' },
+        { key: 'disable', label: t('action.disable'), icon: 'StopOutlined', danger: true },
+        { key: 'adjust', label: t('client.adjust'), icon: 'ClockCircleOutlined' },
+        { key: 'subLinks', label: t('client.menu.subLinks'), icon: 'LinkOutlined' },
       ]
     : [
-        { key: 'batch', label: t('client.menu.bulk'), icon: 'users' },
-        { key: 'export', label: t('client.export'), icon: 'download' },
-        { key: 'import', label: t('client.menu.import'), icon: 'upload' },
-        { key: 'resetAll', label: t('client.resetAll'), icon: 'refresh' },
+        { key: 'batch', label: t('client.menu.bulk'), icon: 'UsergroupAddOutlined' },
+        { key: 'export', label: t('client.export'), icon: 'DownloadOutlined' },
+        { key: 'import', label: t('client.menu.import'), icon: 'UploadOutlined' },
+        { key: 'resetAll', label: t('client.resetAll'), icon: 'RetweetOutlined' },
         { divider: true },
-        { key: 'purgeDepleted', label: t('client.menu.delDepleted'), icon: 'trash', danger: true },
-        { key: 'purgeUnattached', label: t('client.menu.delOrphans'), icon: 'trash', danger: true },
+        { key: 'purgeDepleted', label: t('client.menu.delDepleted'), icon: 'RestOutlined', danger: true },
+        { key: 'purgeUnattached', label: t('client.menu.delOrphans'), icon: 'DisconnectOutlined', danger: true },
       ],
 )
 
@@ -776,105 +818,95 @@ async function submitForm(input) {
     @close="filterOpen = false"
   />
 
-  <!-- Their summary Card: six figures with a title over each. -->
-  <div v-if="stats" class="card summary-card">
-    <div class="summary-grid">
-      <div class="stat">
-        <div class="stat-title">{{ t('nav.clients') }}</div>
-        <div class="stat-value"><Icon name="users" :size="18" class="stat-icon" />{{ nf(stats.clients) }}</div>
+  <div class="antpage clients">
+  <!-- Their summary Card: size="small", six Statistics with a coloured dot. -->
+  <div v-if="stats" class="acard small summary-card">
+    <div class="acard-body">
+      <div class="arow six">
+        <div class="acol">
+          <div class="stat-title">{{ t('nav.clients') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="TeamOutlined" /></span><span>{{ nf(stats.clients) }}</span></div>
+        </div>
+        <div class="acol">
+          <div class="stat-title">{{ t('status.online') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-blue"></i></span><span>{{ nf(stats.online) }}</span></div>
+        </div>
+        <div class="acol">
+          <div class="stat-title">{{ t('stat.depleted') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-red"></i></span><span>{{ nf((stats.exhausted || 0) + (stats.expired || 0)) }}</span></div>
+        </div>
+        <div class="acol">
+          <div class="stat-title">{{ t('stat.depleting') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-orange"></i></span><span>{{ nf(stats.depleting) }}</span></div>
+        </div>
+        <div class="acol">
+          <div class="stat-title">{{ t('status.disabled') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-gray"></i></span><span>{{ nf(stats.disabled) }}</span></div>
+        </div>
+        <div class="acol">
+          <div class="stat-title">{{ t('status.active') }}</div>
+          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-green"></i></span><span>{{ nf(stats.active) }}</span></div>
+        </div>
       </div>
-      <div class="stat">
-        <div class="stat-title">{{ t('status.online') }}</div>
-        <div class="stat-value"><i class="dot dot-blue"></i>{{ nf(stats.online) }}</div>
-      </div>
-      <button type="button" class="stat pressable" :class="{ on: statusFilter === 'depleted' }" @click="statusFilter = statusFilter === 'depleted' ? '' : 'depleted'">
-        <div class="stat-title">{{ t('stat.depleted') }}</div>
-        <div class="stat-value"><i class="dot dot-red"></i>{{ nf((stats.exhausted || 0) + (stats.expired || 0)) }}</div>
-      </button>
-      <div class="stat">
-        <div class="stat-title">{{ t('stat.depleting') }}</div>
-        <div class="stat-value"><i class="dot dot-orange"></i>{{ nf(stats.depleting) }}</div>
-      </div>
-      <button type="button" class="stat pressable" :class="{ on: statusFilter === 'disabled' }" @click="statusFilter = statusFilter === 'disabled' ? '' : 'disabled'">
-        <div class="stat-title">{{ t('status.disabled') }}</div>
-        <div class="stat-value"><i class="dot dot-gray"></i>{{ nf(stats.disabled) }}</div>
-      </button>
-      <button type="button" class="stat pressable" :class="{ on: statusFilter === 'active' }" @click="statusFilter = statusFilter === 'active' ? '' : 'active'">
-        <div class="stat-title">{{ t('status.active') }}</div>
-        <div class="stat-value"><i class="dot dot-green"></i>{{ nf(stats.active) }}</div>
-      </button>
     </div>
   </div>
 
-  <div v-if="!interfaces.length" class="banner warn">
-    <Icon name="alert" :size="17" />
-    <span>
-      {{ t('interface.noneYet') }}
-      <a href="#" @click.prevent="router.push('/interfaces')">{{ t('interface.create') }}</a>
-    </span>
+  <div v-if="!interfaces.length" class="aalert warning">
+    <AntIcon name="ExclamationCircleFilled" />
+    <div class="aalert-body"><span class="aalert-title">{{ t('interface.noneYet') }} <a href="#" @click.prevent="router.push('/interfaces')">{{ t('interface.create') }}</a></span></div>
   </div>
 
-  <div class="card">
-    <!-- Their Card title: Add Clients and more, or the selection count, more
-         and a Delete pushed to the right. -->
-    <div class="card-head">
+  <!-- Their list Card: size="small", the title a toolbar of Add Clients (or
+       the selection count), More, and -- with rows picked -- Delete at the end. -->
+  <div class="acard small">
+    <div class="acard-head">
       <div class="card-toolbar">
-        <button
-          v-if="!selected.size"
-          class="btn primary"
-          :disabled="!interfaces.length"
-          :title="interfaces.length ? '' : t('interface.noneYet')"
-          @click="formFor = {}"
-        >
-          <Icon name="plus" :size="14" />
-          <span>{{ t('client.menu.addClients') }}</span>
+        <button v-if="!selected.size" class="abtn primary" :disabled="!interfaces.length" :title="interfaces.length ? '' : t('interface.noneYet')" @click="formFor = {}">
+          <AntIcon name="PlusOutlined" /><span>{{ t('client.menu.addClients') }}</span>
         </button>
-        <span v-else class="tag blue selchip">
+        <span v-else class="atag blue closable" style="padding: 4px 8px; font-size: 13px">
           {{ t('client.menu.selectedCount').replace('{count}', nf(selected.size)) }}
-          <button type="button" class="chip-x" :aria-label="t('action.cancel')" @click="selected = new Set()">
-            <Icon name="close" :size="11" />
-          </button>
+          <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
         </span>
-        <button class="btn more-btn" :aria-expanded="!!moreOpen" @click="openMore">
-          <Icon name="more" :size="14" />
-          <span>{{ t('outbound.more') }}</span>
+        <button class="abtn more-btn" :aria-expanded="!!moreOpen" @click="openMore">
+          <AntIcon name="MoreOutlined" /><span>{{ t('outbound.more') }}</span>
         </button>
-        <button v-if="selected.size" class="btn danger-ghost spacer" @click="bulk('delete')">
-          <Icon name="trash" :size="14" />
-          <span>{{ t('action.delete') }}</span>
+        <button v-if="selected.size" class="abtn danger" style="margin-inline-start: auto" @click="bulk('delete')">
+          <AntIcon name="DeleteOutlined" /><span>{{ t('action.delete') }}</span>
         </button>
       </div>
     </div>
 
-    <div class="card-body clients-body">
-      <!-- Their filter bar: search, Filter with its count, Sort, Clear all,
+    <div class="acard-body">
+      <!-- Their filter bar: search, Filter with its badge, Sort, Clear all,
            and how many of the total are shown. -->
       <div class="filter-bar">
-        <div class="search">
-          <Icon name="search" :size="14" />
-          <input v-model="search" type="search" :placeholder="t('client.menu.searchPlaceholder')" :aria-label="t('action.search')" />
-        </div>
-        <span class="badge-wrap">
-          <button class="btn" :class="{ primary: filterCount > 0 }" @click="filterOpen = true">
-            <Icon name="filter" :size="14" />
-            <span>{{ t('filter.button') }}</span>
+        <label class="ainput" style="max-width: 320px; width: 100%">
+          <span class="ainput-prefix"><AntIcon name="SearchOutlined" /></span>
+          <input v-model="search" type="text" :placeholder="t('client.menu.searchPlaceholder')" :aria-label="t('action.search')" />
+          <button v-if="search" type="button" class="ainput-clear" :aria-label="t('action.cancel')" @click="search = ''"><AntIcon name="CloseCircleFilled" /></button>
+        </label>
+        <span class="abadge-wrap">
+          <button class="abtn" :class="{ primary: filterCount > 0 }" @click="filterOpen = true">
+            <AntIcon name="FilterOutlined" /><span>{{ t('filter.button') }}</span>
           </button>
-          <span v-if="filterCount" class="badge">{{ filterCount }}</span>
+          <sup v-if="filterCount" class="abadge">{{ filterCount }}</sup>
         </span>
-        <select v-model="sort" class="sort" :aria-label="t('client.sort.label')">
-          <option v-for="o in SORT_OPTIONS" :key="o.value" :value="o.value">{{ t(o.key) }}</option>
-        </select>
-        <button v-if="filterCount || search || statusFilter || groupFilter" class="btn" @click="clearFilters">
-          {{ t('client.menu.clearAllFilters') }}
-        </button>
-        <span v-if="page" class="muted small shown-count">
-          {{ t('client.menu.showingCount').replace('{shown}', nf(page.items.length)).replace('{total}', nf(page.total)) }}
+        <div class="aselect sort-select" style="min-width: 200px">
+          <select v-model="sort" :aria-label="t('client.sort.label')">
+            <option v-for="o in SORT_OPTIONS" :key="o.value" :value="o.value">{{ t(o.key) }}</option>
+          </select>
+          <span class="aselect-suffix"><AntIcon name="SortAscendingOutlined" /></span>
+        </div>
+        <button v-if="filterCount || search || statusFilter || groupFilter" class="abtn" @click="clearFilters">{{ t('client.menu.clearAllFilters') }}</button>
+        <span v-if="page && (filterCount || search || statusFilter || groupFilter)" class="filter-count">
+          {{ t('client.menu.showingCount').replace('{shown}', nf(page.total)).replace('{total}', nf(stats?.clients ?? page.total)) }}
         </span>
       </div>
-      <div v-if="filterChips.length" class="chips">
-        <span v-for="(chip, i) in filterChips" :key="i" class="tag closable" :class="chip.color">
+      <div v-if="filterChips.length" class="filter-chips">
+        <span v-for="(chip, i) in filterChips" :key="i" class="atag closable" :class="chip.color">
           {{ chip.text }}
-          <button type="button" class="chip-x" :aria-label="t('action.remove')" @click="clearChip(chip)"><Icon name="close" :size="10" /></button>
+          <button type="button" class="atag-close" :aria-label="t('action.remove')" @click="clearChip(chip)"><AntIcon name="CloseOutlined" /></button>
         </span>
       </div>
 
@@ -882,169 +914,103 @@ async function submitForm(input) {
       <div v-else-if="loading && !page" class="empty"></div>
 
       <template v-else>
-        <div class="table-wrap desk" :class="{ stale: refiltering }">
-          <table>
+        <div class="atable-wrap" :class="{ stale: refiltering }" style="margin-top: 0">
+          <table class="atable small" style="min-width: 1200px">
             <thead>
               <tr>
-                <th class="tick">
-                  <input type="checkbox" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" />
-                </th>
-                <th class="w-cactions">{{ t('table.actions') }}</th>
-                <th class="w-enabled">{{ t('table.enabled') }}</th>
-                <th class="w-online">{{ t('status.online') }}</th>
-                <th class="w-client">{{ t('client.menu.client') }}</th>
-                <th v-if="hasGroups" class="w-group">{{ t('client.group') }}</th>
-                <th class="w-inbounds">{{ t('client.attachedInbounds') }}</th>
-                <th class="w-ctraffic">{{ t('client.traffic') }}</th>
-                <th class="w-speed center">{{ t('client.speed') }}</th>
-                <th class="w-remaining">{{ t('client.remaining') }}</th>
-                <th class="w-duration">{{ t('client.menu.duration') }}</th>
+                <th class="sel"><input type="checkbox" class="acheck" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" /></th>
+                <th style="width: 200px">{{ t('table.actions') }}</th>
+                <th style="width: 80px">{{ t('table.enabled') }}</th>
+                <th style="width: 90px">{{ t('status.online') }}</th>
+                <th style="width: 220px">{{ t('client.menu.client') }}</th>
+                <th v-if="hasGroups" style="width: 130px">{{ t('client.group') }}</th>
+                <th style="width: 170px">{{ t('client.attachedInbounds') }}</th>
+                <th style="width: 300px">{{ t('client.traffic') }}</th>
+                <th class="center" style="width: 216px">{{ t('client.speed') }}</th>
+                <th style="width: 130px">{{ t('client.remaining') }}</th>
+                <th style="width: 130px">{{ t('client.menu.duration') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!page || !page.items.length" class="empty-row">
                 <td :colspan="hasGroups ? 11 : 10">
-                  <div class="card-empty">
-                    <Icon name="users" :size="32" />
+                  <div class="clients-empty">
+                    <AntIcon name="TeamOutlined" :size="32" />
                     <div>{{ t('common.nothingYet') }}</div>
-                    <button v-if="search || statusFilter || groupFilter || filterCount" class="btn sm" @click="clearFilters">{{ t('client.menu.clearAllFilters') }}</button>
                   </div>
                 </td>
               </tr>
               <tr v-for="c in page.items" :key="c.id" :class="{ picked: selected.has(c.id) }">
-                <td class="tick">
-                  <input type="checkbox" :checked="selected.has(c.id)" :aria-label="c.name" @change="toggleOne(c.id, $event.target.checked)" />
-                </td>
-
-                <td class="w-cactions">
-                  <div class="actions">
-                    <button class="act text" :title="t('device.showQR')" @click="shareFor = c"><Icon name="qr" :size="16" /></button>
-                    <button class="act text" :title="t('client.menu.clientInfo')" @click="router.push(`/clients/${c.id}`)"><Icon name="info" :size="16" /></button>
-                    <button class="act text" :title="t('outbound.resetTraffic')" :disabled="isPending(c.id)" @click="resetOne(c)">
-                      <span v-if="isPending(c.id)" class="spin sm"></span>
-                      <Icon v-else name="refresh" :size="16" />
-                    </button>
-                    <button class="act text" :title="t('action.edit')" @click="formFor = { client: c }"><Icon name="edit" :size="16" /></button>
-                    <button class="act text danger" :title="t('action.delete')" @click="removeOne(c)"><Icon name="trash" :size="16" /></button>
+                <td class="sel"><input type="checkbox" class="acheck" :checked="selected.has(c.id)" :aria-label="c.name" @change="toggleOne(c.id, $event.target.checked)" /></td>
+                <td>
+                  <div class="aspace" style="gap: 4px; flex-wrap: nowrap">
+                    <button class="abtn text sm" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="shareFor = c"><AntIcon name="QrcodeOutlined" /></button>
+                    <button class="abtn text sm" :title="t('client.menu.clientInfo')" :aria-label="t('client.menu.clientInfo')" @click="infoFor = c"><AntIcon name="InfoCircleOutlined" /></button>
+                    <button class="abtn text sm" :title="t('outbound.resetTraffic')" :aria-label="t('outbound.resetTraffic')" :disabled="isPending(c.id)" @click="resetOne(c)"><AntIcon name="RetweetOutlined" /></button>
+                    <button class="abtn text sm" :title="t('action.edit')" :aria-label="t('action.edit')" @click="formFor = { client: c }"><AntIcon name="EditOutlined" /></button>
+                    <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="removeOne(c)"><AntIcon name="DeleteOutlined" /></button>
                   </div>
                 </td>
-
                 <td>
-                  <Toggle
-                    :model-value="c.status === 'active'"
-                    :label="c.name"
-                    :disabled="c.status === 'expired' || c.status === 'exhausted'"
-                    :loading="isPending(c.id)"
-                    @update:model-value="(v) => setEnabled(c, v)"
-                  />
+                  <Toggle :model-value="c.status === 'active'" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted'" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" />
                 </td>
-
                 <td>
-                  <span class="tag" :class="statusTag(c).color" :title="lastOnlineTitle(c)">
+                  <span class="atag" :class="statusTag(c).color === 'grey' ? '' : statusTag(c).color" :title="lastOnlineTitle(c)" style="margin: 0">
                     <i v-if="statusTag(c).dot" class="online-dot"></i>{{ statusTag(c).label }}
                   </span>
                 </td>
-
                 <td>
                   <div class="email-cell">
-                    <a class="email" href="#" @click.prevent="router.push(`/clients/${c.id}`)">{{ c.name }}</a>
+                    <span class="email">{{ c.name }}</span>
                     <span class="sub ltr">{{ c.accounts?.length ?? 0 }} / {{ c.deviceLimit }}</span>
-                    <span v-if="c.note" class="sub">{{ c.note }}</span>
+                    <span v-if="c.note" class="sub" :title="c.note">{{ c.note }}</span>
                   </div>
                 </td>
-
                 <td v-if="hasGroups">
-                  <button v-if="c.group" class="tag geekblue grouptag" :class="{ dim: groupFilter === c.group }" @click="groupFilter = c.group">{{ c.group }}</button>
-                  <span v-else class="muted">—</span>
+                  <span v-if="c.group" class="atag geekblue" :style="{ margin: 0, cursor: 'pointer', opacity: groupFilter === c.group ? 0.6 : 1 }" @click="groupFilter = c.group">{{ c.group }}</span>
+                  <span v-else class="cell-empty">—</span>
                 </td>
-
                 <td>
                   <template v-if="inboundChips(c).length">
-                    <span v-for="ib in inboundChips(c).slice(0, INBOUND_CHIP_LIMIT)" :key="ib.name" class="tag chip" :class="ib.protocol === 'openvpn' ? 'orange' : 'geekblue'" :title="ib.name">{{ ib.name }}</span>
-                    <span v-if="inboundChips(c).length > INBOUND_CHIP_LIMIT" class="tag chip" :title="inboundChips(c).slice(INBOUND_CHIP_LIMIT).map((x) => x.name).join(', ')">+{{ inboundChips(c).length - INBOUND_CHIP_LIMIT }}</span>
+                    <span v-for="ib in inboundChips(c).slice(0, INBOUND_CHIP_LIMIT)" :key="ib.name" class="atag" :class="ib.protocol === 'openvpn' ? 'orange' : 'gold'" style="margin: 2px" :title="ib.name">{{ ib.name }}</span>
+                    <span v-if="inboundChips(c).length > INBOUND_CHIP_LIMIT" class="atag default" style="margin: 2px; cursor: pointer" :title="inboundChips(c).slice(INBOUND_CHIP_LIMIT).map((x) => x.name).join(', ')">+{{ inboundChips(c).length - INBOUND_CHIP_LIMIT }}</span>
                   </template>
-                  <span v-else class="muted">—</span>
+                  <span v-else class="cell-empty">—</span>
                 </td>
-
                 <td>
-                  <div class="traffic-cell" :title="`↑ ${bytes(c.upBytes || 0, store.locale)}  ↓ ${bytes(c.downBytes || 0, store.locale)}`">
-                    <span class="traffic-used num ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
-                    <div class="meter traffic-bar"><span :class="meterClass(usedPercent(c))" :style="{ width: (usedPercent(c) ?? 0) + '%' }"></span></div>
-                    <span class="traffic-limit num ltr">{{ c.quotaBytes ? bytes(c.quotaBytes, store.locale) : '∞' }}</span>
+                  <div class="client-traffic-cell" :class="{ 'is-unlimited': !c.quotaBytes }" :title="`↑ ${bytes(c.upBytes || 0, store.locale)}  ↓ ${bytes(c.downBytes || 0, store.locale)}`">
+                    <span class="client-traffic-cell-used ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
+                    <span class="aprogress client-traffic-cell-bar"><span :style="{ width: (c.quotaBytes ? Math.min(100, usedPercent(c) ?? 0) : 100) + '%', background: barColor(c) }"></span></span>
+                    <span class="client-traffic-cell-limit ltr">
+                      <span v-if="!c.quotaBytes" class="client-traffic-cell-infinity">∞</span>
+                      <template v-else>{{ bytes(c.quotaBytes, store.locale) }}</template>
+                    </span>
                   </div>
                 </td>
-
-                <td class="center">
-                  <span class="tag num ltr speed-tag">{{ speedOf(c) || '—' }}</span>
-                </td>
-
-                <td>
-                  <span class="tag num ltr" :class="remainingTag(c).color">{{ remainingTag(c).label }}</span>
-                </td>
-
-                <td>
-                  <span class="tag ltr" :class="expiryTag(c).color" :title="expiryTitle(c)">{{ expiryTag(c).label }}</span>
-                </td>
+                <td class="center"><span class="atag speed-tag ltr" :class="speedOf(c) ? 'blue' : ''">{{ speedOf(c) || '—' }}</span></td>
+                <td><span class="atag ltr" :class="remainingTag(c).color" style="margin: 0">{{ remainingTag(c).label }}</span></td>
+                <td><span class="atag ltr" :class="expiryTag(c).color" :title="expiryTitle(c)" style="margin: 0">{{ expiryTag(c).label }}</span></td>
               </tr>
             </tbody>
           </table>
         </div>
 
-      <div class="cards">
-        <article v-for="c in page.items" :key="c.id" class="ccard" :class="{ picked: selected.has(c.id) }">
-          <div class="crow">
-            <input
-              type="checkbox"
-              :checked="selected.has(c.id)"
-              :aria-label="c.name"
-              @change="toggleOne(c.id, $event.target.checked)"
-            />
-            <a class="name" href="#" @click.prevent="router.push(`/clients/${c.id}`)">{{ c.name }}</a>
-            <Toggle
-              class="spacer"
-              :model-value="c.status === 'active'"
-              :label="c.name"
-              :disabled="c.status === 'expired' || c.status === 'exhausted'"
-              :loading="isPending(c.id)"
-              @update:model-value="(v) => setEnabled(c, v)"
-            />
-          </div>
-
-          <div class="crow tags">
-            <span class="tag" :class="statusTag(c).color">
-              <i v-if="statusTag(c).dot" class="dot"></i>{{ statusTag(c).label }}
-            </span>
-            <span class="tag proto">{{ c.protocol }}</span>
-            <span v-if="c.group" class="tag geekblue">{{ c.group }}</span>
-            <span class="muted small ltr">{{ c.accounts?.length ?? 0 }} / {{ c.deviceLimit }}</span>
-          </div>
-
-          <div class="meter"><span :class="meterClass(usedPercent(c))" :style="{ width: (usedPercent(c) ?? 0) + '%' }"></span></div>
-          <div class="crow muted small">
-            <span class="num ltr">
-              {{ bytes(c.usedBytes, store.locale) }} /
-              {{ c.quotaBytes ? bytes(c.quotaBytes, store.locale) : '∞' }}
-            </span>
-            <span class="spacer tag ltr" :class="expiryTag(c).color">{{ expiryTag(c).label }}</span>
-          </div>
-
-          <div class="crow actions">
-            <button class="act" :title="t('device.showQR')" @click="shareFor = c"><Icon name="qr" :size="17" /></button>
-            <button class="act" :title="t('action.details')" @click="router.push(`/clients/${c.id}`)"><Icon name="info" :size="17" /></button>
-            <button class="act" :title="t('action.resetTraffic')" :disabled="isPending(c.id)" @click="resetOne(c)"><span v-if="isPending(c.id)" class="spin sm"></span><Icon v-else name="refresh" :size="17" /></button>
-            <button class="act" :title="t('action.edit')" @click="formFor = { client: c }"><Icon name="edit" :size="17" /></button>
-            <button class="act danger spacer" :title="t('action.delete')" @click="removeOne(c)"><Icon name="trash" :size="17" /></button>
-          </div>
-        </article>
-      </div>
+        <!-- Their pagination: total, the pages, and a size changer past ten rows. -->
+        <ul v-if="page && page.total > pageSize" class="apagination">
+          <li class="apagination-total">{{ nf(page.total) }}</li>
+          <li><button class="apage" :disabled="currentPage <= 1" :aria-label="t('action.prev')" @click="goPage(currentPage - 1)"><AntIcon name="LeftOutlined" /></button></li>
+          <li v-for="(it, i) in pageItems" :key="i">
+            <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" @click="goPage(it)">{{ it }}</button>
+            <button v-else class="apage jump" :aria-label="it === 'prev' ? t('action.prev') : t('action.next')" @click="goPage(it === 'prev' ? Math.max(1, currentPage - 5) : Math.min(totalPages, currentPage + 5))">•••</button>
+          </li>
+          <li><button class="apage" :disabled="currentPage >= totalPages" :aria-label="t('action.next')" @click="goPage(currentPage + 1)"><AntIcon name="RightOutlined" /></button></li>
+          <li v-if="page.total > 10" class="aselect apage-size"><select :value="pageSize" :aria-label="t('client.pageSize')" @change="setPageSize($event.target.value)">
+            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }} / {{ t('client.perPage') }}</option>
+          </select></li>
+        </ul>
       </template>
-
-      <div v-if="page && totalPages > 1" class="pager">
-        <button class="btn sm" :disabled="currentPage <= 1" @click="currentPage--; load()">‹</button>
-        <span class="muted small num ltr">{{ currentPage }} / {{ totalPages }}</span>
-        <button class="btn sm" :disabled="currentPage >= totalPages" @click="currentPage++; load()">›</button>
-      </div>
     </div>
+  </div>
   </div>
 
   <div v-if="importOpen" class="modal-backdrop" @click.self="importOpen = false">
@@ -1079,11 +1045,11 @@ async function submitForm(input) {
   </div>
 
   <Teleport to="body">
-    <div v-if="moreOpen" class="rowmenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
+    <div v-if="moreOpen" class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
       <template v-for="(m, i) in moreItems" :key="m.key || `d${i}`">
-        <hr v-if="m.divider" class="menu-divider" />
-        <button v-else class="menu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickMore(m.key)">
-          <Icon :name="m.icon" :size="14" />{{ m.label }}
+        <hr v-if="m.divider" class="amenu-divider" />
+        <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickMore(m.key)">
+          <AntIcon :name="m.icon" /><span>{{ m.label }}</span>
         </button>
       </template>
     </div>
@@ -1195,7 +1161,8 @@ async function submitForm(input) {
     @close="formFor = null"
     @submit="submitForm"
   />
-  <ShareDialog v-if="shareFor" :client="shareFor" @close="shareFor = null" />
+  <ClientQrModal v-if="shareFor" :client="shareFor" @close="shareFor = null" />
+  <ClientInfoModal v-if="infoFor" :client="infoFor" :interfaces="interfaces" @close="infoFor = null" />
 
   <ConfirmDialog
     :open="!!ask"
@@ -1212,479 +1179,57 @@ async function submitForm(input) {
 </template>
 
 <style scoped>
-/* Their summary card: six Statistics in a row, title over value. */
-.summary-card {
-  padding: 12px 16px;
-  margin-bottom: 12px;
-}
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 12px 16px;
-}
-.stat {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: start;
-  color: inherit;
-  font: inherit;
-}
-.stat.pressable {
-  cursor: pointer;
-  border-radius: 6px;
-}
-.stat.pressable.on .stat-value {
-  color: var(--accent);
-}
-.stat-title {
-  font-size: 14px;
-  color: var(--muted);
-}
-.stat-value {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 24px;
-  line-height: 32px;
-  font-variant-numeric: tabular-nums;
-}
-.stat-icon {
-  color: var(--muted);
-}
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-inline-end: 4px;
-}
+/* 3x-ui's ClientsPage.css, measured as it is. */
+.arow.six > .acol { flex: 0 0 16.6667%; max-width: 16.6667%; }
+@media (max-width: 991px) { .arow.six > .acol { flex: 0 0 33.3333%; max-width: 33.3333%; } }
+@media (max-width: 575px) { .arow.six > .acol { flex: 0 0 50%; max-width: 50%; } }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 .dot-green { background: var(--ok); }
-.dot-blue { background: #1677ff; }
+.dot-blue { background: var(--accent); }
 .dot-red { background: var(--bad); }
-.dot-orange { background: #faad14; }
+.dot-orange { background: var(--warn); }
 .dot-gray { background: var(--faint); }
-@media (max-width: 992px) {
-  .summary-grid { grid-template-columns: repeat(3, 1fr); }
-}
-@media (max-width: 560px) {
-  .summary-grid { grid-template-columns: repeat(2, 1fr); }
-}
 
-/* Their toolbar in the card title, and the filter bar under it. */
-.card-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  width: 100%;
-  padding: 6px 0;
-}
-.selchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  font-size: 13px;
-}
-.chip-x {
-  display: inline-flex;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  opacity: 0.6;
-  cursor: pointer;
-}
-.chip-x:hover { opacity: 1; }
-.clients-body {
-  padding: 12px 16px 16px;
-}
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.filter-bar .search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 200px;
-  max-width: 320px;
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--faint);
-}
-.filter-bar .search input {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font-size: 14px;
-}
-.filter-bar .search input:focus { outline: none; box-shadow: none; }
-.filter-bar .sort {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 200px;
-  height: 32px;
-}
-.badge-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.badge {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--bad);
-  color: #fff;
-  font-size: 11px;
-  line-height: 16px;
-  text-align: center;
-}
-.shown-count {
-  margin-inline-start: auto;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-.tag.closable {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
+.acard.small .acard-head { min-height: 38px; padding: 0 12px; }
+.acard.small .acard-body { padding: 12px; }
+.card-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; padding: 6px 0; }
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.filter-count { margin-inline-start: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 6px 8px; background: var(--surface-2); border-radius: 8px; }
+.filter-chips .atag { margin: 0; }
+.abadge-wrap { position: relative; display: inline-block; }
+.abadge { position: absolute; top: 4px; inset-inline-end: 4px; transform: translate(50%, -50%); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 12px; line-height: 16px; text-align: center; box-shadow: 0 0 0 1px var(--surface); }
+.filter-bar .sort-select { width: auto; }
+.sort-select .aselect-suffix { position: absolute; inset-inline-end: 11px; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 12px; pointer-events: none; }
+.sort-select::after { display: none; }
+.sort-select select { padding-inline-end: 28px; }
 
-/* Their columns and widths. */
-.w-cactions { width: 200px; }
-.w-enabled { width: 80px; }
-.w-online { width: 90px; }
-.w-client { width: 220px; }
-.w-group { width: 130px; }
-.w-inbounds { width: 170px; }
-.w-ctraffic { width: 300px; }
-.w-speed { width: 110px; }
-.w-remaining { width: 130px; }
-.w-duration { width: 130px; }
-th.center, td.center { text-align: center; }
-.act.text {
-  width: 24px;
-  height: 24px;
-  color: var(--ink);
-}
-.act.text.danger { color: var(--bad); }
-.online-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  margin-inline-end: 4px;
-}
-.email-cell {
-  display: flex;
-  flex-direction: column;
-}
-.email-cell .email {
-  font-weight: 500;
-  color: inherit;
-  text-decoration: none;
-}
-.email-cell .sub {
-  font-size: 11px;
-  opacity: 0.55;
-  font-family: var(--mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tag.chip { margin: 2px; }
-.grouptag.dim { opacity: 0.6; }
-.traffic-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-.traffic-used,
-.traffic-limit {
-  flex: 0 0 72px;
-  min-width: 72px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.traffic-used { text-align: end; }
-.traffic-limit { text-align: start; color: var(--muted); }
-.traffic-bar {
-  flex: 1 1 60px;
-  min-width: 48px;
-  margin: 0;
-}
-.speed-tag { min-width: 72px; }
+.atable th.center, .atable td.center { text-align: center; }
+.atable-wrap.stale { opacity: 0.6; }
+.email-cell { display: flex; flex-direction: column; }
+.email-cell .email { font-weight: 500; }
+.email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.cell-empty { color: var(--faint); }
+.online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }
+@keyframes online-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
 
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.dot.ok { background: var(--tag-green-ink); }
-.dot.warn { background: var(--tag-orange-ink); }
-.dot.bad { background: var(--tag-red-ink); }
-.dot.muted { background: var(--faint); }
-.dot.ink { background: var(--accent); }
+/* Their ClientTrafficCell: a pill with the figures either side of a bar. */
+.client-traffic-cell { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); }
+.client-traffic-cell-used, .client-traffic-cell-limit { flex: 0 0 72px; min-width: 72px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.client-traffic-cell-used { text-align: end; color: var(--ink); }
+.client-traffic-cell-limit { text-align: start; color: var(--muted); }
+.client-traffic-cell-bar { flex: 1 1 60px; min-width: 48px; }
+.client-traffic-cell.is-unlimited .client-traffic-cell-bar > span { border: 1px solid rgba(114, 46, 209, 0.55); }
+.client-traffic-cell-infinity { display: inline-flex; align-items: center; color: var(--tag-purple-ink); font-size: 14px; line-height: 1; }
 
-.actionbar {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-.selchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px 5px 12px;
-  border-radius: 100px;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  color: var(--accent-hover);
-  font-size: var(--t-sm);
-  font-weight: 600;
-}
-.selchip button {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.selchip button:hover {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.filterbadge {
-  font-size: var(--t-xs);
-  color: var(--muted);
-}
-.filterbadge b {
-  color: var(--accent-hover);
-}
+.clients-empty { padding: 32px 0; text-align: center; color: var(--muted); }
+.clients-empty .anticon { display: block; margin: 0 auto 8px; }
 
-.search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1 1 200px;
-  max-width: 280px;
-}
-.search svg {
-  position: absolute;
-  inset-inline-start: 11px;
-  color: var(--faint);
-  pointer-events: none;
-}
-.search input {
-  padding-inline-start: 34px;
-}
-.ctl {
-  width: auto;
-  min-width: 130px;
-}
-
-th.tick,
-td.tick {
-  width: 42px;
-  padding-inline-end: 0;
-}
-
-/* The declared widths only hold if the table is allowed to reach its natural
-   size; squeezed into a narrower wrapper the browser ignores them and wraps
-   every cell instead. Giving it a floor lets the wrapper scroll sideways —
-   which is what 3x-ui's own client table does — and keeps rows one line tall. */
-.desk table {
-  min-width: 1260px;
-}
-.desk td,
-.desk th {
-  white-space: nowrap;
-}
-.desk td .sub {
-  white-space: normal;
-}
-
-/* Explicit widths, the way 3x-ui sizes its columns. Left to itself the browser
-   gives the icon row more space than the customer's name and wraps it onto
-   three lines, tripling the row height. */
-.w-actions { width: 172px; }
-.w-sm { width: 78px; }
-.w-md { width: 112px; }
-.w-name { min-width: 190px; }
-.w-traffic { width: 200px; }
-.w-exp { width: 132px; }
-
-.name {
-  white-space: nowrap;
-}
-input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  min-height: 0;
-  padding: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-
-tr.picked,
-.ccard.picked {
-  background: var(--accent-soft);
-}
-.name {
-  color: var(--ink);
-  font-weight: 600;
-}
-.cards .name {
-  white-space: normal;
-}
-.name:hover {
-  color: var(--accent-hover);
-}
-.sub {
-  margin-top: 1px;
-}
-.grouptag {
-  border: 1px solid var(--accent-line);
-  cursor: pointer;
-  font: inherit;
-  font-family: var(--mono);
-  font-size: var(--t-xs);
-  font-weight: 600;
-}
-.grouptag:hover {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.soon {
-  color: var(--warn);
-  font-weight: 600;
-}
-
-.rowmenu {
-  position: fixed;
-  z-index: 40;
-  min-width: 222px;
-  padding: 5px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 11px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  font-size: var(--t-sm);
-  text-align: start;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.menu-item:hover {
-  background: var(--surface-3);
-  color: var(--ink);
-}
-.menu-item.danger {
-  color: var(--bad);
-}
-.menu-item.danger:hover {
-  background: var(--bad-soft);
-}
-
-/* ---------- mobile cards ---------- */
-.cards {
-  display: none;
-}
-.ccard {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.ccard:last-child {
-  border-bottom: none;
-}
-.crow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.crow.tags {
-  gap: 6px;
-}
-
-.modal.narrow {
-  max-width: 440px;
-}
-.card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.target {
-  margin: 0;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  justify-content: center;
-  padding: 13px;
-  border-top: 1px solid var(--line-soft);
-}
-
-@media (max-width: 860px) {
-  .desk {
-    display: none;
-  }
-  .cards {
-    display: block;
-  }
-}
+.apagination { align-items: center; }
+.apagination-total { display: inline-flex; align-items: center; height: 32px; margin-inline-end: 8px; color: var(--ink); font-size: 14px; }
+.apage.jump { border-color: transparent; background: transparent; letter-spacing: 2px; color: var(--faint); }
+.apage-size { height: 32px; min-width: 100px; }
+.apage-size select { height: 30px; }
+.apage .anticon { font-size: 12px; }
 </style>
