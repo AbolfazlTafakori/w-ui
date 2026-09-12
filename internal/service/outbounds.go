@@ -464,7 +464,11 @@ func (s *Outbounds) CheckAll(ctx context.Context, mode string) ([]CheckResult, e
 	}
 
 	out := make([]CheckResult, len(list))
-	sem := make(chan struct{}, 8) // a hop that hangs must not hold up the rest
+	width := 8 // a hop that hangs must not hold up the rest
+	if !ProbeConcurrency.Load() {
+		width = 1 // one at a time, so probes do not share the bandwidth
+	}
+	sem := make(chan struct{}, width)
 	done := make(chan struct{})
 
 	for i, ob := range list {

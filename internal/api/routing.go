@@ -155,6 +155,24 @@ func (s *Server) handleDeleteBalancer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleBalancerOverride(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Target string `json:"target"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := s.balancers.SetOverride(r.Context(), id, in.Target); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // checkMode reads how to measure. Anything unrecognised falls back to TCP
 // rather than erroring: a probe is a convenience, and refusing to run one over
 // a query string is not worth an error page.

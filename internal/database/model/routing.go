@@ -269,6 +269,11 @@ type Balancer struct {
 	// Members are outbound tags, comma-separated.
 	Members string `gorm:"type:text" json:"members"`
 	Note    string `gorm:"size:256" json:"note"`
+	// Fallback is the outbound used when no member is up. Override pins
+	// one member by hand until it is cleared; it is a live control, not a
+	// setting, and is left out of exports.
+	Fallback string `gorm:"size:64" json:"fallback"`
+	Override string `gorm:"size:64" json:"override"`
 	// Mark is the routing mark, allocated on creation like an outbound's.
 	Mark uint32 `gorm:"not null;default:0;index" json:"mark"`
 

@@ -63,6 +63,10 @@ func amneziaLines(p model.AWGParams) []string {
 	return lines
 }
 
+// DNSFor is the resolver a customer's profile names. The engine replaces it
+// while the panel's own resolver is on; by default it is the interface's.
+var DNSFor = func(iface *model.Interface) string { return iface.DNS }
+
 // RenderClient produces the file a customer imports.
 func RenderClient(acc *model.Account, iface *model.Interface) string {
 	var b strings.Builder
@@ -73,8 +77,8 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 	// mask would make the client claim the whole tunnel subnet and blackhole
 	// every other customer's traffic on that machine.
 	fmt.Fprintf(&b, "Address = %s/32\n", acc.IP)
-	if iface.DNS != "" {
-		fmt.Fprintf(&b, "DNS = %s\n", iface.DNS)
+	if dns := DNSFor(iface); dns != "" {
+		fmt.Fprintf(&b, "DNS = %s\n", dns)
 	}
 	if iface.MTU > 0 {
 		fmt.Fprintf(&b, "MTU = %d\n", iface.MTU)

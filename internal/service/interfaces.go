@@ -403,7 +403,7 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 		InterfaceID uint
 		N           int64
 	}
-	since := time.Now().Add(-3 * time.Minute)
+	since := time.Now().Add(-onlineWithin())
 	err = s.db.WithContext(ctx).Model(&model.Account{}).
 		Select("interface_id, COUNT(DISTINCT client_id) AS n").
 		Where("last_handshake > ?", since).

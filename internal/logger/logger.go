@@ -17,22 +17,40 @@ import (
 // ring would simply be a second half of the same log.
 var Recent = NewRing()
 
-func New(level, format string) (*slog.Logger, error) {
-	var lv slog.Level
+// Level is the running threshold, changeable from the engine page without
+// a restart.
+var Level = new(slog.LevelVar)
+
+// ParseLevel reads a level name.
+func ParseLevel(level string) (slog.Level, error) {
 	switch strings.ToLower(level) {
 	case "debug":
-		lv = slog.LevelDebug
+		return slog.LevelDebug, nil
 	case "info", "":
-		lv = slog.LevelInfo
+		return slog.LevelInfo, nil
 	case "warn", "warning":
-		lv = slog.LevelWarn
+		return slog.LevelWarn, nil
 	case "error":
-		lv = slog.LevelError
-	default:
-		return nil, fmt.Errorf("logger: unknown level %q", level)
+		return slog.LevelError, nil
 	}
+	return 0, fmt.Errorf("logger: unknown level %q", level)
+}
 
-	opts := &slog.HandlerOptions{Level: lv}
+// SetLevel changes the running threshold; an unknown name is ignored.
+func SetLevel(level string) {
+	if lv, err := ParseLevel(level); err == nil {
+		Level.Set(lv)
+	}
+}
+
+func New(level, format string) (*slog.Logger, error) {
+	lv, err := ParseLevel(level)
+	if err != nil {
+		return nil, err
+	}
+	Level.Set(lv)
+
+	opts := &slog.HandlerOptions{Level: Level}
 
 	var h slog.Handler
 	switch strings.ToLower(format) {

@@ -120,6 +120,9 @@ type Policy struct {
 	PanelUID     int
 	PanelExclude []netip.Prefix
 
+	// NoCounters leaves the per-outbound byte counters out of the program.
+	NoCounters bool
+
 	// Hops are the outbounds with a routing table of their own.
 	Hops []Hop
 
@@ -336,6 +339,9 @@ func writePanelChain(b *strings.Builder, p Policy) {
 // writeCounters emits one counter per hop so the panel can show what each
 // outbound actually carried, rather than only what it was configured to carry.
 func writeCounters(b *strings.Builder, p Policy) {
+	if p.NoCounters {
+		return
+	}
 	hops := append([]Hop(nil), p.Hops...)
 	sort.Slice(hops, func(i, j int) bool { return hops[i].Mark < hops[j].Mark })
 

@@ -9,6 +9,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -67,7 +68,9 @@ type Server struct {
 	// pushes here.
 	localNodeID uint
 
-	restart func()
+	restart  func()
+	engine   *service.Engine
+	template *service.Template
 }
 
 // Options configures a Server.
@@ -102,6 +105,9 @@ type Options struct {
 	// Restart ends the process so the service manager brings it back. Nil
 	// means the settings page cannot offer a restart.
 	Restart func()
+
+	Engine   *service.Engine
+	Template *service.Template
 
 	// What the process is running with, so the settings page can show the
 	// effective listen address, path and certificates when nothing has been
@@ -149,6 +155,8 @@ func New(o Options) *Server {
 		// has never added a second.
 		localNodeID: maxUint(o.LocalNodeID, 1),
 		restart:     o.Restart,
+		engine:      o.Engine,
+		template:    o.Template,
 		basePath:    o.BasePath,
 		tlsCert:     o.TLSCert,
 		tlsKey:      o.TLSKey,
@@ -205,6 +213,9 @@ func LogRequests(log *slog.Logger, next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		if !service.AccessLog.Load() {
+			return
+		}
 
 		level := slog.LevelDebug
 		if rec.status >= 500 {
@@ -222,10 +233,26 @@ func LogRequests(log *slog.Logger, next http.Handler) http.Handler {
 		// ones so a panel's debug log is not a record of where its operator
 		// works from, kept for as long as the journal keeps anything.
 		if rec.status >= 400 {
-			attrs = append(attrs, "ip", clientIP(r))
+			ip := clientIP(r)
+			if service.MaskAddress.Load() {
+				ip = maskIP(ip)
+			}
+			attrs = append(attrs, "ip", ip)
 		}
 		log.Log(r.Context(), level, "request", attrs...)
 	})
+}
+
+// maskIP hides the last part of an address, the way Xray's maskAddress
+// does, for an operator who keeps logs but not where people come from.
+func maskIP(ip string) string {
+	if i := strings.LastIndex(ip, "."); i > 0 {
+		return ip[:i] + ".*"
+	}
+	if i := strings.LastIndex(ip, ":"); i > 0 {
+		return ip[:i] + ":*"
+	}
+	return ip
 }
 
 type statusRecorder struct {

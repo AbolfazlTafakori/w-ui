@@ -271,7 +271,7 @@ func RenderServer(iface *model.Interface, l Layout) (string, error) {
 	}
 
 	b.WriteString("\npush \"redirect-gateway def1 bypass-dhcp\"\n")
-	for _, dns := range dnsServers(iface.DNS) {
+	for _, dns := range dnsServers(DNSFor(iface)) {
 		fmt.Fprintf(&b, "push \"dhcp-option DNS %s\"\n", dns)
 	}
 
@@ -442,6 +442,10 @@ func transport(p model.OpenVPNParams) string {
 	}
 	return "udp"
 }
+
+// DNSFor is the resolver pushed to customers. The engine replaces it while
+// the panel's own resolver is on; by default it is the interface's.
+var DNSFor = func(iface *model.Interface) string { return iface.DNS }
 
 // dnsServers splits the interface's DNS field, which holds a comma-separated
 // list, into individual addresses.

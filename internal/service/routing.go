@@ -68,6 +68,16 @@ type Routing struct {
 	// panelTag is the outbound carrying the panel's own traffic; empty is
 	// direct.
 	panelTag string
+	// domainStrategy is which families names resolve to: AsIs, UseIPv4 or
+	// UseIPv6.
+	domainStrategy string
+}
+
+// SetDomainStrategy chooses the families names in lists resolve to.
+func (s *Routing) SetDomainStrategy(v string) {
+	s.mu.Lock()
+	s.domainStrategy = v
+	s.mu.Unlock()
 }
 
 func NewRouting(db *gorm.DB, log *slog.Logger) *Routing {
@@ -607,6 +617,8 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 		p.DefaultMark = def.mark
 	}
 
+	p.NoCounters = !OutboundCounters.Load()
+
 	// The panel's own traffic. Only a hop with a device can carry it; the
 	// endpoints of every hop stay direct so no tunnel is built through itself.
 	p.PanelUID = -1
@@ -685,11 +697,31 @@ func (s *Routing) endpointPrefixes(address string) []netip.Prefix {
 // its enabled members that have one, or -- for leastPing -- only the one
 // that answered the last check fastest.
 func (s *Routing) balancerDevices(b model.Balancer, byOutbound map[string]model.Outbound) []string {
+	return pickBalancerDevices(b, byOutbound)
+}
+
+// pickBalancerDevices is where a balancer's traffic goes right now: the
+// override if one is set and up; else the members that are up -- all of
+// them for random, the fastest for leastPing; else the fallback, if it is
+// up; else nowhere.
+func pickBalancerDevices(b model.Balancer, byOutbound map[string]model.Outbound) []string {
+	up := func(tag string) (model.Outbound, bool) {
+		o, ok := byOutbound[tag]
+		if !ok || !o.Enabled || hopDevice(o) == "" || o.LastError != "" {
+			return o, false
+		}
+		return o, true
+	}
+	if b.Override != "" {
+		if o, ok := up(b.Override); ok {
+			return []string{hopDevice(o)}
+		}
+	}
 	var devs []string
 	var best *model.Outbound
 	for _, tag := range splitList(b.Members) {
-		o, ok := byOutbound[tag]
-		if !ok || !o.Enabled || hopDevice(o) == "" || o.LastError != "" {
+		o, ok := up(tag)
+		if !ok {
 			continue
 		}
 		if b.Strategy == model.BalancerLeastPing {
@@ -702,7 +734,12 @@ func (s *Routing) balancerDevices(b model.Balancer, byOutbound map[string]model.
 		devs = append(devs, hopDevice(o))
 	}
 	if b.Strategy == model.BalancerLeastPing && best != nil {
-		return []string{hopDevice(*best)}
+		devs = []string{hopDevice(*best)}
+	}
+	if len(devs) == 0 && b.Fallback != "" {
+		if o, ok := up(b.Fallback); ok {
+			devs = []string{hopDevice(o)}
+		}
 	}
 	return devs
 }
@@ -906,6 +943,15 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 		sem = make(chan struct{}, 8)
 	)
 	resolver := net.Resolver{}
+	s.mu.RLock()
+	family := "ip"
+	switch s.domainStrategy {
+	case "UseIPv4":
+		family = "ip4"
+	case "UseIPv6":
+		family = "ip6"
+	}
+	s.mu.RUnlock()
 
 	for name := range names {
 		wg.Add(1)
@@ -914,7 +960,7 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			ips, err := resolver.LookupNetIP(ctx, "ip", name)
+			ips, err := resolver.LookupNetIP(ctx, family, name)
 			if err != nil || len(ips) == 0 {
 				return
 			}

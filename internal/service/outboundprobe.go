@@ -45,7 +45,11 @@ func probeThrough(ctx context.Context, ob *model.Outbound, mode string) probeRes
 	}
 	defer tr.CloseIdleConnections()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, traceURL, nil)
+	target, _ := ProbeURL.Load().(string)
+	if target == "" {
+		target = traceURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return probeResult{err: err}
 	}
@@ -62,12 +66,17 @@ func probeThrough(ctx context.Context, ob *model.Outbound, mode string) probeRes
 		return probeResult{err: err}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return probeResult{err: fmt.Errorf("the trace answered %s", resp.Status)}
+	if resp.StatusCode >= 400 {
+		return probeResult{err: fmt.Errorf("the test URL answered %s", resp.Status)}
 	}
-	eg, err := parseTrace(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return probeResult{err: err}
+	var eg Egress
+	if target == traceURL {
+		eg, err = parseTrace(io.LimitReader(resp.Body, 4096))
+		if err != nil {
+			return probeResult{err: err}
+		}
+	} else {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	}
 	end := time.Now()
 

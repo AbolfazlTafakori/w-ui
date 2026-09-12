@@ -512,10 +512,10 @@ type ListFilter struct {
 	HasNote string // "" | "yes" | "no"
 }
 
-// onlineWithin is how recently a device must have handshaken to count as
+// onlineWithin() is how recently a device must have handshaken to count as
 // present. It matches the window WireGuard itself treats a session as live
 // for, and the overview counter uses the same one.
-const onlineWithin = 3 * time.Minute
+func onlineWithin() time.Duration { return time.Duration(OnlineWithin.Load()) * time.Second }
 
 // bucketWhere renders one status bucket as a condition.
 //
@@ -538,7 +538,7 @@ func bucketWhere(bucket string) (string, []any) {
 			[]any{model.StatusActive, depletingPercent}
 	case "online":
 		return "id IN (SELECT client_id FROM accounts WHERE last_handshake > ?)",
-			[]any{time.Now().UTC().Add(-onlineWithin)}
+			[]any{time.Now().UTC().Add(-onlineWithin())}
 	}
 	return "", nil
 }
@@ -1266,7 +1266,7 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 
 	// A peer is considered present if it handshook within the window after
 	// which WireGuard itself treats a session as stale.
-	cutoff := time.Now().UTC().Add(-3 * time.Minute)
+	cutoff := time.Now().UTC().Add(-onlineWithin())
 	if err := count(&o.Online, &model.Account{}, "last_handshake > ?", cutoff); err != nil {
 		return nil, err
 	}

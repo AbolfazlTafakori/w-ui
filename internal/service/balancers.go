@@ -37,12 +37,18 @@ type BalancerInput struct {
 	Strategy string   `json:"strategy"`
 	Members  []string `json:"members"`
 	Note     string   `json:"note"`
+	Fallback string   `json:"fallback"`
 }
 
-// BalancerView is a balancer with its members split out.
+// BalancerView is a balancer with its members split out, and what it is
+// sending traffic to right now.
 type BalancerView struct {
 	model.Balancer
 	MemberList []string `json:"memberList"`
+	// Live is the members currently carrying traffic: one for leastPing or
+	// an override, every member that is up for random, the fallback when
+	// none is, and nothing when there is nowhere to send it.
+	Live []string `json:"live"`
 }
 
 func view(b model.Balancer) BalancerView {
@@ -54,11 +60,50 @@ func (s *Balancers) List(ctx context.Context) ([]BalancerView, error) {
 	if err := s.db.WithContext(ctx).Order("id").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("service: list balancers: %w", err)
 	}
+	var outbounds []model.Outbound
+	_ = s.db.WithContext(ctx).Find(&outbounds).Error
+	byTag := make(map[string]model.Outbound, len(outbounds))
+	byDevice := map[string]string{}
+	for _, o := range outbounds {
+		byTag[o.Tag] = o
+		if d := hopDevice(o); d != "" {
+			byDevice[d] = o.Tag
+		}
+	}
 	out := make([]BalancerView, 0, len(rows))
 	for _, b := range rows {
-		out = append(out, view(b))
+		v := view(b)
+		for _, d := range pickBalancerDevices(b, byTag) {
+			v.Live = append(v.Live, byDevice[d])
+		}
+		out = append(out, v)
 	}
 	return out, nil
+}
+
+// SetOverride pins a balancer to one member -- or, with an empty target,
+// lets it choose again. A live control: it takes effect on the next tick.
+func (s *Balancers) SetOverride(ctx context.Context, id uint, target string) error {
+	var b model.Balancer
+	if err := s.db.WithContext(ctx).First(&b, id).Error; err != nil {
+		return fmt.Errorf("%w: no balancer %d", ErrNotFound, id)
+	}
+	target = strings.TrimSpace(target)
+	if target != "" {
+		ok := false
+		for _, m := range splitList(b.Members) {
+			if m == target {
+				ok = true
+			}
+		}
+		if !ok && target != b.Fallback {
+			return invalidField("target", "%q is not a member of %s", target, b.Tag)
+		}
+	}
+	if err := s.db.WithContext(ctx).Model(&b).Update("override", target).Error; err != nil {
+		return fmt.Errorf("service: set override: %w", err)
+	}
+	return nil
 }
 
 func (s *Balancers) validate(ctx context.Context, in *BalancerInput, selfID uint) error {
@@ -99,6 +144,20 @@ func (s *Balancers) validate(ctx context.Context, in *BalancerInput, selfID uint
 		return invalidField("tag", "a balancer called %q already exists", in.Tag)
 	}
 
+	in.Fallback = strings.TrimSpace(in.Fallback)
+	if in.Fallback != "" {
+		var fb model.Outbound
+		if err := s.db.WithContext(ctx).Where("tag = ?", in.Fallback).Limit(1).Find(&fb).Error; err != nil {
+			return fmt.Errorf("service: check fallback: %w", err)
+		}
+		if fb.ID == 0 {
+			return invalidField("fallback", "there is no outbound called %q", in.Fallback)
+		}
+		if !fb.Kind.NeedsHop() {
+			return invalidField("fallback", "%q has no device; the fallback has to be a hop", in.Fallback)
+		}
+	}
+
 	seen := map[string]bool{}
 	var members []string
 	for _, m := range in.Members {
@@ -136,6 +195,7 @@ func (s *Balancers) Create(ctx context.Context, in BalancerInput) (*BalancerView
 		Strategy: in.Strategy,
 		Members:  joinList(in.Members),
 		Note:     strings.TrimSpace(in.Note),
+		Fallback: in.Fallback,
 	}
 	if err := s.db.WithContext(ctx).Create(&b).Error; err != nil {
 		return nil, fmt.Errorf("service: create balancer: %w", err)
@@ -164,7 +224,7 @@ func (s *Balancers) Update(ctx context.Context, id uint, in BalancerInput) (*Bal
 	}
 	updates := map[string]any{
 		"tag": in.Tag, "strategy": in.Strategy, "members": joinList(in.Members),
-		"note": strings.TrimSpace(in.Note), "updated_at": time.Now().UTC(),
+		"note": strings.TrimSpace(in.Note), "fallback": in.Fallback, "updated_at": time.Now().UTC(),
 	}
 	if in.Enabled != nil {
 		updates["enabled"] = *in.Enabled
@@ -195,13 +255,15 @@ func (s *Balancers) Update(ctx context.Context, id uint, in BalancerInput) (*Bal
 // member outbound is measured once a minute, so "fastest" means fastest
 // now and not whenever somebody last pressed Test all.
 func (s *Balancers) RunChecks(ctx context.Context, outbounds *Outbounds) {
-	t := time.NewTicker(time.Minute)
-	defer t.Stop()
 	for {
+		every := time.Duration(ProbeInterval.Load()) * time.Second
+		if every < 10*time.Second {
+			every = time.Minute
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-time.After(every):
 		}
 		var n int64
 		if err := s.db.WithContext(ctx).Model(&model.Balancer{}).

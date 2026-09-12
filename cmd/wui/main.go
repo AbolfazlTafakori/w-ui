@@ -31,6 +31,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/dnsproxy"
 	"github.com/abolfazl/w-ui/internal/geoip"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/ipam"
@@ -194,6 +195,13 @@ func run() error {
 
 	outbounds := service.NewOutbounds(db, log)
 	routes := service.NewRouting(db, log)
+	// The engine page's settings. The ones that only take at start are
+	// read now, before anything that uses them is built.
+	engine := service.NewEngine(db, routes, dnsproxy.New(log), log)
+	if ov := engine.Overrides(context.Background()); ov.CollectInterval > 0 {
+		cfg.CollectInterval = ov.CollectInterval
+	}
+	engine.Apply(context.Background())
 	notifier := notify.New(log)
 	notifier.SetConfig(settings.Notify(context.Background()))
 	notifier.SetMail(settings.Mail(context.Background()))
@@ -259,7 +267,9 @@ func run() error {
 	geo := geoip.New(filepath.Join(cfg.DataDir, "geoip"), log)
 	routing.GeoIP = geo.Prefixes
 	go geo.Run(ctx)
-	go service.NewBalancers(db, log).RunChecks(ctx, outbounds)
+	balancers := service.NewBalancers(db, log)
+	go balancers.RunChecks(ctx, outbounds)
+	engine.RunDNS(ctx)
 
 	rec := reconciler.New(reconciler.Options{
 		DB:          db,
@@ -416,7 +426,7 @@ func run() error {
 		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, local.ID, log,
 		// Restart is a tidy stop: the service manager is set to bring the
 		// panel back, and this run's history is saved on the way out.
-		func() { stop() })
+		func() { stop() }, engine, balancers)
 	if err != nil {
 		return err
 	}
@@ -529,6 +539,8 @@ func buildServer(
 	localNodeID uint,
 	log *slog.Logger,
 	restart func(),
+	engine *service.Engine,
+	balancers *service.Balancers,
 ) (*http.Server, http.Handler, error) {
 	// Who may speak for somebody else. Done before anything serves, so no
 	// request is ever handled with the wrong idea of where it came from.
@@ -537,10 +549,13 @@ func buildServer(
 			"entries", strings.Join(bad, " "))
 	}
 
+	ifaceSvc := service.NewInterfaces(db, pools, log)
 	apiSrv := api.New(api.Options{
+		Engine:         engine,
+		Template:       service.NewTemplate(db, ifaceSvc, outbounds, routes, balancers, engine, log),
 		DB:             db,
 		Clients:        service.NewClients(db, pools, log),
-		Interfaces:     service.NewInterfaces(db, pools, log),
+		Interfaces:     ifaceSvc,
 		Catalog:        catalog,
 		Enforcer:       enforcer,
 		Shaper:         shp,
