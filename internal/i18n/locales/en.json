@@ -1522,5 +1522,8 @@
   "eng.confirm": "Confirm",
   "eng.cancel": "Cancel",
   "nav.docs": "Documentation",
-  "nav.theme": "Theme"
+  "nav.theme": "Theme",
+  "sharing.stat.devices": "Devices Flagged",
+  "sharing.stat.clients": "Customers Involved",
+  "sharing.stat.addrs": "Addresses Seen"
 }

@@ -1522,5 +1522,8 @@
   "eng.confirm": "تایید",
   "eng.cancel": "انصراف",
   "nav.docs": "مستندات",
-  "nav.theme": "تم"
+  "nav.theme": "تم",
+  "sharing.stat.devices": "دستگاه‌های مشکوک",
+  "sharing.stat.clients": "مشتریان درگیر",
+  "sharing.stat.addrs": "آدرس‌های دیده‌شده"
 }
