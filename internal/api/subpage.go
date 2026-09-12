@@ -457,6 +457,7 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-head .caret { font-size: 12px; transition: transform .3s; }
 .cfg.open .cfg-head .caret { transform: rotate(90deg); }
 .cfg-head .row-actions { margin-inline-start: auto; }
+.cfg-meta { font-size: 12px; opacity: .85; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cfg-body { display: none; padding: 16px; border-top: 1px solid var(--line); background: var(--surface); }
 .cfg.open .cfg-body { display: block; }
 .cfg-text { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
@@ -549,19 +550,11 @@ a.row-title:hover { text-decoration: underline; }
           <div class="row-actions"><button class="btn sm copy-all" type="button" data-i-title="copyAll"><span class="anticon">{{ index .Icons "CopyOutlined" }}</span></button></div>
         </div>
         {{ range .Devices }}
-        <div class="row">
-          <span class="tag {{ if eq $.Page.Protocol "wireguard" }}cyan{{ else }}orange{{ end }} row-tag">{{ if eq $.Page.Protocol "wireguard" }}WG{{ else }}OVPN{{ end }}</span>
-          <span class="row-title" title="{{ .Name }}">{{ .Name }} <span dir="ltr" style="opacity:.6">{{ .Address }}</span></span>
-          <div class="row-actions">
-            <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
-            {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
-            <div class="pop"><span class="tag qr-tag">{{ .Name }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"></div>{{ end }}
-          </div>
-        </div>
         <div class="cfg">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
             <span class="tag {{ if eq $.Page.Protocol "wireguard" }}cyan{{ else }}orange{{ end }}" style="margin:0;font-weight:600;letter-spacing:.3px" data-i="{{ if eq $.Page.Protocol "wireguard" }}config{{ else }}ovpnConfig{{ end }}">Config</span>
+            <span class="cfg-meta">{{ .Name }}</span>
             <div class="row-actions">
               <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
               <a class="btn sm" href="?device={{ .ID }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
