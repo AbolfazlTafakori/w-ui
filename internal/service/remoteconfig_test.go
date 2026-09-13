@@ -117,7 +117,7 @@ func TestADeviceOnANodeCanBeDownloadedOnItsOwn(t *testing.T) {
 	}
 
 	for _, acc := range accounts {
-		profile, err := s.DeviceConfig(context.Background(), token, acc.ID)
+		profile, err := s.DeviceConfig(context.Background(), token, acc.ID, 0)
 		if err != nil {
 			t.Fatalf("DeviceConfig for device %d: %v", acc.ID, err)
 		}

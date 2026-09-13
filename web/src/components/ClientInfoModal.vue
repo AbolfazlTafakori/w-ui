@@ -50,8 +50,11 @@ async function load() {
     const out = []
     for (const d of fresh.accounts || []) {
       try {
-        const p = await api.profile(d.id)
-        out.push({ device: d, body: p.body, filename: p.filename })
+        // One block per host on the device's inbound, as the subscription
+        // hands them out.
+        for (const p of await api.get(`/api/devices/${d.id}/profiles`, { background: true })) {
+          out.push({ key: `${d.id}-${p.hostId || 0}`, device: d, hostName: p.hostName || '', body: p.body, filename: p.filename })
+        }
       } catch {
         /* a device whose profile cannot be rendered is left out */
       }
@@ -234,18 +237,18 @@ const expiryText = computed(() => {
 
         <template v-if="configs.length">
           <div class="adivider"><span class="adivider-text">{{ c.protocol === 'wireguard' ? t('client.wireguardConfig') : t('client.openvpnConfig') }}</span></div>
-          <div v-for="cf in configs" :key="cf.device.id" class="acollapse config-block" :class="{ open: openCfg.has(cf.device.id) }">
-            <div class="acollapse-item" :class="{ open: openCfg.has(cf.device.id) }">
-              <div class="acollapse-header" role="button" tabindex="0" :aria-expanded="openCfg.has(cf.device.id)" @click="toggleCfg(cf.device.id)" @keydown.enter="toggleCfg(cf.device.id)">
+          <div v-for="cf in configs" :key="cf.key" class="acollapse config-block" :class="{ open: openCfg.has(cf.key) }">
+            <div class="acollapse-item" :class="{ open: openCfg.has(cf.key) }">
+              <div class="acollapse-header" role="button" tabindex="0" :aria-expanded="openCfg.has(cf.key)" @click="toggleCfg(cf.key)" @keydown.enter="toggleCfg(cf.key)">
                 <span class="acollapse-expand"><AntIcon name="RightOutlined" /></span>
-                <span class="acollapse-label"><span class="atag" :class="c.protocol === 'wireguard' ? 'cyan' : 'orange'" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ configs.length > 1 ? cf.device.deviceName : t('client.config') }}</span></span>
+                <span class="acollapse-label"><span class="atag" :class="c.protocol === 'wireguard' ? 'cyan' : 'orange'" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ configs.length > 1 ? cf.device.deviceName : t('client.config') }}</span><span v-if="cf.hostName" style="margin-inline-start: 6px; font-size: 12px; opacity: 0.85">{{ cf.hostName }}</span></span>
                 <div class="acollapse-extra config-block-actions" @click.stop>
                   <button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.body)"><AntIcon name="CopyOutlined" /></button>
                   <button class="abtn small icon" :title="t('action.download')" :aria-label="t('action.download')" @click="downloadText(cf.body, cf.filename)"><AntIcon name="DownloadOutlined" /></button>
-                  <button v-if="c.protocol === 'wireguard'" class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr(`cfg-${cf.device.id}`, cf.body, `${c.name} — ${cf.device.deviceName}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
+                  <button v-if="c.protocol === 'wireguard'" class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr(`cfg-${cf.key}`, cf.body, `${c.name} — ${cf.device.deviceName}${cf.hostName ? ' — ' + cf.hostName : ''}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
                 </div>
               </div>
-              <div v-if="openCfg.has(cf.device.id)" class="acollapse-content"><div class="acollapse-box"><code class="config-block-text">{{ cf.body }}</code></div></div>
+              <div v-if="openCfg.has(cf.key)" class="acollapse-content"><div class="acollapse-box"><code class="config-block-text">{{ cf.body }}</code></div></div>
             </div>
           </div>
         </template>

@@ -535,10 +535,19 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	profile, err := s.clients.Profile(r.Context(), id)
+	all, err := s.clients.Profiles(r.Context(), id)
 	if err != nil {
 		fail(w, s.log, err)
 		return
+	}
+	// ?host= picks the file written for one host; without it, the first.
+	profile := &all[0]
+	if h := r.URL.Query().Get("host"); h != "" {
+		for i := range all {
+			if fmt.Sprint(all[i].HostID) == h {
+				profile = &all[i]
+			}
+		}
 	}
 
 	if r.URL.Query().Get("download") != "1" {

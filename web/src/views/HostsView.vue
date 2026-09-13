@@ -1,343 +1,306 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import { api } from '../lib/api.js'
-import { useLive, mergeRows, useDelayed } from '../lib/live.js'
-import { t, notify } from '../lib/store.js'
-import Icon from '../components/Icon.vue'
+import { useDelayed } from '../lib/live.js'
+import { store, t, notify } from '../lib/store.js'
+import AntIcon from '../components/AntIcon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import ErrorState from '../components/ErrorState.vue'
 import HostForm from '../components/HostForm.vue'
 import PageSpin from '../components/PageSpin.vue'
+import Toggle from '../components/Toggle.vue'
 
-// The addresses customers are handed. An interface listens once; the name a
-// customer dials may be several.
-const hosts = ref([])
+// The hosts page, laid out as 3x-ui's HostsPage: a summary of three
+// figures, then a small card whose title is the toolbar and whose body is
+// the table of host groups -- one row per name, however many addresses and
+// inbounds sit behind it.
+
+const groups = ref([])
 const interfaces = ref([])
 const loading = ref(true)
-const loadError = ref('')
-const formFor = ref(null)
+const loadError = ref(null)
+const showWait = useDelayed(computed(() => loading.value && !groups.value.length))
+const formFor = ref(null) // null | {} | { group }
 const ask = ref(null)
 const busy = ref(false)
+const selected = ref(new Set())
+const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
-const pending = ref(new Set())
-const isPending = (id) => pending.value.has(id)
-function hold(id) {
-  pending.value = new Set(pending.value).add(id)
-}
-function release(id) {
-  const next = new Set(pending.value)
-  next.delete(id)
-  pending.value = next
-}
-
-// Grouped by interface, because a host means nothing without knowing which
-// tunnel it fronts.
-const byInterface = computed(() => {
-  const map = new Map()
-  for (const i of interfaces.value) map.set(i.id, { iface: i, rows: [] })
-  for (const h of hosts.value) {
-    if (!map.has(h.interfaceId)) map.set(h.interfaceId, { iface: null, rows: [] })
-    map.get(h.interfaceId).rows.push(h)
-  }
-  return [...map.values()].filter((g) => g.iface)
-})
-
-const reachable = computed(() => hosts.value.filter((h) => h.reachable).length)
-const enabledCount = computed(() => hosts.value.filter((h) => h.enabled).length)
-
-// One flat list, the way 3x-ui shows it, kept in an order that still reads:
-// the hosts of one tunnel together, in the order a customer is handed them.
-const ordered = computed(() =>
-  byInterface.value.flatMap((g) => g.rows),
-)
-
-function ifaceOf(h) {
-  return interfaces.value.find((i) => i.id === h.interfaceId) || null
-}
+const summary = computed(() => ({
+  total: groups.value.length,
+  enabled: groups.value.filter((g) => g.enabled).length,
+  disabled: groups.value.filter((g) => !g.enabled).length,
+}))
+const ifaceById = computed(() => Object.fromEntries(interfaces.value.map((i) => [i.id, i])))
+const PROTO_COLOR = { wireguard: 'gold', openvpn: 'orange' }
 
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
-    const [h, i] = await Promise.all([
-      api.get('/api/hosts', { background: quiet }),
+    const [g, i] = await Promise.all([
+      api.get('/api/hosts/groups', { background: quiet }),
       api.get('/api/interfaces', { background: quiet }),
     ])
-    hosts.value = quiet ? mergeRows(hosts.value, h, pending.value) : h
-    interfaces.value = Array.isArray(i) ? i : i?.interfaces || []
-    loadError.value = ''
-  } catch (err) {
-    loadError.value = err.message
+    groups.value = g || []
+    interfaces.value = i || []
+    loadError.value = null
+    const ids = new Set(groups.value.map((x) => x.groupId))
+    selected.value = new Set([...selected.value].filter((id) => ids.has(id)))
+  } catch (e) {
+    loadError.value = e
   } finally {
     loading.value = false
   }
 }
-
-const showSkeleton = useDelayed(computed(() => loading.value && !hosts.value.length))
-
 onMounted(load)
 
-// Reachability is filled in by the prober rather than by this page, so the
-// status column is only ever as current as the last read of it.
-useLive(load, { every: 15_000, busy: () => !!formFor.value || !!ask.value })
-
-// Reordering the addresses of one tunnel.
-//
-// The whole order for that tunnel is sent, because a move is only meaningful
-// against the list as it stands and two half-moves race into a third order.
-const reordering = ref(false)
-
-function siblings(h) {
-  return (hosts.value || [])
-    .filter((x) => x.interfaceId === h.interfaceId)
-    .slice()
-    .sort((a, b) => (a.priority || 0) - (b.priority || 0))
+const allSelected = computed(() => !!groups.value.length && selected.value.size === groups.value.length)
+function toggleAll(on) {
+  selected.value = on ? new Set(groups.value.map((g) => g.groupId)) : new Set()
+}
+function toggleOne(id, on) {
+  const next = new Set(selected.value)
+  on ? next.add(id) : next.delete(id)
+  selected.value = next
 }
 
-const isFirst = (h) => siblings(h)[0]?.id === h.id
-const isLast = (h) => siblings(h).slice(-1)[0]?.id === h.id
-
-async function move(h, delta) {
-  const list = siblings(h)
-  const at = list.findIndex((x) => x.id === h.id)
-  const to = at + delta
-  if (at < 0 || to < 0 || to >= list.length) return
-
-  const order = list.map((x) => x.id)
-  order.splice(to, 0, order.splice(at, 1)[0])
-
-  reordering.value = true
+async function setEnabled(g, on) {
   try {
-    await api.post('/api/hosts/reorder', { ids: order })
-    await load()
+    await api.post('/api/hosts/groups/bulk', { action: on ? 'enable' : 'disable', groupIds: [g.groupId] })
+    g.enabled = on
   } catch (e) {
     notify(e.message, 'error')
-  } finally {
-    reordering.value = false
   }
 }
 
-async function check(h) {
-  hold(h.id)
+async function bulk(action) {
+  const ids = [...selected.value]
+  if (!ids.length) return
+  if (action === 'delete') {
+    ask.value = {
+      title: t('hosts.bulkDeleteConfirm').replace('{count}', nf(ids.length)),
+      confirmLabel: t('hosts.bulkDelete'),
+      danger: true,
+      run: async () => {
+        await api.post('/api/hosts/groups/bulk', { action, groupIds: ids })
+        selected.value = new Set()
+        await load(true)
+      },
+    }
+    return
+  }
   try {
-    const res = await api.post(`/api/hosts/${h.id}/check`)
-    h.reachable = res.ok
-    h.lastError = res.ok ? '' : res.error
-    h.lastCheckAt = new Date().toISOString()
-    notify(res.ok ? `${h.name}: ${res.latencyMs} ms` : `${h.name}: ${res.error}`,
-      res.ok ? 'success' : 'error')
-  } catch (err) {
-    notify(err.message, 'error')
-  } finally {
-    release(h.id)
+    await api.post('/api/hosts/groups/bulk', { action, groupIds: ids })
+    await load(true)
+  } catch (e) {
+    notify(e.message, 'error')
   }
 }
 
-async function setEnabled(h, on) {
-  const was = h.enabled
-  if (was === on) return
-  h.enabled = on
-  hold(h.id)
-  try {
-    const updated = await api.patch(`/api/hosts/${h.id}`, {
-      name: h.name,
-      address: h.address,
-      port: h.port,
-      enabled: on,
-    })
-    Object.assign(h, updated)
-  } catch (err) {
-    h.enabled = was
-    notify(err.message, 'error')
-  } finally {
-    release(h.id)
-    load(true)
-  }
-}
-
-function remove(h) {
+function remove(g) {
   ask.value = {
-    title: t('host.removeTitle'),
-    subject: h.name,
-    body: t('host.removeBody'),
+    title: t('hosts.deleteConfirmTitle').replace('{name}', g.remark),
     confirmLabel: t('action.delete'),
+    danger: true,
     run: async () => {
-      await api.del(`/api/hosts/${h.id}`)
-      notify(t('host.removed'), 'success')
-      await load()
+      await api.del(`/api/hosts/groups/${encodeURIComponent(g.groupId)}`)
+      await load(true)
     },
   }
 }
 
 async function runConfirmed() {
-  if (!ask.value) return
+  const a = ask.value
   busy.value = true
   try {
-    await ask.value.run()
+    await a.run()
     ask.value = null
-  } catch (err) {
-    notify(err.message, 'error')
+  } catch (e) {
+    notify(e.message, 'error')
   } finally {
     busy.value = false
   }
 }
+
+// Their move up / move down: the whole order is sent, first first.
+async function move(g, dir) {
+  const ids = groups.value.map((x) => x.groupId)
+  const i = ids.indexOf(g.groupId)
+  const j = dir === 'up' ? i - 1 : i + 1
+  if (j < 0 || j >= ids.length) return
+  ;[ids[i], ids[j]] = [ids[j], ids[i]]
+  try {
+    await api.post('/api/hosts/groups/reorder', { groupIds: ids })
+    await load(true)
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+
+function onSaved() {
+  formFor.value = null
+  load(true)
+}
+
+const popover = ref(null) // { key, items, x, y }
+function showMore(key, items, e) {
+  if (popover.value?.key === key) {
+    popover.value = null
+    return
+  }
+  const r = e.currentTarget.getBoundingClientRect()
+  popover.value = { key, items, x: r.right, y: r.bottom + 4 }
+}
+function ifaceLabel(id) {
+  return ifaceById.value[id]?.name || `#${id}`
+}
 </script>
 
 <template>
-  <section class="view">
-    <!-- No page heading. 3x-ui opens on three figures -- total, enabled,
-         disabled -- and its one control lives in the table's card. -->
-    <div class="strip card">
-      <div class="strip-item">
-        <span class="strip-label"><Icon name="globe" :size="14" />{{ t('host.stat.total') }}</span>
-        <span class="strip-value num">{{ hosts.length }}</span>
-      </div>
-      <div class="strip-item">
-        <span class="strip-label"><Icon name="check" :size="14" />{{ t('table.enabled') }}</span>
-        <span class="strip-value num" style="color: var(--ok)">{{ enabledCount }}</span>
-      </div>
-      <div class="strip-item">
-        <span class="strip-label"><Icon name="close" :size="14" />{{ t('status.disabled') }}</span>
-        <span class="strip-value num">{{ hosts.length - enabledCount }}</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-toolbar">
-        <button class="btn primary" :disabled="!interfaces.length" @click="formFor = {}">
-          <Icon name="plus" :size="14" />
-          <span>{{ t('host.add') }}</span>
-        </button>
-      </div>
-
-      <div v-if="loadError" class="empty empty-cta">
-        <Icon name="alert" :size="28" />
-        <p>{{ loadError }}</p>
-        <button class="btn" @click="load()">{{ t('action.retry') }}</button>
-      </div>
-
-      <PageSpin v-else-if="showSkeleton" />
-      <div v-else-if="loading" class="empty"></div>
-
-      <!-- One flat table, the way theirs is, with the tunnel as a column
-           rather than one card per tunnel. Their columns are Actions, Enable,
-           Remark, Endpoint, Inbounds, Security, Tags; ours carry the same
-           things under our names, and where they show Security and Tags -- an
-           Xray host's TLS settings and labels -- ours show the reachability
-           check and the order a customer is handed the address in, which is
-           what a host here has instead. -->
-      <div v-else class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th class="w-gact">{{ t('table.actions') }}</th>
-              <th class="w-sm">{{ t('table.enabled') }}</th>
-              <th>{{ t('host.name') }}</th>
-              <th>{{ t('host.endpoint') }}</th>
-              <th>{{ t('nav.interfaces') }}</th>
-              <th class="w-md">{{ t('host.status') }}</th>
-              <th class="w-sm num">{{ t('host.priority') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Nowhere to put a host yet is a different empty state from no
-                 hosts: it points at the page that fixes it. -->
-            <tr v-if="!interfaces.length" class="empty-row">
-              <td colspan="7">
-                <div class="card-empty">
-                  <Icon name="globe" :size="32" />
-                  <div>{{ t('host.noInterfaces') }}</div>
-                  <RouterLink class="btn sm" to="/interfaces">{{ t('nav.interfaces') }}</RouterLink>
-                </div>
-              </td>
-            </tr>
-            <tr v-else-if="!hosts.length" class="empty-row">
-              <td colspan="7">
-                <div class="card-empty">
-                  <Icon name="globe" :size="32" />
-                  <div>{{ t('common.nothingYet') }}</div>
-                </div>
-              </td>
-            </tr>
-            <tr v-for="h in ordered" :key="h.id">
-              <td class="w-gact">
-                <div class="actions">
-                  <button
-                    class="act"
-                    :title="t('host.check')"
-                    :disabled="isPending(h.id)"
-                    @click="check(h)"
-                  >
-                    <span v-if="isPending(h.id)" class="spin sm"></span>
-                    <Icon v-else name="zap" :size="16" />
-                  </button>
-                  <!-- Which address a customer is handed first. Moving one is
-                       sending the whole order, not a nudge: two nudges racing
-                       each other land in an order neither operator asked for. -->
-                  <button class="act" :title="t('host.moveUp')"
-                          :disabled="reordering || isFirst(h)" @click="move(h, -1)">
-                    <Icon name="chevronDown" :size="16" class="flip" />
-                  </button>
-                  <button class="act" :title="t('host.moveDown')"
-                          :disabled="reordering || isLast(h)" @click="move(h, 1)">
-                    <Icon name="chevronDown" :size="16" />
-                  </button>
-                  <button class="act" :title="t('action.edit')" @click="formFor = { host: h }">
-                    <Icon name="edit" :size="16" />
-                  </button>
-                  <button class="act danger" :title="t('action.delete')" @click="remove(h)">
-                    <Icon name="trash" :size="16" />
-                  </button>
-                </div>
-              </td>
-              <td>
-                <input
-                  type="checkbox"
-                  :checked="h.enabled"
-                  :disabled="isPending(h.id)"
-                  :aria-label="h.name"
-                  @change="setEnabled(h, $event.target.checked)"
-                />
-              </td>
-              <td>
-                <strong>{{ h.name }}</strong>
-                <div v-if="h.note" class="muted small">{{ h.note }}</div>
-              </td>
-              <td class="ltr num">{{ h.address }}:{{ h.effectivePort || h.port || '—' }}</td>
-              <td>
-                <span class="nodename">{{ ifaceOf(h)?.name || '—' }}</span>
-                <span v-if="ifaceOf(h)" class="tag proto">{{ t(`protocol.${ifaceOf(h).protocol}`) }}</span>
-              </td>
-              <td>
-                <span v-if="h.lastError" class="tag red" :title="h.lastError">
-                  {{ t('host.unreachable') }}
-                </span>
-                <span v-else-if="h.reachable" class="tag green">{{ t('host.ok') }}</span>
-                <span v-else class="muted">—</span>
-              </td>
-              <td class="num ltr">{{ h.priority }}</td>
-            </tr>
-          </tbody>
-        </table>
+  <div class="antpage hosts">
+    <!-- Their summary Card: size="small", three Statistics. -->
+    <div class="acard small summary-card">
+      <div class="acard-body">
+        <div class="arow">
+          <div class="acol">
+            <div class="stat-title">{{ t('hosts.summary.total') }}</div>
+            <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="GlobalOutlined" /></span><span>{{ nf(summary.total) }}</span></div>
+          </div>
+          <div class="acol">
+            <div class="stat-title">{{ t('hosts.summary.enabled') }}</div>
+            <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="CheckCircleOutlined" /></span><span>{{ nf(summary.enabled) }}</span></div>
+          </div>
+          <div class="acol">
+            <div class="stat-title">{{ t('hosts.summary.disabled') }}</div>
+            <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="StopOutlined" /></span><span>{{ nf(summary.disabled) }}</span></div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <HostForm
-      v-if="formFor"
-      :host="formFor.host"
-      :interfaces="interfaces"
-      @saved="((formFor = null), load())"
-      @cancel="formFor = null"
-    />
+    <!-- Their list Card: size="small", the title a toolbar. -->
+    <div class="acard small hosts-card">
+      <div class="acard-head">
+        <div class="card-toolbar">
+          <template v-if="!selected.size">
+            <button class="abtn primary" :disabled="!interfaces.length" @click="formFor = {}"><AntIcon name="PlusOutlined" /><span>{{ t('hosts.addHost') }}</span></button>
+          </template>
+          <template v-else>
+            <span class="atag blue closable" style="padding: 4px 8px; font-size: 13px">
+              {{ t('hosts.selectedCount').replace('{count}', nf(selected.size)) }}
+              <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
+            </span>
+            <button class="abtn" @click="bulk('enable')">{{ t('hosts.bulkEnable') }}</button>
+            <button class="abtn" @click="bulk('disable')">{{ t('hosts.bulkDisable') }}</button>
+            <button class="abtn danger" @click="bulk('delete')"><AntIcon name="DeleteOutlined" /><span>{{ t('hosts.bulkDelete') }}</span></button>
+          </template>
+        </div>
+      </div>
+      <div class="acard-body">
+        <ErrorState v-if="loadError && !groups.length" :error="loadError" @retry="load()" />
+        <PageSpin v-else-if="showWait" />
+        <div v-else-if="loading && !groups.length" class="empty"></div>
+        <div v-else class="atable-wrap" style="margin-top: 0">
+          <table class="atable small" style="min-width: 900px">
+            <thead>
+              <tr>
+                <th class="sel"><input type="checkbox" class="acheck" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" /></th>
+                <th style="width: 168px">{{ t('hosts.fields.actions') }}</th>
+                <th style="width: 90px">{{ t('hosts.fields.enable') }}</th>
+                <th>{{ t('hosts.fields.remark') }}</th>
+                <th>{{ t('hosts.fields.endpoint') }}</th>
+                <th>{{ t('hosts.fields.inbound') }}</th>
+                <th>{{ t('hosts.fields.reachable') }}</th>
+                <th>{{ t('hosts.fields.tags') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!groups.length">
+                <td colspan="8">
+                  <div class="card-empty">
+                    <AntIcon name="GlobalOutlined" :size="32" />
+                    <div>{{ t('common.nothingYet') }}</div>
+                  </div>
+                </td>
+              </tr>
+              <tr v-for="(g, idx) in groups" :key="g.groupId" :class="{ picked: selected.has(g.groupId) }">
+                <td class="sel"><input type="checkbox" class="acheck" :checked="selected.has(g.groupId)" :aria-label="g.remark" @change="toggleOne(g.groupId, $event.target.checked)" /></td>
+                <td>
+                  <div class="aspace" style="gap: 2px; flex-wrap: nowrap">
+                    <button class="abtn text sm" :title="t('hosts.moveUp')" :aria-label="t('hosts.moveUp')" :disabled="idx === 0" @click="move(g, 'up')"><AntIcon name="ArrowUpOutlined" /></button>
+                    <button class="abtn text sm" :title="t('hosts.moveDown')" :aria-label="t('hosts.moveDown')" :disabled="idx >= groups.length - 1" @click="move(g, 'down')"><AntIcon name="ArrowDownOutlined" /></button>
+                    <button class="abtn text sm" :title="t('action.edit')" :aria-label="t('action.edit')" @click="formFor = { group: g }"><AntIcon name="EditOutlined" /></button>
+                    <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="remove(g)"><AntIcon name="DeleteOutlined" /></button>
+                  </div>
+                </td>
+                <td><Toggle :model-value="g.enabled" :label="g.remark" small @update:model-value="(v) => setEnabled(g, v)" /></td>
+                <td>
+                  <div class="host-remark-cell">
+                    <span class="host-remark">{{ g.remark }}</span>
+                    <span v-if="g.description" class="host-desc">{{ g.description }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span v-if="!g.hosts.length" class="atag orange">{{ t('hosts.fields.inheritAddress') }}</span>
+                  <template v-else>
+                    <span class="atag ltr host-endpoint">{{ g.hosts[0] }}</span>
+                    <span v-if="g.hosts.length > 1" class="atag default" style="margin: 2px; cursor: pointer" @click="showMore(`h-${g.groupId}`, g.hosts, $event)">+{{ g.hosts.length - 1 }}</span>
+                  </template>
+                </td>
+                <td>
+                  <span v-if="!g.interfaceIds.length" class="host-muted">—</span>
+                  <template v-else>
+                    <span class="atag" :class="PROTO_COLOR[ifaceById[g.interfaceIds[0]]?.protocol] || 'default'" style="margin: 2px" :title="ifaceLabel(g.interfaceIds[0])">{{ ifaceLabel(g.interfaceIds[0]) }}</span>
+                    <span v-if="g.interfaceIds.length > 1" class="atag default" style="margin: 2px; cursor: pointer" @click="showMore(`i-${g.groupId}`, g.interfaceIds.slice(1).map(ifaceLabel), $event)">+{{ g.interfaceIds.length - 1 }}</span>
+                  </template>
+                </td>
+                <td>
+                  <span class="atag" :class="g.reachable ? 'green' : 'red'" :title="g.lastError || ''">{{ g.reachable ? t('hosts.reachable') : t('hosts.unreachable') }}</span>
+                </td>
+                <td>
+                  <template v-if="g.tags?.length"><span v-for="tag in g.tags" :key="tag" class="atag blue" style="margin: 0 4px 4px 0">{{ tag }}</span></template>
+                  <span v-else class="host-muted">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <Teleport to="body">
+      <div v-if="popover" class="apopover" :style="{ top: popover.y + 'px', left: popover.x + 'px', transform: 'translateX(-100%)' }" @click.stop>
+        <div class="chips-stack"><span v-for="it in popover.items.slice(1)" :key="it" class="atag ltr" style="margin: 0">{{ it }}</span></div>
+      </div>
+    </Teleport>
+
+    <HostForm v-if="formFor" :group="formFor.group" :interfaces="interfaces" @saved="onSaved" @cancel="formFor = null" />
 
     <ConfirmDialog
       :open="!!ask"
       :title="ask?.title || ''"
       :body="ask?.body || ''"
-      :subject="ask?.subject || ''"
       :confirm-label="ask?.confirmLabel || ''"
+      :danger="!!ask?.danger"
       :busy="busy"
       @confirm="runConfirmed"
       @cancel="ask = null"
     />
-  </section>
+  </div>
 </template>
+
+<style scoped>
+/* 3x-ui's HostList.css, as it is. */
+.acard.small .acard-head { min-height: 38px; padding: 0 12px; }
+.acard.small .acard-body { padding: 12px; }
+.card-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; padding: 6px 0; }
+.host-remark-cell { display: flex; flex-direction: column; line-height: 1.3; }
+.host-remark { font-weight: 500; }
+.host-desc { font-size: 0.82em; color: var(--muted); }
+.host-endpoint { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.92em; }
+.host-muted { color: var(--faint); }
+.card-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 12px; text-align: center; color: var(--muted); }
+.card-empty .anticon { margin-bottom: 8px; }
+.chips-stack { display: flex; flex-direction: column; gap: 4px; max-width: 280px; max-height: 280px; overflow-y: auto; }
+.abtn.text.danger { color: var(--bad); }
+</style>

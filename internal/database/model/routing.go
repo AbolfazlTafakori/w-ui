@@ -307,9 +307,26 @@ type Host struct {
 	// forwarder that answers somewhere else.
 	Port int `gorm:"not null;default:0" json:"port"`
 
-	// Priority orders which host a client is handed when several are enabled.
+	// Priority orders the hosts: lowest first, as 3x-ui's sortOrder does.
 	Priority int    `gorm:"not null;default:0" json:"priority"`
 	Note     string `gorm:"size:256" json:"note"`
+
+	// GroupID ties the rows the operator entered as one host together: one
+	// entry on the hosts page is several addresses across several
+	// interfaces, stored as one row per pair, the way 3x-ui stores its
+	// host groups. Empty on rows made before groups existed; each of those
+	// is its own group.
+	GroupID string `gorm:"size:32;index" json:"groupId"`
+	// Description is the line shown under the name.
+	Description string `gorm:"size:64" json:"description"`
+	// Tags are the operator's labels, comma-separated; customers never see
+	// them.
+	Tags string `gorm:"size:512" json:"tags"`
+	// ExcludeFormats lists the subscription formats this host is left out
+	// of, comma-separated: conf, base64, zip, page.
+	ExcludeFormats string `gorm:"size:128" json:"excludeFormats"`
+	// Shuffle hands the group's addresses out in a random order.
+	Shuffle bool `gorm:"not null;default:false" json:"shuffle"`
 
 	// Reachability, filled in by the prober rather than the operator.
 	Reachable   bool       `gorm:"not null;default:true" json:"reachable"`

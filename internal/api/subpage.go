@@ -250,7 +250,11 @@ func (s *Server) maybeServeSubDevice(w http.ResponseWriter, r *http.Request, tok
 		return true
 	}
 
-	profile, err := s.subs.DeviceConfig(r.Context(), token, uint(id))
+	var hostID uint64
+	if h := r.URL.Query().Get("host"); h != "" {
+		hostID, _ = strconv.ParseUint(h, 10, 64)
+	}
+	profile, err := s.subs.DeviceConfig(r.Context(), token, uint(id), uint(hostID))
 	if err != nil {
 		http.NotFound(w, r)
 		return true
@@ -684,10 +688,10 @@ a.row-title:hover { text-decoration: underline; }
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
             <span class="tag {{ if eq $.Page.Protocol "wireguard" }}cyan{{ else }}orange{{ end }}" style="margin:0;font-weight:600;letter-spacing:.3px" data-i="{{ if eq $.Page.Protocol "wireguard" }}config{{ else }}ovpnConfig{{ end }}">Config</span>
-            <span class="cfg-meta">{{ .Name }}</span>
+            <span class="cfg-meta">{{ .Name }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
             <div class="row-actions">
               <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
-              <a class="btn sm" href="?device={{ .ID }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
+              <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
               {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
               <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ .Name }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
             </div>
@@ -708,7 +712,7 @@ a.row-title:hover { text-decoration: underline; }
             {{ else }}
             <a href="https://play.google.com/store/apps/details?id=net.openvpn.openvpn" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
             {{ end }}
-            {{ range .Devices }}<a href="?device={{ .ID }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}
+            {{ range .Devices }}<a href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}
           </div>
         </div>
         <div class="app">
@@ -720,7 +724,7 @@ a.row-title:hover { text-decoration: underline; }
             {{ else }}
             <a href="https://apps.apple.com/app/openvpn-connect/id590379981" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
             {{ end }}
-            {{ range .Devices }}<a href="?device={{ .ID }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}
+            {{ range .Devices }}<a href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}
           </div>
         </div>
       </div>

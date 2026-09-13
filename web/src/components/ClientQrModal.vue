@@ -35,20 +35,25 @@ onMounted(async () => {
     const devices = fresh.accounts || []
     for (const d of devices) {
       try {
-        const p = await api.profile(d.id)
+        // One file per host on the device's inbound, as the subscription
+        // hands them out; one when it has no hosts.
+        const list = await api.get(`/api/devices/${d.id}/profiles`, { background: true })
         const wg = fresh.protocol === 'wireguard'
-        out.push({
-          key: `dev-${d.id}`,
-          tag: wg ? t('client.wireguardConfig') : t('client.openvpnConfig'),
-          tagColor: wg ? 'cyan' : 'orange',
-          meta: devices.length > 1 ? d.deviceName : '',
-          value: p.body,
-          remark: `${fresh.name} — ${d.deviceName}`,
-          downloadName: p.filename,
-          // Only WireGuard imports from a camera; an OpenVPN profile carries
-          // no credentials, so a code of it would be a dead end.
-          showQr: wg,
-        })
+        for (const p of list) {
+          const meta = [devices.length > 1 ? d.deviceName : '', p.hostName || ''].filter(Boolean).join(' · ')
+          out.push({
+            key: `dev-${d.id}-${p.hostId || 0}`,
+            tag: wg ? t('client.wireguardConfig') : t('client.openvpnConfig'),
+            tagColor: wg ? 'cyan' : 'orange',
+            meta,
+            value: p.body,
+            remark: `${fresh.name} — ${d.deviceName}${p.hostName ? ' — ' + p.hostName : ''}`,
+            downloadName: p.filename,
+            // Only WireGuard imports from a camera; an OpenVPN profile carries
+            // no credentials, so a code of it would be a dead end.
+            showQr: wg,
+          })
+        }
       } catch (e) {
         notify(e.message, 'error')
       }

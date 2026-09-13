@@ -366,7 +366,7 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 		return nil, err
 	}
 
-	rendered, err := s.renderDevices(ctx, c, byID)
+	rendered, err := s.renderDevicesFor(ctx, c, byID, bundleFormatName(format))
 	if err != nil {
 		return nil, err
 	}
@@ -449,6 +449,10 @@ func (s *Subscriptions) nodesOverAllowance(ctx context.Context) (map[uint]bool, 
 type RenderedDevice struct {
 	Account model.Account
 	Profile backend.ClientProfile
+	// Host is the endpoint this entry was written for; nil for the
+	// interface's own. A device on an interface with three hosts renders
+	// three times, once per host, as 3x-ui fans its links out.
+	Host *model.Host
 }
 
 // renderDevices produces a configuration for every device that has a working
@@ -462,6 +466,14 @@ type RenderedDevice struct {
 // report but "it stopped working".
 func (s *Subscriptions) renderDevices(
 	ctx context.Context, c *model.Client, byID map[uint]model.Interface,
+) ([]RenderedDevice, error) {
+	return s.renderDevicesFor(ctx, c, byID, "")
+}
+
+// renderDevicesFor renders for one subscription format, so a host left out
+// of that format is left out.
+func (s *Subscriptions) renderDevicesFor(
+	ctx context.Context, c *model.Client, byID map[uint]model.Interface, format string,
 ) ([]RenderedDevice, error) {
 	var out []RenderedDevice
 
@@ -477,13 +489,17 @@ func (s *Subscriptions) renderDevices(
 				"client", c.Name, "account", acc.ID, "error", err)
 			continue
 		}
-		profile, err := drv.Render(ctx, &acc, &iface)
-		if err != nil {
-			s.log.Warn("could not render a configuration for a subscription",
-				"client", c.Name, "account", acc.ID, "error", err)
-			continue
+		for _, v := range variantsFor(&iface, format) {
+			at := withEndpoint(iface, v)
+			profile, err := drv.Render(ctx, &acc, &at)
+			if err != nil {
+				s.log.Warn("could not render a configuration for a subscription",
+					"client", c.Name, "account", acc.ID, "error", err)
+				continue
+			}
+			profile.Filename = variantFilename(profile.Filename, v)
+			out = append(out, RenderedDevice{Account: acc, Profile: profile, Host: v.Host})
 		}
-		out = append(out, RenderedDevice{Account: acc, Profile: profile})
 	}
 
 	if len(out) == 0 {
@@ -555,6 +571,10 @@ type SubPageDevice struct {
 	Address  string
 	Filename string
 	Config   string
+	// The host this entry was written for, when it was written for one.
+	HostID          uint
+	HostName        string
+	HostDescription string
 }
 
 // Unlimited reports whether this plan has no volume ceiling.
@@ -580,6 +600,18 @@ func (p SubPage) UsedPercent() int {
 	return pct
 }
 
+// bundleFormatName is the exclusion name of a bundle format.
+func bundleFormatName(format string) string {
+	switch strings.ToLower(format) {
+	case "zip":
+		return "zip"
+	case "base64":
+		return "base64"
+	default:
+		return "conf"
+	}
+}
+
 // PageFor builds what a customer sees when they open their link in a browser.
 func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*SubPage, error) {
 	c, err := s.byToken(ctx, token)
@@ -601,7 +633,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		return nil, err
 	}
 
-	rendered, err := s.renderDevices(ctx, c, byID)
+	rendered, err := s.renderDevicesFor(ctx, c, byID, "page")
 	if err != nil {
 		return nil, err
 	}
@@ -625,13 +657,19 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			t := *hs
 			page.LastOnline = &t
 		}
-		page.Devices = append(page.Devices, SubPageDevice{
+		dev := SubPageDevice{
 			ID:       d.Account.ID,
 			Name:     d.Account.DeviceName,
 			Address:  d.Account.IP,
 			Filename: d.Profile.Filename,
 			Config:   string(d.Profile.Body),
-		})
+		}
+		if d.Host != nil {
+			dev.HostID = d.Host.ID
+			dev.HostName = d.Host.Name
+			dev.HostDescription = d.Host.Description
+		}
+		page.Devices = append(page.Devices, dev)
 	}
 	return page, nil
 }
@@ -643,7 +681,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 // an id is guessable and a token is not, so the ownership check is what stops
 // one customer reading another's keys.
 func (s *Subscriptions) DeviceConfig(
-	ctx context.Context, token string, deviceID uint,
+	ctx context.Context, token string, deviceID, hostID uint,
 ) (*backend.ClientProfile, error) {
 	c, err := s.byToken(ctx, token)
 	if err != nil {
@@ -663,6 +701,17 @@ func (s *Subscriptions) DeviceConfig(
 	if err != nil {
 		return nil, err
 	}
+	for i := range rendered {
+		r := &rendered[i]
+		if r.Account.ID != deviceID {
+			continue
+		}
+		if hostID == 0 && r.Host == nil || r.Host != nil && r.Host.ID == hostID {
+			return &r.Profile, nil
+		}
+	}
+	// A host that was asked for but is not on this device: the first
+	// rendering is still the right file for the device.
 	for i := range rendered {
 		if rendered[i].Account.ID == deviceID {
 			return &rendered[i].Profile, nil
