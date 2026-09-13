@@ -29,6 +29,7 @@ const (
 	keyDirectDomains   = "routing.directDomains"
 	keyDefaultOutbound = "routing.defaultOutbound"
 	keyIPv4Domains     = "routing.ipv4Domains"
+	keyFailClosed      = "routing.failClosed"
 )
 
 // domainRefresh is how often blocked and pinned names are looked up again.
@@ -52,6 +53,11 @@ type BasicRouting struct {
 	// row 3x-ui calls IPv4 Routing, for services that misbehave over v6.
 	IPv4Domains     []string `json:"ipv4Domains"`
 	DefaultOutbound string   `json:"defaultOutbound"`
+	// FailClosed is what happens to customers' traffic while the outbound
+	// at the top of the list is down: dropped, as Xray's would be with its
+	// outbound unreachable, rather than quietly sent from the server's own
+	// address -- which is the address the outbound exists to hide.
+	FailClosed bool `json:"failClosed"`
 }
 
 // Routing owns the policy: what is blocked, what is pinned, and which outbound
@@ -71,6 +77,18 @@ type Routing struct {
 	// domainStrategy is which families names resolve to: AsIs, UseIPv4 or
 	// UseIPv6.
 	domainStrategy string
+	// defaultMark is the mark the last policy gave everything unmatched --
+	// the first outbound's -- for anything else that should leave the way
+	// customers do.
+	defaultMark uint32
+}
+
+// DefaultMark is the mark of the outbound at the top of the list, or zero
+// while that is the server's own route.
+func (s *Routing) DefaultMark() uint32 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.defaultMark
 }
 
 // SetDomainStrategy chooses the families names in lists resolve to.
@@ -98,13 +116,28 @@ func (s *Routing) Basic(ctx context.Context) (BasicRouting, error) {
 		stored[r.Key] = r.Value
 	}
 
-	out.BlockBitTorrent = stored[keyBlockBitTorrent] == "true"
-	out.BlockIPs = splitList(stored[keyBlockIPs])
+	// What 3x-ui's template ships with: private ranges and BitTorrent
+	// blocked. A panel that has never saved this page behaves the same.
+	if _, ok := stored[keyBlockBitTorrent]; ok {
+		out.BlockBitTorrent = stored[keyBlockBitTorrent] == "true"
+	} else {
+		out.BlockBitTorrent = true
+	}
+	if _, ok := stored[keyBlockIPs]; ok {
+		out.BlockIPs = splitList(stored[keyBlockIPs])
+	} else {
+		out.BlockIPs = []string{"geoip:private"}
+	}
 	out.BlockDomains = splitList(stored[keyBlockDomains])
 	out.BlockPorts = splitList(stored[keyBlockPorts])
 	out.DirectIPs = splitList(stored[keyDirectIPs])
 	out.DirectDomains = splitList(stored[keyDirectDomains])
 	out.IPv4Domains = splitList(stored[keyIPv4Domains])
+	if v, ok := stored[keyFailClosed]; ok {
+		out.FailClosed = v == "true"
+	} else {
+		out.FailClosed = true
+	}
 	// The default is the first outbound in the list, as Xray's is: moving a
 	// hop to the top of the outbounds page makes it carry everything not
 	// matched by a rule. Nothing is stored for it; the order is the setting.
@@ -198,6 +231,7 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 		keyDirectDomains:   joinList(in.DirectDomains),
 		keyIPv4Domains:     joinList(in.IPv4Domains),
 		keyDefaultOutbound: tag,
+		keyFailClosed:      strconv.FormatBool(in.FailClosed),
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -615,7 +649,16 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 
 	if def, ok := byTag[basic.DefaultOutbound]; ok && def.enabled {
 		p.DefaultMark = def.mark
+	} else if basic.DefaultOutbound != TagDirect && basic.DefaultOutbound != TagBlocked && basic.FailClosed {
+		// The chosen exit is down. Nothing unmatched leaves until it is back:
+		// a customer's connection failing is what they would see from an Xray
+		// whose outbound is unreachable, and it is better than every one of
+		// them suddenly appearing from the server's own address.
+		p.DropUnmatched = true
 	}
+	s.mu.Lock()
+	s.defaultMark = p.DefaultMark
+	s.mu.Unlock()
 
 	p.NoCounters = !OutboundCounters.Load()
 

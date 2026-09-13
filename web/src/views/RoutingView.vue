@@ -54,6 +54,7 @@ const showSkeleton = useDelayed(computed(() => loading.value && !rules.value.len
 
 const basic = ref({
   blockBitTorrent: false,
+  failClosed: true,
   blockIps: [],
   blockDomains: [],
   blockPorts: [],
@@ -517,6 +518,16 @@ async function testRoute() {
                   <option v-for="o in outbounds" :key="o.id" :value="o.tag" :disabled="!o.enabled">{{ o.tag }}</option>
                 </select>
                 <p v-if="fieldError.defaultOutbound" class="field-error">{{ fieldError.defaultOutbound }}</p>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-meta">
+                <div class="setting-title">{{ t('routing.failClosed') }}</div>
+                <div class="setting-desc">{{ t('routing.failClosedDesc') }}</div>
+              </div>
+              <div class="setting-ctl">
+                <Toggle v-model="basic.failClosed" :label="t('routing.failClosed')" />
               </div>
             </div>
 

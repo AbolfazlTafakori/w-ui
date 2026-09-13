@@ -67,6 +67,10 @@ type Proxy struct {
 	cache     map[string]*entry
 	http      *http.Client
 	warned    map[string]bool
+	// mark is stamped on every upstream socket, so the query leaves the
+	// way customer traffic leaves: through the default outbound when the
+	// operator has put one first. Zero is the server's own route.
+	mark uint32
 }
 
 type listener struct {
@@ -89,6 +93,23 @@ func New(log *slog.Logger) *Proxy {
 		http:      &http.Client{Timeout: 5 * time.Second},
 		warned:    map[string]bool{},
 	}
+}
+
+// SetMark chooses the routing mark upstream queries carry.
+func (p *Proxy) SetMark(mark uint32) {
+	p.mu.Lock()
+	if p.mark != mark {
+		p.mark = mark
+		p.http = p.httpClient()
+		p.cache = map[string]*entry{}
+	}
+	p.mu.Unlock()
+}
+
+// httpClient is the DoH client for the current mark.
+func (p *Proxy) httpClient() *http.Client {
+	d := &net.Dialer{Timeout: 5 * time.Second, Control: markControl(p.mark)}
+	return &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{DialContext: d.DialContext}}
 }
 
 // Reconfigure applies a configuration and the set of addresses to answer
@@ -479,7 +500,9 @@ func (p *Proxy) ask(ctx context.Context, s Server, q []byte) ([]byte, error) {
 		port = 53
 	}
 	target := net.JoinHostPort(strings.Trim(addr, "[]"), strconv.Itoa(port))
-	var d net.Dialer
+	p.mu.RLock()
+	d := net.Dialer{Control: markControl(p.mark)}
+	p.mu.RUnlock()
 	conn, err := d.DialContext(ctx, proto, target)
 	if err != nil {
 		return nil, err
@@ -542,7 +565,10 @@ func (p *Proxy) askDoH(ctx context.Context, url string, q []byte) ([]byte, error
 	}
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
-	resp, err := p.http.Do(req)
+	p.mu.RLock()
+	client := p.http
+	p.mu.RUnlock()
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

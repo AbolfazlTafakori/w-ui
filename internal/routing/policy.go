@@ -106,6 +106,11 @@ type Policy struct {
 	// address: the behaviour when no hop is configured.
 	DefaultMark uint32
 
+	// DropUnmatched drops customers' traffic that no rule and no default
+	// claimed, for a default outbound that is configured but down: failing
+	// closed rather than leaking the server's own address.
+	DropUnmatched bool
+
 	// Rules are evaluated in order; the first match decides. They are expected
 	// to arrive sorted, and are sorted again here so a caller that forgets
 	// cannot produce a program whose behaviour depends on map iteration.
@@ -240,6 +245,14 @@ func BuildRuleset(p Policy) (string, error) {
 	if len(p.BlockPorts) > 0 {
 		fmt.Fprintf(&b, "\t\tmeta l4proto { tcp, udp } th dport { %s } counter drop\n",
 			portList(p.BlockPorts))
+	}
+
+	// The exit everything was meant to leave by is down. What a rule has
+	// marked for a working hop still goes; the rest of the customers'
+	// traffic is dropped rather than sent from the server's own address.
+	if p.DropUnmatched && len(v4(p.CustomerNets)) > 0 {
+		fmt.Fprintf(&b, "\t\tip saddr @customers4 meta mark and 0x%08x != 0x%08x counter drop\n",
+			MarkMask, MarkBase&MarkMask)
 	}
 	b.WriteString("\t}\n")
 

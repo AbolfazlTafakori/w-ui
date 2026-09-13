@@ -1609,5 +1609,7 @@
   "hosts.formats.zip": "zip",
   "hosts.formats.page": "page",
   "hosts.created": "Host added.",
-  "hosts.updated": "Host updated."
+  "hosts.updated": "Host updated.",
+  "routing.failClosed": "Block traffic while the default outbound is down",
+  "routing.failClosedDesc": "When the outbound at the top of the list stops working, customers' traffic is dropped until it is back, rather than sent from this server's own address. The way an Xray with an unreachable outbound behaves."
 }

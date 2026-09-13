@@ -366,6 +366,10 @@ func (e *Engine) syncDNS(ctx context.Context, cfg EngineSettings) {
 			}
 		}
 	}
+	// Upstream queries leave the way customer traffic does.
+	if e.routing != nil {
+		e.dns.SetMark(e.routing.DefaultMark())
+	}
 	e.dns.Reconfigure(cfg.DNS, addrs)
 }
 
