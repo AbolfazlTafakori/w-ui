@@ -16,7 +16,33 @@ The page a customer sees when they open their subscription link in a browser. It
 
 ## Templates
 
-Settings → Subscription → **Template** picks one of six looks: *classic* (3x-ui's own layout), *aurora*, *waves*, *network* (an animated canvas), *minimal*, *midnight*. **Preview** opens a sample page in the chosen template through a one-time link, so you see it before customers do.
+Settings → Subscription → **Template** picks one of twenty-one looks. **Preview** opens a sample page in the chosen template through a one-time link, so you see it before customers do.
+
+| Template | Look |
+| --- | --- |
+| `classic` | 3x-ui's own layout |
+| `aurora` | red, blue and teal light drifting over dark navy |
+| `waves` | slow gradient waves under a glass card |
+| `network` | an animated canvas of connected points |
+| `minimal` | white, flat, no decoration |
+| `midnight` | pure black with a red glow |
+| `ember` | charcoal with a warm fire glowing up from below |
+| `ocean` | deep water, a slow cyan surface, a glass card |
+| `forest` | dark moss with emerald light through the canopy |
+| `sunset` | violet to amber across the sky, a sun on the horizon |
+| `neon` | black with magenta and cyan edges that glow |
+| `glass` | frosted white over a colourful blur (light) |
+| `paper` | warm cream, serif headings, ruled lines (light) |
+| `terminal` | green phosphor on black, scanlines, a prompt |
+| `carbon` | woven carbon under brushed steel |
+| `royal` | navy and gold, a gilded card edge |
+| `sakura` | white and blossom pink, petals drifting down (light) |
+| `frost` | ice blue and white (light) |
+| `graphite` | flat grey surfaces, one blue, big radii |
+| `mesh` | a slow multicolour mesh behind dark glass |
+| `retro` | synthwave: a striped sun and a grid running to the horizon |
+
+Every look keeps the same content and the same controls — the theme toggle, the language, the download and copy buttons — only the dress changes.
 
 ## The link
 

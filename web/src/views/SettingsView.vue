@@ -70,7 +70,7 @@ const subError = ref({})
 
 // The looks the customer's page can wear. Chosen here; every customer's
 // page follows on its next opening.
-const SUB_TEMPLATES = ['classic', 'aurora', 'waves', 'network', 'minimal', 'midnight']
+const SUB_TEMPLATES = ['classic', 'aurora', 'waves', 'network', 'minimal', 'midnight', 'ember', 'ocean', 'forest', 'sunset', 'neon', 'glass', 'paper', 'terminal', 'carbon', 'royal', 'sakura', 'frost', 'graphite', 'mesh', 'retro']
 // A one-time link, opened in a new tab: the page is served without the
 // panel's session, so the tab cannot carry it.
 async function previewTemplate(key) {
@@ -1496,6 +1496,33 @@ const uptime = computed(() => {
 .tpl-swatch.minimal { background: #fff; }
 .tpl-swatch.minimal .tpl-sw-head { background: #111; } .tpl-swatch.minimal .tpl-sw-row { background: #ddd; }
 .tpl-swatch.midnight { background: radial-gradient(70px 40px at 50% -10%, rgba(224,46,61,.45), transparent 70%), #000; box-shadow: inset 0 0 0 1px rgba(224,46,61,.4); }
+.tpl-swatch.ember { background: radial-gradient(80px 50px at 50% 110%, rgba(255,106,61,.7), rgba(224,46,61,.25) 50%, transparent 75%), #0f0b0a; }
+.tpl-swatch.ocean { background: linear-gradient(180deg, #06202f, #04121c); }
+.tpl-swatch.ocean::after { content: ''; position: absolute; left: -30%; right: -30%; top: -22px; height: 34px; border-radius: 42%; background: linear-gradient(90deg, #19b8e6, #0b5f8a); opacity: .5; }
+.tpl-swatch.forest { background: radial-gradient(60px 40px at 90% -10%, rgba(46,204,113,.55), transparent 70%), radial-gradient(60px 40px at 0% 110%, rgba(23,179,166,.4), transparent 70%), #08120c; }
+.tpl-swatch.sunset { background: linear-gradient(180deg, #2b1449, #6a2a5f 45%, #c8553d 80%, #ff8c42); }
+.tpl-swatch.neon { background: #050008; box-shadow: inset 0 0 0 1px #ff2bd6, inset 0 0 14px -4px #ff2bd6; }
+.tpl-swatch.neon .tpl-sw-bar { background: #00e5ff; }
+.tpl-swatch.glass { background: radial-gradient(50px 40px at 10% 10%, #8b5cf6aa, transparent 70%), radial-gradient(50px 40px at 90% 50%, #22d3eeaa, transparent 70%), radial-gradient(50px 40px at 40% 110%, #f472b6aa, transparent 70%), #dfe6f3; }
+.tpl-swatch.glass .tpl-sw-head { background: rgba(20,26,38,.7); } .tpl-swatch.glass .tpl-sw-row { background: rgba(20,26,38,.2); }
+.tpl-swatch.paper { background: #fbf8f2; box-shadow: inset 0 0 0 1px #d9d0be; }
+.tpl-swatch.paper .tpl-sw-head { background: #2b241c; } .tpl-swatch.paper .tpl-sw-row { background: #ddd3c0; } .tpl-swatch.paper .tpl-sw-bar { background: #9c2f2f; }
+.tpl-swatch.terminal { background: #020402; box-shadow: inset 0 0 0 1px #1d3d24; }
+.tpl-swatch.terminal .tpl-sw-head, .tpl-swatch.terminal .tpl-sw-bar { background: #37ff6e; } .tpl-swatch.terminal .tpl-sw-row { background: rgba(55,255,110,.35); }
+.tpl-swatch.carbon { background-color: #101113; background-image: linear-gradient(27deg, #151618 3px, transparent 3px), linear-gradient(207deg, #151618 3px, transparent 3px), linear-gradient(90deg, #131416 6px, transparent 6px); background-size: 12px 12px; }
+.tpl-swatch.carbon .tpl-sw-bar { background: #c9ced4; }
+.tpl-swatch.royal { background: radial-gradient(80px 50px at 50% -20%, rgba(212,175,55,.35), transparent 60%), #0d1330; box-shadow: inset 0 0 0 1px rgba(212,175,55,.6); }
+.tpl-swatch.royal .tpl-sw-bar { background: #d4af37; }
+.tpl-swatch.sakura { background: radial-gradient(60px 40px at 100% 0%, rgba(232,97,140,.3), transparent 60%), #fff6f8; box-shadow: inset 0 0 0 1px #f5cfd9; }
+.tpl-swatch.sakura .tpl-sw-head { background: #3a2530; } .tpl-swatch.sakura .tpl-sw-row { background: #f5cfd9; } .tpl-swatch.sakura .tpl-sw-bar { background: #e8618c; }
+.tpl-swatch.frost { background: #e9f2fb; box-shadow: inset 0 0 0 1px #cfe0f1; }
+.tpl-swatch.frost .tpl-sw-head { background: #10233a; } .tpl-swatch.frost .tpl-sw-row { background: #cfe0f1; } .tpl-swatch.frost .tpl-sw-bar { background: #1f6fe0; }
+.tpl-swatch.graphite { background: #292c30; border-radius: 12px; }
+.tpl-swatch.graphite .tpl-sw-bar { background: #3b82f6; }
+.tpl-swatch.mesh { background: radial-gradient(60px 50px at 0% 0%, #a855f7cc, transparent 70%), radial-gradient(60px 50px at 100% 30%, #ec4899cc, transparent 70%), radial-gradient(60px 50px at 50% 120%, #06b6d4cc, transparent 70%), #0b0b14; }
+.tpl-swatch.retro { background: linear-gradient(180deg, #12041f 0%, #3a0a5c 50%, #12041f 51%); }
+.tpl-swatch.retro::after { content: ''; position: absolute; left: 50%; top: 30%; width: 28px; height: 28px; transform: translateX(-50%); border-radius: 50%; background: linear-gradient(180deg, #ffd166, #ff0099); }
+.tpl-swatch.retro .tpl-sw-bar { background: #ff0099; }
 .tpl-meta { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .tpl-name { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
 .tpl-desc { font-size: 12px; color: var(--faint); line-height: 1.5; }
