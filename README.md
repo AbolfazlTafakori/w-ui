@@ -8,6 +8,13 @@ operators who already know that panel, with WireGuard, AmneziaWG and OpenVPN
 behind it instead of Xray. Customers get a subscription link with a page of
 their own; everything else is the operator's.
 
+![Overview](docs/screenshots/overview.png)
+
+<p align="center">
+  <img src="docs/screenshots/clients.png" width="49%" alt="Clients">
+  <img src="docs/screenshots/interfaces.png" width="49%" alt="Interfaces">
+</p>
+
 ---
 
 ## Why not just use an existing panel
