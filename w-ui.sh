@@ -117,13 +117,16 @@ acme() { "$ACME_HOME/acme.sh" --home "$ACME_HOME" "$@"; }
 have() { command -v "$1" > /dev/null 2>&1; }
 
 confirm() {
+    # A question nobody is there to answer is answered no. With input at
+    # end-of-file the default would otherwise be taken, and the default for
+    # "update?" is yes -- which is how a piped run once reinstalled a panel.
     if [[ $# > 1 ]]; then
-        echo && read -rp "$1 [Default $2]: " temp
+        echo && read -rp "$1 [Default $2]: " temp || return 1
         if [[ "${temp}" == "" ]]; then
             temp=$2
         fi
     else
-        read -rp "$1 [y/n]: " temp
+        read -rp "$1 [y/n]: " temp || return 1
     fi
     if [[ "${temp}" == "y" || "${temp}" == "Y" ]]; then
         return 0
@@ -2596,7 +2599,7 @@ show_menu() {
 ╚────────────────────────────────────────────────╝
 "
     show_status
-    echo && read -rp "Please enter your selection [0-28]: " num
+    echo && read -rp "Please enter your selection [0-28]: " num || exit 0
 
     case "${num}" in
         0)
