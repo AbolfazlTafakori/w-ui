@@ -826,11 +826,19 @@ show_enable_status() {
 # show_tunnel_status is what "xray state" is on 3x-ui: one line per tunnel
 # the panel runs, WireGuard and OpenVPN alike.
 show_tunnel_status() {
-    local any=0 dev
+    local any=0 dev seen=" "
     if have wg; then
         for dev in $(wg show interfaces 2> /dev/null); do
-            any=1
+            any=1; seen+="$dev "
             echo -e "WireGuard ${dev} (udp/$(wg show "$dev" listen-port 2> /dev/null)): ${green}Running${plain}"
+        done
+    fi
+    # AmneziaWG tunnels answer to awg, not wg.
+    if have awg; then
+        for dev in $(awg show interfaces 2> /dev/null); do
+            [[ "$seen" == *" $dev "* ]] && continue
+            any=1
+            echo -e "AmneziaWG ${dev} (udp/$(awg show "$dev" listen-port 2> /dev/null)): ${green}Running${plain}"
         done
     fi
     local conf
@@ -927,6 +935,9 @@ install_firewall() {
         local dev conf
         for dev in $(wg show interfaces 2> /dev/null); do
             ufw allow "$(wg show "$dev" listen-port 2> /dev/null)/udp"
+        done
+        for dev in $(awg show interfaces 2> /dev/null); do
+            ufw allow "$(awg show "$dev" listen-port 2> /dev/null)/udp"
         done
         for conf in "$DATA_DIR"/openvpn/*/server.conf; do
             [[ -f "$conf" ]] || continue
