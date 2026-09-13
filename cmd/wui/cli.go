@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -44,6 +45,8 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, cmdSetting(args[1:])
 	case "admin":
 		return true, cmdAdmin(args[1:])
+	case "token":
+		return true, cmdToken(args[1:])
 	case "keygen":
 		return true, keygenCommand(args[1:])
 	case "sign":
@@ -70,6 +73,7 @@ Usage:
   wui setting reset                forget every panel setting; the admin
                                    account and the customers are kept
   wui admin reset [flags]          reset the administrator account
+  wui token issue --name NAME      mint an API token, printed once
   wui version                      print the version
   wui keygen                       make a release-signing key pair
   wui sign <binary>                sign a build, for a release
@@ -218,6 +222,36 @@ func cmdSetting(args []string) error {
 	fmt.Printf("clients: %d\n", c.Clients)
 	fmt.Printf("activeClients: %d\n", c.Active)
 	fmt.Printf("accounts: %d\n", c.Accounts)
+	return nil
+}
+
+// cmdToken mints an API token from the shell: what the installer prints
+// at the end, as 3x-ui prints its apiToken, so automation has one from
+// the first minute without anybody signing in to make it.
+func cmdToken(args []string) error {
+	if len(args) == 0 || args[0] != "issue" {
+		return errors.New("token: want \"issue --name NAME\"")
+	}
+	fs := flag.NewFlagSet("token issue", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	name := fs.String("name", "", "what the token is for")
+	quiet := fs.Bool("quiet", false, "print only the token")
+	if err := fs.Parse(args[1:]); err != nil {
+		return fmt.Errorf("token issue: %w", err)
+	}
+	db, _, err := openDatabase()
+	if err != nil {
+		return err
+	}
+	tok, err := service.NewNodes(db, slog.New(slog.NewTextHandler(io.Discard, nil))).IssueToken(context.Background(), *name)
+	if err != nil {
+		return err
+	}
+	if *quiet {
+		fmt.Println(tok.Token)
+		return nil
+	}
+	fmt.Printf("token %q issued; it is shown once:\n\n  %s\n\nSend it as: Authorization: Bearer <token>\n", *name, tok.Token)
 	return nil
 }
 

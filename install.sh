@@ -92,6 +92,7 @@ ACTION=install
 ADMIN_USER="${WUI_ADMIN_USER:-}"
 ADMIN_PASS="${WUI_ADMIN_PASSWORD:-}"
 ADMIN_GENERATED=0
+API_TOKEN=""
 TLS_MODE=""
 TLS_CERT="${WUI_TLS_CERT:-}"
 TLS_KEY="${WUI_TLS_KEY:-}"
@@ -1900,6 +1901,100 @@ summary() {
 
   printf '\n  %sNext%s open the panel, add an interface, then add clients.\n' "$B" "$N"
   printf '%s────────────────────────────────────────────────────────────%s\n\n' "$D" "$N"
+
+  # Everything 3x-ui prints under "Panel Installation Complete", in one
+  # place, for the operator who scrolls back for the one line they need.
+  printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
+  printf '  %s     Panel Installation Complete!         %s\n' "$G" "$N"
+  printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
+  printf '  %sUsername:    %s%s\n' "$G" "$ADMIN_USER" "$N"
+  [[ -n "$ADMIN_PASS" ]] && printf '  %sPassword:    %s%s\n' "$G" "$ADMIN_PASS" "$N"
+  printf '  %sPort:        %s%s\n' "$G" "$PANEL_PORT" "$N"
+  printf '  %sWebBasePath: %s%s\n' "$G" "${BASE_PATH:-/}" "$N"
+  printf '  %sDatabase:    SQLite (%s/wui.db)%s\n' "$G" "$DATA_DIR" "$N"
+  printf '  %sAccess URL:  %s://%s%s%s%s\n' "$G" "$scheme" "$host" "$port" "$shown_path" "$N"
+  [[ -n "$API_TOKEN" ]] && printf '  %sAPI Token:   %s%s\n' "$G" "$API_TOKEN" "$N"
+  printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
+  printf '  %s⚠ IMPORTANT: Save these credentials securely!%s\n' "$Y" "$N"
+  if [[ "$scheme" == https ]]; then
+    printf '  %s⚠ SSL Certificate: Enabled and configured%s\n' "$Y" "$N"
+  else
+    printf '  %s⚠ SSL Certificate: Skipped — panel is HTTP-only. Use a reverse proxy or SSH tunnel.%s\n' "$Y" "$N"
+  fi
+  write_install_result "$scheme" "$host$port"
+}
+
+# Mint the token 3x-ui prints as apiToken: automation gets one from the
+# first minute without anybody signing in to make it. Never fatal.
+issue_api_token() {
+  have_systemd && systemctl is-active --quiet wui || return 0
+  API_TOKEN=$(WUI_DATA_DIR="$DATA_DIR" WUI_DB_SOURCE="$DATA_DIR/wui.db" \
+    "$BIN_PATH" token issue --name installer --quiet 2>/dev/null || true)
+}
+
+# The same facts as the summary, machine-readable, for cloud-init or a
+# login banner to pick up: 3x-ui's install-result.env. Mode 600, root only,
+# because it holds the password.
+write_install_result() {
+  local scheme="$1" hostport="$2" f="$CONF_DIR/install-result.env"
+  install -d -m 700 "$CONF_DIR" 2>/dev/null || true
+  local prev; prev=$(umask); umask 077
+  {
+    printf 'WUI_USERNAME=%q\n' "$ADMIN_USER"
+    printf 'WUI_PASSWORD=%q\n' "$ADMIN_PASS"
+    printf 'WUI_PANEL_PORT=%q\n' "$PANEL_PORT"
+    printf 'WUI_WEB_BASE_PATH=%q\n' "${BASE_PATH:-}"
+    printf 'WUI_ACCESS_URL=%q\n' "${scheme}://${hostport}/${BASE_PATH:+$BASE_PATH/}"
+    printf 'WUI_API_TOKEN=%q\n' "$API_TOKEN"
+    printf 'WUI_DB_TYPE=%q\n' "sqlite"
+  } > "$f" 2>/dev/null && chmod 600 "$f" && chown root:root "$f" 2>/dev/null \
+    && printf '  %sInstall result written to %s (mode 600).%s\n\n' "$G" "$f" "$N" \
+    || warn "could not write $f"
+  umask "$prev"
+}
+
+# IP Limit rides on fail2ban; set it up now so the menu's jail works out
+# of the box, as 3x-ui does. Opt out with WUI_ENABLE_FAIL2BAN=false. Never
+# fatal: a fail2ban that would not install must not fail the panel.
+setup_fail2ban() {
+  if [[ -n "${WUI_ENABLE_FAIL2BAN+x}" && "$WUI_ENABLE_FAIL2BAN" != true ]]; then
+    info "WUI_ENABLE_FAIL2BAN=$WUI_ENABLE_FAIL2BAN, skipping Fail2ban auto-setup"
+    return 0
+  fi
+  have_systemd || return 0
+  [[ -x "$MENU_PATH" ]] || return 0
+  step "Setting up Fail2ban for the IP Limit feature"
+  if "$MENU_PATH" setup-fail2ban </dev/null >/dev/null 2>&1; then
+    ok "Fail2ban setup complete"
+  else
+    warn "Fail2ban setup did not finish; IP Limit stays off until you run 'w-ui' → IP Limit Management"
+  fi
+}
+
+# 3x-ui's closing box: the subcommands, so the operator's next command is
+# already on the screen.
+usage_box() {
+  printf '%s%s installation finished, it is running now...%s\n\n' "$G" "W-UI $("$BIN_PATH" version 2>/dev/null || echo)" "$N"
+  printf '┌───────────────────────────────────────────────────────┐\n'
+  printf '│  %sw-ui control menu usages (subcommands):%s              │\n' "$B" "$N"
+  printf '│                                                       │\n'
+  for row in "w-ui              - Admin Management Script" \
+             "w-ui start        - Start" \
+             "w-ui stop         - Stop" \
+             "w-ui restart      - Restart" \
+             "w-ui status       - Current Status" \
+             "w-ui settings     - Current Settings" \
+             "w-ui enable       - Enable Autostart on OS Startup" \
+             "w-ui disable      - Disable Autostart on OS Startup" \
+             "w-ui log          - Check logs" \
+             "w-ui banlog       - Check Fail2ban ban logs" \
+             "w-ui update       - Update" \
+             "w-ui legacy       - Legacy version" \
+             "w-ui install      - Install" \
+             "w-ui uninstall    - Uninstall"; do
+    printf '│  %s%-17s%s%s%-34s│\n' "$B" "${row%% - *}" "$N" "- " "${row#* - }"
+  done
+  printf '└───────────────────────────────────────────────────────┘\n'
 }
 
 # ── run ──────────────────────────────────────────────────────────────────────
@@ -1930,4 +2025,7 @@ write_unit
 apply_admin
 open_firewall
 start_service
+issue_api_token
+setup_fail2ban
 summary
+usage_box
