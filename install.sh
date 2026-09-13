@@ -183,6 +183,7 @@ detect_os() {
 
   case "$OS_ID" in
     ubuntu|debian) FAMILY=debian ;;
+    fedora|rhel|centos|almalinux|rocky|ol) FAMILY=rhel ;;
     *)
       case "$OS_LIKE" in
         *debian*)          FAMILY=debian ;;
@@ -336,12 +337,23 @@ install_base() {
 
   local base
   case "$FAMILY" in
-    debian) base=(curl ca-certificates gnupg tar iproute2 nftables iptables qrencode) ;;
-    rhel)   base=(curl ca-certificates gnupg2 tar iproute nftables iptables qrencode) ;;
+    debian) base=(curl ca-certificates gnupg tar iproute2 nftables iptables procps) ;;
+    rhel)   base=(curl ca-certificates gnupg2 tar iproute nftables iptables procps-ng) ;;
   esac
 
   pkg_install "${base[@]}" || die "could not install base packages"
   ok "base tools installed"
+
+  # qrencode draws QR codes in the terminal for the menu; the panel draws
+  # its own. On RHEL it lives in EPEL, which a fresh machine may not have,
+  # so its absence is a note rather than a failed install.
+  if ! pkg_install qrencode; then
+    if [[ "$FAMILY" == rhel ]] && pkg_install epel-release && pkg_install qrencode; then
+      ok "qrencode installed from EPEL"
+    else
+      warn "qrencode is not available here; QR codes are still made by the panel itself"
+    fi
+  fi
 }
 
 install_wireguard() {
@@ -606,10 +618,17 @@ net.ipv4.ip_forward = 1
 net.ipv6.conf.all.forwarding = 1
 SYSCTL
 
-  sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-wui.conf >/dev/null
+  # sysctl comes from procps, which a minimal image may lack even after
+  # the base packages; /proc/sys is the same switch without it.
+  if have sysctl; then
+    sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-wui.conf >/dev/null 2>&1 || true
+  else
+    echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+    echo 1 > /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || true
+  fi
   local v4 v6
-  v4=$(sysctl -n net.ipv4.ip_forward 2>/dev/null || echo 0)
-  v6=$(sysctl -n net.ipv6.conf.all.forwarding 2>/dev/null || echo 0)
+  v4=$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)
+  v6=$(cat /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || echo 0)
   [[ "$v4" == 1 ]] && ok "IPv4 forwarding on" || warn "IPv4 forwarding is still off"
   [[ "$v6" == 1 ]] && ok "IPv6 forwarding on" || warn "IPv6 forwarding is still off"
 }
