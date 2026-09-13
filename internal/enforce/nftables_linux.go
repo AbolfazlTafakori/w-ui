@@ -40,7 +40,6 @@ type NFTables struct {
 	lastErr     error
 	caps        Caps
 	probed      bool
-	probeErr    error
 }
 
 // probeCaps finds out what this kernel supports, once.

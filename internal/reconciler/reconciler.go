@@ -16,7 +16,6 @@ package reconciler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -706,8 +705,6 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	}
 	return d, nil
 }
-
-var errClosed = errors.New("reconciler: closed")
 
 // shapedDevices lists the devices a customer's traffic leaves by.
 //
