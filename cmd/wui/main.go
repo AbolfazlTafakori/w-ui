@@ -28,6 +28,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/backup"
+	"github.com/abolfazl/w-ui/internal/certfile"
 	"github.com/abolfazl/w-ui/internal/config"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -494,9 +495,18 @@ func run() error {
 	if sc, err := subs.Settings(ctx); err == nil && sc.Port > 0 {
 		addr := net.JoinHostPort(sc.Listen, strconv.Itoa(sc.Port))
 		if addr != cfg.Listen {
+			subTLS := &tls.Config{MinVersion: tls.VersionTLS12}
+			if sc.CertFile != "" && sc.KeyFile != "" {
+				if ld, err := certfile.New(sc.CertFile, sc.KeyFile); err == nil {
+					subTLS.GetCertificate = ld.GetCertificate
+				} else {
+					log.Error("subscription certificate is unusable; serving it plain", "error", err)
+					sc.CertFile, sc.KeyFile = "", ""
+				}
+			}
 			subSrv = &http.Server{
 				Addr:              addr,
-				TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+				TLSConfig:         subTLS,
 				Handler:           subOnly,
 				ReadHeaderTimeout: 10 * time.Second,
 				ReadTimeout:       30 * time.Second,
@@ -507,7 +517,7 @@ func run() error {
 				log.Info("subscription service listening", "address", addr, "tls", sc.CertFile != "")
 				var err error
 				if sc.CertFile != "" && sc.KeyFile != "" {
-					err = subSrv.ListenAndServeTLS(sc.CertFile, sc.KeyFile)
+					err = subSrv.ListenAndServeTLS("", "")
 				} else {
 					err = subSrv.ListenAndServe()
 				}
@@ -526,10 +536,9 @@ func run() error {
 			"tls", cfg.TLS())
 		var err error
 		if cfg.TLS() {
-			// Paths, not preloaded certificates: the server reads them per
-			// handshake, so a renewal that rewrites the files is picked up by
-			// a restart and nothing has to be rebuilt.
-			err = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+			// The certificate is read from its files again whenever they
+			// change, so a renewal is served without a restart.
+			err = srv.ListenAndServeTLS("", "")
 		} else {
 			// Worth saying once. An administrator's password crosses this
 			// listener in the clear, and a panel that never mentions it is how
@@ -661,11 +670,19 @@ func buildServer(
 	// The subscription service alone, for a listener of its own.
 	subOnly := api.LogRequests(log, api.SecureHeaders(apiSrv.SubscriptionRouter(http.NotFoundHandler())))
 
+	// Nothing below TLS 1.2 is offered. The clients that need less are
+	// older than any browser an operator will be signing in from.
+	tlsConf := &tls.Config{MinVersion: tls.VersionTLS12}
+	if cfg.TLS() {
+		ld, err := certfile.New(cfg.TLSCert, cfg.TLSKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("certificate: %w", err)
+		}
+		tlsConf.GetCertificate = ld.GetCertificate
+	}
 	return &http.Server{
-		Addr: cfg.Listen,
-		// Nothing below TLS 1.2 is offered. The clients that need less are
-		// older than any browser an operator will be signing in from.
-		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+		Addr:              cfg.Listen,
+		TLSConfig:         tlsConf,
 		Handler:           api.LogRequests(log, api.SecureHeaders(handler)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

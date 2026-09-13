@@ -1064,12 +1064,14 @@ firewall_menu() {
 
 ssl_cert_issue() {
     echo
-    echo -e "  ${yellow}The panel serves plain HTTP. A certificate here lets you put it${plain}"
-    echo -e "  ${yellow}behind TLS, which matters because the admin password and every${plain}"
-    echo -e "  ${yellow}customer's configuration travel over this connection.${plain}"
+    echo -e "  ${yellow}A certificate here puts the panel on HTTPS, which matters because${plain}"
+    echo -e "  ${yellow}the admin password and every customer's configuration travel${plain}"
+    echo -e "  ${yellow}over this connection. Renewal is automatic once it is issued.${plain}"
     echo
     echo -e "${green}\t1.${plain} Issue a certificate with acme.sh (needs a domain)"
-    echo -e "${green}\t2.${plain} Show installed certificates"
+    echo -e "${green}\t2.${plain} Show installed certificates and renewal status"
+    echo -e "${green}\t3.${plain} Renew now"
+    echo -e "${green}\t4.${plain} Go back to plain HTTP"
     echo -e "${green}\t0.${plain} Back to Main Menu"
     read -rp "Choose an option: " choice
 
@@ -1077,12 +1079,28 @@ ssl_cert_issue() {
         0) show_menu ;;
         1) issue_acme_cert ;;
         2)
-            if [[ -d /root/.acme.sh ]]; then
-                ~/.acme.sh/acme.sh --list 2>&1 | sed 's/^/  /'
+            if [[ -x "$ACME_HOME/acme.sh" ]]; then
+                "$ACME_HOME/acme.sh" --list --home "$ACME_HOME" 2>&1 | sed 's/^/  /'
+                echo
+                systemctl list-timers wui-cert-renew.timer --no-pager 2>/dev/null | sed 's/^/  /'
             else
                 LOGD "acme.sh is not installed"
             fi
             echo && read -rp "Press enter to continue: " temp
+            ssl_cert_issue
+            ;;
+        3)
+            if [[ -x "$ACME_HOME/acme.sh" ]]; then
+                "$ACME_HOME/acme.sh" --cron --home "$ACME_HOME" --force 2>&1 | tail -8 | sed 's/^/  /'
+                LOGI "The panel picks a renewed certificate up by itself within a minute"
+            else
+                LOGD "acme.sh is not installed"
+            fi
+            echo && read -rp "Press enter to continue: " temp
+            ssl_cert_issue
+            ;;
+        4)
+            "$BIN_PATH" setting set --no-tls && systemctl restart "$SERVICE" && LOGI "Serving plain HTTP"
             ssl_cert_issue
             ;;
         *)
@@ -1092,16 +1110,59 @@ ssl_cert_issue() {
     esac
 }
 
+# acme.sh lives under root's home regardless of who ran this: its renewal
+# runs as root, and an installer run under `sudo` often carries the calling
+# user's HOME.
+ACME_HOME="$(getent passwd root 2>/dev/null | cut -d: -f6)"
+ACME_HOME="${ACME_HOME:-/root}/.acme.sh"
+CERT_DIR="$CONF_DIR/certs"
+
+# Renewal must happen with nobody watching. acme.sh renews from a cron
+# entry -- which is nothing on the many small images that ship without a
+# cron daemon -- so a systemd timer runs its check daily as well.
+ensure_renewal() {
+    "$ACME_HOME/acme.sh" --install-cronjob --home "$ACME_HOME" > /dev/null 2>&1 || true
+    cat > /etc/systemd/system/wui-cert-renew.service <<UNIT
+[Unit]
+Description=W-UI certificate renewal (acme.sh)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=${ACME_HOME%/.acme.sh}
+ExecStart=$ACME_HOME/acme.sh --cron --home $ACME_HOME
+UNIT
+    cat > /etc/systemd/system/wui-cert-renew.timer <<UNIT
+[Unit]
+Description=Daily W-UI certificate renewal check
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+    systemctl daemon-reload
+    systemctl enable --now wui-cert-renew.timer > /dev/null 2>&1 \
+        && LOGI "Renewal timer installed (wui-cert-renew.timer, daily)" \
+        || LOGE "Could not enable the renewal timer; acme.sh's own cron entry is the fallback"
+}
+
 issue_acme_cert() {
     if ! have socat; then
         LOGI "Installing socat"
         have apt-get && apt-get update -qq && apt-get install -y -qq socat
         have dnf && dnf install -y socat
     fi
-    if [[ ! -d /root/.acme.sh ]]; then
+    if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
         LOGI "Installing acme.sh"
-        curl -fsSL https://get.acme.sh | sh
+        curl -fsSL https://get.acme.sh -o /tmp/get-acme.sh \
+            && (HOME="${ACME_HOME%/.acme.sh}" sh /tmp/get-acme.sh --home "$ACME_HOME" > /dev/null 2>&1)
+        rm -f /tmp/get-acme.sh
     fi
+    [[ -x "$ACME_HOME/acme.sh" ]] || { LOGE "acme.sh could not be installed"; ssl_cert_issue; return; }
 
     echo && read -rp "Domain pointing at this server: " domain
     if [[ -z "$domain" ]]; then
@@ -1119,20 +1180,36 @@ issue_acme_cert() {
     fi
     have ufw && ufw allow 80 > /dev/null 2>&1
 
-    local dir="$CONF_DIR/tls/$domain"
-    mkdir -p "$dir"
-    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt > /dev/null 2>&1
-    if ~/.acme.sh/acme.sh --issue -d "$domain" --standalone; then
-        ~/.acme.sh/acme.sh --installcert -d "$domain" \
-            --key-file "$dir/privkey.pem" \
-            --fullchain-file "$dir/fullchain.pem"
-        chmod 0640 "$dir"/*.pem
-        chgrp "$SERVICE_USER" "$dir"/*.pem 2> /dev/null
-        LOGI "Certificate installed in $dir"
-        echo -e "  ${yellow}The panel does not terminate TLS itself. Point a reverse proxy${plain}"
-        echo -e "  ${yellow}at http://127.0.0.1:$(panel_port) and give it these files.${plain}"
-    else
+    "$ACME_HOME/acme.sh" --set-default-ca --server letsencrypt --home "$ACME_HOME" > /dev/null 2>&1
+    if ! "$ACME_HOME/acme.sh" --issue -d "$domain" --standalone --keylength ec-256 --home "$ACME_HOME"; then
         LOGE "Could not issue a certificate; check that the domain resolves here"
+        echo && read -rp "Press enter to continue: " temp
+        ssl_cert_issue
+        return
+    fi
+
+    install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$CERT_DIR"
+    # No restart in the reload command: the panel re-reads the files itself
+    # when they change, and a restart would drop every tunnel for nothing.
+    "$ACME_HOME/acme.sh" --install-cert -d "$domain" --ecc --home "$ACME_HOME" \
+        --fullchain-file "$CERT_DIR/panel.crt" \
+        --key-file "$CERT_DIR/panel.key" \
+        --reloadcmd "chown $SERVICE_USER:$SERVICE_USER $CERT_DIR/panel.crt $CERT_DIR/panel.key; chmod 640 $CERT_DIR/panel.key" > /dev/null 2>&1
+    chown "$SERVICE_USER:$SERVICE_USER" "$CERT_DIR/panel.crt" "$CERT_DIR/panel.key"
+    chmod 644 "$CERT_DIR/panel.crt"
+    chmod 640 "$CERT_DIR/panel.key"
+
+    ensure_renewal
+
+    # Handed to the panel itself, the way the settings page would: from the
+    # next start it serves HTTPS with this pair.
+    local said
+    if said=$("$BIN_PATH" setting set --cert "$CERT_DIR/panel.crt" --key "$CERT_DIR/panel.key" 2>&1); then
+        systemctl restart "$SERVICE"
+        LOGI "Certificate installed; ${said#saved; from the next start }"
+        LOGI "Renewal is automatic and needs port 80 free again in ~60 days"
+    else
+        LOGE "The certificate is in $CERT_DIR but the panel could not be told about it"
     fi
     echo && read -rp "Press enter to continue: " temp
     ssl_cert_issue

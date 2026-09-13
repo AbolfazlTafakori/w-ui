@@ -1311,8 +1311,12 @@ issue_certificate() {
   "$acme" --install-cert -d "$ACME_DOMAIN" --ecc \
     --fullchain-file "$CERT_DIR/panel.crt" \
     --key-file "$CERT_DIR/panel.key" \
-    --reloadcmd "chown $SERVICE_USER:$SERVICE_USER $CERT_DIR/panel.crt $CERT_DIR/panel.key; chmod 640 $CERT_DIR/panel.key; systemctl restart wui 2>/dev/null || true" \
+    --reloadcmd "chown $SERVICE_USER:$SERVICE_USER $CERT_DIR/panel.crt $CERT_DIR/panel.key; chmod 640 $CERT_DIR/panel.key" \
     >/dev/null 2>&1 || { warn "the certificate was issued but could not be installed"; return 1; }
+  # No restart in the reload command: the panel re-reads the files itself
+  # when they change, and a restart would drop every tunnel for nothing.
+
+  ensure_renewal "$acme_home"
 
   chown "$SERVICE_USER:$SERVICE_USER" "$CERT_DIR/panel.crt" "$CERT_DIR/panel.key"
   chmod 640 "$CERT_DIR/panel.key"
@@ -1323,7 +1327,7 @@ issue_certificate() {
   ACME_METHOD="$method"
 
   ok "issued and installed"
-  ok "renewal is automatic; the panel restarts itself when it happens"
+  ok "renewal is automatic; the panel picks the new certificate up by itself"
   if [[ "$method" == standalone ]]; then
     # Renewal binds port 80 again in sixty days. An operator who closes it, or
     # who later puts a web server there, gets an expired certificate and no
@@ -1331,6 +1335,45 @@ issue_certificate() {
     warn "renewal needs port 80 free again in ~60 days"
   fi
   return 0
+}
+
+# Renewal must happen with nobody watching, or the certificate expires in
+# ninety days and the panel goes dark. acme.sh renews from a cron entry --
+# which is nothing on the many small images that ship without a cron
+# daemon. So a systemd timer runs its renewal check daily as well; the two
+# are harmless together, since acme.sh only renews what is due.
+ensure_renewal() {
+  local acme_home="$1"
+  "$acme_home/acme.sh" --install-cronjob --home "$acme_home" >/dev/null 2>&1 || true
+
+  cat > /etc/systemd/system/wui-cert-renew.service <<UNIT
+[Unit]
+Description=W-UI certificate renewal (acme.sh)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=${acme_home%/.acme.sh}
+ExecStart=$acme_home/acme.sh --cron --home $acme_home
+UNIT
+  cat > /etc/systemd/system/wui-cert-renew.timer <<UNIT
+[Unit]
+Description=Daily W-UI certificate renewal check
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  if systemctl enable --now wui-cert-renew.timer >/dev/null 2>&1; then
+    ok "renewal timer installed (wui-cert-renew.timer, daily)"
+  else
+    warn "could not enable the renewal timer; acme.sh's own cron entry is the fallback"
+  fi
 }
 
 # ── sitting behind a proxy that is already here ──────────────────────────────
@@ -1463,6 +1506,10 @@ NGINXSITE
   fi
 
   ok "certificate issued; nginx serves https://$ACME_DOMAIN"
+  # certbot's own timer does the renewing. Debian enables it on install;
+  # RHEL ships it disabled, under another name, and nobody notices until
+  # the day the certificate lapses.
+  systemctl enable --now certbot.timer >/dev/null 2>&1     || systemctl enable --now certbot-renew.timer >/dev/null 2>&1     || warn "certbot's renewal timer could not be enabled; check 'systemctl list-timers'"
   ok "renewal is certbot's, alongside every other certificate on this server"
 
   # The panel itself speaks plain HTTP to nginx over the loopback and is not

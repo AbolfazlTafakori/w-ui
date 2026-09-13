@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +20,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/logger"
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // The subcommands below exist for the `w-ui` management script.
@@ -60,10 +63,20 @@ Usage:
   wui                              run the panel
   wui setting show                 print the effective configuration
   wui setting show --json          the same, as JSON
+  wui setting set [flags]          change where the panel answers (applied
+                                   at the next start)
   wui admin reset [flags]          reset the administrator account
   wui version                      print the version
   wui keygen                       make a release-signing key pair
   wui sign <binary>                sign a build, for a release
+
+Flags for "setting set":
+  --listen ADDR      the address to bind (0.0.0.0 for every address)
+  --port N           the port
+  --base-path PATH   the secret path the panel is served under
+  --cert FILE        certificate to serve TLS with
+  --key FILE         its private key
+  --no-tls           forget the certificate and serve plain HTTP
 
 Flags for "admin reset":
   --username NAME    the administrator's name (default: keep the current one)
@@ -106,11 +119,14 @@ func cmdSetting(args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		sub, args = args[0], args[1:]
 	}
+	if sub == "set" {
+		return cmdSettingSet(args)
+	}
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("setting: %w", err)
 	}
 	if sub != "" && sub != "show" {
-		return fmt.Errorf("setting: unknown subcommand %q, want \"show\"", sub)
+		return fmt.Errorf("setting: unknown subcommand %q, want \"show\" or \"set\"", sub)
 	}
 
 	db, cfg, err := openDatabase()
@@ -171,6 +187,83 @@ func cmdSetting(args []string) error {
 	fmt.Printf("clients: %d\n", c.Clients)
 	fmt.Printf("activeClients: %d\n", c.Active)
 	fmt.Printf("accounts: %d\n", c.Accounts)
+	return nil
+}
+
+// cmdSettingSet is what the installer and the management script call once
+// they have a certificate or a port to hand the panel: the same knobs as
+// the settings page, without a browser. The panel's own stored settings
+// are what win over the environment at start, so this is where a change
+// has to land to stick.
+func cmdSettingSet(args []string) error {
+	fs := flag.NewFlagSet("setting set", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	listen := fs.String("listen", "", "")
+	port := fs.Int("port", 0, "")
+	basePath := fs.String("base-path", "", "")
+	cert := fs.String("cert", "", "")
+	key := fs.String("key", "", "")
+	noTLS := fs.Bool("no-tls", false, "")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("setting set: %w", err)
+	}
+	if fs.NFlag() == 0 {
+		return errors.New("setting set: nothing to change; see wui help")
+	}
+	if (*cert == "") != (*key == "") {
+		return errors.New("setting set: --cert and --key go together")
+	}
+
+	db, cfg, err := openDatabase()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	settings := service.NewSettings(db, cfg.DefaultLocale)
+	cur, err := settings.Get(ctx)
+	if err != nil {
+		return err
+	}
+	if *listen != "" {
+		cur.WebListen = *listen
+	}
+	if *port != 0 {
+		cur.WebPort = *port
+	}
+	if *basePath != "" {
+		cur.WebBasePath = *basePath
+	}
+	if *cert != "" {
+		for _, f := range []string{*cert, *key} {
+			if _, err := os.Stat(f); err != nil {
+				return fmt.Errorf("setting set: %w", err)
+			}
+		}
+		cur.WebCertFile, cur.WebKeyFile = *cert, *key
+	}
+	if *noTLS {
+		cur.WebCertFile, cur.WebKeyFile = "", ""
+	}
+	saved, err := settings.Save(ctx, cur)
+	if err != nil {
+		return err
+	}
+	scheme := "http"
+	if saved.WebCertFile != "" {
+		scheme = "https"
+	}
+	host := saved.WebListen
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "<this server>"
+	}
+	p := saved.WebPort
+	if p == 0 {
+		p = 2096
+	}
+	if saved.WebBasePath == "" {
+		saved.WebBasePath = "/"
+	}
+	fmt.Printf("saved; from the next start the panel answers at %s://%s:%d%s\n", scheme, host, p, saved.WebBasePath)
 	return nil
 }
 
