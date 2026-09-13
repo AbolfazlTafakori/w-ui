@@ -1159,7 +1159,8 @@ configure_defaults() {
   [[ "$BASE_KNOWN" == 1 ]] || BASE_PATH="$(gen_string 18)"
   if [[ "$PORT_KNOWN" == 0 ]]; then
     PANEL_PORT="$(random_free_port)"
-  elif port_taken "$PANEL_PORT"; then
+  elif port_taken "$PANEL_PORT" && [[ "$(port_owner "$PANEL_PORT")" != wui ]]; then
+    # The panel itself holding the port is an upgrade, not a conflict.
     die "port $PANEL_PORT is already served by $(port_owner "$PANEL_PORT"); pass --port with a free one"
   fi
   if [[ -n "$TLS_MODE" ]]; then
