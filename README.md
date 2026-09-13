@@ -17,6 +17,8 @@ their own; everything else is the operator's.
 
 ---
 
+**Documentation:** [abolfazltafakori.github.io/w-ui](https://abolfazltafakori.github.io/w-ui/) — English and [فارسی](https://abolfazltafakori.github.io/w-ui/fa/).
+
 ## Why not just use an existing panel
 
 The difference is *where the limit is enforced*.
