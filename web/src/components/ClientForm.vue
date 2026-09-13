@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../lib/api.js'
 import { t } from '../lib/store.js'
-import { bytesToGigabytes } from '../lib/format.js'
+import { quotaToUnit, unitToBytes, durationToUnit, unitToHours } from '../lib/format.js'
 import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
@@ -16,6 +16,11 @@ const emit = defineEmits(['close', 'submit'])
 
 const editing = computed(() => !!props.client)
 
+function hoursLeft(iso) {
+  if (!iso) return 0
+  const h = (new Date(iso).getTime() - Date.now()) / 3600e3
+  return h > 0 ? Math.round(h * 100) / 100 : 0
+}
 function daysLeft(iso) {
   if (!iso) return ''
   const d = Math.ceil((new Date(iso) - Date.now()) / 86400e3)
@@ -31,8 +36,10 @@ const form = ref(
         telegramId: props.client.telegramId || 0,
         // Every server this customer already reaches, from their accounts.
         interfaceIds: [...new Set((props.client.accounts || []).map((a) => a.interfaceId))],
-        quotaGB: bytesToGigabytes(props.client.quotaBytes),
-        expiresInDays: daysLeft(props.client.expiresAt),
+        quota: quotaToUnit(props.client.quotaBytes).value,
+        quotaUnit: quotaToUnit(props.client.quotaBytes).unit,
+        expiresIn: durationToUnit(hoursLeft(props.client.expiresAt)).value,
+        expiresUnit: durationToUnit(hoursLeft(props.client.expiresAt)).unit,
         deviceLimit: props.client.deviceLimit,
         rateMbit: props.client.rateBitsPerSec ? props.client.rateBitsPerSec / 1e6 : '',
         startOnFirstUse: !!props.client.startOnFirstUse,
@@ -45,8 +52,10 @@ const form = ref(
         group: '',
         telegramId: 0,
         interfaceIds: props.interfaces[0] ? [props.interfaces[0].id] : [],
-        quotaGB: '',
-        expiresInDays: '',
+        quota: '',
+        quotaUnit: 'GB',
+        expiresIn: '',
+        expiresUnit: 'days',
         deviceLimit: 1,
         rateMbit: '',
         startOnFirstUse: false,
@@ -64,7 +73,11 @@ onMounted(async () => {
   try {
     const cfg = await api.get('/api/settings')
     const d = cfg.settings
-    if (d.defaultQuotaBytes) form.value.quotaGB = d.defaultQuotaBytes / 1024 ** 3
+    if (d.defaultQuotaBytes) {
+      const q = quotaToUnit(d.defaultQuotaBytes)
+      form.value.quota = q.value
+      form.value.quotaUnit = q.unit
+    }
     if (d.defaultExpiryDays) form.value.expiresInDays = d.defaultExpiryDays
     if (d.defaultDeviceLimit) form.value.deviceLimit = d.defaultDeviceLimit
     if (d.defaultRateBitsPerSec) form.value.rateMbit = d.defaultRateBitsPerSec / 1e6
@@ -149,19 +162,20 @@ const presets = [
 ]
 
 function applyPreset(p) {
-  form.value.quotaGB = p.gb
-  form.value.expiresInDays = p.days
+  form.value.quota = p.gb
+  form.value.quotaUnit = 'GB'
+  form.value.expiresIn = p.days
+  form.value.expiresUnit = 'days'
   form.value.deviceLimit = p.devices
 }
 
 async function submit() {
   busy.value = true
   try {
-    const days = Number(form.value.expiresInDays)
-    const hasExpiry = Number.isFinite(days) && days > 0
-    const expiresAt = hasExpiry
-      ? new Date(Date.now() + days * 86400e3).toISOString()
-      : null
+    // Sold in whatever unit was chosen -- half a gigabyte, thirty-six hours --
+    // and stored in bytes and a timestamp, which is what is enforced.
+    const hours = unitToHours(form.value.expiresIn, form.value.expiresUnit)
+    const expiresAt = hours > 0 ? new Date(Date.now() + hours * 3600e3).toISOString() : null
 
     await emit('submit', {
       name: form.value.name.trim(),
@@ -169,7 +183,7 @@ async function submit() {
       group: form.value.group.trim(),
       telegramId: Number(form.value.telegramId) || 0,
       interfaceIds: form.value.interfaceIds,
-      quotaGB: form.value.quotaGB,
+      quotaBytes: unitToBytes(form.value.quota, form.value.quotaUnit),
       expiresAt,
       deviceLimit: Number(form.value.deviceLimit) || 1,
       rateBitsPerSec: Math.max(0, Math.round(Number(form.value.rateMbit) * 1e6)) || 0,
@@ -233,27 +247,41 @@ async function submit() {
               <div class="unit-field">
                 <input
                   id="cf-quota"
-                  v-model="form.quotaGB"
+                  v-model="form.quota"
                   type="number"
                   min="0"
-                  step="0.5"
+                  step="any"
+                  inputmode="decimal"
                   :placeholder="t('client.unlimited')"
                 />
-                <span class="unit">GB</span>
+                <select v-model="form.quotaUnit" class="unit-select" :aria-label="t('client.quotaUnit')">
+                  <option value="MB">MB</option>
+                  <option value="GB">GB</option>
+                  <option value="TB">TB</option>
+                </select>
               </div>
             </div>
           </div>
 
           <div class="col-6">
             <div class="field">
-              <label for="cf-days">{{ t('client.expiresInDays') }}</label>
-              <input
-                id="cf-days"
-                v-model="form.expiresInDays"
-                type="number"
-                min="0"
-                :placeholder="t('client.neverExpires')"
-              />
+              <label for="cf-days">{{ t('client.expiresIn') }}</label>
+              <div class="unit-field">
+                <input
+                  id="cf-days"
+                  v-model="form.expiresIn"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputmode="decimal"
+                  :placeholder="t('client.neverExpires')"
+                />
+                <select v-model="form.expiresUnit" class="unit-select" :aria-label="t('client.expiresUnit')">
+                  <option value="hours">{{ t('unit.hours') }}</option>
+                  <option value="days">{{ t('unit.days') }}</option>
+                  <option value="months">{{ t('unit.months') }}</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -515,5 +543,11 @@ async function submit() {
 }
 .unit-field input {
   min-width: 0;
+}
+.unit-select {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 72px;
+  padding-inline: 8px;
 }
 </style>

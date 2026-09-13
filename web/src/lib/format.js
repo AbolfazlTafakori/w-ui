@@ -41,6 +41,49 @@ export function gigabytesToBytes(gb) {
   return Number.isFinite(v) && v > 0 ? Math.round(v * 1024 ** 3) : 0
 }
 
+// The data units a plan is sold in. Binary, as every panel and every client
+// app counts them, so "1 GB" here is the 1 GB the customer's phone shows.
+export const DATA_UNITS = { MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 }
+
+// quotaToUnit picks the unit a stored quota reads best in: whole numbers
+// where they exist, otherwise the largest unit that leaves at most two
+// decimals. 500 MB comes back as 500 MB, not 0.49 GB.
+export function quotaToUnit(bytes) {
+  const b = Number(bytes || 0)
+  if (b <= 0) return { value: '', unit: 'GB' }
+  for (const unit of ['TB', 'GB', 'MB']) {
+    const v = b / DATA_UNITS[unit]
+    if (v >= 1 && Math.abs(v - Math.round(v * 100) / 100) < 1e-9) return { value: +v.toFixed(2), unit }
+  }
+  return { value: +(b / DATA_UNITS.MB).toFixed(2), unit: 'MB' }
+}
+
+// unitToBytes turns what was typed, in the chosen unit, into bytes.
+export function unitToBytes(value, unit) {
+  const v = Number(value)
+  if (!Number.isFinite(v) || v <= 0) return 0
+  return Math.round(v * (DATA_UNITS[unit] || DATA_UNITS.GB))
+}
+
+// The time units a plan is sold in, in hours.
+export const TIME_UNITS = { hours: 1, days: 24, months: 24 * 30 }
+
+export function durationToUnit(hours) {
+  const h = Number(hours || 0)
+  if (h <= 0) return { value: '', unit: 'days' }
+  for (const unit of ['months', 'days', 'hours']) {
+    const v = h / TIME_UNITS[unit]
+    if (v >= 1 && Math.abs(v - Math.round(v * 100) / 100) < 1e-9) return { value: +v.toFixed(2), unit }
+  }
+  return { value: +(h / TIME_UNITS.days).toFixed(2), unit: 'days' }
+}
+
+export function unitToHours(value, unit) {
+  const v = Number(value)
+  if (!Number.isFinite(v) || v <= 0) return 0
+  return v * (TIME_UNITS[unit] || TIME_UNITS.days)
+}
+
 export function bytesToGigabytes(b) {
   const v = Number(b || 0)
   return v === 0 ? '' : +(v / 1024 ** 3).toFixed(2)

@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, relative, dateTime, percent, gigabytesToBytes, isOnline } from '../lib/format.js'
+import { bytes, relative, dateTime, percent, gigabytesToBytes, isOnline, unitToBytes, unitToHours } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
 import ClientQrModal from '../components/ClientQrModal.vue'
 import ClientInfoModal from '../components/ClientInfoModal.vue'
@@ -76,7 +76,7 @@ const formFor = ref(null)
 const shareFor = ref(null)
 const infoFor = ref(null)
 const dialog = ref(null) // { kind }
-const form = ref({ group: '', addDays: '', quotaGB: '', resetCycle: '', prefix: '', count: 10 })
+const form = ref({ group: '', addDays: '', addUnit: 'days', quotaGB: '', quotaUnit: 'GB', resetCycle: '', prefix: '', count: 10 })
 const selected = ref(new Set())
 // On a phone the table becomes a list of cards, as 3x-ui's clients do,
 // and each card's actions live behind one menu.
@@ -778,8 +778,8 @@ async function submitDialog() {
       selected.value = new Set()
     } else if (d.kind === 'adjust') {
       const payload = { ids: ids() }
-      if (form.value.addDays !== '') payload.addDays = Number(form.value.addDays)
-      if (form.value.quotaGB !== '') payload.quotaBytes = gigabytesToBytes(form.value.quotaGB)
+      if (form.value.addDays !== '') payload.addDays = unitToHours(form.value.addDays, form.value.addUnit) / 24
+      if (form.value.quotaGB !== '') payload.quotaBytes = unitToBytes(form.value.quotaGB, form.value.quotaUnit)
       if (form.value.resetCycle) payload.resetCycle = form.value.resetCycle
       const res = await api.adjustClients(payload)
       notify(`${t('client.bulkDone')} — ${nf(res.affected)}`, 'success')
@@ -792,7 +792,7 @@ async function submitDialog() {
         start: 1,
         interfaceId: iface?.id,
         deviceLimit: 1,
-        quotaBytes: gigabytesToBytes(form.value.quotaGB),
+        quotaBytes: unitToBytes(form.value.quotaGB, form.value.quotaUnit),
         resetCycle: 'none',
         deviceNames: [],
       })
@@ -808,7 +808,7 @@ async function submitDialog() {
 }
 
 async function submitForm(input) {
-  const payload = { ...input, quotaBytes: gigabytesToBytes(input.quotaGB), quotaGB: undefined }
+  const payload = { ...input }
   try {
     if (formFor.value?.client) {
       // interfaceIds is deliberately kept on an edit: it is how an operator
@@ -1185,13 +1185,25 @@ async function submitForm(input) {
 
         <template v-else-if="dialog.kind === 'adjust'">
           <div class="field">
-            <label for="cd-days">{{ t('group.extendDays') }}</label>
-            <input id="cd-days" v-model="form.addDays" type="number" :placeholder="t('client.leaveBlank')" autofocus />
+            <label for="cd-days">{{ t('group.extend') }}</label>
+            <div class="unit-field">
+              <input id="cd-days" v-model="form.addDays" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.leaveBlank')" autofocus />
+              <select v-model="form.addUnit" class="unit-select" :aria-label="t('client.expiresUnit')">
+                <option value="hours">{{ t('unit.hours') }}</option>
+                <option value="days">{{ t('unit.days') }}</option>
+                <option value="months">{{ t('unit.months') }}</option>
+              </select>
+            </div>
             <span class="hint">{{ t('group.extendHint') }}</span>
           </div>
           <div class="field">
-            <label for="cd-quota">{{ t('client.quota') }} (GB)</label>
-            <input id="cd-quota" v-model="form.quotaGB" type="number" min="0" step="0.5" :placeholder="t('client.leaveBlank')" />
+            <label for="cd-quota">{{ t('client.quota') }}</label>
+            <div class="unit-field">
+              <input id="cd-quota" v-model="form.quotaGB" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.leaveBlank')" />
+              <select v-model="form.quotaUnit" class="unit-select" :aria-label="t('client.quotaUnit')">
+                <option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option>
+              </select>
+            </div>
           </div>
           <div class="field">
             <label for="cd-cycle">{{ t('client.resetCycle') }}</label>
@@ -1217,8 +1229,13 @@ async function submitForm(input) {
             </div>
           </div>
           <div class="field">
-            <label for="cd-bquota">{{ t('client.quota') }} (GB)</label>
-            <input id="cd-bquota" v-model="form.quotaGB" type="number" min="0" step="0.5" :placeholder="t('client.unlimited')" />
+            <label for="cd-bquota">{{ t('client.quota') }}</label>
+            <div class="unit-field">
+              <input id="cd-bquota" v-model="form.quotaGB" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.unlimited')" />
+              <select v-model="form.quotaUnit" class="unit-select" :aria-label="t('client.quotaUnit')">
+                <option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option>
+              </select>
+            </div>
             <span class="hint">{{ t('client.batchHint') }}</span>
           </div>
         </template>
@@ -1273,6 +1290,7 @@ async function submitForm(input) {
 .acard.small .acard-head { min-height: 38px; padding: 0 12px; }
 .acard.small .acard-body { padding: 12px; }
 .card-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; padding: 6px 0; }
+.unit-select { flex: 0 0 auto; width: auto; min-width: 72px; padding-inline: 8px; }
 .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .filter-count { margin-inline-start: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 6px 8px; background: var(--surface-2); border-radius: 8px; }

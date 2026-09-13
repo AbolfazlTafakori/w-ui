@@ -1038,8 +1038,9 @@ func (s *Clients) Bulk(ctx context.Context, action BulkAction, ids []uint) (int6
 // all three without forcing the operator to restate the two they do not want to
 // touch.
 type AdjustInput struct {
-	IDs        []uint            `json:"ids"`
-	AddDays    *int              `json:"addDays"`
+	IDs []uint `json:"ids"`
+	// AddDays may be fractional: half a day is twelve hours.
+	AddDays    *float64          `json:"addDays"`
 	QuotaBytes *uint64           `json:"quotaBytes"`
 	ResetCycle *model.ResetCycle `json:"resetCycle"`
 }
@@ -1073,7 +1074,7 @@ func (s *Clients) Adjust(ctx context.Context, in AdjustInput) (int64, error) {
 				if m.ExpiresAt != nil && m.ExpiresAt.After(now) {
 					base = *m.ExpiresAt
 				}
-				next := base.Add(time.Duration(*in.AddDays) * 24 * time.Hour)
+				next := base.Add(time.Duration(*in.AddDays * 24 * float64(time.Hour)))
 				fields["expires_at"] = next
 				if m.Status == model.StatusExpired && next.After(now) {
 					fields["status"] = model.StatusActive
