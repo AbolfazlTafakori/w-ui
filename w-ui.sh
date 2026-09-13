@@ -213,11 +213,11 @@ update_dev() {
 replace_wui_script() {
     local url="$1"
     local use_if_modified_since="$2"
-    local temp_file="/usr/bin/w-ui-temp.$$"
+    local temp_file="/usr/local/bin/w-ui-temp.$$"
 
     rm -f "$temp_file"
     if [[ "$use_if_modified_since" == "true" ]]; then
-        curl -fLRo "$temp_file" -z /usr/bin/w-ui "$url"
+        curl -fLRo "$temp_file" -z /usr/local/bin/w-ui "$url"
     else
         curl -fLRo "$temp_file" "$url"
     fi
@@ -228,18 +228,18 @@ replace_wui_script() {
 
     if [[ ! -s "$temp_file" ]]; then
         rm -f "$temp_file"
-        # -z above means "not modified since /usr/bin/w-ui" rather than a
+        # -z above means "not modified since /usr/local/bin/w-ui" rather than a
         # real failure, so an empty download here is success, not an error.
         [[ "$use_if_modified_since" == "true" ]] && return 0
         return 1
     fi
 
-    mv -f "$temp_file" /usr/bin/w-ui
+    mv -f "$temp_file" /usr/local/bin/w-ui
     if [[ $? != 0 ]]; then
         rm -f "$temp_file"
         return 1
     fi
-    chmod +x /usr/bin/w-ui
+    chmod +x /usr/local/bin/w-ui
     return 0
 }
 
