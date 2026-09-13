@@ -13,6 +13,7 @@ import WarpDialog from '../components/WarpDialog.vue'
 import NordDialog from '../components/NordDialog.vue'
 import PiaDialog from '../components/PiaDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
+import { useIsMobile } from '../lib/mobile.js'
 
 // Where traffic leaves. Two rows always exist and cannot be removed, so a
 // routing rule always has somewhere to point.
@@ -184,6 +185,14 @@ async function setEnabled(o, on) {
 
 // ── the row menu, the same one theirs keeps behind the "more" circle ──
 const menu = ref(null) // { outbound, idx, x, y }
+// On a phone the table becomes 3x-ui's OutboundCardList.
+const isMobile = useIsMobile()
+const cardEgressShown = ref(new Set())
+function toggleCardEgress(id) {
+  const next = new Set(cardEgressShown.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  cardEgressShown.value = next
+}
 
 function openMenuFor(o, idx, event) {
   if (menu.value?.outbound?.id === o.id) {
@@ -436,7 +445,7 @@ async function runImport() {
         <div class="toolbar-group">
           <button class="btn primary" @click="formFor = {}">
             <AntIcon name="PlusOutlined" />
-            <span>{{ t('nav.outbounds') }}</span>
+            <span v-if="!isMobile">{{ t('nav.outbounds') }}</span>
           </button>
           <button class="btn" @click="dialog = 'subs'">
             <AntIcon name="CloudOutlined" />
@@ -493,7 +502,7 @@ async function runImport() {
           <button class="btn primary" :disabled="checkingAll" @click="checkAll">
             <span v-if="checkingAll" class="spin sm"></span>
             <AntIcon v-else name="PlayCircleOutlined" />
-            <span>{{ t('outbound.testAll') }}</span>
+            <span v-if="!isMobile">{{ t('outbound.testAll') }}</span>
           </button>
 
           <button class="btn icon" :aria-label="t('outbound.resetTraffic')" :title="t('outbound.resetTraffic')" @click="resetAllTraffic">
@@ -514,6 +523,68 @@ async function runImport() {
       <!-- Their columns, in their order and with their widths: #, Tag,
            Address, Egress (with the eye that hides the address), Country,
            Traffic, Latency, Check. -->
+      <div v-else-if="isMobile" class="outbound-cards">
+        <div v-if="!outbounds.length" class="card-empty">
+          <AntIcon name="ExportOutlined" :size="32" />
+          <div>{{ t('common.nothingYet') }}</div>
+        </div>
+        <div v-for="(o, idx) in outbounds" :key="o.id" class="outbound-card" :class="{ off: !o.enabled }">
+          <div class="card-head">
+            <div class="card-identity">
+              <span class="card-num">{{ idx + 1 }}</span>
+              <span class="tag-name" :title="o.tag">{{ o.tag }}</span>
+              <span class="tag green">{{ kindLabel(o) }}</span>
+            </div>
+            <button
+              class="act round sm"
+              :aria-label="t('action.more')"
+              :aria-expanded="menu?.outbound?.id === o.id"
+              @click="openMenuFor(o, idx, $event)"
+            >
+              <AntIcon name="MoreOutlined" />
+            </button>
+          </div>
+          <div v-if="o.address" class="address-list">
+            <span class="address-pill" :title="o.address">{{ o.address }}</span>
+          </div>
+          <div v-if="o.egressIp || o.egressCountry" class="card-egress">
+            <div class="card-egress-row">
+              <span>{{ t('outbound.egress') }}:</span>
+              <button type="button" class="ip-toggle" :aria-label="t('outbound.toggleIpVisibility')" @click="toggleCardEgress(o.id)">
+                <AntIcon :name="cardEgressShown.has(o.id) ? 'EyeOutlined' : 'EyeInvisibleOutlined'" />
+              </button>
+              <span v-if="o.egressCountry" class="country-pill">
+                <span>{{ countryFlag(o.egressCountry) }}</span>
+                <span>{{ countryName(o.egressCountry) || o.egressCountry }}</span>
+              </span>
+            </div>
+            <div v-if="o.egressIp" class="card-egress-row" :title="o.egressIp">
+              <span class="egress-family">{{ o.egressIp.includes(':') ? 'v6' : 'v4' }}:</span>
+              <span class="egress-ip" :class="cardEgressShown.has(o.id) ? 'address-visible' : 'address-hidden'">{{ o.egressIp }}</span>
+            </div>
+          </div>
+          <div class="card-foot">
+            <span class="traffic-up">↑ {{ bytes(o.txBytes || 0) }}</span>
+            <span class="traffic-sep"></span>
+            <span class="traffic-down">↓ {{ bytes(o.rxBytes || 0) }}</span>
+            <span class="card-test">
+              <span v-if="o.lastError" class="tag red" :title="o.lastError">{{ t('outbound.failed') }}</span>
+              <span v-else-if="o.latencyMs" class="tag green">{{ o.latencyMs }} ms</span>
+              <AntIcon v-else-if="isPending(o.id)" name="LoadingOutlined" class="anticon-spin" />
+              <button
+                class="act round sm primary"
+                :aria-label="t('outbound.check')"
+                :disabled="isPending(o.id) || o.kind === 'block'"
+                @click="check(o)"
+              >
+                <AntIcon v-if="isPending(o.id)" name="LoadingOutlined" class="anticon-spin" />
+                <AntIcon v-else name="ThunderboltOutlined" />
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div v-else class="table-wrap">
         <table>
           <thead>

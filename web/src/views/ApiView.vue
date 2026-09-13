@@ -90,7 +90,7 @@ const methodTone = (m) =>
 </script>
 
 <template>
-  <div class="page-head">
+  <div class="page-head api-docs">
     <div>
       <h1>{{ t('nav.api') }}</h1>
       <p class="lede">{{ t('api.lede') }}</p>

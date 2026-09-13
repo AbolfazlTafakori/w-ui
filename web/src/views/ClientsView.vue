@@ -14,6 +14,7 @@ import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FilterDrawer, { emptyFilters, activeFilterCount } from '../components/FilterDrawer.vue'
 import PageSpin from '../components/PageSpin.vue'
+import { useIsMobile } from '../lib/mobile.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -77,6 +78,24 @@ const infoFor = ref(null)
 const dialog = ref(null) // { kind }
 const form = ref({ group: '', addDays: '', quotaGB: '', resetCycle: '', prefix: '', count: 10 })
 const selected = ref(new Set())
+// On a phone the table becomes a list of cards, as 3x-ui's clients do,
+// and each card's actions live behind one menu.
+const isMobile = useIsMobile()
+const cardMenu = ref(null)
+function openCardMenu(c, e) {
+  e.stopPropagation()
+  const r = e.currentTarget.getBoundingClientRect()
+  cardMenu.value = cardMenu.value?.client?.id === c.id ? null : { client: c, x: Math.max(8, r.right - 180), y: r.bottom + 4 }
+}
+function cardAction(key) {
+  const c = cardMenu.value?.client
+  cardMenu.value = null
+  if (!c) return
+  if (key === 'qr') shareFor.value = c
+  else if (key === 'reset') resetOne(c)
+  else if (key === 'edit') formFor.value = { client: c }
+  else if (key === 'delete') removeOne(c)
+}
 const moreOpen = ref(null) // { x, y }
 const busy = ref(false)
 
@@ -212,9 +231,12 @@ function onDocClick(e) {
   if (moreOpen.value && !e.target.closest?.('.rowmenu') && !e.target.closest?.('.more-btn')) {
     moreOpen.value = null
   }
+  if (cardMenu.value && !e.target.closest?.('.rowmenu') && !e.target.closest?.('.row-action-trigger')) {
+    cardMenu.value = null
+  }
 }
 function onKey(e) {
-  if (e.key === 'Escape') moreOpen.value = null
+  if (e.key === 'Escape') { moreOpen.value = null; cardMenu.value = null }
 }
 
 let searchTimer = null
@@ -862,17 +884,17 @@ async function submitForm(input) {
     <div class="acard-head">
       <div class="card-toolbar">
         <button v-if="!selected.size" class="abtn primary" :disabled="!interfaces.length" :title="interfaces.length ? '' : t('interface.noneYet')" @click="formFor = {}">
-          <AntIcon name="PlusOutlined" /><span>{{ t('client.menu.addClients') }}</span>
+          <AntIcon name="PlusOutlined" /><span v-if="!isMobile">{{ t('client.menu.addClients') }}</span>
         </button>
         <span v-else class="atag blue closable" style="padding: 4px 8px; font-size: 13px">
           {{ t('client.menu.selectedCount').replace('{count}', nf(selected.size)) }}
           <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
         </span>
         <button class="abtn more-btn" :aria-expanded="!!moreOpen" @click="openMore">
-          <AntIcon name="MoreOutlined" /><span>{{ t('outbound.more') }}</span>
+          <AntIcon name="MoreOutlined" /><span v-if="!isMobile">{{ t('outbound.more') }}</span>
         </button>
         <button v-if="selected.size" class="abtn danger" style="margin-inline-start: auto" @click="bulk('delete')">
-          <AntIcon name="DeleteOutlined" /><span>{{ t('action.delete') }}</span>
+          <AntIcon name="DeleteOutlined" /><span v-if="!isMobile">{{ t('action.delete') }}</span>
         </button>
       </div>
     </div>
@@ -880,19 +902,19 @@ async function submitForm(input) {
     <div class="acard-body">
       <!-- Their filter bar: search, Filter with its badge, Sort, Clear all,
            and how many of the total are shown. -->
-      <div class="filter-bar">
-        <label class="ainput" style="max-width: 320px; width: 100%">
+      <div class="filter-bar" :class="{ mobile: isMobile }">
+        <label class="ainput" :class="{ small: isMobile }" :style="isMobile ? 'max-width: 200px; width: 100%' : 'max-width: 320px; width: 100%'">
           <span class="ainput-prefix"><AntIcon name="SearchOutlined" /></span>
           <input v-model="search" type="text" :placeholder="t('client.menu.searchPlaceholder')" :aria-label="t('action.search')" />
           <button v-if="search" type="button" class="ainput-clear" :aria-label="t('action.cancel')" @click="search = ''"><AntIcon name="CloseCircleFilled" /></button>
         </label>
         <span class="abadge-wrap">
           <button class="abtn" :class="{ primary: filterCount > 0 }" @click="filterOpen = true">
-            <AntIcon name="FilterOutlined" /><span>{{ t('filter.button') }}</span>
+            <AntIcon name="FilterOutlined" /><span v-if="!isMobile">{{ t('filter.button') }}</span>
           </button>
           <sup v-if="filterCount" class="abadge">{{ filterCount }}</sup>
         </span>
-        <div class="aselect sort-select" style="min-width: 200px">
+        <div class="aselect sort-select" :class="{ small: isMobile }" :style="{ minWidth: (isMobile ? 130 : 200) + 'px' }">
           <select v-model="sort" :aria-label="t('client.sort.label')">
             <option v-for="o in SORT_OPTIONS" :key="o.value" :value="o.value">{{ t(o.key) }}</option>
           </select>
@@ -912,6 +934,64 @@ async function submitForm(input) {
 
       <PageSpin v-if="showSkeleton" />
       <div v-else-if="loading && !page" class="empty"></div>
+
+      <div v-else-if="isMobile" class="client-cards" :class="{ stale: refiltering }">
+        <div v-if="page && page.items.length" class="card-bulk-bar">
+          <label class="acheckbox">
+            <input type="checkbox" class="acheck" :checked="allSelected" @change="toggleAll($event.target.checked)" />
+            <span>{{ t('action.selectAll') }}</span>
+          </label>
+          <span v-if="selected.size" class="bulk-count">{{ nf(selected.size) }}</span>
+        </div>
+        <div v-if="!page || !page.items.length" class="card-empty">
+          <AntIcon name="TeamOutlined" :size="28" style="opacity: 0.5" />
+          <div>{{ t('common.nothingYet') }}</div>
+        </div>
+        <div v-if="page && page.total > pageSize" class="card-pagination">
+          <ul class="apagination small">
+            <li class="apagination-total">{{ nf(page.total) }}</li>
+            <li><button class="apage" :disabled="currentPage <= 1" :aria-label="t('action.prev')" @click="goPage(currentPage - 1)"><AntIcon name="LeftOutlined" /></button></li>
+            <li v-for="(it, i) in pageItems" :key="i">
+              <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" @click="goPage(it)">{{ it }}</button>
+              <button v-else class="apage jump" @click="goPage(it === 'prev' ? Math.max(1, currentPage - 5) : Math.min(totalPages, currentPage + 5))">•••</button>
+            </li>
+            <li><button class="apage" :disabled="currentPage >= totalPages" :aria-label="t('action.next')" @click="goPage(currentPage + 1)"><AntIcon name="RightOutlined" /></button></li>
+          </ul>
+        </div>
+        <div v-for="c in page?.items || []" :key="c.id" class="client-card" :class="{ 'is-selected': selected.has(c.id) }">
+          <div class="card-head">
+            <input type="checkbox" class="acheck" :checked="selected.has(c.id)" :aria-label="c.name" @change="toggleOne(c.id, $event.target.checked)" />
+            <i v-if="statusTag(c).dot" class="online-dot" style="margin-inline-end: 0"></i>
+            <i v-else class="abadge-dot" :class="statusTag(c).color"></i>
+            <span class="tag-name">{{ c.name }}</span>
+            <span v-if="c.status === 'exhausted' || c.status === 'expired'" class="atag red status-tag">{{ t('stat.depleted') }}</span>
+            <span v-else-if="remainingTag(c).color === 'orange' || expiryTag(c).color === 'orange'" class="atag orange status-tag">{{ t('stat.depleting') }}</span>
+            <div class="card-actions">
+              <button type="button" class="row-action-trigger" :aria-label="t('client.menu.clientInfo')" @click="infoFor = c"><AntIcon name="InfoCircleOutlined" /></button>
+              <Toggle :model-value="c.status === 'active'" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted'" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" />
+              <button type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="cardMenu?.client?.id === c.id" @click="openCardMenu(c, $event)"><AntIcon name="MoreOutlined" /></button>
+            </div>
+          </div>
+          <span v-if="c.note" class="client-card-comment">{{ c.note }}</span>
+          <div class="client-traffic-cell is-compact" :class="{ 'is-unlimited': !c.quotaBytes }">
+            <span class="client-traffic-cell-used ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
+            <span class="aprogress client-traffic-cell-bar"><span :style="{ width: (c.quotaBytes ? Math.min(100, usedPercent(c) ?? 0) : 100) + '%', background: barColor(c) }"></span></span>
+            <span class="client-traffic-cell-limit ltr">
+              <span v-if="!c.quotaBytes" class="client-traffic-cell-infinity">∞</span>
+              <template v-else>{{ bytes(c.quotaBytes, store.locale) }}</template>
+            </span>
+          </div>
+          <div v-if="speedOf(c) !== '—'" class="client-card-speed"><span class="atag blue ltr" style="margin: 0">{{ speedOf(c) }}</span></div>
+        </div>
+        <Teleport to="body">
+          <div v-if="cardMenu" class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
+            <button class="menu-item" role="menuitem" @click="cardAction('qr')"><AntIcon name="QrcodeOutlined" />{{ t('client.qrCode') }}</button>
+            <button class="menu-item" role="menuitem" @click="cardAction('reset')"><AntIcon name="RetweetOutlined" />{{ t('outbound.resetTraffic') }}</button>
+            <button class="menu-item" role="menuitem" @click="cardAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>
+            <button class="menu-item danger" role="menuitem" @click="cardAction('delete')"><AntIcon name="DeleteOutlined" />{{ t('action.delete') }}</button>
+          </div>
+        </Teleport>
+      </div>
 
       <template v-else>
         <div class="atable-wrap" :class="{ stale: refiltering }" style="margin-top: 0">

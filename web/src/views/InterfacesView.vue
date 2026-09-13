@@ -13,6 +13,7 @@ import Icon from '../components/Icon.vue'
 import AntIcon from '../components/AntIcon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
+import { useIsMobile } from '../lib/mobile.js'
 
 const router = useRouter()
 
@@ -31,6 +32,15 @@ const loading = ref(true)
 const formFor = ref(null) // null = closed, {} = create, { iface } = edit
 const detailFor = ref(null)
 const selected = ref(new Set())
+// On a phone the table becomes a list of cards, as 3x-ui's inbounds do;
+// tapping a card's info opens its stats.
+const isMobile = useIsMobile()
+const cardOpen = ref(new Set())
+function toggleCard(id) {
+  const next = new Set(cardOpen.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  cardOpen.value = next
+}
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
@@ -779,11 +789,11 @@ async function submitForm(input) {
     <div class="acard-head">
       <div class="aspace">
         <button class="abtn primary" @click="formFor = {}">
-          <AntIcon name="PlusOutlined" /><span>{{ t('iface.menu.add') }}</span>
+          <AntIcon name="PlusOutlined" /><span v-if="!isMobile">{{ t('iface.menu.add') }}</span>
         </button>
         <div class="more-wrap">
           <button class="abtn primary more-btn" :aria-expanded="generalOpen" @click="generalOpen = !generalOpen">
-            <AntIcon name="MenuOutlined" /><span>{{ t('iface.menu.general') }}</span>
+            <AntIcon name="MenuOutlined" /><span v-if="!isMobile">{{ t('iface.menu.general') }}</span>
           </button>
           <div v-if="generalOpen" class="amenu below" role="menu">
             <button class="amenu-item" role="menuitem" @click="pickGeneral('import')"><AntIcon name="ImportOutlined" /><span>{{ t('iface.menu.import') }}</span></button>
@@ -802,7 +812,7 @@ async function submitForm(input) {
             <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
           </span>
           <button class="abtn danger" @click="bulkDelete">
-            <AntIcon name="DeleteOutlined" /><span>{{ t('action.delete') }}</span>
+            <AntIcon name="DeleteOutlined" /><span v-if="!isMobile">{{ t('action.delete') }}</span>
           </button>
         </template>
       </div>
@@ -813,6 +823,62 @@ async function submitForm(input) {
 
       <PageSpin v-else-if="showSkeleton" />
       <div v-else-if="loading" class="empty"></div>
+
+      <div v-else-if="isMobile" class="inbound-cards">
+        <div v-if="!sorted.length" class="card-empty">
+          <AntIcon name="ImportOutlined" :size="28" style="opacity: 0.5" />
+          <div>{{ t('common.nothingYet') }}</div>
+        </div>
+        <template v-else>
+          <div class="card-bulk-bar">
+            <label class="acheckbox">
+              <input type="checkbox" class="acheck" :checked="allSelected" @change="toggleAll($event.target.checked)" />
+              <span>{{ t('action.selectAll') }}</span>
+            </label>
+            <span v-if="selected.size" class="bulk-count">{{ nf(selected.size) }}</span>
+          </div>
+          <div v-for="i in paged" :key="i.id" class="inbound-card" :class="{ 'is-selected': selected.has(i.id) }">
+            <div class="card-head" @click="toggleCard(i.id)">
+              <input type="checkbox" class="acheck" :checked="selected.has(i.id)" :aria-label="i.name" @click.stop @change="toggleOne(i.id, $event.target.checked)" />
+              <span class="card-id">#{{ i.id }}</span>
+              <span class="tag-name">{{ i.name }}</span>
+              <div class="card-actions" @click.stop>
+                <button type="button" class="row-action-trigger" :aria-label="t('iface.menu.info')" :title="t('iface.menu.info')" @click="toggleCard(i.id)"><AntIcon name="InfoCircleOutlined" /></button>
+                <Toggle :model-value="i.enabled" :label="i.name" :loading="isPending(i.id)" small @update:model-value="(v) => setEnabled(i, v)" />
+                <button type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="rowMenu?.iface?.id === i.id" @click="openRowMenu(i, $event)"><AntIcon name="MoreOutlined" /></button>
+              </div>
+            </div>
+            <div v-if="cardOpen.has(i.id)" class="card-stats">
+              <div class="stat-row">
+                <span class="stat-label">{{ t('client.protocol') }}</span>
+                <span class="atag purple">{{ i.protocol }}</span>
+                <span class="atag green">{{ i.protocol === 'openvpn' ? (i.openvpn?.transport || 'udp').toUpperCase() : 'UDP' }}</span>
+                <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">{{ t('interface.port') }}</span>
+                <span class="ltr">{{ i.listenPort }}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">{{ t('nav.clients') }}</span>
+                <span class="atag count"><AntIcon name="TeamOutlined" /> {{ nf(i.clients) }}</span>
+                <span class="atag green count">{{ nf(i.active) }}</span>
+                <span v-if="i.depleted" class="atag red count">{{ nf(i.depleted) }}</span>
+                <span v-if="i.online" class="atag blue count">{{ nf(i.online) }}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">{{ t('client.traffic') }}</span>
+                <span class="atag purple ltr">{{ bytes(i.usedBytes, store.locale) }} / <span class="infinity">∞</span></span>
+              </div>
+            </div>
+          </div>
+          <ul v-if="pageCount > 1" class="apagination">
+            <li><button class="apage" :disabled="page <= 1" :aria-label="t('action.previous')" @click="page--">‹</button></li>
+            <li v-for="n in pageNumbers" :key="n"><button class="apage" :class="{ active: n === page }" @click="page = n">{{ n }}</button></li>
+            <li><button class="apage" :disabled="page >= pageCount" :aria-label="t('action.next')" @click="page++">›</button></li>
+          </ul>
+        </template>
+      </div>
 
       <div v-else class="atable-wrap">
         <table class="atable small" :style="{ minWidth: (hasNodes ? 1366 : 1236) + 'px' }">

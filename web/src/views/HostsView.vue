@@ -8,7 +8,10 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ErrorState from '../components/ErrorState.vue'
 import HostForm from '../components/HostForm.vue'
 import PageSpin from '../components/PageSpin.vue'
+import { useIsMobile } from '../lib/mobile.js'
 import Toggle from '../components/Toggle.vue'
+// 3x-ui's HostList drops the button's word on a phone.
+const isMobile = useIsMobile()
 
 // The hosts page, laid out as 3x-ui's HostsPage: a summary of three
 // figures, then a small card whose title is the toolbar and whose body is
@@ -183,7 +186,7 @@ function ifaceLabel(id) {
       <div class="acard-head">
         <div class="card-toolbar">
           <template v-if="!selected.size">
-            <button class="abtn primary" :disabled="!interfaces.length" @click="formFor = {}"><AntIcon name="PlusOutlined" /><span>{{ t('hosts.addHost') }}</span></button>
+            <button class="abtn primary" :disabled="!interfaces.length" @click="formFor = {}"><AntIcon name="PlusOutlined" /><span v-if="!isMobile">{{ t('hosts.addHost') }}</span></button>
           </template>
           <template v-else>
             <span class="atag blue closable" style="padding: 4px 8px; font-size: 13px">

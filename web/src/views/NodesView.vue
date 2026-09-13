@@ -8,8 +8,37 @@ import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
+import AntIcon from '../components/AntIcon.vue'
+import { useIsMobile } from '../lib/mobile.js'
 
 const nodes = ref([])
+// On a phone the table becomes 3x-ui's node cards: the head opens the
+// readings, the info glyph opens the figures, and the actions sit in one menu.
+const isMobile = useIsMobile()
+const expandedIds = ref(new Set())
+function toggleExpanded(id) {
+  const next = new Set(expandedIds.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expandedIds.value = next
+}
+const nodeMenu = ref(null)
+function openNodeMenu(n, e) {
+  e.stopPropagation()
+  const r = e.currentTarget.getBoundingClientRect()
+  nodeMenu.value = nodeMenu.value?.node?.id === n.id ? null : { node: n, x: Math.max(8, r.right - 180), y: r.bottom + 4 }
+}
+function nodeAction(key) {
+  const n = nodeMenu.value?.node
+  nodeMenu.value = null
+  if (!n) return
+  if (key === 'probe') probe(n)
+  else if (key === 'update') askNodeUpdate(n)
+  else if (key === 'edit') openEdit(n)
+  else if (key === 'delete') remove(n)
+}
+function closeNodeMenu(e) {
+  if (nodeMenu.value && !e.target.closest?.('.rowmenu')) nodeMenu.value = null
+}
 const loading = ref(true)
 
 // Declared here, after the state it reads: useDelayed watches with `immediate`
@@ -369,7 +398,7 @@ function latencyTone(ms) {
     <div class="card-toolbar spread">
       <button class="btn primary" @click="openAdd">
         <Icon name="plus" :size="14" />
-        <span>{{ t('node.add') }}</span>
+        <span v-if="!isMobile">{{ t('node.add') }}</span>
       </button>
       <button class="btn" @click="openIssue">
         <Icon name="key" :size="14" />
@@ -384,6 +413,48 @@ function latencyTone(ms) {
     <!-- Their column order. Enabled is the second column, a switch beside
          the actions; the readings run left to right from status to heartbeat.
          The header row stays when there is nothing under it. -->
+    <div v-else-if="isMobile" class="node-cards" @click="closeNodeMenu">
+      <div v-if="!nodes.length" class="card-empty">
+        <AntIcon name="ClusterOutlined" :size="28" style="opacity: 0.5" />
+        <div>{{ t('common.nothingYet') }}</div>
+      </div>
+      <div v-for="n in nodes" :key="n.id" class="node-card">
+        <div class="card-head" @click="toggleExpanded(n.id)">
+          <AntIcon name="RightOutlined" class="card-expand" :class="{ 'is-expanded': expandedIds.has(n.id) }" />
+          <i class="abadge-dot" :class="n.kind === 'local' || n.reachable ? 'green' : !n.enabled ? '' : 'red'"></i>
+          <span class="node-name">{{ n.name }}</span>
+          <span v-if="n.kind === 'local'" class="tag grey">{{ t('node.thisPanel') }}</span>
+          <div class="card-actions" @click.stop>
+            <input type="checkbox" class="acheck" :checked="n.enabled" :disabled="n.kind === 'local' || isPending(n.id)" :aria-label="n.name" @change="toggle(n, $event.target.checked)" />
+            <button v-if="n.kind !== 'local'" type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="nodeMenu?.node?.id === n.id" @click="openNodeMenu(n, $event)"><AntIcon name="MoreOutlined" /></button>
+          </div>
+        </div>
+        <div v-if="expandedIds.has(n.id)" class="card-history card-stats">
+          <div class="stat-row"><span class="stat-label">{{ t('node.address') }}</span><span class="ltr">{{ n.address || '—' }}</span></div>
+          <div class="stat-row"><span class="stat-label">{{ t('node.status') }}</span>
+            <span v-if="n.kind === 'local'" class="tag green">{{ t('node.running') }}</span>
+            <span v-else-if="!n.enabled" class="tag grey">{{ t('status.disabled') }}</span>
+            <span v-else-if="n.reachable" class="tag green">{{ t('node.online') }}</span>
+            <span v-else class="tag red" :title="n.lastError">{{ t('node.offline') }}</span>
+          </div>
+          <div class="stat-row"><span class="stat-label">CPU / RAM</span><span class="ltr">{{ n.cpuPercent ? n.cpuPercent.toFixed(0) + '%' : '—' }} / {{ n.memPercent ? n.memPercent.toFixed(0) + '%' : '—' }}</span></div>
+          <div class="stat-row"><span class="stat-label">{{ t('node.version') }}</span><span class="ltr">{{ n.version || '—' }}</span></div>
+          <div class="stat-row"><span class="stat-label">{{ t('node.uptime') }}</span><span class="ltr">{{ uptime(n.uptimeSec) }}</span></div>
+          <div class="stat-row"><span class="stat-label">{{ t('client.traffic') }}</span><span class="ltr">{{ bytes(n.usedBytes || 0, store.locale) }}<template v-if="n.dataLimitBytes"> / {{ bytes(n.dataLimitBytes, store.locale) }}</template></span></div>
+          <div class="stat-row"><span class="stat-label">{{ t('node.latency') }}</span><span class="tag num ltr" :class="latencyTone(n.latencyMs)">{{ n.latencyMs || 0 }} ms</span></div>
+          <div class="stat-row"><span class="stat-label">{{ t('node.lastSeen') }}</span><span>{{ n.kind === 'local' ? t('node.justNow') : ago(n.lastSeenAt) }}</span></div>
+        </div>
+      </div>
+      <Teleport to="body">
+        <div v-if="nodeMenu" class="rowmenu" role="menu" :style="{ top: nodeMenu.y + 'px', left: nodeMenu.x + 'px' }">
+          <button class="menu-item" role="menuitem" @click="nodeAction('probe')"><AntIcon name="ThunderboltOutlined" />{{ t('node.probe') }}</button>
+          <button class="menu-item" role="menuitem" @click="nodeAction('update')"><AntIcon name="DownloadOutlined" />{{ t('update.askNode') }}</button>
+          <button class="menu-item" role="menuitem" @click="nodeAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>
+          <button class="menu-item danger" role="menuitem" @click="nodeAction('delete')"><AntIcon name="DeleteOutlined" />{{ t('action.delete') }}</button>
+        </div>
+      </Teleport>
+    </div>
+
     <div v-else class="table-wrap">
     <table>
       <thead>

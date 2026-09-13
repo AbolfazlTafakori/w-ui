@@ -926,10 +926,14 @@ pre.config {
 /* Below this the rail is gone entirely and the drawer replaces it, which is
    the same breakpoint the rest of the layout collapses at. */
 @media (max-width: 768px) {
-  
-  
-  /* Room for the floating handle so it never lands on a heading. */
-  
+  /* IndexPage.css: room for the floating handle so it never lands on a
+     heading; the other pages let it float over their summary card, as
+     3x-ui's do. */
+  .main:has(.ov-page),
+  .main:has(.api-docs) {
+    padding-top: 64px;
+  }
+  .main > .banner { margin-top: 48px; }
 }
 
 /* Phone: everything goes single file and the dialog fills the screen. */

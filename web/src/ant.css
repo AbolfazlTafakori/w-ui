@@ -827,3 +827,190 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .atag.orange { background: var(--tag-orange-bg); border-color: var(--tag-orange-line); color: var(--tag-orange-ink); }
 .atag.gold { background: var(--tag-orange-bg); border-color: var(--tag-orange-line); color: #d4b106; }
 .atag.default { background: var(--surface-3); border-color: var(--line); color: var(--ink); }
+
+/* ── phones: cards instead of tables ─────────────────────────────────────
+   3x-ui's InboundList.css / ClientsPage.css / OutboundsTab.css, measured. */
+.inbound-cards, .client-cards, .node-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+.client-cards { gap: 10px; }
+.inbound-card, .client-card, .node-card, .outbound-card {
+  border: 1px solid var(--line-soft, var(--line));
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--fill-quaternary, rgba(255, 255, 255, 0.03));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.client-card { padding: 10px 12px; }
+.outbound-card { border-radius: 8px; margin-bottom: 8px; }
+.outbound-card.off { opacity: 0.6; }
+.outbound-card .card-head { justify-content: space-between; cursor: default; }
+.outbound-card .card-identity .tag-name { flex: 0 1 auto; }
+.inbound-card.is-selected, .client-card.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.card-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 8px;
+}
+.bulk-count {
+  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 0 8px;
+  line-height: 20px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.card-id { font-size: 11px; opacity: 0.6; }
+.tag-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.row-action-trigger {
+  font-size: 20px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+}
+.card-stats { display: flex; flex-direction: column; gap: 6px; }
+.stat-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  min-width: 96px;
+  flex-shrink: 0;
+}
+.card-stats .atag { margin: 0; }
+.card-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.card-num { font-weight: 500; opacity: 0.7; min-width: 18px; text-align: right; }
+.card-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.card-test { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.card-egress { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 12px; opacity: 0.85; }
+.card-egress-row { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.card-pagination { display: flex; justify-content: center; flex-wrap: wrap; padding: 4px 0 8px; }
+.status-tag { margin: 0 0 0 4px; font-size: 11px; padding: 0 6px; line-height: 18px; }
+.client-card-comment { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; max-height: 4.5em; overflow-y: auto; }
+.card-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  /* page-shell.css: the content and the summary card lose their padding */
+  .antpage .summary-card .acard-body { padding: 8px; }
+  /* InboundList.css */
+  .antpage .acard-head { padding: 0 12px; min-height: 44px; }
+  .antpage .acard-body { padding: 8px; }
+  .antpage .row-action-trigger { font-size: 22px; padding: 4px; }
+}
+/* ClientsPage.css: between the drawer and the desktop, buttons keep their
+   icon and drop their word. */
+@media (min-width: 769px) and (max-width: 920px) {
+  .card-toolbar, .acard-head .aspace { gap: 6px; }
+  .card-toolbar .abtn .anticon + span,
+  .acard-head .aspace .abtn .anticon + span { display: none; }
+  .card-toolbar .abtn, .acard-head .aspace .abtn { padding-inline: 8px; }
+}
+
+.node-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-expand { font-size: 12px; opacity: 0.6; transition: transform 150ms ease; flex-shrink: 0; }
+.card-expand.is-expanded { transform: rotate(90deg); }
+.card-history { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line-soft, var(--line)); }
+
+/* RoutingTab.css: the rule cards on a phone. */
+.rule-list { display: flex; flex-direction: column; gap: 14px; }
+.rule-empty { text-align: center; opacity: 0.5; padding: 24px 12px; }
+.rule-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.rule-list > .rule-card:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 32px;
+  height: 1px;
+  background: var(--line);
+  transform: translateX(-50%);
+  opacity: 0.7;
+}
+.rule-card.rule-disabled { opacity: 0.6; }
+.rule-card-head { display: flex; align-items: center; gap: 8px; }
+.rule-card-head .drag-handle { cursor: grab; opacity: 0.35; padding: 4px; }
+.rule-number { font-weight: 600; font-size: 13px; opacity: 0.75; flex: 1; }
+.rule-flow { display: flex; align-items: center; gap: 8px; }
+.flow-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.flow-side-target { align-items: flex-end; text-align: right; }
+.flow-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.55; }
+.flow-tag { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.flow-arrow { font-size: 16px; opacity: 0.45; flex-shrink: 0; }
+.rule-criteria { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.criterion-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 6px;
+  background: var(--fill-tertiary, rgba(255, 255, 255, 0.06));
+  max-width: 100%;
+}
+.criterion-chip-label { font-size: 10px; text-transform: uppercase; opacity: 0.55; letter-spacing: 0.04em; }
+.criterion-chip-value { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.criterion-empty { opacity: 0.4; }
+.rule-comment { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.rule-comment-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* page-shell.css .icons-only: the tabs share the width, icon only. */
+.tabs.icons-only { margin-bottom: 8px; width: 100%; display: flex; }
+.tabs.icons-only .tab { flex: 1 1 0; justify-content: center; margin: 0; padding: 10px 0; }
+
+/* Ant Badge status dot. */
+.abadge-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
+.abadge-dot.red { background: var(--bad); }
+.abadge-dot.orange { background: var(--warn); }
+.abadge-dot.green { background: var(--ok); }

@@ -1232,9 +1232,10 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 
 <style scoped>
 .ov-page {
+  --ov-gap: 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--ov-gap);
 }
 
 .ov-actionbar {
@@ -1281,8 +1282,15 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 /* ---------- vitals ---------- */
 .ov-vitals {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ov-gap, 12px);
+}
+/* IndexPage.css: four tiles, two under 1100, one under 560. */
+@media (max-width: 1100px) {
+  .ov-vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .ov-vitals { grid-template-columns: minmax(0, 1fr); }
 }
 .ov-tile {
   padding: 16px 0 0;
@@ -1354,12 +1362,12 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 /* ---------- mid grid ---------- */
 .ov-mid {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--ov-gap, 12px);
 }
-@media (max-width: 1000px) {
+@media (max-width: 1100px) {
   .ov-mid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .ov-wide {
@@ -1463,9 +1471,15 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 /* ---------- strip ---------- */
 .ov-strip-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: var(--line-soft);
+}
+@media (max-width: 1100px) {
+  .ov-strip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .ov-strip-grid { grid-template-columns: minmax(0, 1fr); }
 }
 .ov-strip-cell {
   background: var(--surface);
@@ -1525,9 +1539,20 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
   color: var(--ink);
 }
 
-@media (max-width: 620px) {
+@media (max-width: 768px) {
+  /* IndexPage.css: the action bar's buttons take the whole width, spread. */
+  .ov-actionbar .ov-actions {
+    margin-inline-start: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+  .ov-page { --ov-gap: 8px; }
+}
+@media (max-width: 560px) {
   .ov-wide-foot {
+    flex-direction: column;
     flex-wrap: wrap;
+    gap: 10px;
   }
   .ov-foot-sep {
     display: none;

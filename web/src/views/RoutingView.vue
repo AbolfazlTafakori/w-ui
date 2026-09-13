@@ -11,6 +11,8 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import RoutingRuleForm from '../components/RoutingRuleForm.vue'
 import BalancerForm from '../components/BalancerForm.vue'
 import PageSpin from '../components/PageSpin.vue'
+import AntIcon from '../components/AntIcon.vue'
+import { useIsMobile } from '../lib/mobile.js'
 
 // The routing page, laid out the way 3x-ui lays its own out: the Save bar
 // with its warning, then one card with the tabs -- Basic Routing, Routing
@@ -42,6 +44,8 @@ const inactive = ref('')
 const groups = ref([])
 const resolver = ref(null)
 const rules = ref([])
+// On a phone the rules table becomes 3x-ui's RuleCardList.
+const isMobile = useIsMobile()
 const outbounds = ref([])
 const balancers = ref([])
 const interfaces = ref([])
@@ -478,7 +482,9 @@ async function testRoute() {
 
     <div v-else class="card">
       <div class="card-body">
-        <div class="tabs" role="tablist">
+        <!-- On a phone the tab is its icon alone, with the word as its
+             tooltip: 3x-ui's catTabLabel. -->
+        <div class="tabs" :class="{ 'icons-only': isMobile }" role="tablist">
           <button
             v-for="x in tabs"
             :key="x.key"
@@ -486,10 +492,12 @@ async function testRoute() {
             class="tab"
             :class="{ on: tab === x.key }"
             :aria-selected="tab === x.key"
+            :aria-label="t(`routing.tab.${x.key}`)"
+            :title="isMobile ? t(`routing.tab.${x.key}`) : ''"
             @click="tab = x.key"
           >
-            <Icon :name="x.icon" :size="14" />
-            {{ t(`routing.tab.${x.key}`) }}
+            <Icon :name="x.icon" :size="isMobile ? 18 : 14" />
+            <template v-if="!isMobile">{{ t(`routing.tab.${x.key}`) }}</template>
           </button>
         </div>
 
@@ -638,7 +646,49 @@ async function testRoute() {
             </div>
           </div>
 
-          <div class="table-wrap">
+          <div v-if="isMobile" class="rule-list">
+            <div v-if="!rules.length" class="rule-empty">—</div>
+            <div v-for="(r, i) in rules" :key="r.id" class="rule-card" :class="{ 'rule-disabled': !r.enabled }">
+              <div class="rule-card-head">
+                <Icon name="menu" :size="14" class="drag-handle" :title="t('routing.dragToReorder')" />
+                <span class="rule-number">#{{ i + 1 }}</span>
+                <button class="act round sm" :aria-label="t('action.more')" :aria-expanded="menu?.rule?.id === r.id" @click="openMenuFor(r, i, $event)">
+                  <AntIcon name="MoreOutlined" />
+                </button>
+                <Toggle :model-value="r.enabled" :label="r.name" small :loading="isPending(r.id)" style="margin-inline-start: 8px" @update:model-value="(v) => setRuleEnabled(r, v)" />
+              </div>
+              <div class="rule-flow">
+                <div class="flow-side">
+                  <span class="flow-label">{{ t('nav.interfaces') }}</span>
+                  <span v-if="inboundsOf(r).length" class="tag blue flow-tag">{{ inboundsOf(r).join(', ') }}</span>
+                  <span v-else class="criterion-empty">any</span>
+                </div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-side flow-side-target">
+                  <span class="flow-label">{{ isBalancer(r.outboundTag) ? t('routing.tab.balancers') : t('nav.outbounds') }}</span>
+                  <span v-if="isBalancer(r.outboundTag)" class="tag purple flow-tag"><AntIcon name="ClusterOutlined" /> {{ r.outboundTag }}</span>
+                  <span v-else-if="r.outboundTag" class="tag flow-tag" :class="r.outboundTag === 'blocked' ? 'red' : 'green'"><AntIcon name="ExportOutlined" /> {{ r.outboundTag }}</span>
+                  <span v-else class="criterion-empty">—</span>
+                </div>
+              </div>
+              <div v-if="sourceOf(r).length || destOf(r).length || r.network" class="rule-criteria">
+                <span v-for="(c, k) in sourceOf(r)" :key="'s' + k" class="criterion-chip" :title="`${t('routing.col.source')}: ${c.text}`">
+                  <span class="criterion-chip-label">{{ t('routing.col.source') }}</span><span class="criterion-chip-value ltr">{{ c.text }}</span>
+                </span>
+                <span v-if="r.network" class="criterion-chip">
+                  <span class="criterion-chip-label">{{ t('routing.col.network') }}</span><span class="criterion-chip-value">{{ r.network }}</span>
+                </span>
+                <span v-for="(c, k) in destOf(r)" :key="'d' + k" class="criterion-chip" :title="`${t('routing.col.dest')}: ${c.text}`">
+                  <span class="criterion-chip-label">{{ t('routing.col.dest') }}</span><span class="criterion-chip-value ltr">{{ c.text }}</span>
+                </span>
+              </div>
+              <div v-if="r.name || r.note" class="rule-comment" :title="r.note || r.name">
+                <span class="rule-comment-text">{{ r.name }}<template v-if="r.note"> — {{ r.note }}</template></span>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="table-wrap">
             <table>
               <thead>
                 <tr>
