@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"path"
 	"path/filepath"
@@ -292,15 +293,40 @@ func (s *Subscriptions) LinkFor(ctx context.Context, token, requestHost string) 
 	if cfg.ReverseProxyURI != "" {
 		return strings.TrimRight(cfg.ReverseProxyURI, "/") + cfg.Path + token, nil
 	}
-	host := cfg.Host
+	host := strings.TrimRight(cfg.Host, "/")
 	if host == "" {
 		host = requestHost
 	}
-	scheme := "http://"
-	if strings.HasPrefix(host, "https://") || strings.HasPrefix(host, "http://") {
-		scheme = ""
+	scheme := ""
+	if !strings.HasPrefix(host, "https://") && !strings.HasPrefix(host, "http://") {
+		scheme = "http://"
+		if cfg.Port > 0 && cfg.CertFile != "" && cfg.KeyFile != "" {
+			scheme = "https://"
+		}
 	}
-	return scheme + strings.TrimRight(host, "/") + cfg.Path + token, nil
+	// A subscription service on its own port is reached on that port, as
+	// 3x-ui's is: the link says so, or the customer's app knocks on the
+	// panel's instead. A host the operator typed with a port of its own
+	// already says where it lives.
+	if cfg.Port > 0 {
+		host = withPort(host, cfg.Port)
+	}
+	return scheme + host + cfg.Path + token, nil
+}
+
+// withPort puts a port on a host that names none.
+func withPort(host string, port int) string {
+	prefix := ""
+	if i := strings.Index(host, "://"); i >= 0 {
+		prefix, host = host[:i+3], host[i+3:]
+	}
+	if _, _, err := net.SplitHostPort(host); err == nil {
+		return prefix + host
+	}
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+	return prefix + host + ":" + strconv.Itoa(port)
 }
 
 // Bundle is what a customer's client fetches.
