@@ -353,11 +353,30 @@
   white-space: nowrap;
   transition: color 0.2s;
 }
-.sider-version .anticon { font-size: 16px; }
+.sider-version .anticon { font-size: 14px; }
 .sidebar:not(.expanded) .sider-version {
   justify-content: center;
-  padding: 8px 0;
+  padding: 6px 0;
 }
+
+/* The two rows under the menu sit tighter than the menu itself: a smaller
+   sign-out row, a smaller version line, and both icons on the menu's own
+   icon column so the bottom of the rail reads as one block. */
+.sider-utility .amenu-item {
+  height: 32px;
+  line-height: 32px;
+  margin: 2px 4px;
+  padding: 0 16px 0 24px;
+  font-size: 13px;
+}
+.sider-utility .amenu-item .anticon { font-size: 14px; }
+.sider-footer { padding: 2px 8px 8px; }
+.sider-version {
+  gap: 8px;
+  padding: 6px 16px 6px 24px;
+  font-size: 12px;
+}
+.sidebar:not(.expanded) .sider-utility .amenu-item { padding-inline: calc(50% - 7px); }
 .sider-version:hover,
 .sider-version:focus-visible {
   color: var(--accent);
