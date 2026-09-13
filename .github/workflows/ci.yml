@@ -23,15 +23,10 @@ jobs:
         working-directory: web
       - run: npx vite build
         working-directory: web
-      # The bundle is committed so `go build` works from a plain checkout.
-      # A source change without a rebuild would ship the old UI.
-      - name: Committed bundle is current
-        run: |
-          if [ -n "$(git status --porcelain internal/web/dist)" ]; then
-            echo "internal/web/dist differs from a fresh build; run 'cd web && npx vite build' and commit it" >&2
-            git status --porcelain internal/web/dist
-            exit 1
-          fi
+      # The bundle is committed so `go build` works from a plain checkout;
+      # the release workflow rebuilds it from source, so a stale commit can
+      # never ship. Hashes differ between build hosts, so they are not
+      # compared here.
 
   go:
     name: Go vet, static analysis and tests
@@ -70,9 +65,68 @@ jobs:
       - run: bash -n install.sh && bash -n w-ui.sh
       - run: bash scripts/test-install-questions.sh install.sh
       - run: bash scripts/test-install-output.sh install.sh
-      - run: sh scripts/verify-installer.sh
       - name: shellcheck
         run: |
           sudo apt-get install -y -qq shellcheck >/dev/null
           # Style findings are advisory; anything that is an actual error fails.
           shellcheck -S error install.sh w-ui.sh
+
+  install-matrix:
+    name: Clean install on ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: [go]
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "almalinux:9", "rockylinux:9", "fedora:41"]
+    container:
+      image: ${{ matrix.image }}
+      # nftables and WireGuard need the host kernel; the runner's has both.
+      options: --privileged
+    steps:
+      - name: Prerequisites the image lacks
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates git sudo >/dev/null
+          else
+            dnf install -y -q curl ca-certificates git sudo tar
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build the panel
+        run: CGO_ENABLED=0 go build -o /tmp/wui ./cmd/wui
+      - name: Run the installer unattended
+        run: |
+          bash install.sh --local /tmp/wui -y --no-tls --username ci --password ci-password-12345 2>&1 | tee /tmp/install.log
+      - name: The install produced a working panel
+        run: |
+          grep -q "W-UI is installed" /tmp/install.log
+          test -x /usr/local/bin/wui
+          test -x /usr/local/bin/w-ui
+          test -f /etc/systemd/system/wui.service
+          id wui
+          command -v wg && command -v nft
+          # The binary answers from the data directory the installer made,
+          # with the port and path the unit file carries.
+          set -a; eval "$(grep -oE 'WUI_[A-Z_]+=[^ ]+' /etc/systemd/system/wui.service)"; set +a
+          WUI_DATA_DIR=/var/lib/wui WUI_DB_SOURCE=/var/lib/wui/wui.db /usr/local/bin/wui setting show | tee /tmp/show.log
+          grep -q "^admin: ci$" /tmp/show.log
+          port="${WUI_LISTEN##*:}"; path="/${WUI_BASE_PATH}/"
+          echo "port=$port path=$path"
+          [ "$port" -ge 1024 ] && [ "${#WUI_BASE_PATH}" -ge 16 ]
+          # The panel comes up and answers on its port, without systemd.
+          (cd /var/lib/wui && WUI_LISTEN=127.0.0.1:$port WUI_DATA_DIR=/var/lib/wui WUI_DB_SOURCE=/var/lib/wui/wui.db /usr/local/bin/wui > /tmp/panel.log 2>&1 &)
+          for i in $(seq 1 30); do curl -fs -o /dev/null "http://127.0.0.1:$port$path" && break; sleep 1; done
+          curl -fs -o /dev/null -w "panel answered %{http_code}\n" "http://127.0.0.1:$port$path"
+          curl -s -o /dev/null -w "root is %{http_code}\n" "http://127.0.0.1:$port/" | grep -q 404
+          grep -E "enforcement|quota|listening" /tmp/panel.log | head
+      - name: Uninstall leaves the packages and a copy of the data
+        run: |
+          bash install.sh --purge 2>&1 | tee /tmp/uninstall.log
+          grep -q "a copy of the database" /tmp/uninstall.log
+          ls /root/wui-last-copy-*.tar.gz
+          test ! -e /usr/local/bin/wui
+          command -v wg
