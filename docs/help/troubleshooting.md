@@ -1,3 +1,7 @@
+---
+description: "The panel does not open, a customer cannot connect, connects without internet, limits not enforced, renewal fails, an uninstall by mistake — what to check, in order."
+---
+
 # Troubleshooting
 
 Start with the log:

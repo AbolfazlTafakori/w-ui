@@ -1,3 +1,7 @@
+---
+description: "The panel serves HTTPS itself, on its one port. There is no reverse proxy to configure, and the address and the domain reach it the same way."
+---
+
 # Certificates
 
 The panel serves HTTPS itself, on its one port. There is no reverse proxy to configure, and the address and the domain reach it the same way.

@@ -1,3 +1,7 @@
+---
+description: "Other W-UI panels, watched from this one over the same API this one serves : not a purpose-built agent. Issue a token on the far panel , add it here by address, and this panel asks it every thirty…"
+---
+
 # Nodes
 
 Other W-UI panels, watched from this one over the same API this one serves — not a purpose-built agent. Issue a token on the far panel (Nodes → tokens), add it here by address, and this panel asks it every thirty seconds: version, uptime, load, customers, whether its own limits are enforced.

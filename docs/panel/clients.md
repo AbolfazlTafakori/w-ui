@@ -1,3 +1,7 @@
+---
+description: "Customers. One client is one plan; each has as many devices  as its device limit allows, each with its own key and address."
+---
+
 # Clients
 
 Customers. One client is one plan; each has as many devices (accounts) as its device limit allows, each with its own key and address.

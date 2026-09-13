@@ -1,3 +1,7 @@
+---
+description: "One command installs W-UI on Ubuntu, Debian, AlmaLinux, Rocky or Fedora; the questions it asks, every flag, unattended installs, and running behind a proxy."
+---
+
 # Install
 
 One command, as root, on a fresh server:

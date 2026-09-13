@@ -1,3 +1,7 @@
+---
+description: "Why a quota enforced by the kernel overshoots by one packet where a polled counter overshoots by megabytes, and how the reconciler keeps kernel state equal to the database."
+---
+
 # How enforcement works
 
 ## The difference from a polling panel

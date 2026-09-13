@@ -19,8 +19,31 @@
 html[lang='fa'] body {
   font-family: 'Vazirmatn', 'Segoe UI', Tahoma, system-ui, sans-serif;
 }
-html[lang='fa'] .vp-doc :not(pre) > code,
-html[lang='fa'] .vp-doc pre {
-  direction: ltr;
-  text-align: left;
+/* Commands and code never mirror: a shell line read right to left is a
+   different command. The mirrored theme rule is outranked on purpose. */
+[dir='rtl'] .vp-doc div[class*='language-'] pre,
+[dir='rtl'] .vp-doc div[class*='language-'] code,
+[dir='rtl'] .vp-doc :not(pre) > code,
+[dir='rtl'] .vp-code-group div[class*='language-'] pre {
+  direction: ltr !important;
+  text-align: left !important;
+  unicode-bidi: isolate;
+}
+[dir='rtl'] .vp-doc table code,
+[dir='rtl'] .vp-doc td code {
+  display: inline-block;
+}
+
+/* postcss-rtlcss prefixes the mirrored rules with [dir=…], which outranks
+   the theme's own unprefixed state rules. The sidebar's "shown" states are
+   restated at the same specificity so they win again in both directions. */
+[dir='ltr'] .VPSidebar.open,
+[dir='rtl'] .VPSidebar.open {
+  transform: translateX(0);
+}
+@media (min-width: 960px) {
+  [dir='ltr'] .VPSidebar,
+  [dir='rtl'] .VPSidebar {
+    transform: translateX(0);
+  }
 }

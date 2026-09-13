@@ -1,3 +1,7 @@
+---
+description: "What the panel does to protect itself and what you should do on top: firewall, two-factor authentication, backups off the box."
+---
+
 # Security
 
 ## What the panel does for you

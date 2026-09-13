@@ -1,3 +1,7 @@
+---
+description: "Where customers' traffic leaves. Two built-ins, direct  and blocked , and any number of hops you add : a WireGuard peer, another server, a SOCKS or HTTP proxy."
+---
+
 # Outbounds
 
 Where customers' traffic leaves. Two built-ins, **direct** (this server's own address) and **blocked** (discarded), and any number of hops you add — a WireGuard peer, another server, a SOCKS or HTTP proxy.

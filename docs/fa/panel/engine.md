@@ -1,3 +1,7 @@
+---
+description: "همان xray#basic، #balancer، #dns و #advanced سنایی، برای پنلی که موتورش کرنل است نه Xray. ورودی Engine در سایدبار چهار صفحه باز می‌کند."
+---
+
 # موتور
 
 همان `xray#basic`، `#balancer`، `#dns` و `#advanced` سنایی، برای پنلی که موتورش کرنل است نه Xray. ورودی **Engine** در سایدبار چهار صفحه باز می‌کند.

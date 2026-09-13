@@ -1,3 +1,7 @@
+---
+description: "What 3x-ui calls inbounds: the tunnels this server offers. One interface is one subnet on one port with one protocol."
+---
+
 # Interfaces
 
 What 3x-ui calls **inbounds**: the tunnels this server offers. One interface is one subnet on one port with one protocol.

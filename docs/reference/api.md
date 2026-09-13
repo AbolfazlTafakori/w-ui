@@ -1,3 +1,7 @@
+---
+description: "Everything the panel does, it does through its own HTTP API : there is no private path the interface uses and callers cannot."
+---
+
 # API
 
 Everything the panel does, it does through its own HTTP API — there is no private path the interface uses and callers cannot.

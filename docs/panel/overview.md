@@ -1,3 +1,7 @@
+---
+description: "The first page after sign-in: host load, panel state, and what this server is carrying. It refreshes every three seconds from one request, so every number is from the same moment."
+---
+
 # Overview
 
 The first page after sign-in: host load, panel state, and what this server is carrying. It refreshes every three seconds from one request, so every number is from the same moment.

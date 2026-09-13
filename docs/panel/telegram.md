@@ -1,3 +1,7 @@
+---
+description: "The same bot 3x-ui runs, for the same two audiences."
+---
+
 # Telegram bot
 
 The same bot 3x-ui runs, for the same two audiences.

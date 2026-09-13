@@ -1,3 +1,7 @@
+---
+description: "Update in place with w-ui update, uninstall with a last copy of the data kept, and where backups go."
+---
+
 # Updating and uninstalling
 
 ## Update

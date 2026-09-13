@@ -1,3 +1,7 @@
+---
+description: "Everything is an environment variable : there is no config file to keep in sync. The installer writes them into the systemd unit; /etc/wui/wui.env is read after it and overrides it."
+---
+
 # Configuration
 
 Everything is an environment variable — there is no config file to keep in sync. The installer writes them into the systemd unit; `/etc/wui/wui.env` is read after it and overrides it.

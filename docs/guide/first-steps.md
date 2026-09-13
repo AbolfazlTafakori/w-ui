@@ -1,3 +1,7 @@
+---
+description: "A fresh panel is empty on purpose: no interfaces, no customers, one administrator. Three steps get a customer connected."
+---
+
 # First tunnel, first customer
 
 A fresh panel is empty on purpose: no interfaces, no customers, one administrator. Three steps get a customer connected.

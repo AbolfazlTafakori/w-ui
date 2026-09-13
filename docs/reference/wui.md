@@ -1,3 +1,7 @@
+---
+description: "One static, CGO-free binary at /usr/local/bin/wui with the frontend embedded. Run with no arguments it is the panel; with a subcommand it is a tool the script and the installer use."
+---
+
 # The `wui` binary
 
 One static, CGO-free binary at `/usr/local/bin/wui` with the frontend embedded. Run with no arguments it is the panel; with a subcommand it is a tool the script and the installer use.

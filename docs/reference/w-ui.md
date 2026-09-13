@@ -1,3 +1,7 @@
+---
+description: "Installed alongside the panel. Run w-ui for the menu, or w-ui <subcommand> for one thing. The menu is 3x-ui's x-ui, number for number; what is Xray there is the tunnels here."
+---
+
 # The `w-ui` menu
 
 Installed alongside the panel. Run `w-ui` for the menu, or `w-ui <subcommand>` for one thing. The menu is 3x-ui's `x-ui`, number for number; what is Xray there is the tunnels here.

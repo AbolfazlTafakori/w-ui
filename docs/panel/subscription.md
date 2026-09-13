@@ -1,3 +1,7 @@
+---
+description: "The page a customer sees when they open their subscription link in a browser. It is server-rendered, so it works without JavaScript and loads fast on a bad connection."
+---
+
 # Subscription page
 
 The page a customer sees when they open their subscription link in a browser. It is server-rendered, so it works without JavaScript and loads fast on a bad connection.

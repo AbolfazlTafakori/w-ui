@@ -1,3 +1,7 @@
+---
+description: "The addresses a customer's config points at. Without hosts, every config dials the interface's endpoint. With hosts, one customer fans out to several addresses : a CDN front, a second server, a…"
+---
+
 # Hosts
 
 The addresses a customer's config points at. Without hosts, every config dials the interface's endpoint. With hosts, one customer fans out to several addresses — a CDN front, a second server, a domain and an IP — and gets one config, one QR and one subscription entry **per host**, the way 3x-ui's hosts work.
