@@ -557,11 +557,8 @@ panel — `test/tunnel.sh` prints the overshoot so it is not mistaken for a pass
 
 ## License
 
-Copyright (c) 2026 Abolfazl Tafakori. All rights reserved.
+Copyright (c) 2026 Abolfazl Tafakori.
 
-The source is public so you can read it, audit it, and see how the enforcement
-works. It is not open source: no permission is granted to use, copy, modify,
-redistribute or sell it, in whole or in part. If you want to use it, get in
-touch.
-
-See [LICENSE](LICENSE).
+W-UI is free software under the [GNU Affero General Public License v3.0](LICENSE).
+You may use, study, change and redistribute it; if you run a modified version
+as a service, you must offer its source to your users under the same terms.
