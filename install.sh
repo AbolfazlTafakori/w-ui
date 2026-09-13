@@ -66,6 +66,9 @@ MENU_URL="${WUI_MENU_URL:-https://raw.githubusercontent.com/AbolfazlTafakori/w-u
 DATA_DIR=/var/lib/wui
 CONF_DIR=/etc/wui
 UNIT=/etc/systemd/system/wui.service
+# Scheduled backups live outside the data directory on purpose: removing
+# the panel, or its data, must never remove the copies of it.
+BACKUP_DIR=/var/backups/wui
 SERVICE_USER=wui
 RELEASE_URL="${WUI_RELEASE_URL:-}"
 ASSET_URL=""
@@ -237,6 +240,7 @@ do_uninstall() {
   else
     info "database kept at $DATA_DIR — use --purge to delete it too"
   fi
+  [[ -d "$BACKUP_DIR" ]] && info "scheduled backups kept at $BACKUP_DIR"
 
   # The VPN packages are deliberately left alone: they may predate this panel,
   # and removing WireGuard would take down tunnels the operator still needs.
@@ -1616,7 +1620,7 @@ create_user() {
     ok "user $SERVICE_USER created"
   fi
 
-  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$DATA_DIR" "$CONF_DIR"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$DATA_DIR" "$CONF_DIR" "$BACKUP_DIR"
   ok "$DATA_DIR (0750, owned by $SERVICE_USER)"
 }
 
@@ -1657,6 +1661,7 @@ NoNewPrivileges=true
 Environment=WUI_LISTEN=$LISTEN_ADDR:$PANEL_PORT
 Environment=WUI_DATA_DIR=$DATA_DIR
 Environment=WUI_DB_SOURCE=$DATA_DIR/wui.db
+Environment=WUI_BACKUP_DIR=$BACKUP_DIR
 $BASE_ENV$TLS_ENV
 EnvironmentFile=-$CONF_DIR/wui.env
 
@@ -1686,7 +1691,7 @@ RuntimeDirectoryPreserve=yes
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=$DATA_DIR
+ReadWritePaths=$DATA_DIR $BACKUP_DIR
 ProtectKernelTunables=false
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 

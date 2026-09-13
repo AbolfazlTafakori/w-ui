@@ -225,6 +225,7 @@ func run() error {
 
 	backups := backup.New(backup.Options{
 		DataDir: cfg.DataDir,
+		Dir:     cfg.BackupDir,
 		Keep:    7,
 		Log:     log,
 		// SQLite can write a consistent copy of itself while it is in use.

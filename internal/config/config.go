@@ -35,6 +35,10 @@ type Config struct {
 
 	// DataDir holds the SQLite file, backups and generated profiles.
 	DataDir string
+	// BackupDir is where scheduled backups are written. Empty means a
+	// "backups" directory inside DataDir. The installer points it outside,
+	// so removing the panel's data does not remove the copies of it.
+	BackupDir string
 
 	// CollectInterval is how often counters are drained and limits evaluated.
 	// Two seconds matches what 3x-ui settled on and keeps the reporting lag
@@ -113,6 +117,7 @@ func Load() (Config, error) {
 	c.DBDriver = Driver(strings.ToLower(env("WUI_DB_DRIVER", string(c.DBDriver))))
 	c.DBSource = env("WUI_DB_SOURCE", c.DBSource)
 	c.DataDir = env("WUI_DATA_DIR", c.DataDir)
+	c.BackupDir = env("WUI_BACKUP_DIR", c.BackupDir)
 	c.DefaultLocale = strings.ToLower(env("WUI_DEFAULT_LOCALE", c.DefaultLocale))
 	c.BasePath = normalizeBase(env("WUI_BASE_PATH", c.BasePath))
 	c.TLSCert = env("WUI_TLS_CERT", c.TLSCert)

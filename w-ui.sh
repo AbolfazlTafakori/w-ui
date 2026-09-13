@@ -334,6 +334,7 @@ uninstall() {
     rm "$CONF_DIR"/ -rf
     rm "$DATA_DIR"/ -rf
     rm -f "$BIN_PATH"
+    [[ -d /var/backups/wui ]] && LOGI "Scheduled backups were kept at /var/backups/wui"
 
     echo ""
     echo -e "Uninstalled Successfully.\n"

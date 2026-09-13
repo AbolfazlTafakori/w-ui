@@ -163,6 +163,9 @@ what a cloud-init or CI install wants.
 | `--uninstall` | Remove the panel, keep the data |
 | `--purge` | Remove the panel and the data, after copying the data to `/root` |
 
+Scheduled backups are written to `/var/backups/wui`, outside the data
+directory, and neither uninstall nor purge touches them.
+
 Uninstalling never removes WireGuard or OpenVPN — other things on the server may
 be using them.
 
