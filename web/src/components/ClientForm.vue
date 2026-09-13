@@ -28,6 +28,7 @@ const form = ref(
         name: props.client.name,
         note: props.client.note || '',
         group: props.client.group || '',
+        telegramId: props.client.telegramId || 0,
         // Every server this customer already reaches, from their accounts.
         interfaceIds: [...new Set((props.client.accounts || []).map((a) => a.interfaceId))],
         quotaGB: bytesToGigabytes(props.client.quotaBytes),
@@ -42,6 +43,7 @@ const form = ref(
         name: '',
         note: '',
         group: '',
+        telegramId: 0,
         interfaceIds: props.interfaces[0] ? [props.interfaces[0].id] : [],
         quotaGB: '',
         expiresInDays: '',
@@ -165,6 +167,7 @@ async function submit() {
       name: form.value.name.trim(),
       note: form.value.note.trim(),
       group: form.value.group.trim(),
+      telegramId: Number(form.value.telegramId) || 0,
       interfaceIds: form.value.interfaceIds,
       quotaGB: form.value.quotaGB,
       expiresAt,
@@ -337,6 +340,16 @@ async function submit() {
               <datalist id="cf-groups">
                 <option v-for="g in groupNames" :key="g" :value="g" />
               </datalist>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="field">
+              <label for="cf-tgid">
+                {{ t('client.telegramId') }}
+                <Icon name="info" :size="12" class="help" :title="t('client.telegramIdHint')" />
+              </label>
+              <input id="cf-tgid" v-model.number="form.telegramId" type="number" min="0" class="ltr" placeholder="0" />
             </div>
           </div>
         </div>

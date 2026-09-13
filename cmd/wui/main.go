@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -44,6 +45,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/shaper"
 	"github.com/abolfazl/w-ui/internal/single"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
+	"github.com/abolfazl/w-ui/internal/tgbot"
 	"github.com/abolfazl/w-ui/internal/web"
 )
 
@@ -195,6 +197,7 @@ func run() error {
 
 	outbounds := service.NewOutbounds(db, log)
 	routes := service.NewRouting(db, log)
+	ifaceSvc := service.NewInterfaces(db, pools, log)
 	// The engine page's settings. The ones that only take at start are
 	// read now, before anything that uses them is built.
 	engine := service.NewEngine(db, routes, dnsproxy.New(log), log)
@@ -356,6 +359,57 @@ func run() error {
 	}()
 
 	notifier.Start(ctx)
+
+	// The Telegram bot: the same chat the notifications go to answers
+	// questions and takes orders, as 3x-ui's bot does.
+	go tgbot.New(tgbot.Deps{
+		Config:   notifier.Config,
+		Clients:  service.NewClients(db, pools, log),
+		Subs:     subs,
+		Ifaces:   ifaceSvc,
+		Settings: settings,
+		Sys:      sys.Snapshot,
+		Version:  version,
+		Backup: func(ctx context.Context) (string, []byte, error) {
+			a, err := backups.Create(ctx)
+			if err != nil {
+				return "", nil, err
+			}
+			f, _, err := backups.Open(a.Name)
+			if err != nil {
+				return "", nil, err
+			}
+			defer f.Close()
+			data, err := io.ReadAll(f)
+			return a.Name, data, err
+		},
+		Restart: func(ctx context.Context) error {
+			var ifaces []model.Interface
+			if err := db.WithContext(ctx).Where("enabled = ? AND node_id = ?", true, local.ID).Find(&ifaces).Error; err != nil {
+				return err
+			}
+			var failed []string
+			for i := range ifaces {
+				if err := pool.Open(ctx, &ifaces[i]); err != nil {
+					failed = append(failed, ifaces[i].Name+": "+err.Error())
+				}
+			}
+			if len(failed) > 0 {
+				return errors.New(strings.Join(failed, "; "))
+			}
+			return nil
+		},
+		LoginFailures: func() []string {
+			var out []string
+			for _, e := range logger.Recent.Recent(200, "warn", "request") {
+				if p, _ := e.Fields["path"].(string); strings.HasSuffix(p, "/auth/login") {
+					out = append(out, fmt.Sprintf("%s  %v  %v", e.Time.Local().Format("01-02 15:04"), e.Fields["ip"], e.Fields["status"]))
+				}
+			}
+			return out
+		},
+	}, log).Run(ctx)
+
 	// The host's own load, for the CPU and memory events.
 	notifier.RunSystemMonitor(ctx, func() (float64, float64) {
 		snap := sys.Snapshot()

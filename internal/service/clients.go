@@ -31,9 +31,10 @@ func NewClients(db *gorm.DB, pools *ipam.Pools, log *slog.Logger) *Clients {
 
 // CreateInput describes a new client.
 type CreateInput struct {
-	Name  string `json:"name"`
-	Note  string `json:"note"`
-	Group string `json:"group"`
+	Name       string `json:"name"`
+	Note       string `json:"note"`
+	Group      string `json:"group"`
+	TelegramID int64  `json:"telegramId"`
 	// InterfaceID is the tunnel a customer is placed on. Kept for callers that
 	// sell one server, and it is the first entry of InterfaceIDs when both are
 	// given.
@@ -93,6 +94,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 		Name:           in.Name,
 		Note:           in.Note,
 		Group:          strings.TrimSpace(in.Group),
+		TelegramID:     in.TelegramID,
 		Protocol:       iface.Protocol,
 		QuotaBytes:     in.QuotaBytes,
 		ExpiresAt:      in.ExpiresAt,
@@ -697,6 +699,7 @@ type UpdateInput struct {
 	Name           *string             `json:"name"`
 	Note           *string             `json:"note"`
 	Group          *string             `json:"group"`
+	TelegramID     *int64              `json:"telegramId"`
 	QuotaBytes     *uint64             `json:"quotaBytes"`
 	ExpiresAt      **time.Time         `json:"expiresAt"`
 	DeviceLimit    *int                `json:"deviceLimit"`
@@ -733,6 +736,9 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 	}
 	if in.Group != nil {
 		fields["group"] = strings.TrimSpace(*in.Group)
+	}
+	if in.TelegramID != nil {
+		fields["telegram_id"] = *in.TelegramID
 	}
 	if in.QuotaBytes != nil {
 		fields["quota_bytes"] = *in.QuotaBytes
@@ -1338,4 +1344,29 @@ func (s *Clients) interfaceName(ctx context.Context, id uint) string {
 		return fmt.Sprintf("interface %d", id)
 	}
 	return iface.Name
+}
+
+// ByTelegramID finds the customers a Telegram account is on, for the bot.
+func (s *Clients) ByTelegramID(ctx context.Context, id int64) ([]model.Client, error) {
+	var out []model.Client
+	if id == 0 {
+		return out, nil
+	}
+	if err := s.db.WithContext(ctx).Preload("Accounts").Where("telegram_id = ?", id).Order("name").Find(&out).Error; err != nil {
+		return nil, fmt.Errorf("service: find by telegram id: %w", err)
+	}
+	return out, nil
+}
+
+// ByName finds one customer by exact name, case-insensitively.
+func (s *Clients) ByName(ctx context.Context, name string) (*model.Client, error) {
+	var c model.Client
+	err := s.db.WithContext(ctx).Preload("Accounts").Where("LOWER(name) = LOWER(?)", strings.TrimSpace(name)).First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("%w: no customer called %q", ErrNotFound, name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("service: find client: %w", err)
+	}
+	return &c, nil
 }

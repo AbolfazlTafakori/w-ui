@@ -196,6 +196,10 @@ const expiryText = computed(() => {
               <td>{{ t('iface.col.updatedAt') }}</td>
               <td><span class="atag ltr">{{ dateTime(c.updatedAt, store.locale) }}</span></td>
             </tr>
+            <tr v-if="c.telegramId">
+              <td>{{ t('client.telegramId') }}</td>
+              <td><span class="atag info-large-tag ltr">{{ c.telegramId }}</span></td>
+            </tr>
             <tr v-if="c.group">
               <td>{{ t('client.group') }}</td>
               <td><span class="atag geekblue">{{ c.group }}</span></td>

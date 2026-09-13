@@ -210,6 +210,9 @@ type Client struct {
 	// its own: the groups page is a GROUP BY over this column, so creating one
 	// is typing a name and deleting one is clearing it from its members.
 	Group string `gorm:"size:64;index" json:"group"`
+	// TelegramID is the customer's Telegram account, for the bot to answer
+	// them about their own plan. Zero is nobody.
+	TelegramID int64 `gorm:"index" json:"telegramId"`
 
 	// QuotaBytes of 0 means unlimited.
 	QuotaBytes uint64 `gorm:"not null;default:0" json:"quotaBytes"`

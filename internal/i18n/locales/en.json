@@ -1611,5 +1611,7 @@
   "hosts.created": "Host added.",
   "hosts.updated": "Host updated.",
   "routing.failClosed": "Block traffic while the default outbound is down",
-  "routing.failClosedDesc": "When the outbound at the top of the list stops working, customers' traffic is dropped until it is back, rather than sent from this server's own address. The way an Xray with an unreachable outbound behaves."
+  "routing.failClosedDesc": "When the outbound at the top of the list stops working, customers' traffic is dropped until it is back, rather than sent from this server's own address. The way an Xray with an unreachable outbound behaves.",
+  "client.telegramId": "Telegram ID",
+  "client.telegramIdHint": "The customer's Telegram account id. With the bot on, they can ask it about this plan and get their links and QR codes."
 }
