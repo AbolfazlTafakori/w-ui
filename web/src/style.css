@@ -1085,6 +1085,13 @@ td.center { text-align: center; }
   width: 12px;
   height: 12px;
 }
+/* Ant's circle buttons: default 32px, small 24px, icon at 14px (16px on the
+   default size); a primary circle for the one action a row is about. */
+.act.round, .act.round.sm { width: 24px; height: 24px; font-size: 14px; }
+.act.round.check-btn { width: 32px; height: 32px; font-size: 16px; }
+.act.round.check-btn:disabled { opacity: 0.45; }
+.anticon-spin svg { animation: anticon-spin 1s linear infinite; }
+@keyframes anticon-spin { to { transform: rotate(360deg); } }
 
 .identity-cell {
   display: flex;

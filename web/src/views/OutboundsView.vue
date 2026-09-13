@@ -5,6 +5,7 @@ import { mergeRows, useDelayed } from '../lib/live.js'
 import { t, tn, notify, store } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
+import AntIcon from '../components/AntIcon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import OutboundForm from '../components/OutboundForm.vue'
 import OutboundSubsDialog from '../components/OutboundSubsDialog.vue'
@@ -228,19 +229,19 @@ onUnmounted(() => {
 function menuFor(o, idx) {
   const last = outbounds.value.length - 1
   const items = []
-  if (idx > 0) items.push({ key: 'top', icon: 'upload', label: t('outbound.moveToTop') })
+  if (idx > 0) items.push({ key: 'top', icon: 'VerticalAlignTopOutlined', label: t('outbound.moveToTop') })
   items.push(
-    { key: 'up', icon: 'chevronDown', flip: true, label: t('outbound.moveUp'), disabled: idx === 0 },
-    { key: 'down', icon: 'chevronDown', label: t('outbound.moveDown'), disabled: idx === last },
-    { key: 'reset', icon: 'refresh', label: t('outbound.resetTraffic') },
+    { key: 'up', icon: 'ArrowUpOutlined', label: t('outbound.moveUp'), disabled: idx === 0 },
+    { key: 'down', icon: 'ArrowDownOutlined', label: t('outbound.moveDown'), disabled: idx === last },
+    { key: 'reset', icon: 'RetweetOutlined', label: t('outbound.resetTraffic') },
     {
       key: 'toggle',
-      icon: o.enabled ? 'pause' : 'play',
+      icon: o.enabled ? 'StopOutlined' : 'PlayCircleOutlined',
       label: o.enabled ? t('action.disable') : t('action.enable'),
       disabled: o.builtin,
     },
     { divider: true },
-    { key: 'del', icon: 'trash', label: t('action.delete'), danger: true, disabled: o.builtin },
+    { key: 'del', icon: 'DeleteOutlined', label: t('action.delete'), danger: true, disabled: o.builtin },
   )
   return items
 }
@@ -434,31 +435,31 @@ async function runImport() {
       <div class="card-toolbar spread wrap">
         <div class="toolbar-group">
           <button class="btn primary" @click="formFor = {}">
-            <Icon name="plus" :size="14" />
+            <AntIcon name="PlusOutlined" />
             <span>{{ t('nav.outbounds') }}</span>
           </button>
           <button class="btn" @click="dialog = 'subs'">
-            <Icon name="globe" :size="14" />
+            <AntIcon name="CloudOutlined" />
             <span>{{ t('outbound.sub.manage') }}</span>
           </button>
           <div class="more-wrap">
             <button class="btn more-btn" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
-              <Icon name="more" :size="14" />
+              <AntIcon name="MoreOutlined" />
               <span>{{ t('outbound.more') }}</span>
             </button>
             <div v-if="moreOpen" class="rowmenu below" role="menu">
               <button class="menu-item" role="menuitem" @click="moreOpen = false; dialog = 'warp'">
-                <Icon name="globe" :size="14" />WARP
+                <AntIcon name="CloudOutlined" />WARP
               </button>
               <button class="menu-item" role="menuitem" @click="moreOpen = false; dialog = 'nord'">
-                <Icon name="link" :size="14" />NordVPN
+                <AntIcon name="ApiOutlined" />NordVPN
               </button>
               <button class="menu-item" role="menuitem" @click="moreOpen = false; dialog = 'pia'">
-                <Icon name="link" :size="14" />{{ t('outbound.pia.menu') }}
+                <AntIcon name="ApiOutlined" />{{ t('outbound.pia.menu') }}
               </button>
               <hr class="menu-divider" />
               <button class="menu-item" role="menuitem" @click="moreOpen = false; importOpen = true">
-                <Icon name="download" :size="14" />{{ t('outbound.import') }}
+                <AntIcon name="ImportOutlined" />{{ t('outbound.import') }}
               </button>
               <button
                 class="menu-item"
@@ -466,7 +467,7 @@ async function runImport() {
                 :disabled="!outbounds.some((o) => !o.builtin)"
                 @click="moreOpen = false; exportOpen = true"
               >
-                <Icon name="upload" :size="14" />{{ t('outbound.export') }}
+                <AntIcon name="ExportOutlined" />{{ t('outbound.export') }}
               </button>
             </div>
           </div>
@@ -491,12 +492,12 @@ async function runImport() {
 
           <button class="btn primary" :disabled="checkingAll" @click="checkAll">
             <span v-if="checkingAll" class="spin sm"></span>
-            <Icon v-else name="play" :size="14" />
+            <AntIcon v-else name="PlayCircleOutlined" />
             <span>{{ t('outbound.testAll') }}</span>
           </button>
 
           <button class="btn icon" :aria-label="t('outbound.resetTraffic')" :title="t('outbound.resetTraffic')" @click="resetAllTraffic">
-            <Icon name="refresh" :size="14" />
+            <AntIcon name="RetweetOutlined" />
           </button>
         </div>
       </div>
@@ -530,7 +531,7 @@ async function runImport() {
                     :title="t('outbound.toggleIpVisibility')"
                     @click="showEgressIp = !showEgressIp"
                   >
-                    <Icon :name="showEgressIp ? 'eye' : 'eyeOff'" :size="14" />
+                    <AntIcon :name="showEgressIp ? 'EyeOutlined' : 'EyeInvisibleOutlined'" />
                   </button>
                 </span>
               </th>
@@ -557,22 +558,22 @@ async function runImport() {
                   <span class="num row-index">{{ idx + 1 }}</span>
                   <div class="action-buttons">
                     <button
-                      class="act round"
+                      class="act round sm"
                       :aria-label="t('action.edit')"
                       :title="t('action.edit')"
                       :disabled="isPending(o.id)"
                       @click="formFor = { outbound: o }"
                     >
-                      <Icon name="edit" :size="13" />
+                      <AntIcon name="EditOutlined" />
                     </button>
                     <button
-                      class="act round"
+                      class="act round sm"
                       :aria-label="t('action.more')"
                       :title="t('action.more')"
                       :aria-expanded="menu?.outbound?.id === o.id"
                       @click="openMenuFor(o, idx, $event)"
                     >
-                      <Icon name="more" :size="13" />
+                      <AntIcon name="MoreOutlined" />
                     </button>
                   </div>
                 </div>
@@ -621,7 +622,7 @@ async function runImport() {
               </td>
 
               <td class="num ltr">
-                <span v-if="isPending(o.id)" class="spin sm"></span>
+                <AntIcon v-if="isPending(o.id)" name="LoadingOutlined" class="anticon-spin" />
                 <template v-else-if="o.lastError">
                   <span class="tag red" :title="o.lastError">{{ t('outbound.failed') }}</span>
                 </template>
@@ -634,14 +635,14 @@ async function runImport() {
 
               <td class="center">
                 <button
-                  class="act round primary"
+                  class="act round primary check-btn"
                   :aria-label="t('outbound.check')"
                   :title="`${t('outbound.check')} (${modeLabel(mode)})`"
                   :disabled="isPending(o.id) || o.kind === 'block'"
                   @click="check(o)"
                 >
-                  <span v-if="isPending(o.id)" class="spin sm"></span>
-                  <Icon v-else name="zap" :size="14" />
+                  <AntIcon v-if="isPending(o.id)" name="LoadingOutlined" class="anticon-spin" />
+                  <AntIcon v-else name="ThunderboltOutlined" />
                 </button>
               </td>
             </tr>
@@ -669,7 +670,7 @@ async function runImport() {
           role="menuitem"
           @click="pick(menu.outbound, menu.idx, m.key)"
         >
-          <Icon :name="m.icon" :size="14" :class="{ flip: m.flip }" />{{ m.label }}
+          <AntIcon :name="m.icon" />{{ m.label }}
         </button>
       </template>
     </div>
