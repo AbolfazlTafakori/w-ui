@@ -1,0 +1,85 @@
+name: Release
+
+# A tag v1.2.3 becomes a GitHub release carrying a signed binary for every
+# platform the installer knows, the checksums, and the scripts. The
+# installer's one-line install and the panel's own updater both read this.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the frontend
+        run: npm ci && npx vite build
+        working-directory: web
+
+      - name: Tests
+        run: go test ./...
+
+      - name: Build every platform
+        env:
+          # The public half of the release-signing key, baked into the build
+          # so a panel installs only updates signed with the private half.
+          WUI_PUBLIC_KEY: ${{ vars.WUI_SIGNING_PUBLIC_KEY }}
+        run: |
+          version="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X main.version=${version} -X github.com/abolfazl/w-ui/internal/update.PublicKey=${WUI_PUBLIC_KEY}" \
+              -o "dist/wui-linux-${arch}" ./cmd/wui
+          done
+          # A native build of the same commit does the signing.
+          go build -o dist/wui-host ./cmd/wui
+
+      - name: Sign
+        env:
+          WUI_SIGNING_KEY: ${{ secrets.WUI_SIGNING_KEY }}
+        run: |
+          if [ -z "$WUI_SIGNING_KEY" ]; then
+            echo "::warning::WUI_SIGNING_KEY is not set; the release is unsigned and panels will not self-update from it"
+            exit 0
+          fi
+          for f in dist/wui-linux-*; do dist/wui-host sign "$f"; done
+
+      - name: Checksums and scripts
+        run: |
+          rm -f dist/wui-host
+          cp install.sh w-ui.sh dist/
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
+
+      - name: Release notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "No CHANGELOG.md section for ${version}; add one under '## [${version}]'" >&2
+            exit 1
+          fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: dist/*

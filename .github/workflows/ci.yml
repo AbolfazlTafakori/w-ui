@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend builds and matches the committed bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx vite build
+        working-directory: web
+      # The bundle is committed so `go build` works from a plain checkout.
+      # A source change without a rebuild would ship the old UI.
+      - name: Committed bundle is current
+        run: |
+          if [ -n "$(git status --porcelain internal/web/dist)" ]; then
+            echo "internal/web/dist differs from a fresh build; run 'cd web && npx vite build' and commit it" >&2
+            git status --porcelain internal/web/dist
+            exit 1
+          fi
+
+  go:
+    name: Go vet, static analysis and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          out="$(gofmt -l cmd internal)"
+          if [ -n "$out" ]; then echo "not gofmt'd:"; echo "$out"; exit 1; fi
+      - run: go vet ./...
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - run: go test -race ./...
+      - name: Cross-compiles for every release target
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/wui
+          done
+
+  installer:
+    name: Installer and menu behave
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n install.sh && bash -n w-ui.sh
+      - run: bash scripts/test-install-questions.sh install.sh
+      - run: bash scripts/test-install-output.sh install.sh
+      - run: sh scripts/verify-installer.sh
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y -qq shellcheck >/dev/null
+          # Style findings are advisory; anything that is an actual error fails.
+          shellcheck -S error install.sh w-ui.sh

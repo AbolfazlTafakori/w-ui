@@ -120,7 +120,7 @@ confirm() {
     # A question nobody is there to answer is answered no. With input at
     # end-of-file the default would otherwise be taken, and the default for
     # "update?" is yes -- which is how a piped run once reinstalled a panel.
-    if [[ $# > 1 ]]; then
+    if [[ $# -gt 1 ]]; then
         echo && read -rp "$1 [Default $2]: " temp || return 1
         if [[ "${temp}" == "" ]]; then
             temp=$2
@@ -324,6 +324,13 @@ uninstall() {
     systemctl daemon-reload
     systemctl reset-failed
 
+    # Never the only copy: the database and every key go to root's home
+    # before they are deleted, so an uninstall typed on the wrong server is
+    # a mistake and not a disaster.
+    if [[ -d "$DATA_DIR" ]]; then
+        local keep="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
+        tar czf "$keep" --exclude='*/backups' -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2> /dev/null && chmod 0600 "$keep"             && LOGI "A copy of the database and keys is at ${keep}"
+    fi
     rm "$CONF_DIR"/ -rf
     rm "$DATA_DIR"/ -rf
     rm -f "$BIN_PATH"
@@ -2695,7 +2702,7 @@ show_menu() {
     esac
 }
 
-if [[ $# > 0 ]]; then
+if [[ $# -gt 0 ]]; then
     case $1 in
         "start")
             check_install 0 && start 0

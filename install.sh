@@ -68,6 +68,8 @@ CONF_DIR=/etc/wui
 UNIT=/etc/systemd/system/wui.service
 SERVICE_USER=wui
 RELEASE_URL="${WUI_RELEASE_URL:-}"
+ASSET_URL=""
+SUMS_URL=""
 # Where to fetch from when nothing else was asked for. Overridable, because a
 # fork or a mirror is a normal thing to install from.
 REPO="${WUI_REPO:-AbolfazlTafakori/w-ui}"
@@ -196,6 +198,23 @@ detect_os() {
 }
 
 # ── uninstall ────────────────────────────────────────────────────────────────
+# One archive of everything the panel holds, in root's home, before anything
+# is deleted. Cheap -- a few hundred kilobytes -- and the difference between
+# a mistake and a disaster.
+last_copy_of_data() {
+  [[ -d "$DATA_DIR" ]] || return 0
+  local out="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
+  if tar czf "$out" --exclude='*/backups' -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2>/dev/null; then
+    chmod 0600 "$out"
+    ok "a copy of the database and keys is at $out"
+  else
+    warn "could not copy $DATA_DIR before removing it"
+    if [[ "$INTERACTIVE" == 1 ]]; then
+      ask_yn "Delete it anyway?" n || die "nothing was deleted"
+    fi
+  fi
+}
+
 do_uninstall() {
   step "Removing W-UI"
   if have_systemd && systemctl list-unit-files 2>/dev/null | grep -q '^wui\.service'; then
@@ -208,6 +227,10 @@ do_uninstall() {
   ok "binary and unit removed"
 
   if [[ "$ACTION" == purge ]]; then
+    # Never the only copy. A purge typed on the wrong server, or a script
+    # that reached this with nobody watching, must leave the customers
+    # recoverable: the database and keys go to root's home first.
+    last_copy_of_data
     rm -rf "$DATA_DIR" "$CONF_DIR"
     id -u "$SERVICE_USER" >/dev/null 2>&1 && userdel "$SERVICE_USER" 2>/dev/null || true
     warn "database and configuration deleted"
@@ -642,12 +665,26 @@ release_asset_url() {
   json="$(curl -fsSL --max-time 20 "$api" 2>/dev/null)" || return 1
   [[ -n "$json" ]] || return 1
 
-  ASSET_URL="$(printf '%s' "$json" \
-    | grep -o '"browser_download_url": *"[^"]*"' \
-    | sed 's/.*"browser_download_url": *"//; s/"$//' \
-    | grep -E "linux[-_]${ARCH}" \
-    | head -1)"
+  local urls
+  urls="$(printf '%s' "$json"     | grep -o '"browser_download_url": *"[^"]*"'     | sed 's/.*"browser_download_url": *"//; s/"$//')"
+  ASSET_URL="$(grep -E "linux[-_]${ARCH}$" <<<"$urls" | head -1)"
+  SUMS_URL="$(grep -E '/SHA256SUMS$' <<<"$urls" | head -1)"
   [[ -n "$ASSET_URL" ]]
+}
+
+# The release carries a checksum list; a download that does not match it is
+# not installed. A truncated transfer or a tampered mirror would otherwise
+# become the panel.
+verify_download() {
+  local file="$1" name="$2"
+  [[ -n "${SUMS_URL:-}" ]] || { warn "the release publishes no SHA256SUMS; installing unverified"; return 0; }
+  local sums want got
+  sums="$(curl -fsSL --max-time 20 "$SUMS_URL" 2>/dev/null)" || { warn "could not fetch SHA256SUMS; installing unverified"; return 0; }
+  want="$(awk -v n="$name" '$2 == n || $2 == "*" n {print $1}' <<<"$sums" | head -1)"
+  [[ -n "$want" ]] || { warn "SHA256SUMS has no entry for $name; installing unverified"; return 0; }
+  got="$(sha256sum "$file" | awk '{print $1}')"
+  [[ "$got" == "$want" ]] || die "checksum mismatch for $name: the download is not the file that was released"
+  ok "checksum verified"
 }
 
 # Build the panel from the project's own source, without needing the repository
@@ -1519,6 +1556,7 @@ install_binary() {
     if release_asset_url; then
       info "downloading $ASSET_URL"
       curl -fsSL "$ASSET_URL" -o /tmp/wui.new || die "download failed"
+      verify_download /tmp/wui.new "${ASSET_URL##*/}"
       install -m 0755 /tmp/wui.new "$BIN_PATH"
       rm -f /tmp/wui.new
       ok "installed from the latest release"

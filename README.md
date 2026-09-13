@@ -3,8 +3,10 @@
 A management panel for WireGuard and OpenVPN, built for reselling access:
 per-customer data quotas, expiry dates, device limits, and downloadable configs.
 
-Admin-only. There is no customer portal — you create a client in the panel and
-hand out the config or QR code yourself.
+Laid out the way 3x-ui is — the same pages, menus and management script — for
+operators who already know that panel, with WireGuard, AmneziaWG and OpenVPN
+behind it instead of Xray. Customers get a subscription link with a page of
+their own; everything else is the operator's.
 
 ---
 
@@ -42,14 +44,16 @@ to remove a peer, never to enforce the byte limit.
 
 ## Status
 
-| Phase | Scope | State |
-|-------|-------|-------|
-| 1 | Data model, address allocator, driver and enforcement contracts | done |
-| 2 | nftables enforcement engine and reconciler | done |
-| 3 | WireGuard / AmneziaWG kernel driver | done |
-| 4 | OpenVPN driver | done |
-| 5 | Bandwidth rate limiting (`tc`) | done |
-| 6 | Backups, sharing detection, Telegram notifications | done |
+Version 1.0 — the feature set of 3x-ui, on WireGuard, AmneziaWG and OpenVPN:
+
+| Area | What is there |
+|------|---------------|
+| Tunnels | WireGuard, AmneziaWG (obfuscated), OpenVPN; several interfaces per server; hosts and host groups fanning one customer out to many addresses |
+| Customers | quotas enforced in the kernel, expiry, start-on-first-use, device limits, rate limits, groups, bulk actions, Telegram id per plan |
+| Handing out access | subscription links with six page templates, QR codes, config files for every client app, a customer-facing page in their language |
+| Egress | outbounds with policy routing, balancers with fallback, a fail-closed default outbound, DNS proxy with pins and per-domain upstreams, geo lists |
+| Operations | Telegram notifications and an interactive bot, scheduled backups, sharing detection, an API with tokens and built-in docs, nodes watched over the same API |
+| Install | one command; Let's Encrypt for a domain or for the server's own address, renewed unattended; a `w-ui` menu laid out like `x-ui` |
 
 **What works today:** WireGuard, AmneziaWG and OpenVPN, end to end. The panel
 brings up a real interface, writes accounts to it, hands out working configs,
@@ -76,8 +80,9 @@ between wifi and mobile data changes address legitimately.
 Telegram notifications cover customers running out, expiring, credentials being
 shared, and backups.
 
-**What does not:** multi-node is modelled in the schema but there is no Nodes
-page, so one panel drives one server.
+**What one panel does not do:** program another server's tunnels. A node is
+watched — version, load, customers, whether its limits are enforced — but its
+interfaces and customers are managed by signing in to that panel.
 
 ---
 
@@ -114,8 +119,9 @@ walk away:
   path outside it answers 404, the sign-in page included
 - **the administrator's name and password** — both generated unless you set
   them, and created before the panel's first start
-- **how the panel is reached** — a domain with a free Let's Encrypt certificate,
-  a certificate you already have, or plain HTTP
+- **how the panel is reached** — a Let's Encrypt certificate for a domain, one
+  for the server's own address (six days, renews itself; the default), a
+  certificate you already have, or plain HTTP
 - **which tunnels to install** alongside WireGuard
 
 **Press enter through all of it and nothing about the result is guessable:** a
@@ -127,10 +133,12 @@ being the only thing in the way.
 Re-running the installer keeps the port and path the panel is already reached
 at, and leaves an existing administrator account alone.
 
-The certificate is the panel's own: it serves HTTPS itself and no reverse proxy
-is configured, added to, or restarted. If something is already serving port 80,
-that service is left running and the ACME challenge goes through its document
-root instead.
+The certificate is the panel's own: it serves HTTPS itself on the one port,
+reached by the address and by the domain alike; no reverse proxy is configured,
+added to, or restarted. Renewal runs unattended — acme.sh's cron entry and a
+systemd timer every six hours — and the panel picks the renewed files up
+without restarting. If something is already serving port 80, the installer
+asks for another port to answer the ACME challenge on, as 3x-ui's does.
 
 Every answer is also a flag, and `--yes` skips the questions entirely — which is
 what a cloud-init or CI install wants.
@@ -141,6 +149,7 @@ what a cloud-init or CI install wants.
 | `--username NAME` | Administrator name (default `admin`) |
 | `--password PASS` | Administrator password (default: generated and shown once) |
 | `--domain NAME` | Fetch a Let's Encrypt certificate for this domain |
+| `--ip-cert [ADDR]` | Fetch a six-day Let's Encrypt certificate for the server's address |
 | `--email ADDR` | Where the certificate authority sends expiry notices |
 | `--tls-cert PATH` / `--tls-key PATH` | Use a certificate you already have |
 | `--path SEG` | Serve the panel under this URL path instead of a random one |
@@ -148,11 +157,11 @@ what a cloud-init or CI install wants.
 | `--no-tls` | Serve plain HTTP — only sane behind a proxy or an SSH tunnel |
 | `-y`, `--yes` | Ask nothing; use flags, environment and defaults |
 | `--local PATH` | Install a binary you already built |
-| `--from-source` | Build from the current checkout (needs Go) |
+| `--from-source` | Build the latest commit from source (installs Go if needed) |
 | `--no-amnezia` | Skip the AmneziaWG packages |
 | `--no-openvpn` | Skip OpenVPN and easy-rsa |
 | `--uninstall` | Remove the panel, keep the data |
-| `--purge` | Remove the panel and the data |
+| `--purge` | Remove the panel and the data, after copying the data to `/root` |
 
 Uninstalling never removes WireGuard or OpenVPN — other things on the server may
 be using them.
