@@ -22,6 +22,8 @@
 #   --username <name>  administrator name (default admin)
 #   --password <pass>  administrator password (default: generated)
 #   --domain <name>    get a Let's Encrypt certificate for this domain
+#   --ip-cert [addr]   get a 6-day Let's Encrypt certificate for this server's
+#                      address (auto-detected unless given); renews itself
 #   --email <addr>     where the certificate authority sends expiry notices
 #   --tls-cert <path>  use a certificate you already have
 #   --tls-key <path>   its private key
@@ -44,7 +46,7 @@
 # time, and the whole run stopped there with an empty log.
 #
 # Worse, it can give the wrong answer rather than no answer:
-# `certbot plugins | grep -q nginx` returns 141 when grep matches and finds
+# `acme.sh --list | grep` returns 141 when grep matches and finds
 # what it wanted, so the check reports the plugin missing when it is there.
 #
 # Nothing here depends on catching a failure in the middle of a pipeline;
@@ -89,6 +91,9 @@ TLS_MODE=""
 TLS_CERT="${WUI_TLS_CERT:-}"
 TLS_KEY="${WUI_TLS_KEY:-}"
 ACME_DOMAIN="${WUI_DOMAIN:-}"
+ACME_IP="${WUI_SERVER_IP:-}"
+ACME_IPV6="${WUI_SSL_IPV6:-}"
+TLS_DOMAIN=""
 ACME_EMAIL="${WUI_ACME_EMAIL:-}"
 ACME_METHOD=""
 # Which address the panel binds to. 127.0.0.1 when something else is
@@ -139,6 +144,7 @@ while [[ "$LIB_ONLY" != 1 && $# -gt 0 ]]; do
     --username)    ADMIN_USER="${2:?--username needs a name}"; shift 2 ;;
     --password)    ADMIN_PASS="${2:?--password needs a value}"; shift 2 ;;
     --domain)      ACME_DOMAIN="${2:?--domain needs a name}"; shift 2 ;;
+    --ip-cert)     ACME_IP="${2:-}"; [[ -n "$ACME_IP" && "$ACME_IP" != -* ]] && shift; TLS_MODE=ip; shift ;;
     --email)       ACME_EMAIL="${2:?--email needs an address}"; shift 2 ;;
     --tls-cert)    TLS_CERT="${2:?--tls-cert needs a path}"; shift 2 ;;
     --tls-key)     TLS_KEY="${2:?--tls-key needs a path}"; shift 2 ;;
@@ -953,21 +959,32 @@ configure() {
     info "the password is generated and shown once, at the end"
   fi
 
-  # ── how it is reached ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+  # ── how it is reached ─────────────────────────────────────────────────────
+  #
+  # The same four choices 3x-ui's installer offers, in the same order, with
+  # the same default: a certificate for the address itself. Whatever is
+  # chosen, the panel answers on the one port above -- by name and by
+  # address alike -- so a link written down today works tomorrow.
   tty_out '\n'
-  info "How should the panel be reached?"
-  info "  1) a domain name, with a free certificate from Let's Encrypt"
-  info "  2) certificate files you already have"
-  info "  3) plain HTTP — no certificate"
+  info "SSL Certificate Setup (RECOMMENDED)"
+  info "SSL is strongly recommended. Skip only if a reverse proxy"
+  info "or SSH tunnel handles TLS for you."
+  info "Let's Encrypt supports both domains and IP addresses."
   tty_out '\n'
-  warn "option 3 sends your password across the network in the clear"
+  info "  1) Let's Encrypt for Domain (90-day validity, auto-renews)"
+  info "  2) Let's Encrypt for IP Address (6-day validity, auto-renews)"
+  info "  3) Custom SSL Certificate (path to existing files)"
+  info "  4) Skip SSL (advanced — behind reverse proxy / SSH tunnel only)"
+  info "Note: options 1 & 2 need port 80 reachable from the internet."
+  info "Note: option 4 serves the panel over plain HTTP."
+  tty_out '\n'
 
   local choice
   while true; do
-    ask choice "Choose" "1"
+    ask choice "Choose" "2"
     case "$choice" in
-      1|2|3) break ;;
-      *) warn "answer 1, 2 or 3" ;;
+      1|2|3|4) break ;;
+      *) warn "answer 1, 2, 3 or 4" ;;
     esac
   done
 
@@ -993,7 +1010,24 @@ configure() {
       [[ "$TLS_MODE" == acme ]] && ask ACME_EMAIL "Email for expiry notices (optional)" "${ACME_EMAIL:-}"
       ;;
     2)
+      TLS_MODE=ip
+      local mine; mine="$(public_ip)"
+      if [[ -n "$mine" ]]; then
+        if ask_yn "Is $mine the correct incoming public IPv4 address for this server?" y; then
+          ACME_IP="$mine"
+        fi
+      else
+        warn "could not auto-detect this server's public address"
+      fi
+      while [[ -z "$ACME_IP" ]]; do
+        ask ACME_IP "This server's public IPv4 address" ""
+        [[ "$ACME_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { warn "that is not an IPv4 address"; ACME_IP=""; }
+      done
+      ask ACME_IPV6 "IPv6 address to include (blank to skip)" "${ACME_IPV6:-}"
+      ;;
+    3)
       TLS_MODE=files
+      ask TLS_DOMAIN "Domain the certificate was issued for (blank: use the address)" "${TLS_DOMAIN:-}"
       while true; do
         ask TLS_CERT "Path to the certificate (fullchain .crt or .pem)" "${TLS_CERT:-}"
         [[ -s "$TLS_CERT" ]] && break
@@ -1005,22 +1039,23 @@ configure() {
         warn "no readable file at that path"
       done
       ;;
-    3)
+    4)
       TLS_MODE=none
+      tty_out '\n'
+      warn "the panel will be installed WITHOUT SSL/TLS"
+      warn "login credentials and cookies travel as plain HTTP; only safe when"
+      warn "  a reverse proxy (nginx, Caddy) terminates TLS for you, or"
+      warn "  you reach the panel exclusively via an SSH tunnel"
       ;;
   esac
 
-  # Asked wherever the panel ends up on plain HTTP, not only when that was
-  # picked outright -- choosing a domain and then leaving it blank lands in
-  # the same place and deserves the same question.
-  #
   # A panel on a public address over plain HTTP puts an administrator's
   # password on the wire. Bound to the loopback it is reachable only through
   # an SSH tunnel or a proxy on this machine, which is the one way serving
   # plain HTTP is defensible at all.
   if [[ "$TLS_MODE" == none && "$LISTEN_ADDR" != 127.0.0.1 ]]; then
     tty_out '\n'
-    if ask_yn "Bind it to 127.0.0.1 only? (reachable via an SSH tunnel or a local proxy)" n; then
+    if ask_yn "Bind the panel to 127.0.0.1 only? (recommended — forces SSH tunnel / reverse-proxy access)" n; then
       LISTEN_ADDR=127.0.0.1
     fi
   fi
@@ -1038,7 +1073,8 @@ configure() {
   [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
   case "$TLS_MODE" in
     acme)  info "Address        https://$ACME_DOMAIN:$PANEL_PORT$shown_path  (certificate from Let's Encrypt)" ;;
-    files) info "Address        https://<your host>:$PANEL_PORT$shown_path  (your own certificate)" ;;
+    ip)    info "Address        https://$ACME_IP:$PANEL_PORT$shown_path  (6-day certificate from Let's Encrypt, renews itself)" ;;
+    files) info "Address        https://${TLS_DOMAIN:-<your host>}:$PANEL_PORT$shown_path  (your own certificate)" ;;
     none)  info "Address        http://$([[ "$LISTEN_ADDR" == 127.0.0.1 ]] && echo 127.0.0.1 || echo '<this server>'):$PANEL_PORT$shown_path  (no certificate)" ;;
   esac
   local extras="WireGuard"
@@ -1065,6 +1101,10 @@ configure_defaults() {
     : # --no-tls, or a mode already chosen
   elif [[ -n "$ACME_DOMAIN" ]]; then
     TLS_MODE=acme
+  elif [[ -n "$ACME_IP" || "${WUI_SSL_MODE:-}" == ip ]]; then
+    TLS_MODE=ip
+    [[ -n "$ACME_IP" ]] || ACME_IP="$(public_ip)"
+    [[ -n "$ACME_IP" ]] || { warn "no public address found; the panel will serve plain HTTP"; TLS_MODE=none; }
   elif [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then
     TLS_MODE=files
   else
@@ -1135,9 +1175,13 @@ gen_password() {
 # This server's address as the internet sees it, for checking that a domain
 # actually points here before asking a certificate authority to confirm it.
 public_ip() {
-  curl -fsS --max-time 8 https://api.ipify.org 2>/dev/null \
-    || curl -fsS --max-time 8 https://ifconfig.me/ip 2>/dev/null \
-    || hostname -I 2>/dev/null | awk '{print $1}'
+  local u ip
+  for u in https://api4.ipify.org https://ipv4.icanhazip.com https://v4.api.ipinfo.io/ip \
+           https://ipv4.myexternalip.com/raw https://4.ident.me https://check-host.net/ip; do
+    ip="$(curl -fsS -4 --max-time 3 "$u" 2>/dev/null | tr -d '[:space:]"')"
+    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then printf '%s' "$ip"; return 0; fi
+  done
+  hostname -I 2>/dev/null | awk '{print $1}'
 }
 
 # Does the domain resolve to this machine?
@@ -1172,6 +1216,16 @@ setup_tls() {
     files)
       step "Certificate"
       use_existing_cert
+      return 0
+      ;;
+    ip)
+      step "Certificate for $ACME_IP"
+      issue_ip_certificate || {
+        warn "continuing without a certificate — the panel will serve plain HTTP"
+        warn "check that port 80 is open, then run: w-ui  → 20 → 6"
+        TLS_MODE=none
+        TLS_CERT=""; TLS_KEY=""
+      }
       return 0
       ;;
     acme)
@@ -1218,12 +1272,121 @@ use_existing_cert() {
   warn "  restart the panel, or grant $SERVICE_USER read access to the original"
 }
 
-# A free certificate from Let's Encrypt, over the HTTP-01 challenge.
-#
-# The challenge needs port 80 for a few seconds. If another project is already
-# serving on 80 this does not stop it — it asks for that server's document root
-# and drops the challenge file there instead, which is the one way to get a
-# certificate without interrupting a site that is already running.
+# ── acme.sh ──────────────────────────────────────────────────────────────────
+# A fixed home rather than $HOME. Under `sudo bash` the environment often
+# still carries the calling user's home, so acme.sh would install itself
+# into their directory while its renewal runs as root — and a later run of
+# this installer would not find it there.
+ACME_HOME="$( { getent passwd root 2>/dev/null || true; } | cut -d: -f6)"
+ACME_HOME="${ACME_HOME:-/root}/.acme.sh"
+acme() { "$ACME_HOME/acme.sh" --home "$ACME_HOME" "$@"; }
+
+install_acme() {
+  [[ -x "$ACME_HOME/acme.sh" ]] && return 0
+  info "installing acme.sh"
+  curl -fsSL --max-time 60 https://get.acme.sh -o /tmp/get-acme.sh || {
+    warn "could not download acme.sh"; return 1; }
+  ( HOME="${ACME_HOME%/.acme.sh}" sh /tmp/get-acme.sh --home "$ACME_HOME" ${ACME_EMAIL:+--accountemail "$ACME_EMAIL"} >/dev/null 2>&1 )
+  rm -f /tmp/get-acme.sh
+  [[ -x "$ACME_HOME/acme.sh" ]] || { warn "acme.sh is not installed"; return 1; }
+  # Let's Encrypt by name. acme.sh defaults to a different authority, and an
+  # operator who was told "Let's Encrypt" should get Let's Encrypt.
+  acme --set-default-ca --server letsencrypt >/dev/null 2>&1
+  return 0
+}
+
+# Renewal must happen with nobody watching, or the certificate expires and
+# the panel goes dark. acme.sh renews from a cron entry -- which is nothing
+# on the many small images that ship without a cron daemon. So a systemd
+# timer runs its renewal check every six hours as well; the two are harmless
+# together, since acme.sh only renews what is due. Six hours, not a day: an
+# address certificate lives six days and is renewed at six, and a daily
+# check could miss the window.
+ensure_renewal() {
+  acme --install-cronjob >/dev/null 2>&1 || true
+
+  cat > /etc/systemd/system/wui-cert-renew.service <<UNIT
+[Unit]
+Description=W-UI certificate renewal (acme.sh)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=${ACME_HOME%/.acme.sh}
+ExecStart=$ACME_HOME/acme.sh --cron --home $ACME_HOME
+UNIT
+  cat > /etc/systemd/system/wui-cert-renew.timer <<UNIT
+[Unit]
+Description=W-UI certificate renewal check, every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  if systemctl enable --now wui-cert-renew.timer >/dev/null 2>&1; then
+    ok "renewal timer installed (wui-cert-renew.timer, every 6 hours)"
+  else
+    warn "could not enable the renewal timer; acme.sh's own cron entry is the fallback"
+  fi
+}
+
+# The port the HTTP-01 challenge answers on. Let's Encrypt always knocks on
+# 80; when something else already holds it, the operator can forward 80 to
+# another port and name it here, as 3x-ui's installer allows.
+acme_http_port() {
+  ACME_HTTP_PORT=80
+  if ! port_taken 80; then return 0; fi
+  local who; who="$(port_owner 80)"
+  warn "port 80 is already served by $who"
+  if [[ "$INTERACTIVE" != 1 ]]; then
+    warn "no terminal to ask for another port — skipping the certificate"
+    return 1
+  fi
+  local alt
+  ask alt "Another port for the ACME listener (forward external 80 to it; blank to give up)" ""
+  [[ -n "$alt" ]] || return 1
+  [[ "$alt" =~ ^[0-9]+$ ]] && (( alt >= 1 && alt <= 65535 )) || { warn "not a port"; return 1; }
+  port_taken "$alt" && { warn "port $alt is taken too"; return 1; }
+  ACME_HTTP_PORT="$alt"
+  info "reminder: Let's Encrypt still reaches port 80; forward external port 80 to $alt for validation"
+  return 0
+}
+
+# Put an issued certificate where the panel's own account can read it, and
+# keep it there across renewals. No restart in the reload command: the panel
+# re-reads the files itself when they change.
+install_cert_files() {
+  local name="$1" dir="$CERT_DIR/$1"
+  shift
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$CERT_DIR"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$dir"
+  acme --install-cert "$@" \
+    --fullchain-file "$dir/fullchain.pem" \
+    --key-file "$dir/privkey.pem" \
+    --reloadcmd "chown $SERVICE_USER:$SERVICE_USER $dir/fullchain.pem $dir/privkey.pem; chmod 600 $dir/privkey.pem" \
+    >/dev/null 2>&1 || true
+  [[ -s "$dir/fullchain.pem" && -s "$dir/privkey.pem" ]] || {
+    warn "the certificate was issued but could not be installed"; return 1; }
+  chown "$SERVICE_USER:$SERVICE_USER" "$dir/fullchain.pem" "$dir/privkey.pem"
+  chmod 644 "$dir/fullchain.pem"
+  chmod 600 "$dir/privkey.pem"
+  TLS_CERT="$dir/fullchain.pem"
+  TLS_KEY="$dir/privkey.pem"
+  ACME_METHOD=standalone
+  ensure_renewal
+  ok "issued and installed in $dir"
+  ok "renewal is automatic; the panel picks the new certificate up by itself"
+  warn "renewal needs port 80 reachable again; keep it open"
+  return 0
+}
+
+# A free certificate from Let's Encrypt for a domain, over the HTTP-01
+# challenge on the standalone listener, as 3x-ui's installer gets one.
 issue_certificate() {
   if ! domain_points_here "$ACME_DOMAIN"; then
     warn "$ACME_DOMAIN does not resolve to this server's address"
@@ -1234,291 +1397,49 @@ issue_certificate() {
       warn "trying anyway"
     fi
   fi
+  acme_http_port || return 1
+  pkg_install socat || warn "socat is missing; the standalone challenge may not work"
+  install_acme || return 1
 
-  # A machine that already has a web server in front is not a machine to take
-  # port 80 from. Going through the proxy is better in every direction: no
-  # outage for the sites already on it, one certificate manager instead of two,
-  # and a panel that is not exposed on a public port at all.
-  if [[ "$(proxy_on_80 2>/dev/null)" == nginx ]]; then
-    info "nginx is already serving port 80 on this machine"
-    info "the panel will sit behind it rather than taking the port"
-    issue_via_nginx && return 0
-    warn "could not put the panel behind nginx"
-    return 1
-  fi
-
-  local method="standalone" webroot=""
-  if port_taken 80; then
-    local who; who="$(port_owner 80)"
-    warn "port 80 is already served by $who"
-    info "that service is left running — the challenge can go through it instead"
-    if [[ "$INTERACTIVE" == 1 ]]; then
-      info "give the document root it serves for $ACME_DOMAIN, or leave blank to give up"
-      ask webroot "Document root" ""
-      [[ -n "$webroot" && -d "$webroot" ]] || {
-        warn "no usable document root — skipping the certificate"
-        return 1
-      }
-      method="webroot"
-    else
-      warn "no terminal to ask for a document root — skipping the certificate"
-      return 1
-    fi
-  fi
-
-  # Only the standalone challenge needs it, and only now that we know that is
-  # the route being taken.
-  [[ "$method" == standalone ]] && { pkg_install socat || warn "socat is missing; the standalone challenge may not work"; }
-
-  # A fixed home rather than $HOME. Under `sudo bash` the environment often
-  # still carries the calling user's home, so acme.sh would install itself
-  # into their directory while its renewal cron runs as root — and a later
-  # run of this installer would not find it there.
-  local acme_home
-  acme_home="$(getent passwd root 2>/dev/null | cut -d: -f6)"
-  acme_home="${acme_home:-/root}/.acme.sh"
-  local acme="$acme_home/acme.sh"
-
-  if [[ ! -x "$acme" ]]; then
-    info "installing acme.sh"
-    curl -fsSL --max-time 60 https://get.acme.sh -o /tmp/get-acme.sh || {
-      warn "could not download acme.sh"; return 1; }
-    ( HOME="${acme_home%/.acme.sh}" sh /tmp/get-acme.sh --home "$acme_home" ${ACME_EMAIL:+--accountemail "$ACME_EMAIL"} >/dev/null 2>&1 )
-    rm -f /tmp/get-acme.sh
-  fi
-  [[ -x "$acme" ]] || { warn "acme.sh is not installed"; return 1; }
-
-  # Let's Encrypt by name. acme.sh defaults to a different authority, and an
-  # operator who was told "Let's Encrypt" should get Let's Encrypt.
-  "$acme" --set-default-ca --server letsencrypt >/dev/null 2>&1
+  local listen=""
+  ip -4 addr show scope global 2>/dev/null | grep -q "inet " || listen="--listen-v6"
 
   info "asking Let's Encrypt for a certificate (this takes a moment)"
   local out
-  if [[ "$method" == webroot ]]; then
-    out=$("$acme" --issue -d "$ACME_DOMAIN" --webroot "$webroot" --keylength ec-256 2>&1) || true
-  else
-    out=$("$acme" --issue -d "$ACME_DOMAIN" --standalone --keylength ec-256 2>&1) || true
-  fi
-
-  if ! "$acme" --list 2>/dev/null | grep -q "^$ACME_DOMAIN"; then
+  out=$(acme --issue -d "$ACME_DOMAIN" $listen --standalone --httpport "$ACME_HTTP_PORT" --keylength ec-256 --force 2>&1) || true
+  if ! acme --list 2>/dev/null | awk '{print $1}' | grep -Fxq "$ACME_DOMAIN"; then
     warn "the certificate was not issued"
     # The operator needs the authority's own words, not a summary of them.
     printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
+    rm -rf "$ACME_HOME/$ACME_DOMAIN" "$ACME_HOME/${ACME_DOMAIN}_ecc"
     return 1
   fi
-
-  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$CERT_DIR"
-  "$acme" --install-cert -d "$ACME_DOMAIN" --ecc \
-    --fullchain-file "$CERT_DIR/panel.crt" \
-    --key-file "$CERT_DIR/panel.key" \
-    --reloadcmd "chown $SERVICE_USER:$SERVICE_USER $CERT_DIR/panel.crt $CERT_DIR/panel.key; chmod 640 $CERT_DIR/panel.key" \
-    >/dev/null 2>&1 || { warn "the certificate was issued but could not be installed"; return 1; }
-  # No restart in the reload command: the panel re-reads the files itself
-  # when they change, and a restart would drop every tunnel for nothing.
-
-  ensure_renewal "$acme_home"
-
-  chown "$SERVICE_USER:$SERVICE_USER" "$CERT_DIR/panel.crt" "$CERT_DIR/panel.key"
-  chmod 640 "$CERT_DIR/panel.key"
-  chmod 644 "$CERT_DIR/panel.crt"
-
-  TLS_CERT="$CERT_DIR/panel.crt"
-  TLS_KEY="$CERT_DIR/panel.key"
-  ACME_METHOD="$method"
-
-  ok "issued and installed"
-  ok "renewal is automatic; the panel picks the new certificate up by itself"
-  if [[ "$method" == standalone ]]; then
-    # Renewal binds port 80 again in sixty days. An operator who closes it, or
-    # who later puts a web server there, gets an expired certificate and no
-    # warning — so it is said once, now, while it can still be written down.
-    warn "renewal needs port 80 free again in ~60 days"
-  fi
-  return 0
+  install_cert_files "$ACME_DOMAIN" -d "$ACME_DOMAIN" --ecc
 }
 
-# Renewal must happen with nobody watching, or the certificate expires in
-# ninety days and the panel goes dark. acme.sh renews from a cron entry --
-# which is nothing on the many small images that ship without a cron
-# daemon. So a systemd timer runs its renewal check daily as well; the two
-# are harmless together, since acme.sh only renews what is due.
-ensure_renewal() {
-  local acme_home="$1"
-  "$acme_home/acme.sh" --install-cronjob --home "$acme_home" >/dev/null 2>&1 || true
+# A certificate for the address itself: Let's Encrypt's short-lived profile,
+# valid six days and renewed by the timer, so the panel is on HTTPS with no
+# domain at all -- what 3x-ui's installer does by default.
+issue_ip_certificate() {
+  acme_http_port || return 1
+  pkg_install socat || warn "socat is missing; the standalone challenge may not work"
+  install_acme || return 1
 
-  cat > /etc/systemd/system/wui-cert-renew.service <<UNIT
-[Unit]
-Description=W-UI certificate renewal (acme.sh)
-After=network-online.target
+  local args=(-d "$ACME_IP")
+  [[ -n "$ACME_IPV6" && "$ACME_IPV6" == *:* ]] && args+=(-d "$ACME_IPV6")
 
-[Service]
-Type=oneshot
-Environment=HOME=${acme_home%/.acme.sh}
-ExecStart=$acme_home/acme.sh --cron --home $acme_home
-UNIT
-  cat > /etc/systemd/system/wui-cert-renew.timer <<UNIT
-[Unit]
-Description=Daily W-UI certificate renewal check
-
-[Timer]
-OnCalendar=daily
-RandomizedDelaySec=6h
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-  systemctl daemon-reload
-  if systemctl enable --now wui-cert-renew.timer >/dev/null 2>&1; then
-    ok "renewal timer installed (wui-cert-renew.timer, daily)"
-  else
-    warn "could not enable the renewal timer; acme.sh's own cron entry is the fallback"
-  fi
-}
-
-# ── sitting behind a proxy that is already here ──────────────────────────────
-# A server that already runs nginx on port 80 and 443 is the common case, not
-# the exception: it has other sites on it, a certbot that renews them, and an
-# operator who will not thank anyone for a panel that took port 80 away to run
-# its own ACME challenge.
-#
-# So when nginx is found holding port 80, the panel does not compete with it. It
-# binds to localhost, a new server block is added for the panel's domain, and
-# the certificate is obtained with the certbot that is already managing every
-# other certificate on the machine. Nothing that was already configured is read,
-# rewritten or reloaded out from under itself -- one new file, checked before it
-# is allowed to take effect.
-
-# Which reverse proxy, if any, owns port 80.
-proxy_on_80() {
-  port_taken 80 || return 1
-  case "$(port_owner 80)" in
-    nginx) printf 'nginx'; return 0 ;;
-    apache2|httpd) printf 'apache'; return 0 ;;
-    caddy) printf 'caddy'; return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-# The panel's own nginx site. Its own file, so removing the panel is removing
-# one file and nothing of anybody else's is involved.
-NGINX_SITE=""
-
-# Put the panel behind the nginx that is already running.
-#
-# Returns non-zero without having changed anything that matters if it cannot
-# finish, so the caller can fall back to serving plain HTTP rather than leaving
-# a half-configured web server behind.
-issue_via_nginx() {
-  local avail="/etc/nginx/sites-available" enabled="/etc/nginx/sites-enabled"
-  if [[ ! -d "$avail" || ! -d "$enabled" ]]; then
-    # A distribution that does not use the sites-available layout. conf.d is
-    # the other convention and is read by every nginx build.
-    avail="/etc/nginx/conf.d"; enabled=""
-    [[ -d "$avail" ]] || { warn "cannot find nginx's configuration directory"; return 1; }
-  fi
-
-  have certbot || pkg_install certbot python3-certbot-nginx || {
-    warn "could not install certbot"; return 1; }
-  certbot plugins --non-interactive 2>/dev/null | grep -q '^\* nginx' || {
-    warn "certbot has no nginx plugin here; install python3-certbot-nginx"; return 1; }
-
-  local site="$avail/wui-panel"
-  [[ "$avail" == */conf.d ]] && site="$avail/wui-panel.conf"
-
-  if [[ -e "$site" ]]; then
-    # A previous run's file. Ours to replace; anybody else's would not be
-    # called this.
-    info "replacing the panel's own nginx site"
-  fi
-
-  # Plain HTTP only, on purpose. certbot adds the TLS half itself, the same way
-  # it did for every other site here, so renewal keeps working through the same
-  # mechanism instead of a second one nobody remembers.
-  cat >"$site" <<NGINXSITE
-# W-UI panel. Written by the W-UI installer; safe to delete with the panel.
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $ACME_DOMAIN;
-
-    # The panel is the only thing on this name, so everything goes through.
-    location / {
-        proxy_pass         http://127.0.0.1:$PANEL_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              \$host;
-        proxy_set_header   X-Real-IP         \$remote_addr;
-        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
-
-        # The overview polls, and a configuration download can be slow on a
-        # busy node. Neither should be cut off by the proxy.
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-
-        # Buffering off: the panel streams its own responses and an operator
-        # watching a live figure should see it move.
-        proxy_buffering off;
-    }
-
-    # QR codes and configuration files.
-    client_max_body_size 16m;
-}
-NGINXSITE
-
-  if [[ -n "$enabled" ]]; then
-    ln -sfn "$site" "$enabled/$(basename "$site")"
-  fi
-
-  # Checked before it is allowed anywhere near a running web server. A syntax
-  # error here would take every other site on this machine down with it, and
-  # this installer's whole promise is that it does not do that.
-  if ! nginx -t >/tmp/wui-nginx.err 2>&1; then
-    warn "the panel's nginx site did not pass nginx -t; removing it"
-    sed 's/^/      /' /tmp/wui-nginx.err | head -6
-    rm -f "$site"
-    [[ -n "$enabled" ]] && rm -f "$enabled/$(basename "$site")"
-    nginx -t >/dev/null 2>&1 || warn "nginx was already failing its own config test before this"
-    return 1
-  fi
-  rm -f /tmp/wui-nginx.err
-
-  systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || {
-    warn "nginx would not reload"; return 1; }
-  NGINX_SITE="$site"
-  ok "nginx now serves $ACME_DOMAIN on port 80"
-
-  # certbot is pointed at this one name, so it edits this one server block.
-  info "asking certbot for a certificate (this takes a moment)"
+  info "asking Let's Encrypt for a 6-day certificate for $ACME_IP (this takes a moment)"
   local out
-  out=$(certbot --nginx -d "$ACME_DOMAIN" --non-interactive --agree-tos --redirect \
-        ${ACME_EMAIL:+-m "$ACME_EMAIL"} ${ACME_EMAIL:+--no-eff-email} 2>&1) || true
-
-  if [[ ! -s "/etc/letsencrypt/live/$ACME_DOMAIN/fullchain.pem" ]]; then
-    warn "certbot did not issue a certificate"
+  out=$(acme --issue "${args[@]}" --standalone --server letsencrypt \
+    --certificate-profile shortlived --days 6 --httpport "$ACME_HTTP_PORT" --force 2>&1) || true
+  if ! acme --list 2>/dev/null | awk '{print $1}' | grep -Fxq "$ACME_IP"; then
+    warn "the certificate was not issued"
     printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
-    warn "the panel is still reachable over plain HTTP at http://$ACME_DOMAIN/"
-    # The site stays: it works, it just has no TLS yet. Removing it would
-    # leave the operator with nothing at all.
-    TLS_MODE=proxy_plain
-    LISTEN_ADDR=127.0.0.1
-    return 0
+    rm -rf "$ACME_HOME/$ACME_IP" "$ACME_HOME/${ACME_IP}_ecc"
+    [[ -n "$ACME_IPV6" ]] && rm -rf "$ACME_HOME/$ACME_IPV6" "$ACME_HOME/${ACME_IPV6}_ecc"
+    return 1
   fi
-
-  ok "certificate issued; nginx serves https://$ACME_DOMAIN"
-  # certbot's own timer does the renewing. Debian enables it on install;
-  # RHEL ships it disabled, under another name, and nobody notices until
-  # the day the certificate lapses.
-  systemctl enable --now certbot.timer >/dev/null 2>&1     || systemctl enable --now certbot-renew.timer >/dev/null 2>&1     || warn "certbot's renewal timer could not be enabled; check 'systemctl list-timers'"
-  ok "renewal is certbot's, alongside every other certificate on this server"
-
-  # The panel itself speaks plain HTTP to nginx over the loopback and is not
-  # reachable from outside at all. Its own TLS support is for servers that have
-  # no proxy in front of them.
-  TLS_MODE=proxy
-  LISTEN_ADDR=127.0.0.1
-  TLS_CERT=""; TLS_KEY=""
-  return 0
+  install_cert_files ip -d "$ACME_IP" --ecc
 }
 
 # ── the administrator ────────────────────────────────────────────────────────
@@ -1702,6 +1623,7 @@ $BASE_ENV$TLS_ENV
 EnvironmentFile=-$CONF_DIR/wui.env
 
 ExecStart=$BIN_PATH
+ExecReload=/bin/kill -HUP \$MAINPID
 WorkingDirectory=$DATA_DIR
 
 Restart=always
@@ -1825,16 +1747,13 @@ summary() {
   scheme=http; host="$ip"; local port=":$PANEL_PORT"
   if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then scheme=https; fi
   [[ "$TLS_MODE" == acme && -n "$ACME_DOMAIN" ]] && host="$ACME_DOMAIN"
+  [[ "$TLS_MODE" == ip && -n "$ACME_IP" ]] && host="$ACME_IP"
+  [[ "$TLS_MODE" == files && -n "$TLS_DOMAIN" ]] && host="$TLS_DOMAIN"
 
   # Behind a proxy the panel's own port is not the address anybody uses: nginx
   # answers on 443 for the domain and reaches the panel over the loopback.
   # Printing the panel's port here would hand the operator a URL that is
   # firewalled off from the internet.
-  case "$TLS_MODE" in
-    proxy)       scheme=https; host="$ACME_DOMAIN"; port="" ;;
-    proxy_plain) scheme=http;  host="$ACME_DOMAIN"; port="" ;;
-  esac
-
   printf '\n%s────────────────────────────────────────────────────────────%s\n' "$D" "$N"
   printf '  %sW-UI is installed%s\n\n' "$B" "$N"
   local shown_path="/"
@@ -1873,9 +1792,8 @@ summary() {
   printf '    URL path     %s\n' "$([[ -n "$BASE_PATH" ]] && echo "$shown_path — nothing else on this address answers" || echo 'none (the panel is at the root)')"
   case "$TLS_MODE" in
     acme)  printf "    certificate  Let%ss Encrypt, renews itself\n" "'" ;;
+    ip)    printf "    certificate  Let%ss Encrypt for %s, 6 days, renews itself every 6 hours\n" "'" "$ACME_IP" ;;
     files) printf '    certificate  yours, at %s\n' "$TLS_CERT" ;;
-    proxy) printf '    certificate  certbot, through the nginx already on this server\n' ;;
-    proxy_plain) printf '    certificate  %snone yet — nginx serves the panel over plain HTTP%s\n' "$Y" "$N" ;;
     *)     printf '    certificate  %snone — this panel serves plain HTTP%s\n' "$Y" "$N" ;;
   esac
 

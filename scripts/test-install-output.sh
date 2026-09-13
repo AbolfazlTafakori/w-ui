@@ -98,20 +98,19 @@ yes_ "https://203.0.113.9:8443" "$s" "https on the address"
 yes_ "yours, at /srv/certs/live.pem" "$s" "and named as their own file"
 
 echo
-echo "── behind a proxy, the panel's own port is not the address ────────────"
+echo "── a certificate for the address itself: https, on the one port ───────"
+s=$(ACME_IP=203.0.113.9 summary_of ip "" /etc/wui/certs/ip/fullchain.pem "p" 0 secretPath)
+yes_ "https://203.0.113.9:8443/secretPath/" "$s" "https on the address, on the panel's own port"
+yes_ "6 days, renews itself" "$s" "and the operator is told it is a six-day certificate that renews"
+
+echo
+echo "── plain HTTP on the loopback is said to be reachable only from here ───"
 u=$(unit_with "" "" 39001 secretPath 127.0.0.1)
 yes_ "Environment=WUI_LISTEN=127.0.0.1:39001" "$u" "the service binds the loopback, not every interface"
 no_  "WUI_TLS_CERT" "$u" "and terminates no TLS of its own"
-
-s=$(summary_of proxy wui.example.com "" "Chosen-Pass-1" 0 secretPath 127.0.0.1)
-yes_ "https://wui.example.com/secretPath/" "$s" "the address is the domain nginx answers on"
-no_  ":39001" "$s" "the panel's own port is not offered — it is firewalled off by design"
-yes_ "127.0.0.1 only" "$s" "and the operator is told it listens on the loopback"
-yes_ "certbot, through the nginx already on this server" "$s" "the certificate is named as certbot's, not a second one"
-
-s=$(summary_of proxy_plain wui.example.com "" "p" 0 secretPath 127.0.0.1)
-yes_ "http://wui.example.com/secretPath/" "$s" "a proxy with no certificate yet is reported over http"
-yes_ "nginx serves the panel over plain HTTP" "$s" "and said plainly"
+yes_ "ExecReload=/bin/kill -HUP" "$u" "reload restarts the tunnels without stopping the panel"
+s=$(summary_of none "" "" "p" 0 secretPath 127.0.0.1)
+yes_ "127.0.0.1 only" "$s" "the operator is told it listens on the loopback"
 
 fw() {
   (

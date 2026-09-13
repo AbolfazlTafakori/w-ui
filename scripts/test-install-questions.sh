@@ -64,8 +64,8 @@ run_wizard() {
   )
 }
 
-# Nine blank lines: port? path? credentials? certificate? domain? loopback?
-# openvpn? amneziawg? confirm?
+# Nine blank lines: port? path? credentials? certificate (2: the address)?
+# is that the address? ipv6? openvpn? amneziawg? confirm?
 ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n'
 
 echo
@@ -86,7 +86,7 @@ truth "the administrator is not called admin" \
 truth "the administrator name is generated, not typed" \
       "$([[ ${#user} -ge 8 ]] && echo 1)" "name was ${#user} characters: $user"
 check "no password is chosen here; one is generated at install time" "" "$(field PASS "$out")"
-check "a blank domain lands on plain HTTP, not a dead end" "none" "$(field MODE "$out")"
+check "the default is a certificate for the address, as 3x-ui's is" "ip" "$(field MODE "$out")"
 
 echo
 echo "── and the next install is not the same install ───────────────────────"
@@ -125,7 +125,7 @@ out=$(run_wizard "y
 9000
 n
 n
-3
+4
 n
 y
 y
@@ -138,7 +138,7 @@ out=$(run_wizard "n
 y
 
 n
-3
+4
 n
 y
 y
@@ -150,7 +150,7 @@ echo "── plain HTTP can be shut in to the loopback, and nothing is then open
 out=$(run_wizard "n
 n
 n
-3
+4
 y
 y
 y
@@ -159,7 +159,7 @@ check "binds to the loopback when asked"  "127.0.0.1" "$(field LISTEN "$out")"
 out=$(run_wizard "n
 n
 n
-3
+4
 n
 y
 y
@@ -200,7 +200,7 @@ firstpassword
 secondpassword
 matching-one
 matching-one
-3
+4
 n
 y
 y
@@ -216,7 +216,7 @@ admin
 short
 longenough1
 longenough1
-3
+4
 n
 y
 y
@@ -241,8 +241,9 @@ out=$(
   set +e
   # shellcheck disable=SC1091
   WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
-  printf 'n\nn\nn\n3\nn\ny\ny\nn\n' >"$WORK/answers"
+  printf 'n\nn\nn\n4\nn\ny\ny\nn\n' >"$WORK/answers"
   open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
+  public_ip() { printf '203.0.113.5'; }
   have() { return 1; }
   port_taken() { return 1; }
   die() { printf 'CANCELLED: %s\n' "$*"; exit 9; }

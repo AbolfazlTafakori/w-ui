@@ -8,7 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +67,8 @@ Usage:
   wui setting show --json          the same, as JSON
   wui setting set [flags]          change where the panel answers (applied
                                    at the next start)
+  wui setting reset                forget every panel setting; the admin
+                                   account and the customers are kept
   wui admin reset [flags]          reset the administrator account
   wui version                      print the version
   wui keygen                       make a release-signing key pair
@@ -122,6 +126,9 @@ func cmdSetting(args []string) error {
 	if sub == "set" {
 		return cmdSettingSet(args)
 	}
+	if sub == "reset" {
+		return cmdSettingReset()
+	}
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("setting: %w", err)
 	}
@@ -132,6 +139,31 @@ func cmdSetting(args []string) error {
 	db, cfg, err := openDatabase()
 	if err != nil {
 		return err
+	}
+
+	// What the panel actually answers on: the settings page's values win
+	// over the environment at start, so they are what is shown.
+	stored, _ := service.NewSettings(db, cfg.DefaultLocale).Get(context.Background())
+	if stored.WebListen != "" || stored.WebPort > 0 {
+		host := stored.WebListen
+		port := stored.WebPort
+		if port == 0 {
+			port = 2096
+		}
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		cfg.Listen = host + ":" + strconv.Itoa(port)
+	}
+	if stored.WebBasePath != "" {
+		cfg.BasePath = stored.WebBasePath
+	}
+	if stored.WebCertFile != "" && stored.WebKeyFile != "" {
+		cfg.TLSCert, cfg.TLSKey = stored.WebCertFile, stored.WebKeyFile
+	}
+	listenIP, _, _ := net.SplitHostPort(cfg.Listen)
+	if listenIP == "" {
+		listenIP = "0.0.0.0"
 	}
 
 	// Find rather than First: an install with no administrator yet is a normal
@@ -168,13 +200,12 @@ func cmdSetting(args []string) error {
 	}
 
 	fmt.Printf("listen: %s\n", cfg.Listen)
+	fmt.Printf("listenIP: %s\n", listenIP)
 	fmt.Printf("port: %s\n", portOf(cfg.Listen))
 	fmt.Printf("basePath: %s\n", cfg.BasePath)
 	fmt.Printf("scheme: %s\n", cfg.Scheme())
-	if cfg.TLS() {
-		fmt.Printf("tlsCert: %s\n", cfg.TLSCert)
-		fmt.Printf("tlsKey: %s\n", cfg.TLSKey)
-	}
+	fmt.Printf("cert: %s\n", cfg.TLSCert)
+	fmt.Printf("key: %s\n", cfg.TLSKey)
 	fmt.Printf("dataDir: %s\n", cfg.DataDir)
 	fmt.Printf("dbDriver: %s\n", cfg.DBDriver)
 	fmt.Printf("dbSource: %s\n", cfg.DBSource)
@@ -187,6 +218,22 @@ func cmdSetting(args []string) error {
 	fmt.Printf("clients: %d\n", c.Clients)
 	fmt.Printf("activeClients: %d\n", c.Active)
 	fmt.Printf("accounts: %d\n", c.Accounts)
+	return nil
+}
+
+// cmdSettingReset forgets every panel setting -- port, path, certificate,
+// session length, defaults -- and leaves the administrator and every
+// customer alone, as `x-ui setting -reset` does.
+func cmdSettingReset() error {
+	db, _, err := openDatabase()
+	if err != nil {
+		return err
+	}
+	res := db.Where("key LIKE ?", "panel.%").Delete(&model.Setting{})
+	if res.Error != nil {
+		return res.Error
+	}
+	fmt.Printf("reset %d panel settings; the environment's values apply from the next start\n", res.RowsAffected)
 	return nil
 }
 

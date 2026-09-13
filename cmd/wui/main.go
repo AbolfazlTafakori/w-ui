@@ -361,6 +361,44 @@ func run() error {
 
 	notifier.Start(ctx)
 
+	// Every tunnel brought up again from its stored configuration: what
+	// 3x-ui's "restart xray" is here. The bot offers it, and so does
+	// `systemctl reload wui`, which sends SIGHUP.
+	restartTunnels := func(ctx context.Context) error {
+		var ifaces []model.Interface
+		if err := db.WithContext(ctx).Where("enabled = ? AND node_id = ?", true, local.ID).Find(&ifaces).Error; err != nil {
+			return err
+		}
+		var failed []string
+		for i := range ifaces {
+			if err := pool.Open(ctx, &ifaces[i]); err != nil {
+				failed = append(failed, ifaces[i].Name+": "+err.Error())
+			}
+		}
+		if len(failed) > 0 {
+			return errors.New(strings.Join(failed, "; "))
+		}
+		return nil
+	}
+	go func() {
+		hup := make(chan os.Signal, 1)
+		signal.Notify(hup, syscall.SIGHUP)
+		defer signal.Stop(hup)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-hup:
+				log.Info("reload requested: restarting every tunnel")
+				if err := restartTunnels(ctx); err != nil {
+					log.Error("tunnel restart", "error", err)
+				} else {
+					log.Info("every tunnel restarted")
+				}
+			}
+		}
+	}()
+
 	// The Telegram bot: the same chat the notifications go to answers
 	// questions and takes orders, as 3x-ui's bot does.
 	go tgbot.New(tgbot.Deps{
@@ -384,22 +422,7 @@ func run() error {
 			data, err := io.ReadAll(f)
 			return a.Name, data, err
 		},
-		Restart: func(ctx context.Context) error {
-			var ifaces []model.Interface
-			if err := db.WithContext(ctx).Where("enabled = ? AND node_id = ?", true, local.ID).Find(&ifaces).Error; err != nil {
-				return err
-			}
-			var failed []string
-			for i := range ifaces {
-				if err := pool.Open(ctx, &ifaces[i]); err != nil {
-					failed = append(failed, ifaces[i].Name+": "+err.Error())
-				}
-			}
-			if len(failed) > 0 {
-				return errors.New(strings.Join(failed, "; "))
-			}
-			return nil
-		},
+		Restart: restartTunnels,
 		LoginFailures: func() []string {
 			var out []string
 			for _, e := range logger.Recent.Recent(200, "warn", "request") {

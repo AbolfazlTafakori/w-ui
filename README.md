@@ -194,84 +194,86 @@ arguments opens a menu:
 
 ```
 ╔────────────────────────────────────────────────╗
-│  W-UI · WireGuard & OpenVPN Panel              │
-│   0. Exit Script                               │
+│  W-UI Panel Management Script                  │
+│  0. Exit Script                                │
 │────────────────────────────────────────────────│
-│  📦  1. Install                                │
-│  🔃  2. Update                                 │
-│  📜  3. Update This Menu                       │
-│  🧹  4. Uninstall                              │
+│  1. Install                                    │
+│  2. Update                                     │
+│  3. Update to Dev Channel (latest commit)      │
+│  4. Update Menu                                │
+│  5. Legacy Version                             │
+│  6. Uninstall                                  │
 │────────────────────────────────────────────────│
-│  🔑  5. Reset Admin Password                   │
-│  🔧  6. Settings                               │
-│  🔌  7. Change Panel Port                      │
-│  📋  8. View Current Settings                  │
+│  7. Reset Username & Password                  │
+│  8. Reset Web Base Path                        │
+│  9. Reset Settings                             │
+│  10. Change Port                               │
+│  11. View Current Settings                     │
 │────────────────────────────────────────────────│
-│  🟢  9. Start                                  │
-│  🔴 10. Stop                                   │
-│  🔄 11. Restart                                │
-│  📊 12. Check Status                           │
-│  📁 13. Logs Management                        │
+│  12. Start                                     │
+│  13. Stop                                      │
+│  14. Restart                                   │
+│  15. Restart Tunnels                           │
+│  16. Check Status                              │
+│  17. Logs Management                           │
 │────────────────────────────────────────────────│
-│  ✅ 14. Enable Autostart                       │
-│  ❌ 15. Disable Autostart                      │
+│  18. Enable Autostart                          │
+│  19. Disable Autostart                         │
 │────────────────────────────────────────────────│
-│  🧱 16. Enforcement Diagnostics                │
-│  🌐 17. Interface Overview                     │
-│  👥 18. Customer Summary                       │
-│  🔥 19. Firewall Management                    │
-│  🔒 20. SSL Certificate Management             │
+│  20. SSL Certificate Management                │
+│  21. Cloudflare SSL Certificate                │
+│  22. IP Limit Management                       │
+│  23. Firewall Management                       │
+│  24. SSH Port Forwarding Management            │
+│  25. Backup & Restore                          │
 │────────────────────────────────────────────────│
-│  💾 21. Backup & Restore                       │
-│  🚀 22. Enable BBR                             │
-│  📡 23. Speedtest by Ookla                     │
+│  26. Enable BBR                                │
+│  27. Update Geo Files                          │
+│  28. Speedtest by Ookla                        │
 ╚────────────────────────────────────────────────╝
 
 Panel state: Running
-Autostart:   Yes
-WireGuard:   v1.0.20210914 + amnezia
-OpenVPN:     2.6.19
-Enforcement: Exact (kernel quota)
+Start automatically: Yes
+WireGuard wgir (udp/443): Running
+OpenVPN ovpn443 (tcp/443): Running
 ```
 
-The status block under the menu is the point of it. **Enforcement** is the line
-that matters commercially: it says whether data limits are being applied by the
-kernel or only on the next poll, so you find out before a customer does.
+The menu is laid out the way 3x-ui's is, number for number, so anyone who has
+run that panel already knows this one. Anything the script needs from the
+database it asks the panel binary for, rather than reading SQLite from a
+shell — the schema has one implementation.
 
-Anything the script needs from the database it asks the panel binary for, rather
-than reading SQLite from a shell — the schema has one implementation.
+### Certificates (option 20)
 
-### Settings (option 6)
-
-Every value the panel reads at startup can be set from here, with the current
-value shown beside each one. Each change writes a single key to
-`/etc/wui/wui.env` and offers a restart, since none of them take effect until
-the process re-reads its configuration.
-
-Listen address · panel port · data directory · collection interval · default
-language · log level · log format · database source · show the environment
-file · reset everything to defaults.
-
-Resetting clears that file only — customers, interfaces, keys and usage are
-untouched.
+Get SSL for a domain (90 days) or for the server's own address (Let's Encrypt's
+six-day certificate, which needs no domain at all), revoke, force a renewal,
+list what is installed, or hand the panel a certificate you already have.
+Renewal is unattended: acme.sh's cron entry plus a systemd timer
+(`wui-cert-renew.timer`, every six hours), and the panel re-reads the files when
+they change, so nothing restarts. Whatever is chosen, the panel stays on the one
+port — the address and the domain reach it the same way.
 
 ### Without the menu
 
 ```bash
 w-ui start | stop | restart | status
+w-ui restart-tunnels           # every tunnel again, panel stays up
 w-ui enable | disable          # start at boot, or not
 w-ui log                       # follow the panel log
+w-ui banlog                    # fail2ban's bans on the sign-in form
 w-ui settings                  # what the panel is actually running with
-w-ui admin                     # reset the administrator account
-w-ui check                     # enforcement diagnostics
-w-ui interfaces                # what is up and how many are connected
-w-ui install | update | uninstall
+w-ui update | update-dev | legacy
+w-ui update-all-geofiles
+w-ui backup
+w-ui install | uninstall
 ```
 
 The panel binary also answers directly, which is what the script uses:
 
 ```bash
 wui setting show [--json]
+wui setting set --listen ADDR --port N --base-path PATH --cert FILE --key FILE
+wui setting reset
 wui admin reset [--username NAME] [--password PASS]
 ```
 
