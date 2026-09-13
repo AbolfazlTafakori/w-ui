@@ -99,6 +99,7 @@ ACME_DOMAIN="${WUI_DOMAIN:-}"
 ACME_IP="${WUI_SERVER_IP:-}"
 ACME_IPV6="${WUI_SSL_IPV6:-}"
 TLS_DOMAIN=""
+TLS_KEPT=0
 ACME_EMAIL="${WUI_ACME_EMAIL:-}"
 ACME_METHOD=""
 # Which address the panel binds to. 127.0.0.1 when something else is
@@ -898,6 +899,18 @@ read_existing() {
   v=$(sed -n 's|^Environment=WUI_BASE_PATH=/\{0,1\}\(.*\)|\1|p' "$UNIT" | head -1)
   v="${v%/}"
   if [[ -n "$v" && "$BASE_KNOWN" == 0 ]]; then BASE_PATH="$v"; BASE_KNOWN=1; fi
+
+  # The certificate it already serves, and the address it binds. An upgrade
+  # that forgot either would put a panel back on plain HTTP, or on every
+  # interface, without anyone having asked.
+  local c k
+  c=$(sed -n 's/^Environment=WUI_TLS_CERT=//p' "$UNIT" | head -1)
+  k=$(sed -n 's/^Environment=WUI_TLS_KEY=//p' "$UNIT" | head -1)
+  if [[ -z "$TLS_MODE" && -z "$TLS_CERT" && -z "$ACME_DOMAIN" && -z "$ACME_IP" && -s "$c" && -s "$k" ]]; then
+    TLS_MODE=files; TLS_CERT="$c"; TLS_KEY="$k"; TLS_KEPT=1
+  fi
+  v=$(sed -n 's/^Environment=WUI_LISTEN=\(.*\):[0-9]\{1,5\}$//p' "$UNIT" | head -1)
+  [[ -n "$v" && "$LISTEN_ADDR" == 0.0.0.0 ]] && LISTEN_ADDR="$v"
 }
 
 # Say plainly what a re-run does, because the wrong idea about it is the one
@@ -1281,6 +1294,10 @@ setup_tls() {
       ;;
     files)
       step "Certificate"
+      if [[ "${TLS_KEPT:-0}" == 1 ]]; then
+        ok "keeping the certificate this install already serves: $TLS_CERT"
+        return 0
+      fi
       use_existing_cert
       return 0
       ;;
