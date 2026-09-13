@@ -909,7 +909,8 @@ read_existing() {
   if [[ -z "$TLS_MODE" && -z "$TLS_CERT" && -z "$ACME_DOMAIN" && -z "$ACME_IP" && -s "$c" && -s "$k" ]]; then
     TLS_MODE=files; TLS_CERT="$c"; TLS_KEY="$k"; TLS_KEPT=1
   fi
-  v=$(sed -n 's/^Environment=WUI_LISTEN=\(.*\):[0-9]\{1,5\}$//p' "$UNIT" | head -1)
+  v=$(sed -n 's/^Environment=WUI_LISTEN=//p' "$UNIT" | head -1)
+  v="${v%:*}"
   [[ -n "$v" && "$LISTEN_ADDR" == 0.0.0.0 ]] && LISTEN_ADDR="$v"
 }
 
