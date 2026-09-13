@@ -98,7 +98,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: Build the panel
-        run: CGO_ENABLED=0 go build -o /tmp/wui ./cmd/wui
+        run: CGO_ENABLED=0 go build -buildvcs=false -o /tmp/wui ./cmd/wui
       - name: Run the installer unattended
         run: |
           bash install.sh --local /tmp/wui -y --no-tls --username ci --password ci-password-12345 2>&1 | tee /tmp/install.log
