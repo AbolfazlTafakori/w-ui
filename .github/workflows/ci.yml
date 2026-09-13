@@ -90,7 +90,7 @@ jobs:
           if command -v apt-get >/dev/null; then
             apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates git sudo >/dev/null
           else
-            dnf install -y -q curl ca-certificates git sudo tar
+            dnf install -y -q --allowerasing curl ca-certificates git sudo tar
           fi
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

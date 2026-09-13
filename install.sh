@@ -319,7 +319,9 @@ ppa_publishes_for_this_release() {
 pkg_install() {
   case "$FAMILY" in
     debian) DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" >/dev/null ;;
-    rhel)   dnf install -y -q "$@" >/dev/null ;;
+    # --allowerasing: RHEL 9 images ship curl-minimal, which conflicts with
+    # the curl package and otherwise stops the whole install at step one.
+    rhel)   dnf install -y -q --allowerasing "$@" >/dev/null ;;
   esac
 }
 
@@ -578,6 +580,8 @@ install_openvpn() {
     warn "/dev/net/tun is missing; OpenVPN interfaces will not start"
     warn "  load it with: modprobe tun   (and add 'tun' to /etc/modules-load.d/)"
   fi
+  # A minimal image may not have the directory at all.
+  install -d /etc/modules-load.d 2>/dev/null || true
   echo tun > /etc/modules-load.d/wui-tun.conf 2>/dev/null || true
 
   if have openvpn; then
@@ -594,6 +598,7 @@ enable_forwarding() {
 
   # Written to a file rather than only applied, or the setting is lost on the
   # first reboot and every tunnel stops routing with no obvious cause.
+  install -d /etc/sysctl.d
   cat >/etc/sysctl.d/99-wui.conf <<'SYSCTL'
 # Installed by W-UI. Without forwarding, packets arriving on a tunnel are
 # never routed out to the internet and customers connect but reach nothing.
