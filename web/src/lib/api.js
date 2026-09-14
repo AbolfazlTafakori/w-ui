@@ -248,7 +248,7 @@ export const api = {
   changePassword: (currentPassword, newPassword) =>
     request('POST', '/api/auth/password', { currentPassword, newPassword }),
   system: () => request('GET', '/api/system'),
-  meta: () => request('GET', '/api/meta'),
+  meta: (opts) => request('GET', '/api/meta', undefined, opts),
   messages: (locale) => request('GET', `/api/i18n/${locale}`),
   overview: (opts) => request('GET', '/api/overview', undefined, opts),
   fullOverview: (opts) => request('GET', '/api/overview/full', undefined, opts),

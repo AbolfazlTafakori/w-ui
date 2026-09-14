@@ -121,6 +121,9 @@ export async function signIn(username, password, code) {
   setToken(res.token)
   store.admin = res.admin
   loadPanelSettings()
+  // The server says more about itself to someone signed in -- the version,
+  // the state of the kernel engines -- so ask again now that we are.
+  api.meta({ background: true }).then((m) => { store.meta = m }).catch(() => {})
   if (res.admin?.locale && res.admin.locale !== store.locale) {
     await loadMessages(res.admin.locale)
   }

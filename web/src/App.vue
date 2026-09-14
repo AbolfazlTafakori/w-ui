@@ -408,7 +408,7 @@ function reload() {
 
     <main class="main">
       <div
-        v-if="store.meta && !store.meta.enforcementActive"
+        v-if="store.admin && store.meta && !store.meta.enforcementActive"
         class="banner warn"
         role="status"
       >

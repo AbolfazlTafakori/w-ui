@@ -18,7 +18,7 @@ import (
 // offers only protocols that have a driver and warns when quota enforcement is
 // not running.
 type metaResponse struct {
-	Version            string           `json:"version"`
+	Version            string           `json:"version,omitempty"`
 	Protocols          []model.Protocol `json:"protocols"`
 	Locales            []string         `json:"locales"`
 	DefaultLocale      string           `json:"defaultLocale"`
@@ -30,11 +30,18 @@ type metaResponse struct {
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	resp := metaResponse{
-		Version:       s.version,
 		Protocols:     backend.Registered(),
 		Locales:       s.catalog.Locales(),
 		DefaultLocale: i18n.DefaultLocale,
 	}
+	// The sign-in page needs the languages and nothing else. The version and
+	// the state of the kernel engines -- whose messages name modules and
+	// commands -- are for someone who has signed in.
+	if !s.signedIn(r) {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	resp.Version = s.version
 	if err := s.enforcer.Health(r.Context()); err != nil {
 		resp.EnforcementMessage = err.Error()
 	} else {

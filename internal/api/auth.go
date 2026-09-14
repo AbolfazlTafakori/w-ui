@@ -179,64 +179,82 @@ func (s *Server) issueToken(w http.ResponseWriter, r *http.Request, admin *model
 	return token, nil
 }
 
+// authenticate says who a request is from: an administrator with a live
+// session, a machine token (admin nil, machine true), or nobody, with the
+// message the caller should answer with and whether the binding cookie
+// should be cleared.
+func (s *Server) authenticate(r *http.Request) (admin *model.Admin, machine bool, reason string, clearCookie bool) {
+	raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if raw == "" || raw == r.Header.Get("Authorization") {
+		return nil, false, "your session has ended; sign in again", false
+	}
+
+	// A machine token, from another panel watching this one. Checked before
+	// the JWT because it is not one and would fail that parse with a
+	// message about sessions that would send an operator looking in the
+	// wrong place.
+	if strings.HasPrefix(raw, "wui_") {
+		if s.nodes != nil && s.nodes.VerifyToken(r.Context(), raw) {
+			return nil, true, "", false
+		}
+		return nil, false, "that access token is not valid", false
+	}
+
+	claims := &sessionClaims{}
+	_, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
+		// Pinning the algorithm is what stops a token signed with "none",
+		// or with the public half of an asymmetric key, from being accepted.
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected signing method %q", t.Method.Alg())
+		}
+		return s.jwtSecret, nil
+	}, jwt.WithIssuer("w-ui"), jwt.WithExpirationRequired())
+	if err != nil {
+		return nil, false, "session expired, sign in again", false
+	}
+
+	// The token alone is not a session. Without the cookie it names, this is
+	// a token that left the browser it was issued to.
+	if !bindingHolds(r, claims) {
+		return nil, false, "your session has ended; sign in again", false
+	}
+
+	var a model.Admin
+	if err := s.db.WithContext(r.Context()).First(&a, claims.Subject).Error; err != nil {
+		return nil, false, "your session has ended; sign in again", false
+	}
+
+	// Signed out everywhere since this was issued — by a password change, or
+	// deliberately.
+	if !epochHolds(&a, claims) {
+		return nil, false, "you were signed out everywhere; sign in again", true
+	}
+	return &a, false, "", false
+}
+
+// signedIn is authenticate for a handler that serves everyone and says a
+// little more to an administrator.
+func (s *Server) signedIn(r *http.Request) bool {
+	admin, machine, _, _ := s.authenticate(r)
+	return admin != nil || machine
+}
+
 // requireAuth rejects requests without a valid bearer token.
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if raw == "" || raw == r.Header.Get("Authorization") {
-			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
-			return
-		}
-
-		// A machine token, from another panel watching this one. Checked before
-		// the JWT because it is not one and would fail that parse with a
-		// message about sessions that would send an operator looking in the
-		// wrong place.
-		if strings.HasPrefix(raw, "wui_") {
-			if s.nodes != nil && s.nodes.VerifyToken(r.Context(), raw) {
-				next(w, r)
-				return
+		admin, machine, reason, clearCookie := s.authenticate(r)
+		if admin == nil && !machine {
+			if clearCookie {
+				clearBindCookie(w, r)
 			}
-			writeError(w, http.StatusUnauthorized, "that access token is not valid")
+			writeError(w, http.StatusUnauthorized, reason)
 			return
 		}
-
-		claims := &sessionClaims{}
-		_, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
-			// Pinning the algorithm is what stops a token signed with "none",
-			// or with the public half of an asymmetric key, from being accepted.
-			if t.Method != jwt.SigningMethodHS256 {
-				return nil, fmt.Errorf("unexpected signing method %q", t.Method.Alg())
-			}
-			return s.jwtSecret, nil
-		}, jwt.WithIssuer("w-ui"), jwt.WithExpirationRequired())
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "session expired, sign in again")
+		if machine {
+			next(w, r)
 			return
 		}
-
-		// The token alone is not a session. Without the cookie it names, this is
-		// a token that left the browser it was issued to.
-		if !bindingHolds(r, claims) {
-			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
-			return
-		}
-
-		var admin model.Admin
-		if err := s.db.WithContext(r.Context()).First(&admin, claims.Subject).Error; err != nil {
-			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
-			return
-		}
-
-		// Signed out everywhere since this was issued — by a password change, or
-		// deliberately.
-		if !epochHolds(&admin, claims) {
-			clearBindCookie(w, r)
-			writeError(w, http.StatusUnauthorized, "you were signed out everywhere; sign in again")
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), ctxAdmin, &admin)
+		ctx := context.WithValue(r.Context(), ctxAdmin, admin)
 		next(w, r.WithContext(ctx))
 	}
 }
