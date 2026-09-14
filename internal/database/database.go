@@ -60,7 +60,7 @@ func Open(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	log.Info("database ready", "driver", cfg.DBDriver, "source", cfg.DBSource)
+	log.Info("database ready", "driver", cfg.DBDriver, "source", config.RedactDSN(cfg.DBSource))
 	return db, nil
 }
 
