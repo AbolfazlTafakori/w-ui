@@ -1,4 +1,5 @@
 <script setup>
+import logo from '../assets/logo.png'
 import { nextTick, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { store, t, signIn, loadMessages } from '../lib/store.js'
@@ -87,7 +88,7 @@ const localeIcon = (l) => (l === 'fa' ? '🇮🇷' : '🇬🇧')
       <div class="login-wrapper">
         <div class="login-card">
           <div class="brand">
-            <span class="brand-name">W-UI</span>
+            <img class="brand-logo" :src="logo" alt="W-UI" />
             <span class="brand-accent" aria-hidden="true"></span>
           </div>
           <h2 class="welcome"><b :key="word">{{ word }}</b></h2>
@@ -231,10 +232,7 @@ const localeIcon = (l) => (l === 'fa' ? '🇮🇷' : '🇬🇧')
 @media (max-width: 480px) { .login-card { padding: 32px 20px 24px; } }
 
 .brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 8px; }
-.brand-name {
-  font-size: 28px; font-weight: 700; letter-spacing: 1.5px;
-  background: linear-gradient(135deg, var(--accent-hover), var(--accent)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-}
+.brand-logo { width: 96px; height: auto; display: block; }
 .brand-accent { display: block; width: 40px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--accent-hover), var(--accent)); }
 .welcome { min-height: 42px; margin: 12px 0 28px; text-align: center; color: var(--ink); font-size: 32px; font-weight: 700; line-height: 1.2; letter-spacing: 0.3px; }
 .welcome b { display: inline-block; font-weight: inherit; animation: headline-in 280ms ease both; }

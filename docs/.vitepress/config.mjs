@@ -235,6 +235,7 @@ export default defineConfig({
   locales: { root: en, fa },
   themeConfig: {
     logo: '/logo.png',
+    siteTitle: false,
     search: {
       provider: 'local',
       options: {
