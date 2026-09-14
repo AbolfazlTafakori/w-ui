@@ -42,7 +42,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func fail(w http.ResponseWriter, log *slog.Logger, err error) {
 	switch {
 	case errors.Is(err, service.ErrNotFound):
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, humanMessage(err))
 	case errors.Is(err, service.ErrInvalid),
 		errors.Is(err, service.ErrDeviceLimit),
 		errors.Is(err, service.ErrPoolExhausted),

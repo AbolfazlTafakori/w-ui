@@ -75,6 +75,7 @@ const enSidebar = [
       { text: 'Database', link: '/reference/database' },
       { text: 'API', link: '/reference/api' },
       { text: 'How enforcement works', link: '/reference/how-it-works' },
+      { text: 'Errors', link: '/reference/errors' },
     ],
   },
   {
@@ -155,6 +156,7 @@ const faSidebar = [
       { text: 'دیتابیس', link: '/fa/reference/database' },
       { text: 'API', link: '/fa/reference/api' },
       { text: 'اعمال محدودیت چطور کار می‌کند', link: '/fa/reference/how-it-works' },
+      { text: 'خطاها', link: '/fa/reference/errors' },
     ],
   },
   {

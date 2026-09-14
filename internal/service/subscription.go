@@ -931,7 +931,8 @@ func checkSubPath(p string) error {
 		return invalidField("path",
 			"a path can only contain letters, digits, - and _ (found %q)", string(r))
 	}
-	if len(p) < 3 {
+	// The slashes around it do not count: "/a/" is one letter of path.
+	if len(strings.Trim(p, "/")) < 2 {
 		return invalidField("path", "that path is too short to be worth having")
 	}
 	return nil

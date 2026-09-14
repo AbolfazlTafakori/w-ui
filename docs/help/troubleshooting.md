@@ -4,6 +4,9 @@ description: "The panel does not open, a customer cannot connect, connects witho
 
 # Troubleshooting
 
+::: tip Every message, explained
+The [Errors reference](/reference/errors) lists every message the panel, the installer, `update.sh` and the `w-ui` menu can show, with what each means and what to do.
+:::
 Start with the log:
 
 ```bash
