@@ -2557,12 +2557,19 @@ postgresql_stop()    { local u; u=$(pg_unit); [[ -n "$u" ]] && systemctl stop "$
 postgresql_restart() { local u; u=$(pg_unit); [[ -n "$u" ]] && systemctl restart "$u" && LOGI "PostgreSQL restarted" || LOGE "PostgreSQL is not installed"; }
 postgresql_enable()  { local u; u=$(pg_unit); [[ -n "$u" ]] && systemctl enable "$u" > /dev/null 2>&1 && LOGI "PostgreSQL will start on boot" || LOGE "PostgreSQL is not installed"; }
 postgresql_log() {
-    local u; u=$(pg_unit)
-    if [[ -n "$u" ]]; then
-        journalctl -u "$u" -n 100 --no-pager
-    else
-        ls -t /var/log/postgresql/*.log 2> /dev/null | head -1 | xargs -r tail -n 100
+    # Debian's postgresql.service is a shell around postgresql@VER-main,
+    # which is where the server actually logs; and the server writes its
+    # own file too. The first of those with something to say.
+    local f
+    f=$(ls -t /var/log/postgresql/*.log 2> /dev/null | head -1)
+    if [[ -n "$f" ]]; then
+        tail -n 100 "$f"
+        return
     fi
+    local inst
+    inst=$(systemctl list-units --type=service --all 2> /dev/null | awk '{print $1}' | grep -E '^postgresql(@.+|-[0-9]+)\.service$' | head -1)
+    [[ -n "$inst" ]] || inst=$(pg_unit)
+    [[ -n "$inst" ]] && journalctl -u "$inst" -n 100 --no-pager || LOGE "PostgreSQL is not installed"
 }
 
 # Install the server and the panel's database, exactly as the installer's
