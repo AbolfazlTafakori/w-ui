@@ -1302,6 +1302,14 @@ fix_cert_perms() {
 # Hand the panel a certificate: what the classic `cert -webCert -webCertKey` is.
 set_panel_cert() {
     panel_cli setting set --cert "$1" --key "$2" > /dev/null 2>&1
+    # The subscription service on a port of its own serves the same
+    # certificate; left alone it would keep answering plain HTTP there.
+    local sub_port panel_port
+    sub_port=$(setting_value subPort)
+    panel_port=$(setting_value port)
+    if [[ -n "$sub_port" && "$sub_port" != "$panel_port" ]]; then
+        panel_cli setting set --sub-cert "$1" --sub-key "$2" > /dev/null 2>&1
+    fi
 }
 
 ssl_cert_issue_main() {
