@@ -162,7 +162,7 @@ Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
 ## Requirements
 
-Linux with `nftables` and the `nft_quota` module, `wireguard-tools` (`amneziawg` for the obfuscated mode), `openvpn` if you sell it, a public IPv4 address and an open UDP port. The installer brings all of the packages. Tested in CI on Debian 12 and 13, Ubuntu 22.04 and 24.04, AlmaLinux 9, Rocky 9 and Fedora 41.
+Linux with `nftables` and the `nft_quota` module, `wireguard-tools` (`amneziawg` for the obfuscated mode), `openvpn` if you sell it, a public IPv4 address and an open UDP port. The installer brings all of the packages. Tested in CI on Debian 12 and 13, Ubuntu 22.04, 24.04 and 26.04, AlmaLinux 9, Rocky 9 and Fedora 41.
 
 ---
 

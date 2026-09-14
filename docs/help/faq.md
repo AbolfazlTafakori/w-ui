@@ -10,7 +10,7 @@ Yes — [AGPL-3.0](https://github.com/AbolfazlTafakori/w-ui/blob/main/LICENSE). 
 
 ## What does it run on?
 
-Ubuntu 22.04 / 24.04, Debian 12 / 13, AlmaLinux 9, Rocky 9, Fedora 41, on x86-64 and arm64 — each one installed clean in CI on every release. Other systemd distributions generally work; the installer says what it could not do.
+Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, AlmaLinux 9, Rocky 9, Fedora 41, on x86-64 and arm64 — each one installed clean in CI on every release. Other systemd distributions generally work; the installer says what it could not do.
 
 ## How is it different from an Xray panel?
 

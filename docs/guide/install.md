@@ -14,7 +14,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 
 | | |
 |---|---|
-| OS | Ubuntu 22.04 / 24.04, Debian 12 / 13, AlmaLinux 9, Rocky 9, Fedora 41 — every one is installed clean in CI on each release |
+| OS | Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, AlmaLinux 9, Rocky 9, Fedora 41 — every one is installed clean in CI on each release |
 | Architecture | x86-64 or arm64 |
 | Kernel | one with `nft_quota` — stock Ubuntu, Debian and most VPS kernels have it; the installer checks and says so |
 | Ports | the panel port (TCP), one UDP port per WireGuard interface, TCP 443 if you use OpenVPN, and port 80 reachable for a Let's Encrypt certificate |

@@ -14,7 +14,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 
 | | |
 |---|---|
-| سیستم‌عامل | Ubuntu 22.04 / 24.04، Debian 12 / 13، AlmaLinux 9، Rocky 9، Fedora 41 — هر کدام با هر ریلیز به‌صورت تمیز در CI نصب می‌شود |
+| سیستم‌عامل | Ubuntu 22.04 / 24.04 / 26.04، Debian 12 / 13، AlmaLinux 9، Rocky 9، Fedora 41 — هر کدام با هر ریلیز به‌صورت تمیز در CI نصب می‌شود |
 | معماری | x86-64 یا arm64 |
 | کرنل | کرنلی با `nft_quota` — اوبونتو، دبیان و بیشتر کرنل‌های VPS دارند؛ نصاب بررسی می‌کند و می‌گوید |
 | پورت‌ها | پورت پنل (TCP)، یک پورت UDP برای هر اینترفیس وایرگارد، TCP 443 اگر OpenVPN می‌خواهی، و پورت 80 در دسترس برای سرتیفیکیت Let's Encrypt |
