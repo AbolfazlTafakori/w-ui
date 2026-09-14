@@ -2570,6 +2570,9 @@ postgresql_log() {
 pg_install_server_action() {
     local lib; lib=$(installer_lib) || { LOGE "could not fetch the installer"; return 1; }
     (
+        # This script's install() would shadow coreutils' install(1), which
+        # the library uses for files and directories.
+        unset -f install
         # shellcheck disable=SC1090
         WUI_LIB_ONLY=1 source "$lib"
         detect_os
