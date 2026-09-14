@@ -595,171 +595,147 @@ function latencyTone(ms) {
     </div>
   </div>
 
-  <!-- Add / edit -->
-  <div v-if="dialog" class="modal-backdrop" @click.self="dialog = null">
-    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="n-title">
-      <div class="card-head">
-        <h2 id="n-title">
+  <!-- Add / edit: the same 760px horizontal form the other dialogs use,
+       labels at the end of a third of the row and the control beside them,
+       in three groups -- the server, how it is trusted, what it costs. -->
+  <div v-if="dialog" class="amodal-backdrop" @click.self="dialog = null">
+    <div class="amodal" :class="dialog.kind === 'token' ? 'w520' : 'w760'" role="dialog" aria-modal="true" aria-labelledby="n-title">
+      <div class="amodal-head">
+        <h2 id="n-title" class="amodal-title">
           {{ dialog.kind === 'token' ? t('node.issueToken')
             : dialog.kind === 'add' ? t('node.add') : t('node.edit') }}
         </h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="dialog = null">
-          <Icon name="close" :size="15" />
-        </button>
+        <button class="amodal-close" :aria-label="t('action.cancel')" @click="dialog = null"><AntIcon name="CloseOutlined" /></button>
       </div>
 
-      <form
-        id="n-form"
-        class="card-body"
-        @submit.prevent="dialog.kind === 'token' ? issueToken() : submit()"
-      >
-        <template v-if="dialog.kind === 'token'">
-          <div class="field">
-            <label for="tk-name">{{ t('node.tokenName') }}</label>
-            <input id="tk-name" v-model="form.name" required autofocus maxlength="64"
-                   :placeholder="t('node.tokenNamePlaceholder')" />
-            <span class="hint">{{ t('node.tokenNameHint') }}</span>
-          </div>
-        </template>
+      <div class="amodal-body nf-body">
+        <form id="n-form" class="hform" @submit.prevent="dialog.kind === 'token' ? issueToken() : submit()">
+          <template v-if="dialog.kind === 'token'">
+            <div class="hrow">
+              <label class="req" for="tk-name">{{ t('node.tokenName') }}</label>
+              <div class="hctl">
+                <label class="ainput block"><input id="tk-name" v-model="form.name" required autofocus maxlength="64" :placeholder="t('node.tokenNamePlaceholder')" /></label>
+                <p class="hint">{{ t('node.tokenNameHint') }}</p>
+              </div>
+            </div>
+          </template>
 
-        <template v-else>
-        <div class="field">
-          <label for="n-name">{{ t('node.name') }}</label>
-          <input id="n-name" v-model="form.name" required autofocus maxlength="64" />
-        </div>
+          <template v-else>
+            <div class="nf-section">{{ t('node.sectionServer') }}</div>
+            <div class="hrow">
+              <label class="req" for="n-name">{{ t('node.name') }}</label>
+              <div class="hctl"><label class="ainput block"><input id="n-name" v-model="form.name" required autofocus maxlength="64" /></label></div>
+            </div>
+            <div class="hrow">
+              <label class="req" for="n-addr">{{ t('node.address') }}</label>
+              <div class="hctl">
+                <label class="ainput block"><input id="n-addr" v-model="form.address" required placeholder="https://vpn2.example.com:2096" class="ltr" /></label>
+                <p class="hint">{{ t('node.addressHint') }}</p>
+                <label class="acheckbox nf-check"><input v-model="form.allowPrivateAddress" type="checkbox" /><span>{{ t('node.allowPrivate') }}</span></label>
+                <p v-if="form.allowPrivateAddress" class="hint">{{ t('node.allowPrivateHint') }}</p>
+              </div>
+            </div>
+            <div class="hrow">
+              <label for="n-note">{{ t('group.note') }}</label>
+              <div class="hctl"><label class="ainput block"><input id="n-note" v-model="form.note" maxlength="256" /></label></div>
+            </div>
 
-        <div class="field">
-          <label for="n-addr">{{ t('node.address') }}</label>
-          <input id="n-addr" v-model="form.address" required placeholder="https://vpn2.example.com:2096" class="ltr" />
-          <span class="hint">{{ t('node.addressHint') }}</span>
-        </div>
+            <div class="nf-section">{{ t('node.sectionTrust') }}</div>
+            <div class="hrow">
+              <label :class="{ req: dialog.kind === 'add' }" for="n-token">{{ t('node.token') }}</label>
+              <div class="hctl">
+                <label class="ainput block"><input id="n-token" v-model="form.token" type="password" class="ltr" autocomplete="off"
+                       :required="dialog.kind === 'add'" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : 'wui_…'" /></label>
+                <p class="hint">{{ t('node.tokenHint') }}</p>
+              </div>
+            </div>
+            <div class="hrow">
+              <label for="n-tls">{{ t('node.tlsMode') }}</label>
+              <div class="hctl">
+                <label class="aselect"><select id="n-tls" v-model="form.tlsMode">
+                  <option value="verify">{{ t('node.tlsVerify') }}</option>
+                  <option value="pin">{{ t('node.tlsPin') }}</option>
+                  <option value="mtls">{{ t('node.tlsMutual') }}</option>
+                  <option value="skip">{{ t('node.tlsSkip') }}</option>
+                </select></label>
+                <p v-if="form.tlsMode === 'verify'" class="hint">{{ t('node.tlsModeHint') }}</p>
+                <p v-else-if="form.tlsMode === 'pin'" class="hint">{{ t('node.tlsPinnedHint') }}</p>
+                <p v-else-if="form.tlsMode === 'mtls'" class="hint">{{ t('node.tlsMutualHint') }}</p>
+                <p v-else class="hint warn-text">{{ t('node.tlsSkipWarning') }}</p>
+              </div>
+            </div>
+            <div v-if="form.tlsMode === 'pin'" class="hrow">
+              <label for="n-pin">{{ t('node.pin') }}</label>
+              <div class="hctl">
+                <div class="nf-inline">
+                  <label class="ainput block"><input id="n-pin" v-model="form.tlsPin" class="ltr mono" placeholder="sha256/…" /></label>
+                  <button type="button" class="abtn" :disabled="pinBusy || !form.address" @click="fetchPin">
+                    <span v-if="pinBusy" class="spin sm"></span>
+                    <template v-else><AntIcon name="DownloadOutlined" /><span>{{ t('node.fetchPin') }}</span></template>
+                  </button>
+                </div>
+                <p class="hint">{{ t('node.fetchPinHint') }}</p>
+              </div>
+            </div>
+            <div v-if="form.tlsMode === 'mtls'" class="hrow">
+              <label>{{ t('node.authority') }}</label>
+              <div class="hctl">
+                <textarea v-model="authority" rows="4" readonly class="atextarea ltr mono" :placeholder="t('node.authorityLoading')"></textarea>
+                <div class="nf-inline nf-actions">
+                  <button type="button" class="abtn" :disabled="authorityBusy" @click="loadAuthority">
+                    <span v-if="authorityBusy" class="spin sm"></span>
+                    <template v-else><AntIcon name="SafetyCertificateOutlined" /><span>{{ t('node.authorityLoad') }}</span></template>
+                  </button>
+                  <button type="button" class="abtn" :disabled="!authority" @click="copyAuthority"><AntIcon name="CopyOutlined" /><span>{{ t('action.copy') }}</span></button>
+                </div>
+                <p class="hint">{{ t('node.authorityHint') }}</p>
+              </div>
+            </div>
 
-        <!-- The token below is a bearer credential for a whole panel, so who
-             is on the other end is not a detail. Verification is right when the
-             node has a real certificate; pinning is the answer when it does
-             not, and is stronger there rather than weaker. -->
-        <div class="field">
-          <label class="log-follow">
-            <input v-model="form.allowPrivateAddress" type="checkbox" />
-            <span>{{ t('node.allowPrivate') }}</span>
-          </label>
-          <span class="hint">{{ t('node.allowPrivateHint') }}</span>
-        </div>
+            <div class="nf-section">{{ t('node.sectionBilling') }}</div>
+            <div class="hrow">
+              <label for="n-coef">{{ t('node.coefficient') }}</label>
+              <div class="hctl">
+                <label class="ainput number" style="width: 140px"><input id="n-coef" v-model="form.usageCoefficient" type="number" step="0.1" min="0.1" max="100" class="ltr" /><span class="ainput-suffix">×</span></label>
+                <p class="hint">{{ t('node.coefficientHint') }}</p>
+              </div>
+            </div>
+            <div class="hrow">
+              <label for="n-limit">{{ t('node.dataLimit') }}</label>
+              <div class="hctl">
+                <div class="nf-inline">
+                  <label class="ainput number" style="width: 140px"><input id="n-limit" v-model="form.dataLimitGB" type="number" min="0" step="1" placeholder="∞" class="ltr" /><span class="ainput-suffix">GB</span></label>
+                  <span class="nf-sep">{{ t('node.resetDay') }}</span>
+                  <label class="ainput number" style="width: 110px"><input id="n-resetday" v-model="form.resetDay" type="number" min="0" max="28" step="1" placeholder="0" class="ltr" /></label>
+                </div>
+                <p class="hint">{{ t('node.dataLimitHint') }}</p>
+              </div>
+            </div>
+          </template>
+        </form>
+      </div>
 
-        <div class="field">
-          <label for="n-tls">{{ t('node.tlsMode') }}</label>
-          <select id="n-tls" v-model="form.tlsMode">
-            <option value="verify">{{ t('node.tlsVerify') }}</option>
-            <option value="pin">{{ t('node.tlsPin') }}</option>
-            <option value="mtls">{{ t('node.tlsMutual') }}</option>
-            <option value="skip">{{ t('node.tlsSkip') }}</option>
-          </select>
-          <span class="hint">{{ t('node.tlsModeHint') }}</span>
-        </div>
-
-        <div v-if="form.tlsMode === 'pin'" class="field">
-          <label for="n-pin">{{ t('node.pin') }}</label>
-          <div class="row gap">
-            <input id="n-pin" v-model="form.tlsPin" class="ltr" placeholder="sha256/…" />
-            <button type="button" class="btn sm" :disabled="pinBusy" @click="fetchPin">
-              <span v-if="pinBusy" class="spin sm"></span>
-              <span v-else>{{ t('node.fetchPin') }}</span>
-            </button>
-          </div>
-          <span class="hint">{{ t('node.fetchPinHint') }}</span>
-        </div>
-
-        <!-- The one value an operator has to move by hand, and it only goes
-             one way: the authority's public half, from here into the node. -->
-        <div v-if="form.tlsMode === 'mtls'" class="field">
-          <label>{{ t('node.authority') }}</label>
-          <textarea v-model="authority" rows="4" readonly class="ltr mono"
-                    :placeholder="t('node.authorityLoading')"></textarea>
-          <div class="row gap">
-            <button type="button" class="btn sm" :disabled="authorityBusy" @click="loadAuthority">
-              <span v-if="authorityBusy" class="spin sm"></span>
-              <span v-else>{{ t('node.authorityLoad') }}</span>
-            </button>
-            <button type="button" class="btn sm" :disabled="!authority" @click="copyAuthority">
-              {{ t('action.copy') }}
-            </button>
-          </div>
-          <span class="hint">{{ t('node.authorityHint') }}</span>
-        </div>
-
-        <div v-if="form.tlsMode === 'skip'" class="field">
-          <span class="hint warn-text">{{ t('node.tlsSkipWarning') }}</span>
-        </div>
-
-        <div class="field">
-          <label for="n-token">{{ t('node.token') }}</label>
-          <input id="n-token" v-model="form.token" type="password" class="ltr"
-                 :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : 'wui_…'" />
-          <span class="hint">{{ t('node.tokenHint') }}</span>
-        </div>
-
-        <div class="field">
-          <label for="n-note">{{ t('group.note') }}</label>
-          <input id="n-note" v-model="form.note" maxlength="256" />
-        </div>
-
-        <!-- What a gigabyte through this server costs a customer. The nearest a
-             reseller gets to charging more for an expensive server without
-             selling a second plan. -->
-        <div class="field">
-          <label for="n-coef">{{ t('node.coefficient') }}</label>
-          <input id="n-coef" v-model="form.usageCoefficient" type="number"
-                 step="0.1" min="0.1" max="100" class="ltr" />
-          <span class="hint">{{ t('node.coefficientHint') }}</span>
-        </div>
-
-        <!-- The machine's own allowance, which is a different thing from a
-             customer's: a hundred customers well inside their own limits can
-             still take a server past what its host gives it. -->
-        <div class="grid-2">
-          <div class="field">
-            <label for="n-limit">{{ t('node.dataLimit') }}</label>
-            <input id="n-limit" v-model="form.dataLimitGB" type="number"
-                   min="0" step="1" placeholder="∞" class="ltr" />
-          </div>
-          <div class="field">
-            <label for="n-resetday">{{ t('node.resetDay') }}</label>
-            <input id="n-resetday" v-model="form.resetDay" type="number"
-                   min="0" max="28" step="1" placeholder="0" class="ltr" />
-          </div>
-        </div>
-        <div class="field">
-          <span class="hint">{{ t('node.dataLimitHint') }}</span>
-        </div>
-        </template>
-      </form>
-
-      <div class="modal-foot">
-        <button type="button" class="btn ghost" @click="dialog = null">{{ t('action.cancel') }}</button>
-        <button type="submit" form="n-form" class="btn primary" :disabled="busy">
-          <span v-if="busy" class="spin"></span>
-          <template v-else>{{ t('action.save') }}</template>
+      <div class="amodal-foot">
+        <button type="button" class="abtn" @click="dialog = null">{{ t('action.cancel') }}</button>
+        <button type="submit" form="n-form" class="abtn primary" :disabled="busy">
+          <span v-if="busy" class="spin sm"></span>
+          <template v-else>{{ dialog.kind === 'token' ? t('node.issueToken') : t('action.save') }}</template>
         </button>
       </div>
     </div>
   </div>
 
   <!-- A freshly issued token, shown once. -->
-  <div v-if="issued" class="modal-backdrop" @click.self="issued = null">
-    <div class="modal narrow" role="dialog" aria-modal="true">
-      <div class="card-head">
-        <h2>{{ t('node.tokenIssued') }}</h2>
+  <div v-if="issued" class="amodal-backdrop" @click.self="issued = null">
+    <div class="amodal w520" role="dialog" aria-modal="true">
+      <div class="amodal-head"><h2 class="amodal-title">{{ t('node.tokenIssued') }}</h2></div>
+      <div class="amodal-body">
+        <div class="nf-notice"><AntIcon name="ExclamationCircleOutlined" /><span>{{ t('node.tokenOnce') }}</span></div>
+        <pre class="api-code ltr nf-token"><code>{{ issued.token }}</code></pre>
       </div>
-      <div class="card-body">
-        <p class="muted small">{{ t('node.tokenOnce') }}</p>
-        <pre class="api-code ltr"><code>{{ issued.token }}</code></pre>
-      </div>
-      <div class="modal-foot">
-        <button class="btn ghost" @click="issued = null">{{ t('common.close') }}</button>
-        <button class="btn primary" @click="copyToken">
-          <Icon name="copy" :size="15" />
-          <span>{{ t('api.copy') }}</span>
-        </button>
+      <div class="amodal-foot">
+        <button class="abtn" @click="issued = null">{{ t('common.close') }}</button>
+        <button class="abtn primary" @click="copyToken"><AntIcon name="CopyOutlined" /><span>{{ t('api.copy') }}</span></button>
       </div>
     </div>
   </div>
@@ -781,5 +757,52 @@ function latencyTone(ms) {
 .nodename {
   font-weight: 600;
   margin-inline-end: 6px;
+}
+.nf-body { max-height: 72vh; overflow-y: auto; overflow-x: hidden; }
+.hint { margin: 4px 0 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
+.hint.warn-text { color: var(--warn); }
+/* A group heading: small caps over a rule, the way a settings page breaks
+   its rows up, so a nine-row form reads as three short ones. */
+.nf-section {
+  margin: 4px 0 16px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nf-section:not(:first-child) { margin-top: 8px; }
+.nf-check { display: inline-flex; margin-top: 8px; }
+.nf-inline { display: flex; align-items: center; gap: 8px; }
+.nf-inline .ainput.block { flex: 1; }
+.nf-actions { margin-top: 8px; }
+.nf-sep { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.ainput-suffix { color: var(--faint); font-size: 12px; padding-inline-end: 10px; }
+.atextarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.atextarea:focus { outline: none; border-color: var(--accent-hover); box-shadow: 0 0 0 2px var(--accent-ring); }
+.nf-notice {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; margin-bottom: 12px;
+  border: 1px solid var(--warn-line, var(--line)); border-radius: 6px;
+  background: var(--warn-bg, var(--surface-2)); color: var(--ink); font-size: 13px; line-height: 1.5;
+}
+.nf-notice .anticon { color: var(--warn); margin-top: 2px; }
+.nf-token { margin: 0; user-select: all; }
+@media (max-width: 640px) {
+  .hrow { grid-template-columns: 1fr; }
+  .hrow > label { text-align: start; padding-top: 0; }
 }
 </style>

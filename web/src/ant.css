@@ -822,6 +822,8 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .amodal-backdrop.centered { align-items: center; padding: 24px 16px; }
 .amodal.w640 { width: 640px; }
 .amodal.w440 { width: 440px; }
+.amodal.w520 { width: min(520px, calc(100vw - 32px)); }
+.amodal.w760 { width: min(760px, calc(100vw - 32px)); }
 .atag.cyan { background: var(--tag-cyan-bg, #112123); border-color: var(--tag-cyan-line, #144848); color: var(--tag-cyan-ink, #33bcb7); }
 .atag.geekblue { background: var(--tag-geek-bg); border-color: var(--tag-geek-line); color: var(--tag-geek-ink); }
 .atag.orange { background: var(--tag-orange-bg); border-color: var(--tag-orange-line); color: var(--tag-orange-ink); }

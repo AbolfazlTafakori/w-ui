@@ -147,7 +147,7 @@ async function submit() {
 </template>
 
 <style scoped>
-.amodal.w760 { width: 760px; }
+.amodal.w760 { width: min(760px, calc(100vw - 32px)); }
 .hf-body { max-height: 70vh; overflow-y: auto; overflow-x: hidden; }
 .hint { margin: 4px 0 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
 .field-error { margin: 4px 0 0; font-size: 12px; color: var(--bad); }

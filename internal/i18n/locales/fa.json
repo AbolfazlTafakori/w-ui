@@ -1649,5 +1649,8 @@
   "set.subTpl.mesh": "مِش",
   "set.subTpl.meshDesc": "شبکه‌ای رنگارنگ و آرام پشت شیشهٔ تیره.",
   "set.subTpl.retro": "رترو",
-  "set.subTpl.retroDesc": "سینث‌ویو: خورشید راه‌راه و شبکه‌ای که تا افق می‌دود."
+  "set.subTpl.retroDesc": "سینث‌ویو: خورشید راه‌راه و شبکه‌ای که تا افق می‌دود.",
+  "node.sectionServer": "سرور",
+  "node.sectionTrust": "دسترسی و اعتماد",
+  "node.sectionBilling": "هزینه و سهمیه"
 }

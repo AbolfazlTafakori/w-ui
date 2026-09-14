@@ -1649,5 +1649,8 @@
   "set.subTpl.mesh": "Mesh",
   "set.subTpl.meshDesc": "A slow multicolour mesh behind dark glass.",
   "set.subTpl.retro": "Retro",
-  "set.subTpl.retroDesc": "Synthwave: a striped sun and a grid running to the horizon."
+  "set.subTpl.retroDesc": "Synthwave: a striped sun and a grid running to the horizon.",
+  "node.sectionServer": "Server",
+  "node.sectionTrust": "Access and trust",
+  "node.sectionBilling": "Cost and allowance"
 }
