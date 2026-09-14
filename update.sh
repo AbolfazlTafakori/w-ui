@@ -78,14 +78,18 @@ if [[ -n "$SIG_URL" ]] && curl -fsSL "$SIG_URL" -o "$tmp/wui.sig" 2>/dev/null; t
   # panel from before this command existed) -- said, and carried on with
   # the checksum alone.
   set +e
-  "$BIN_PATH" verify "$tmp/wui" "$tmp/wui.sig" >/dev/null 2>&1
+  out="$("$BIN_PATH" verify "$tmp/wui" "$tmp/wui.sig" 2>&1)"
   rc=$?
   set -e
-  case "$rc" in
-    0) ok "signature verified" ;;
-    2) die "signature check failed: the download is not a build this project signed" ;;
-    *) warn "the installed panel cannot check signatures; the checksum is what was verified" ;;
-  esac
+  # A panel from before this command existed does not know "verify" and
+  # tries to start instead; only an answer that begins "verify:" is one.
+  if [[ $rc -eq 0 && "$out" == *"signature ok"* ]]; then
+    ok "signature verified"
+  elif [[ $rc -eq 2 && "$out" == *"verify:"* ]]; then
+    die "signature check failed: the download is not a build this project signed"
+  else
+    warn "the installed panel cannot check signatures; the checksum is what was verified"
+  fi
 else
   warn "the release carries no signature for this build"
 fi
