@@ -14,7 +14,7 @@ Everything is an environment variable — there is no config file to keep in syn
 | `WUI_TRUSTED_PROXIES` | — | CIDRs allowed to set `X-Forwarded-*` |
 | `WUI_DATA_DIR` | `./data` | database and state |
 | `WUI_DB_DRIVER` | `sqlite` | `sqlite` or `postgres` |
-| `WUI_DB_SOURCE` | `<data dir>/wui.db` | file path or DSN |
+| `WUI_DB_SOURCE` | `<data dir>/wui.db` | file path or DSN; the installer keeps both database variables in `/etc/wui/db.env` (root only, read by the unit and the script) |
 | `WUI_BACKUP_DIR` | `<data dir>/backups` | where scheduled backups go; the installer points it at `/var/backups/wui` |
 | `WUI_COLLECT_INTERVAL` | `2s` | how often usage is read (minimum `1s`) |
 | `WUI_DEFAULT_LOCALE` | `en` | `en` or `fa` |

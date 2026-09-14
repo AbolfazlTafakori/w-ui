@@ -46,6 +46,7 @@ const enSidebar = [
       { text: 'Security', link: '/operations/security' },
       { text: 'Reverse proxy', link: '/operations/reverse-proxy' },
       { text: 'Ports and firewall', link: '/operations/ports-firewall' },
+      { text: 'Backup and restore', link: '/operations/backup-restore' },
     ],
   },
   {
@@ -125,6 +126,7 @@ const faSidebar = [
       { text: 'امنیت', link: '/fa/operations/security' },
       { text: 'Reverse proxy', link: '/fa/operations/reverse-proxy' },
       { text: 'پورت‌ها و فایروال', link: '/fa/operations/ports-firewall' },
+      { text: 'بک‌آپ و ریستور', link: '/fa/operations/backup-restore' },
     ],
   },
   {

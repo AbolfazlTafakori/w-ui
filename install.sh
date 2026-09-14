@@ -1670,15 +1670,24 @@ setup_database() {
     rhel)
       pkg_install postgresql-server postgresql-contrib || die "could not install PostgreSQL"
       if [[ ! -s /var/lib/pgsql/data/PG_VERSION ]]; then
-        postgresql-setup --initdb >/dev/null 2>&1 || die "could not initialise PostgreSQL"
-      fi ;;
+        # The distribution's wrapper wants systemd; where there is none,
+        # initdb itself. Password logins over the loopback either way --
+        # the RHEL default is ident, which would refuse the panel's.
+        install -d -o postgres -g postgres -m 700 /var/lib/pgsql/data
+        if ! postgresql-setup --initdb >/dev/null 2>&1; then
+          runuser -u postgres -- initdb -D /var/lib/pgsql/data --auth-local=peer --auth-host=scram-sha-256 -E UTF8 >/dev/null 2>&1             || die "could not initialise PostgreSQL"
+        fi
+      fi
+      sed -i -E 's/^(host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1\/32|::1\/128)[[:space:]]+)(ident|md5)$/\1scram-sha-256/' /var/lib/pgsql/data/pg_hba.conf 2>/dev/null || true
+      have_systemd && systemctl reload postgresql >/dev/null 2>&1 || true
+      ;;
   esac
   ensure_postgres_running
 
   DB_PASS="$(gen_string 32)"
   # One role and one database, owned by it. Created idempotently: a role
   # that exists gets the new password rather than an error.
-  as_postgres() { runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qAt "$@"; }
+  as_postgres() { runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qAt -c "SET password_encryption = 'scram-sha-256'" "$@"; }
   if as_postgres -c "SELECT 1 FROM pg_roles WHERE rolname='wui'" | grep -q 1; then
     as_postgres -c "ALTER ROLE wui WITH LOGIN PASSWORD '$DB_PASS'" >/dev/null || die "could not set the database password"
   else

@@ -14,6 +14,9 @@ wui setting set [flags]          change where the panel answers (applied at the 
 wui setting reset                forget every panel setting; the admin account and the customers are kept
 wui admin reset [flags]          reset the administrator account
 wui token issue --name NAME      mint an API token, printed once
+wui backup create [--dir DIR]    take a backup, the same archive the panel takes
+wui backup list [--dir DIR]      the backups in that directory
+wui backup restore FILE          stage a restore, applied at the next start
 wui version                      print the version
 wui keygen                       make a release-signing key pair
 wui sign <binary>                sign a build, for a release
@@ -28,9 +31,19 @@ wui sign <binary>                sign a build, for a release
 --cert FILE        certificate to serve TLS with
 --key FILE         its private key
 --no-tls           forget the certificate and serve plain HTTP
+--sub-enable       serve customers' subscription links
+--sub-disable      stop serving them
+--sub-port N       a port of the subscription service's own (0: the panel's)
+--sub-listen ADDR  the address it binds
+--sub-cert FILE    certificate for that port (default: the panel's)
+--sub-key FILE     its private key
 ```
 
-The settings page's values win over the environment at start, so this is where a change has to land to stick. `setting show` prints the effective result — `listen`, `listenIP`, `port`, `basePath`, `scheme`, `cert`, `key` — in the lines the script parses.
+The settings page's values win over the environment at start, so this is where a change has to land to stick. `setting show` prints the effective result — `listen`, `listenIP`, `port`, `basePath`, `scheme`, `cert`, `key`, `subEnabled`, `subPort`, `subPath`, `dbDriver`, `dbSource` (password redacted) — in the lines the script parses.
+
+## `backup`
+
+`create` writes the same archive the panel's scheduler writes: the SQLite snapshot, every key, and a portable JSON dump of every table, so the file restores into a panel on either database engine and into a newer W-UI. `restore` copies the archive in, checks it, keeps a copy of the current data beside it, and stages it; the next start applies it. Pass `--move-addresses` to take the archive's server addresses too instead of keeping this machine's. Both need the panel's environment — the `w-ui` menu supplies it, and so does `/etc/wui/db.env`. See [Backup and restore](/operations/backup-restore).
 
 ## `admin reset`
 

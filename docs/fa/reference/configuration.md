@@ -14,7 +14,7 @@ description: "همه چیز متغیر محیطی است : فایل کانفیگ
 | `WUI_TRUSTED_PROXIES` | — | CIDRهایی که اجازهٔ `X-Forwarded-*` دارند |
 | `WUI_DATA_DIR` | `./data` | دیتابیس و state |
 | `WUI_DB_DRIVER` | `sqlite` | `sqlite` یا `postgres` |
-| `WUI_DB_SOURCE` | `<data dir>/wui.db` | مسیر فایل یا DSN |
+| `WUI_DB_SOURCE` | `<data dir>/wui.db` | مسیر فایل یا DSN؛ نصاب هر دو متغیر دیتابیس را در `/etc/wui/db.env` نگه می‌دارد (فقط root، یونیت و اسکریپت می‌خوانند) |
 | `WUI_BACKUP_DIR` | `<data dir>/backups` | بک‌آپ‌های زمان‌بندی‌شده؛ نصاب به `/var/backups/wui` می‌بردش |
 | `WUI_COLLECT_INTERVAL` | `2s` | هر چند وقت مصرف خوانده شود (حداقل `1s`) |
 | `WUI_DEFAULT_LOCALE` | `en` | `en` یا `fa` |

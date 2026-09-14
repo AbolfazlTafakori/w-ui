@@ -28,7 +28,16 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 ۱. **پورت پنل** — رندوم و آزاد، مگر خودت بگویی. پورتی که چیز دیگری روی آن گوش می‌دهد را قبول نمی‌کند.
 ۲. **مسیر URL** — یک پیشوند ۱۸ حرفی رندوم. هر چیزی خارج از آن، حتی صفحهٔ ورود، 404 می‌دهد.
 ۳. **مدیر** — نام و رمز هر دو تولید می‌شوند، مگر خودت بدهی.
-۴. **چطور به پنل برسیم:**
+۴. **دیتابیس:**
+
+   ```
+   1) SQLite      — یک فایل، بدون نصب چیزی؛ تا چند هزار مشتری کافی است   ← پیش‌فرض
+   2) PostgreSQL  — برای تعداد زیاد مشتری؛ همین‌جا نصب و تنظیم می‌شود
+   ```
+
+   هر کدام را بگیری، بک‌آپش در دیگری ریستور می‌شود، پس تصمیمی نیست که در آن گیر کنی. [بک‌آپ و ریستور](/fa/operations/backup-restore).
+
+۵. **چطور به پنل برسیم:**
 
    ```
    1) Let's Encrypt for Domain (90-day validity, auto-renews)
@@ -39,7 +48,9 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 
    هر کدام را انتخاب کنی، پنل روی همان یک پورت جواب می‌دهد — با آی‌پی و با دامنه یکسان. [سرتیفیکیت](/fa/guide/certificates).
 
-۵. اینکه OpenVPN و AmneziaWG هم کنار WireGuard نصب شود یا نه.
+۶. اینکه OpenVPN و AmneziaWG هم کنار WireGuard نصب شود یا نه.
+
+پرسیده نمی‌شود: **پورت سابسکریپشن**. نصاب خودش یک پورت آزاد رندوم کنار پورت پنل انتخاب می‌کند، سرویس سابسکریپشن را روشن می‌کند و سرتیفیکیت پنل را به آن می‌دهد، تا لینک مشتری از دقیقهٔ اول کار کند. با `--sub-port N` می‌توانی خودت تعیین کنی.
 
 اگر روی همه Enter بزنی، هیچ چیزِ نتیجه قابل حدس نیست: پورت رندوم، مسیر رندوم، مدیر رندوم، رمز تولیدشده، سرتیفیکیت برای خودِ آی‌پی سرور.
 
@@ -50,6 +61,8 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 | پرچم | اثر |
 |------|-----|
 | `--port N` | روی پورت N گوش بده |
+| `--sub-port N` | پورت سرویس سابسکریپشن (پیش‌فرض: رندوم) |
+| `--db sqlite\|postgres` | دیتا کجا باشد (پیش‌فرض: `sqlite`) |
 | `--path SEG` / `--no-path` | پیشوند URL، یا هیچ |
 | `--username NAME` / `--password PASS` | مدیر |
 | `--domain NAME` | Let's Encrypt برای این دامنه |
@@ -62,7 +75,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 | `--from-source` | آخرین کامیت را از سورس بساز (Go را اگر نباشد نصب می‌کند) |
 | `-y`, `--yes` | هیچ نپرس |
 
-متغیرهای محیطی هم کار می‌کنند: `WUI_DOMAIN`، `WUI_SERVER_IP`، `WUI_SSL_MODE=ip|domain|none`، `WUI_ADMIN_USER`، `WUI_ADMIN_PASSWORD`، `WUI_ENABLE_FAIL2BAN=false`.
+متغیرهای محیطی هم کار می‌کنند: `WUI_DOMAIN`، `WUI_SERVER_IP`، `WUI_SSL_MODE=ip|domain|none`، `WUI_ADMIN_USER`، `WUI_ADMIN_PASSWORD`، `WUI_SUB_PORT`، `WUI_DB_DRIVER=sqlite|postgres`، `WUI_ENABLE_FAIL2BAN=false`.
 
 ```bash
 # برای cloud-init

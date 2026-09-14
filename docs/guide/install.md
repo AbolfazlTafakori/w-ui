@@ -28,7 +28,16 @@ It asks first, then works unattended:
 1. **The panel port** — a random free one unless you name it. It refuses a port something else already listens on.
 2. **The URL path** — a random 18-character prefix. Everything outside it answers 404, the sign-in page included.
 3. **The administrator** — name and password both generated unless you set them.
-4. **How the panel is reached:**
+4. **The database:**
+
+   ```
+   1) SQLite      — one file, nothing to install; fine up to a few thousand customers   ← default
+   2) PostgreSQL  — for a large number of customers; installed and configured here
+   ```
+
+   Either way a backup restores into the other, so this is not a decision you are stuck with. See [Backup and restore](/operations/backup-restore).
+
+5. **How the panel is reached:**
 
    ```
    1) Let's Encrypt for Domain (90-day validity, auto-renews)
@@ -39,7 +48,9 @@ It asks first, then works unattended:
 
    Whatever you choose, the panel answers on the one port — by the address and by the domain alike. See [Certificates](/guide/certificates).
 
-5. Whether to install OpenVPN and AmneziaWG alongside WireGuard.
+6. Whether to install OpenVPN and AmneziaWG alongside WireGuard.
+
+Not asked: the **subscription port**. The installer picks a free random one beside the panel's, turns the subscription service on, and gives it the panel's certificate, so a customer's link works from the first minute. `--sub-port N` names one instead.
 
 Press enter through all of it and nothing about the result is guessable: random port, random path, random administrator, generated password, a certificate for the server's own address.
 
@@ -50,6 +61,8 @@ Every answer is also a flag, and `--yes` skips the questions:
 | Flag | Effect |
 |------|--------|
 | `--port N` | Listen on port N |
+| `--sub-port N` | The subscription service's port (default: random) |
+| `--db sqlite\|postgres` | Where the data lives (default: `sqlite`) |
 | `--path SEG` / `--no-path` | The URL prefix, or none |
 | `--username NAME` / `--password PASS` | The administrator |
 | `--domain NAME` | Let's Encrypt for this domain |
@@ -62,7 +75,7 @@ Every answer is also a flag, and `--yes` skips the questions:
 | `--from-source` | Build the latest commit (installs Go if needed) |
 | `-y`, `--yes` | Ask nothing |
 
-Environment variables work too: `WUI_DOMAIN`, `WUI_SERVER_IP`, `WUI_SSL_MODE=ip|domain|none`, `WUI_ADMIN_USER`, `WUI_ADMIN_PASSWORD`, `WUI_ENABLE_FAIL2BAN=false`.
+Environment variables work too: `WUI_DOMAIN`, `WUI_SERVER_IP`, `WUI_SSL_MODE=ip|domain|none`, `WUI_ADMIN_USER`, `WUI_ADMIN_PASSWORD`, `WUI_SUB_PORT`, `WUI_DB_DRIVER=sqlite|postgres`, `WUI_ENABLE_FAIL2BAN=false`.
 
 ```bash
 # cloud-init style
