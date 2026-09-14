@@ -370,16 +370,21 @@ func cmdSettingSet(args []string) error {
 	if *noTLS {
 		cur.WebCertFile, cur.WebKeyFile = "", ""
 	}
-	saved, err := settings.Save(ctx, cur)
-	if err != nil {
-		return err
+	panelChanged := *listen != "" || *port != 0 || *basePath != "" || *cert != "" || *noTLS
+	subChanged := *subEnable || *subDisable || *subPort >= 0 || *subListen != "" || *subCert != ""
+
+	var saved service.PanelSettings
+	if panelChanged {
+		if saved, err = settings.Save(ctx, cur); err != nil {
+			return err
+		}
 	}
 
 	// The subscription service, the same way: only what was asked for moves.
-	if *subEnable || *subDisable || *subPort >= 0 || *subListen != "" || *subCert != "" {
+	var sc service.SubSettings
+	if subChanged {
 		subs := service.NewSubscriptions(db, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-		sc, err := subs.Settings(ctx)
-		if err != nil {
+		if sc, err = subs.Settings(ctx); err != nil {
 			return err
 		}
 		if *subEnable {
@@ -402,26 +407,50 @@ func cmdSettingSet(args []string) error {
 			}
 			sc.CertFile, sc.KeyFile = *subCert, *subKey
 		}
-		if _, err := subs.SaveSettings(ctx, sc); err != nil {
+		if sc, err = subs.SaveSettings(ctx, sc); err != nil {
 			return err
 		}
 	}
-	scheme := "http"
-	if saved.WebCertFile != "" {
-		scheme = "https"
+
+	// Said back only for what moved: the panel's own address comes from the
+	// environment on an install that never touched these, and reporting the
+	// stored defaults for it would name a port it does not listen on.
+	if panelChanged {
+		scheme := "http"
+		if saved.WebCertFile != "" {
+			scheme = "https"
+		}
+		host := saved.WebListen
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = "<this server>"
+		}
+		p := saved.WebPort
+		if p == 0 {
+			p = 2096
+		}
+		if saved.WebBasePath == "" {
+			saved.WebBasePath = "/"
+		}
+		fmt.Printf("saved; from the next start the panel answers at %s://%s:%d%s\n", scheme, host, p, saved.WebBasePath)
 	}
-	host := saved.WebListen
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "<this server>"
+	if subChanged {
+		switch {
+		case !sc.Enabled:
+			fmt.Println("saved; the subscription service is off")
+		case sc.Port == 0:
+			fmt.Printf("saved; from the next start subscriptions are served on the panel's port under %s\n", sc.Path)
+		default:
+			scheme := "http"
+			if sc.CertFile != "" {
+				scheme = "https"
+			}
+			host := sc.Listen
+			if host == "" || host == "0.0.0.0" || host == "::" {
+				host = "<this server>"
+			}
+			fmt.Printf("saved; from the next start subscriptions are served at %s://%s:%d%s\n", scheme, host, sc.Port, sc.Path)
+		}
 	}
-	p := saved.WebPort
-	if p == 0 {
-		p = 2096
-	}
-	if saved.WebBasePath == "" {
-		saved.WebBasePath = "/"
-	}
-	fmt.Printf("saved; from the next start the panel answers at %s://%s:%d%s\n", scheme, host, p, saved.WebBasePath)
 	return nil
 }
 

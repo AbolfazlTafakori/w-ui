@@ -219,6 +219,12 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		if clean == backupsDir {
 			return filepath.SkipDir
 		}
+		// And the directory scheduled backups used to go to before the
+		// installer pointed them outside: an install upgraded from then still
+		// has it, full of archives.
+		if d.IsDir() && clean == filepath.Join(root, "backups") {
+			return filepath.SkipDir
+		}
 		// A restore staged but not yet applied. Archiving it would put a whole
 		// second copy of the data inside the backup, and restoring that backup
 		// would stage the older one again.
