@@ -179,10 +179,6 @@ const en = {
       { text: 'Reference', link: '/reference/w-ui', activeMatch: '^/(reference|operations|help)/' },
     ],
     sidebar: { '/': enSidebar },
-    editLink: {
-      pattern: 'https://github.com/AbolfazlTafakori/w-ui/edit/main/docs/:path',
-      text: 'Edit this page on GitHub',
-    },
     outline: { level: [2, 3] },
   },
 }
@@ -200,10 +196,6 @@ const fa = {
       { text: 'مرجع', link: '/fa/reference/w-ui', activeMatch: '^/fa/(reference|operations|help)/' },
     ],
     sidebar: { '/fa/': faSidebar },
-    editLink: {
-      pattern: 'https://github.com/AbolfazlTafakori/w-ui/edit/main/docs/:path',
-      text: 'ویرایش این صفحه در گیت‌هاب',
-    },
     outline: { level: [2, 3], label: 'در این صفحه' },
     docFooter: { prev: 'صفحهٔ قبلی', next: 'صفحهٔ بعدی' },
     lastUpdated: { text: 'آخرین به‌روزرسانی' },

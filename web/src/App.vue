@@ -176,7 +176,8 @@ function collapseLeave(el) {
   })
 }
 
-const REPO_DOCS = 'https://github.com/AbolfazlTafakori/w-ui#readme'
+// The docs, in the language the panel is being read in.
+const REPO_DOCS = computed(() => 'https://abolfazltafakori.github.io/w-ui/' + (store.locale === 'fa' ? 'fa/' : ''))
 
 function onKeydown(event) {
   if (event.key === 'Escape' && drawerOpen.value) drawerOpen.value = false
