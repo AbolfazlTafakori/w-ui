@@ -39,7 +39,7 @@ Installed alongside the panel. Run `w-ui` for the menu, or `w-ui <subcommand>` f
 │  22. IP Limit Management                       │
 │  23. Firewall Management                       │
 │  24. SSH Port Forwarding Management            │
-│  25. Backup & Restore                          │
+│  25. PostgreSQL Management                     │
 │────────────────────────────────────────────────│
 │  26. Enable BBR                                │
 │  27. Update Geo Files                          │
@@ -54,12 +54,12 @@ Under the box: the panel state, whether it starts at boot, and one line per tunn
 | # | Does | Asks |
 |---|------|------|
 | 1 | runs the installer | — |
-| 2 | fetches the latest release, replaces the binary, restarts | confirm |
-| 3 | builds the latest commit on `main` and installs it | confirm |
+| 2 | fetches the latest release, verifies it, replaces the binary and this script, restarts — nothing is asked; port, path, certificate, database and administrator stay. A panel with no certificate is offered one | confirm |
+| 3 | the same, from the rolling `dev-latest` build of the latest commit | confirm |
 | 4 | replaces this script with the one published for the installed version | confirm |
 | 5 | installs a named earlier version | the version |
 | 6 | removes the panel, its data and its unit — **after copying the data to `/root/wui-last-copy-…`** | confirm, default no |
-| 7 | new username and password (generated unless typed) | both, then whether to restart |
+| 7 | new username and password (generated unless typed), and whether to drop two-factor | both, 2FA, then whether to restart |
 | 8 | a new random URL path | confirm |
 | 9 | every panel setting back to the environment's; the admin and customers stay | confirm, default no |
 | 10 | the port, applied at the next restart | the port |
@@ -74,7 +74,7 @@ Under the box: the panel state, whether it starts at boot, and one line per tunn
 | 22 | fail2ban on the sign-in form: install, ban duration, unban all, ban log, ban / unban one, live log, status, restart, uninstall | which |
 | 23 | ufw: install, list, open, delete, enable, disable, status | which |
 | 24 | bind the panel to 127.0.0.1 and print the `ssh -L` command to reach it | which |
-| 25 | make, restore or list backups | which |
+| 25 | PostgreSQL: install the server and the panel's database, move the data SQLite → PostgreSQL or back, status, start, stop, restart, autostart, log, and Backup & Restore | which |
 | 26 | enable / disable BBR | which |
 | 27 | refresh the country lists routing rules use, or fetch one | which |
 | 28 | install and run Ookla's speedtest | — |
@@ -87,6 +87,7 @@ w-ui settings                 # what the panel is actually running with
 w-ui enable | disable
 w-ui log | banlog
 w-ui update | update-dev | legacy
+w-ui backup | postgres
 w-ui update-all-geofiles
 w-ui backup
 w-ui install | uninstall

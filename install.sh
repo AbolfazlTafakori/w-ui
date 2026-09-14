@@ -1005,10 +1005,125 @@ announce_existing() {
   tty_out '%sis another panel and belongs on another machine.%s\n\n' "$D" "$N"
 }
 
+# The certificate question, on its own so the update path can ask it too
+# when it finds a panel with none.
+ask_tls() {
+  # ── how it is reached ─────────────────────────────────────────────────────
+  #
+  # The same four choices the classic panel's installer offers, in the same order, with
+  # the same default: a certificate for the address itself. Whatever is
+  # chosen, the panel answers on the one port above -- by name and by
+  # address alike -- so a link written down today works tomorrow.
+  tty_out '\n'
+  info "SSL Certificate Setup (RECOMMENDED)"
+  info "SSL is strongly recommended. Skip only if a reverse proxy"
+  info "or SSH tunnel handles TLS for you."
+  info "Let's Encrypt supports both domains and IP addresses."
+  tty_out '\n'
+  info "  1) Let's Encrypt for Domain (90-day validity, auto-renews)"
+  info "  2) Let's Encrypt for IP Address (6-day validity, auto-renews)"
+  info "  3) Custom SSL Certificate (path to existing files)"
+  info "  4) Skip SSL (advanced — behind reverse proxy / SSH tunnel only)"
+  info "Note: options 1 & 2 need port 80 reachable from the internet."
+  info "Note: option 4 serves the panel over plain HTTP."
+  tty_out '\n'
+
+  local choice
+  while true; do
+    ask choice "Choose" "2"
+    case "$choice" in
+      1|2|3|4) break ;;
+      *) warn "answer 1, 2, 3 or 4" ;;
+    esac
+  done
+
+  case "$choice" in
+    1)
+      TLS_MODE=acme
+      # Blank is a way out, not a mistake to be corrected. An operator who
+      # picked this option and then realised the DNS is not ready yet should
+      # be able to finish the install, not be held at a question whose only
+      # valid answer they do not have.
+      while true; do
+        ask ACME_DOMAIN "Domain pointing at this server (blank: no certificate)" "${ACME_DOMAIN:-}"
+        if [[ -z "$ACME_DOMAIN" ]]; then
+          warn "no domain — the panel will serve plain HTTP"
+          TLS_MODE=none
+          break
+        elif [[ ! "$ACME_DOMAIN" =~ ^[A-Za-z0-9._-]+\.[A-Za-z]{2,}$ ]]; then
+          warn "that does not look like a domain name"
+        else
+          break
+        fi
+      done
+      [[ "$TLS_MODE" == acme ]] && ask ACME_EMAIL "Email for expiry notices (optional)" "${ACME_EMAIL:-}"
+      ;;
+    2)
+      TLS_MODE=ip
+      local mine; mine="$(public_ip)"
+      if [[ -n "$mine" ]]; then
+        if ask_yn "Is $mine the correct incoming public IPv4 address for this server?" y; then
+          ACME_IP="$mine"
+        fi
+      else
+        warn "could not auto-detect this server's public address"
+      fi
+      while [[ -z "$ACME_IP" ]]; do
+        ask ACME_IP "This server's public IPv4 address" ""
+        [[ "$ACME_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { warn "that is not an IPv4 address"; ACME_IP=""; }
+      done
+      ask ACME_IPV6 "IPv6 address to include (blank to skip)" "${ACME_IPV6:-}"
+      ;;
+    3)
+      TLS_MODE=files
+      ask TLS_DOMAIN "Domain the certificate was issued for (blank: use the address)" "${TLS_DOMAIN:-}"
+      while true; do
+        ask TLS_CERT "Path to the certificate (fullchain .crt or .pem)" "${TLS_CERT:-}"
+        [[ -s "$TLS_CERT" ]] && break
+        warn "no readable file at that path"
+      done
+      while true; do
+        ask TLS_KEY "Path to the private key" "${TLS_KEY:-}"
+        [[ -s "$TLS_KEY" ]] && break
+        warn "no readable file at that path"
+      done
+      ;;
+    4)
+      TLS_MODE=none
+      tty_out '\n'
+      warn "the panel will be installed WITHOUT SSL/TLS"
+      warn "login credentials and cookies travel as plain HTTP; only safe when"
+      warn "  a reverse proxy (nginx, Caddy) terminates TLS for you, or"
+      warn "  you reach the panel exclusively via an SSH tunnel"
+      ;;
+  esac
+
+  # A panel on a public address over plain HTTP puts an administrator's
+  # password on the wire. Bound to the loopback it is reachable only through
+  # an SSH tunnel or a proxy on this machine, which is the one way serving
+  # plain HTTP is defensible at all.
+  if [[ "$TLS_MODE" == none && "$LISTEN_ADDR" != 127.0.0.1 ]]; then
+    tty_out '\n'
+    if ask_yn "Bind the panel to 127.0.0.1 only? (recommended — forces SSH tunnel / reverse-proxy access)" n; then
+      LISTEN_ADDR=127.0.0.1
+    fi
+  fi
+}
+
 configure() {
   open_tty
   read_existing
   announce_existing
+
+  # A panel is already here: this is an update, and an update asks nothing.
+  # The port, the path, the certificate, the database, the administrator and
+  # the packages are whatever they are; only the binary and the scripts move.
+  if [[ -f "$UNIT" ]]; then
+    step "Update"
+    info "keeping the port, path, certificate, database and administrator this install has"
+    configure_upgrade
+    return 0
+  fi
 
   if [[ "$INTERACTIVE" != 1 ]]; then
     # Said, not silently assumed. An operator who piped this from a file and
@@ -1141,106 +1256,7 @@ configure() {
     info "database: $DB_DRIVER"
   fi
 
-  # ── how it is reached ─────────────────────────────────────────────────────
-  #
-  # The same four choices the classic panel's installer offers, in the same order, with
-  # the same default: a certificate for the address itself. Whatever is
-  # chosen, the panel answers on the one port above -- by name and by
-  # address alike -- so a link written down today works tomorrow.
-  tty_out '\n'
-  info "SSL Certificate Setup (RECOMMENDED)"
-  info "SSL is strongly recommended. Skip only if a reverse proxy"
-  info "or SSH tunnel handles TLS for you."
-  info "Let's Encrypt supports both domains and IP addresses."
-  tty_out '\n'
-  info "  1) Let's Encrypt for Domain (90-day validity, auto-renews)"
-  info "  2) Let's Encrypt for IP Address (6-day validity, auto-renews)"
-  info "  3) Custom SSL Certificate (path to existing files)"
-  info "  4) Skip SSL (advanced — behind reverse proxy / SSH tunnel only)"
-  info "Note: options 1 & 2 need port 80 reachable from the internet."
-  info "Note: option 4 serves the panel over plain HTTP."
-  tty_out '\n'
-
-  local choice
-  while true; do
-    ask choice "Choose" "2"
-    case "$choice" in
-      1|2|3|4) break ;;
-      *) warn "answer 1, 2, 3 or 4" ;;
-    esac
-  done
-
-  case "$choice" in
-    1)
-      TLS_MODE=acme
-      # Blank is a way out, not a mistake to be corrected. An operator who
-      # picked this option and then realised the DNS is not ready yet should
-      # be able to finish the install, not be held at a question whose only
-      # valid answer they do not have.
-      while true; do
-        ask ACME_DOMAIN "Domain pointing at this server (blank: no certificate)" "${ACME_DOMAIN:-}"
-        if [[ -z "$ACME_DOMAIN" ]]; then
-          warn "no domain — the panel will serve plain HTTP"
-          TLS_MODE=none
-          break
-        elif [[ ! "$ACME_DOMAIN" =~ ^[A-Za-z0-9._-]+\.[A-Za-z]{2,}$ ]]; then
-          warn "that does not look like a domain name"
-        else
-          break
-        fi
-      done
-      [[ "$TLS_MODE" == acme ]] && ask ACME_EMAIL "Email for expiry notices (optional)" "${ACME_EMAIL:-}"
-      ;;
-    2)
-      TLS_MODE=ip
-      local mine; mine="$(public_ip)"
-      if [[ -n "$mine" ]]; then
-        if ask_yn "Is $mine the correct incoming public IPv4 address for this server?" y; then
-          ACME_IP="$mine"
-        fi
-      else
-        warn "could not auto-detect this server's public address"
-      fi
-      while [[ -z "$ACME_IP" ]]; do
-        ask ACME_IP "This server's public IPv4 address" ""
-        [[ "$ACME_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { warn "that is not an IPv4 address"; ACME_IP=""; }
-      done
-      ask ACME_IPV6 "IPv6 address to include (blank to skip)" "${ACME_IPV6:-}"
-      ;;
-    3)
-      TLS_MODE=files
-      ask TLS_DOMAIN "Domain the certificate was issued for (blank: use the address)" "${TLS_DOMAIN:-}"
-      while true; do
-        ask TLS_CERT "Path to the certificate (fullchain .crt or .pem)" "${TLS_CERT:-}"
-        [[ -s "$TLS_CERT" ]] && break
-        warn "no readable file at that path"
-      done
-      while true; do
-        ask TLS_KEY "Path to the private key" "${TLS_KEY:-}"
-        [[ -s "$TLS_KEY" ]] && break
-        warn "no readable file at that path"
-      done
-      ;;
-    4)
-      TLS_MODE=none
-      tty_out '\n'
-      warn "the panel will be installed WITHOUT SSL/TLS"
-      warn "login credentials and cookies travel as plain HTTP; only safe when"
-      warn "  a reverse proxy (nginx, Caddy) terminates TLS for you, or"
-      warn "  you reach the panel exclusively via an SSH tunnel"
-      ;;
-  esac
-
-  # A panel on a public address over plain HTTP puts an administrator's
-  # password on the wire. Bound to the loopback it is reachable only through
-  # an SSH tunnel or a proxy on this machine, which is the one way serving
-  # plain HTTP is defensible at all.
-  if [[ "$TLS_MODE" == none && "$LISTEN_ADDR" != 127.0.0.1 ]]; then
-    tty_out '\n'
-    if ask_yn "Bind the panel to 127.0.0.1 only? (recommended — forces SSH tunnel / reverse-proxy access)" n; then
-      LISTEN_ADDR=127.0.0.1
-    fi
-  fi
+  ask_tls
 
   # ── what is installed alongside ───────────────────────────────────────────
   tty_out '\n'
@@ -1268,6 +1284,18 @@ configure() {
   tty_out '\n'
 
   ask_yn "Start the install with these?" y || die "cancelled — nothing was changed"
+}
+
+# Everything as it is. What read_existing could not find is left at what it
+# was on this machine: the tunnels that are installed stay installed and
+# nothing new is added, and a panel with no certificate keeps serving plain
+# HTTP -- the update script is what offers one.
+configure_upgrade() {
+  [[ -n "$TLS_MODE" ]] || TLS_MODE=none
+  [[ -n "$DB_DRIVER" ]] || DB_DRIVER=sqlite
+  [[ -n "$SUB_PORT" ]] || SUB_PORT="$(pick_sub_port)"
+  if [[ "$WANT_OPENVPN" == 1 && ! -x "$(command -v openvpn 2>/dev/null)" ]]; then WANT_OPENVPN=0; fi
+  if [[ "$WANT_AMNEZIA" == 1 && ! -x "$(command -v awg 2>/dev/null)" ]]; then WANT_AMNEZIA=0; fi
 }
 
 # The same decisions, made without a terminal.
@@ -2209,7 +2237,7 @@ setup_fail2ban() {
 # the classic panel's closing box: the subcommands, so the operator's next command is
 # already on the screen.
 usage_box() {
-  printf '%s%s installation finished, it is running now...%s\n\n' "$G" "W-UI $("$BIN_PATH" version 2>/dev/null || echo)" "$N"
+  printf '%s%s %s finished, it is running now...%s\n\n' "$G" "W-UI $("$BIN_PATH" version 2>/dev/null || echo)" "${1:-installation}" "$N"
   printf '┌───────────────────────────────────────────────────────┐\n'
   printf '│  %sw-ui control menu usages (subcommands):%s              │\n' "$B" "$N"
   printf '│                                                       │\n'

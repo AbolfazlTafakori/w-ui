@@ -109,7 +109,7 @@ Installing the panel also installs its management script. `w-ui` alone opens the
 │  3. Update to Dev    9. Reset Settings              14. Restart                               22. IP Limit Management          28. Speedtest by Ookla
 │  4. Update Menu     10. Change Port                 15. Restart Tunnels                       23. Firewall Management
 │  5. Legacy Version  11. View Current Settings       16. Check Status                          24. SSH Port Forwarding
-│  6. Uninstall                                       17. Logs Management                       25. Backup & Restore
+│  6. Uninstall                                       17. Logs Management                       25. PostgreSQL Management
 ```
 
 Each entry is also a subcommand: `w-ui start`, `w-ui restart`, `w-ui log`, `w-ui settings`, `w-ui backup`, `w-ui update`, and so on. Anything the script needs from the database it asks the panel binary for, so the schema has one implementation:

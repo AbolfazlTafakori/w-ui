@@ -10,9 +10,15 @@ description: "Update in place with w-ui update, uninstall with a last copy of th
 w-ui update
 ```
 
-or `w-ui` → **2. Update**. It fetches the latest release, verifies it, replaces the binary and restarts the panel. Settings, customers and keys are kept. WireGuard customers stay connected: the tunnels are kernel objects, and the panel only restarts an interface whose configuration actually changed.
+or `w-ui` → **2. Update**. It fetches the latest release, verifies the checksum and the signature, replaces the binary and the `w-ui` script, and restarts the panel. **It asks nothing**: the port, the URL path, the certificate, the database and the administrator are whatever the install already has. The one exception is a panel with no certificate at all, which is offered one. Settings, customers and keys are kept. WireGuard customers stay connected: the tunnels are kernel objects, and the panel only restarts an interface whose configuration actually changed.
 
-`w-ui update-dev` (menu 3) builds the latest commit on `main` from source instead — for trying a fix before it is released.
+`w-ui update-dev` (menu 3) installs the rolling `dev-latest` build of the latest commit instead — for trying a fix before it is released.
+
+The same thing without the menu, on any machine:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/update.sh)
+```
 
 `w-ui legacy` (menu 5) installs a named earlier version.
 

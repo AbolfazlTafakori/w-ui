@@ -4,10 +4,13 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/abolfazl/w-ui/internal/update"
 )
 
 // Producing the signature a panel checks before it installs an update.
@@ -87,5 +90,30 @@ func signCommand(args []string) error {
 	fmt.Printf("signed %s\n  -> %s\n", args[0], out)
 	fmt.Println("\nPublish both as release assets. A panel downloads the pair and")
 	fmt.Println("installs nothing if the signature does not match.")
+	return nil
+}
+
+// verifyCommand is how the update script checks a download before it
+// becomes the panel: the key is the one baked into the running binary, so
+// the script needs nothing but the panel it already has.
+func verifyCommand(args []string) error {
+	if len(args) != 2 {
+		return errors.New("verify: want a binary and its .sig")
+	}
+	if !update.Signed() {
+		return errors.New("verify: this build carries no signing key, so it cannot check one")
+	}
+	binary, err := os.ReadFile(args[0])
+	if err != nil {
+		return err
+	}
+	sig, err := os.ReadFile(args[1])
+	if err != nil {
+		return err
+	}
+	if err := update.Verify(binary, sig); err != nil {
+		return err
+	}
+	fmt.Println("signature ok")
 	return nil
 }

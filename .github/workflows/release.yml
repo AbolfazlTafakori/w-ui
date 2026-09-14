@@ -62,7 +62,7 @@ jobs:
       - name: Checksums and scripts
         run: |
           rm -f dist/wui-host
-          cp install.sh w-ui.sh dist/
+          cp install.sh w-ui.sh update.sh dist/
           (cd dist && sha256sum * > SHA256SUMS)
           ls -l dist
 

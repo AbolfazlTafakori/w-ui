@@ -85,7 +85,7 @@ jobs:
         run: |
           sudo apt-get install -y -qq shellcheck >/dev/null
           # Style findings are advisory; anything that is an actual error fails.
-          shellcheck -S error install.sh w-ui.sh
+          shellcheck -S error install.sh w-ui.sh update.sh
 
   install-matrix:
     name: Clean install on ${{ matrix.image }} (${{ matrix.db }})
@@ -161,3 +161,58 @@ jobs:
           ls /root/wui-last-copy-*.tar.gz
           test ! -e /usr/local/bin/wui
           command -v wg
+
+  # The rolling build of the latest commit: what "Update to Dev Channel" in
+  # the w-ui menu installs. One pre-release named dev-latest, replaced on
+  # every push to main that passed everything above.
+  dev-release:
+    name: dev-latest pre-release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [go, frontend, installer, install-matrix]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: npm ci && npx vite build
+        working-directory: web
+      - name: Build every platform
+        env:
+          WUI_PUBLIC_KEY: ${{ vars.WUI_SIGNING_PUBLIC_KEY }}
+        run: |
+          version="dev-$(git rev-parse --short HEAD)"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath               -ldflags "-s -w -X main.version=${version} -X github.com/abolfazl/w-ui/internal/update.PublicKey=${WUI_PUBLIC_KEY}"               -o "dist/wui-linux-${arch}" ./cmd/wui
+          done
+          go build -o dist/wui-host ./cmd/wui
+      - name: Sign
+        env:
+          WUI_SIGNING_KEY: ${{ secrets.WUI_SIGNING_KEY }}
+        run: |
+          [ -n "$WUI_SIGNING_KEY" ] || { echo "::warning::unsigned dev build"; exit 0; }
+          for f in dist/wui-linux-*; do dist/wui-host sign "$f"; done
+      - name: Checksums and scripts
+        run: |
+          rm -f dist/wui-host
+          cp install.sh w-ui.sh update.sh dist/
+          (cd dist && sha256sum * > SHA256SUMS)
+      - name: Replace the dev-latest pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete dev-latest --yes --cleanup-tag 2>/dev/null || true
+          git tag -f dev-latest
+          git push -f origin dev-latest
+          gh release create dev-latest dist/* --prerelease --title "dev-latest ($(git rev-parse --short HEAD))"             --notes "Rolling build of the latest commit on main. Not a stable release; install it with w-ui → 3 (Update to Dev Channel)."

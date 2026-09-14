@@ -284,3 +284,19 @@ func newer(current, latest string) bool {
 	}
 	return current != latest
 }
+
+// Verify checks a build against the key this panel was built with.
+func Verify(binary, sig []byte) error {
+	key, err := signingKey()
+	if err != nil {
+		return err
+	}
+	signature, err := decodeSignature(sig)
+	if err != nil {
+		return err
+	}
+	if !ed25519.Verify(key, binary, signature) {
+		return ErrBadSignature
+	}
+	return nil
+}

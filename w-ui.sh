@@ -201,7 +201,7 @@ update() {
         fi
         return 0
     fi
-    bash <(curl -Ls "${REPO_RAW}/install.sh")
+    bash <(curl -Ls "${REPO_RAW}/update.sh")
     if [[ $? == 0 ]]; then
         LOGI "Update is complete, Panel has automatically restarted "
         before_show_menu
@@ -209,7 +209,7 @@ update() {
 }
 
 update_dev() {
-    confirm "This will update W-UI to the latest commit on main (built from source, not a stable release). Your data is preserved. Continue?" "y"
+    confirm "This will update W-UI to the latest DEV commit (the rolling 'dev-latest' build, not a stable release). Your data is preserved. Continue?" "y"
     if [[ $? != 0 ]]; then
         LOGE "Cancelled"
         if [[ $# == 0 ]]; then
@@ -217,7 +217,9 @@ update_dev() {
         fi
         return 0
     fi
-    bash <(curl -Ls "${REPO_RAW}/install.sh") --from-source
+    # WUI_UPDATE_TAG tells update.sh to install the dev-latest pre-release
+    # instead of the latest stable tag.
+    WUI_UPDATE_TAG="dev-latest" bash <(curl -Ls "${REPO_RAW}/update.sh")
     if [[ $? == 0 ]]; then
         LOGI "Dev update is complete, Panel has automatically restarted "
         before_show_menu
@@ -300,17 +302,9 @@ legacy_version() {
         exit 1
     fi
     tag_version="${tag_version#v}"
-    local arch
-    case "$(uname -m)" in
-        x86_64 | amd64) arch=amd64 ;;
-        aarch64 | arm64) arch=arm64 ;;
-        *) arch="$(uname -m)" ;;
-    esac
     # Use the entered panel version in the download link
-    install_command="WUI_RELEASE_URL=https://github.com/${REPO}/releases/download/v${tag_version}/wui-linux-${arch} bash <(curl -Ls \"https://raw.githubusercontent.com/${REPO}/v${tag_version}/install.sh\")"
-
     echo "Downloading and installing panel version $tag_version..."
-    eval $install_command
+    bash <(curl -Ls "${REPO_RAW}/update.sh") "v${tag_version}"
 }
 
 # Function to handle the deletion of the script file
@@ -380,7 +374,13 @@ reset_user() {
     read -rp "Please set the login password [default is a random password]: " config_password
     [[ -z $config_password ]] && config_password=$(gen_random_string 18)
 
-    panel_cli admin reset --username "${config_account}" --password "${config_password}" --quiet > /dev/null 2>&1
+    read -rp "Do you want to disable currently configured two-factor authentication? (y/n): " twoFactorConfirm
+    if [[ $twoFactorConfirm != "y" && $twoFactorConfirm != "Y" ]]; then
+        panel_cli admin reset --username "${config_account}" --password "${config_password}" --quiet > /dev/null 2>&1
+    else
+        panel_cli admin reset --username "${config_account}" --password "${config_password}" --reset-two-factor --quiet > /dev/null 2>&1
+        echo -e "Two factor authentication has been disabled."
+    fi
 
     echo -e "Panel login username has been reset to: ${green} ${config_account} ${plain}"
     echo -e "Panel login password has been reset to: ${green} ${config_password} ${plain}"
@@ -2510,8 +2510,172 @@ SSH_port_forwarding() {
     esac
 }
 
-# Backup & Restore sits where the classic panel's PostgreSQL menu is: this panel keeps
-# everything in one SQLite file, and the archive is the whole of it.
+# ── PostgreSQL ──────────────────────────────────────────────────────────────
+# The panel runs on SQLite or PostgreSQL; the installer sets either up, and
+# this menu is the same work after the fact: install the server, move the
+# data across, and the service controls. Moving is a backup and a restore:
+# the archive carries a portable dump, so the same file lands in either.
+
+# The installer's own functions, for the pieces it already knows how to do.
+installer_lib() {
+    local lib
+    lib=$(mktemp) || return 1
+    curl -fsSL "${REPO_RAW}/install.sh" -o "$lib" || { rm -f "$lib"; return 1; }
+    printf '%s' "$lib"
+}
+
+db_driver_now() {
+    [[ -r "$CONF_DIR/db.env" ]] && sed -n 's/^WUI_DB_DRIVER=//p' "$CONF_DIR/db.env" | head -1 || echo sqlite
+}
+
+postgresql_installed() {
+    command -v psql > /dev/null 2>&1 && id postgres > /dev/null 2>&1
+}
+
+pg_unit() {
+    systemctl list-unit-files 2> /dev/null | awk '{print $1}' | grep -E '^postgresql(@.+|-[0-9]+)?\.service$' | head -1
+}
+
+postgresql_status() {
+    if ! postgresql_installed; then
+        echo -e "${yellow}PostgreSQL is not installed${plain}"
+        return
+    fi
+    echo -e "${green}PostgreSQL:${plain} $(psql --version 2> /dev/null)"
+    local u; u=$(pg_unit)
+    [[ -n "$u" ]] && systemctl status "$u" --no-pager -l 2> /dev/null | head -12
+    if runuser -u postgres -- pg_isready 2> /dev/null; then
+        echo -e "${green}port 5432: accepting connections${plain}"
+    else
+        echo -e "${red}port 5432: not accepting connections${plain}"
+    fi
+    echo -e "${green}panel database:${plain} $(db_driver_now)"
+}
+
+postgresql_start()   { local u; u=$(pg_unit); [[ -n "$u" ]] && systemctl start "$u" && LOGI "PostgreSQL started" || LOGE "PostgreSQL is not installed"; }
+postgresql_stop()    { local u; u=$(pg_unit); [[ -n "$u" ]] && systemctl stop "$u" && LOGI "PostgreSQL stopped" || LOGE "PostgreSQL is not installed"; }
+postgresql_restart() { local u; u=$(pg_unit); [[ -n "$u" ]] && systemctl restart "$u" && LOGI "PostgreSQL restarted" || LOGE "PostgreSQL is not installed"; }
+postgresql_enable()  { local u; u=$(pg_unit); [[ -n "$u" ]] && systemctl enable "$u" > /dev/null 2>&1 && LOGI "PostgreSQL will start on boot" || LOGE "PostgreSQL is not installed"; }
+postgresql_log() {
+    local u; u=$(pg_unit)
+    if [[ -n "$u" ]]; then
+        journalctl -u "$u" -n 100 --no-pager
+    else
+        ls -t /var/log/postgresql/*.log 2> /dev/null | head -1 | xargs -r tail -n 100
+    fi
+}
+
+# Install the server and the panel's database, exactly as the installer's
+# own database step does it. The panel keeps running on what it has.
+pg_install_server_action() {
+    local lib; lib=$(installer_lib) || { LOGE "could not fetch the installer"; return 1; }
+    (
+        # shellcheck disable=SC1090
+        WUI_LIB_ONLY=1 source "$lib"
+        detect_os
+        DB_DRIVER=postgres
+        # setup_database writes db.env, which would switch the panel; keep
+        # that file aside and put it back, so installing is not migrating.
+        [[ -r "$CONF_DIR/db.env" ]] && cp -p "$CONF_DIR/db.env" "$CONF_DIR/db.env.keep"
+        setup_database
+        mv -f "$CONF_DIR/db.env" "$CONF_DIR/db.env.postgres"
+        [[ -r "$CONF_DIR/db.env.keep" ]] && mv -f "$CONF_DIR/db.env.keep" "$CONF_DIR/db.env"
+    )
+    local rc=$?
+    rm -f "$lib"
+    if [[ $rc == 0 ]]; then
+        LOGI "PostgreSQL is installed; the panel's database and role exist. Choose 2 to move the data across."
+    else
+        LOGE "PostgreSQL install failed"
+    fi
+    return $rc
+}
+
+# Move the panel from one engine to the other: a backup on the engine it is
+# on, the connection switched, and the archive restored into the new one.
+# The dump inside the archive is what crosses; the old data stays where it
+# was, untouched, in case of a change of mind.
+migrate_engine() {
+    local to="$1" from; from=$(db_driver_now)
+    if [[ "$from" == "$to" ]]; then
+        LOGI "the panel is already on $to"
+        return 0
+    fi
+    if [[ "$to" == postgres && ! -r "$CONF_DIR/db.env.postgres" ]]; then
+        LOGE "PostgreSQL is not set up for the panel yet; choose 1 first"
+        return 1
+    fi
+    confirm "Move the panel's data from $from to $to? A backup is taken first, and the $from data is left in place." "n" || return 0
+
+    local archive
+    archive=$(panel_cli backup create --dir "$BACKUP_DIR" 2>&1 | tail -1)
+    [[ -f "$archive" ]] || { LOGE "backup failed: $archive"; return 1; }
+    LOGI "backup taken: $archive"
+
+    systemctl stop "$SERVICE" 2> /dev/null
+    cp -p "$CONF_DIR/db.env" "$CONF_DIR/db.env.$from"
+    if [[ "$to" == postgres ]]; then
+        cp -f "$CONF_DIR/db.env.postgres" "$CONF_DIR/db.env"
+    else
+        printf 'WUI_DB_DRIVER=sqlite\nWUI_DB_SOURCE=%s/wui.db\n' "$DATA_DIR" > "$CONF_DIR/db.env"
+        # A fresh file: the restore loads the dump into it.
+        rm -f "$DATA_DIR/wui.db" "$DATA_DIR/wui.db-wal" "$DATA_DIR/wui.db-shm"
+    fi
+    chmod 600 "$CONF_DIR/db.env"
+
+    local report
+    if report=$(panel_cli backup restore "$archive" --dir "$BACKUP_DIR" 2>&1); then
+        echo "$report" | sed 's/^/  /'
+        systemctl start "$SERVICE" 2> /dev/null
+        sleep 3
+        if systemctl is-active --quiet "$SERVICE" && journalctl -u "$SERVICE" --since "-1 min" --no-pager 2> /dev/null | grep -q "imported a portable backup\|restored from a backup"; then
+            LOGI "the panel is now on $to"
+        else
+            LOGE "the panel did not come up on $to; see: journalctl -u $SERVICE -n 50"
+            LOGE "to go back: cp $CONF_DIR/db.env.$from $CONF_DIR/db.env && systemctl restart $SERVICE"
+        fi
+    else
+        LOGE "restore failed: $report"
+        cp -f "$CONF_DIR/db.env.$from" "$CONF_DIR/db.env"
+        systemctl start "$SERVICE" 2> /dev/null
+    fi
+}
+
+postgresql_menu() {
+    echo -e "\n${green}\t1.${plain} ${green}Install${plain} PostgreSQL (server + wui database)"
+    echo -e "${green}\t2.${plain} Migrate SQLite ${green}->${plain} PostgreSQL"
+    echo -e "${green}\t3.${plain} Status (server & port 5432)"
+    echo -e "${green}\t4.${plain} ${green}Start${plain} PostgreSQL"
+    echo -e "${green}\t5.${plain} ${red}Stop${plain} PostgreSQL"
+    echo -e "${green}\t6.${plain} Restart PostgreSQL"
+    echo -e "${green}\t7.${plain} ${green}Enable${plain} Autostart on boot"
+    echo -e "${green}\t8.${plain} View PostgreSQL Log"
+    echo -e "${green}\t9.${plain} Backup & Restore (either engine)"
+    echo -e "${green}\t10.${plain} Migrate PostgreSQL ${green}->${plain} SQLite"
+    echo -e "${green}\t0.${plain} Back to Main Menu"
+    echo -e "  ${yellow}Panel database now: $(db_driver_now)${plain}"
+    read -rp "Choose an option: " choice
+
+    case "$choice" in
+        0) show_menu ;;
+        1) pg_install_server_action; postgresql_menu ;;
+        2) migrate_engine postgres; postgresql_menu ;;
+        3) postgresql_status; postgresql_menu ;;
+        4) postgresql_start; postgresql_menu ;;
+        5) postgresql_stop; postgresql_menu ;;
+        6) postgresql_restart; postgresql_menu ;;
+        7) postgresql_enable; postgresql_menu ;;
+        8) postgresql_log; postgresql_menu ;;
+        9) backup_menu ;;
+        10) migrate_engine sqlite; postgresql_menu ;;
+        *)
+            echo -e "${red}Invalid option. Please select a valid number.${plain}\n"
+            postgresql_menu
+            ;;
+    esac
+}
+
+# Backup & Restore: the archive carries the database from either engine.
 backup_menu() {
     echo -e "\n${green}\t1.${plain} Create a backup"
     echo -e "${green}\t2.${plain} Restore from a backup"
@@ -2602,6 +2766,7 @@ show_usage() {
 │  ${blue}w-ui update-dev${plain}            - Update to Dev channel (latest)   │
 │  ${blue}w-ui update-all-geofiles${plain}   - Update all geo files             │
 │  ${blue}w-ui backup${plain}                - Backup & Restore                 │
+│  ${blue}w-ui postgres${plain}              - PostgreSQL Management             │
 │  ${blue}w-ui legacy${plain}                - Legacy version                   │
 │  ${blue}w-ui install${plain}               - Install                          │
 │  ${blue}w-ui uninstall${plain}             - Uninstall                        │
@@ -2642,7 +2807,7 @@ show_menu() {
 │  ${green}22.${plain} IP Limit Management                      │
 │  ${green}23.${plain} Firewall Management                      │
 │  ${green}24.${plain} SSH Port Forwarding Management           │
-│  ${green}25.${plain} Backup & Restore                         │
+│  ${green}25.${plain} PostgreSQL Management                    │
 │────────────────────────────────────────────────│
 │  ${green}26.${plain} Enable BBR                               │
 │  ${green}27.${plain} Update Geo Files                         │
@@ -2729,7 +2894,7 @@ show_menu() {
             SSH_port_forwarding
             ;;
         25)
-            check_install && backup_menu
+            check_install && postgresql_menu
             ;;
         26)
             bbr_menu
@@ -2804,6 +2969,9 @@ if [[ $# -gt 0 ]]; then
             ;;
         "backup")
             check_install 0 && backup_menu
+            ;;
+        "postgres" | "postgresql")
+            check_install 0 && postgresql_menu
             ;;
         *) show_usage ;;
     esac

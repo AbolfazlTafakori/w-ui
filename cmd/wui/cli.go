@@ -55,6 +55,8 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, keygenCommand(args[1:])
 	case "sign":
 		return true, signCommand(args[1:])
+	case "verify":
+		return true, verifyCommand(args[1:])
 	case "version", "-v", "--version":
 		fmt.Println(version)
 		return true, nil
@@ -90,6 +92,8 @@ Usage:
   wui version                      print the version
   wui keygen                       make a release-signing key pair
   wui sign <binary>                sign a build, for a release
+  wui verify <binary> <sig>        check a build against the key this panel
+                                   was built with; exit 0 when it is signed
 
 Flags for "setting set":
   --listen ADDR      the address to bind (0.0.0.0 for every address)
@@ -111,6 +115,7 @@ Flags for "admin reset":
   --password PASS    the new password (default: generate one and print it)
   --password-stdin   read the password from standard input instead, so it
                      never appears in the process list
+  --reset-two-factor forget the two-factor secret as well
   --quiet            print nothing on success
 
 Configuration is read from WUI_* environment variables. The management script
@@ -476,6 +481,7 @@ func cmdAdmin(args []string) error {
 	// for as long as the command runs, via ps. Scripts should pipe it instead.
 	fromStdin := fs.Bool("password-stdin", false, "read the password from stdin")
 	quiet := fs.Bool("quiet", false, "print nothing on success")
+	resetTwoFactor := fs.Bool("reset-two-factor", false, "forget the two-factor secret")
 	if err := fs.Parse(args[1:]); err != nil {
 		return fmt.Errorf("admin reset: %w", err)
 	}
@@ -542,9 +548,16 @@ func cmdAdmin(args []string) error {
 		updates := map[string]any{
 			"password_hash": string(hash),
 			"updated_at":    time.Now().UTC(),
+			// Every session that was signed in with the old password ends.
+			"session_epoch": gorm.Expr("session_epoch + 1"),
 		}
 		if *username != "" {
 			updates["username"] = *username
+		}
+		if *resetTwoFactor {
+			// An operator locked out by a lost authenticator gets back in
+			// this way; the secret is gone, not shown.
+			updates["totp_secret"] = ""
 		}
 		if err := db.Model(&admin).Updates(updates).Error; err != nil {
 			return fmt.Errorf("admin reset: update administrator: %w", err)
