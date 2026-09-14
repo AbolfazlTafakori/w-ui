@@ -56,6 +56,13 @@ type Options struct {
 	// a consistent copy of itself instead; this is how the panel asks for one.
 	Snapshot func(ctx context.Context, dest string) error
 
+	// DBFile is the SQLite file's name inside DataDir, or empty when the
+	// panel runs on another engine. Any other .db in the directory is not
+	// the database -- a file left behind by a move between engines -- and
+	// archiving it would put a stale, empty or half-migrated one back on
+	// a restore, in place of the dump that carries the real data.
+	DBFile string
+
 	// Export writes the database as a portable dump -- every table as JSON,
 	// independent of the engine. It goes into every archive beside the
 	// SQLite snapshot, so a backup taken on one engine restores into the
@@ -75,6 +82,7 @@ type Service struct {
 	keep     int
 	snapshot func(context.Context, string) error
 	export   func(context.Context, io.Writer) error
+	dbFile   string
 	log      *slog.Logger
 
 	// Only one backup runs at a time. Two at once would read the database
@@ -97,6 +105,7 @@ func New(o Options) *Service {
 		keep:     o.Keep,
 		snapshot: o.Snapshot,
 		export:   o.Export,
+		dbFile:   o.DBFile,
 		log:      log,
 	}
 }
@@ -234,6 +243,10 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		// SQLite's sidecar files are meaningless without the moment they
 		// belonged to, and restoring a stale one corrupts the database.
 		if strings.HasSuffix(clean, ".db-wal") || strings.HasSuffix(clean, ".db-shm") {
+			return nil
+		}
+		// Only the database is the database.
+		if strings.HasSuffix(clean, ".db") && d.Name() != s.dbFile {
 			return nil
 		}
 		// A dump waiting to be loaded is not data yet.

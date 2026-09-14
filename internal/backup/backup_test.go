@@ -34,7 +34,7 @@ func newService(t *testing.T, keep int) (*Service, string) {
 			t.Fatal(err)
 		}
 	}
-	return New(Options{DataDir: data, Keep: keep, Log: quiet()}), data
+	return New(Options{DataDir: data, Keep: keep, DBFile: "wui.db", Log: quiet()}), data
 }
 
 func entries(t *testing.T, path string) map[string]string {
@@ -297,6 +297,7 @@ func TestTheDatabaseIsArchivedFromItsSnapshot(t *testing.T) {
 
 	s := New(Options{
 		DataDir: data,
+		DBFile:  "wui.db",
 		Log:     quiet(),
 		Snapshot: func(_ context.Context, dest string) error {
 			return os.WriteFile(dest, []byte("a consistent snapshot"), 0o600)
@@ -324,6 +325,7 @@ func TestAFailedSnapshotStillProducesABackup(t *testing.T) {
 
 	s := New(Options{
 		DataDir: data,
+		DBFile:  "wui.db",
 		Log:     quiet(),
 		Snapshot: func(context.Context, string) error {
 			return io.ErrUnexpectedEOF

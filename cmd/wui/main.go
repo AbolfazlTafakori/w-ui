@@ -900,10 +900,15 @@ func importPending(db *gorm.DB, cfg config.Config, path string, log *slog.Logger
 // for the command line alike: the same archive, with the same contents,
 // whichever asked for it.
 func newBackupService(db *gorm.DB, cfg config.Config, dir string, log *slog.Logger) *backup.Service {
+	dbFile := ""
+	if cfg.DBDriver == config.DriverSQLite {
+		dbFile = filepath.Base(cfg.DBSource)
+	}
 	return backup.New(backup.Options{
 		DataDir: cfg.DataDir,
 		Dir:     dir,
 		Keep:    7,
+		DBFile:  dbFile,
 		Log:     log,
 		// SQLite can write a consistent copy of itself while it is in use.
 		// Copying the file byte by byte instead can catch it mid-write, and a

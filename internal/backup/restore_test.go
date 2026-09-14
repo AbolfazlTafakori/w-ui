@@ -360,7 +360,7 @@ func TestARestoreAcrossEnginesKeepsTheDumpForImport(t *testing.T) {
 	}
 
 	// SQLite to SQLite: the exact file, and the dump is discarded.
-	data = stage(t, map[string]string{"wui.db": "restored", ExportFile: `{"format":1}`})
+	data = stage(t, map[string]string{"wui.db": "restored", ExportFile: `{"format":1,"driver":"sqlite"}`})
 	if _, _, ok := ApplyPending(data, "wui.db", quiet()); !ok {
 		t.Fatal("not applied")
 	}
@@ -372,5 +372,39 @@ func TestARestoreAcrossEnginesKeepsTheDumpForImport(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(data, ExportFile)); !os.IsNotExist(err) {
 		t.Error("the dump was copied into the data directory")
+	}
+}
+
+// A PostgreSQL panel's archive may carry a SQLite file a move left behind.
+// The dump says where the data really is, and the stale file is not put back.
+func TestAStaleSQLiteFileInAPostgresArchiveIsIgnored(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "wui.db"), []byte("live"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	staging := pendingDir(data)
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"wui.db":   "stale",
+		ExportFile: `{"format":1,"version":"x","driver":"postgres","tables":{}}`,
+		markerFile: "wui-backup-20260101-000000.tar.gz",
+	} {
+		if err := os.WriteFile(filepath.Join(staging, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, ok := ApplyPending(data, "wui.db", quiet()); !ok {
+		t.Fatal("not applied")
+	}
+	if b, _ := os.ReadFile(filepath.Join(data, "wui.db")); string(b) != "live" {
+		t.Errorf("the stale file replaced the database: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(data, PendingImportFile)); err != nil {
+		t.Error("the dump was not kept for import")
 	}
 }

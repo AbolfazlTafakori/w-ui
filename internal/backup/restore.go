@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -201,7 +202,13 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 			hasExport = true
 		}
 	}
+	// An archive taken on the other engine may still carry a SQLite file --
+	// one left behind by a move -- which is not the data. The dump says
+	// which engine it came from, and that is what decides.
 	byFile := hasDB
+	if hasDB && hasExport && dumpDriver(filepath.Join(staging, ExportFile)) != "sqlite" {
+		byFile = false
+	}
 	switch {
 	case byFile:
 		// The exact file wins; the dump is only for crossing engines.
@@ -517,3 +524,22 @@ func (s *Service) Accept(r io.Reader) (Archive, error) {
 	s.log.Info("a backup archive was uploaded", "archive", name, "size", size)
 	return Archive{Name: name, Size: size, Taken: now}, nil
 }
+
+// dumpDriver reads which engine a portable dump was taken on, from its
+// header, without loading the tables.
+func dumpDriver(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(f, head)
+	m := driverRe.FindSubmatch(head[:n])
+	if m == nil {
+		return ""
+	}
+	return string(m[1])
+}
+
+var driverRe = regexp.MustCompile(`"driver"\s*:\s*"([a-z]+)"`)
