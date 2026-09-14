@@ -117,10 +117,23 @@ fi
 # put right, since neither is something a panel should be without.
 step "Settings"
 read_existing
-env_of() { (set -a; [[ -r "$CONF_DIR/db.env" ]] && . "$CONF_DIR/db.env"; set +a; WUI_DATA_DIR="$DATA_DIR" "$BIN_PATH" "$@"); }
+# The panel's own environment -- the unit's lines, then db.env and wui.env --
+# so what is read back is what the service runs with, not the defaults.
+env_of() {
+  (
+    set -a
+    WUI_DATA_DIR="$DATA_DIR"
+    for kv in $(grep -oE 'WUI_[A-Z_]+=[^ ]+' "$UNIT" 2>/dev/null); do export "$kv"; done
+    [[ -r "$CONF_DIR/db.env" ]] && . "$CONF_DIR/db.env"
+    [[ -r "$CONF_DIR/wui.env" ]] && . "$CONF_DIR/wui.env"
+    set +a
+    "$BIN_PATH" "$@"
+  )
+}
 env_of setting show 2>/dev/null | sed 's/^/    /' || true
 
 base="$(env_of setting show 2>/dev/null | sed -n 's/^basePath: //p' | tr -d '/')"
+[[ -n "$base" ]] || base="$BASE_PATH"
 if (( ${#base} < 4 )); then
   BASE_PATH="$(gen_string 18)"
   warn "the URL path is missing or too short; a new one is set: /$BASE_PATH/"
