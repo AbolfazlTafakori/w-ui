@@ -5,7 +5,7 @@ hero:
   text: WireGuard & OpenVPN, sold by the gigabyte
   tagline: The classic panel layout — the same pages, menus and management script — with data limits the kernel enforces, not a poller.
   image:
-    src: /favicon.svg
+    src: /logo.png
     alt: W-UI
   actions:
     - theme: brand

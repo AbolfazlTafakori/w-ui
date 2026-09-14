@@ -5,7 +5,7 @@ hero:
   text: وایرگارد و OpenVPN، فروش به گیگابایت
   tagline: چیدمان کلاسیک پنل — همان صفحه‌ها، همان منوها، همان اسکریپت مدیریت — با محدودیت حجمی که کرنل اعمال می‌کند، نه یک poller.
   image:
-    src: /favicon.svg
+    src: /logo.png
     alt: W-UI
   actions:
     - theme: brand

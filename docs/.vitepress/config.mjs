@@ -223,7 +223,10 @@ export default defineConfig({
   // two sets of rules carry the same weight.
   vite: { css: { postcss: { plugins: [postcssRTLCSS({ mode: 'combined', ltrPrefix: '[dir="ltr"]', rtlPrefix: '[dir="rtl"]' })] } } },
   head: [
-    ['link', { rel: 'icon', href: '/w-ui/favicon.svg' }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '64x64', href: '/w-ui/favicon-64.png' }],
+    ['link', { rel: 'icon', href: '/w-ui/favicon.ico' }],
+    ['link', { rel: 'apple-touch-icon', href: '/w-ui/logo-192.png' }],
+    ['meta', { property: 'og:image', content: 'https://abolfazltafakori.github.io/w-ui/logo-512.png' }],
     ['meta', { name: 'theme-color', content: '#0b0b0d' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'W-UI' }],
@@ -231,7 +234,7 @@ export default defineConfig({
   sitemap: { hostname: 'https://abolfazltafakori.github.io/w-ui/' },
   locales: { root: en, fa },
   themeConfig: {
-    logo: '/favicon.svg',
+    logo: '/logo.png',
     search: {
       provider: 'local',
       options: {

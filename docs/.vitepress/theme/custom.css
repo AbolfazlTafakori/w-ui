@@ -47,3 +47,9 @@ html[lang='fa'] body {
     transform: translateX(0);
   }
 }
+
+/* The logo: the mark alone, sized to the nav bar, and the hero's image kept
+   to its own proportions rather than the square VitePress assumes. */
+.VPNavBarTitle .logo { height: 26px; width: auto; }
+.VPHero .image-src { max-width: 320px; max-height: 220px; width: auto; height: auto; object-fit: contain; }
+@media (min-width: 960px) { .VPHero .image-src { max-width: 380px; max-height: 260px; } }

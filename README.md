@@ -1,3 +1,4 @@
+<p align="center"><img src="docs/public/logo.png" alt="W-UI" width="220"></p>
 <h1 align="center">W-UI</h1>
 
 <p align="center">
