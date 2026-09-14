@@ -3,7 +3,7 @@ layout: home
 hero:
   name: W-UI
   text: وایرگارد و OpenVPN، فروش به گیگابایت
-  tagline: پنلی با چیدمان سنایی — همان صفحه‌ها، همان منوها، همان اسکریپت مدیریت — با محدودیت حجمی که کرنل اعمال می‌کند، نه یک poller.
+  tagline: چیدمان کلاسیک پنل — همان صفحه‌ها، همان منوها، همان اسکریپت مدیریت — با محدودیت حجمی که کرنل اعمال می‌کند، نه یک poller.
   image:
     src: /favicon.svg
     alt: W-UI
@@ -25,7 +25,7 @@ features:
     title: WireGuard، AmneziaWG، OpenVPN
     details: چند اینترفیس روی یک سرور؛ وایرگارد مبهم‌شده جایی که DPI نسخهٔ ساده را می‌بندد؛ OpenVPN روی TCP 443 جایی که هیچ چیز دیگری رد نمی‌شود.
   - icon: 🧭
-    title: همان سنایی که بلدی
+    title: همان چیدمانی که بلدی
     details: Inbounds، Clients، Hosts، Outbounds، Routing، Balancers، DNS، تب‌های تنظیمات، منوی w-ui با شماره‌های ۰ تا ۲۸ — همه در همان جا، با همان کار.
   - icon: 🔐
     title: HTTPS از دقیقهٔ اول

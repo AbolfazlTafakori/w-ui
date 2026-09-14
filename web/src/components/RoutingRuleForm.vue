@@ -6,7 +6,7 @@ import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
 
-// The rule dialog, laid out the way 3x-ui's is: a 780px horizontal form
+// The rule dialog, laid out the way the classic panel's is: a 780px horizontal form
 // with Enabled, Comment, then the criteria in their order -- Source IPs,
 // Source Port, Network, IPs, Domains, User, Port, Inbound tags -- and where
 // it goes: Outbound tag or Balancer. Every criterion filled in has to

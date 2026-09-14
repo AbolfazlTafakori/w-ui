@@ -18,7 +18,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
-// Host groups: the hosts page as 3x-ui has it.
+// Host groups: the hosts page as the classic panel has it.
 //
 // What the operator enters is one thing -- a name, some addresses, the
 // inbounds it applies to -- and what is stored is one row per address per
@@ -256,7 +256,7 @@ func rowsFor(groupID string, in HostGroup) []model.Host {
 	hosts := in.Hosts
 	if len(hosts) == 0 {
 		// An address-less host: the inbound's own address with this group's
-		// name and port, which is what 3x-ui's "inherits" means.
+		// name and port, which is what the classic panel's "inherits" means.
 		hosts = []string{""}
 	}
 	var rows []model.Host
@@ -480,9 +480,9 @@ func (v HostVariant) Label() string {
 // variantsFor is where a WireGuard customer connects to on an interface:
 // the enabled hosts in order, or the interface's own endpoint when it has
 // none. A host that leaves its address blank inherits the interface's, as
-// 3x-ui's does. format leaves out the hosts excluded from it. Hosts win:
+// the classic panel's does. format leaves out the hosts excluded from it. Hosts win:
 // once one exists the interface's own address is not handed out on its
-// own, which is exactly how 3x-ui's externalProxy fan-out behaves.
+// own, which is exactly how the classic panel's externalProxy fan-out behaves.
 func variantsFor(iface *model.Interface, format string) []HostVariant {
 	own := HostVariant{Endpoint: iface.EndpointHost, Port: iface.ListenPort}
 	if !iface.IsWireGuard() {

@@ -366,7 +366,7 @@ func run() error {
 	notifier.Start(ctx)
 
 	// Every tunnel brought up again from its stored configuration: what
-	// 3x-ui's "restart xray" is here. The bot offers it, and so does
+	// the classic panel's "restart xray" is here. The bot offers it, and so does
 	// `systemctl reload wui`, which sends SIGHUP.
 	restartTunnels := func(ctx context.Context) error {
 		var ifaces []model.Interface
@@ -404,7 +404,7 @@ func run() error {
 	}()
 
 	// The Telegram bot: the same chat the notifications go to answers
-	// questions and takes orders, as 3x-ui's bot does.
+	// questions and takes orders, as the classic panel's bot does.
 	go tgbot.New(tgbot.Deps{
 		Config:   notifier.Config,
 		Clients:  service.NewClients(db, pools, log),

@@ -213,7 +213,7 @@ async function submit() {
         </div>
 
         <!-- A half-width field leading a row of quarters, which is the shape
-             3x-ui uses: the one thing you type sits beside the numbers that
+             the classic panel uses: the one thing you type sits beside the numbers that
              qualify it, and the fourth number wraps to its own line. -->
         <div class="row">
           <div class="col-12">
@@ -310,7 +310,7 @@ async function submit() {
             </div>
           </div>
 
-          <!-- A switch under its own label, the way 3x-ui puts "Start After
+          <!-- A switch under its own label, the way the classic panel puts "Start After
                First Use" in the row rather than as a stray tickbox below it. -->
           <div class="col-6">
             <div class="field">
@@ -370,7 +370,7 @@ async function submit() {
           </div>
         </div>
 
-        <!-- 3x-ui's Attached inbounds, control for control: two small
+        <!-- the classic panel's Attached inbounds, control for control: two small
              buttons in a row above, then a multiple select whose chosen items
              are removable tags. Select all unions with what is already there
              rather than replacing it, so an id outside the current options is
@@ -426,10 +426,10 @@ async function submit() {
 </template>
 
 <style scoped>
-/* The geometry is 3x-ui's, read from its source rather than from a screenshot:
+/* The geometry is the classic panel's, read from its source rather than from a screenshot:
    a 720px dialog, Ant Design's 24-column grid at gutter 16, a label above its
    control with 8px between them, and 24px between rows. Ant Design's own
-   defaults supply the rest, because 3x-ui overrides only colour tokens and
+   defaults supply the rest, because the classic panel overrides only colour tokens and
    leaves sizing alone. */
 
 .card-body {

@@ -42,7 +42,7 @@ type Config struct {
 	BackupDir string
 
 	// CollectInterval is how often counters are drained and limits evaluated.
-	// Two seconds matches what 3x-ui settled on and keeps the reporting lag
+	// Two seconds matches what the classic panel settled on and keeps the reporting lag
 	// short; it is not what bounds quota accuracy, since the kernel enforces
 	// the limit between ticks.
 	CollectInterval time.Duration

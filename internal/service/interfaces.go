@@ -335,7 +335,7 @@ type Load struct {
 	UsedBytes uint64 `json:"usedBytes"`
 	UpBytes   uint64 `json:"upBytes"`
 	DownBytes uint64 `json:"downBytes"`
-	// How the customers on it are doing, the way 3x-ui counts them beside
+	// How the customers on it are doing, the way the classic panel counts them beside
 	// an inbound: enabled, switched off, out of traffic or time, and seen
 	// in the last few minutes.
 	Active   int64 `json:"active"`

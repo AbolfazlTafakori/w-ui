@@ -185,7 +185,7 @@ async function setEnabled(o, on) {
 
 // ── the row menu, the same one theirs keeps behind the "more" circle ──
 const menu = ref(null) // { outbound, idx, x, y }
-// On a phone the table becomes 3x-ui's OutboundCardList.
+// On a phone the table becomes the classic panel's OutboundCardList.
 const isMobile = useIsMobile()
 const cardEgressShown = ref(new Set())
 function toggleCardEgress(id) {

@@ -29,7 +29,7 @@ const loading = ref(true)
 const formFor = ref(null) // null = closed, {} = create, { iface } = edit
 const detailFor = ref(null)
 const selected = ref(new Set())
-// On a phone the table becomes a list of cards, as 3x-ui's inbounds do;
+// On a phone the table becomes a list of cards, as the classic panel's inbounds do;
 // tapping a card's info opens its stats.
 const isMobile = useIsMobile()
 const cardOpen = ref(new Set())
@@ -133,7 +133,7 @@ onUnmounted(() => {
   window.removeEventListener('scroll', closeMenus, true)
 })
 
-// Their row menu, item for item: what 3x-ui shows for an inbound that
+// Their row menu, item for item: what the classic panel shows for an inbound that
 // carries many customers (every one of ours does). Restart is the one
 // addition; a kernel tunnel can be bounced, an Xray inbound cannot.
 function rowItems(i) {
@@ -186,7 +186,7 @@ async function clientsOn(i) {
 }
 
 // Export All URLs: every customer's subscription link, one per line, the
-// way 3x-ui hands over every client's share link at once.
+// way the classic panel hands over every client's share link at once.
 async function exportUrls(i) {
   try {
     const list = await clientsOn(i)
@@ -416,7 +416,7 @@ useLive(load, {
   busy: () => !!formFor.value || !!detailFor.value || !!ask.value,
 })
 
-// The strip 3x-ui puts above its inbound table: what the whole set is carrying.
+// The strip the classic panel puts above its inbound table: what the whole set is carrying.
 const totals = computed(() => {
   const list = interfaces.value
   return {

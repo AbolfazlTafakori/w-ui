@@ -29,7 +29,7 @@ import (
 // connection, which is worth nothing to anybody who captures it. A node set to
 // require one refuses a caller with a perfectly good token and no certificate.
 //
-// The arrangement is the one 3x-ui settled on and it is the simple one: the
+// The arrangement is the one the classic panel settled on and it is the simple one: the
 // managing panel mints a certificate authority of its own, signs itself a
 // client certificate with it, and an operator pastes the authority's public
 // half into each node. One value to copy, and a node that trusts it trusts that

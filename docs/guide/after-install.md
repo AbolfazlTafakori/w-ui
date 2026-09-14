@@ -1,10 +1,10 @@
 ---
-description: "The installer ends the way 3x-ui's does, with everything you need on one screen. Copy it somewhere safe before you close the terminal."
+description: "The installer ends with everything you need on one screen. Copy it somewhere safe before you close the terminal."
 ---
 
 # After the install
 
-The installer ends the way 3x-ui's does, with everything you need on one screen. Copy it somewhere safe before you close the terminal.
+The installer ends with everything you need on one screen. Copy it somewhere safe before you close the terminal.
 
 ```
   ═══════════════════════════════════════════

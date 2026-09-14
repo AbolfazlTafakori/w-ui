@@ -13,7 +13,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/dnsproxy"
 )
 
-// The whole configuration as one document -- the thing 3x-ui's advanced
+// The whole configuration as one document -- the thing the classic panel's advanced
 // tab shows as the Xray template. Ours is read out of the database and
 // written back into it, by name and tag, so an operator can keep it in a
 // file, diff it, and paste it into another panel.

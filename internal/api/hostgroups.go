@@ -6,7 +6,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
-// The hosts page's own endpoints: groups, as 3x-ui's page speaks in them.
+// The hosts page's own endpoints: groups, as the classic panel's page speaks in them.
 // The row endpoints stay for the backup and the importer.
 
 func (s *Server) handleListHostGroups(w http.ResponseWriter, r *http.Request) {

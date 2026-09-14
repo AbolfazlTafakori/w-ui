@@ -1,5 +1,5 @@
 <script setup>
-// The page-loading state 3x-ui shows: Ant's large Spin, with "loading"
+// The page-loading state the classic panel shows: Ant's large Spin, with "loading"
 // under it, over a spacer the height of the screen.
 import { t } from '../lib/store.js'
 </script>

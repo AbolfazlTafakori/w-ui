@@ -14,7 +14,7 @@ import PageSpin from '../components/PageSpin.vue'
 import AntIcon from '../components/AntIcon.vue'
 import { useIsMobile } from '../lib/mobile.js'
 
-// The routing page, laid out the way 3x-ui lays its own out: the Save bar
+// The routing page, laid out the way the classic panel lays its own out: the Save bar
 // with its warning, then one card with the tabs -- Basic Routing, Routing
 // Rules, Route Tester -- each with the icon theirs carries, plus Balancers,
 // which theirs keeps on another page and this panel keeps beside the rules
@@ -44,7 +44,7 @@ const inactive = ref('')
 const groups = ref([])
 const resolver = ref(null)
 const rules = ref([])
-// On a phone the rules table becomes 3x-ui's RuleCardList.
+// On a phone the rules table becomes the classic panel's RuleCardList.
 const isMobile = useIsMobile()
 const outbounds = ref([])
 const balancers = ref([])
@@ -483,7 +483,7 @@ async function testRoute() {
     <div v-else class="card">
       <div class="card-body">
         <!-- On a phone the tab is its icon alone, with the word as its
-             tooltip: 3x-ui's catTabLabel. -->
+             tooltip: the classic panel's catTabLabel. -->
         <div class="tabs" :class="{ 'icons-only': isMobile }" role="tablist">
           <button
             v-for="x in tabs"

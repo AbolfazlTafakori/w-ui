@@ -20,7 +20,7 @@ Settings → Subscription → **Template** picks one of twenty-one looks. **Prev
 
 | Template | Look |
 | --- | --- |
-| `classic` | 3x-ui's own layout |
+| `classic` | the classic panel layout |
 | `aurora` | red, blue and teal light drifting over dark navy |
 | `waves` | slow gradient waves under a glass card |
 | `network` | an animated canvas of connected points |

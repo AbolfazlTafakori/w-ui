@@ -5,7 +5,7 @@ import postcssRTLCSS from 'postcss-rtlcss'
 // the root; Persian sits under /fa/ with its own sidebar, right to left.
 // The sections follow what the panels people already know document --
 // getting started, the panel page by page, operations, worked examples,
-// reference, help -- so a reader coming from 3x-ui or Marzban's docs
+// reference, help -- so a reader coming from another panel's docs
 // finds things where they expect them.
 
 const enSidebar = [
@@ -82,7 +82,7 @@ const enSidebar = [
     items: [
       { text: 'FAQ', link: '/help/faq' },
       { text: 'Troubleshooting', link: '/help/troubleshooting' },
-      { text: 'Coming from 3x-ui or Marzban', link: '/help/migration' },
+      { text: 'Coming from another panel', link: '/help/migration' },
       { text: 'Contributing', link: '/help/contributing' },
     ],
   },
@@ -162,7 +162,7 @@ const faSidebar = [
     items: [
       { text: 'سؤالات متداول', link: '/fa/help/faq' },
       { text: 'عیب‌یابی', link: '/fa/help/troubleshooting' },
-      { text: 'از سنایی یا مرزبان آمده‌اید', link: '/fa/help/migration' },
+      { text: 'از پنل دیگری آمده‌اید', link: '/fa/help/migration' },
       { text: 'مشارکت', link: '/fa/help/contributing' },
     ],
   },
@@ -213,7 +213,7 @@ const fa = {
 
 export default defineConfig({
   title: 'W-UI',
-  description: 'A WireGuard and OpenVPN panel for reselling access, laid out like 3x-ui.',
+  description: 'A WireGuard and OpenVPN panel for reselling access, with the classic panel layout.',
   base: '/w-ui/',
   cleanUrls: true,
   lastUpdated: true,

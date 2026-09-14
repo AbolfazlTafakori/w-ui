@@ -4,7 +4,7 @@ import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
 
-// The outbound form, laid out the way 3x-ui's is: a 780px dialog titled
+// The outbound form, laid out the way the classic panel's is: a 780px dialog titled
 // "+ Outbounds", two tabs -- Basics and JSON -- and a horizontal form with
 // the label in the left third and the control beside it.
 //
@@ -13,7 +13,7 @@ import Icon from './Icon.vue'
 //   openvpn     -- an openvpn process holding a tun, from the pasted profile.
 //   vless, vmess, trojan, shadowsocks, hysteria, socks, http
 //               -- the Xray outbound object, verbatim, run by an xray process
-//                  behind a tun. The JSON tab is that object, as in 3x-ui;
+//                  behind a tun. The JSON tab is that object, as in the classic panel;
 //                  Basics shows the fields of it that are usually all anyone
 //                  changes, and writes them back into the object.
 //
@@ -255,7 +255,7 @@ function xrayFromFields() {
 }
 
 // A fresh object for a protocol chosen in the select, with the defaults
-// 3x-ui's form starts from.
+// the classic panel's form starts from.
 function freshXray(kind) {
   const f = form.value
   f.host = ''
@@ -416,7 +416,7 @@ function payload() {
 }
 
 // ── JSON tab ──
-// For the Xray family the JSON is the outbound object itself, as 3x-ui shows
+// For the Xray family the JSON is the outbound object itself, as the classic panel shows
 // it. For the rest it is the object the API takes.
 const jsonText = ref('')
 const jsonDirty = ref(false)

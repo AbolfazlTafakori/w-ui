@@ -4,7 +4,7 @@ import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
 
-// The PIA dialog, in 3x-ui's order: username and password with Log In; then
+// The PIA dialog, in the classic panel's order: username and password with Log In; then
 // the account and Log Out; Settings with Country, Region (All regions) and
 // Server; Add outbound; and the servers already added, each with Reset.
 

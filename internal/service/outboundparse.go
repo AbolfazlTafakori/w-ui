@@ -15,8 +15,8 @@ import (
 
 // Turning what an operator pastes into an outbound.
 //
-// The Xray family is parsed the way 3x-ui parses a share link, into the same
-// Xray outbound object 3x-ui would show in its JSON tab, and that object is
+// The Xray family is parsed the way the classic panel parses a share link, into the same
+// Xray outbound object the classic panel would show in its JSON tab, and that object is
 // what runs -- verbatim -- so anything a link can say, xray hears. A WireGuard
 // configuration file becomes a WireGuard hop, an OpenVPN profile an OpenVPN
 // hop, and an Xray outbound object pasted as JSON is taken as it is.
@@ -108,7 +108,7 @@ func firstParam(q url.Values, keys ...string) string {
 	return ""
 }
 
-// buildStream is 3x-ui's buildStream: the streamSettings object for a
+// buildStream is the classic panel's buildStream: the streamSettings object for a
 // transport and a security, with the defaults their form starts from.
 func buildStream(network, security string) map[string]any {
 	st := map[string]any{"network": network, "security": security}
@@ -600,7 +600,7 @@ func parseOpenVPNProfile(text string) (*OutboundInput, error) {
 	return in, nil
 }
 
-// parseXrayJSON takes an Xray outbound object as 3x-ui shows one.
+// parseXrayJSON takes an Xray outbound object as the classic panel shows one.
 func parseXrayJSON(text string) (*OutboundInput, error) {
 	var ob map[string]any
 	if err := json.Unmarshal([]byte(text), &ob); err != nil {

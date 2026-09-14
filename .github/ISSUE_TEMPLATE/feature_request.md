@@ -8,4 +8,4 @@ labels: enhancement
 
 **How you do it today, if at all**
 
-**If 3x-ui or another panel has it, where**
+**If another panel has it, where**

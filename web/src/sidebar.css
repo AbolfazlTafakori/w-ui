@@ -1,6 +1,6 @@
-/* The rail, measured to 3x-ui's: an Ant Layout.Sider (72px collapsed, 220px
+/* The rail, measured to the classic panel's: an Ant Layout.Sider (72px collapsed, 220px
    open) carrying an inline Menu. Every number here is Ant's default for that
-   component, or 3x-ui's own override of it; nothing is ours.
+   component, or the classic panel's own override of it; nothing is ours.
 
    Menu items are 40px on a 4px margin with an 8px radius; the selected one is
    a 20% wash of the primary colour with primary text, hover a 10% wash; icons
@@ -188,7 +188,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 3x-ui's overrides: a wash of the primary colour rather than Ant's fill. */
+/* the classic panel's overrides: a wash of the primary colour rather than Ant's fill. */
 .amenu-inline .amenu-item:hover:not(.selected),
 .amenu-inline .amenu-submenu-title:hover:not(.selected) {
   background-color: color-mix(in srgb, var(--accent) 10%, transparent);

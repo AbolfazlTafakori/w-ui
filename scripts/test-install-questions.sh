@@ -87,7 +87,7 @@ truth "the administrator is not called admin" \
 truth "the administrator name is generated, not typed" \
       "$([[ ${#user} -ge 8 ]] && echo 1)" "name was ${#user} characters: $user"
 check "no password is chosen here; one is generated at install time" "" "$(field PASS "$out")"
-check "the default is a certificate for the address, as 3x-ui's is" "ip" "$(field MODE "$out")"
+check "the default is a certificate for the address, as the classic default is" "ip" "$(field MODE "$out")"
 check "the default database is SQLite" "sqlite" "$(field DB "$out")"
 sub=$(field SUB "$out")
 truth "a subscription port is picked without asking" "$([[ "$sub" =~ ^[0-9]+$ ]] && echo 1)" "got $sub"

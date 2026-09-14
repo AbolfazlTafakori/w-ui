@@ -1,7 +1,7 @@
 package tgbot
 
 // The bot's words, in the language the settings page chose. Keyed the way
-// 3x-ui's tgbot strings are, so a translator who knows one knows the other.
+// the classic panel's tgbot strings are, so a translator who knows one knows the other.
 
 func (b *Bot) t(key string) string {
 	lang := b.config().Lang

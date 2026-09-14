@@ -16,7 +16,7 @@
   --surface-2: #1c191d;
   --surface-3: #262227;
   --surface-elev: #1f1b20;
-  /* The rail and the ground under an open submenu, as 3x-ui keeps them a
+  /* The rail and the ground under an open submenu, as the classic panel keeps them a
      step darker than the cards. */
   --sider: #0f0d10;
   --sider-sub: #0a090a;
@@ -116,7 +116,7 @@
 
   --radius: 8px;
   --radius-sm: 6px;
-  /* Ant Design's fontFamily token, which is what 3x-ui renders with in every
+  /* Ant Design's fontFamily token, which is what the classic panel renders with in every
      language: the system's own face, Persian included. */
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
@@ -124,7 +124,7 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --sidebar-w: 232px;
 
-  /* Type scale, matched to Ant Design's, which is what 3x-ui runs on: it
+  /* Type scale, matched to Ant Design's, which is what the classic panel runs on: it
      overrides only colour tokens, so its sizing is Ant's defaults. Everything
      here was a step larger, and a panel an operator reads all day should not
      be. fontSize 14, fontSizeSM 12, fontSizeLG 16, fontSizeXL 20, and
@@ -138,7 +138,7 @@
 }
 
 /*
- * Three themes, the way 3x-ui offers them: light, dark, and a pure-black
+ * Three themes, the way the classic panel offers them: light, dark, and a pure-black
  * variant for an operator working at night or on an OLED screen.
  *
  * Only the surfaces and the ink change. The accent, the status hues and every
@@ -578,7 +578,7 @@ option {
   padding: 18px;
 }
 
-/* A compact metric pair, the unit 3x-ui builds its overview out of: a quiet
+/* A compact metric pair, the unit the classic panel builds its overview out of: a quiet
    label with the value under it, large enough to read across a desk. */
 /* Dividers are drawn by a 1px gap over a line-coloured ground rather than by
    per-cell borders. The grid wraps at different column counts depending on
@@ -629,7 +629,7 @@ table {
 th,
 td {
   text-align: start;
-  /* 3x-ui renders its client table at size="small", whose cell padding is 8
+  /* the classic panel renders its client table at size="small", whose cell padding is 8
      both ways. Ours was 13 by 18, which is why the same number of rows filled
      half again as much screen. */
   padding: 8px 12px;
@@ -654,7 +654,7 @@ tbody tr:hover {
   background: var(--surface-2);
 }
 
-/* Tags carry meaning through colour the way 3x-ui's do, so a row can be read
+/* Tags carry meaning through colour the way the classic panel's do, so a row can be read
    without reading its numbers: purple is unlimited, green is healthy, orange is
    running low, red is stopped, grey is idle. The palette is Ant Design's dark
    presets, which is what those semantics are borrowed from.
@@ -928,7 +928,7 @@ pre.config {
 @media (max-width: 768px) {
   /* IndexPage.css: room for the floating handle so it never lands on a
      heading; the other pages let it float over their summary card, as
-     3x-ui's do. */
+     the classic panel's do. */
   .main:has(.ov-page),
   .main:has(.api-docs) {
     padding-top: 64px;
@@ -1002,7 +1002,7 @@ td {
  * too small to use.
  */
 
-/* A card's toolbar: 3x-ui's Card title slot holding the page's one primary
+/* A card's toolbar: the classic panel's Card title slot holding the page's one primary
    button, top-left, above the table it acts on. */
 .card-toolbar {
   display: flex;
@@ -1906,7 +1906,7 @@ body.light .log-view {
 /* Without a pointer there is no hover, so the rail stays open once it has been
    opened rather than collapsing to icons the moment a finger lifts. */
 
-/* Groups table: the widths 3x-ui uses, so the name column takes the slack and
+/* Groups table: the widths the classic panel uses, so the name column takes the slack and
    the numeric ones stay put as figures change. */
 .w-gcount { width: 180px; }
 .w-gsize { width: 140px; }
@@ -2120,7 +2120,7 @@ textarea.bad:focus {
   }
 }
 
-/* 720, the width 3x-ui gives this dialog, with its body capped the same way. */
+/* 720, the width the classic panel gives this dialog, with its body capped the same way. */
 .modal.cf-modal {
   max-width: 720px;
 }
@@ -2301,7 +2301,7 @@ textarea.bad:focus {
    colouring the whole line: a screen of warnings has to stay readable. */
 
 /* On a phone the three columns cannot hold. The line becomes a card: time and
-   level on one row, the message under it, which is what 3x-ui does and is the
+   level on one row, the message under it, which is what the classic panel does and is the
    only thing that fits. */
 @media (max-width: 640px) {
   .loglist li {
@@ -3796,7 +3796,7 @@ button.card:hover,
 }
 
 /* ── Ant's horizontal Form, labelCol 8 / wrapperCol 14 ─────────────────────
-   Shared by the dialogs copied from 3x-ui: the label takes a third of the
+   Shared by the dialogs copied from the classic panel: the label takes a third of the
    row and sits at the end of it, the control the next 14/24ths, rows 24px
    apart, every control 32px tall. */
 .hform {

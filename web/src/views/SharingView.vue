@@ -8,7 +8,7 @@ import AntIcon from '../components/AntIcon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import PageSpin from '../components/PageSpin.vue'
 
-// Credentials seen from several places at once. Ours, not 3x-ui's, so it
+// Credentials seen from several places at once. Ours, not the classic panel's, so it
 // is laid out the way its list pages are: a summary card of three figures,
 // then a card whose title holds the actions and the search, and a small
 // table with sortable columns and a menu column at the front.

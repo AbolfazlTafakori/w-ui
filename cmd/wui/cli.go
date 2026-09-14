@@ -256,7 +256,7 @@ func cmdSetting(args []string) error {
 }
 
 // cmdToken mints an API token from the shell: what the installer prints
-// at the end, as 3x-ui prints its apiToken, so automation has one from
+// at the end, as the classic panel prints its apiToken, so automation has one from
 // the first minute without anybody signing in to make it.
 func cmdToken(args []string) error {
 	if len(args) == 0 || args[0] != "issue" {
@@ -287,7 +287,7 @@ func cmdToken(args []string) error {
 
 // cmdSettingReset forgets every panel setting -- port, path, certificate,
 // session length, defaults -- and leaves the administrator and every
-// customer alone, as `x-ui setting -reset` does.
+// customer alone, as the classic `setting -reset` does.
 func cmdSettingReset() error {
 	db, _, err := openDatabase()
 	if err != nil {

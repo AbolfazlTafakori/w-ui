@@ -89,7 +89,7 @@ PANEL_PORT=2096
 SUB_PORT="${WUI_SUB_PORT:-}"
 SUB_KNOWN=0
 # Where the data lives. SQLite for most installs; PostgreSQL for one with a
-# lot of customers, the way 3x-ui offers both.
+# lot of customers, the way the classic panel offers both.
 DB_DRIVER="${WUI_DB_DRIVER:-}"
 DB_KNOWN=0
 DB_SOURCE=""
@@ -1143,7 +1143,7 @@ configure() {
 
   # ── how it is reached ─────────────────────────────────────────────────────
   #
-  # The same four choices 3x-ui's installer offers, in the same order, with
+  # The same four choices the classic panel's installer offers, in the same order, with
   # the same default: a certificate for the address itself. Whatever is
   # chosen, the panel answers on the one port above -- by name and by
   # address alike -- so a link written down today works tomorrow.
@@ -1532,7 +1532,7 @@ UNIT
 
 # The port the HTTP-01 challenge answers on. Let's Encrypt always knocks on
 # 80; when something else already holds it, the operator can forward 80 to
-# another port and name it here, as 3x-ui's installer allows.
+# another port and name it here, as the classic panel's installer allows.
 acme_http_port() {
   ACME_HTTP_PORT=80
   if ! port_taken 80; then return 0; fi
@@ -1581,7 +1581,7 @@ install_cert_files() {
 }
 
 # A free certificate from Let's Encrypt for a domain, over the HTTP-01
-# challenge on the standalone listener, as 3x-ui's installer gets one.
+# challenge on the standalone listener, as the classic panel's installer gets one.
 issue_certificate() {
   if ! domain_points_here "$ACME_DOMAIN"; then
     warn "$ACME_DOMAIN does not resolve to this server's address"
@@ -1614,7 +1614,7 @@ issue_certificate() {
 
 # A certificate for the address itself: Let's Encrypt's short-lived profile,
 # valid six days and renewed by the timer, so the panel is on HTTPS with no
-# domain at all -- what 3x-ui's installer does by default.
+# domain at all -- what the classic panel's installer does by default.
 issue_ip_certificate() {
   acme_http_port || return 1
   pkg_install socat || warn "socat is missing; the standalone challenge may not work"
@@ -2130,7 +2130,7 @@ summary() {
   printf '\n  %sNext%s open the panel, add an interface, then add clients.\n' "$B" "$N"
   printf '%s────────────────────────────────────────────────────────────%s\n\n' "$D" "$N"
 
-  # Everything 3x-ui prints under "Panel Installation Complete", in one
+  # Everything the classic panel prints under "Panel Installation Complete", in one
   # place, for the operator who scrolls back for the one line they need.
   printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
   printf '  %s     Panel Installation Complete!         %s\n' "$G" "$N"
@@ -2157,7 +2157,7 @@ summary() {
   write_install_result "$scheme" "$host$port"
 }
 
-# Mint the token 3x-ui prints as apiToken: automation gets one from the
+# Mint the token the classic panel prints as apiToken: automation gets one from the
 # first minute without anybody signing in to make it. Never fatal.
 issue_api_token() {
   have_systemd && systemctl is-active --quiet wui || return 0
@@ -2166,7 +2166,7 @@ issue_api_token() {
 }
 
 # The same facts as the summary, machine-readable, for cloud-init or a
-# login banner to pick up: 3x-ui's install-result.env. Mode 600, root only,
+# login banner to pick up: the classic panel's install-result.env. Mode 600, root only,
 # because it holds the password.
 write_install_result() {
   local scheme="$1" hostport="$2" f="$CONF_DIR/install-result.env"
@@ -2189,7 +2189,7 @@ write_install_result() {
 }
 
 # IP Limit rides on fail2ban; set it up now so the menu's jail works out
-# of the box, as 3x-ui does. Opt out with WUI_ENABLE_FAIL2BAN=false. Never
+# of the box, as the classic panel does. Opt out with WUI_ENABLE_FAIL2BAN=false. Never
 # fatal: a fail2ban that would not install must not fail the panel.
 setup_fail2ban() {
   if [[ -n "${WUI_ENABLE_FAIL2BAN+x}" && "$WUI_ENABLE_FAIL2BAN" != true ]]; then
@@ -2206,7 +2206,7 @@ setup_fail2ban() {
   fi
 }
 
-# 3x-ui's closing box: the subcommands, so the operator's next command is
+# the classic panel's closing box: the subcommands, so the operator's next command is
 # already on the screen.
 usage_box() {
   printf '%s%s installation finished, it is running now...%s\n\n' "$G" "W-UI $("$BIN_PATH" version 2>/dev/null || echo)" "$N"

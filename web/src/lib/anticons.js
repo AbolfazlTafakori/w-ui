@@ -1,5 +1,5 @@
 // Ant Design's own icon outlines, copied from @ant-design/icons-svg so a
-// page laid out after 3x-ui's carries the same glyphs it does. Only the
+// page laid out after the classic panel's carries the same glyphs it does. Only the
 // ones a page here uses; add to the list in the generator when a page
 // needs another.
 export const antIcons = {

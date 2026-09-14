@@ -96,7 +96,7 @@ func ExpandGroup(name string) ([]netip.Prefix, bool) {
 // by main; nil means such entries are refused.
 var GeoIP func(cc string) ([]netip.Prefix, error)
 
-// GeoIPPrefix is what a country entry starts with, as 3x-ui writes one.
+// GeoIPPrefix is what a country entry starts with, as the classic panel writes one.
 const GeoIPPrefix = "geoip:"
 
 // ParseTarget turns one entry an operator typed into prefixes.
@@ -117,7 +117,7 @@ func ParseTarget(s string) ([]netip.Prefix, error) {
 	}
 	if strings.HasPrefix(strings.ToLower(s), GeoIPPrefix) {
 		cc := strings.ToLower(strings.TrimPrefix(strings.ToLower(s), GeoIPPrefix))
-		// 3x-ui spells the private ranges as a country too.
+		// the classic panel spells the private ranges as a country too.
 		if cc == "private" {
 			p, _ := ExpandGroup(GroupPrivate)
 			return p, nil

@@ -9,7 +9,7 @@ import (
 
 // Schedule is when something recurring happens: one of the cron shorthands,
 // an interval, or a crontab line with or without a seconds field -- the same
-// forms 3x-ui's bot takes for its report time.
+// forms the classic panel's bot takes for its report time.
 type Schedule struct {
 	every  time.Duration
 	fields [6]fieldSet // second minute hour dom month dow

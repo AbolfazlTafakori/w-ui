@@ -97,7 +97,7 @@ const totals = computed(() => data.value?.totals || {})
 
 // Every entry in the row menu, with the ones that need members disabled rather
 // than hidden, so the menu keeps the same shape on an empty group.
-// The order is 3x-ui's: what you do to the members, then to the group, then a
+// The order is the classic panel's: what you do to the members, then to the group, then a
 // rule, then everything that destroys something. Entries needing members are
 // disabled rather than hidden, so the menu keeps its shape on an empty group and
 // an operator learns one layout instead of two.
@@ -343,7 +343,7 @@ function viewMembers(g) {
 </script>
 
 <template>
-  <!-- No page title and no lede. 3x-ui opens this page straight on the
+  <!-- No page title and no lede. the classic panel opens this page straight on the
        figures, and the one control it has lives inside the table's card,
        where the thing it acts on is. -->
 

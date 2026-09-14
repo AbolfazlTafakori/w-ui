@@ -13,7 +13,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
-// Informer posts each customer's traffic to an outside URL, the way 3x-ui's
+// Informer posts each customer's traffic to an outside URL, the way the classic panel's
 // external traffic inform does, so a billing system can be told without
 // polling the panel. Only what changed since the last post is sent.
 type Informer struct {

@@ -1,5 +1,5 @@
 ---
-description: "Frequently asked questions : licence, supported systems, client apps, how it compares with 3x-ui and Marzban."
+description: "Frequently asked questions : licence, supported systems, client apps, how it compares with Xray panels and Marzban."
 ---
 
 # FAQ
@@ -12,9 +12,9 @@ Yes — [AGPL-3.0](https://github.com/AbolfazlTafakori/w-ui/blob/main/LICENSE). 
 
 Ubuntu 22.04 / 24.04, Debian 12 / 13, AlmaLinux 9, Rocky 9, Fedora 41, on x86-64 and arm64 — each one installed clean in CI on every release. Other systemd distributions generally work; the installer says what it could not do.
 
-## How is it different from 3x-ui?
+## How is it different from an Xray panel?
 
-3x-ui manages Xray — VLESS, VMess, Trojan, REALITY. W-UI manages **WireGuard, AmneziaWG and OpenVPN**, with the same pages, menus and script so you do not relearn anything. Its other difference is enforcement: data limits are nftables quota objects the kernel applies, not a counter polled every few seconds. [How enforcement works](/reference/how-it-works).
+An Xray panel manages Xray — VLESS, VMess, Trojan, REALITY. W-UI manages **WireGuard, AmneziaWG and OpenVPN**, with the same pages, menus and script so you do not relearn anything. Its other difference is enforcement: data limits are nftables quota objects the kernel applies, not a counter polled every few seconds. [How enforcement works](/reference/how-it-works).
 
 ## And from Marzban?
 

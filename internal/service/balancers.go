@@ -17,7 +17,7 @@ import (
 //
 // A balancer is a routing table with several next hops: the kernel hashes
 // each flow onto one of them, so a connection stays on the exit it started
-// on and the load spreads evenly -- what 3x-ui's "random" strategy does.
+// on and the load spreads evenly -- what the classic panel's "random" strategy does.
 // "leastPing" instead points the table at whichever member answered the
 // last check fastest, re-evaluated on every tick.
 type Balancers struct {

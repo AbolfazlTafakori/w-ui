@@ -4,7 +4,7 @@ import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
 
-// The NordVPN dialog, in 3x-ui's order: log in with an access token or paste
+// The NordVPN dialog, in the classic panel's order: log in with an access token or paste
 // the NordLynx private key; then the two values and Log Out; Settings with
 // Country, City (All Cities) and Server, each server with its load; Add
 // outbound; and the servers already added, each with Reset.

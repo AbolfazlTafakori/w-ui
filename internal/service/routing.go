@@ -50,7 +50,7 @@ type BasicRouting struct {
 	DirectIPs       []string `json:"directIps"`
 	DirectDomains   []string `json:"directDomains"`
 	// IPv4Domains are names resolved over IPv4 only and sent direct -- the
-	// row 3x-ui calls IPv4 Routing, for services that misbehave over v6.
+	// row the classic panel calls IPv4 Routing, for services that misbehave over v6.
 	IPv4Domains     []string `json:"ipv4Domains"`
 	DefaultOutbound string   `json:"defaultOutbound"`
 	// FailClosed is what happens to customers' traffic while the outbound
@@ -116,7 +116,7 @@ func (s *Routing) Basic(ctx context.Context) (BasicRouting, error) {
 		stored[r.Key] = r.Value
 	}
 
-	// What 3x-ui's template ships with: private ranges and BitTorrent
+	// What the classic panel's template ships with: private ranges and BitTorrent
 	// blocked. A panel that has never saved this page behaves the same.
 	if _, ok := stored[keyBlockBitTorrent]; ok {
 		out.BlockBitTorrent = stored[keyBlockBitTorrent] == "true"

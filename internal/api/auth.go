@@ -368,7 +368,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Either proof will do: the password, or a code from the app being
-	// removed, which is what 3x-ui asks for and what an operator holding the
+	// removed, which is what the classic panel asks for and what an operator holding the
 	// phone has to hand.
 	switch {
 	case req.Password != "" && bcrypt.CompareHashAndPassword([]byte(stored.PasswordHash), []byte(req.Password)) == nil:

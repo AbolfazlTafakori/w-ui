@@ -1,5 +1,5 @@
 // Package geoip turns a country code into the address ranges registered to
-// that country, so a routing list can say "geoip:ir" the way 3x-ui's can.
+// that country, so a routing list can say "geoip:ir" the way the classic panel's can.
 //
 // The kernel matches addresses, not countries, so a country is a set of
 // prefixes -- a few hundred to a few thousand -- fetched once, kept on disk,

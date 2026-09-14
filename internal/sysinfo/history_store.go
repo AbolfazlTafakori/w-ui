@@ -20,7 +20,7 @@ import (
 //
 // Storing every two-second sample for a week would be two hundred thousand
 // points per series. Instead each sample is fed into three rings of decreasing
-// resolution — the shape RRDtool settled on decades ago and 3x-ui uses too.
+// resolution — the shape RRDtool settled on decades ago and the classic panel uses too.
 // Recent minutes stay exact; older ones become averages. About six thousand
 // points per series covers a live view through a week, and the whole store is
 // small enough to write to disk and read back on the next start.

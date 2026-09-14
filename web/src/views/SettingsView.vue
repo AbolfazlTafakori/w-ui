@@ -1,5 +1,5 @@
 <script setup>
-// The settings page, laid out the way 3x-ui lays its own out: a card with
+// The settings page, laid out the way the classic panel lays its own out: a card with
 // Save and Restart Panel and the standing warning, then a card holding the
 // category the sidebar chose -- General, Authentication, Telegram Bot, Email,
 // Subscription -- each a row of tabs over lists of setting rows.

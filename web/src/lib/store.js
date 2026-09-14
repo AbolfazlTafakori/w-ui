@@ -81,7 +81,7 @@ export async function loadMessages(locale) {
   store.locale = locale
   store.messages = res.messages
 
-  // The layout is never mirrored. 3x-ui keeps the same left-to-right page in
+  // The layout is never mirrored. the classic panel keeps the same left-to-right page in
   // Persian -- labels on the left, controls on the right, the sidebar where
   // it is -- and only the text itself runs right to left, which the browser
   // does on its own per line. Mirroring the whole page put every control on

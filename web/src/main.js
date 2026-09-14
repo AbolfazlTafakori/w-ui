@@ -59,8 +59,8 @@ const router = createRouter({
     { path: '/settings/:tab', name: 'settings-tab', component: SettingsView, props: true },
     { path: '/settings/notify', redirect: '/settings/telegram' },
     { path: '/configs/:tab', name: 'configs', component: ConfigsView, props: true },
-    // The engine: what 3x-ui keeps under Xray. A section per page, and the
-    // hash form 3x-ui's links use is honoured too.
+    // The engine: what the classic panel keeps under Xray. A section per page, and the
+    // hash form the classic panel's links use is honoured too.
     { path: '/engine', name: 'engine', component: EngineView },
     { path: '/engine/:tab', name: 'engine-tab', component: EngineView, props: true },
     { path: '/configs', redirect: '/configs/engine' },

@@ -1,10 +1,10 @@
 ---
-description: "What xray#basic, #balancer, #dns and #advanced are on 3x-ui, for a panel whose engine is the kernel rather than Xray. The sidebar entry Engine opens four pages."
+description: "The core's own knobs — basics, balancers, DNS, advanced — for a panel whose engine is the kernel rather than Xray. The sidebar entry Engine opens four pages."
 ---
 
 # Engine
 
-What `xray#basic`, `#balancer`, `#dns` and `#advanced` are on 3x-ui, for a panel whose engine is the kernel rather than Xray. The sidebar entry **Engine** opens four pages.
+The core's own knobs — basics, balancers, DNS, advanced — for a panel whose engine is the kernel rather than Xray. The sidebar entry **Engine** opens four pages.
 
 ## Basics
 

@@ -17,9 +17,9 @@ const busy = ref(false)
 const langOpen = ref(false)
 const showPw = ref(false)
 
-// The headline cycles a word at a time, the way 3x-ui's does. It is the one
+// The headline cycles a word at a time, the way the classic panel's does. It is the one
 // piece of motion on an otherwise still screen, so it carries the page.
-// Two words, turn and turn about, as 3x-ui's headline does.
+// Two words, turn and turn about, as the classic panel's headline does.
 const words = computed(() => [t('login.hello'), t('login.title')])
 const wordIndex = ref(0)
 const word = computed(() => words.value[wordIndex.value % words.value.length])
@@ -134,7 +134,7 @@ const localeIcon = (l) => (l === 'fa' ? '🇮🇷' : '🇬🇧')
 </template>
 
 <style scoped>
-/* 3x-ui's LoginPage.css, in this panel's colours: five blurred blobs and a
+/* the classic panel's LoginPage.css, in this panel's colours: five blurred blobs and a
    fading grid behind a frosted card, the name in a gradient, the headline
    turning a word at a time, Ant's large inputs and button. */
 .login-app {

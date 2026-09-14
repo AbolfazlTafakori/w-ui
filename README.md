@@ -1,7 +1,7 @@
 <h1 align="center">W-UI</h1>
 
 <p align="center">
-  A WireGuard, AmneziaWG and OpenVPN panel for selling access — quotas the kernel enforces, expiry, device limits, subscription links, and a management script laid out like 3x-ui's.
+  A WireGuard, AmneziaWG and OpenVPN panel for selling access — quotas the kernel enforces, expiry, device limits, subscription links, and a management script with the classic panel layout.
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@ Every question is also a flag, and `-y` skips them all — for cloud-init and CI
 | **Egress** | outbounds with policy routing, balancers with fallback, a fail-closed default outbound, a DNS proxy with pins and per-domain upstreams, geo lists |
 | **Operations** | Telegram notifications and an interactive bot, scheduled backups that restore into any version and either database engine, sharing detection, an API with tokens and built-in docs, other servers watched over that same API |
 | **Storage** | SQLite for most installs, PostgreSQL for a large customer count — chosen at install, switchable by backup and restore |
-| **Install** | one command on five distributions, Let's Encrypt for a domain or for the server's own address renewed unattended, fail2ban wired to the panel's log, a `w-ui` menu laid out like `x-ui`'s |
+| **Install** | one command on five distributions, Let's Encrypt for a domain or for the server's own address renewed unattended, fail2ban wired to the panel's log, a `w-ui` menu with the classic numbering |
 
 ### Where the limit is enforced
 
@@ -95,13 +95,13 @@ Open the access URL, sign in, and:
 2. **Clients** → add a customer — quota in MB, GB or TB, validity in hours, days or months, how many devices, which interfaces.
 3. Hand them the subscription link, the QR code or the config file from the client's row.
 
-The rest of the panel — groups, outbounds, balancers, routing, hosts, nodes, the Telegram bot, backups, two-factor authentication — is under Settings and the sidebar, in the place 3x-ui keeps it. [First login](https://abolfazltafakori.github.io/w-ui/guide/first-login) walks through securing it first.
+The rest of the panel — groups, outbounds, balancers, routing, hosts, nodes, the Telegram bot, backups, two-factor authentication — is under Settings and the sidebar, where the classic layout keeps it. [First login](https://abolfazltafakori.github.io/w-ui/guide/first-login) walks through securing it first.
 
 ---
 
 ## The `w-ui` command
 
-Installing the panel also installs its management script. `w-ui` alone opens the menu — the same numbers as `x-ui`'s, so anyone who has run that panel knows this one:
+Installing the panel also installs its management script. `w-ui` alone opens the menu — the classic numbering, so anyone who has run a panel of this kind knows this one:
 
 ```
 │  1. Install          7. Reset Username & Password   12. Start        18. Enable Autostart     20. SSL Certificate Management   26. Enable BBR

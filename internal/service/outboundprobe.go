@@ -21,7 +21,7 @@ import (
 // An HTTP probe sends a real request through the outbound and reads back what
 // the far side saw. Cloudflare's trace endpoint answers with the caller's
 // address and country in a few plain lines, which is exactly the two things an
-// operator wants to know about an exit, and it is what 3x-ui asks too.
+// operator wants to know about an exit, and it is what the classic panel asks too.
 const traceURL = "https://www.cloudflare.com/cdn-cgi/trace"
 
 const probeTimeout = 10 * time.Second

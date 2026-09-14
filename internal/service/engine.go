@@ -21,7 +21,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
-// The engine page: what 3x-ui keeps under Xray -- the core's own knobs --
+// The engine page: what the classic panel keeps under Xray -- the core's own knobs --
 // kept here for the kernel tunnels this panel runs instead. One JSON blob
 // rather than a key per field, because the page saves it whole, and the
 // parts that need a restart (the collection interval, the log settings)

@@ -41,7 +41,7 @@ const (
 	KindPanel     Kind = "panel"     // the panel started, stopped, or degraded
 	KindBackup    Kind = "backup"    // a backup was taken
 
-	// The event bus 3x-ui's bot subscribes to, kind for kind.
+	// The event bus the classic panel's bot subscribes to, kind for kind.
 	KindOutboundDown Kind = "outbound.down" // an outbound stopped answering
 	KindOutboundUp   Kind = "outbound.up"   // and came back
 	KindNodeDown     Kind = "node.down"     // a node stopped answering

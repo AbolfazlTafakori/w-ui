@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 
-// The ring 3x-ui puts across the top of its overview. The percentage is the
+// The ring the classic panel puts across the top of its overview. The percentage is the
 // point, so it sits in the middle of the arc rather than beside it.
 const props = defineProps({
   percent: { type: Number, default: 0 },

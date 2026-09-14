@@ -16,7 +16,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
-// Providers are the three services 3x-ui's outbound page can build a hop
+// Providers are the three services the classic panel's outbound page can build a hop
 // from: Cloudflare WARP, NordVPN and Private Internet Access. Each one is a
 // WireGuard endpoint behind an account, and what this service does is hold the
 // account and turn a chosen server into a WireGuard hop outbound.

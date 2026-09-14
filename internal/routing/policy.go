@@ -117,7 +117,7 @@ type Policy struct {
 	Rules []MarkRule
 
 	// PanelMark sends the panel's own traffic -- its probes, its bot, its
-	// talks with other panels -- through an outbound, the way 3x-ui's "panel
+	// talks with other panels -- through an outbound, the way the classic panel's "panel
 	// outbound" does. Zero leaves it on the server's own address. The process
 	// is told apart by PanelUID; PanelExclude are the hop endpoints, which
 	// must never be reached through the hop they carry.

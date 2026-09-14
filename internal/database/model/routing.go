@@ -20,7 +20,7 @@ const (
 	// device.
 	OutboundOpenVPN OutboundKind = "openvpn"
 	// The Xray family. Each is an Xray outbound object stored verbatim, the
-	// way 3x-ui keeps one, run by an xray process behind a tun device.
+	// way the classic panel keeps one, run by an xray process behind a tun device.
 	OutboundSOCKS       OutboundKind = "socks"
 	OutboundHTTP        OutboundKind = "http"
 	OutboundVLESS       OutboundKind = "vless"
@@ -307,13 +307,13 @@ type Host struct {
 	// forwarder that answers somewhere else.
 	Port int `gorm:"not null;default:0" json:"port"`
 
-	// Priority orders the hosts: lowest first, as 3x-ui's sortOrder does.
+	// Priority orders the hosts: lowest first, as the classic panel's sortOrder does.
 	Priority int    `gorm:"not null;default:0" json:"priority"`
 	Note     string `gorm:"size:256" json:"note"`
 
 	// GroupID ties the rows the operator entered as one host together: one
 	// entry on the hosts page is several addresses across several
-	// interfaces, stored as one row per pair, the way 3x-ui stores its
+	// interfaces, stored as one row per pair, the way the classic panel stores its
 	// host groups. Empty on rows made before groups existed; each of those
 	// is its own group.
 	GroupID string `gorm:"size:32;index" json:"groupId"`

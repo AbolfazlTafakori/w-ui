@@ -1,5 +1,5 @@
 <script setup>
-// 3x-ui's QrPanel: a bordered panel with the remark as a green tag, the
+// the classic panel's QrPanel: a bordered panel with the remark as a green tag, the
 // copy / download-image / download buttons beside it, and the code drawn
 // as an SVG on white below. Clicking the code copies it as an image.
 import { ref, watch } from 'vue'

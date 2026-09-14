@@ -12,7 +12,7 @@ import AntIcon from '../components/AntIcon.vue'
 import { useIsMobile } from '../lib/mobile.js'
 
 const nodes = ref([])
-// On a phone the table becomes 3x-ui's node cards: the head opens the
+// On a phone the table becomes the classic panel's node cards: the head opens the
 // readings, the info glyph opens the figures, and the actions sit in one menu.
 const isMobile = useIsMobile()
 const expandedIds = ref(new Set())
@@ -368,7 +368,7 @@ function latencyTone(ms) {
 </script>
 
 <template>
-  <!-- No page heading. 3x-ui opens this page straight on the figures, and
+  <!-- No page heading. the classic panel opens this page straight on the figures, and
        both controls live in the table's card, where the rows they act on are.
        Add node takes the primary spot on the left; the token button sits at
        the far end the way their Node mTLS does -- both are how a node proves

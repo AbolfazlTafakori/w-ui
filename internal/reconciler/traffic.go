@@ -19,7 +19,7 @@ import (
 // SQLite serialises writers, so ten thousand clients each producing a write
 // every two seconds would spend their time fighting for the same lock. The
 // updates are funnelled through one goroutine and flushed in batches instead —
-// the shape 3x-ui arrived at for the same reason.
+// the shape the classic panel arrived at for the same reason.
 const queueSize = 512
 
 // flushInterval is how often the buffer is drained to the database.

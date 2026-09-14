@@ -78,7 +78,7 @@ const infoFor = ref(null)
 const dialog = ref(null) // { kind }
 const form = ref({ group: '', addDays: '', addUnit: 'days', quotaGB: '', quotaUnit: 'GB', resetCycle: '', prefix: '', count: 10 })
 const selected = ref(new Set())
-// On a phone the table becomes a list of cards, as 3x-ui's clients do,
+// On a phone the table becomes a list of cards, as the classic panel's clients do,
 // and each card's actions live behind one menu.
 const isMobile = useIsMobile()
 const cardMenu = ref(null)
@@ -363,7 +363,7 @@ function barColor(c) {
   if (p >= DEPLETING_AT) return 'var(--warn)'
   return 'var(--ok)'
 }
-// The three cells below use 3x-ui's own colour rules, so a row reads at a
+// The three cells below use the classic panel's own colour rules, so a row reads at a
 // glance: purple is unlimited, green healthy, orange running low, red stopped.
 
 function statusTag(c) {
@@ -1244,7 +1244,7 @@ async function submitForm(input) {
 </template>
 
 <style scoped>
-/* 3x-ui's ClientsPage.css, measured as it is. */
+/* the classic panel's ClientsPage.css, measured as it is. */
 .arow.six > .acol { flex: 0 0 16.6667%; max-width: 16.6667%; }
 @media (max-width: 991px) { .arow.six > .acol { flex: 0 0 33.3333%; max-width: 33.3333%; } }
 @media (max-width: 575px) { .arow.six > .acol { flex: 0 0 50%; max-width: 50%; } }

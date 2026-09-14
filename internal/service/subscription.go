@@ -305,7 +305,7 @@ func (s *Subscriptions) LinkFor(ctx context.Context, token, requestHost string) 
 		}
 	}
 	// A subscription service on its own port is reached on that port, as
-	// 3x-ui's is: the link says so, or the customer's app knocks on the
+	// the classic panel's is: the link says so, or the customer's app knocks on the
 	// panel's instead. A host the operator typed with a port of its own
 	// already says where it lives.
 	if cfg.Port > 0 {
@@ -477,7 +477,7 @@ type RenderedDevice struct {
 	Profile backend.ClientProfile
 	// Host is the endpoint this entry was written for; nil for the
 	// interface's own. A device on an interface with three hosts renders
-	// three times, once per host, as 3x-ui fans its links out.
+	// three times, once per host, as the classic panel fans its links out.
 	Host *model.Host
 }
 

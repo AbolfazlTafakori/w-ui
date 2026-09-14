@@ -1,4 +1,4 @@
-// Whether the viewport is a phone, by 3x-ui's one breakpoint (768px).
+// Whether the viewport is a phone, by the classic panel's one breakpoint (768px).
 //
 // matchMedia's change event rather than resize: it fires only when the
 // answer flips, not on every pixel of a window drag.

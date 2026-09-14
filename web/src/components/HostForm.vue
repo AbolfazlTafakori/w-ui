@@ -1,5 +1,5 @@
 <script setup>
-// 3x-ui's HostFormModal: a 760px modal, a horizontal form (labels 8/24,
+// the classic panel's HostFormModal: a 760px modal, a horizontal form (labels 8/24,
 // controls 14/24), tabs for the basics and the advanced page. Their
 // Security and Clash tabs are Xray's TLS and Mihomo settings and have no
 // meaning for a WireGuard or OpenVPN endpoint, so they are not here.

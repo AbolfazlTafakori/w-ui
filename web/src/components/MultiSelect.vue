@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import Icon from './Icon.vue'
 import { t } from '../lib/store.js'
 
-// A multiple-choice select, built to behave the way 3x-ui's does: chosen items
+// A multiple-choice select, built to behave the way the classic panel's does: chosen items
 // sit in the control as removable tags, the ones that do not fit collapse into
 // a count, typing filters the list, and the list opens upward so it does not
 // fall off the bottom of a dialog it sits near the end of.

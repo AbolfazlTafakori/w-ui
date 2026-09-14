@@ -3,7 +3,7 @@
 # W-UI management script.
 #
 # Everything an operator does to the panel from a terminal lives here, laid
-# out the way 3x-ui's x-ui.sh is: the same menu, the same numbers, the same
+# out the way the classic menu script is: the same menu, the same numbers, the same
 # answers, for a panel that runs WireGuard and OpenVPN instead of Xray.
 # Anything that needs the database goes through the panel binary rather than
 # reading SQLite from a shell, so the schema has exactly one implementation.
@@ -607,7 +607,7 @@ restart() {
 }
 
 # Every tunnel brought up again from its stored configuration, without the
-# panel itself going down: what "restart xray" is on 3x-ui.
+# panel itself going down: what "restart xray" is on the classic panel.
 restart_tunnels() {
     systemctl reload "$SERVICE"
     LOGI "Tunnel restart signal sent successfully, Please check the log information to confirm whether the tunnels restarted successfully"
@@ -861,7 +861,7 @@ show_enable_status() {
     fi
 }
 
-# show_tunnel_status is what "xray state" is on 3x-ui: one line per tunnel
+# show_tunnel_status is what "xray state" is on the classic panel: one line per tunnel
 # the panel runs, WireGuard and OpenVPN alike.
 show_tunnel_status() {
     local any=0 dev seen=" "
@@ -1297,7 +1297,7 @@ fix_cert_perms() {
     chmod 644 "$1"/fullchain.pem 2> /dev/null
 }
 
-# Hand the panel a certificate: what `x-ui cert -webCert -webCertKey` is.
+# Hand the panel a certificate: what the classic `cert -webCert -webCertKey` is.
 set_panel_cert() {
     panel_cli setting set --cert "$1" --key "$2" > /dev/null 2>&1
 }
@@ -2510,7 +2510,7 @@ SSH_port_forwarding() {
     esac
 }
 
-# Backup & Restore sits where 3x-ui's PostgreSQL menu is: this panel keeps
+# Backup & Restore sits where the classic panel's PostgreSQL menu is: this panel keeps
 # everything in one SQLite file, and the archive is the whole of it.
 backup_menu() {
     echo -e "\n${green}\t1.${plain} Create a backup"

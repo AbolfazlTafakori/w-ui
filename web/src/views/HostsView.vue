@@ -10,10 +10,10 @@ import HostForm from '../components/HostForm.vue'
 import PageSpin from '../components/PageSpin.vue'
 import { useIsMobile } from '../lib/mobile.js'
 import Toggle from '../components/Toggle.vue'
-// 3x-ui's HostList drops the button's word on a phone.
+// the classic panel's HostList drops the button's word on a phone.
 const isMobile = useIsMobile()
 
-// The hosts page, laid out as 3x-ui's HostsPage: a summary of three
+// The hosts page, laid out as the classic panel's HostsPage: a summary of three
 // figures, then a small card whose title is the toolbar and whose body is
 // the table of host groups -- one row per name, however many addresses and
 // inbounds sit behind it.
@@ -293,7 +293,7 @@ function ifaceLabel(id) {
 </template>
 
 <style scoped>
-/* 3x-ui's HostList.css, as it is. */
+/* the classic panel's HostList.css, as it is. */
 .acard.small .acard-head { min-height: 38px; padding: 0 12px; }
 .acard.small .acard-body { padding: 12px; }
 .card-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; padding: 6px 0; }

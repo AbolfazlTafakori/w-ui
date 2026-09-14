@@ -1,10 +1,10 @@
 ---
-description: "Five tabs, in 3x-ui's order. Every change is saved with the button at the top; the ones that concern where the panel listens take effect at the next restart, and the page says so."
+description: "Five tabs, in the classic order. Every change is saved with the button at the top; the ones that concern where the panel listens take effect at the next restart, and the page says so."
 ---
 
 # Settings
 
-Five tabs, in 3x-ui's order. Every change is saved with the button at the top; the ones that concern where the panel listens take effect at the next restart, and the page says so.
+Five tabs, in the classic order. Every change is saved with the button at the top; the ones that concern where the panel listens take effect at the next restart, and the page says so.
 
 ## General
 

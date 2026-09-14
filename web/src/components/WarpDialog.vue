@@ -6,7 +6,7 @@ import { bytes } from '../lib/format.js'
 import Icon from './Icon.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
-// The WARP dialog, in 3x-ui's order: create the account; then the account's
+// The WARP dialog, in the classic panel's order: create the account; then the account's
 // four values and Delete account; Settings with the WARP+ licence key; Account
 // info with Refresh and Change IP over the device record; and Outbound Status,
 // where the hop is added or reset.

@@ -4,7 +4,7 @@ import Icon from './Icon.vue'
 import MultiSelect from './MultiSelect.vue'
 import { t } from '../lib/store.js'
 
-// The filter panel, laid out the way 3x-ui lays its own out: a 420px drawer
+// The filter panel, laid out the way the classic panel lays its own out: a 420px drawer
 // from the side, sections in the same order, and a footer with Clear all on
 // one end and Done on the other.
 //

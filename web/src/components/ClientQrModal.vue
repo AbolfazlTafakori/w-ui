@@ -1,5 +1,5 @@
 <script setup>
-// 3x-ui's ClientQrModal: a 520px centred modal with a Collapse of one
+// the classic panel's ClientQrModal: a 520px centred modal with a Collapse of one
 // panel per shareable thing -- the subscription link first, then each
 // device's tunnel config -- the first open, each a QrPanel.
 import { onMounted, ref } from 'vue'

@@ -3,7 +3,7 @@ layout: home
 hero:
   name: W-UI
   text: WireGuard & OpenVPN, sold by the gigabyte
-  tagline: A panel laid out like 3x-ui — the same pages, menus and management script — with data limits the kernel enforces, not a poller.
+  tagline: The classic panel layout — the same pages, menus and management script — with data limits the kernel enforces, not a poller.
   image:
     src: /favicon.svg
     alt: W-UI
@@ -25,7 +25,7 @@ features:
     title: WireGuard, AmneziaWG, OpenVPN
     details: Several interfaces on one server, obfuscated WireGuard where DPI blocks the plain one, OpenVPN over TCP 443 where nothing else gets through.
   - icon: 🧭
-    title: The 3x-ui you already know
+    title: The layout you already know
     details: Inbounds, clients, hosts, outbounds, routing, balancers, DNS, the settings tabs, the w-ui menu numbered 0 to 28 — in the same places, doing the same things.
   - icon: 🔐
     title: HTTPS from the first minute

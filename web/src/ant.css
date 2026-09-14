@@ -1,4 +1,4 @@
-/* Ant Design's default geometry, so a page laid out after 3x-ui's measures
+/* Ant Design's default geometry, so a page laid out after the classic panel's measures
    the same as theirs: 14px text on a 22px line, 32px controls, 8px table
    cells, tags of 12px on a 20px line. Colour comes from the panel's tokens.
    The classes are prefixed a- so they never collide with the panel's own. */
@@ -46,7 +46,7 @@
   .acol:last-child { flex: 0 0 100%; max-width: 100%; }
 }
 
-/* Statistic, with 3x-ui's tokens: an 11px title over 17px content. */
+/* Statistic, with the classic panel's tokens: an 11px title over 17px content. */
 .stat-title {
   margin-bottom: 4px;
   font-size: 11px;
@@ -489,7 +489,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 }
 .acheckbox input { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
 
-/* A settings row: 3x-ui's SettingListItem at paddings="small". */
+/* A settings row: the classic panel's SettingListItem at paddings="small". */
 .setting-list-item {
   display: flex;
   align-items: center;
@@ -681,7 +681,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 
 /* Spin, size="large", with a description: four dots turning in a 32px
    square at the centre of a spacer the height of the viewport, the way a
-   3x-ui page loads. */
+   the classic panel page loads. */
 .aspin-nested { position: relative; }
 .aspin-nested > .loading-spacer { min-height: calc(100vh - 120px); }
 .aspin {
@@ -829,7 +829,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .atag.default { background: var(--surface-3); border-color: var(--line); color: var(--ink); }
 
 /* ── phones: cards instead of tables ─────────────────────────────────────
-   3x-ui's InboundList.css / ClientsPage.css / OutboundsTab.css, measured. */
+   the classic panel's InboundList.css / ClientsPage.css / OutboundsTab.css, measured. */
 .inbound-cards, .client-cards, .node-cards {
   display: flex;
   flex-direction: column;

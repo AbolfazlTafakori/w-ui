@@ -6,7 +6,7 @@ import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
-// The Outbound Subscriptions dialog, laid out the way 3x-ui lays its own out:
+// The Outbound Subscriptions dialog, laid out the way the classic panel lays its own out:
 // the form on top -- Remark, URL, Tag prefix, Update interval, Enabled, Allow
 // private address, Before manual outbounds -- with Add, Preview and Cancel
 // under it; then the active subscriptions as a table with move, edit,

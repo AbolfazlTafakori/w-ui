@@ -1,5 +1,5 @@
 <script setup>
-// 3x-ui's ClientInfoModal: a 640px modal holding the info table -- one
+// the classic panel's ClientInfoModal: a 640px modal holding the info table -- one
 // 13px label column, a tag per value -- then a Divider and a link row for
 // the subscription, and a Divider and a ConfigBlock per tunnel config.
 import { computed, onMounted, ref } from 'vue'

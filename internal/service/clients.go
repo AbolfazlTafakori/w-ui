@@ -1135,7 +1135,7 @@ func (s *Clients) DeleteByStatus(ctx context.Context, status model.ClientStatus)
 			return 0, fmt.Errorf("service: list %s clients: %w", status, err)
 		}
 	case "depleted":
-		// 3x-ui's "depleted": out of traffic or out of time, either one.
+		// the classic panel's "depleted": out of traffic or out of time, either one.
 		if err := s.db.WithContext(ctx).Model(&model.Client{}).
 			Where("status IN ?", []model.ClientStatus{model.StatusExhausted, model.StatusExpired}).
 			Pluck("id", &ids).Error; err != nil {
@@ -1143,7 +1143,7 @@ func (s *Clients) DeleteByStatus(ctx context.Context, status model.ClientStatus)
 		}
 	case "unattached":
 		// Customers on no server at all: nothing to hand them, nothing to
-		// bill. What 3x-ui calls orphans.
+		// bill. What the classic panel calls orphans.
 		if err := s.db.WithContext(ctx).Model(&model.Client{}).
 			Where("NOT EXISTS (SELECT 1 FROM accounts WHERE accounts.client_id = clients.id)").
 			Pluck("id", &ids).Error; err != nil {

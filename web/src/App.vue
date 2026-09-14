@@ -15,7 +15,7 @@ const signedIn = computed(() => !!store.admin)
 // where it goes out and by which route. Settings and the config templates sit
 // below as collapsible groups, and the docs last.
 //
-// It is also, item for item, the order 3x-ui uses, which is worth keeping on
+// It is also, item for item, the order the classic panel uses, which is worth keeping on
 // purpose: an operator moving between panels should not have to hunt for the
 // page they already know the position of. What we have and it does not goes in
 // beside the thing it is about, rather than appended where it would read as
@@ -35,7 +35,7 @@ const nav = [
     key: 'nav.settings',
     icon: 'SettingOutlined',
     children: [
-      // Exactly 3x-ui's five, in its order. An operator who has run one panel
+      // Exactly the classic panel's five, in its order. An operator who has run one panel
       // should find these where they left them, and a menu that grows an entry
       // every time something is added stops being a place anyone can find
       // anything. The language is chosen on the General page, as it is there,
@@ -48,7 +48,7 @@ const nav = [
     ],
   },
   {
-    // 3x-ui's Xray group, for the engine this panel runs instead: the
+    // the classic panel's Xray group, for the engine this panel runs instead: the
     // basics, the balancers, DNS and the raw template, then our own
     // generated-config and log pages.
     key: 'nav.engine',

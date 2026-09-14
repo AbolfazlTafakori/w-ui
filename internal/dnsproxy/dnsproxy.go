@@ -459,7 +459,7 @@ func (p *Proxy) forward(cfg Config, q []byte, name string) ([]byte, error) {
 	return nil, last
 }
 
-// matchDomain is a suffix match, with the forms 3x-ui's lists use:
+// matchDomain is a suffix match, with the forms the classic panel's lists use:
 // "example.com" (and its subdomains), "domain:example.com", "full:x.y" for
 // exactly that name, "regexp:" is not supported and never matches.
 func matchDomain(name, rule string) bool {

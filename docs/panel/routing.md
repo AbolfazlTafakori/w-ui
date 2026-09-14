@@ -8,7 +8,7 @@ Which traffic goes where. Four tabs.
 
 ## Basic
 
-The default outbound, the domain strategy, the blocks 3x-ui applies by default — BitTorrent on its well-known ports, private ranges — plus your own blocked and direct lists of domains, addresses, `geoip:xx` countries and named groups, and the IPv4-only list for services that misbehave over IPv6.
+The default outbound, the domain strategy, the blocks panels of this kind apply by default — BitTorrent on its well-known ports, private ranges — plus your own blocked and direct lists of domains, addresses, `geoip:xx` countries and named groups, and the IPv4-only list for services that misbehave over IPv6.
 
 ## Rules
 

@@ -537,7 +537,7 @@ func (s *Settings) validate(in *PanelSettings) error {
 	return nil
 }
 
-// normalizeBasePath makes a path begin and end with a slash, the way 3x-ui
+// normalizeBasePath makes a path begin and end with a slash, the way the classic panel
 // keeps its URI path. Empty stays empty, which means the environment's.
 func normalizeBasePath(p string) string {
 	p = strings.TrimSpace(p)

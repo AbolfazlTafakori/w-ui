@@ -11,7 +11,7 @@ The first page after sign-in: host load, panel state, and what this server is ca
 | Button | What it does |
 |--------|--------------|
 | **Tunnels 3 / 3** | how many interfaces are up, of how many are enabled; red when one is down |
-| **Restart** | every tunnel again from its stored configuration (what "restart Xray" is on 3x-ui); the panel stays up |
+| **Restart** | every tunnel again from its stored configuration (the classic "restart core"); the panel stays up |
 | **Stop** | the panel service — tunnels keep running, limits stop being enforced |
 | **History** | CPU, memory, traffic and connections over the last day, week or month |
 | **Logs** | the panel's log, filterable by level and source, live |

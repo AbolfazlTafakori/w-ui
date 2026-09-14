@@ -1,5 +1,5 @@
 <script setup>
-// The switch 3x-ui puts in its Enabled column. It is a real checkbox
+// The switch the classic panel puts in its Enabled column. It is a real checkbox
 // underneath, so it reaches the keyboard and screen readers the way a styled
 // div never would.
 defineProps({

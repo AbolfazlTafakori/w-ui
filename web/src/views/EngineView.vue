@@ -12,7 +12,7 @@ import MultiSelect from '../components/MultiSelect.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 
-// The engine pages: what 3x-ui keeps under "Xray" -- the core's own
+// The engine pages: what the classic panel keeps under "Xray" -- the core's own
 // settings, its balancers, its DNS and the raw template -- laid out the
 // same way, for the kernel tunnels this panel runs instead of a core.
 

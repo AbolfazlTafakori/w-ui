@@ -19,7 +19,7 @@ import (
 
 // The page a customer sees when they open their subscription link in a browser.
 //
-// Laid out as 3x-ui's SubPage is -- one centred Card with the Descriptions
+// Laid out as the classic panel's SubPage is -- one centred Card with the Descriptions
 // table, the usage summary, the link rows, a config block per device and
 // the two app buttons -- in this panel's own colours. Rendered whole on the
 // server and carrying no external reference of any kind: a customer opening
@@ -214,7 +214,7 @@ func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, tok
 	_, _ = w.Write(buf.Bytes())
 }
 
-// subPageStrings are the page's words in both languages, keyed as 3x-ui's
+// subPageStrings are the page's words in both languages, keyed as the classic panel's
 // subscription strings are, so the language button can swap them in place.
 var subPageStrings = map[string]map[string]string{
 	"en": {
@@ -341,7 +341,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
 <meta name="robots" content="noindex, nofollow">
 <title>{{ .Page.Title }}</title>
 <style nonce="{{ .Nonce }}">
-/* This panel's palette on 3x-ui's subscription page: Ant's geometry, our
+/* This panel's palette on the classic panel's subscription page: Ant's geometry, our
    black and red. Three themes, cycled from the button in the card head. */
 :root {
   color-scheme: dark;

@@ -51,7 +51,7 @@ Certificates live under `/etc/wui/certs/<name>/fullchain.pem` and `privkey.pem`,
 
 ## The subscription service on its own port
 
-Settings → Subscription can put the subscription service on a listener of its own, with its own certificate. The link handed to customers then carries that port and scheme, so `https://your.host:2096/sub/TOKEN` works the way 3x-ui's does.
+Settings → Subscription can put the subscription service on a listener of its own, with its own certificate. The link handed to customers then carries that port and scheme, so `https://your.host:2096/sub/TOKEN` works as customers expect.
 
 ## Behind your own proxy
 

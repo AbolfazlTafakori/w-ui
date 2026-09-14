@@ -1,4 +1,4 @@
-// Package tgbot is the panel's Telegram bot: the same bot 3x-ui runs, for
+// Package tgbot is the panel's Telegram bot: the same bot the classic panel runs, for
 // the same two audiences. An administrator asks it for the server's state,
 // the customers, backups and links, and presses its buttons to reset
 // traffic or add a customer; a customer whose Telegram id is on their plan
@@ -182,7 +182,7 @@ func (b *Bot) sendPhoto(ctx context.Context, chat int64, name string, png []byte
 	return b.upload(ctx, "sendPhoto", "photo", name, png, map[string]string{"chat_id": fmt.Sprint(chat), "caption": caption, "parse_mode": "HTML"})
 }
 
-// pages splits a long message on blank lines the way 3x-ui's bot does, so
+// pages splits a long message on blank lines the way the classic panel's bot does, so
 // nothing is cut mid-line by Telegram's limit.
 func pages(text string, limit int) []string {
 	if len(text) <= limit {

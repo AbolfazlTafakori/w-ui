@@ -97,7 +97,7 @@ const stat = (arr) => {
   }
 }
 
-// Four vitals, in 3x-ui's order. Each carries its own recent history so the
+// Four vitals, in the classic panel's order. Each carries its own recent history so the
 // number is read against where it has been, not on its own.
 const vitals = computed(() => {
   const s = sys.value
@@ -183,7 +183,7 @@ let logTimer = null
 
 // Refreshing while the operator is reading is the point of following, so it has
 // to be slow enough not to move the page under them and quick enough to be
-// worth having on. Five seconds is what 3x-ui settled on and it is right.
+// worth having on. Five seconds is what the classic panel settled on and it is right.
 const followInterval = 5000
 
 // Both of these used to live a page away. When something is wrong, the log and
@@ -813,7 +813,7 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
       </article>
     </div>
 
-    <!-- The strip 3x-ui closes its overview with: uptime, panel, addresses. -->
+    <!-- The strip the classic panel closes its overview with: uptime, panel, addresses. -->
     <article class="card ov-strip">
       <div class="ov-strip-grid">
         <div class="ov-strip-cell">
@@ -875,7 +875,7 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
       </div>
     </article>
 
-    <!-- What this panel manages, which 3x-ui puts under Inbounds instead. -->
+    <!-- What this panel manages, which the classic panel puts under Inbounds instead. -->
     <article class="card">
       <div class="card-head">
         <h2>{{ t('nav.interfaces') }}</h2>

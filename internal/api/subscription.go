@@ -81,7 +81,7 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	h.Set("Subscription-Userinfo", bundle.UserInfo)
 	h.Set("Profile-Update-Interval", fmt.Sprint(bundle.UpdateHours))
 	h.Set("Profile-Title", "base64:"+b64(bundle.Title))
-	// The optional ones client apps show beside the profile, as 3x-ui sends
+	// The optional ones client apps show beside the profile, as the classic panel sends
 	// them; each only when set.
 	if cfg.SupportURL != "" {
 		h.Set("Support-Url", cfg.SupportURL)

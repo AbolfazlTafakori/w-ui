@@ -1,10 +1,10 @@
 ---
-description: "The same bot 3x-ui runs, for the same two audiences."
+description: "The classic panel bot, for its two audiences."
 ---
 
 # Telegram bot
 
-The same bot 3x-ui runs, for the same two audiences.
+The classic panel bot, for its two audiences.
 
 ## Setting it up
 
