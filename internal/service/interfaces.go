@@ -9,10 +9,11 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/big"
 	"net/netip"
 	"strings"
 	"time"
@@ -567,7 +568,16 @@ const handshakeLengthGap = 56
 // The H1-H4 ranges are kept far apart so the four message types stay
 // distinguishable to a peer that validates them.
 func NewAWGParams() model.AWGParams {
-	between := func(lo, hi int) int { return lo + rand.Intn(hi-lo+1) }
+	// Not secret -- every client is handed these -- but drawn from the
+	// kernel's randomness anyway, so two servers set up the same minute do
+	// not share a profile.
+	between := func(lo, hi int) int {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(hi-lo+1)))
+		if err != nil {
+			return lo
+		}
+		return lo + int(n.Int64())
+	}
 
 	jmin := between(40, 89)
 
