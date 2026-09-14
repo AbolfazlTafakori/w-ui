@@ -88,6 +88,9 @@ PANEL_PORT=2096
 # minute without the operator having to find the setting.
 SUB_PORT="${WUI_SUB_PORT:-}"
 SUB_KNOWN=0
+# Set only when the port was read from an install already here: a port
+# given on the command line is still a fresh install to switch on.
+SUB_EXISTING=0
 # Where the data lives. SQLite for most installs; PostgreSQL for one with a
 # lot of customers, the way the classic panel offers both.
 DB_DRIVER="${WUI_DB_DRIVER:-}"
@@ -953,7 +956,7 @@ read_existing() {
   # And the subscription port the links already carry.
   if [[ "$SUB_KNOWN" == 0 && -r "$CONF_DIR/install-result.env" ]]; then
     v=$(sed -n 's/^WUI_SUB_PORT=//p' "$CONF_DIR/install-result.env" | head -1 | tr -d "'\"")
-    [[ "$v" =~ ^[0-9]+$ ]] && { SUB_PORT="$v"; SUB_KNOWN=1; }
+    [[ "$v" =~ ^[0-9]+$ ]] && { SUB_PORT="$v"; SUB_KNOWN=1; SUB_EXISTING=1; }
   fi
 }
 
@@ -1767,7 +1770,7 @@ ensure_postgres_running() {
 # operator has set since.
 apply_sub_settings() {
   step "Subscription service"
-  if [[ "$SUB_KNOWN" == 1 ]]; then
+  if [[ "$SUB_EXISTING" == 1 ]]; then
     ok "kept on port $SUB_PORT"
     return 0
   fi
