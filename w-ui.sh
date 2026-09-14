@@ -338,7 +338,9 @@ uninstall() {
         # database from either engine, restorable into either -- and a
         # plain copy of the directory when it cannot.
         local made=""
-        [[ -x "$BIN_PATH" ]] && made=$(panel_cli backup create --dir /root 2> /dev/null | tail -1)
+        # Written where the service's user can write, then moved: the panel
+        # runs the backup as that user, and /root is not its to write in.
+        [[ -x "$BIN_PATH" ]] && made=$(panel_cli backup create --dir "$BACKUP_DIR" 2> /dev/null | tail -1)
         if [[ -n "$made" && -f "$made" ]]; then
             mv -f "$made" "$keep" && chmod 0600 "$keep" && LOGI "A copy of the database and keys is at ${keep}"
         else
