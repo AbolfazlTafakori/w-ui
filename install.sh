@@ -1720,7 +1720,9 @@ ensure_postgres_running() {
       local ver; ver=$(ls /etc/postgresql 2>/dev/null | sort -V | tail -1)
       [[ -n "$ver" ]] && pg_ctlcluster "$ver" main start >/dev/null 2>&1 || true
     elif [[ -d /var/lib/pgsql/data ]]; then
-      runuser -u postgres -- pg_ctl -D /var/lib/pgsql/data -l /var/lib/pgsql/initdb.log start >/dev/null 2>&1 || true
+      # The socket directory systemd's tmpfiles would have made.
+      install -d -o postgres -g postgres -m 755 /run/postgresql 2>/dev/null || true
+      runuser -u postgres -- pg_ctl -D /var/lib/pgsql/data -l /var/lib/pgsql/startup.log -w start >/dev/null 2>&1 || true
     fi
   fi
   local i
@@ -1728,6 +1730,7 @@ ensure_postgres_running() {
     runuser -u postgres -- pg_isready -q 2>/dev/null && return 0
     sleep 1
   done
+  [[ -r /var/lib/pgsql/startup.log ]] && tail -5 /var/lib/pgsql/startup.log >&2
   die "PostgreSQL did not come up; see: journalctl -u postgresql"
 }
 
