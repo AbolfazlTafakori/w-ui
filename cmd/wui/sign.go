@@ -100,8 +100,11 @@ func verifyCommand(args []string) error {
 	if len(args) != 2 {
 		return errors.New("verify: want a binary and its .sig")
 	}
+	// Exit codes a script can act on: 0 signed, 2 not signed by this
+	// project's key, 3 this build cannot check (no key baked in).
 	if !update.Signed() {
-		return errors.New("verify: this build carries no signing key, so it cannot check one")
+		fmt.Fprintln(os.Stderr, "verify: this build carries no signing key, so it cannot check one")
+		os.Exit(3)
 	}
 	binary, err := os.ReadFile(args[0])
 	if err != nil {
@@ -112,7 +115,8 @@ func verifyCommand(args []string) error {
 		return err
 	}
 	if err := update.Verify(binary, sig); err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "verify: %v\n", err)
+		os.Exit(2)
 	}
 	fmt.Println("signature ok")
 	return nil

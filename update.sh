@@ -73,13 +73,19 @@ verify_download "$tmp/wui" "${ASSET_URL##*/}"
 # The signature, checked with the key baked into the panel already installed.
 # A build that does not verify is not installed, whatever the checksum said.
 if [[ -n "$SIG_URL" ]] && curl -fsSL "$SIG_URL" -o "$tmp/wui.sig" 2>/dev/null; then
-  if out="$("$BIN_PATH" verify "$tmp/wui" "$tmp/wui.sig" 2>&1)"; then
-    ok "signature verified"
-  elif [[ "$out" == *"carries no signing key"* ]]; then
-    warn "the installed panel carries no signing key, so the signature was not checked"
-  else
-    die "signature check failed: the download is not a build this project signed"
-  fi
+  # 0: signed by this project's key. 2: it is not, and it is not installed.
+  # Anything else: the installed panel cannot check (no key baked in, or a
+  # panel from before this command existed) -- said, and carried on with
+  # the checksum alone.
+  set +e
+  "$BIN_PATH" verify "$tmp/wui" "$tmp/wui.sig" >/dev/null 2>&1
+  rc=$?
+  set -e
+  case "$rc" in
+    0) ok "signature verified" ;;
+    2) die "signature check failed: the download is not a build this project signed" ;;
+    *) warn "the installed panel cannot check signatures; the checksum is what was verified" ;;
+  esac
 else
   warn "the release carries no signature for this build"
 fi
