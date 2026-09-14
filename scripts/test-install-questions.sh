@@ -58,15 +58,16 @@ run_wizard() {
     die() { printf 'DIED: %s\n' "$*"; exit 9; }
 
     configure >/dev/null 2>&1
+    printf 'SUB=%s\nDB=%s\n' "$SUB_PORT" "$DB_DRIVER"
     printf 'PORT=%s\nUSER=%s\nPASS=%s\nBASE=%s\nMODE=%s\nDOMAIN=%s\nEMAIL=%s\nCERT=%s\nLISTEN=%s\nOVPN=%s\nAWG=%s\n' \
       "$PANEL_PORT" "$ADMIN_USER" "$ADMIN_PASS" "$BASE_PATH" "$TLS_MODE" "$ACME_DOMAIN" \
       "$ACME_EMAIL" "$TLS_CERT" "$LISTEN_ADDR" "$WANT_OPENVPN" "$WANT_AMNEZIA"
   )
 }
 
-# Nine blank lines: port? path? credentials? certificate (2: the address)?
-# is that the address? ipv6? openvpn? amneziawg? confirm?
-ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n'
+# Ten blank lines: port? path? credentials? database? certificate (2: the
+# address)? is that the address? ipv6? openvpn? amneziawg? confirm?
+ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n\n'
 
 echo
 echo "── pressing enter through everything leaves nothing guessable ─────────"
@@ -87,6 +88,10 @@ truth "the administrator name is generated, not typed" \
       "$([[ ${#user} -ge 8 ]] && echo 1)" "name was ${#user} characters: $user"
 check "no password is chosen here; one is generated at install time" "" "$(field PASS "$out")"
 check "the default is a certificate for the address, as 3x-ui's is" "ip" "$(field MODE "$out")"
+check "the default database is SQLite" "sqlite" "$(field DB "$out")"
+sub=$(field SUB "$out")
+truth "a subscription port is picked without asking" "$([[ "$sub" =~ ^[0-9]+$ ]] && echo 1)" "got $sub"
+truth "and it is not the panel's port" "$([[ "$sub" != "$port" ]] && echo 1)" "both were $port"
 
 echo
 echo "── and the next install is not the same install ───────────────────────"
@@ -105,6 +110,7 @@ y
 operator
 Sup3rSecret!
 Sup3rSecret!
+1
 1
 panel.example.com
 me@example.com
@@ -125,6 +131,7 @@ out=$(run_wizard "y
 9000
 n
 n
+1
 4
 n
 y
@@ -138,6 +145,7 @@ out=$(run_wizard "n
 y
 
 n
+1
 4
 n
 y
@@ -150,6 +158,7 @@ echo "── plain HTTP can be shut in to the loopback, and nothing is then open
 out=$(run_wizard "n
 n
 n
+1
 4
 y
 y
@@ -159,6 +168,7 @@ check "binds to the loopback when asked"  "127.0.0.1" "$(field LISTEN "$out")"
 out=$(run_wizard "n
 n
 n
+1
 4
 n
 y
@@ -177,6 +187,8 @@ has/slash
 also space
 good-path
 n
+3
+1
 9
 1
 not-a-domain
@@ -189,6 +201,7 @@ check "invalid ports rejected"  "2096"              "$(field PORT "$out")"
 check "invalid paths rejected"  "good-path"         "$(field BASE "$out")"
 check "invalid choice rejected" "acme"              "$(field MODE "$out")"
 check "invalid domain rejected" "panel.example.org" "$(field DOMAIN "$out")"
+check "invalid database choice rejected" "sqlite" "$(field DB "$out")"
 
 echo
 echo "── a mistyped password is asked again, not accepted ───────────────────"
@@ -200,6 +213,7 @@ firstpassword
 secondpassword
 matching-one
 matching-one
+1
 4
 n
 y
@@ -216,6 +230,7 @@ admin
 short
 longenough1
 longenough1
+1
 4
 n
 y
@@ -241,7 +256,7 @@ out=$(
   set +e
   # shellcheck disable=SC1091
   WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
-  printf 'n\nn\nn\n4\nn\ny\ny\nn\n' >"$WORK/answers"
+  printf 'n\nn\nn\n1\n4\nn\ny\ny\nn\n' >"$WORK/answers"
   open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
   public_ip() { printf '203.0.113.5'; }
   have() { return 1; }

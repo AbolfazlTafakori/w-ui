@@ -9,6 +9,7 @@ package backup
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -55,8 +56,17 @@ type Options struct {
 	// a consistent copy of itself instead; this is how the panel asks for one.
 	Snapshot func(ctx context.Context, dest string) error
 
+	// Export writes the database as a portable dump -- every table as JSON,
+	// independent of the engine. It goes into every archive beside the
+	// SQLite snapshot, so a backup taken on one engine restores into the
+	// other, and one taken by an older panel restores into a newer one.
+	Export func(ctx context.Context, w io.Writer) error
+
 	Log *slog.Logger
 }
+
+// ExportFile is the portable dump's name inside an archive.
+const ExportFile = "wui-export.json"
 
 // Service takes and prunes backups.
 type Service struct {
@@ -64,6 +74,7 @@ type Service struct {
 	dir      string
 	keep     int
 	snapshot func(context.Context, string) error
+	export   func(context.Context, io.Writer) error
 	log      *slog.Logger
 
 	// Only one backup runs at a time. Two at once would read the database
@@ -85,6 +96,7 @@ func New(o Options) *Service {
 		dir:      dir,
 		keep:     o.Keep,
 		snapshot: o.Snapshot,
+		export:   o.Export,
 		log:      log,
 	}
 }
@@ -218,6 +230,10 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		if strings.HasSuffix(clean, ".db-wal") || strings.HasSuffix(clean, ".db-shm") {
 			return nil
 		}
+		// A dump waiting to be loaded is not data yet.
+		if d.Name() == PendingImportFile {
+			return nil
+		}
 		if d.IsDir() {
 			return nil
 		}
@@ -281,6 +297,23 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		return err
 	}
 
+	// The portable dump, last. Its size is not known until it is written, so
+	// it goes through a buffer; a database is small next to a year of
+	// archives of it.
+	if s.export != nil {
+		var buf bytes.Buffer
+		if err := s.export(ctx, &buf); err != nil {
+			s.log.Warn("could not write the portable dump into the backup", "error", err)
+		} else {
+			hdr := &tar.Header{Name: ExportFile, Mode: 0o600, Size: int64(buf.Len()), ModTime: time.Now(), Typeflag: tar.TypeReg}
+			if err := tw.WriteHeader(hdr); err != nil {
+				return fmt.Errorf("backup: write header for %s: %w", ExportFile, err)
+			}
+			if _, err := io.Copy(tw, &buf); err != nil {
+				return fmt.Errorf("backup: write %s: %w", ExportFile, err)
+			}
+		}
+	}
 	if err := tw.Close(); err != nil {
 		return fmt.Errorf("backup: finish archive: %w", err)
 	}

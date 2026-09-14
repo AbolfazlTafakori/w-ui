@@ -131,6 +131,12 @@ func (s *Service) Restore(ctx context.Context, name string, keep *LocalAddresses
 // markerFile is what tells the next start that a staged restore is complete.
 const markerFile = ".restore-ready"
 
+// PendingImportFile is where ApplyPending leaves a portable dump that has to
+// be loaded into the database rather than copied over it. The caller loads it
+// after the database is open and removes it; one that is still there at the
+// next start is loaded then.
+const PendingImportFile = ".restore-import.json"
+
 // PendingDirName is the staging directory, inside the data directory.
 //
 // Inside rather than beside it, which is the only place that works: the unit
@@ -150,10 +156,16 @@ func pendingDir(dataDir string) string {
 // ApplyPending puts a staged restore in place, and is called at startup before
 // anything opens the database.
 //
+// dbFile names the SQLite file inside the data directory, or is empty when the
+// panel runs on another engine. When the archive holds that file it is put
+// back as it is -- an exact copy. Otherwise the archive's portable dump is
+// kept aside for the caller to load once the database is open: that is how a
+// SQLite backup lands in a PostgreSQL panel, and the other way round.
+//
 // Returns the archive's name when one was applied, so the caller can say so.
 // Anything that goes wrong here is reported and the panel starts on the data it
 // already had: a failed restore must not also be a panel that will not start.
-func ApplyPending(dataDir string, log *slog.Logger) (string, *LocalAddresses, bool) {
+func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddresses, bool) {
 	staging := pendingDir(dataDir)
 
 	marker, err := os.ReadFile(filepath.Join(staging, markerFile))
@@ -179,11 +191,51 @@ func ApplyPending(dataDir string, log *slog.Logger) (string, *LocalAddresses, bo
 		return "", nil, false
 	}
 
+	hasDB := false
+	hasExport := false
+	for _, rel := range entries {
+		if dbFile != "" && rel == dbFile {
+			hasDB = true
+		}
+		if rel == ExportFile {
+			hasExport = true
+		}
+	}
+	byFile := hasDB
+	switch {
+	case byFile:
+		// The exact file wins; the dump is only for crossing engines.
+	case hasExport:
+		log.Info("the archive has no database file for this engine; its portable dump will be loaded")
+	default:
+		log.Error("the archive holds neither a database file for this engine nor a portable dump; only the other files are restored",
+			"archive", archive)
+	}
+
 	applied := 0
 	for _, rel := range entries {
 		// Neither of these is part of the panel's data; they are how the
 		// restore carried itself across the restart.
 		if rel == markerFile || rel == localAddressesFile {
+			continue
+		}
+		if rel == ExportFile {
+			if byFile {
+				continue
+			}
+			// Kept where the caller looks for it after the database is open.
+			src := filepath.Join(staging, ExportFile)
+			dst := filepath.Join(dataDir, PendingImportFile)
+			if err := os.Rename(src, dst); err != nil {
+				if err := copyFile(src, dst); err != nil {
+					log.Error("could not keep the portable dump for import", "error", err)
+				}
+			}
+			continue
+		}
+		// A database file from the other engine is of no use here, and would
+		// sit beside the real one confusing the next person to look.
+		if !byFile && strings.HasSuffix(rel, ".db") {
 			continue
 		}
 		src := filepath.Join(staging, filepath.FromSlash(rel))

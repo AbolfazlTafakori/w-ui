@@ -107,11 +107,28 @@ func run() error {
 	// to whichever file was open when it was written. Applying a restore under
 	// a running process means the log is checkpointed back over it and the
 	// restore quietly undoes itself.
-	restoredFrom, keepAddresses, restored := backup.ApplyPending(cfg.DataDir, log)
+	dbFile := ""
+	if cfg.DBDriver == config.DriverSQLite {
+		dbFile = filepath.Base(cfg.DBSource)
+	}
+	restoredFrom, keepAddresses, restored := backup.ApplyPending(cfg.DataDir, dbFile, log)
 
 	db, err := database.Open(cfg, log)
 	if err != nil {
 		return err
+	}
+
+	// A restore that crossed engines, or came from a panel on the other one:
+	// the archive's portable dump is loaded now that the schema is current.
+	if pending := filepath.Join(cfg.DataDir, backup.PendingImportFile); fileExists(pending) {
+		if err := importPending(db, cfg, pending, log); err != nil {
+			log.Error("the restored backup could not be loaded into the database; the panel is running on the data it had",
+				"error", err, "kept", pending+".failed")
+			_ = os.Rename(pending, pending+".failed")
+		} else {
+			_ = os.Remove(pending)
+			restored = true
+		}
 	}
 
 	if restored {
@@ -223,21 +240,7 @@ func run() error {
 		notifier.Send(notify.Event{Kind: kind, Title: title, Body: tag + " — " + detail})
 	}
 
-	backups := backup.New(backup.Options{
-		DataDir: cfg.DataDir,
-		Dir:     cfg.BackupDir,
-		Keep:    7,
-		Log:     log,
-		// SQLite can write a consistent copy of itself while it is in use.
-		// Copying the file byte by byte instead can catch it mid-write, and a
-		// torn database is worth nothing at the moment it is needed.
-		Snapshot: func(ctx context.Context, dest string) error {
-			if cfg.DBDriver != config.DriverSQLite {
-				return fmt.Errorf("snapshots are only available for sqlite")
-			}
-			return db.WithContext(ctx).Exec("VACUUM INTO ?", dest).Error
-		},
-	})
+	backups := newBackupService(db, cfg, cfg.BackupDir, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -878,3 +881,42 @@ func openPool(ctx context.Context, db *gorm.DB, nodeID uint, log *slog.Logger) (
 // finest tier holds an hour, so nothing older than the last write is ever at
 // risk.
 const historySaveInterval = 5 * time.Minute
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.Mode().IsRegular()
+}
+
+func importPending(db *gorm.DB, cfg config.Config, path string, log *slog.Logger) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return database.Import(context.Background(), db, cfg.DBDriver, f, log)
+}
+
+// newBackupService is the one place a backup is defined, for the panel and
+// for the command line alike: the same archive, with the same contents,
+// whichever asked for it.
+func newBackupService(db *gorm.DB, cfg config.Config, dir string, log *slog.Logger) *backup.Service {
+	return backup.New(backup.Options{
+		DataDir: cfg.DataDir,
+		Dir:     dir,
+		Keep:    7,
+		Log:     log,
+		// SQLite can write a consistent copy of itself while it is in use.
+		// Copying the file byte by byte instead can catch it mid-write, and a
+		// torn database is worth nothing at the moment it is needed.
+		Snapshot: func(ctx context.Context, dest string) error {
+			if cfg.DBDriver != config.DriverSQLite {
+				return fmt.Errorf("snapshots are only available for sqlite")
+			}
+			return db.WithContext(ctx).Exec("VACUUM INTO ?", dest).Error
+		},
+		// And, for every engine, the copy that restores into any other.
+		Export: func(ctx context.Context, w io.Writer) error {
+			return database.Export(ctx, db, cfg.DBDriver, version, w)
+		},
+	})
+}

@@ -18,7 +18,9 @@
 #   --from-source      build from the repository in the current directory
 #   --no-amnezia       skip AmneziaWG (it builds a kernel module and needs headers)
 #   --no-openvpn       skip OpenVPN if you only sell WireGuard
-#   --port <n>         panel port (default 2096)
+#   --port <n>         panel port (default: random)
+#   --sub-port <n>     subscription service port (default: random)
+#   --db <engine>      sqlite (default) or postgres, for a large customer count
 #   --username <name>  administrator name (default admin)
 #   --password <pass>  administrator password (default: generated)
 #   --domain <name>    get a Let's Encrypt certificate for this domain
@@ -81,6 +83,17 @@ BRANCH="${WUI_BRANCH:-main}"
 # Only a starting point for the prompt. Nothing is installed on it unless the
 # operator asks for it by name: the default is a random free port.
 PANEL_PORT=2096
+# The subscription service's own port. Random, like the panel's: the panel
+# picks it and enables the service, so a customer's link works from the first
+# minute without the operator having to find the setting.
+SUB_PORT="${WUI_SUB_PORT:-}"
+SUB_KNOWN=0
+# Where the data lives. SQLite for most installs; PostgreSQL for one with a
+# lot of customers, the way 3x-ui offers both.
+DB_DRIVER="${WUI_DB_DRIVER:-}"
+DB_KNOWN=0
+DB_SOURCE=""
+DB_PASS=""
 WANT_AMNEZIA=1
 WANT_OPENVPN=1
 LOCAL_BIN=""
@@ -148,6 +161,8 @@ while [[ "$LIB_ONLY" != 1 && $# -gt 0 ]]; do
     --no-amnezia)  WANT_AMNEZIA=0; shift ;;
     --no-openvpn)  WANT_OPENVPN=0; shift ;;
     --port)        PANEL_PORT="${2:?--port needs a number}"; PORT_KNOWN=1; shift 2 ;;
+    --sub-port)    SUB_PORT="${2:?--sub-port needs a number}"; SUB_KNOWN=1; shift 2 ;;
+    --db)          DB_DRIVER="${2:?--db needs sqlite or postgres}"; DB_KNOWN=1; shift 2 ;;
     --username)    ADMIN_USER="${2:?--username needs a name}"; shift 2 ;;
     --password)    ADMIN_PASS="${2:?--password needs a value}"; shift 2 ;;
     --domain)      ACME_DOMAIN="${2:?--domain needs a name}"; shift 2 ;;
@@ -210,7 +225,17 @@ detect_os() {
 last_copy_of_data() {
   [[ -d "$DATA_DIR" ]] || return 0
   local out="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
-  if tar czf "$out" --exclude='*/backups' -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2>/dev/null; then
+  # The panel's own archive when it can make one -- the database from either
+  # engine, restorable into either -- and a plain copy when it cannot.
+  local made=""
+  if [[ -x "$BIN_PATH" && -r "$CONF_DIR/db.env" ]]; then
+    # shellcheck disable=SC1091
+    made=$( (set -a; . "$CONF_DIR/db.env"; set +a; WUI_DATA_DIR="$DATA_DIR" "$BIN_PATH" backup create --dir /root 2>/dev/null | tail -1) )
+  fi
+  if [[ -n "$made" && -f "$made" ]] && mv -f "$made" "$out"; then
+    chmod 0600 "$out"
+    ok "a copy of the database and keys is at $out"
+  elif tar czf "$out" --exclude='*/backups' -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2>/dev/null; then
     chmod 0600 "$out"
     ok "a copy of the database and keys is at $out"
   else
@@ -913,6 +938,46 @@ read_existing() {
   v=$(sed -n 's/^Environment=WUI_LISTEN=//p' "$UNIT" | head -1)
   v="${v%:*}"
   [[ -n "$v" && "$LISTEN_ADDR" == 0.0.0.0 ]] && LISTEN_ADDR="$v"
+
+  # The engine it runs on. An upgrade that switched a PostgreSQL panel back
+  # to SQLite would start it on an empty database.
+  if [[ "$DB_KNOWN" == 0 && -r "$CONF_DIR/db.env" ]]; then
+    v=$(sed -n 's/^WUI_DB_DRIVER=//p' "$CONF_DIR/db.env" | head -1)
+    [[ -n "$v" ]] && { DB_DRIVER="$v"; DB_KNOWN=1; }
+    v=$(sed -n 's/^WUI_DB_SOURCE=//p' "$CONF_DIR/db.env" | head -1)
+    [[ -n "$v" ]] && DB_SOURCE="$v"
+  fi
+  if [[ "$DB_KNOWN" == 0 && -f "$DATA_DIR/wui.db" ]]; then
+    DB_DRIVER=sqlite; DB_KNOWN=1
+  fi
+  # And the subscription port the links already carry.
+  if [[ "$SUB_KNOWN" == 0 && -r "$CONF_DIR/install-result.env" ]]; then
+    v=$(sed -n 's/^WUI_SUB_PORT=//p' "$CONF_DIR/install-result.env" | head -1 | tr -d "'\"")
+    [[ "$v" =~ ^[0-9]+$ ]] && { SUB_PORT="$v"; SUB_KNOWN=1; }
+  fi
+}
+
+# A port for the subscription service that is free and is not the panel's.
+pick_sub_port() {
+  local p tries=0
+  while (( tries++ < 20 )); do
+    p="$(random_free_port)"
+    [[ "$p" != "$PANEL_PORT" ]] && { printf '%s' "$p"; return 0; }
+  done
+  printf '%s' $(( PANEL_PORT % 60000 + 1025 ))
+}
+
+# The environment a wui subcommand needs to open the same database the
+# service does, as one string of assignments for env(1).
+panel_env() {
+  printf 'WUI_DATA_DIR=%s WUI_DB_DRIVER=%s WUI_DB_SOURCE=%s' "$DATA_DIR" "$DB_DRIVER" "$DB_SOURCE"
+}
+
+# Whether this machine already has a panel's data, whichever engine holds it.
+existing_data() {
+  [[ -f "$DATA_DIR/wui.db" ]] && return 0
+  [[ "$DB_DRIVER" == postgres && "$DB_KNOWN" == 1 ]] && return 0
+  return 1
 }
 
 # Say plainly what a re-run does, because the wrong idea about it is the one
@@ -987,6 +1052,18 @@ configure() {
     info "panel port: $PANEL_PORT"
   fi
 
+  # ── the subscription port ─────────────────────────────────────────────────
+  #
+  # Not asked. The customers' links carry it, and there is no reason for it
+  # to be anything but a free random port beside the panel's. An operator who
+  # wants a particular one passes --sub-port.
+  if [[ "$SUB_KNOWN" == 1 ]]; then
+    info "keeping the subscription port this install already uses: $SUB_PORT"
+  else
+    SUB_PORT="$(pick_sub_port)"
+    info "subscription port: $SUB_PORT"
+  fi
+
   # ── the path it answers on ────────────────────────────────────────────────
   #
   # The other half of not being found. With a random prefix there is nothing at
@@ -1037,6 +1114,31 @@ configure() {
     [[ -n "$ADMIN_USER" ]] || ADMIN_USER="$(gen_string 10)"
     info "administrator: $ADMIN_USER"
     info "the password is generated and shown once, at the end"
+  fi
+
+  # ── where the data lives ──────────────────────────────────────────────────
+  #
+  # SQLite is one file, needs nothing installed, and carries a few thousand
+  # customers without noticing. PostgreSQL is for the install that outgrows
+  # that. Both are backed up in the same archive, and a backup from either
+  # restores into the other.
+  if [[ "$DB_KNOWN" == 1 ]]; then
+    info "keeping the database this install already uses: $DB_DRIVER"
+  else
+    tty_out '\n'
+    info "Database"
+    info "  1) SQLite      — one file, nothing to install; fine up to a few thousand customers (default)"
+    info "  2) PostgreSQL  — for a large number of customers; installed and configured here"
+    local dbc
+    while true; do
+      ask dbc "Choose" "1"
+      case "$dbc" in
+        1) DB_DRIVER=sqlite; break ;;
+        2) DB_DRIVER=postgres; break ;;
+        *) warn "answer 1 or 2" ;;
+      esac
+    done
+    info "database: $DB_DRIVER"
   fi
 
   # ── how it is reached ─────────────────────────────────────────────────────
@@ -1148,6 +1250,8 @@ configure() {
   # ── read it back ──────────────────────────────────────────────────────────
   tty_out '\n'
   info "Panel port     $PANEL_PORT"
+  info "Sub port       $SUB_PORT"
+  info "Database       $DB_DRIVER"
   info "Administrator  $ADMIN_USER"
   local shown_path="/"
   [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
@@ -1178,6 +1282,12 @@ configure_defaults() {
     # The panel itself holding the port is an upgrade, not a conflict.
     die "port $PANEL_PORT is already served by $(port_owner "$PANEL_PORT"); pass --port with a free one"
   fi
+  [[ "$SUB_KNOWN" == 1 ]] || SUB_PORT="$(pick_sub_port)"
+  [[ -n "$DB_DRIVER" ]] || DB_DRIVER=sqlite
+  case "$DB_DRIVER" in
+    sqlite|postgres) ;;
+    *) die "--db must be sqlite or postgres, not $DB_DRIVER" ;;
+  esac
   if [[ -n "$TLS_MODE" ]]; then
     : # --no-tls, or a mode already chosen
   elif [[ -n "$ACME_DOMAIN" ]]; then
@@ -1531,6 +1641,108 @@ issue_ip_certificate() {
 # Created before the panel first starts, so the account is the one the operator
 # chose. The panel generates a random administrator only when it finds none,
 # which after this it never does.
+# The database the panel opens. SQLite is one file under the data directory
+# and needs nothing. PostgreSQL is installed from the distribution, given a
+# role and a database of its own with a generated password, and the
+# connection string is kept root-only in $CONF_DIR/db.env, which the unit
+# reads. Re-runs keep what is there.
+setup_database() {
+  step "Database"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$CONF_DIR"
+
+  if [[ "$DB_DRIVER" == sqlite ]]; then
+    DB_SOURCE="$DATA_DIR/wui.db"
+    printf 'WUI_DB_DRIVER=sqlite\nWUI_DB_SOURCE=%s\n' "$DB_SOURCE" > "$CONF_DIR/db.env"
+    chmod 600 "$CONF_DIR/db.env"
+    ok "SQLite at $DB_SOURCE"
+    return 0
+  fi
+
+  if [[ -n "$DB_SOURCE" ]] && [[ "$DB_SOURCE" == postgres://* ]]; then
+    ok "PostgreSQL, as already configured"
+    ensure_postgres_running
+    return 0
+  fi
+
+  info "installing PostgreSQL"
+  case "$FAMILY" in
+    debian) pkg_install postgresql postgresql-contrib || die "could not install PostgreSQL" ;;
+    rhel)
+      pkg_install postgresql-server postgresql-contrib || die "could not install PostgreSQL"
+      if [[ ! -s /var/lib/pgsql/data/PG_VERSION ]]; then
+        postgresql-setup --initdb >/dev/null 2>&1 || die "could not initialise PostgreSQL"
+      fi ;;
+  esac
+  ensure_postgres_running
+
+  DB_PASS="$(gen_string 32)"
+  # One role and one database, owned by it. Created idempotently: a role
+  # that exists gets the new password rather than an error.
+  as_postgres() { runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qAt "$@"; }
+  if as_postgres -c "SELECT 1 FROM pg_roles WHERE rolname='wui'" | grep -q 1; then
+    as_postgres -c "ALTER ROLE wui WITH LOGIN PASSWORD '$DB_PASS'" >/dev/null || die "could not set the database password"
+  else
+    as_postgres -c "CREATE ROLE wui WITH LOGIN PASSWORD '$DB_PASS'" >/dev/null || die "could not create the database role"
+  fi
+  if ! as_postgres -c "SELECT 1 FROM pg_database WHERE datname='wui'" | grep -q 1; then
+    as_postgres -c "CREATE DATABASE wui OWNER wui" >/dev/null || die "could not create the database"
+  fi
+
+  DB_SOURCE="postgres://wui:$DB_PASS@127.0.0.1:5432/wui?sslmode=disable"
+  local prev; prev=$(umask); umask 077
+  printf 'WUI_DB_DRIVER=postgres\nWUI_DB_SOURCE=%s\n' "$DB_SOURCE" > "$CONF_DIR/db.env"
+  umask "$prev"
+  chmod 600 "$CONF_DIR/db.env"
+  ok "PostgreSQL database wui, credentials in $CONF_DIR/db.env"
+}
+
+ensure_postgres_running() {
+  if have_systemd; then
+    systemctl enable --now postgresql >/dev/null 2>&1 || true
+  elif runuser -u postgres -- pg_isready -q 2>/dev/null; then
+    :
+  elif have service; then
+    # A container or a host without systemd: the init script, or the
+    # cluster tool Debian ships, or pg_ctl itself on RHEL.
+    service postgresql start >/dev/null 2>&1 || true
+  fi
+  if ! runuser -u postgres -- pg_isready -q 2>/dev/null; then
+    if have pg_ctlcluster; then
+      local ver; ver=$(ls /etc/postgresql 2>/dev/null | sort -V | tail -1)
+      [[ -n "$ver" ]] && pg_ctlcluster "$ver" main start >/dev/null 2>&1 || true
+    elif [[ -d /var/lib/pgsql/data ]]; then
+      runuser -u postgres -- pg_ctl -D /var/lib/pgsql/data -l /var/lib/pgsql/initdb.log start >/dev/null 2>&1 || true
+    fi
+  fi
+  local i
+  for i in $(seq 1 30); do
+    runuser -u postgres -- pg_isready -q 2>/dev/null && return 0
+    sleep 1
+  done
+  die "PostgreSQL did not come up; see: journalctl -u postgresql"
+}
+
+# The subscription service: on, on its own port, with the panel's
+# certificate. Only on a fresh install; an upgrade keeps whatever the
+# operator has set since.
+apply_sub_settings() {
+  step "Subscription service"
+  if [[ "$SUB_KNOWN" == 1 ]]; then
+    ok "kept on port $SUB_PORT"
+    return 0
+  fi
+  local args=(--sub-enable --sub-port "$SUB_PORT")
+  if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then
+    args+=(--sub-cert "$TLS_CERT" --sub-key "$TLS_KEY")
+  fi
+  # shellcheck disable=SC2046
+  if as_service_user env $(panel_env) "$BIN_PATH" setting set "${args[@]}" >/dev/null 2>&1; then
+    ok "enabled on port $SUB_PORT"
+  else
+    warn "could not enable the subscription service; turn it on under Settings → Subscription"
+  fi
+}
+
 apply_admin() {
   step "Administrator account"
 
@@ -1538,7 +1750,7 @@ apply_admin() {
   # somebody is already signing in with. Nothing was asked for here, so
   # nothing is changed: generating a fresh password over a working one
   # would lock an operator out of their own panel on an upgrade.
-  if [[ -f "$DATA_DIR/wui.db" && -z "$ADMIN_PASS" ]]; then
+  if existing_data && [[ -z "$ADMIN_PASS" ]]; then
     ok "existing account left as it is"
     info "to change it:  wui admin reset --username NAME"
     return 0
@@ -1552,8 +1764,8 @@ apply_admin() {
 
   # Piped, never passed as an argument: an argument is visible in ps to every
   # user on the machine for as long as the command runs.
-  if printf '%s' "$ADMIN_PASS" | as_service_user env \
-      WUI_DATA_DIR="$DATA_DIR" WUI_DB_SOURCE="$DATA_DIR/wui.db" \
+  # shellcheck disable=SC2046
+  if printf '%s' "$ADMIN_PASS" | as_service_user env $(panel_env) \
       "$BIN_PATH" admin reset --username "$ADMIN_USER" --password-stdin --quiet; then
     ok "$ADMIN_USER"
   else
@@ -1684,7 +1896,7 @@ write_unit() {
 [Unit]
 Description=W-UI — WireGuard and OpenVPN panel
 Documentation=https://github.com/abolfazl/w-ui
-After=network-online.target nftables.service
+After=network-online.target nftables.service postgresql.service
 Wants=network-online.target
 
 [Service]
@@ -1704,9 +1916,11 @@ NoNewPrivileges=true
 
 Environment=WUI_LISTEN=$LISTEN_ADDR:$PANEL_PORT
 Environment=WUI_DATA_DIR=$DATA_DIR
-Environment=WUI_DB_SOURCE=$DATA_DIR/wui.db
 Environment=WUI_BACKUP_DIR=$BACKUP_DIR
 $BASE_ENV$TLS_ENV
+# The database: driver and connection string, root-only because the
+# PostgreSQL one carries a password.
+EnvironmentFile=-$CONF_DIR/db.env
 EnvironmentFile=-$CONF_DIR/wui.env
 
 ExecStart=$BIN_PATH
@@ -1766,6 +1980,7 @@ open_firewall() {
   # would be a lie in the operator's own rule list.
   local ports=()
   [[ "$LISTEN_ADDR" == 127.0.0.1 ]] || ports+=("$PANEL_PORT/tcp")
+  [[ -n "$SUB_PORT" ]] && ports+=("$SUB_PORT/tcp")
   [[ "$ACME_METHOD" == standalone ]] && ports+=("80/tcp")
   local pr
   if [[ ${#ports[@]} -eq 0 ]]; then
@@ -1799,7 +2014,7 @@ start_service() {
 
   step "Starting W-UI"
   local fresh=0
-  [[ -f "$DATA_DIR/wui.db" ]] || fresh=1
+  existing_data || fresh=1
 
   systemctl enable wui.service >/dev/null 2>&1
   systemctl restart wui.service
@@ -1846,6 +2061,7 @@ summary() {
   local shown_path="/"
   [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
   printf '  Panel      %s://%s%s%s\n' "$scheme" "$host" "$port" "$shown_path"
+  printf '  Subs       %s://%s:%s/subscribe/<token>\n' "$scheme" "$host" "$SUB_PORT"
 
   if [[ -n "$ADMIN_PASS" ]]; then
     printf '  Username   %s\n' "$ADMIN_USER"
@@ -1862,7 +2078,7 @@ summary() {
     # one here would send the operator looking for something that is not there.
     printf '  %sThe panel has not been started yet, so no account exists.%s\n' "$Y" "$N"
     printf '  It prints a generated password to its log the first time it runs.\n'
-  elif [[ -f "$DATA_DIR/wui.db" ]]; then
+  elif existing_data; then
     printf '  Sign in with your existing admin account.\n'
   else
     printf '  %sThe first-run password could not be read from the log.%s\n' "$Y" "$N"
@@ -1910,8 +2126,13 @@ summary() {
   printf '  %sUsername:    %s%s\n' "$G" "$ADMIN_USER" "$N"
   [[ -n "$ADMIN_PASS" ]] && printf '  %sPassword:    %s%s\n' "$G" "$ADMIN_PASS" "$N"
   printf '  %sPort:        %s%s\n' "$G" "$PANEL_PORT" "$N"
+  printf '  %sSub Port:    %s%s\n' "$G" "$SUB_PORT" "$N"
   printf '  %sWebBasePath: %s%s\n' "$G" "${BASE_PATH:-/}" "$N"
-  printf '  %sDatabase:    SQLite (%s/wui.db)%s\n' "$G" "$DATA_DIR" "$N"
+  if [[ "$DB_DRIVER" == postgres ]]; then
+    printf '  %sDatabase:    PostgreSQL (wui on 127.0.0.1, credentials in %s/db.env)%s\n' "$G" "$CONF_DIR" "$N"
+  else
+    printf '  %sDatabase:    SQLite (%s/wui.db)%s\n' "$G" "$DATA_DIR" "$N"
+  fi
   printf '  %sAccess URL:  %s://%s%s%s%s\n' "$G" "$scheme" "$host" "$port" "$shown_path" "$N"
   [[ -n "$API_TOKEN" ]] && printf '  %sAPI Token:   %s%s\n' "$G" "$API_TOKEN" "$N"
   printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
@@ -1928,8 +2149,8 @@ summary() {
 # first minute without anybody signing in to make it. Never fatal.
 issue_api_token() {
   have_systemd && systemctl is-active --quiet wui || return 0
-  API_TOKEN=$(WUI_DATA_DIR="$DATA_DIR" WUI_DB_SOURCE="$DATA_DIR/wui.db" \
-    "$BIN_PATH" token issue --name installer --quiet 2>/dev/null || true)
+  # shellcheck disable=SC2046
+  API_TOKEN=$(env $(panel_env) "$BIN_PATH" token issue --name installer --quiet 2>/dev/null || true)
 }
 
 # The same facts as the summary, machine-readable, for cloud-init or a
@@ -1946,7 +2167,9 @@ write_install_result() {
     printf 'WUI_WEB_BASE_PATH=%q\n' "${BASE_PATH:-}"
     printf 'WUI_ACCESS_URL=%q\n' "${scheme}://${hostport}/${BASE_PATH:+$BASE_PATH/}"
     printf 'WUI_API_TOKEN=%q\n' "$API_TOKEN"
-    printf 'WUI_DB_TYPE=%q\n' "sqlite"
+    printf 'WUI_SUB_PORT=%q\n' "$SUB_PORT"
+    printf 'WUI_SUB_URL=%q\n' "${scheme}://${hostport%%:*}:${SUB_PORT}/subscribe/"
+    printf 'WUI_DB_TYPE=%q\n' "$DB_DRIVER"
   } > "$f" 2>/dev/null && chmod 600 "$f" && chown root:root "$f" 2>/dev/null \
     && printf '  %sInstall result written to %s (mode 600).%s\n\n' "$G" "$f" "$N" \
     || warn "could not write $f"
@@ -2020,9 +2243,11 @@ check_nftables
 install_binary
 install_menu
 create_user
+setup_database
 setup_tls
 write_unit
 apply_admin
+apply_sub_settings
 open_firewall
 start_service
 issue_api_token

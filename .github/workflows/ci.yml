@@ -32,6 +32,19 @@ jobs:
   go:
     name: Go vet, static analysis and tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wui
+          POSTGRES_PASSWORD: wui
+          POSTGRES_DB: wui
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U wui"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -52,6 +65,8 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
       - run: go test -race ./...
+        env:
+          WUI_TEST_PG_DSN: postgres://wui:wui@localhost:5432/wui?sslmode=disable
       - name: Cross-compiles for every release target
         run: |
           for arch in amd64 arm64; do
@@ -73,13 +88,17 @@ jobs:
           shellcheck -S error install.sh w-ui.sh
 
   install-matrix:
-    name: Clean install on ${{ matrix.image }}
+    name: Clean install on ${{ matrix.image }} (${{ matrix.db }})
     runs-on: ubuntu-latest
     needs: [go]
     strategy:
       fail-fast: false
       matrix:
         image: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "almalinux:9", "rockylinux:9", "fedora:41"]
+        db: ["sqlite"]
+        include:
+          - { image: "ubuntu:24.04", db: "postgres" }
+          - { image: "almalinux:9", db: "postgres" }
     container:
       image: ${{ matrix.image }}
       # nftables and WireGuard need the host kernel; the runner's has both.
@@ -101,7 +120,7 @@ jobs:
         run: CGO_ENABLED=0 go build -buildvcs=false -o /tmp/wui ./cmd/wui
       - name: Run the installer unattended
         run: |
-          bash install.sh --local /tmp/wui -y --no-tls --username ci --password ci-password-12345 2>&1 | tee /tmp/install.log
+          bash install.sh --local /tmp/wui -y --no-tls --db ${{ matrix.db }} --username ci --password ci-password-12345 2>&1 | tee /tmp/install.log
       - name: The install produced a working panel
         run: |
           grep -q "W-UI is installed" /tmp/install.log
@@ -112,18 +131,29 @@ jobs:
           command -v wg && command -v nft
           # The binary answers from the data directory the installer made,
           # with the port and path the unit file carries.
-          set -a; eval "$(grep -oE 'WUI_[A-Z_]+=[^ ]+' /etc/systemd/system/wui.service)"; set +a
-          WUI_DATA_DIR=/var/lib/wui WUI_DB_SOURCE=/var/lib/wui/wui.db /usr/local/bin/wui setting show | tee /tmp/show.log
+          set -a; eval "$(grep -oE 'WUI_[A-Z_]+=[^ ]+' /etc/systemd/system/wui.service)"; . /etc/wui/db.env; set +a
+          test "$WUI_DB_DRIVER" = "${{ matrix.db }}"
+          WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui setting show | tee /tmp/show.log
           grep -q "^admin: ci$" /tmp/show.log
+          grep -q "^subEnabled: true$" /tmp/show.log
+          sub=$(sed -n 's/^subPort: //p' /tmp/show.log); [ "$sub" -ge 1024 ] && [ "$sub" != "${WUI_LISTEN##*:}" ]
+          grep -q "^WUI_SUB_PORT=" /etc/wui/install-result.env
+          # A backup from the terminal holds the portable dump, and restores.
+          runuser -u wui --preserve-environment -- env WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui backup create --dir /var/backups/wui | tee /tmp/backup.log
+          tar tzf "$(tail -1 /tmp/backup.log)" | grep -q '^wui-export.json$'
+          runuser -u wui --preserve-environment -- env WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui backup restore "$(tail -1 /tmp/backup.log)" --dir /var/backups/wui | grep -q staged
           port="${WUI_LISTEN##*:}"; path="/${WUI_BASE_PATH}/"
           echo "port=$port path=$path"
           [ "$port" -ge 1024 ] && [ "${#WUI_BASE_PATH}" -ge 16 ]
           # The panel comes up and answers on its port, without systemd.
-          (cd /var/lib/wui && WUI_LISTEN=127.0.0.1:$port WUI_DATA_DIR=/var/lib/wui WUI_DB_SOURCE=/var/lib/wui/wui.db /usr/local/bin/wui > /tmp/panel.log 2>&1 &)
+          (cd /var/lib/wui && WUI_LISTEN=127.0.0.1:$port WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui > /tmp/panel.log 2>&1 &)
           for i in $(seq 1 30); do curl -fs -o /dev/null "http://127.0.0.1:$port$path" && break; sleep 1; done
           curl -fs -o /dev/null -w "panel answered %{http_code}\n" "http://127.0.0.1:$port$path"
           curl -s -o /dev/null -w "root is %{http_code}\n" "http://127.0.0.1:$port/" | grep -q 404
           grep -E "enforcement|quota|listening" /tmp/panel.log | head
+          # The staged restore was applied at that start, and the admin survived it.
+          grep -q "restored from a backup" /tmp/panel.log
+          WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui setting show | grep -q "^admin: ci$"
       - name: Uninstall leaves the packages and a copy of the data
         run: |
           bash install.sh --purge 2>&1 | tee /tmp/uninstall.log

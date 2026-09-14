@@ -97,6 +97,7 @@ os_version=$(grep "^VERSION_ID" /etc/os-release | cut -d '=' -f2 | tr -d '"' | t
 BIN_PATH=/usr/local/bin/wui
 DATA_DIR=/var/lib/wui
 CONF_DIR=/etc/wui
+BACKUP_DIR=/var/backups/wui
 ENV_FILE=$CONF_DIR/wui.env
 CERT_ROOT=$CONF_DIR/certs
 SERVICE=wui
@@ -159,9 +160,19 @@ panel_cli() {
         for kv in $(grep -oE 'WUI_[A-Z_]+=[^ ]+' /etc/systemd/system/${SERVICE}.service 2> /dev/null); do
             export "$kv"
         done
+        # The database, whichever engine: the installer keeps the driver and
+        # the connection string here, root-only, and the unit reads the same.
+        [[ -f "$CONF_DIR/db.env" ]] && . "$CONF_DIR/db.env"
         [[ -f "$ENV_FILE" ]] && . "$ENV_FILE"
         set +a
-        "$BIN_PATH" "$@"
+        # A backup or a restore writes files the panel later has to own --
+        # the archive it lists, the staged restore it applies at start -- so
+        # those run as the service's own user, with the environment kept.
+        if [[ "${1:-}" == backup ]] && id -u "$SERVICE_USER" > /dev/null 2>&1; then
+            runuser -u "$SERVICE_USER" --preserve-environment -- "$BIN_PATH" "$@"
+        else
+            "$BIN_PATH" "$@"
+        fi
     )
 }
 
@@ -329,7 +340,16 @@ uninstall() {
     # a mistake and not a disaster.
     if [[ -d "$DATA_DIR" ]]; then
         local keep="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
-        tar czf "$keep" --exclude='*/backups' -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2> /dev/null && chmod 0600 "$keep"             && LOGI "A copy of the database and keys is at ${keep}"
+        # The panel's own archive when it can make one -- it holds the
+        # database from either engine, restorable into either -- and a
+        # plain copy of the directory when it cannot.
+        local made=""
+        [[ -x "$BIN_PATH" ]] && made=$(panel_cli backup create --dir /root 2> /dev/null | tail -1)
+        if [[ -n "$made" && -f "$made" ]]; then
+            mv -f "$made" "$keep" && chmod 0600 "$keep" && LOGI "A copy of the database and keys is at ${keep}"
+        else
+            tar czf "$keep" --exclude='*/backups' -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2> /dev/null && chmod 0600 "$keep" && LOGI "A copy of the database and keys is at ${keep}"
+        fi
     fi
     rm "$CONF_DIR"/ -rf
     rm "$DATA_DIR"/ -rf
@@ -452,7 +472,14 @@ check_config() {
         return
     fi
     LOGI "${info}"
-    echo -e "${green}Database: SQLite (${DATA_DIR}/wui.db)${plain}"
+    local db_driver db_source
+    db_driver=$(echo "$info" | grep -Eo 'dbDriver: .+' | awk '{print $2}')
+    db_source=$(echo "$info" | grep -Eo 'dbSource: .+' | awk '{print $2}')
+    if [[ "$db_driver" == postgres ]]; then
+        echo -e "${green}Database: PostgreSQL (${db_source%%\?*} — credentials in ${CONF_DIR}/db.env)${plain}" | sed -E 's|//[^:]+:[^@]+@|//wui:***@|'
+    else
+        echo -e "${green}Database: SQLite (${db_source:-$DATA_DIR/wui.db})${plain}"
+    fi
 
     local existing_webBasePath=$(echo "$info" | grep -Eo 'basePath: .+' | awk '{print $2}')
     local existing_port=$(echo "$info" | grep -Eo 'port: .+' | awk '{print $2}')
@@ -2492,17 +2519,19 @@ backup_menu() {
     echo -e "${green}\t0.${plain} Back to Main Menu"
     echo -e "  ${yellow}The archive holds the database, every interface key and every${plain}"
     echo -e "  ${yellow}customer credential. Treat it like a password file.${plain}"
+    echo -e "  ${yellow}It is the panel's own format: a backup from any W-UI version, on${plain}"
+    echo -e "  ${yellow}SQLite or PostgreSQL, restores here.${plain}"
     read -rp "Choose an option: " choice
 
     case "$choice" in
         0) show_menu ;;
         1)
-            local out="/root/wui-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
-            if tar czf "$out" -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2> /dev/null; then
-                chmod 0600 "$out"
+            local out
+            out=$(panel_cli backup create --dir "$BACKUP_DIR" 2>&1 | tail -1)
+            if [[ -f "$out" ]]; then
                 LOGI "Backup written to $out"
             else
-                LOGE "Backup failed"
+                LOGE "Backup failed: $out"
             fi
             backup_menu
             ;;
@@ -2513,24 +2542,38 @@ backup_menu() {
                 backup_menu
                 return
             fi
-            confirm "Restoring replaces every customer and key currently on this server" "n"
+            confirm "Restoring replaces every customer and key currently on this server (a copy of the current data is kept first)" "n"
             if [[ $? != 0 ]]; then
                 backup_menu
                 return
             fi
-            systemctl stop "$SERVICE" 2> /dev/null
-            if tar xzf "$archive" -C /; then
-                chown -R "$SERVICE_USER":"$SERVICE_USER" "$DATA_DIR" 2> /dev/null
-                LOGI "Restored"
-                systemctl start "$SERVICE" 2> /dev/null
+            # Staged by the panel's own restore, then applied at the restart:
+            # the archive is checked, the current data is kept beside it, and
+            # this server's own addresses are put back over the archive's.
+            # The archive may sit somewhere only root can read, such as /root;
+            # handed to the service's user through a copy it can open.
+            local handoff report
+            install -d -m 700 -o "$SERVICE_USER" -g "$SERVICE_USER" "$BACKUP_DIR" 2> /dev/null
+            handoff=$(mktemp "$BACKUP_DIR/.handoff-XXXXXX") && cp -f "$archive" "$handoff" && chown "$SERVICE_USER" "$handoff"
+            if report=$(panel_cli backup restore "$handoff" --dir "$BACKUP_DIR" 2>&1); then
+                rm -f "$handoff"
+                echo "$report" | sed 's/^/  /'
+                systemctl restart "$SERVICE" 2> /dev/null
+                sleep 2
+                if systemctl is-active --quiet "$SERVICE"; then
+                    LOGI "Restored; the panel is running on the archive's data"
+                else
+                    LOGE "The panel did not come back; see: journalctl -u $SERVICE -n 50"
+                fi
             else
-                LOGE "Restore failed"
-                systemctl start "$SERVICE" 2> /dev/null
+                rm -f "$handoff"
+                LOGE "Restore failed: $report"
             fi
             backup_menu
             ;;
         3)
-            ls -lh /root/wui-backup-*.tar.gz 2> /dev/null | sed 's/^/  /' || echo -e "  ${yellow}No backups yet${plain}"
+            panel_cli backup list --dir "$BACKUP_DIR" 2> /dev/null | awk -F'\t' '{ printf "  %s  %.1f MB  %s\n", $1, $2/1048576, $3 }'
+            [[ -n "$(panel_cli backup list --dir "$BACKUP_DIR" 2> /dev/null)" ]] || echo -e "  ${yellow}No backups yet in $BACKUP_DIR${plain}"
             backup_menu
             ;;
         *)

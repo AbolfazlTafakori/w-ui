@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/config"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -45,6 +47,8 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, cmdSetting(args[1:])
 	case "admin":
 		return true, cmdAdmin(args[1:])
+	case "backup":
+		return true, cmdBackup(args[1:])
 	case "token":
 		return true, cmdToken(args[1:])
 	case "keygen":
@@ -74,6 +78,15 @@ Usage:
                                    account and the customers are kept
   wui admin reset [flags]          reset the administrator account
   wui token issue --name NAME      mint an API token, printed once
+  wui backup create [--dir DIR]    take a backup, the same archive the panel
+                                   takes; prints its path
+  wui backup list [--dir DIR]      the backups in that directory
+  wui backup restore FILE          stage a restore; applied when the panel
+                                   next starts. A backup from either
+                                   database engine restores into either.
+  wui backup restore FILE --move-addresses
+                                   ...and take the archive's server addresses
+                                   too, for cloning one machine onto another
   wui version                      print the version
   wui keygen                       make a release-signing key pair
   wui sign <binary>                sign a build, for a release
@@ -85,6 +98,13 @@ Flags for "setting set":
   --cert FILE        certificate to serve TLS with
   --key FILE         its private key
   --no-tls           forget the certificate and serve plain HTTP
+  --sub-enable       serve customers' subscription links
+  --sub-disable      stop serving them
+  --sub-port N       a port of the subscription service's own (0: the
+                     panel's port)
+  --sub-listen ADDR  the address it binds (default: every address)
+  --sub-cert FILE    certificate for that port (default: the panel's)
+  --sub-key FILE     its private key
 
 Flags for "admin reset":
   --username NAME    the administrator's name (default: keep the current one)
@@ -169,6 +189,11 @@ func cmdSetting(args []string) error {
 	if listenIP == "" {
 		listenIP = "0.0.0.0"
 	}
+	subCfg, _ := service.NewSubscriptions(db, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Settings(context.Background())
+	subPort := subCfg.Port
+	if subPort == 0 {
+		subPort, _ = strconv.Atoi(portOf(cfg.Listen))
+	}
 
 	// Find rather than First: an install with no administrator yet is a normal
 	// state, and First reports it as an error the operator would have to read
@@ -195,10 +220,12 @@ func cmdSetting(args []string) error {
 		fmt.Printf(`{"listen":%q,"dataDir":%q,"dbDriver":%q,"dbSource":%q,`+
 			`"collectInterval":%q,"defaultLocale":%q,"logLevel":%q,"logFormat":%q,`+
 			`"scheme":%q,"tls":%t,"tlsCert":%q,"tlsKey":%q,"basePath":%q,`+
+			`"subEnabled":%t,"subPort":%d,"subPath":%q,`+
 			`"admin":%q,"interfaces":%d,"clients":%d,"accounts":%d,"activeClients":%d}`+"\n",
 			cfg.Listen, cfg.DataDir, cfg.DBDriver, cfg.DBSource,
 			cfg.CollectInterval, cfg.DefaultLocale, cfg.LogLevel, cfg.LogFormat,
 			cfg.Scheme(), cfg.TLS(), cfg.TLSCert, cfg.TLSKey, cfg.BasePath,
+			subCfg.Enabled, subPort, subCfg.Path,
 			adminName, c.Interfaces, c.Clients, c.Accounts, c.Active)
 		return nil
 	}
@@ -210,6 +237,9 @@ func cmdSetting(args []string) error {
 	fmt.Printf("scheme: %s\n", cfg.Scheme())
 	fmt.Printf("cert: %s\n", cfg.TLSCert)
 	fmt.Printf("key: %s\n", cfg.TLSKey)
+	fmt.Printf("subEnabled: %t\n", subCfg.Enabled)
+	fmt.Printf("subPort: %d\n", subPort)
+	fmt.Printf("subPath: %s\n", subCfg.Path)
 	fmt.Printf("dataDir: %s\n", cfg.DataDir)
 	fmt.Printf("dbDriver: %s\n", cfg.DBDriver)
 	fmt.Printf("dbSource: %s\n", cfg.DBSource)
@@ -285,6 +315,12 @@ func cmdSettingSet(args []string) error {
 	cert := fs.String("cert", "", "")
 	key := fs.String("key", "", "")
 	noTLS := fs.Bool("no-tls", false, "")
+	subEnable := fs.Bool("sub-enable", false, "")
+	subDisable := fs.Bool("sub-disable", false, "")
+	subPort := fs.Int("sub-port", -1, "")
+	subListen := fs.String("sub-listen", "", "")
+	subCert := fs.String("sub-cert", "", "")
+	subKey := fs.String("sub-key", "", "")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("setting set: %w", err)
 	}
@@ -293,6 +329,15 @@ func cmdSettingSet(args []string) error {
 	}
 	if (*cert == "") != (*key == "") {
 		return errors.New("setting set: --cert and --key go together")
+	}
+	if (*subCert == "") != (*subKey == "") {
+		return errors.New("setting set: --sub-cert and --sub-key go together")
+	}
+	if *subEnable && *subDisable {
+		return errors.New("setting set: --sub-enable and --sub-disable contradict")
+	}
+	if *subPort > 65535 {
+		return errors.New("setting set: --sub-port is not a port")
 	}
 
 	db, cfg, err := openDatabase()
@@ -328,6 +373,38 @@ func cmdSettingSet(args []string) error {
 	saved, err := settings.Save(ctx, cur)
 	if err != nil {
 		return err
+	}
+
+	// The subscription service, the same way: only what was asked for moves.
+	if *subEnable || *subDisable || *subPort >= 0 || *subListen != "" || *subCert != "" {
+		subs := service.NewSubscriptions(db, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		sc, err := subs.Settings(ctx)
+		if err != nil {
+			return err
+		}
+		if *subEnable {
+			sc.Enabled = true
+		}
+		if *subDisable {
+			sc.Enabled = false
+		}
+		if *subPort >= 0 {
+			sc.Port = *subPort
+		}
+		if *subListen != "" {
+			sc.Listen = *subListen
+		}
+		if *subCert != "" {
+			for _, f := range []string{*subCert, *subKey} {
+				if _, err := os.Stat(f); err != nil {
+					return fmt.Errorf("setting set: %w", err)
+				}
+			}
+			sc.CertFile, sc.KeyFile = *subCert, *subKey
+		}
+		if _, err := subs.SaveSettings(ctx, sc); err != nil {
+			return err
+		}
 	}
 	scheme := "http"
 	if saved.WebCertFile != "" {
@@ -474,4 +551,98 @@ func randomPassword() (string, error) {
 		return "", fmt.Errorf("generate password: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// cmdBackup is the menu's backup and restore. It builds the same archive
+// the panel's scheduler does -- database snapshot, keys, and the portable
+// dump -- so an operator at a terminal and one in a browser get the same
+// file, and one restores the other's.
+func cmdBackup(args []string) error {
+	if len(args) == 0 {
+		return errors.New("backup: want \"create\", \"list\" or \"restore\"")
+	}
+	sub, args := args[0], args[1:]
+	fs := flag.NewFlagSet("backup "+sub, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	dir := fs.String("dir", "", "")
+	moveAddresses := fs.Bool("move-addresses", false, "")
+	// The file may come before or after the flags.
+	var positional []string
+	for len(args) > 0 {
+		if strings.HasPrefix(args[0], "-") {
+			if err := fs.Parse(args); err != nil {
+				return fmt.Errorf("backup %s: %w", sub, err)
+			}
+			positional = append(positional, fs.Args()...)
+			break
+		}
+		positional = append(positional, args[0])
+		args = args[1:]
+	}
+
+	db, cfg, err := openDatabase()
+	if err != nil {
+		return err
+	}
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	where := *dir
+	if where == "" {
+		where = cfg.BackupDir
+	}
+	svc := newBackupService(db, cfg, where, quiet)
+	ctx := context.Background()
+
+	switch sub {
+	case "create":
+		a, err := svc.Create(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Println(filepath.Join(svc.Dir(), a.Name))
+		return nil
+
+	case "list":
+		list, err := svc.List()
+		if err != nil {
+			return err
+		}
+		for _, a := range list {
+			fmt.Printf("%s\t%d\t%s\n", a.Name, a.Size, a.Taken.Format(time.RFC3339))
+		}
+		return nil
+
+	case "restore":
+		if len(positional) != 1 {
+			return errors.New("backup restore: give the archive's path")
+		}
+		f, err := os.Open(positional[0])
+		if err != nil {
+			return fmt.Errorf("backup restore: %w", err)
+		}
+		defer f.Close()
+		// Copied into the backup directory first, checked on the way, so a
+		// restore from a file anywhere on the disk goes through the same
+		// door as one uploaded to the panel.
+		a, err := svc.Accept(f)
+		if err != nil {
+			return err
+		}
+		var keep *backup.LocalAddresses
+		if !*moveAddresses {
+			// This server's own addresses over the archive's, as the panel
+			// does by default: the usual reason to restore is that the old
+			// machine is gone, and its address with it.
+			if keep, err = backup.ReadLocalAddresses(db); err != nil {
+				return err
+			}
+		}
+		report, err := svc.Restore(ctx, a.Name, keep)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("staged %d files from %s; the current data is kept at %s\n", len(report.Files), a.Name, filepath.Join(svc.Dir(), report.SafetyCopy))
+		fmt.Println("restart the panel to apply it: systemctl restart wui")
+		return nil
+	}
+	return fmt.Errorf("backup: unknown subcommand %q", sub)
 }

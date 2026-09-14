@@ -153,7 +153,7 @@ func TestAnIncompleteStagedRestoreIsDiscarded(t *testing.T) {
 	}
 	// No marker.
 
-	if _, _, ok := ApplyPending(data, quiet()); ok {
+	if _, _, ok := ApplyPending(data, "wui.db", quiet()); ok {
 		t.Error("an unmarked staging directory was applied")
 	}
 	live, err := os.ReadFile(filepath.Join(data, "wui.db"))
@@ -196,7 +196,7 @@ func TestAStagedRestoreIsAppliedAndCleanedUp(t *testing.T) {
 		}
 	}
 
-	archive, _, ok := ApplyPending(data, quiet())
+	archive, _, ok := ApplyPending(data, "wui.db", quiet())
 	if !ok {
 		t.Fatal("a complete staged restore was not applied")
 	}
@@ -232,7 +232,7 @@ func TestAStagedRestoreIsAppliedAndCleanedUp(t *testing.T) {
 // Nothing staged, nothing done — every ordinary start goes through this.
 func TestAnOrdinaryStartDoesNothing(t *testing.T) {
 	data := t.TempDir()
-	if _, _, ok := ApplyPending(data, quiet()); ok {
+	if _, _, ok := ApplyPending(data, "wui.db", quiet()); ok {
 		t.Error("a start with nothing staged reported a restore")
 	}
 }
@@ -311,5 +311,66 @@ func TestABackupSkipsAStagedRestore(t *testing.T) {
 		if strings.HasPrefix(hdr.Name, PendingDirName+"/") {
 			t.Errorf("the backup carries a staged restore: %s", hdr.Name)
 		}
+	}
+}
+
+// A backup from the other engine: the file is left alone and the dump is kept
+// aside for the caller to load. Both directions.
+func TestARestoreAcrossEnginesKeepsTheDumpForImport(t *testing.T) {
+	stage := func(t *testing.T, files map[string]string) string {
+		data := filepath.Join(t.TempDir(), "data")
+		if err := os.MkdirAll(data, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(data, "wui.db"), []byte("live"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		staging := pendingDir(data)
+		if err := os.MkdirAll(staging, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		files[markerFile] = "wui-backup-20260101-000000.tar.gz"
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(staging, name), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return data
+	}
+
+	// PostgreSQL panel restoring a SQLite archive: no db file to want.
+	data := stage(t, map[string]string{"wui.db": "sqlite bytes", ExportFile: `{"format":1}`})
+	if _, _, ok := ApplyPending(data, "", quiet()); !ok {
+		t.Fatal("not applied")
+	}
+	if b, _ := os.ReadFile(filepath.Join(data, "wui.db")); string(b) != "live" {
+		t.Errorf("a SQLite file was written into a PostgreSQL panel's data directory: %q", b)
+	}
+	if b, err := os.ReadFile(filepath.Join(data, PendingImportFile)); err != nil || string(b) != `{"format":1}` {
+		t.Errorf("the dump was not kept for import: %q %v", b, err)
+	}
+
+	// SQLite panel restoring a PostgreSQL archive: dump only.
+	data = stage(t, map[string]string{ExportFile: `{"format":1}`})
+	if _, _, ok := ApplyPending(data, "wui.db", quiet()); !ok {
+		t.Fatal("not applied")
+	}
+	if _, err := os.Stat(filepath.Join(data, PendingImportFile)); err != nil {
+		t.Error("the dump was not kept for import")
+	}
+
+	// SQLite to SQLite: the exact file, and the dump is discarded.
+	data = stage(t, map[string]string{"wui.db": "restored", ExportFile: `{"format":1}`})
+	if _, _, ok := ApplyPending(data, "wui.db", quiet()); !ok {
+		t.Fatal("not applied")
+	}
+	if b, _ := os.ReadFile(filepath.Join(data, "wui.db")); string(b) != "restored" {
+		t.Errorf("db: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(data, PendingImportFile)); !os.IsNotExist(err) {
+		t.Error("the dump was kept although the file was restored")
+	}
+	if _, err := os.Stat(filepath.Join(data, ExportFile)); !os.IsNotExist(err) {
+		t.Error("the dump was copied into the data directory")
 	}
 }
