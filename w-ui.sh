@@ -1886,6 +1886,10 @@ ssl_cert_issue_CF() {
 
         LOGD "Please set a domain name:"
         read -rp "Input your domain here: " CF_Domain
+        if [[ -z "$CF_Domain" ]]; then
+            LOGE "No domain given; cancelled"
+            return 1
+        fi
         LOGD "Your domain name is set to: ${CF_Domain}"
 
         # Cloudflare API credentials: an API Token (recommended, scoped to a
@@ -2050,7 +2054,9 @@ run_speedtest() {
         fi
     fi
 
-    speedtest
+    # Ookla's licence and GDPR notice, accepted here: answered by hand they
+    # would end the run on a server nobody is typing at.
+    speedtest --accept-license --accept-gdpr
 }
 
 ip_validation() {
