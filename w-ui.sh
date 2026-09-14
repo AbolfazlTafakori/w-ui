@@ -476,7 +476,7 @@ check_config() {
     db_driver=$(echo "$info" | grep -Eo 'dbDriver: .+' | awk '{print $2}')
     db_source=$(echo "$info" | grep -Eo 'dbSource: .+' | awk '{print $2}')
     if [[ "$db_driver" == postgres ]]; then
-        echo -e "${green}Database: PostgreSQL (${db_source%%\?*} — credentials in ${CONF_DIR}/db.env)${plain}" | sed -E 's|//[^:]+:[^@]+@|//wui:***@|'
+        echo -e "${green}Database: PostgreSQL (${db_source%%\?*} — credentials in ${CONF_DIR}/db.env)${plain}" | sed -E 's|//[^:]+:[^@]+@|//wui:redacted@|'
     else
         echo -e "${green}Database: SQLite (${db_source:-$DATA_DIR/wui.db})${plain}"
     fi

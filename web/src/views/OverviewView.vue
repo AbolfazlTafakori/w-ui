@@ -173,7 +173,6 @@ const poolTotals = computed(() => ({
   capacity: ifaces.value.reduce((a, i) => a + (i.capacity || 0), 0),
 }))
 
-const busy = ref(false)
 const logs = ref(null)
 const logLevel = ref('info')
 const logLimit = ref(200)

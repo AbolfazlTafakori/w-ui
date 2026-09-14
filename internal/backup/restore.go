@@ -326,7 +326,9 @@ func verify(path, label string) error {
 		if total > maxRestoreTotal {
 			return fmt.Errorf("backup: %q expands to more than this can restore", label)
 		}
-		if strings.HasSuffix(hdr.Name, ".db") {
+		// The database, in either of its shapes: the SQLite file, or the
+		// portable dump a PostgreSQL panel's archive carries instead.
+		if strings.HasSuffix(hdr.Name, ".db") || hdr.Name == ExportFile {
 			seenDB = true
 		}
 		// Read the member out rather than skipping it: the checksum at the end

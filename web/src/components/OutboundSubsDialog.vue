@@ -50,7 +50,7 @@ async function load() {
   loading.value = true
   try {
     subs.value = await api.get('/api/outbound-subs')
-  } catch (err) {
+  } catch {
     notify(t('outbound.sub.toastLoadFailed'), 'error')
   } finally {
     loading.value = false

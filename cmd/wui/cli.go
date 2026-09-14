@@ -222,7 +222,7 @@ func cmdSetting(args []string) error {
 			`"scheme":%q,"tls":%t,"tlsCert":%q,"tlsKey":%q,"basePath":%q,`+
 			`"subEnabled":%t,"subPort":%d,"subPath":%q,`+
 			`"admin":%q,"interfaces":%d,"clients":%d,"accounts":%d,"activeClients":%d}`+"\n",
-			cfg.Listen, cfg.DataDir, cfg.DBDriver, cfg.DBSource,
+			cfg.Listen, cfg.DataDir, cfg.DBDriver, config.RedactDSN(cfg.DBSource),
 			cfg.CollectInterval, cfg.DefaultLocale, cfg.LogLevel, cfg.LogFormat,
 			cfg.Scheme(), cfg.TLS(), cfg.TLSCert, cfg.TLSKey, cfg.BasePath,
 			subCfg.Enabled, subPort, subCfg.Path,
@@ -242,7 +242,7 @@ func cmdSetting(args []string) error {
 	fmt.Printf("subPath: %s\n", subCfg.Path)
 	fmt.Printf("dataDir: %s\n", cfg.DataDir)
 	fmt.Printf("dbDriver: %s\n", cfg.DBDriver)
-	fmt.Printf("dbSource: %s\n", cfg.DBSource)
+	fmt.Printf("dbSource: %s\n", config.RedactDSN(cfg.DBSource))
 	fmt.Printf("collectInterval: %s\n", cfg.CollectInterval)
 	fmt.Printf("defaultLocale: %s\n", cfg.DefaultLocale)
 	fmt.Printf("logLevel: %s\n", cfg.LogLevel)

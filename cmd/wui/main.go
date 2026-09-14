@@ -658,7 +658,7 @@ func buildServer(
 		Version:        version,
 		Listen:         cfg.Listen,
 		DBDriver:       string(cfg.DBDriver),
-		DBSource:       cfg.DBSource,
+		DBSource:       config.RedactDSN(cfg.DBSource),
 		SysInfo:        sys,
 		Outbounds:      outbounds,
 		Routing:        routes,

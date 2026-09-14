@@ -8,6 +8,7 @@ package config
 import (
 	"crypto/tls"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -259,4 +260,18 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// RedactDSN hides the password in a connection string. What the panel
+// prints or serves about its own configuration is pasted into bug reports
+// and read over shoulders; a PostgreSQL database password is not for either.
+func RedactDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || u.User == nil {
+		return dsn
+	}
+	if _, has := u.User.Password(); has {
+		u.User = url.UserPassword(u.User.Username(), "redacted")
+	}
+	return u.String()
 }

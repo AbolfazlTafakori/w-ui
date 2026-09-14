@@ -1,11 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api, apiURL, getToken } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, relative, dateTime } from '../lib/format.js'
+import { bytes } from '../lib/format.js'
 import InterfaceForm from '../components/InterfaceForm.vue'
 import InterfaceDetail from '../components/InterfaceDetail.vue'
 import Toggle from '../components/Toggle.vue'
@@ -14,8 +13,6 @@ import AntIcon from '../components/AntIcon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 import { useIsMobile } from '../lib/mobile.js'
-
-const router = useRouter()
 
 const interfaces = ref([])
 // The servers a tunnel can be put on. An install that never added one has
@@ -91,9 +88,11 @@ const sorted = computed(() => {
 const page = ref(1)
 const pageSize = computed(() => (store.panel.pageSize > 0 ? store.panel.pageSize : sorted.value.length || 1))
 const pageCount = computed(() => Math.max(1, Math.ceil(sorted.value.length / pageSize.value)))
+// Clamped from a watcher, not inside the computed: a filter that shrinks
+// the list must not write to the page while the page is being read.
+watch(pageCount, (n) => { if (page.value > n) page.value = n })
 const paged = computed(() => {
-  if (page.value > pageCount.value) page.value = pageCount.value
-  const start = (page.value - 1) * pageSize.value
+  const start = (Math.min(page.value, pageCount.value) - 1) * pageSize.value
   return sorted.value.slice(start, start + pageSize.value)
 })
 const pageNumbers = computed(() => Array.from({ length: pageCount.value }, (_, i) => i + 1))
@@ -322,6 +321,7 @@ function pickGeneral(key) {
   generalOpen.value = false
   if (key === 'import') importOpen.value = true
   else if (key === 'export') exportAllUrls()
+  else if (key === 'exportAll') exportAll()
   else if (key === 'resetAll') resetAllUsage()
 }
 function resetAllUsage() {
@@ -373,10 +373,6 @@ function toggleAttach(id) {
 
 // Their traffic tag colour: by how much of the limit is used; ours have
 // no limit, so it is the calm one.
-function expiryOf(i) {
-  return null
-}
-
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
@@ -446,10 +442,6 @@ function toggleOne(id, checked) {
   const next = new Set(selected.value)
   checked ? next.add(id) : next.delete(id)
   selected.value = next
-}
-
-function poolPercent(i) {
-  return i.capacity ? (i.allocated / i.capacity) * 100 : 0
 }
 
 async function guard(fn, successKey) {
@@ -798,6 +790,7 @@ async function submitForm(input) {
           <div v-if="generalOpen" class="amenu below" role="menu">
             <button class="amenu-item" role="menuitem" @click="pickGeneral('import')"><AntIcon name="ImportOutlined" /><span>{{ t('iface.menu.import') }}</span></button>
             <button class="amenu-item" role="menuitem" @click="pickGeneral('export')"><AntIcon name="ExportOutlined" /><span>{{ t('iface.menu.exportUrls') }}</span></button>
+            <button class="amenu-item" role="menuitem" @click="pickGeneral('exportAll')"><AntIcon name="CopyOutlined" /><span>{{ t('iface.menu.exportAll') }}</span></button>
             <button class="amenu-item" role="menuitem" @click="pickGeneral('resetAll')"><AntIcon name="ReloadOutlined" /><span>{{ t('iface.menu.resetAll') }}</span></button>
           </div>
         </div>

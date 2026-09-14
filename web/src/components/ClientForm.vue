@@ -21,12 +21,6 @@ function hoursLeft(iso) {
   const h = (new Date(iso).getTime() - Date.now()) / 3600e3
   return h > 0 ? Math.round(h * 100) / 100 : 0
 }
-function daysLeft(iso) {
-  if (!iso) return ''
-  const d = Math.ceil((new Date(iso) - Date.now()) / 86400e3)
-  return d > 0 ? d : ''
-}
-
 const form = ref(
   editing.value
     ? {
@@ -107,12 +101,6 @@ onMounted(async () => {
 const chosen = computed(() =>
   props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)),
 )
-
-function toggleInterface(id, on) {
-  const next = new Set(form.value.interfaceIds)
-  on ? next.add(id) : next.delete(id)
-  form.value.interfaceIds = [...next]
-}
 
 // Taking all of them, or none. An operator selling access to every tunnel does
 // it on almost every customer, and ticking six boxes by hand each time is the

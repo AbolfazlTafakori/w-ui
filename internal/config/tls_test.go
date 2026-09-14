@@ -143,3 +143,12 @@ func TestLoadReadsTLSFromEnvironment(t *testing.T) {
 		t.Fatalf("Load() gave TLS=%v scheme=%q, want true/https", c.TLS(), c.Scheme())
 	}
 }
+
+func TestRedactDSN(t *testing.T) {
+	if got := RedactDSN("postgres://wui:s3cret@127.0.0.1:5432/wui?sslmode=disable"); got != "postgres://wui:redacted@127.0.0.1:5432/wui?sslmode=disable" {
+		t.Errorf("got %q", got)
+	}
+	if got := RedactDSN("/var/lib/wui/wui.db"); got != "/var/lib/wui/wui.db" {
+		t.Errorf("a path was changed: %q", got)
+	}
+}

@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, relative, dateTime, percent, gigabytesToBytes, isOnline, unitToBytes, unitToHours } from '../lib/format.js'
+import { bytes, relative, dateTime, percent, isOnline, unitToBytes, unitToHours } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
 import ClientQrModal from '../components/ClientQrModal.vue'
 import ClientInfoModal from '../components/ClientInfoModal.vue'
@@ -256,9 +256,6 @@ const totalPages = computed(() =>
   page.value ? Math.max(1, Math.ceil(page.value.total / page.value.perPage)) : 1,
 )
 const hasGroups = computed(() => groupNames.value.length > 0)
-const activeFilters = computed(
-  () => [search.value, statusFilter.value, groupFilter.value].filter(Boolean).length,
-)
 
 // Their chips: one per active filter, each closable on its own.
 const filterChips = computed(() => {
@@ -323,28 +320,6 @@ function clearFilters() {
   load()
 }
 
-const strip = computed(() => {
-  const s = stats.value
-  if (!s) return []
-  // `filter` is the status this figure narrows the table to. An empty string
-  // means "all of them"; null means the figure is not a filter at all.
-  //
-  // Online and running-low are the two that are not: neither is a stored
-  // status -- one is derived from recent handshakes, the other from usage
-  // against quota -- so there is nothing to ask the server for. They used to
-  // be buttons anyway, which meant clicking either of them silently cleared
-  // whatever filter you had set.
-  return [
-    { key: 'clients', value: s.clients, tone: 'ink', filter: '' },
-    { key: 'online', value: s.online, tone: 'ok', filter: null },
-    { key: 'depleting', value: s.depleting, tone: 'warn', filter: null },
-    { key: 'exhausted', value: s.exhausted, tone: 'bad', filter: 'exhausted' },
-    { key: 'expired', value: s.expired, tone: 'bad', filter: 'expired' },
-    { key: 'disabled', value: s.disabled, tone: 'muted', filter: 'disabled' },
-    { key: 'active', value: s.active, tone: 'ok', filter: 'active' },
-  ]
-})
-
 const allSelected = computed(
   () => !!page.value?.items.length && selected.value.size === page.value.items.length,
 )
@@ -388,13 +363,6 @@ function barColor(c) {
   if (p >= DEPLETING_AT) return 'var(--warn)'
   return 'var(--ok)'
 }
-function meterClass(p) {
-  if (p == null) return ''
-  if (p >= 100) return 'bad'
-  if (p >= 85) return 'warn'
-  return ''
-}
-
 // The three cells below use 3x-ui's own colour rules, so a row reads at a
 // glance: purple is unlimited, green healthy, orange running low, red stopped.
 
