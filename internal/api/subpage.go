@@ -752,11 +752,11 @@ a.row-title:hover { text-decoration: underline; }
     <div class="card-head">
       <div class="card-title"><span data-i="title">{{ .Page.Title }}</span><span class="tag">{{ .SubID }}</span></div>
       <div class="card-extra">
-        <button class="btn toolbar-btn" type="button" id="theme" data-i-title="theme">
+        {{ if eq .Template "classic" }}<button class="btn toolbar-btn" type="button" id="theme" data-i-title="theme">
           <span class="anticon" data-theme-icon="light">{{ index .Icons "SunOutlined" }}</span>
           <span class="anticon" data-theme-icon="dark">{{ index .Icons "MoonOutlined" }}</span>
           <span class="anticon" data-theme-icon="ultra">{{ index .Icons "MoonFilled" }}</span>
-        </button>
+        </button>{{ end }}
         <div class="app" style="flex: none">
           <button class="btn toolbar-btn" type="button" data-menu="lang" data-i-title="language"><span class="anticon">{{ index .Icons "TranslationOutlined" }}</span></button>
           <div class="menu lang-menu" id="menu-lang">
@@ -910,15 +910,22 @@ a.row-title:hover { text-decoration: underline; }
   $('#menu-lang button').forEach(function (b) { b.addEventListener('click', function () { applyLang(b.getAttribute('data-lang')); closeMenus(); }); });
 
   // The theme: dark, then pure black, then light, as the panel's own cycles.
+  // Only the classic look has the switch; every other template is one
+  // designed palette, and a light or black override would wreck it.
   var THEMES = ['dark', 'ultra', 'light'];
+  var themeBtn = document.getElementById('theme');
   function theme() { try { var t = localStorage.getItem('wui.sub.theme'); return THEMES.indexOf(t) >= 0 ? t : 'dark'; } catch (e) { return 'dark'; } }
   function applyTheme(t) {
     if (t === 'dark') html.removeAttribute('data-theme'); else html.setAttribute('data-theme', t);
     $('[data-theme-icon]').forEach(function (el) { el.classList.toggle('hidden', el.getAttribute('data-theme-icon') !== t); });
     try { localStorage.setItem('wui.sub.theme', t); } catch (e) {}
   }
-  applyTheme(theme());
-  document.getElementById('theme').addEventListener('click', function () { applyTheme(THEMES[(THEMES.indexOf(theme()) + 1) % 3]); });
+  if (themeBtn) {
+    applyTheme(theme());
+    themeBtn.addEventListener('click', function () { applyTheme(THEMES[(THEMES.indexOf(theme()) + 1) % 3]); });
+  } else {
+    html.removeAttribute('data-theme');
+  }
 
   var toast = document.getElementById('toast'), toastT;
   function say(msg) { toast.textContent = msg; toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(function () { toast.classList.remove('show'); }, 1600); }
