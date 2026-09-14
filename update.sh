@@ -68,11 +68,11 @@ info "available: $RELEASE_TAG"
 step "Downloading W-UI $RELEASE_TAG"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp" "$lib"' EXIT
-curl -fsSL "$ASSET_URL" -o "$tmp/wui" || die "download failed"
+curl -fsSL --retry 4 --retry-all-errors --retry-delay 3 "$ASSET_URL" -o "$tmp/wui" || die "download failed"
 verify_download "$tmp/wui" "${ASSET_URL##*/}"
 # The signature, checked with the key baked into the panel already installed.
 # A build that does not verify is not installed, whatever the checksum said.
-if [[ -n "$SIG_URL" ]] && curl -fsSL "$SIG_URL" -o "$tmp/wui.sig" 2>/dev/null; then
+if [[ -n "$SIG_URL" ]] && curl -fsSL --retry 4 --retry-all-errors --retry-delay 3 "$SIG_URL" -o "$tmp/wui.sig" 2>/dev/null; then
   # 0: signed by this project's key. 2: it is not, and it is not installed.
   # Anything else: the installed panel cannot check (no key baked in, or a
   # panel from before this command existed) -- said, and carried on with
@@ -98,7 +98,7 @@ fi
 step "Installing"
 install -m 0755 "$tmp/wui" "$BIN_PATH.new" && mv -f "$BIN_PATH.new" "$BIN_PATH"
 ok "$BIN_PATH"
-if [[ -n "${MENU_URL:-}" ]] && curl -fsSL "$MENU_URL" -o "$tmp/w-ui.sh"; then
+if [[ -n "${MENU_URL:-}" ]] && curl -fsSL --retry 4 --retry-all-errors --retry-delay 3 "$MENU_URL" -o "$tmp/w-ui.sh"; then
   sed 's/\r$//' "$tmp/w-ui.sh" > "$tmp/w-ui.clean" && install -m 0755 "$tmp/w-ui.clean" "$MENU_PATH"
   ok "$MENU_PATH"
 else
