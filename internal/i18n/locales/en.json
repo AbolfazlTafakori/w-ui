@@ -82,7 +82,7 @@
   "client.clearAll": "None",
   "client.planGroup": "What they get",
   "client.quotaHint": "Total data across every server this customer uses. Empty means unlimited.",
-  "client.delayedStart": "Delayed start",
+  "client.delayedStart": "On hold",
   "client.selectServers": "Select one or more servers",
   "common.noResults": "Nothing matches",
   "filter.button": "Filter",
@@ -1653,5 +1653,11 @@
   "node.sectionServer": "Server",
   "node.sectionTrust": "Access and trust",
   "node.sectionBilling": "Cost and allowance",
-  "interface.editHint": "Everything here can be changed. A new port, subnet or mode restarts the tunnel and every customer on it needs their configuration again; a new subnet also gives each device a fresh address."
+  "interface.editHint": "Everything here can be changed. A new port, subnet or mode restarts the tunnel and every customer on it needs their configuration again; a new subnet also gives each device a fresh address.",
+  "client.openvpnUsername": "OpenVPN username",
+  "client.openvpnPassword": "OpenVPN password",
+  "client.openvpnGenerated": "generated if left empty",
+  "client.openvpnKeep": "leave empty to keep",
+  "client.openvpnHint": "Used on every OpenVPN tunnel this customer is on. A second device on the same tunnel gets the name with a number after it.",
+  "status.onHold": "On hold"
 }

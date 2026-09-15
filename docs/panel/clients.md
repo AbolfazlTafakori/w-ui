@@ -46,3 +46,11 @@ Everything about one plan on one screen: status, quota, expiry, devices, every l
 ## Start on first use
 
 A plan can be sold as "30 days from the first connection" instead of a fixed date: the clock starts when the first handshake arrives.
+
+In the client form switch on **On hold** and give a **Plan length** in days. Until the customer connects the row shows an **On hold** tag and the expiry column shows the days; the moment their first connection arrives the countdown begins and the expiry date appears.
+
+## OpenVPN username and password
+
+OpenVPN logs in with a username and a password rather than a key. When an OpenVPN tunnel is among the servers chosen for a customer, two fields appear under the server picker: **OpenVPN username** and **OpenVPN password**. Type what the customer should use, or leave them empty and the panel generates a pair. On the edit form the username shows the current one; a new password only has to be typed when it should change.
+
+The same credentials apply on every OpenVPN tunnel the customer is on. A second device on the same tunnel gets the username with a number after it (`roya-2`), because a tunnel knows its sessions by name. Usernames are unique per tunnel, 3 to 48 characters from letters, digits, `- _ . @`; passwords 6 to 64 characters with no spaces.

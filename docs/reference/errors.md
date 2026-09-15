@@ -66,6 +66,10 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `there is no group called "…"` | A rule or a bulk action named a group that does not exist. | Create the group first, or fix the name. |
 | `a group called "…" already exists` / `a group needs a name` / `that name is too long` | | |
 | `a tag prefix can only contain letters, digits, - and _` / `a tag cannot contain a comma or a space` | | |
+| `an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel` | Credentials were typed for a customer with no OpenVPN tunnel ticked. | Tick an OpenVPN tunnel, or leave the fields empty. |
+| `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` | | Something like `roya` or `roya.k`. |
+| `the username "…" is already used on …` | Usernames are unique per OpenVPN tunnel. | Another name. |
+| `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` | | |
 | `device limit reached` (400) | The customer has as many devices as their plan allows. | Raise the limit, or remove a device. |
 | `address pool exhausted` (400) | The tunnel's subnet has no free address. | A larger subnet on the interface, or another interface. |
 | `no interfaces configured; create one before adding customers` (log) | A customer was created before any tunnel. | Create an interface first. |

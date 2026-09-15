@@ -16,6 +16,18 @@ const emit = defineEmits(['close', 'submit'])
 
 const editing = computed(() => !!props.client)
 
+// Whether any tunnel picked is OpenVPN: those log in with a username and
+// password, and a reseller may want to choose them rather than be handed
+// generated ones.
+function currentOpenVPNUsername() {
+  const ovpn = new Set((props.interfaces || []).filter((i) => i.protocol === 'openvpn').map((i) => i.id))
+  const acc = (props.client?.accounts || []).find((a) => ovpn.has(a.interfaceId) && a.username)
+  return acc ? acc.username : ''
+}
+const hasOpenVPN = computed(() =>
+  (props.interfaces || []).some((i) => i.protocol === 'openvpn' && form.value.interfaceIds.includes(i.id)),
+)
+
 function hoursLeft(iso) {
   if (!iso) return 0
   const h = (new Date(iso).getTime() - Date.now()) / 3600e3
@@ -37,6 +49,10 @@ const form = ref(
         deviceLimit: props.client.deviceLimit,
         rateMbit: props.client.rateBitsPerSec ? props.client.rateBitsPerSec / 1e6 : '',
         startOnFirstUse: !!props.client.startOnFirstUse,
+        // The name their first OpenVPN device logs in with, so it can be read
+        // and changed here rather than looked up on the devices page.
+        openvpnUsername: currentOpenVPNUsername(),
+        openvpnPassword: '',
         durationDays: props.client.durationDays || '',
         resetCycle: props.client.resetCycle || 'none',
       }
@@ -53,6 +69,8 @@ const form = ref(
         deviceLimit: 1,
         rateMbit: '',
         startOnFirstUse: false,
+        openvpnUsername: '',
+        openvpnPassword: '',
         durationDays: '',
         resetCycle: 'none',
       },
@@ -176,6 +194,9 @@ async function submit() {
       deviceLimit: Number(form.value.deviceLimit) || 1,
       rateBitsPerSec: Math.max(0, Math.round(Number(form.value.rateMbit) * 1e6)) || 0,
       startOnFirstUse: form.value.startOnFirstUse,
+      ...(hasOpenVPN.value && form.value.openvpnUsername.trim() && form.value.openvpnUsername.trim() !== currentOpenVPNUsername()
+        ? { openvpnUsername: form.value.openvpnUsername.trim() } : {}),
+      ...(hasOpenVPN.value && form.value.openvpnPassword ? { openvpnPassword: form.value.openvpnPassword } : {}),
       durationDays: Number(form.value.durationDays) || 0,
       resetCycle: form.value.resetCycle,
       deviceNames: [],
@@ -409,6 +430,28 @@ async function submit() {
           </span>
         </div>
 
+          <!-- OpenVPN logs in with a name and a password. Shown only when an
+               OpenVPN tunnel is picked; left empty they are generated. -->
+        <div v-if="hasOpenVPN" class="row creds">
+          <div class="col-12">
+            <div class="field">
+              <label for="cf-ovpn-user">{{ t('client.openvpnUsername') }}</label>
+              <input id="cf-ovpn-user" v-model="form.openvpnUsername" class="ltr" autocomplete="off" maxlength="48"
+                     :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" />
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="field">
+              <label for="cf-ovpn-pass">{{ t('client.openvpnPassword') }}</label>
+              <input id="cf-ovpn-pass" v-model="form.openvpnPassword" class="ltr" type="text" autocomplete="off" maxlength="64"
+                     :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" />
+            </div>
+          </div>
+          <div class="col-24 creds-hint">
+            <span class="hint">{{ t('client.openvpnHint') }}</span>
+          </div>
+        </div>
+
         <span v-if="editing" class="hint">{{ t('client.expiryResetHint') }}</span>
       </form>
 
@@ -476,6 +519,15 @@ async function submit() {
 }
 .col-6 {
   grid-column: span 6;
+}
+.col-24 {
+  grid-column: 1 / -1;
+}
+.creds {
+  margin-top: 16px;
+}
+.creds-hint {
+  margin-top: -16px;
 }
 
 /* xs={24}: everything is full width on a phone, which is what their Col does

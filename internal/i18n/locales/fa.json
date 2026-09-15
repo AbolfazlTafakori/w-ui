@@ -82,7 +82,7 @@
   "client.clearAll": "هیچ‌کدام",
   "client.planGroup": "چه چیزی می‌گیرد",
   "client.quotaHint": "مجموع حجم روی همه‌ی سرورهایی که این مشتری استفاده می‌کند. خالی یعنی نامحدود.",
-  "client.delayedStart": "شروع تأخیری",
+  "client.delayedStart": "On hold (شروع با اولین اتصال)",
   "client.selectServers": "یک یا چند سرور انتخاب کن",
   "common.noResults": "چیزی پیدا نشد",
   "filter.button": "فیلتر",
@@ -1653,5 +1653,11 @@
   "node.sectionServer": "سرور",
   "node.sectionTrust": "دسترسی و اعتماد",
   "node.sectionBilling": "هزینه و سهمیه",
-  "interface.editHint": "همه‌چیز این‌جا قابل تغییر است. پورت، زیرشبکه یا حالت جدید تانل را ری‌استارت می‌کند و هر مشتری روی آن باید کانفیگ جدید بگیرد؛ زیرشبکهٔ جدید به هر دستگاه آدرس تازه هم می‌دهد."
+  "interface.editHint": "همه‌چیز این‌جا قابل تغییر است. پورت، زیرشبکه یا حالت جدید تانل را ری‌استارت می‌کند و هر مشتری روی آن باید کانفیگ جدید بگیرد؛ زیرشبکهٔ جدید به هر دستگاه آدرس تازه هم می‌دهد.",
+  "client.openvpnUsername": "نام کاربری OpenVPN",
+  "client.openvpnPassword": "رمز OpenVPN",
+  "client.openvpnGenerated": "خالی بماند تولید می‌شود",
+  "client.openvpnKeep": "خالی بماند تغییری نمی‌کند",
+  "client.openvpnHint": "روی هر تانل OpenVPN که این مشتری روی آن است استفاده می‌شود. دستگاه دوم روی همان تانل، همین نام را با یک شماره می‌گیرد.",
+  "status.onHold": "On hold"
 }

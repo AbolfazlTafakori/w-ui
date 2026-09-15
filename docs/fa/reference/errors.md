@@ -66,6 +66,10 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `there is no group called "…"` | قانون یا عمل گروهی گروهی را نام برده که نیست. | اول گروه را بساز، یا نام را درست کن. |
 | `a group called "…" already exists` / `a group needs a name` / `that name is too long` |  |  |
 | `a tag prefix can only contain letters, digits, - and _` / `a tag cannot contain a comma or a space` |  |  |
+| `an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel` | برای مشتری‌ای که تانل OpenVPN ندارد نام کاربری/رمز وارد شده. | یک تانل OpenVPN تیک بزن، یا فیلدها را خالی بگذار. |
+| `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` |  | چیزی مثل `roya` یا `roya.k`. |
+| `the username "…" is already used on …` | نام کاربری روی هر تانل OpenVPN یکتاست. | نام دیگری. |
+| `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` |  |  |
 | `device limit reached` (400) | مشتری به سقف دستگاه پلنش رسیده. | سقف را بالا ببر، یا دستگاهی را حذف کن. |
 | `address pool exhausted` (400) | زیرشبکهٔ تانل آدرس آزاد ندارد. | زیرشبکهٔ بزرگ‌تر روی اینترفیس، یا اینترفیس دیگر. |
 | `no interfaces configured; create one before adding customers` (log) | مشتری قبل از هر تانلی ساخته شده. | اول یک اینترفیس بساز. |

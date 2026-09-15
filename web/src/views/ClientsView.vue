@@ -370,6 +370,10 @@ function statusTag(c) {
   if (c.status === 'exhausted' || c.status === 'expired') return { color: 'red', label: t('stat.depleted') }
   if (c.status !== 'disabled' && clientOnline(c)) return { color: 'green', label: t('status.online'), dot: true }
   if (c.status === 'disabled') return { color: 'grey', label: t('status.disabled') }
+  // A plan that has not started: on hold until the first connection.
+  if (!c.expiresAt && c.startOnFirstUse && c.durationDays > 0 && !c.activatedAt) {
+    return { color: 'blue', label: t('status.onHold') }
+  }
   // "Running low" earns its own state: it is the moment to sell a renewal,
   // which is worth surfacing before the customer notices anything.
   const p = usedPercent(c)
