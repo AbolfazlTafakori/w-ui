@@ -707,6 +707,12 @@ type UpdateInput struct {
 	ResetCycle     *model.ResetCycle   `json:"resetCycle"`
 	Status         *model.ClientStatus `json:"status"`
 
+	// StartOnFirstUse and DurationDays: a plan whose clock starts at the
+	// first connection. Turning it on clears any fixed expiry; turning it
+	// off keeps whatever date the customer had.
+	StartOnFirstUse *bool `json:"startOnFirstUse"`
+	DurationDays    *int  `json:"durationDays"`
+
 	// InterfaceIDs replaces the set of servers this customer can reach.
 	//
 	// Adding one issues them credentials there for every device they already
@@ -745,6 +751,28 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 	}
 	if in.ExpiresAt != nil {
 		fields["expires_at"] = *in.ExpiresAt
+	}
+	if in.StartOnFirstUse != nil || in.DurationDays != nil {
+		on := client.StartOnFirstUse
+		days := client.DurationDays
+		if in.StartOnFirstUse != nil {
+			on = *in.StartOnFirstUse
+		}
+		if in.DurationDays != nil {
+			days = *in.DurationDays
+		}
+		if days < 0 {
+			return nil, invalidField("durationDays", "the duration cannot be negative")
+		}
+		if on && days > 0 && client.ActivatedAt == nil {
+			// Deferred: the date is decided at the first handshake.
+			fields["start_on_first_use"] = true
+			fields["duration_days"] = days
+			fields["expires_at"] = nil
+		} else {
+			fields["start_on_first_use"] = false
+			fields["duration_days"] = 0
+		}
 	}
 	if in.DeviceLimit != nil {
 		// Devices, not accounts. A customer on three servers holds three

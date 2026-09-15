@@ -541,3 +541,22 @@ func parseInt(s string) int64 {
 	}
 	return n
 }
+
+// Destroy removes the device. A userspace amneziawg-go process exits with
+// its TUN device; a kernel device simply goes.
+func (d *Driver) Destroy(ctx context.Context) error {
+	d.mu.Lock()
+	iface := d.iface
+	d.mu.Unlock()
+	if iface == nil {
+		return nil
+	}
+	if d.run(ctx, "ip", "link", "show", "dev", iface.Name) != nil {
+		return nil // already gone
+	}
+	if err := d.run(ctx, "ip", "link", "del", "dev", iface.Name); err != nil {
+		return fmt.Errorf("wgdriver: remove %s: %w", iface.Name, err)
+	}
+	d.log.Info("removed interface", "interface", iface.Name)
+	return nil
+}

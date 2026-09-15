@@ -712,6 +712,10 @@ async function submitForm(input) {
     if (formFor.value?.iface) {
       await api.updateInterface(formFor.value.iface.id, {
         enabled: input.enabled,
+        name: input.name,
+        listenPort: Number(input.listenPort),
+        subnet: input.subnet,
+        ...(input.protocol === 'wireguard' && input.mode ? { mode: input.mode } : {}),
         endpointHost: input.endpointHost,
         mtu: Number(input.mtu),
         dns: input.dns,

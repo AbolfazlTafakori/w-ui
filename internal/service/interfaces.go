@@ -39,7 +39,12 @@ var (
 type Interfaces struct {
 	db    *gorm.DB
 	pools *ipam.Pools
-	log   *slog.Logger
+
+	// Teardown takes a tunnel's live device down, for a deletion and for a
+	// change that has to bring it up again as new. Set by the panel; a CLI
+	// or a test that has no data plane leaves it nil.
+	Teardown func(ctx context.Context, id uint)
+	log      *slog.Logger
 }
 
 // NewInterfaces builds the interface service.
@@ -109,6 +114,9 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	if clash > 0 {
 		return nil, invalidField("name", "a tunnel called %q already exists on %s",
 			in.Name, node.Name)
+	}
+	if err := s.checkSubnetFree(ctx, nodeID, 0, in.Subnet); err != nil {
+		return nil, err
 	}
 
 	iface := model.Interface{
@@ -198,8 +206,8 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	in.Name = strings.TrimSpace(in.Name)
 	in.EndpointHost = strings.TrimSpace(in.EndpointHost)
 
-	if in.Name == "" {
-		return invalidField("name", "name is required")
+	if err := checkIfaceName(in.Name); err != nil {
+		return err
 	}
 	if !in.Protocol.Valid() {
 		return invalidField("protocol", "unknown protocol %q", in.Protocol)
@@ -426,9 +434,20 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 type UpdateInterfaceInput struct {
 	Enabled      *bool   `json:"enabled"`
 	EndpointHost *string `json:"endpointHost"`
-	MTU          *int    `json:"mtu"`
-	DNS          *string `json:"dns"`
-	NATInterface *string `json:"natInterface"`
+
+	// The parts that reach the kernel. Any of them changing reopens the
+	// interface -- the reconciler sees a new fingerprint and brings it up
+	// again -- and a new subnet moves every account on it to a fresh
+	// address, so customers need their configuration again. Allowed anyway:
+	// an operator who has to change a port or a range should not have to
+	// delete every customer to do it.
+	Name         *string              `json:"name"`
+	ListenPort   *int                 `json:"listenPort"`
+	Subnet       *string              `json:"subnet"`
+	Mode         *model.InterfaceMode `json:"mode"`
+	MTU          *int                 `json:"mtu"`
+	DNS          *string              `json:"dns"`
+	NATInterface *string              `json:"natInterface"`
 
 	// Transport switches an OpenVPN tunnel between udp and tcp. Every customer
 	// on it needs their configuration again afterwards, so it is not a setting
@@ -446,6 +465,68 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	fields := map[string]any{}
 	if in.Enabled != nil {
 		fields["enabled"] = *in.Enabled
+	}
+	if in.Name != nil && strings.TrimSpace(*in.Name) != iface.Name {
+		name := strings.TrimSpace(*in.Name)
+		if err := checkIfaceName(name); err != nil {
+			return nil, err
+		}
+		var clash int64
+		if err := s.db.WithContext(ctx).Model(&model.Interface{}).
+			Where("node_id = ? AND name = ? AND id <> ?", iface.NodeID, name, id).Count(&clash).Error; err != nil {
+			return nil, fmt.Errorf("service: check interface name: %w", err)
+		}
+		if clash > 0 {
+			return nil, invalidField("name", "a tunnel called %q already exists on this server", name)
+		}
+		fields["name"] = name
+	}
+	if in.ListenPort != nil && *in.ListenPort != iface.ListenPort {
+		port := *in.ListenPort
+		if port < 1 || port > 65535 {
+			return nil, invalidField("listenPort", "listen port %d is out of range", port)
+		}
+		proto := "udp"
+		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" {
+			proto = "tcp"
+		}
+		if local, err := s.isLocal(ctx, iface.NodeID); err == nil && local {
+			if err := checkPortFree(port, proto); err != nil {
+				return nil, &FieldError{Field: "listenPort", Err: err}
+			}
+		}
+		fields["listen_port"] = port
+	}
+	if in.Mode != nil && *in.Mode != iface.Mode {
+		mode := *in.Mode
+		if mode == "" {
+			mode = model.ModeStandard
+		}
+		switch mode {
+		case model.ModeStandard, model.ModeAmnezia:
+		default:
+			return nil, invalidField("mode", "unknown mode %q", mode)
+		}
+		if mode == model.ModeAmnezia && iface.Protocol != model.ProtocolWireGuard {
+			return nil, invalidField("mode", "AmneziaWG mode applies to WireGuard only")
+		}
+		if mode == model.ModeAmnezia && iface.AWG.V.Jc == 0 {
+			fields["awg"] = model.JSON(NewAWGParams())
+		}
+		fields["mode"] = mode
+		s.log.Warn("tunnel mode changed; every customer needs their configuration again",
+			"interface", iface.Name, "from", iface.Mode, "to", mode)
+	}
+	var newSubnet string
+	if in.Subnet != nil && strings.TrimSpace(*in.Subnet) != iface.Subnet {
+		newSubnet = strings.TrimSpace(*in.Subnet)
+		if _, err := netip.ParsePrefix(newSubnet); err != nil {
+			return nil, invalidField("subnet", "subnet %q: %v", newSubnet, err)
+		}
+		if err := s.checkSubnetFree(ctx, iface.NodeID, id, newSubnet); err != nil {
+			return nil, err
+		}
+		fields["subnet"] = newSubnet
 	}
 	if in.EndpointHost != nil {
 		host := strings.TrimSpace(*in.EndpointHost)
@@ -502,12 +583,132 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	if len(fields) == 0 {
 		return iface, nil
 	}
-	if err := s.db.WithContext(ctx).Model(&model.Interface{}).
+	// The old device cannot become the new one: a renamed link keeps its old
+	// name, a moved port stays bound until the process lets go. It is taken
+	// down before the row changes, and the next reconcile brings the new one
+	// up. Customers on it reconnect to the new configuration.
+	_, renamed := fields["name"]
+	_, moved := fields["listen_port"]
+	_, remoded := fields["mode"]
+	if (renamed || moved || remoded || newSubnet != "") && s.Teardown != nil {
+		s.Teardown(ctx, id)
+	}
+	if newSubnet != "" {
+		if err := s.readdress(ctx, iface, newSubnet, fields); err != nil {
+			return nil, err
+		}
+	} else if err := s.db.WithContext(ctx).Model(&model.Interface{}).
 		Where("id = ?", id).Updates(fields).Error; err != nil {
 		return nil, fmt.Errorf("service: update interface: %w", err)
 	}
 	s.log.Info("interface updated", "id", id, "name", iface.Name, "fields", len(fields))
 	return s.Get(ctx, id)
+}
+
+// readdress moves a tunnel to a new subnet: every account on it gets a fresh
+// address from the new range, in one transaction with the interface's own
+// change, and the pool follows only once that has committed.
+func (s *Interfaces) readdress(ctx context.Context, iface *model.Interface, subnet string, fields map[string]any) error {
+	prefix, _ := netip.ParsePrefix(subnet)
+	fresh, err := ipam.New(prefix)
+	if err != nil {
+		return invalidField("subnet", "subnet %q: %v", subnet, err)
+	}
+	var accounts []model.Account
+	if err := s.db.WithContext(ctx).Where("interface_id = ?", iface.ID).Order("id").Find(&accounts).Error; err != nil {
+		return fmt.Errorf("service: load accounts: %w", err)
+	}
+	moved := make(map[uint]string, len(accounts))
+	for _, a := range accounts {
+		addr, err := fresh.Allocate()
+		if err != nil {
+			return invalidField("subnet", "%q is too small for the %d devices on this tunnel", subnet, len(accounts))
+		}
+		moved[a.ID] = addr.String()
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(fields).Error; err != nil {
+			return err
+		}
+		// Two passes, so an address that is both somebody's old one and
+		// somebody else's new one does not trip the unique index halfway.
+		for id := range moved {
+			if err := tx.Model(&model.Account{}).Where("id = ?", id).Update("ip", fmt.Sprintf("pending-%d", id)).Error; err != nil {
+				return err
+			}
+		}
+		for id, ip := range moved {
+			if err := tx.Model(&model.Account{}).Where("id = ?", id).Update("ip", ip).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("service: move tunnel to %s: %w", subnet, err)
+	}
+	if s.pools != nil {
+		if _, err := s.pools.Add(iface.ID, subnet); err == nil {
+			for _, ip := range moved {
+				_ = s.pools.Replay(iface.ID, ip)
+			}
+		}
+	}
+	s.log.Warn("tunnel moved to a new subnet; every customer on it needs their configuration again",
+		"interface", iface.Name, "from", iface.Subnet, "to", subnet, "devices", len(moved))
+	return nil
+}
+
+// isLocal says whether a node id is this panel.
+func (s *Interfaces) isLocal(ctx context.Context, nodeID uint) (bool, error) {
+	var n model.Node
+	if err := s.db.WithContext(ctx).First(&n, nodeID).Error; err != nil {
+		return false, err
+	}
+	return n.Kind == model.KindLocal, nil
+}
+
+// checkSubnetFree refuses a range that overlaps another tunnel's on the same
+// server: two interfaces on one range give the kernel two routes to the same
+// addresses, and the replies leave by whichever it picks.
+func (s *Interfaces) checkSubnetFree(ctx context.Context, nodeID, selfID uint, subnet string) error {
+	want, err := netip.ParsePrefix(subnet)
+	if err != nil {
+		return invalidField("subnet", "subnet %q: %v", subnet, err)
+	}
+	var others []model.Interface
+	if err := s.db.WithContext(ctx).Where("node_id = ? AND id <> ?", nodeID, selfID).Find(&others).Error; err != nil {
+		return fmt.Errorf("service: check subnets: %w", err)
+	}
+	for _, o := range others {
+		have, err := netip.ParsePrefix(o.Subnet)
+		if err != nil {
+			continue
+		}
+		if have.Overlaps(want) {
+			return invalidField("subnet", "%s overlaps %s, the subnet of tunnel %q; every tunnel on a server needs its own range", subnet, o.Subnet, o.Name)
+		}
+	}
+	return nil
+}
+
+// checkIfaceName is the kernel's rule for a network device name, said before
+// the kernel says it: up to 15 characters, none of them a space, a slash or
+// a dot -- a domain name typed here would only fail at bring-up.
+func checkIfaceName(name string) error {
+	if name == "" {
+		return invalidField("name", "name is required")
+	}
+	if len(name) > 15 {
+		return invalidField("name", "a tunnel name is at most 15 characters; %q is %d", name, len(name))
+	}
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			continue
+		}
+		return invalidField("name", "a tunnel name can only contain letters, digits, - and _ (found %q); it names a network device, not a host", string(r))
+	}
+	return nil
 }
 
 // Delete removes an interface.
@@ -531,6 +732,9 @@ func (s *Interfaces) Delete(ctx context.Context, id uint) error {
 			ErrInvalid, accounts, iface.Name)
 	}
 
+	if s.Teardown != nil {
+		s.Teardown(ctx, id)
+	}
 	if err := s.db.WithContext(ctx).Delete(&model.Interface{}, id).Error; err != nil {
 		return fmt.Errorf("service: delete interface: %w", err)
 	}

@@ -61,6 +61,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `device limit must be between 1 and 64` | | A number in that range. |
 | `expiry is in the past` | The expiry date has already passed. | Pick a future date, or leave it empty for no expiry. |
 | `unknown reset cycle "…"` | | `none`, `daily`, `weekly` or `monthly`. |
+| `the duration cannot be negative` | Start-on-first-use days below zero. | Zero or more. |
 | `this customer already has a device called "…"` | Device names are unique per customer. | Another name. |
 | `there is no group called "…"` | A rule or a bulk action named a group that does not exist. | Create the group first, or fix the name. |
 | `a group called "…" already exists` / `a group needs a name` / `that name is too long` | | |
@@ -74,7 +75,10 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | Message | Meaning | What to do |
 |---|---|---|
 | `a tunnel needs a name` / `name is required` | | |
-| `a tunnel called "…" already exists on …` | Names are unique per server. | Another name. |
+| `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | Names are unique per server. | Another name. |
+| `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | The name becomes the kernel device (`wg0`); a domain typed here would fail at bring-up. | Something like `wg0` or `ir443`; the domain goes in **Endpoint**. |
+| `… overlaps …, the subnet of tunnel "…"; every tunnel on a server needs its own range` | Two tunnels on one range give the kernel two routes to the same addresses. | A different range, like `10.67.0.0/16`. |
+| `"…" is too small for the … devices on this tunnel` | The new subnet cannot hold the devices already issued. | A larger range. |
 | `unknown protocol "…"` | | `wireguard` or `openvpn`. |
 | `no driver available for "…" on this server` | The kernel or the binary for that protocol is missing here (`wg`/`awg`/`openvpn`). | Install it: re-run the installer. |
 | `listen port … is out of range` | | 1–65535. |

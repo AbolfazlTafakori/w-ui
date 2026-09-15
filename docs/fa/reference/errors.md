@@ -61,6 +61,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `device limit must be between 1 and 64` |  | عددی در همان بازه. |
 | `expiry is in the past` | تاریخ انقضا گذشته است. | تاریخ آینده بده، یا خالی بگذار تا منقضی نشود. |
 | `unknown reset cycle "…"` |  | `none`، `daily`، `weekly` یا `monthly`. |
+| `the duration cannot be negative` | روزهای شروع-با-اولین-اتصال زیر صفر. | صفر یا بیشتر. |
 | `this customer already has a device called "…"` | نام دستگاه برای هر مشتری یکتاست. | نام دیگری. |
 | `there is no group called "…"` | قانون یا عمل گروهی گروهی را نام برده که نیست. | اول گروه را بساز، یا نام را درست کن. |
 | `a group called "…" already exists` / `a group needs a name` / `that name is too long` |  |  |
@@ -74,7 +75,10 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | پیام | معنی | چه کنی |
 |---|---|---|
 | `a tunnel needs a name` / `name is required` |  |  |
-| `a tunnel called "…" already exists on …` | نام‌ها در هر سرور یکتا هستند. | نام دیگری. |
+| `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | نام‌ها در هر سرور یکتا هستند. | نام دیگری. |
+| `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | نام، نام دستگاه کرنل می‌شود (`wg0`)؛ دامنه این‌جا موقع بالا آمدن شکست می‌خورد. | چیزی مثل `wg0` یا `ir443`؛ دامنه در **Endpoint** می‌رود. |
+| `… overlaps …, the subnet of tunnel "…"; every tunnel on a server needs its own range` | دو تانل روی یک رنج به کرنل دو مسیر برای یک آدرس می‌دهد. | رنج متفاوت، مثل `10.67.0.0/16`. |
+| `"…" is too small for the … devices on this tunnel` | زیرشبکهٔ جدید دستگاه‌های موجود را جا نمی‌دهد. | رنج بزرگ‌تر. |
 | `unknown protocol "…"` |  | `wireguard` یا `openvpn`. |
 | `no driver available for "…" on this server` | کرنل یا باینری آن پروتکل این‌جا نیست (`wg`/`awg`/`openvpn`). | نصبش کن: نصاب را دوباره اجرا کن. |
 | `listen port … is out of range` |  | ۱ تا ۶۵۵۳۵. |

@@ -153,7 +153,7 @@ defineExpose({ showError })
 
           <div class="field">
             <label for="if-name"><span class="req">*</span>{{ t('interface.name') }}</label>
-            <input id="if-name" data-field="name" :class="{ bad: fieldName === 'name' }" @input="clearError('name')" v-model="form.name" :disabled="editing" required />
+            <input id="if-name" data-field="name" :class="{ bad: fieldName === 'name' }" @input="clearError('name')" v-model="form.name" required />
             <span v-if="fieldName === 'name'" class="field-error" role="alert">{{ fieldError }}</span>
           </div>
 
@@ -183,7 +183,6 @@ defineExpose({ showError })
               type="number"
               min="1"
               max="65535"
-              :disabled="editing"
               required
             />
             <span v-if="fieldName === 'listenPort'" class="field-error" role="alert">{{ fieldError }}</span>
@@ -211,7 +210,7 @@ defineExpose({ showError })
 
           <div class="field">
             <label for="if-subnet"><span class="req">*</span>{{ t('interface.subnet') }}</label>
-            <input id="if-subnet" data-field="subnet" :class="{ bad: fieldName === 'subnet' }" @input="clearError('subnet')" v-model="form.subnet" :disabled="editing" required />
+            <input id="if-subnet" data-field="subnet" :class="{ bad: fieldName === 'subnet' }" @input="clearError('subnet')" v-model="form.subnet" required />
             <span v-if="fieldName === 'subnet'" class="field-error" role="alert">{{ fieldError }}</span>
             <span class="hint">{{ t('interface.subnetHint') }}</span>
           </div>
@@ -235,7 +234,7 @@ defineExpose({ showError })
 
         <div v-if="isWireGuard" class="field">
           <label for="if-mode">{{ t('interface.mode') }}</label>
-          <select id="if-mode" data-field="mode" :class="{ bad: fieldName === 'mode' }" @input="clearError('mode')" v-model="form.mode" :disabled="editing">
+          <select id="if-mode" data-field="mode" :class="{ bad: fieldName === 'mode' }" @input="clearError('mode')" v-model="form.mode">
             <option value="standard">{{ t('interface.mode.standard') }}</option>
             <option value="amnezia">{{ t('interface.mode.amnezia') }}</option>
           </select>
@@ -243,10 +242,11 @@ defineExpose({ showError })
           <span class="hint">{{ t('interface.modeHint') }}</span>
         </div>
 
-        <!-- Port, subnet, protocol and mode are baked into every config already
-             handed out, so changing them would break live customers. -->
+        <!-- Port, subnet and mode are baked into every config already handed
+             out: changing them is allowed, and said to cost every customer a
+             new configuration, so it is done knowingly. -->
         <p v-if="editing" class="locked">
-          <Icon name="lock" :size="13" />{{ t('interface.lockedHint') }}
+          <Icon name="alert" :size="13" />{{ t('interface.editHint') }}
         </p>
       </form>
 

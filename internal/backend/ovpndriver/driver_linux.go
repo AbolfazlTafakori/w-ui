@@ -596,3 +596,19 @@ func lastLines(path string, n int) string {
 	}
 	return strings.Join(lines, " | ")
 }
+
+// Destroy stops the server process; the tun device goes with it.
+func (d *Driver) Destroy(ctx context.Context) error {
+	d.mu.Lock()
+	iface := d.iface
+	d.mu.Unlock()
+	if iface == nil {
+		return nil
+	}
+	l := ovpnconf.NewLayout(DataRoot, iface.Name)
+	if pid, alive := runningPID(l.PIDFile()); alive {
+		stop(pid)
+		d.log.Info("stopped openvpn server", "interface", iface.Name, "pid", pid)
+	}
+	return nil
+}

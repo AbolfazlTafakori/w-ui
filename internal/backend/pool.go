@@ -144,6 +144,25 @@ func (p *Pool) CloseAll() {
 // Errors are not returned: one interface that will not come up must not stop
 // the others from being brought in line. They are recorded per interface and
 // reported through ErrorFor.
+// Destroy takes an interface's tunnel down for good and forgets its driver.
+// The next reconcile brings it up again from the database, if it is still
+// there -- as a fresh device with whatever name, port and range it now has.
+func (p *Pool) Destroy(ctx context.Context, id uint) {
+	p.mu.Lock()
+	e, ok := p.open[id]
+	delete(p.open, id)
+	p.mu.Unlock()
+	if !ok || e.drv == nil {
+		return
+	}
+	if d, can := e.drv.(Destroyer); can {
+		if err := d.Destroy(ctx); err != nil {
+			p.log.Warn("could not take a tunnel down", "interface", id, "error", err)
+		}
+	}
+	_ = e.drv.Close()
+}
+
 func (p *Pool) Sync(ctx context.Context, ifaces []model.Interface) {
 	want := make(map[uint]bool, len(ifaces))
 

@@ -125,3 +125,12 @@ type Backend interface {
 	// Close releases driver resources. It does not tear down the interface.
 	Close() error
 }
+
+// Destroyer is a driver that can also take the tunnel down for good: the
+// kernel device removed, the server process stopped. Close deliberately does
+// not -- a panel restart must not disconnect anyone -- so this is separate,
+// for the two moments the tunnel really is going: deletion, and a change of
+// name, port, subnet or mode, after which it is brought up again as new.
+type Destroyer interface {
+	Destroy(ctx context.Context) error
+}

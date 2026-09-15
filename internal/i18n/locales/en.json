@@ -1652,5 +1652,6 @@
   "set.subTpl.retroDesc": "Synthwave: a striped sun and a grid running to the horizon.",
   "node.sectionServer": "Server",
   "node.sectionTrust": "Access and trust",
-  "node.sectionBilling": "Cost and allowance"
+  "node.sectionBilling": "Cost and allowance",
+  "interface.editHint": "Everything here can be changed. A new port, subnet or mode restarts the tunnel and every customer on it needs their configuration again; a new subnet also gives each device a fresh address."
 }

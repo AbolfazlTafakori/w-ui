@@ -640,6 +640,9 @@ func buildServer(
 	}
 
 	ifaceSvc := service.NewInterfaces(db, pools, log)
+	// Deleting a tunnel, or changing what reaches the kernel, takes the live
+	// device down; the reconciler brings the new one up.
+	ifaceSvc.Teardown = pool.Destroy
 	apiSrv := api.New(api.Options{
 		Engine:         engine,
 		Template:       service.NewTemplate(db, ifaceSvc, outbounds, routes, balancers, engine, log),

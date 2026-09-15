@@ -40,4 +40,4 @@ On a phone the table becomes a list of cards; tap the ⓘ for the figures.
 
 **OpenVPN** adds the transport (UDP or TCP), cipher, and whether to push a redirect-gateway.
 
-Editing an interface that is up applies the change in place. Only a change to the tunnel itself (port, keys, subnet) restarts it; a name or DNS change does not disconnect anyone.
+Everything on an interface can be edited after it is up. Endpoint, DNS, MTU and the egress interface apply in place and disconnect nobody. Name, port, subnet and mode take the tunnel down and bring it up again as new, and every customer on it needs their configuration again (the subscription link already carries the new one); a new subnet also hands each device a fresh address. The panel refuses a subnet that overlaps another tunnel's on the same server, and a name that is not a valid device name (up to 15 letters, digits, `-` or `_`).
