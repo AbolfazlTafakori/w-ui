@@ -1512,7 +1512,7 @@ install_acme() {
   info "installing acme.sh"
   curl -fsSL --max-time 60 https://get.acme.sh -o /tmp/get-acme.sh || {
     warn "could not download acme.sh"; return 1; }
-  ( HOME="${ACME_HOME%/.acme.sh}" sh /tmp/get-acme.sh --home "$ACME_HOME" ${ACME_EMAIL:+--accountemail "$ACME_EMAIL"} >/dev/null 2>&1 )
+  ( HOME="${ACME_HOME%/.acme.sh}" sh /tmp/get-acme.sh "home=$ACME_HOME" ${ACME_EMAIL:+--accountemail "$ACME_EMAIL"} >/dev/null 2>&1 )
   rm -f /tmp/get-acme.sh
   [[ -x "$ACME_HOME/acme.sh" ]] || { warn "acme.sh is not installed"; return 1; }
   # Let's Encrypt by name. acme.sh defaults to a different authority, and an

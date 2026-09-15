@@ -1205,7 +1205,9 @@ install_acme() {
     LOGI "Installing acme.sh..."
     cd ~ || return 1 # Ensure you can change to the home directory
 
-    curl -fsSL https://get.acme.sh -o /tmp/get-acme.sh && (HOME="${ACME_HOME%/.acme.sh}" sh /tmp/get-acme.sh --home "$ACME_HOME")
+    # get.acme.sh turns its first argument "key=value" into "--key value"
+    # itself; handing it "--home" makes "----home", which acme.sh rejects.
+    curl -fsSL https://get.acme.sh -o /tmp/get-acme.sh && (HOME="${ACME_HOME%/.acme.sh}" sh /tmp/get-acme.sh "home=$ACME_HOME")
     local rc=$?
     rm -f /tmp/get-acme.sh
     if [ $rc -ne 0 ] || [[ ! -x "$ACME_HOME/acme.sh" ]]; then
