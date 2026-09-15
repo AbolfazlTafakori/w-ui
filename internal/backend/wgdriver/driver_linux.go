@@ -551,12 +551,24 @@ func (d *Driver) Destroy(ctx context.Context) error {
 	if iface == nil {
 		return nil
 	}
-	if d.run(ctx, "ip", "link", "show", "dev", iface.Name) != nil {
+	return RemoveLink(ctx, iface)
+}
+
+// RemoveLink deletes the device by name, whoever created it, and the
+// amneziawg-go process serving it if there is one.
+func RemoveLink(ctx context.Context, iface *model.Interface) error {
+	if exec.CommandContext(ctx, "ip", "link", "show", "dev", iface.Name).Run() != nil {
 		return nil // already gone
 	}
-	if err := d.run(ctx, "ip", "link", "del", "dev", iface.Name); err != nil {
-		return fmt.Errorf("wgdriver: remove %s: %w", iface.Name, err)
+	if out, err := exec.CommandContext(ctx, "ip", "link", "del", "dev", iface.Name).CombinedOutput(); err != nil {
+		return fmt.Errorf("wgdriver: remove %s: %v: %s", iface.Name, err, strings.TrimSpace(string(out)))
 	}
-	d.log.Info("removed interface", "interface", iface.Name)
+	// A userspace device dies with its link; the process notices and exits.
+	// Any that did not is told to.
+	_ = exec.CommandContext(ctx, "pkill", "-f", "^"+userspaceTool+" "+iface.Name+"$").Run()
 	return nil
+}
+
+func init() {
+	backend.RegisterRemover(model.ProtocolWireGuard, RemoveLink)
 }

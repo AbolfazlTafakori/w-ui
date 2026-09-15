@@ -43,7 +43,7 @@ type Interfaces struct {
 	// Teardown takes a tunnel's live device down, for a deletion and for a
 	// change that has to bring it up again as new. Set by the panel; a CLI
 	// or a test that has no data plane leaves it nil.
-	Teardown func(ctx context.Context, id uint)
+	Teardown func(ctx context.Context, iface *model.Interface)
 	log      *slog.Logger
 }
 
@@ -591,7 +591,7 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	_, moved := fields["listen_port"]
 	_, remoded := fields["mode"]
 	if (renamed || moved || remoded || newSubnet != "") && s.Teardown != nil {
-		s.Teardown(ctx, id)
+		s.Teardown(ctx, iface)
 	}
 	if newSubnet != "" {
 		if err := s.readdress(ctx, iface, newSubnet, fields); err != nil {
@@ -733,7 +733,7 @@ func (s *Interfaces) Delete(ctx context.Context, id uint) error {
 	}
 
 	if s.Teardown != nil {
-		s.Teardown(ctx, id)
+		s.Teardown(ctx, iface)
 	}
 	if err := s.db.WithContext(ctx).Delete(&model.Interface{}, id).Error; err != nil {
 		return fmt.Errorf("service: delete interface: %w", err)

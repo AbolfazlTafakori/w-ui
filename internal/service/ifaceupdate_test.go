@@ -48,7 +48,7 @@ func TestChangingTheSubnetMovesEveryDevice(t *testing.T) {
 		}
 	}
 	torn := 0
-	svc.Teardown = func(context.Context, uint) { torn++ }
+	svc.Teardown = func(context.Context, *model.Interface) { torn++ }
 
 	sub := "10.50.0.0/24"
 	got, err := svc.Update(ctx, iface.ID, UpdateInterfaceInput{Subnet: &sub})
@@ -97,7 +97,7 @@ func TestRenamingAndMovingPortTearDownTheOldDevice(t *testing.T) {
 	db, iface := seeded(t)
 	svc := NewInterfaces(db, ipam.NewPools(), quietLog())
 	torn := 0
-	svc.Teardown = func(context.Context, uint) { torn++ }
+	svc.Teardown = func(context.Context, *model.Interface) { torn++ }
 
 	name := "wg9"
 	if _, err := svc.Update(ctx, iface.ID, UpdateInterfaceInput{Name: &name}); err != nil {

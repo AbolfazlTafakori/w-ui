@@ -147,20 +147,25 @@ func (p *Pool) CloseAll() {
 // Destroy takes an interface's tunnel down for good and forgets its driver.
 // The next reconcile brings it up again from the database, if it is still
 // there -- as a fresh device with whatever name, port and range it now has.
-func (p *Pool) Destroy(ctx context.Context, id uint) {
+func (p *Pool) Destroy(ctx context.Context, iface *model.Interface) {
 	p.mu.Lock()
-	e, ok := p.open[id]
-	delete(p.open, id)
+	e, ok := p.open[iface.ID]
+	delete(p.open, iface.ID)
 	p.mu.Unlock()
-	if !ok || e.drv == nil {
-		return
-	}
-	if d, can := e.drv.(Destroyer); can {
-		if err := d.Destroy(ctx); err != nil {
-			p.log.Warn("could not take a tunnel down", "interface", id, "error", err)
+	if ok && e.drv != nil {
+		if d, can := e.drv.(Destroyer); can {
+			if err := d.Destroy(ctx); err != nil {
+				p.log.Warn("could not take a tunnel down", "interface", iface.Name, "error", err)
+			}
 		}
+		_ = e.drv.Close()
 	}
-	_ = e.drv.Close()
+	// With or without a driver in hand -- one that failed to open, or a
+	// panel that came back to a device it did not create this run -- the
+	// device itself has to go, or its port stays taken.
+	if err := Remove(ctx, iface); err != nil {
+		p.log.Warn("could not remove a tunnel's device", "interface", iface.Name, "error", err)
+	}
 }
 
 func (p *Pool) Sync(ctx context.Context, ifaces []model.Interface) {

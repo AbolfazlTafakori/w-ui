@@ -134,3 +134,20 @@ type Backend interface {
 type Destroyer interface {
 	Destroy(ctx context.Context) error
 }
+
+// removers is how each protocol takes a device down by name, registered by
+// the driver packages that know how. It needs no open driver.
+var removers = map[model.Protocol]func(context.Context, *model.Interface) error{}
+
+// RegisterRemover is called by a driver package at init.
+func RegisterRemover(p model.Protocol, f func(context.Context, *model.Interface) error) {
+	removers[p] = f
+}
+
+// Remove takes an interface's device down by name.
+func Remove(ctx context.Context, iface *model.Interface) error {
+	if f, ok := removers[iface.Protocol]; ok {
+		return f(ctx, iface)
+	}
+	return nil
+}

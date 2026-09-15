@@ -605,10 +605,22 @@ func (d *Driver) Destroy(ctx context.Context) error {
 	if iface == nil {
 		return nil
 	}
+	return StopServer(ctx, iface)
+}
+
+// StopServer ends the OpenVPN process for a tunnel by name, and removes a
+// tun device of that name if one is left behind.
+func StopServer(ctx context.Context, iface *model.Interface) error {
 	l := ovpnconf.NewLayout(DataRoot, iface.Name)
 	if pid, alive := runningPID(l.PIDFile()); alive {
 		stop(pid)
-		d.log.Info("stopped openvpn server", "interface", iface.Name, "pid", pid)
+	}
+	if exec.CommandContext(ctx, "ip", "link", "show", "dev", iface.Name).Run() == nil {
+		_ = exec.CommandContext(ctx, "ip", "link", "del", "dev", iface.Name).Run()
 	}
 	return nil
+}
+
+func init() {
+	backend.RegisterRemover(model.ProtocolOpenVPN, StopServer)
 }
