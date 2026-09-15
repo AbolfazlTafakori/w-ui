@@ -132,6 +132,13 @@ env_of() {
 }
 env_of setting show 2>/dev/null | sed 's/^/    /' || true
 
+# A certificate set from the menu lives in the database, not the unit; what
+# the panel actually serves with is what setting show reports.
+if [[ -z "$TLS_CERT" || -z "$TLS_KEY" ]]; then
+  c="$(env_of setting show 2>/dev/null | sed -n 's/^cert: //p')"
+  k="$(env_of setting show 2>/dev/null | sed -n 's/^key: //p')"
+  if [[ -s "$c" && -s "$k" ]]; then TLS_CERT="$c"; TLS_KEY="$k"; TLS_MODE=files; fi
+fi
 base="$(env_of setting show 2>/dev/null | sed -n 's/^basePath: //p' | tr -d '/')"
 [[ -n "$base" ]] || base="$BASE_PATH"
 if (( ${#base} < 4 )); then
