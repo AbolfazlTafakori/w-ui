@@ -16,6 +16,7 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -105,6 +106,9 @@ type Reconciler struct {
 	// another node is another panel's to apply.
 	localNodeID uint
 
+	// conc holds customers to the connections their plan allows.
+	conc *concurrency
+
 	mu    sync.RWMutex
 	stats Stats
 	// lastRouteErr is the routing failure already reported, for the same reason
@@ -125,6 +129,7 @@ func New(o Options) *Reconciler {
 		interval = 2 * time.Second
 	}
 	return &Reconciler{
+		conc:     newConcurrency(),
 		db:       o.DB,
 		enforcer: o.Enforcer,
 		shaper:   o.Shaper,
@@ -293,6 +298,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 			r.log.Warn("driver stats unavailable", "interface", ifaceID, "error", err)
 			continue
 		}
+		r.conc.observe(stats, now)
 		for _, s := range stats {
 			if s.LastHandshake.IsZero() {
 				continue
@@ -633,6 +639,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	for _, a := range accounts {
 		byClient[a.ClientID] = append(byClient[a.ClientID], a)
 	}
+	now := time.Now().UTC()
 
 	d := &desired{
 		rules:      make([]enforce.Rule, 0, len(clients)),
@@ -685,8 +692,21 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		if !serviceable {
 			continue
 		}
+		// More connected at once than the plan allows: the newest are held
+		// off for a while. Left out of the desired set, a WireGuard peer is
+		// removed by Sync; an OpenVPN session is ended here.
+		for _, h := range r.conc.enforce(&c, accs, now) {
+			r.log.Info("connection limit reached; device held off",
+				"client", c.Name, "device", h.Account.DeviceName,
+				"limit", c.DeviceLimit, "until", h.Until.Format(time.Kitchen))
+			if b, ok := r.pool.Get(h.Account.InterfaceID); ok {
+				if err := b.Kick(ctx, h.Account.ID); err != nil && !errors.Is(err, backend.ErrNotSupported) {
+					r.log.Warn("could not end a held-off session", "device", h.Account.DeviceName, "error", err)
+				}
+			}
+		}
 		for _, a := range accs {
-			if !a.Enabled {
+			if !a.Enabled || r.conc.heldOff(a.ID, now) {
 				continue
 			}
 			ip, err := netip.ParseAddr(a.IP)
