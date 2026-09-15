@@ -229,8 +229,18 @@ func BuildRuleset(p Policy) (string, error) {
 	fmt.Fprintf(&b, "\t\ttype filter hook forward priority %d; policy accept;\n", dropPriority)
 
 	// Named destinations an operator has forbidden.
+	//
+	// Only for what the customers send. The default list blocks the private
+	// ranges, and the tunnels' own subnets sit inside 10.0.0.0/8 -- so a
+	// rule on destination alone drops every reply on its way back to a
+	// customer, and the tunnel hands shakes and carries nothing. Matched on
+	// the customers' source addresses, the block means what it says.
 	if len(v4(p.BlockAddrs)) > 0 {
-		b.WriteString("\t\tip daddr @blocked4 counter drop\n")
+		if len(v4(p.CustomerNets)) > 0 {
+			b.WriteString("\t\tip saddr @customers4 ip daddr @blocked4 counter drop\n")
+		} else {
+			b.WriteString("\t\tip daddr @blocked4 counter drop\n")
+		}
 	}
 	if len(v6(p.BlockAddrs)) > 0 {
 		b.WriteString("\t\tip6 daddr @blocked6 counter drop\n")

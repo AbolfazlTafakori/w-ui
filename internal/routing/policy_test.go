@@ -78,8 +78,25 @@ func TestBlockedTrafficIsDroppedBeforeItIsBilled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "ip daddr @blocked4 counter drop") {
-		t.Fatal("blocked destinations are not dropped")
+	if !strings.Contains(out, "ip saddr @customers4 ip daddr @blocked4 counter drop") {
+		t.Fatal("blocked destinations are not dropped for the customers' traffic")
+	}
+}
+
+// The default block list covers 10.0.0.0/8, and the tunnels live inside it.
+// A drop on destination alone would drop every reply to every customer.
+func TestBlockingPrivateRangesDoesNotBlockRepliesToCustomers(t *testing.T) {
+	p := customerPolicy()
+	p.BlockAddrs = mustPrefixes(t, "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+	out, err := BuildRuleset(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "\t\tip daddr @blocked4 counter drop") {
+		t.Fatal("the block matches replies on their way back into the tunnel")
+	}
+	if !strings.Contains(out, "ip saddr @customers4 ip daddr @blocked4 counter drop") {
+		t.Fatal("the block is not limited to what customers send")
 	}
 }
 
