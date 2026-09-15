@@ -105,3 +105,29 @@ func TestLimitOfTwoAllowsTwo(t *testing.T) {
 		t.Fatalf("expected the third held off, got %+v", got)
 	}
 }
+
+// The limit is the customer's, not a tunnel's: WireGuard on the phone and
+// OpenVPN on the laptop are two connections of one plan.
+func TestLimitSpansProtocols(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{
+		{ID: 10, InterfaceID: 1, DeviceName: "phone-wg"},
+		{ID: 11, InterfaceID: 2, DeviceName: "laptop-ovpn", Username: "roya"},
+	}
+	// Two drivers report separately, as they do in a tick.
+	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
+	c.observe([]backend.Stat{stat(11, 100, "2.2.2.2")}, t0)
+	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
+	c.observe([]backend.Stat{stat(11, 100, "2.2.2.2")}, t0.Add(2*time.Second))
+	if got := c.enforce(client, accs, t0.Add(2*time.Second)); got != nil {
+		t.Fatalf("the phone alone was held off: %+v", got)
+	}
+	c.observe([]backend.Stat{stat(10, 300, "1.1.1.1")}, t0.Add(4*time.Second))
+	c.observe([]backend.Stat{stat(11, 200, "2.2.2.2")}, t0.Add(4*time.Second))
+	got := c.enforce(client, accs, t0.Add(4*time.Second))
+	if len(got) != 1 || got[0].Account.ID != 11 {
+		t.Fatalf("expected the OpenVPN laptop held off while the WireGuard phone stays, got %+v", got)
+	}
+}
