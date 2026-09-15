@@ -331,6 +331,14 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
   border-bottom: 1px solid var(--line-soft);
 }
 .atabs-list { display: flex; gap: 32px; flex-wrap: wrap; }
+/* On a phone the tabs scroll sideways in one row, as Ant's do, rather than
+   stacking into three. */
+@media (max-width: 768px) {
+  .atabs-nav { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .atabs-nav::-webkit-scrollbar { display: none; }
+  .atabs-list { flex-wrap: nowrap; gap: 20px; width: max-content; min-width: 100%; }
+  .atab { white-space: nowrap; }
+}
 .atab {
   position: relative;
   display: inline-flex;

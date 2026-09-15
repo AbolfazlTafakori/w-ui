@@ -808,6 +808,29 @@ a.row-title:hover { text-decoration: underline; }
 .stat-v { font-size: 16px; font-weight: 700; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat-s { font-size: 12px; color: var(--faint); }
 @media (max-width: 575px) { .quick { flex-direction: column; } }
+/* Nothing on this page may be wider than a phone. Long values -- a token, an
+   email, a hostname -- wrap or are cut with an ellipsis; they never push the
+   card out of the viewport. */
+.card { max-width: 100%; overflow: hidden; }
+.card-title > span[data-i] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-title .tag { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-extra { flex-shrink: 0; }
+.desc { table-layout: fixed; }
+.desc td { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+@media (max-width: 480px) { .desc th { width: 34%; white-space: normal; padding: 8px 10px; } .desc td { padding: 8px 10px; font-size: 13px; } }
+.hero { min-width: 0; }
+.hero > div { min-width: 0; flex: 1; }
+.hero h1, .hero p { overflow-wrap: anywhere; }
+.hero-meta { flex-wrap: wrap; }
+.usage-labels { min-width: 0; overflow: hidden; }
+.usage-head { flex-wrap: wrap; gap: 6px; }
+.row-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-card { max-width: calc(100vw - 32px); }
+.pop-card img { max-width: 100%; height: auto; }
+.toast { max-width: calc(100vw - 32px); }
+.menu { max-width: calc(100vw - 24px); }
+/* On a phone the id beside the title is the same one in the table below. */
+@media (max-width: 480px) { .card-title .tag { display: none; } .card-head { font-size: 15px; } }
 </style>
 </head>
 <body>

@@ -1829,7 +1829,10 @@ td.right .actions {
   font-family: var(--mono);
   font-size: var(--t-xs);
   line-height: 1.6;
-  /* Long commands scroll inside their own box rather than widening the page. */
+  /* Long commands scroll inside their own box rather than widening the page:
+     a block that fills its column and no more, whatever is inside it. */
+  display: block;
+  max-width: 100%;
   overflow-x: auto;
   white-space: pre;
 }
