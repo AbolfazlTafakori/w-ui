@@ -43,6 +43,8 @@ type subPageView struct {
 	Nonce      string
 	SubID      string
 	Devices    []subPageDevice
+	HasWG      bool // any device on a WireGuard tunnel: its apps are offered
+	HasOVPN    bool // any on OpenVPN
 	HasQuota   bool
 	Unlimited  bool
 	Active     bool
@@ -281,6 +283,11 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 			}
 		}
 		v.Devices = append(v.Devices, entry)
+		if d.Protocol == "openvpn" {
+			v.HasOVPN = true
+		} else {
+			v.HasWG = true
+		}
 	}
 	dict, _ := json.Marshal(subPageStrings)
 	v.Strings = template.JS(dict)
@@ -815,11 +822,11 @@ a.row-title:hover { text-decoration: underline; }
 .card-title > span[data-i] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-title .tag { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-extra { flex-shrink: 0; }
-.desc { table-layout: fixed; }
 .desc td { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
 @media (max-width: 480px) { .desc th { width: 34%; white-space: normal; padding: 8px 10px; } .desc td { padding: 8px 10px; font-size: 13px; } }
 .hero { min-width: 0; }
-.hero > div { min-width: 0; flex: 1; }
+.hero > .hero-copy { min-width: 0; flex: 1; }
+.hero-icon { flex: none; }
 .hero h1, .hero p { overflow-wrap: anywhere; }
 .hero-meta { flex-wrap: wrap; }
 .usage-labels { min-width: 0; overflow: hidden; }
@@ -933,7 +940,7 @@ a.row-title:hover { text-decoration: underline; }
         <div class="cfg">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag tag-config {{ if eq $.Page.Protocol "wireguard" }}cyan{{ else }}orange{{ end }}" data-i="{{ if eq $.Page.Protocol "wireguard" }}config{{ else }}ovpnConfig{{ end }}">Config</span>
+            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else }}config{{ end }}">Config</span>
             <span class="cfg-meta">{{ .Name }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
             <div class="row-actions">
               <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
@@ -952,10 +959,10 @@ a.row-title:hover { text-decoration: underline; }
         <div class="app">
           <button class="btn lg primary" type="button" data-menu="android"><span class="anticon">{{ index .Icons "AndroidOutlined" }}</span> Android <span class="anticon">{{ index .Icons "DownOutlined" }}</span></button>
           <div class="menu" id="menu-android">
-            {{ if eq .Page.Protocol "wireguard" }}
+            {{ if .HasWG }}
             <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener noreferrer">WireGuard</a>
             <a href="https://play.google.com/store/apps/details?id=org.amnezia.awg" target="_blank" rel="noopener noreferrer">AmneziaWG</a>
-            {{ else }}
+            {{ end }}{{ if .HasOVPN }}
             <a href="https://play.google.com/store/apps/details?id=net.openvpn.openvpn" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
             {{ end }}
             {{ range .Devices }}<a href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}
@@ -964,10 +971,10 @@ a.row-title:hover { text-decoration: underline; }
         <div class="app">
           <button class="btn lg primary" type="button" data-menu="ios"><span class="anticon">{{ index .Icons "AppleOutlined" }}</span> iOS <span class="anticon">{{ index .Icons "DownOutlined" }}</span></button>
           <div class="menu" id="menu-ios">
-            {{ if eq .Page.Protocol "wireguard" }}
+            {{ if .HasWG }}
             <a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener noreferrer">WireGuard</a>
             <a href="https://apps.apple.com/app/amneziawg/id6478942365" target="_blank" rel="noopener noreferrer">AmneziaWG</a>
-            {{ else }}
+            {{ end }}{{ if .HasOVPN }}
             <a href="https://apps.apple.com/app/openvpn-connect/id590379981" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
             {{ end }}
             {{ range .Devices }}<a href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}

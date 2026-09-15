@@ -695,8 +695,48 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: list clients: %w", err)
 	}
+	if err := s.fillOnlineNow(ctx, items); err != nil {
+		return nil, err
+	}
 
 	return &Page{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage}, nil
+}
+
+// fillOnlineNow counts, for each listed customer, the public addresses their
+// credentials are live from: one per device in use, or more when one file is
+// on two devices at once. A device whose handshake has gone stale is not
+// connected, whatever address it last had.
+func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]uint, len(items))
+	for i := range items {
+		ids[i] = items[i].ID
+	}
+	cutoff := time.Now().UTC().Add(-onlineWithin())
+	var rows []struct {
+		ClientID uint
+		N        int
+	}
+	err := s.db.WithContext(ctx).
+		Table("account_endpoints AS e").
+		Select("a.client_id AS client_id, COUNT(DISTINCT e.addr) AS n").
+		Joins("JOIN accounts a ON a.id = e.account_id").
+		Where("a.client_id IN ? AND e.last_seen > ? AND a.last_handshake > ?", ids, cutoff, cutoff).
+		Group("a.client_id").
+		Scan(&rows).Error
+	if err != nil {
+		return fmt.Errorf("service: count connections: %w", err)
+	}
+	byClient := make(map[uint]int, len(rows))
+	for _, r := range rows {
+		byClient[r.ClientID] = r.N
+	}
+	for i := range items {
+		items[i].OnlineNow = byClient[items[i].ID]
+	}
+	return nil
 }
 
 // Get loads one client with its devices.

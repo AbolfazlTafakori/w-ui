@@ -303,7 +303,10 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 				Endpoint:  s.Endpoint,
 				At:        now,
 			})
-			if s.Endpoint != "" {
+			// Only a live session marks its address as in use: a peer that
+			// stopped hours ago still reports the address it last had, and
+			// refreshing that would count a switched-off phone as connected.
+			if s.Endpoint != "" && now.Sub(s.LastHandshake) < liveWindow() {
 				seen[s.AccountID] = s.Endpoint
 			}
 		}
@@ -784,3 +787,7 @@ func (r *Reconciler) overAllowance(ctx context.Context) bool {
 		"fix", "raise the allowance on the Servers page, or clear the counter")
 	return true
 }
+
+// liveWindow is how recent a handshake has to be for a session to count as
+// connected -- the panel's online window.
+func liveWindow() time.Duration { return time.Duration(service.OnlineWithin.Load()) * time.Second }

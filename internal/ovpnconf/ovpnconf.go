@@ -108,8 +108,18 @@ func Network(subnet string) (network, netmask string, err error) {
 //
 // It stays a distinct function because the driver contract renders per account,
 // and because a WireGuard profile genuinely is per device.
-func RenderClient(_ *model.Account, iface *model.Interface) string {
-	return RenderProfile(iface)
+func RenderClient(acc *model.Account, iface *model.Interface) string {
+	profile := RenderProfile(iface)
+	if acc == nil || acc.Username == "" || acc.Secret == "" {
+		return profile
+	}
+	// The device's own username and password ride inside its file, so an
+	// import connects without a prompt: the file already is the secret, the
+	// customer already has it, and asking them to type the second half of it
+	// back in only produced tickets. The same pair is what the panel shows
+	// them, for a client old enough not to read the block (before 2.5) or
+	// one they would rather type into.
+	return profile + fmt.Sprintf("\n<auth-user-pass>\n%s\n%s\n</auth-user-pass>\n", acc.Username, acc.Secret)
 }
 
 // RenderProfile produces the one profile every customer on this tunnel uses.

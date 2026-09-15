@@ -1,10 +1,10 @@
 ---
-description: "Customers. One client is one plan; each has as many devices  as its device limit allows, each with its own key and address."
+description: "Customers. One client is one plan, allowed a number of connections at once; each device file has its own key and address."
 ---
 
 # Clients
 
-Customers. One client is one plan; each has as many devices (accounts) as its device limit allows, each with its own key and address.
+Customers. One client is one plan, allowed a number of **connections at once**. Each device file (account) has its own key and address, and no more files are issued than connections allowed. The number beside the name is how many places the customer is connected from right now, counted from the public addresses their credentials are live from — a file used on two devices one after the other is one connection, both at the same time is two.
 
 ## The summary card
 
@@ -21,7 +21,7 @@ Clients, online, depleted, depleting, disabled, active — six figures with a co
 | Actions | QR code, client information, reset traffic, edit, delete |
 | Enabled | a switch; disabled when the plan is expired or exhausted |
 | Online | with the last time they were seen |
-| Client | name, devices used / allowed, comment |
+| Client | name, connections in use / allowed at once (red when over), comment |
 | Group | click to filter |
 | Attached inbounds | which interfaces the plan is on |
 | Traffic | used, a bar, the limit — red past 100 %, orange near it |

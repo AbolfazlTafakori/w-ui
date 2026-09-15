@@ -72,8 +72,8 @@
   "client.expires": "انقضا",
   "client.expiresInDays": "اعتبار (روز)",
   "client.expiryResetHint": "از همین لحظه شمرده می‌شود، پس ذخیره کردن شمارش را از نو شروع می‌کند.",
-  "client.deviceLimit": "تعداد دستگاه",
-  "client.deviceLimitHint": "هر دستگاه کلید و آدرس اختصاصی خودش را می‌گیرد.",
+  "client.deviceLimit": "اتصال هم‌زمان",
+  "client.deviceLimitHint": "از چند جا هم‌زمان می‌تواند وصل باشد. هر فایل دستگاه کلید و آدرس خودش را دارد؛ یک فایل که روی دو دستگاه به‌نوبت استفاده شود یک اتصال است.",
   "client.rateLimit": "محدودیت سرعت",
   "client.resetCycle": "تمدید",
   "client.unlimited": "نامحدود",
@@ -1659,5 +1659,6 @@
   "client.openvpnGenerated": "خالی بماند تولید می‌شود",
   "client.openvpnKeep": "خالی بماند تغییری نمی‌کند",
   "client.openvpnHint": "روی هر تانل OpenVPN که این مشتری روی آن است استفاده می‌شود. دستگاه دوم روی همان تانل، همین نام را با یک شماره می‌گیرد.",
-  "status.onHold": "On hold"
+  "status.onHold": "On hold",
+  "client.connectionsNow": "{n} اتصال فعال از {limit} مجاز هم‌زمان ({files} فایل دستگاه صادر شده)"
 }

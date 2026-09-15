@@ -72,8 +72,8 @@
   "client.expires": "Expires",
   "client.expiresInDays": "Valid for (days)",
   "client.expiryResetHint": "Counted from now, so saving restarts the countdown.",
-  "client.deviceLimit": "Devices",
-  "client.deviceLimitHint": "Each device gets its own key and address.",
+  "client.deviceLimit": "Connections at once",
+  "client.deviceLimitHint": "How many places the customer may be connected from at the same time. Each device file gets its own key and address; a file used on two devices one after the other is one connection.",
   "client.rateLimit": "Speed limit",
   "client.resetCycle": "Renews",
   "client.unlimited": "Unlimited",
@@ -1659,5 +1659,6 @@
   "client.openvpnGenerated": "generated if left empty",
   "client.openvpnKeep": "leave empty to keep",
   "client.openvpnHint": "Used on every OpenVPN tunnel this customer is on. A second device on the same tunnel gets the name with a number after it.",
-  "status.onHold": "On hold"
+  "status.onHold": "On hold",
+  "client.connectionsNow": "{n} connected now of {limit} allowed at once ({files} device files issued)"
 }

@@ -597,6 +597,9 @@ type SubPageDevice struct {
 	Address  string
 	Filename string
 	Config   string
+	// Protocol of the tunnel this device is on: a customer on both a
+	// WireGuard and an OpenVPN tunnel sees each file labelled for its app.
+	Protocol string
 	// The host this entry was written for, when it was written for one.
 	HostID          uint
 	HostName        string
@@ -718,6 +721,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			Address:  d.Account.IP,
 			Filename: d.Profile.Filename,
 			Config:   string(d.Profile.Body),
+			Protocol: string(byID[d.Account.InterfaceID].Protocol),
 		}
 		if d.Host != nil {
 			dev.HostID = d.Host.ID

@@ -1014,7 +1014,13 @@ async function submitForm(input) {
                 <td>
                   <div class="email-cell">
                     <span class="email">{{ c.name }}</span>
-                    <span class="sub ltr">{{ c.accounts?.length ?? 0 }} / {{ c.deviceLimit }}</span>
+                    <!-- Connections in use right now against what the plan allows at once,
+                         the way the classic panel shows its IP count: a file on two devices
+                         used one at a time is one connection; both at once is two. -->
+                    <span class="sub ltr" :class="{ over: (c.onlineNow || 0) > c.deviceLimit }"
+                          :title="t('client.connectionsNow', { n: c.onlineNow || 0, limit: c.deviceLimit, files: c.accounts?.length ?? 0 })">
+                      {{ c.onlineNow || 0 }} / {{ c.deviceLimit }}
+                    </span>
                     <span v-if="c.note" class="sub" :title="c.note">{{ c.note }}</span>
                   </div>
                 </td>
@@ -1278,6 +1284,7 @@ async function submitForm(input) {
 .atable-wrap.stale { opacity: 0.6; }
 .email-cell { display: flex; flex-direction: column; }
 .email-cell .email { font-weight: 500; }
+.email-cell .sub.over { color: var(--danger, #e5484d); font-weight: 600; }
 .email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .cell-empty { color: var(--faint); }
 .online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }

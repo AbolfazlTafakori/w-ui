@@ -237,7 +237,16 @@ type Client struct {
 	DurationDays    int        `gorm:"not null;default:0" json:"durationDays"`
 	ActivatedAt     *time.Time `json:"activatedAt"`
 
+	// DeviceLimit is how many connections the customer may have at once: the
+	// number of credentials issued (one per device file) is capped by it,
+	// and a credential used from more places than that at the same time is
+	// what the sharing report and OnlineNow show.
 	DeviceLimit int `gorm:"not null;default:1" json:"deviceLimit"`
+
+	// OnlineNow is how many distinct public addresses the customer's
+	// credentials are connected from right now -- the connections in use,
+	// against DeviceLimit. Filled by the list, not stored.
+	OnlineNow int `gorm:"-" json:"onlineNow"`
 
 	// RateBitsPerSec of 0 means unmetered. Applied via tc by the enforcer.
 	RateBitsPerSec uint64 `gorm:"not null;default:0" json:"rateBitsPerSec"`
