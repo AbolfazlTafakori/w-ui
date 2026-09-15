@@ -66,6 +66,11 @@ type CreateInput struct {
 	// and a fact in an import, and only the importer may say which.
 	Historical bool `json:"-"`
 
+	// Enabled, when given and false, creates the customer switched off: a
+	// plan sold ahead of time, or a row prepared for a customer who has not
+	// paid yet. Absent, they are active.
+	Enabled *bool `json:"enabled"`
+
 	// OpenVPNUsername and OpenVPNPassword, when given, are the credentials
 	// the customer's first device gets on every OpenVPN tunnel it is put on
 	// -- what a reseller who sells "username and password" plans types in
@@ -114,6 +119,9 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 
 		StartOnFirstUse: in.StartOnFirstUse,
 		DurationDays:    in.DurationDays,
+	}
+	if in.Enabled != nil && !*in.Enabled {
+		client.Status = model.StatusDisabled
 	}
 
 	// A deferred plan carries a duration instead of a date. Keeping both would

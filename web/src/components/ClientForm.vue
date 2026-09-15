@@ -1,11 +1,20 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+// The classic panel's client dialog, control for control: a wide modal with
+// three tabs -- Basics, Credentials, Links -- over Ant's 24-column grid at
+// gutter 16, 14px labels 8px above 32px controls, 24px between rows, a
+// question mark beside every label that needs a word of explanation, and the
+// Enabled switch at the foot of the basics. Ours has more to say than theirs
+// (a speed limit, a plan that starts on first use, OpenVPN's own username and
+// password, several servers per customer), so the rows are ours; the shape
+// and the sizes are theirs.
+import { ref, computed, onMounted, watch } from 'vue'
 import { api } from '../lib/api.js'
-import { t } from '../lib/store.js'
+import { t, notify } from '../lib/store.js'
 import { quotaToUnit, unitToBytes, durationToUnit, unitToHours } from '../lib/format.js'
-import Icon from './Icon.vue'
+import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
+import TagInput from './TagInput.vue'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -15,24 +24,35 @@ const props = defineProps({
 const emit = defineEmits(['close', 'submit'])
 
 const editing = computed(() => !!props.client)
+const tab = ref('basics')
 
-// Whether any tunnel picked is OpenVPN: those log in with a username and
-// password, and a reseller may want to choose them rather than be handed
-// generated ones.
+// Their email is a random ten-character handle with a button to draw another;
+// a customer's name here is free text, and the same button fills one in for
+// a reseller who names customers by their order number anyway.
+function randomHandle(n = 10) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const bytes = new Uint8Array(n)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
+}
+function randomSecret(n = 16) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const bytes = new Uint8Array(n)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
+}
+
 function currentOpenVPNUsername() {
   const ovpn = new Set((props.interfaces || []).filter((i) => i.protocol === 'openvpn').map((i) => i.id))
   const acc = (props.client?.accounts || []).find((a) => ovpn.has(a.interfaceId) && a.username)
   return acc ? acc.username : ''
 }
-const hasOpenVPN = computed(() =>
-  (props.interfaces || []).some((i) => i.protocol === 'openvpn' && form.value.interfaceIds.includes(i.id)),
-)
-
 function hoursLeft(iso) {
   if (!iso) return 0
   const h = (new Date(iso).getTime() - Date.now()) / 3600e3
   return h > 0 ? Math.round(h * 100) / 100 : 0
 }
+
 const form = ref(
   editing.value
     ? {
@@ -49,12 +69,14 @@ const form = ref(
         deviceLimit: props.client.deviceLimit,
         rateMbit: props.client.rateBitsPerSec ? props.client.rateBitsPerSec / 1e6 : '',
         startOnFirstUse: !!props.client.startOnFirstUse,
+        durationDays: props.client.durationDays || '',
+        resetCycle: props.client.resetCycle || 'none',
+        enabled: props.client.status !== 'disabled',
         // The name their first OpenVPN device logs in with, so it can be read
         // and changed here rather than looked up on the devices page.
         openvpnUsername: currentOpenVPNUsername(),
         openvpnPassword: '',
-        durationDays: props.client.durationDays || '',
-        resetCycle: props.client.resetCycle || 'none',
+        deviceNames: [],
       }
     : {
         name: '',
@@ -69,10 +91,12 @@ const form = ref(
         deviceLimit: 1,
         rateMbit: '',
         startOnFirstUse: false,
-        openvpnUsername: '',
-        openvpnPassword: '',
         durationDays: '',
         resetCycle: 'none',
+        enabled: true,
+        openvpnUsername: '',
+        openvpnPassword: '',
+        deviceNames: [],
       },
 )
 const busy = ref(false)
@@ -90,7 +114,10 @@ onMounted(async () => {
       form.value.quota = q.value
       form.value.quotaUnit = q.unit
     }
-    if (d.defaultExpiryDays) form.value.expiresInDays = d.defaultExpiryDays
+    if (d.defaultExpiryDays) {
+      form.value.expiresIn = d.defaultExpiryDays
+      form.value.expiresUnit = 'days'
+    }
     if (d.defaultDeviceLimit) form.value.deviceLimit = d.defaultDeviceLimit
     if (d.defaultRateBitsPerSec) form.value.rateMbit = d.defaultRateBitsPerSec / 1e6
     if (d.defaultResetCycle) form.value.resetCycle = d.defaultResetCycle
@@ -111,30 +138,50 @@ onMounted(async () => {
   }
 })
 
-// The protocol is not a separate choice. An account lives on an interface and
-// an interface serves one protocol, so picking the interface picks the
-// protocol, and the two can never be made to disagree. Moving an existing
-// client between interfaces would mean reissuing every device, so the field is
-// locked once the client exists.
-const chosen = computed(() =>
-  props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)),
-)
+// The subscription, for the Links tab of an existing customer.
+const sub = ref(null)
+const subEnabled = ref(false)
+async function loadSub() {
+  if (!editing.value) return
+  try {
+    const s = await api.get('/api/subscription', { background: true })
+    subEnabled.value = !!s?.enabled
+    if (s?.enabled) sub.value = await api.get(`/api/clients/${props.client.id}/subscription`, { background: true })
+  } catch {
+    sub.value = null
+  }
+}
+onMounted(loadSub)
 
-// Taking all of them, or none. An operator selling access to every tunnel does
-// it on almost every customer, and ticking six boxes by hand each time is the
-// kind of small tax that a panel is supposed to remove.
-const allChosen = computed(
-  () =>
-    props.interfaces.length > 0 &&
-    form.value.interfaceIds.length === props.interfaces.length,
-)
-
-function chooseAll() {
-  form.value.interfaceIds = [
-    ...new Set([...form.value.interfaceIds, ...props.interfaces.map((i) => i.id)]),
-  ]
+async function rotateSub() {
+  try {
+    sub.value = await api.post(`/api/clients/${props.client.id}/subscription/rotate`, {})
+    notify(t('client.subRotated'), 'success')
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+}
+async function copy(text) {
+  try {
+    await navigator.clipboard.writeText(String(text))
+    notify(t('common.copied'), 'success')
+  } catch {
+    notify(t('action.copyFailed'), 'error')
+  }
 }
 
+const chosen = computed(() => props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)))
+// Whether any tunnel picked is OpenVPN: those log in with a username and
+// password, and a reseller may want to choose them rather than be handed
+// generated ones.
+const hasOpenVPN = computed(() => chosen.value.some((i) => i.protocol === 'openvpn'))
+
+const allChosen = computed(
+  () => props.interfaces.length > 0 && form.value.interfaceIds.length === props.interfaces.length,
+)
+function chooseAll() {
+  form.value.interfaceIds = [...new Set([...form.value.interfaceIds, ...props.interfaces.map((i) => i.id)])]
+}
 function chooseNone() {
   form.value.interfaceIds = []
 }
@@ -154,9 +201,7 @@ const serverOptions = computed(() =>
 // The tightest pool among the chosen servers, because that is the one that
 // runs out first and stops the whole customer being created.
 const poolLeft = computed(() => {
-  const left = chosen.value
-    .filter((i) => i.capacity)
-    .map((i) => i.capacity - i.allocated)
+  const left = chosen.value.filter((i) => i.capacity).map((i) => i.capacity - i.allocated)
   return left.length ? Math.min(...left) : null
 })
 
@@ -166,7 +211,6 @@ const presets = [
   { gb: 100, days: 30, devices: 3 },
   { gb: 200, days: 60, devices: 3 },
 ]
-
 function applyPreset(p) {
   form.value.quota = p.gb
   form.value.quotaUnit = 'GB'
@@ -175,13 +219,41 @@ function applyPreset(p) {
   form.value.deviceLimit = p.devices
 }
 
+// The devices of an existing customer, read-only here: they are issued and
+// removed on the customer's own page, where each has its files.
+const devices = computed(() => {
+  const seen = new Map()
+  for (const a of props.client?.accounts || []) {
+    if (!seen.has(a.deviceName)) seen.set(a.deviceName, a)
+  }
+  return [...seen.values()]
+})
+
+const fieldError = ref({})
+watch(form, () => { fieldError.value = {} }, { deep: true })
+
+function validate() {
+  const e = {}
+  if (!form.value.name.trim()) e.name = t('client.nameRequired')
+  if (!form.value.interfaceIds.length) e.servers = t('client.chooseAtLeastOne')
+  if (form.value.startOnFirstUse && !(Number(form.value.durationDays) > 0)) e.durationDays = t('client.durationRequired')
+  fieldError.value = e
+  if (Object.keys(e).length) {
+    tab.value = 'basics'
+    return false
+  }
+  return true
+}
+
 async function submit() {
+  if (!validate()) return
   busy.value = true
   try {
     // Sold in whatever unit was chosen -- half a gigabyte, thirty-six hours --
     // and stored in bytes and a timestamp, which is what is enforced.
     const hours = unitToHours(form.value.expiresIn, form.value.expiresUnit)
     const expiresAt = hours > 0 ? new Date(Date.now() + hours * 3600e3).toISOString() : null
+    const user = form.value.openvpnUsername.trim()
 
     await emit('submit', {
       name: form.value.name.trim(),
@@ -194,12 +266,12 @@ async function submit() {
       deviceLimit: Number(form.value.deviceLimit) || 1,
       rateBitsPerSec: Math.max(0, Math.round(Number(form.value.rateMbit) * 1e6)) || 0,
       startOnFirstUse: form.value.startOnFirstUse,
-      ...(hasOpenVPN.value && form.value.openvpnUsername.trim() && form.value.openvpnUsername.trim() !== currentOpenVPNUsername()
-        ? { openvpnUsername: form.value.openvpnUsername.trim() } : {}),
-      ...(hasOpenVPN.value && form.value.openvpnPassword ? { openvpnPassword: form.value.openvpnPassword } : {}),
-      durationDays: Number(form.value.durationDays) || 0,
+      durationDays: form.value.startOnFirstUse ? Number(form.value.durationDays) || 0 : 0,
       resetCycle: form.value.resetCycle,
-      deviceNames: [],
+      ...(editing.value ? { status: form.value.enabled ? 'active' : 'disabled' } : { enabled: form.value.enabled }),
+      ...(hasOpenVPN.value && user && user !== currentOpenVPNUsername() ? { openvpnUsername: user } : {}),
+      ...(hasOpenVPN.value && form.value.openvpnPassword ? { openvpnPassword: form.value.openvpnPassword } : {}),
+      deviceNames: form.value.deviceNames.map((d) => d.trim()).filter(Boolean),
     })
   } finally {
     busy.value = false
@@ -208,259 +280,215 @@ async function submit() {
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="emit('close')">
-    <div class="modal cf-modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
-      <div class="card-head">
-        <Icon :name="editing ? 'edit' : 'plus'" :size="17" />
-        <h2 id="cf-title">{{ editing ? t('client.edit') : t('client.create') }}</h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="emit('close')">
-          <Icon name="close" :size="15" />
-        </button>
+  <div class="amodal-backdrop" @click.self="emit('close')">
+    <div class="amodal w880" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+      <div class="amodal-head">
+        <h2 id="cf-title" class="amodal-title">{{ editing ? t('client.edit') : t('client.create') }}</h2>
+        <button class="amodal-close" :aria-label="t('action.cancel')" @click="emit('close')"><AntIcon name="CloseOutlined" /></button>
       </div>
 
-      <form id="client-form" class="card-body" @submit.prevent="submit">
-        <div v-if="!editing" class="presets">
-          <span class="muted small">{{ t('client.presets') }}</span>
-          <button
-            v-for="p in presets"
-            :key="`${p.gb}-${p.days}`"
-            type="button"
-            class="btn sm"
-            @click="applyPreset(p)"
-          >
-            <span class="ltr num">{{ p.gb }}GB · {{ p.days }}d</span>
-            <Icon name="users" :size="12" />{{ p.devices }}
-          </button>
-        </div>
+      <div class="amodal-body cf-body">
+        <div class="atabs-nav"><div class="atabs-list">
+          <button type="button" class="atab" :class="{ active: tab === 'basics' }" @click="tab = 'basics'"><span>{{ t('client.tabBasics') }}</span></button>
+          <button type="button" class="atab" :class="{ active: tab === 'credentials' }" @click="tab = 'credentials'"><span>{{ t('client.tabCredentials') }}</span></button>
+          <button type="button" class="atab" :class="{ active: tab === 'links' }" @click="tab = 'links'"><span>{{ t('client.tabLinks') }}</span></button>
+        </div></div>
 
-        <!-- A half-width field leading a row of quarters, which is the shape
-             the classic panel uses: the one thing you type sits beside the numbers that
-             qualify it, and the fourth number wraps to its own line. -->
-        <div class="row">
-          <div class="col-12">
-            <div class="field">
-              <label for="cf-name"><span class="req">*</span>{{ t('client.name') }}</label>
-              <input id="cf-name" v-model="form.name" required autofocus />
+        <form id="client-form" class="cf-form" @submit.prevent="submit">
+          <!-- ══ Basics ══ -->
+          <div v-show="tab === 'basics'">
+            <div v-if="!editing" class="presets">
+              <span class="presets-label">{{ t('client.presets') }}</span>
+              <button v-for="p in presets" :key="`${p.gb}-${p.days}`" type="button" class="abtn small" @click="applyPreset(p)">
+                <span class="ltr">{{ p.gb }}GB · {{ p.days }}d · {{ p.devices }}<AntIcon name="TeamOutlined" /></span>
+              </button>
             </div>
-          </div>
 
-          <div class="col-6">
-            <div class="field">
-              <!-- The unit sits in the field rather than the label. "Data
-                   allowance (GB)" wrapped to two lines in a quarter column and
-                   pushed its own input out of the row's alignment. -->
-              <label for="cf-quota">
-                {{ t('client.quota') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.quotaHint')" />
-              </label>
-              <div class="unit-field">
-                <input
-                  id="cf-quota"
-                  v-model="form.quota"
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputmode="decimal"
-                  :placeholder="t('client.unlimited')"
-                />
-                <select v-model="form.quotaUnit" class="unit-select" :aria-label="t('client.quotaUnit')">
-                  <option value="MB">MB</option>
-                  <option value="GB">GB</option>
-                  <option value="TB">TB</option>
-                </select>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label required" for="cf-name">{{ t('client.name') }}</label>
+                  <div class="acompact">
+                    <label class="ainput block" :class="{ invalid: fieldError.name }"><input id="cf-name" v-model="form.name" maxlength="64" autofocus /></label>
+                    <button type="button" class="abtn icon" :title="t('client.randomName')" :aria-label="t('client.randomName')" @click="form.name = randomHandle()"><AntIcon name="ReloadOutlined" /></button>
+                  </div>
+                  <p v-if="fieldError.name" class="field-error">{{ fieldError.name }}</p>
+                </div>
+              </div>
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-quota">{{ t('client.quota') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.quotaHint')" /></label>
+                  <div class="acompact">
+                    <label class="ainput number"><input id="cf-quota" v-model="form.quota" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('client.unlimited')" /></label>
+                    <div class="aselect unit"><select v-model="form.quotaUnit" :aria-label="t('client.quotaUnit')"><option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option></select></div>
+                  </div>
+                </div>
+              </div>
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-devices">{{ t('client.deviceLimit') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.deviceLimitHint')" /></label>
+                  <label class="ainput number"><input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" class="ltr" /></label>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="col-6">
-            <div class="field">
-              <label for="cf-days">{{ t('client.expiresIn') }}</label>
-              <div class="unit-field">
-                <input
-                  id="cf-days"
-                  v-model="form.expiresIn"
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputmode="decimal"
-                  :placeholder="t('client.neverExpires')"
-                />
-                <select v-model="form.expiresUnit" class="unit-select" :aria-label="t('client.expiresUnit')">
-                  <option value="hours">{{ t('unit.hours') }}</option>
-                  <option value="days">{{ t('unit.days') }}</option>
-                  <option value="months">{{ t('unit.months') }}</option>
-                </select>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-expires">{{ t('client.expiresIn') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.expiresHint')" /></label>
+                  <div class="acompact">
+                    <label class="ainput number"><input id="cf-expires" v-model="form.expiresIn" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('client.neverExpires')" /></label>
+                    <div class="aselect unit"><select v-model="form.expiresUnit" :aria-label="t('client.expiresUnit')"><option value="hours">{{ t('unit.hours') }}</option><option value="days">{{ t('unit.days') }}</option><option value="months">{{ t('unit.months') }}</option></select></div>
+                  </div>
+                </div>
+              </div>
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label">{{ t('client.delayedStart') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.startOnFirstUseHint')" /></label>
+                  <div class="switch-line"><Toggle v-model="form.startOnFirstUse" :label="t('client.startOnFirstUse')" /></div>
+                </div>
+              </div>
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-duration">{{ t('client.durationDays') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.durationHint')" /></label>
+                  <label class="ainput number" :class="{ disabled: !form.startOnFirstUse, invalid: fieldError.durationDays }"><input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" class="ltr" :disabled="!form.startOnFirstUse" placeholder="0" /></label>
+                  <p v-if="fieldError.durationDays" class="field-error">{{ fieldError.durationDays }}</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="col-6">
-            <div class="field">
-              <label for="cf-devices">
-                <span class="req">*</span>{{ t('client.deviceLimit') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.deviceLimitHint')" />
-              </label>
-              <input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" required />
-            </div>
-          </div>
-        </div>
-
-        <div class="row">
-          <div class="col-6">
-            <div class="field">
-              <label for="cf-rate">
-                {{ t('client.rate') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.rateHint')" />
-              </label>
-              <div class="unit-field">
-                <input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" placeholder="0" />
-                <span class="unit">Mbit/s</span>
+            <div class="arow16">
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-rate">{{ t('client.rate') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.rateHint')" /></label>
+                  <label class="ainput number"><input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" class="ltr" placeholder="0" /><span class="ainput-suffix">Mbit/s</span></label>
+                </div>
+              </div>
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-reset">{{ t('client.resetCycle') }}</label>
+                  <div class="aselect"><select id="cf-reset" v-model="form.resetCycle"><option value="none">{{ t('reset.none') }}</option><option value="daily">{{ t('reset.daily') }}</option><option value="weekly">{{ t('reset.weekly') }}</option><option value="monthly">{{ t('reset.monthly') }}</option></select></div>
+                </div>
+              </div>
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-tgid">{{ t('client.telegramId') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.telegramIdHint')" /></label>
+                  <label class="ainput number"><input id="cf-tgid" v-model.number="form.telegramId" type="number" min="0" class="ltr" placeholder="0" /></label>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="col-6">
-            <div class="field">
-              <label for="cf-reset">{{ t('client.resetCycle') }}</label>
-              <select id="cf-reset" v-model="form.resetCycle">
-                <option value="none">{{ t('reset.none') }}</option>
-                <option value="daily">{{ t('reset.daily') }}</option>
-                <option value="weekly">{{ t('reset.weekly') }}</option>
-                <option value="monthly">{{ t('reset.monthly') }}</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- A switch under its own label, the way the classic panel puts "Start After
-               First Use" in the row rather than as a stray tickbox below it. -->
-          <div class="col-6">
-            <div class="field">
-              <label>
-                {{ t('client.delayedStart') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.startOnFirstUseHint')" />
-              </label>
-              <Toggle v-model="form.startOnFirstUse" :label="t('client.startOnFirstUse')" />
-            </div>
-          </div>
-
-          <div v-if="form.startOnFirstUse" class="col-6">
-            <div class="field">
-              <label for="cf-duration">{{ t('client.durationDays') }}</label>
-              <div class="unit-field">
-                <input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" />
-                <span class="unit">{{ t('settings.days') }}</span>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-note">{{ t('client.note') }}</label>
+                  <label class="ainput block"><input id="cf-note" v-model="form.note" maxlength="256" :placeholder="t('client.notePlaceholder')" /></label>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-group">{{ t('client.group') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.groupHint')" /></label>
+                  <label class="ainput block"><input id="cf-group" v-model="form.group" list="cf-groups" :placeholder="t('client.groupPlaceholder')" /></label>
+                  <datalist id="cf-groups"><option v-for="g in groupNames" :key="g" :value="g" /></datalist>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div class="row">
-          <div class="col-12">
-            <div class="field">
-              <label for="cf-note">{{ t('client.note') }}</label>
-              <input id="cf-note" v-model="form.note" :placeholder="t('client.notePlaceholder')" />
+            <!-- Their Attached inbounds: Select all / Clear all above a
+                 multiple select whose chosen items are removable tags. -->
+            <div class="aform-item">
+              <label class="aform-label required">{{ t('client.chooseServers') }}</label>
+              <div class="bulk">
+                <button type="button" class="abtn small" :disabled="allChosen" @click="chooseAll">{{ t('client.selectAll') }}</button>
+                <button type="button" class="abtn small" :disabled="!form.interfaceIds.length" @click="chooseNone">{{ t('client.clearAll') }}</button>
+              </div>
+              <MultiSelect v-model="form.interfaceIds" :options="serverOptions" :placeholder="t('client.selectServers')" :invalid="!!fieldError.servers" />
+              <p v-if="fieldError.servers" class="field-error">{{ fieldError.servers }}</p>
+              <p v-else-if="poolLeft !== null" class="hint">{{ t('interface.addressesLeft') }}: <span class="ltr">{{ poolLeft.toLocaleString() }}</span></p>
             </div>
-          </div>
 
-          <div class="col-12">
-            <div class="field">
-              <label for="cf-group">
-                {{ t('client.group') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.groupHint')" />
-              </label>
-              <input
-                id="cf-group"
-                v-model="form.group"
-                list="cf-groups"
-                :placeholder="t('client.groupPlaceholder')"
-              />
-              <datalist id="cf-groups">
-                <option v-for="g in groupNames" :key="g" :value="g" />
-              </datalist>
+            <div class="aform-item enabled-line">
+              <Toggle v-model="form.enabled" :label="t('client.enabled')" />
+              <span class="enabled-text">{{ t('client.enabled') }}</span>
             </div>
+            <p v-if="editing" class="hint foot-hint">{{ t('client.expiryResetHint') }}</p>
           </div>
 
-          <div class="col-12">
-            <div class="field">
-              <label for="cf-tgid">
-                {{ t('client.telegramId') }}
-                <Icon name="info" :size="12" class="help" :title="t('client.telegramIdHint')" />
-              </label>
-              <input id="cf-tgid" v-model.number="form.telegramId" type="number" min="0" class="ltr" placeholder="0" />
-            </div>
+          <!-- ══ Credentials ══ -->
+          <div v-show="tab === 'credentials'">
+            <template v-if="hasOpenVPN">
+              <div class="aform-item">
+                <label class="aform-label" for="cf-ovpn-user">{{ t('client.openvpnUsername') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.openvpnHint')" /></label>
+                <div class="acompact">
+                  <label class="ainput block"><input id="cf-ovpn-user" v-model="form.openvpnUsername" class="ltr" autocomplete="off" maxlength="48" :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" /></label>
+                  <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="form.openvpnUsername = randomHandle(12)"><AntIcon name="ReloadOutlined" /></button>
+                </div>
+              </div>
+              <div class="aform-item">
+                <label class="aform-label" for="cf-ovpn-pass">{{ t('client.openvpnPassword') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.openvpnPasswordHint')" /></label>
+                <div class="acompact">
+                  <label class="ainput block"><input id="cf-ovpn-pass" v-model="form.openvpnPassword" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" /></label>
+                  <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="form.openvpnPassword = randomSecret()"><AntIcon name="ReloadOutlined" /></button>
+                </div>
+              </div>
+            </template>
+            <div v-else class="aalert info"><AntIcon name="InfoCircleOutlined" /><span>{{ t('client.credsNoOpenVPN') }}</span></div>
+
+            <template v-if="!editing">
+              <div class="aform-item">
+                <label class="aform-label">{{ t('client.deviceNames') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.deviceNamesHint')" /></label>
+                <TagInput v-model="form.deviceNames" placeholder="device-1" />
+                <p class="hint">{{ t('client.deviceNamesHint') }}</p>
+              </div>
+            </template>
+            <template v-else>
+              <div class="aform-item">
+                <label class="aform-label">{{ t('client.devices') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.devicesOnPage')" /></label>
+                <div class="device-list">
+                  <span v-for="d in devices" :key="d.id" class="atag">{{ d.deviceName }}</span>
+                  <span v-if="!devices.length" class="hint">—</span>
+                </div>
+                <p class="hint">{{ t('client.devicesOnPage') }}</p>
+              </div>
+              <div class="aform-item">
+                <label class="aform-label">{{ t('client.subscriptionId') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.subscriptionIdHint')" /></label>
+                <div class="acompact">
+                  <label class="ainput block disabled"><input class="ltr" :value="sub?.token || (subEnabled ? '' : t('client.subDisabled'))" readonly /></label>
+                  <button type="button" class="abtn icon" :title="t('action.copy')" :aria-label="t('action.copy')" :disabled="!sub?.token" @click="copy(sub.token)"><AntIcon name="CopyOutlined" /></button>
+                  <button type="button" class="abtn icon" :title="t('client.rotateSub')" :aria-label="t('client.rotateSub')" :disabled="!subEnabled" @click="rotateSub"><AntIcon name="ReloadOutlined" /></button>
+                </div>
+                <p class="hint">{{ t('client.subscriptionIdHint') }}</p>
+              </div>
+            </template>
           </div>
-        </div>
 
-        <!-- the classic panel's Attached inbounds, control for control: two small
-             buttons in a row above, then a multiple select whose chosen items
-             are removable tags. Select all unions with what is already there
-             rather than replacing it, so an id outside the current options is
-             not silently dropped -- their SelectAllClearButtons is careful
-             about the same thing. -->
-        <div class="field">
-          <label for="cf-servers"><span class="req">*</span>{{ t('client.chooseServers') }}</label>
-
-          <div class="bulk">
-            <button type="button" class="btn sm" :disabled="allChosen" @click="chooseAll">
-              {{ t('client.selectAll') }}
-            </button>
-            <button
-              type="button"
-              class="btn sm"
-              :disabled="!form.interfaceIds.length"
-              @click="chooseNone"
-            >
-              {{ t('client.clearAll') }}
-            </button>
+          <!-- ══ Links ══ -->
+          <div v-show="tab === 'links'">
+            <p class="tab-lead">{{ t('client.linksLead') }}</p>
+            <div v-if="!editing" class="aalert info"><AntIcon name="InfoCircleOutlined" /><span>{{ t('client.linksAfterCreate') }}</span></div>
+            <template v-else>
+              <div class="aform-item">
+                <label class="aform-label">{{ t('client.subscriptionTitle') }}</label>
+                <div v-if="sub?.link" class="acompact">
+                  <label class="ainput block disabled"><input class="ltr" :value="sub.link" readonly /></label>
+                  <button type="button" class="abtn icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(sub.link)"><AntIcon name="CopyOutlined" /></button>
+                  <a class="abtn icon" :href="sub.link" target="_blank" rel="noopener noreferrer" :title="t('client.openSubPage')"><AntIcon name="LinkOutlined" /></a>
+                </div>
+                <p v-else class="hint">{{ t('client.subDisabled') }}</p>
+              </div>
+              <div class="aform-item">
+                <label class="aform-label">{{ t('client.deviceFiles') }}</label>
+                <p class="hint">{{ t('client.deviceFilesHint') }}</p>
+              </div>
+            </template>
           </div>
+        </form>
+      </div>
 
-          <MultiSelect
-            v-model="form.interfaceIds"
-            :options="serverOptions"
-            :placeholder="t('client.selectServers')"
-            :invalid="!form.interfaceIds.length"
-          />
-
-          <span v-if="!form.interfaceIds.length" class="field-error" role="alert">
-            {{ t('client.chooseAtLeastOne') }}
-          </span>
-          <span v-else-if="poolLeft !== null" class="hint">
-            {{ t('interface.addressesLeft') }}:
-            <span class="num ltr">{{ poolLeft.toLocaleString() }}</span>
-          </span>
-        </div>
-
-          <!-- OpenVPN logs in with a name and a password. Shown only when an
-               OpenVPN tunnel is picked; left empty they are generated. -->
-        <div v-if="hasOpenVPN" class="row creds">
-          <div class="col-12">
-            <div class="field">
-              <label for="cf-ovpn-user">{{ t('client.openvpnUsername') }}</label>
-              <input id="cf-ovpn-user" v-model="form.openvpnUsername" class="ltr" autocomplete="off" maxlength="48"
-                     :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" />
-            </div>
-          </div>
-          <div class="col-12">
-            <div class="field">
-              <label for="cf-ovpn-pass">{{ t('client.openvpnPassword') }}</label>
-              <input id="cf-ovpn-pass" v-model="form.openvpnPassword" class="ltr" type="text" autocomplete="off" maxlength="64"
-                     :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" />
-            </div>
-          </div>
-          <div class="col-24 creds-hint">
-            <span class="hint">{{ t('client.openvpnHint') }}</span>
-          </div>
-        </div>
-
-        <span v-if="editing" class="hint">{{ t('client.expiryResetHint') }}</span>
-      </form>
-
-      <div class="modal-foot">
-        <button type="button" class="btn ghost" @click="emit('close')">
-          {{ t('action.cancel') }}
-        </button>
-        <button type="submit" form="client-form" class="btn primary" :disabled="busy">
-          <span v-if="busy" class="spin"></span>
+      <div class="amodal-foot">
+        <button class="abtn" type="button" @click="emit('close')">{{ t('action.cancel') }}</button>
+        <button class="abtn primary" type="submit" form="client-form" :disabled="busy">
+          <AntIcon v-if="busy" name="LoadingOutlined" class="spin" />
           <template v-else>{{ editing ? t('action.save') : t('action.create') }}</template>
         </button>
       </div>
@@ -469,125 +497,46 @@ async function submit() {
 </template>
 
 <style scoped>
-/* The geometry is the classic panel's, read from its source rather than from a screenshot:
-   a 720px dialog, Ant Design's 24-column grid at gutter 16, a label above its
-   control with 8px between them, and 24px between rows. Ant Design's own
-   defaults supply the rest, because the classic panel overrides only colour tokens and
-   leaves sizing alone. */
+.amodal.w880 { width: min(880px, calc(100vw - 32px)); }
+.cf-body { max-height: 72vh; overflow-y: auto; overflow-x: hidden; }
+.cf-form { padding-top: 4px; }
 
-.card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.card-head svg {
-  color: var(--muted);
-}
-.presets {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-  padding-bottom: 16px;
-  margin-bottom: 24px;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-/* gutter={16}: 8px of padding on each column, pulled back off the row so the
-   first and last columns still line up with everything else in the dialog. */
-/* Their 24-column grid, as a grid rather than as flex percentages. Flex bases
-   of 50% and 25% resolve to fractions on an odd row width, round up, overflow
-   by less than a pixel, and drop the third column onto its own line -- which
-   is exactly what happened: 342 + 171 + 171 into 683. Grid tracks divide the
-   row exactly and cannot. */
-.row {
-  display: grid;
-  grid-template-columns: repeat(24, minmax(0, 1fr));
-  margin-inline: -8px;
-}
-.row > [class^='col-'] {
-  /* gutter={16}: 8px each side, pulled back off the row so the outer columns
-     still line up with everything else in the dialog. */
-  padding-inline: 8px;
-  /* Form.Item's own margin-bottom, which is the gap between rows as much as
-     between fields. */
-  margin-bottom: 24px;
-  min-width: 0;
-}
-.col-12 {
-  grid-column: span 12;
-}
-.col-6 {
-  grid-column: span 6;
-}
-.col-24 {
-  grid-column: 1 / -1;
-}
-.creds {
-  margin-top: 16px;
-}
-.creds-hint {
-  margin-top: -16px;
-}
-
-/* xs={24}: everything is full width on a phone, which is what their Col does
-   below the md breakpoint. */
+/* Their Row gutter={16}: 8px each side, pulled off the row so the outer
+   columns line up with everything else in the dialog. Grid tracks divide
+   the row exactly; flex percentages round up and drop the third column. */
+.arow16 { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); margin-inline: -8px; }
+.arow16 > [class^='acol'] { padding-inline: 8px; min-width: 0; }
+.acol12 { grid-column: span 12; }
+.acol6 { grid-column: span 6; }
 @media (max-width: 768px) {
-  .col-12,
-  .col-6 {
-    grid-column: 1 / -1;
-  }
+  .acol12, .acol6 { grid-column: 1 / -1; }
 }
 
-/* Their label: normal weight at body size, sitting 8px above its control,
-   rather than the small bold caps this panel uses elsewhere. */
-.field > label {
-  font-size: var(--t-base);
-  font-weight: 400;
-  color: var(--ink);
-  margin-bottom: 2px;
-}
-.field {
-  gap: 6px;
-}
+.aform-label .ahelp { margin-inline-start: 4px; color: var(--faint); cursor: help; vertical-align: -1px; font-size: 14px; }
+.aform-label .ahelp:hover { color: var(--ink-2); }
+.aform-label.required::before { content: '*'; margin-inline-end: 4px; color: var(--bad); }
 
-/* The question mark beside a label, which is where their tooltips live. It
-   replaced two paragraphs that made the dialog a screen taller. */
-.help {
-  color: var(--faint);
-  cursor: help;
-  vertical-align: -1px;
-}
-.help:hover {
-  color: var(--ink-2);
-}
+.ainput.invalid, .ainput.invalid:hover { border-color: var(--bad); }
+.ainput-suffix { margin-inline-start: 4px; color: var(--faint); font-size: 14px; white-space: nowrap; }
+.acompact .aselect.unit { flex: 0 0 auto; width: auto; min-width: 84px; }
+.acompact .abtn.icon { width: 32px; padding: 0; flex: none; }
+.abtn.icon { display: inline-flex; align-items: center; justify-content: center; height: 32px; }
 
-/* Select all / Clear all sit directly above the control they act on. */
-.bulk {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.bulk-count {
-  margin-inline-start: auto;
-  font-size: var(--t-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
+.switch-line { display: flex; align-items: center; height: 32px; }
+.enabled-line { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.enabled-text { font-size: 14px; color: var(--ink); }
 
-.cf-grid .unit-field,
-.cf-grid .unit-field input,
-.unit-field {
-  min-width: 0;
-}
-.unit-field input {
-  min-width: 0;
-}
-.unit-select {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 72px;
-  padding-inline: 8px;
-}
+.bulk { display: flex; gap: 8px; margin-bottom: 8px; }
+.presets { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.presets-label { font-size: 12px; color: var(--faint); }
+.presets .anticon { margin-inline-start: 3px; font-size: 12px; }
+
+.hint { margin: 4px 0 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
+.foot-hint { margin-top: 0; }
+.field-error { margin: 4px 0 0; font-size: 12px; color: var(--bad); }
+.tab-lead { margin: 0 0 16px; font-size: 14px; color: var(--muted); }
+.device-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+.aalert { margin-bottom: 24px; }
+.anticon.spin { animation: aspin 1s linear infinite; }
+@keyframes aspin { to { transform: rotate(360deg); } }
 </style>
