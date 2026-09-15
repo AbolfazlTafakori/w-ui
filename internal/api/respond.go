@@ -68,9 +68,23 @@ func fail(w http.ResponseWriter, log *slog.Logger, err error) {
 }
 
 func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeWith(w, r, dst, true)
+}
+
+// decodeLenient reads a body and lets unknown fields pass. For what one
+// panel sends another: a panel updated first must still be able to talk to
+// a node that has not been, and a field the node does not know yet is
+// nothing it can act on anyway.
+func decodeLenient(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeWith(w, r, dst, false)
+}
+
+func decodeWith(w http.ResponseWriter, r *http.Request, dst any, strict bool) bool {
 	defer r.Body.Close()
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
+	if strict {
+		dec.DisallowUnknownFields()
+	}
 
 	if err := dec.Decode(dst); err != nil {
 		// Go's own wording here names its decoder, not anything the caller did.

@@ -151,7 +151,7 @@ func New(o Options) *Server {
 		balancers: service.NewBalancers(o.DB, o.Logger),
 		providers: service.NewProviders(o.DB, o.Outbounds, o.Logger),
 		pool:      o.Pool,
-		nodeSync:  service.NewNodeSync(o.DB, o.Logger),
+		nodeSync:  newNodeSync(o),
 		// Falls back to the first node, which is this one on every install that
 		// has never added a second.
 		localNodeID: maxUint(o.LocalNodeID, 1),
@@ -272,4 +272,18 @@ func maxUint(v, floor uint) uint {
 		return floor
 	}
 	return v
+}
+
+// newNodeSync builds the node side with its way to the data plane: a hold
+// the managing panel decides has to end a session here, which is the
+// reconciler's to do.
+func newNodeSync(o Options) *service.NodeSync {
+	ns := service.NewNodeSync(o.DB, o.Logger)
+	if o.Reconciler != nil {
+		ns.OnHold = o.Reconciler.Hold
+	}
+	if o.Interfaces != nil && o.Interfaces.Teardown != nil {
+		ns.OnRemoveInterface = o.Interfaces.Teardown
+	}
+	return ns
 }

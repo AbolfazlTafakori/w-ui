@@ -470,6 +470,14 @@ func run() error {
 			rec.AddNodeUsage(u.OriginID, u.Bytes, u.Up, u.Down)
 		}
 	}, log)
+	// The connections limit spans every server: what is live on each node
+	// comes back here every few seconds, the reconciler counts it with what
+	// this kernel sees, and a device it holds off on a node is told to that
+	// node at once and again with every push.
+	syncer.Sessions = rec.SetRemoteSessions
+	syncer.Holds = rec.Holds
+	rec.OnHold = syncer.PushHold
+	service.ConnectionsNow = rec.ConnectionsNow
 	syncer.Start(ctx)
 
 	// Re-read on every check rather than captured here, so changing either on

@@ -267,7 +267,14 @@ func (s *TC) currentClasses(ctx context.Context, device string) (map[uint16]uint
 		Rate   any    `json:"rate"`
 	}
 	if err := json.Unmarshal([]byte(out), &raw); err != nil {
-		return nil, fmt.Errorf("shaper: reading classes on %s: %w", device, err)
+		// An iproute2 old enough not to speak JSON for classes -- Debian
+		// 12's 6.1 among them -- prints the plain listing despite -j. Read
+		// that instead of leaving the device unshaped forever.
+		have, ok := parseClassText(out)
+		if !ok {
+			return nil, fmt.Errorf("shaper: reading classes on %s: %w", device, err)
+		}
+		return have, nil
 	}
 
 	have := make(map[uint16]uint64, len(raw))

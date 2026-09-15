@@ -97,6 +97,12 @@ Each device the customer adds gets its own account on every tunnel it is allowed
 
 Bulk actions (attach existing customers to a tunnel, move a group) work across servers the same way.
 
+### Connections at once, across servers
+
+The plan's **connections at once** is the customer's, not a server's. Every three seconds the panel asks each node which credentials are live on it (a few bytes per session, not the whole state), adds that to what its own kernel sees, and counts the customer's connections across everything — a WireGuard file on this server and an OpenVPN login on the node are two. When more are connected than the plan allows, the newest is held off for two minutes: on this server directly; on a node, the panel tells the node at once (`/api/node/hold`) and again with every push, and the node ends the session and keeps the peer off until then. The panel's log says `connection limit reached; device held off … on="node 2"`, the node's says `device held off by the panel`.
+
+If a node cannot be reached, its last report is believed for 30 seconds and then not counted — a customer's device on an unreachable node cannot be held through it either. On the node's side, once it has not heard from its panel for 45 seconds it holds customers to the limit on its own, with only what it can see, so a network blip between the servers is not a way past the limit. Both need this release or newer.
+
 ## Certificate check
 
 The token lets this panel read every customer's keys on that node, so *who answers* at the address matters. Three modes:
@@ -127,13 +133,15 @@ If the host caps server B's monthly traffic, set the cap here and the day of the
 
 ## Updating a node
 
+Update nodes when you update the panel: a node older than its panel still syncs (fields it does not know are ignored), but the connections limit across servers and the withdrawal of deleted tunnels need both sides on the same release.
+
 **Nodes** → the node's row → **Update** (shown when a newer release exists). The panel *asks* the node to update itself — you confirm **Install and restart**; the node fetches the release from GitHub and checks the signature with the key built into its own binary. Nothing travels from this panel, so a compromised panel cannot push code onto nodes. Or, on server B: `w-ui update`.
 
 ## Removing a node
 
 **Nodes** → remove. Nothing on server B changes: it keeps running its tunnels and its customers keep working until you delete them on the node's own panel. Its token stays valid until you revoke it there (Settings → Authentication → API tokens).
 
-To delete the node's tunnels from here first, delete them under **Interfaces** — that removes them on the node on the next round.
+To delete the node's tunnels from here first, delete them under **Interfaces** — each round names the tunnels the node should still have, so a deleted one is taken down on the node, device and all, within a round.
 
 ## When a node goes quiet
 

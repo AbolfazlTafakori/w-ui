@@ -59,10 +59,14 @@ type NodeInterface struct {
 // a customer who has spent their allowance stop working on every node at once
 // rather than only on the one that happened to count the last byte.
 type NodeClient struct {
-	OriginID       uint          `json:"originId"`
-	Enabled        bool          `json:"enabled"`
-	RateBitsPerSec uint64        `json:"rateBitsPerSec"`
-	Accounts       []NodeAccount `json:"accounts"`
+	OriginID       uint   `json:"originId"`
+	Enabled        bool   `json:"enabled"`
+	RateBitsPerSec uint64 `json:"rateBitsPerSec"`
+	// DeviceLimit is how many connections the plan allows at once. The panel
+	// holds the customer to it across every server; the node keeps it only
+	// to fall back on its own view while the panel is out of touch.
+	DeviceLimit int           `json:"deviceLimit"`
+	Accounts    []NodeAccount `json:"accounts"`
 }
 
 // NodeAccount is one device's credentials on this tunnel.
@@ -76,6 +80,29 @@ type NodeAccount struct {
 	PresharedKey string `json:"presharedKey,omitempty"`
 	Username     string `json:"username,omitempty"`
 	Secret       string `json:"secret,omitempty"`
+	// HeldUntil, when set, is a device the panel has decided is over its
+	// plan's connections at once: the node keeps it off until then. Carried
+	// in every push as well as by the immediate call, so a node that missed
+	// the call still learns of it.
+	HeldUntil *time.Time `json:"heldUntil,omitempty"`
+}
+
+// NodeSession is one credential live on a node, as the node reports it to
+// the panel that owns the customer -- a few bytes every few seconds, which
+// is what lets the panel count a customer's connections across servers.
+type NodeSession struct {
+	OriginID    uint `json:"originId"`
+	Connections int  `json:"connections"`
+	// AgeSeconds is how long the session has been live, as an age rather
+	// than a time so the two machines' clocks need not agree.
+	AgeSeconds int      `json:"ageSeconds"`
+	Addrs      []string `json:"addrs,omitempty"`
+}
+
+// NodeHold is one device the panel wants held off on a node.
+type NodeHold struct {
+	OriginID uint      `json:"originId"`
+	Until    time.Time `json:"until"`
 }
 
 // NodeUsage is what one customer spent on this node since it was last asked.
@@ -95,6 +122,15 @@ type NodeUsage struct {
 type NodeSync struct {
 	db  *gorm.DB
 	log *slog.Logger
+
+	// OnHold is how a hold the panel decided reaches this server's data
+	// plane: the account's local id and until when. Set by the panel; nil
+	// on a CLI.
+	OnHold func(ctx context.Context, accountID uint, until time.Time)
+
+	// OnRemoveInterface takes a withdrawn tunnel's device down. Set by the
+	// panel to the same teardown its own deletions use; nil on a CLI.
+	OnRemoveInterface func(ctx context.Context, iface *model.Interface)
 }
 
 func NewNodeSync(db *gorm.DB, log *slog.Logger) *NodeSync {
@@ -191,7 +227,12 @@ func (s *NodeSync) upsertClients(tx *gorm.DB, iface *model.Interface, want []Nod
 		// plan decides. Enabled is the decision arriving.
 		c.QuotaBytes = 0
 		c.ExpiresAt = nil
-		c.DeviceLimit = len(wc.Accounts)
+		c.DeviceLimit = wc.DeviceLimit
+		if c.DeviceLimit <= 0 {
+			// A panel older than this field sends none; its own count is
+			// then the only one, and the fallback must not hold anybody.
+			c.DeviceLimit = len(wc.Accounts)
+		}
 		if wc.Enabled {
 			c.Status = model.StatusActive
 		} else {
@@ -208,15 +249,26 @@ func (s *NodeSync) upsertClients(tx *gorm.DB, iface *model.Interface, want []Nod
 	// Anything the panel stopped sending is gone: a customer deleted centrally
 	// must stop working here, and leaving the peer behind would be exactly the
 	// free service this is meant to prevent.
+	//
+	// Only from this tunnel: the push is per tunnel, and a customer on the
+	// node's other tunnel is simply not in this one. Their row goes when
+	// nothing on any tunnel here is left for it.
 	for _, c := range existing {
 		if seen[c.OriginID] {
 			continue
 		}
-		if err := tx.Where("client_id = ?", c.ID).Delete(&model.Account{}).Error; err != nil {
+		if err := tx.Where("client_id = ? AND interface_id = ?", c.ID, iface.ID).
+			Delete(&model.Account{}).Error; err != nil {
 			return fmt.Errorf("remove withdrawn accounts: %w", err)
 		}
-		if err := tx.Delete(&model.Client{}, c.ID).Error; err != nil {
-			return fmt.Errorf("remove withdrawn client: %w", err)
+		var left int64
+		if err := tx.Model(&model.Account{}).Where("client_id = ?", c.ID).Count(&left).Error; err != nil {
+			return fmt.Errorf("count remaining accounts: %w", err)
+		}
+		if left == 0 {
+			if err := tx.Delete(&model.Client{}, c.ID).Error; err != nil {
+				return fmt.Errorf("remove withdrawn client: %w", err)
+			}
 		}
 	}
 	return nil
@@ -259,6 +311,9 @@ func (s *NodeSync) upsertAccounts(
 		a.Secret = wa.Secret
 		if err := tx.Save(a).Error; err != nil {
 			return fmt.Errorf("store managed account %d: %w", wa.OriginID, err)
+		}
+		if wa.HeldUntil != nil && s.OnHold != nil && time.Now().Before(*wa.HeldUntil) {
+			s.OnHold(context.Background(), a.ID, *wa.HeldUntil)
 		}
 	}
 
@@ -313,4 +368,74 @@ func (s *NodeSync) Drain(ctx context.Context) ([]NodeUsage, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// Hold applies what the panel decided: each named device, by its id on the
+// panel, is held off here until the time given.
+func (s *NodeSync) Hold(ctx context.Context, holds []NodeHold) (int, error) {
+	if len(holds) == 0 || s.OnHold == nil {
+		return 0, nil
+	}
+	origins := make([]uint, 0, len(holds))
+	until := make(map[uint]time.Time, len(holds))
+	for _, h := range holds {
+		if h.OriginID == 0 {
+			continue
+		}
+		origins = append(origins, h.OriginID)
+		until[h.OriginID] = h.Until
+	}
+	var accounts []model.Account
+	if err := s.db.WithContext(ctx).Where("origin_id IN ?", origins).Find(&accounts).Error; err != nil {
+		return 0, fmt.Errorf("service: find held accounts: %w", err)
+	}
+	n := 0
+	for _, a := range accounts {
+		s.OnHold(ctx, a.ID, until[a.OriginID])
+		n++
+	}
+	return n, nil
+}
+
+// Prune removes the managed tunnels the panel no longer sends: a tunnel
+// deleted centrally must stop here too, device and all, or it keeps serving
+// whoever still holds a file for it. keep lists the origin ids the panel
+// still has on this node.
+func (s *NodeSync) Prune(ctx context.Context, nodeID uint, keep []uint) (int, error) {
+	var managed []model.Interface
+	if err := s.db.WithContext(ctx).Where("node_id = ? AND managed = ?", nodeID, true).
+		Find(&managed).Error; err != nil {
+		return 0, fmt.Errorf("service: read managed interfaces: %w", err)
+	}
+	stay := make(map[uint]bool, len(keep))
+	for _, id := range keep {
+		stay[id] = true
+	}
+	removed := 0
+	for i := range managed {
+		iface := &managed[i]
+		if stay[iface.OriginID] {
+			continue
+		}
+		if s.OnRemoveInterface != nil {
+			s.OnRemoveInterface(ctx, iface)
+		}
+		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("interface_id = ?", iface.ID).Delete(&model.Account{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Delete(&model.Interface{}, iface.ID).Error; err != nil {
+				return err
+			}
+			// A managed customer with nothing left here is gone from here.
+			return tx.Where("origin_id > 0 AND NOT EXISTS (SELECT 1 FROM accounts WHERE accounts.client_id = clients.id)").
+				Delete(&model.Client{}).Error
+		})
+		if err != nil {
+			return removed, fmt.Errorf("service: remove withdrawn tunnel %s: %w", iface.Name, err)
+		}
+		s.log.Info("withdrawn tunnel removed", "interface", iface.Name)
+		removed++
+	}
+	return removed, nil
 }

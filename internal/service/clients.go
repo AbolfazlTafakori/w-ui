@@ -709,10 +709,17 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	return &Page{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage}, nil
 }
 
-// fillOnlineNow counts, for each listed customer, the public addresses their
-// credentials are live from: one per device in use, or more when one file is
-// on two devices at once. A device whose handshake has gone stale is not
-// connected, whatever address it last had.
+// ConnectionsNow, when set, answers how many connections each of these
+// customers has right now across every server -- the same count the limit is
+// enforced on. Set by the panel from its reconciler; a CLI leaves it nil and
+// the list falls back to the addresses on record.
+var ConnectionsNow func(clientIDs []uint) map[uint]int
+
+// fillOnlineNow counts, for each listed customer, the connections in use:
+// one per device with traffic moving, or more when one file is on two
+// devices at once, on this server and on every node. Without the live
+// count it reads the public addresses on record; a device whose handshake
+// has gone stale is not connected, whatever address it last had.
 func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error {
 	if len(items) == 0 {
 		return nil
@@ -720,6 +727,13 @@ func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error
 	ids := make([]uint, len(items))
 	for i := range items {
 		ids[i] = items[i].ID
+	}
+	if ConnectionsNow != nil {
+		live := ConnectionsNow(ids)
+		for i := range items {
+			items[i].OnlineNow = live[items[i].ID]
+		}
+		return nil
 	}
 	cutoff := time.Now().UTC().Add(-onlineWithin())
 	var rows []struct {

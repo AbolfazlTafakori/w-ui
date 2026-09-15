@@ -176,3 +176,23 @@ func TestRateStringsFromEitherTCVersionAreUnderstood(t *testing.T) {
 		}
 	}
 }
+
+// An iproute2 that ignores -j on classes prints the plain listing; it is
+// read rather than reported as broken JSON.
+func TestPlainClassListingIsRead(t *testing.T) {
+	out := "class htb 1:ffff root prio 0 rate 10Gbit ceil 10Gbit burst 1680b cburst 1680b \n" +
+		"class htb 1:2a parent 1:ffff prio 0 rate 5Mbit ceil 5Mbit burst 1600b cburst 1600b \n"
+	have, ok := parseClassText(out)
+	if !ok {
+		t.Fatal("listing not recognised")
+	}
+	if have[0xffff] != 10_000_000_000 || have[0x2a] != 5_000_000 {
+		t.Fatalf("classes = %v", have)
+	}
+	if _, ok := parseClassText("Error: Cannot find device"); ok {
+		t.Fatal("an error was read as a listing")
+	}
+	if _, ok := parseClassText(""); !ok {
+		t.Fatal("an empty listing is a device with no classes")
+	}
+}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 func stat(id uint, bytes uint64, ep string) backend.Stat {
@@ -129,5 +130,134 @@ func TestLimitSpansProtocols(t *testing.T) {
 	got := c.enforce(client, accs, t0.Add(4*time.Second))
 	if len(got) != 1 || got[0].Account.ID != 11 {
 		t.Fatalf("expected the OpenVPN laptop held off while the WireGuard phone stays, got %+v", got)
+	}
+}
+
+// The limit spans servers: a device live on a node is one of the customer's
+// connections, and when it is the newer one it is the one held -- there.
+func TestLimitSpansNodes(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{
+		{ID: 10, ClientID: 1, NodeID: 1, InterfaceID: 1, DeviceName: "phone-here"},
+		{ID: 11, ClientID: 1, NodeID: 5, InterfaceID: 9, DeviceName: "laptop-on-node"},
+	}
+	c.remember(accs, 1)
+
+	// The phone is live on this server.
+	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
+	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
+	// The node reports the laptop just came on.
+	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1, AgeSeconds: 0}}, t0.Add(3*time.Second))
+
+	got := c.enforce(client, accs, t0.Add(3*time.Second))
+	if len(got) != 1 || got[0].Account.ID != 11 || got[0].Node != 5 {
+		t.Fatalf("expected the laptop held off on node 5, got %+v", got)
+	}
+	// Its hold is what the syncer carries with the next push.
+	if _, ok := c.holds(t0.Add(4 * time.Second))[11]; !ok {
+		t.Fatal("the hold is not listed for the push")
+	}
+	// The list agrees: one connection, the held one not counted.
+	if n := c.connectionsNow([]uint{1}, t0.Add(4*time.Second))[1]; n != 1 {
+		t.Fatalf("connections now = %d, want 1", n)
+	}
+}
+
+// The other way round: the laptop on the node was there first, so the
+// phone arriving here is the one held, on this server.
+func TestTheOlderConnectionOnANodeIsKept(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{
+		{ID: 10, NodeID: 1, InterfaceID: 1},
+		{ID: 11, NodeID: 5, InterfaceID: 9},
+	}
+	c.remember(accs, 1)
+	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1, AgeSeconds: 60}}, t0)
+	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
+	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
+	got := c.enforce(client, accs, t0.Add(2*time.Second))
+	if len(got) != 1 || got[0].Account.ID != 10 || got[0].Node != 0 {
+		t.Fatalf("expected the phone held off here, got %+v", got)
+	}
+}
+
+// A node that has gone quiet is not believed for long: its last report
+// stops counting, rather than holding a customer to a stale picture.
+func TestAStaleNodeReportIsNotCounted(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{{ID: 10, NodeID: 1}, {ID: 11, NodeID: 5}}
+	c.remember(accs, 1)
+	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1}}, t0)
+	later := t0.Add(remoteTTL + 5*time.Second)
+	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, later)
+	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, later.Add(2*time.Second))
+	if got := c.enforce(client, accs, later.Add(2*time.Second)); got != nil {
+		t.Fatalf("a stale report held a device off: %+v", got)
+	}
+}
+
+// What a node reports upward: its managed credentials that are live, by
+// their id on the panel, with how long they have been on.
+func TestANodeReportsItsLiveManagedSessions(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	c.remember([]model.Account{
+		{ID: 1, NodeID: 1, OriginID: 40},
+		{ID: 2, NodeID: 1, OriginID: 41},
+		{ID: 3, NodeID: 1, OriginID: 0}, // this server's own customer: not the panel's business
+	}, 1)
+	all := func(b uint64) []backend.Stat {
+		return []backend.Stat{stat(1, b, "1.1.1.1"), stat(2, b, "2.2.2.2"), stat(3, b, "3.3.3.3")}
+	}
+	c.observe(all(100), t0)
+	c.observe([]backend.Stat{stat(1, 200, "1.1.1.1"), stat(2, 100, "2.2.2.2"), stat(3, 200, "3.3.3.3")}, t0.Add(2*time.Second))
+	got := c.sessions(t0.Add(12 * time.Second))
+	if len(got) != 1 || got[0].OriginID != 40 || got[0].Connections != 1 || got[0].AgeSeconds != 10 {
+		t.Fatalf("sessions = %+v", got)
+	}
+	if len(got[0].Addrs) != 1 || got[0].Addrs[0] != "1.1.1.1" {
+		t.Fatalf("addrs = %v", got[0].Addrs)
+	}
+}
+
+// A hold the panel decided lands on the node like one of its own.
+func TestAHoldFromThePanelIsHonoured(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	c.hold(7, t0.Add(holdFor))
+	if !c.heldOff(7, t0.Add(time.Second)) {
+		t.Fatal("not held")
+	}
+	if c.heldOff(7, t0.Add(holdFor+time.Second)) {
+		t.Fatal("still held after it ended")
+	}
+	// A shorter hold does not cut a longer one short.
+	c.hold(8, t0.Add(holdFor))
+	c.hold(8, t0.Add(10*time.Second))
+	if !c.heldOff(8, t0.Add(30*time.Second)) {
+		t.Fatal("a later, shorter hold cut the first one short")
+	}
+}
+
+// The fallback: a node decides for itself only once its panel has been
+// quiet for a while.
+func TestANodeFallsBackOnlyWhenThePanelIsQuiet(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	if !c.panelSilent(t0) {
+		t.Fatal("never heard from a panel should count as silent")
+	}
+	c.panelSpoke(t0)
+	if c.panelSilent(t0.Add(10 * time.Second)) {
+		t.Fatal("silent ten seconds after the panel spoke")
+	}
+	if !c.panelSilent(t0.Add(panelSilence + time.Second)) {
+		t.Fatal("not silent after the panel went quiet")
 	}
 }

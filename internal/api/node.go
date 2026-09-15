@@ -22,8 +22,11 @@ import (
 // arrives twice do nothing the second time.
 func (s *Server) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	var state service.NodeState
-	if !decode(w, r, &state) {
+	if !decodeLenient(w, r, &state) {
 		return
+	}
+	if s.rec != nil {
+		s.rec.PanelSpoke()
 	}
 	if err := s.nodeSync.Apply(r.Context(), s.localNodeID, state); err != nil {
 		fail(w, s.log, err)
@@ -48,6 +51,25 @@ func (s *Server) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 // these to a total that spans every node, and a figure returned twice would
 // bill a customer for traffic they never sent.
 func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
+	if s.rec != nil {
+		s.rec.PanelSpoke()
+	}
+	// The same call carries which tunnels the panel still has here, so
+	// one it deleted is taken down on this side. A panel older than this
+	// sends no body and nothing is pruned.
+	var in struct {
+		Keep *[]uint `json:"keep"`
+	}
+	if r.ContentLength != 0 {
+		if !decodeLenient(w, r, &in) {
+			return
+		}
+	}
+	if in.Keep != nil {
+		if _, err := s.nodeSync.Prune(r.Context(), s.localNodeID, *in.Keep); err != nil {
+			s.log.Warn("could not remove withdrawn tunnels", "error", err)
+		}
+	}
 	usage, err := s.nodeSync.Drain(r.Context())
 	if err != nil {
 		fail(w, s.log, err)
@@ -57,4 +79,33 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 		usage = []service.NodeUsage{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"usage": usage})
+}
+
+// handleNodeSessions reports what is live on this server, for the panel that
+// manages it to count a customer's connections across every server.
+func (s *Server) handleNodeSessions(w http.ResponseWriter, r *http.Request) {
+	sessions := []service.NodeSession{}
+	if s.rec != nil {
+		if got := s.rec.Sessions(); got != nil {
+			sessions = got
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+}
+
+// handleNodeHold takes the panel's decision that a device is over its plan's
+// connections at once, and holds it off here until the time given.
+func (s *Server) handleNodeHold(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Holds []service.NodeHold `json:"holds"`
+	}
+	if !decodeLenient(w, r, &in) {
+		return
+	}
+	n, err := s.nodeSync.Hold(r.Context(), in.Holds)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"held": n})
 }

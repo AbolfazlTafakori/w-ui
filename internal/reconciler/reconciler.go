@@ -108,6 +108,9 @@ type Reconciler struct {
 
 	// conc holds customers to the connections their plan allows.
 	conc *concurrency
+	// OnHold carries a hold decided here to the node serving the device.
+	// Set by the panel's node syncer; nil when there are no nodes.
+	OnHold func(nodeID uint, hold service.NodeHold)
 
 	mu    sync.RWMutex
 	stats Stats
@@ -627,6 +630,16 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	for _, iface := range interfaces {
 		local[iface.ID] = true
 	}
+	//
+	// They are still counted: the connections limit is the customer's, and
+	// a device on another node is one of their connections. So every
+	// account is grouped by customer for the limit, and only the local ones
+	// go on to the desired set.
+	r.conc.remember(accounts, r.localNodeID)
+	allByClient := make(map[uint][]model.Account, len(clients))
+	for _, a := range accounts {
+		allByClient[a.ClientID] = append(allByClient[a.ClientID], a)
+	}
 	kept := accounts[:0]
 	for _, a := range accounts {
 		if local[a.InterfaceID] {
@@ -640,6 +653,10 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		byClient[a.ClientID] = append(byClient[a.ClientID], a)
 	}
 	now := time.Now().UTC()
+	// On a node, the panel that owns a customer decides for them, seeing
+	// every server at once; this server decides only for its own customers,
+	// and for managed ones only while that panel has gone quiet.
+	panelSilent := r.conc.panelSilent(now)
 
 	d := &desired{
 		rules:      make([]enforce.Rule, 0, len(clients)),
@@ -653,6 +670,11 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 
 	for _, c := range clients {
 		accs := byClient[c.ID]
+		// A customer with every device on other nodes still has a limit to
+		// be held to, so the limit runs before the local check below.
+		if c.Status.Serviceable() && (c.OriginID == 0 || panelSilent) {
+			r.holdOver(ctx, &c, allByClient[c.ID], now)
+		}
 		if len(accs) == 0 {
 			continue
 		}
@@ -692,19 +714,9 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		if !serviceable {
 			continue
 		}
-		// More connected at once than the plan allows: the newest are held
-		// off for a while. Left out of the desired set, a WireGuard peer is
-		// removed by Sync; an OpenVPN session is ended here.
-		for _, h := range r.conc.enforce(&c, accs, now) {
-			r.log.Info("connection limit reached; device held off",
-				"client", c.Name, "device", h.Account.DeviceName,
-				"limit", c.DeviceLimit, "until", h.Until.Format(time.Kitchen))
-			if b, ok := r.pool.Get(h.Account.InterfaceID); ok {
-				if err := b.Kick(ctx, h.Account.ID); err != nil && !errors.Is(err, backend.ErrNotSupported) {
-					r.log.Warn("could not end a held-off session", "device", h.Account.DeviceName, "error", err)
-				}
-			}
-		}
+		// A device held off -- by this server or by the panel that owns the
+		// customer -- is left out of the desired set: a WireGuard peer is
+		// removed by Sync, an OpenVPN session was ended when the hold began.
 		for _, a := range accs {
 			if !a.Enabled || r.conc.heldOff(a.ID, now) {
 				continue
@@ -811,3 +823,77 @@ func (r *Reconciler) overAllowance(ctx context.Context) bool {
 // liveWindow is how recent a handshake has to be for a session to count as
 // connected -- the panel's online window.
 func liveWindow() time.Duration { return time.Duration(service.OnlineWithin.Load()) * time.Second }
+
+// holdOver holds a customer to the connections their plan allows, across
+// every server they reach. What is over the limit is held off: a session on
+// this server is ended here, one on a node is carried to it.
+func (r *Reconciler) holdOver(ctx context.Context, c *model.Client, accs []model.Account, now time.Time) {
+	for _, h := range r.conc.enforce(c, accs, now) {
+		where := "here"
+		if h.Node != 0 {
+			where = fmt.Sprintf("node %d", h.Node)
+		}
+		r.log.Info("connection limit reached; device held off",
+			"client", c.Name, "device", h.Account.DeviceName, "on", where,
+			"limit", c.DeviceLimit, "until", h.Until.Format(time.Kitchen))
+		if h.Node != 0 {
+			if r.OnHold != nil {
+				r.OnHold(h.Node, service.NodeHold{OriginID: h.Account.ID, Until: h.Until})
+			}
+			continue
+		}
+		r.kick(ctx, h.Account.InterfaceID, h.Account.ID, h.Account.DeviceName)
+	}
+}
+
+// kick ends a session on this server, for the protocols that have one.
+func (r *Reconciler) kick(ctx context.Context, ifaceID, accountID uint, device string) {
+	if r.pool == nil {
+		return
+	}
+	if b, ok := r.pool.Get(ifaceID); ok {
+		if err := b.Kick(ctx, accountID); err != nil && !errors.Is(err, backend.ErrNotSupported) {
+			r.log.Warn("could not end a held-off session", "device", device, "error", err)
+		}
+	}
+}
+
+// Hold applies a hold the panel that owns the customer decided: the account
+// is off until then. Its session is ended now; a WireGuard peer goes at the
+// next tick.
+func (r *Reconciler) Hold(ctx context.Context, accountID uint, until time.Time) {
+	r.conc.hold(accountID, until)
+	r.conc.panelSpoke(time.Now().UTC())
+	var a model.Account
+	if err := r.db.WithContext(ctx).First(&a, accountID).Error; err != nil {
+		return
+	}
+	r.log.Info("device held off by the panel", "device", a.DeviceName, "until", until.Format(time.Kitchen))
+	r.kick(ctx, a.InterfaceID, a.ID, a.DeviceName)
+}
+
+// Sessions is what this server reports to the panel that manages it: every
+// managed credential live here, by its id there.
+func (r *Reconciler) Sessions() []service.NodeSession {
+	now := time.Now().UTC()
+	r.conc.panelSpoke(now)
+	return r.conc.sessions(now)
+}
+
+// PanelSpoke notes that the managing panel is in touch, for the fallback.
+func (r *Reconciler) PanelSpoke() { r.conc.panelSpoke(time.Now().UTC()) }
+
+// SetRemoteSessions stores what one node just reported live on it.
+func (r *Reconciler) SetRemoteSessions(nodeID uint, sessions []service.NodeSession) {
+	r.conc.setRemote(nodeID, sessions, time.Now().UTC())
+}
+
+// Holds is every hold in force, by account id, for the syncer to carry to
+// the nodes with each push.
+func (r *Reconciler) Holds() map[uint]time.Time { return r.conc.holds(time.Now().UTC()) }
+
+// ConnectionsNow is how many connections each customer has right now,
+// across every server, for the list.
+func (r *Reconciler) ConnectionsNow(clientIDs []uint) map[uint]int {
+	return r.conc.connectionsNow(clientIDs, time.Now().UTC())
+}

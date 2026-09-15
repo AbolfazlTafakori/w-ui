@@ -187,6 +187,20 @@ func (s *Server) routes() []Route {
 				"to a total spanning every node, so a figure returned twice would bill " +
 				"a customer for traffic they never sent.",
 			handler: s.requireManagingPanel(s.handleNodeUsage)},
+		{Method: "POST", Path: "/api/node/sessions", Group: "Nodes", Auth: true,
+			Summary: "Report which managed credentials are live here right now.",
+			Note: "A few bytes per live session, asked every few seconds, so the " +
+				"panel can hold a customer to their connections at once across " +
+				"every server. Each entry names the account by its id on the panel, " +
+				"how many devices it is carrying, and how long it has been live.",
+			handler: s.requireManagingPanel(s.handleNodeSessions)},
+		{Method: "POST", Path: "/api/node/hold", Group: "Nodes", Auth: true,
+			Summary: "Hold devices off until a time, on the panel's decision.",
+			Body:    `{"holds":[{"originId":12,"until":"2026-01-01T12:00:00Z"}]}`,
+			Note: "The panel that owns a customer has counted more connections than " +
+				"their plan allows and named the newest. Its session here is ended " +
+				"and its peer kept off until then.",
+			handler: s.requireManagingPanel(s.handleNodeHold)},
 
 		// ── Interfaces ──
 		{Method: "GET", Path: "/api/interfaces", Group: "Interfaces", Auth: true,

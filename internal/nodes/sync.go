@@ -36,6 +36,12 @@ const (
 	// node does not hold the round open.
 	syncTimeout = 30 * time.Second
 
+	// sessionInterval is how often each node is asked what is live on it.
+	// Fast, because it decides whether a customer's second device is let
+	// on, and cheap, because the answer is a few bytes per live session
+	// rather than the whole state.
+	sessionInterval = 3 * time.Second
+
 	// syncInterval is how often the desired state is pushed.
 	//
 	// Slower than the local reconciler on purpose. This crosses the internet to
@@ -53,6 +59,12 @@ type Syncer struct {
 	// usage is where drained node counters are handed back to the caller, which
 	// folds them into the same per-customer total the local kernel feeds.
 	usage func([]service.NodeUsage)
+
+	// Sessions is where what a node reports live on it is handed back, for
+	// the connections limit. Holds answers which devices the panel has
+	// decided to hold off, carried in every push. Either may be nil.
+	Sessions func(nodeID uint, sessions []service.NodeSession)
+	Holds    func() map[uint]time.Time
 
 	mu sync.Mutex
 	// lastErr is the failure already reported per node, so an unreachable node
@@ -87,6 +99,67 @@ func (s *Syncer) Start(ctx context.Context) {
 			case <-t.C:
 				s.Round(ctx)
 			}
+		}
+	}()
+	go func() {
+		t := time.NewTicker(sessionInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.sessionsRound(ctx)
+			}
+		}
+	}()
+}
+
+// sessionsRound asks every node what is live on it. Nodes in parallel, as
+// in Round; a node that does not answer keeps its last report until it
+// goes stale on the reconciler's side.
+func (s *Syncer) sessionsRound(ctx context.Context) {
+	if s.Sessions == nil {
+		return
+	}
+	var remotes []model.Node
+	if err := s.db.WithContext(ctx).
+		Where("kind = ? AND enabled = ?", model.KindRemote, true).
+		Find(&remotes).Error; err != nil {
+		return
+	}
+	var wg sync.WaitGroup
+	for i := range remotes {
+		node := remotes[i]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var reply struct {
+				Sessions []service.NodeSession `json:"sessions"`
+			}
+			if err := s.post(ctx, node, "/api/node/sessions", nil, &reply); err != nil {
+				return // reported by the next Round, which fails the same way
+			}
+			s.Sessions(node.ID, reply.Sessions)
+		}()
+	}
+	wg.Wait()
+}
+
+// PushHold tells one node, now, to hold a device off. Called from the
+// reconciler's tick, so the call itself happens off that goroutine; the
+// next push carries the same hold again in case this one is lost.
+func (s *Syncer) PushHold(nodeID uint, hold service.NodeHold) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+		defer cancel()
+		var node model.Node
+		if err := s.db.WithContext(ctx).First(&node, nodeID).Error; err != nil {
+			return
+		}
+		body := map[string]any{"holds": []service.NodeHold{hold}}
+		if err := s.post(ctx, node, "/api/node/hold", body, nil); err != nil {
+			s.log.Warn("could not hold a device off on a node", "node", node.Name, "error", err)
 		}
 	}()
 }
@@ -127,19 +200,23 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 		return
 	}
 
+	keep := make([]uint, 0, len(states))
 	for _, state := range states {
 		if err := s.post(ctx, node, "/api/node/sync", state, nil); err != nil {
 			s.report(node, fmt.Errorf("pushing %s: %w", state.Interface.Name, err))
 			return
 		}
+		keep = append(keep, state.Interface.OriginID)
 	}
 
 	// Drained after the push, so a customer disabled in this round stops before
-	// their last bytes are counted rather than after.
+	// their last bytes are counted rather than after. The same call names
+	// the tunnels the node should still have, so one deleted here is taken
+	// down there.
 	var reply struct {
 		Usage []service.NodeUsage `json:"usage"`
 	}
-	if err := s.post(ctx, node, "/api/node/usage", nil, &reply); err != nil {
+	if err := s.post(ctx, node, "/api/node/usage", map[string]any{"keep": keep}, &reply); err != nil {
 		s.report(node, fmt.Errorf("reading its usage: %w", err))
 		return
 	}
@@ -207,6 +284,11 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 		}
 	}
 
+	var holds map[uint]time.Time
+	if s.Holds != nil {
+		holds = s.Holds()
+	}
+
 	out := make([]service.NodeState, 0, len(interfaces))
 	for _, iface := range interfaces {
 		state := service.NodeState{Interface: interfaceState(iface)}
@@ -216,7 +298,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 			if a.InterfaceID != iface.ID {
 				continue
 			}
-			grouped[a.ClientID] = append(grouped[a.ClientID], service.NodeAccount{
+			na := service.NodeAccount{
 				OriginID:     a.ID,
 				DeviceName:   a.DeviceName,
 				IP:           a.IP,
@@ -226,7 +308,12 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 				PresharedKey: a.PresharedKey,
 				Username:     a.Username,
 				Secret:       a.Secret,
-			})
+			}
+			if until, held := holds[a.ID]; held {
+				u := until
+				na.HeldUntil = &u
+			}
+			grouped[a.ClientID] = append(grouped[a.ClientID], na)
 		}
 
 		for clientID, accs := range grouped {
@@ -246,6 +333,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 				// month rolls over, instead of rebuilding every peer.
 				Enabled:        !spent && c.Status.Serviceable(),
 				RateBitsPerSec: c.RateBitsPerSec,
+				DeviceLimit:    c.DeviceLimit,
 				Accounts:       accs,
 			})
 		}

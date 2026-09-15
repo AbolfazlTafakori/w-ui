@@ -275,3 +275,38 @@ func parseRateString(s string) (uint64, bool) {
 	}
 	return uint64(n * float64(multiplier)), true
 }
+
+// parseClassText reads the plain "tc class show" listing, for an iproute2
+// that ignores -j on classes. One class per line:
+//
+//	class htb 1:ffff root prio 0 rate 10Gbit ceil 10Gbit burst 1680b cburst 1680b
+//
+// It reports false when nothing in the text looks like that listing, so a
+// real failure is still reported as one.
+func parseClassText(out string) (map[uint16]uint64, bool) {
+	have := map[uint16]uint64{}
+	seen := false
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || f[0] != "class" {
+			continue
+		}
+		seen = true
+		if f[1] != "htb" {
+			continue
+		}
+		minor, ok := parseMinor(f[2])
+		if !ok {
+			continue
+		}
+		for i := 3; i+1 < len(f); i++ {
+			if f[i] == "rate" {
+				if rate, ok := parseRateString(f[i+1]); ok {
+					have[minor] = rate
+				}
+				break
+			}
+		}
+	}
+	return have, seen || strings.TrimSpace(out) == ""
+}

@@ -53,6 +53,8 @@ In the client form switch on **On hold** and give a **Plan length** in days. Unt
 
 **Connections at once** (the device limit) is enforced, not just shown. Every two seconds the panel looks at which of the customer's credentials have traffic moving and where it comes from; when more are connected than the plan allows, the newest are **held off for two minutes** — a WireGuard peer is removed and comes back on its own when the hold ends, an OpenVPN session is ended. The device that was already connected stays. The log says `connection limit reached; device held off` with the client, the device and until when.
 
+The count spans every server: a device on a node is one of the customer's connections too, and one held off there is held through the node — see [Nodes](/panel/nodes#connections-at-once-across-servers).
+
 What counts: a credential with bytes moving in the last 75 seconds is one connection, whichever address it comes from — a phone walking from wifi onto mobile data changes address once and is still one person. One file used on two devices at the same time shows as an address that keeps flipping back and forth, and that counts as two. So a customer with ten files and a plan for one can use any of them, one after the other; using two together holds the second off.
 
 ## OpenVPN username and password
