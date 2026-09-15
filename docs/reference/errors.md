@@ -58,7 +58,8 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `choose at least one server for this customer` | No interface was ticked. | Tick the tunnel(s) the customer may use. |
 | `Not found: …` | An interface id that does not exist — usually a stale page after a deletion. | Reload; pick an existing tunnel. |
 | `one of those inbounds does not exist` / `choose at least one inbound` | The same, on bulk creation. | |
-| `device limit must be between 1 and 64` | | A number in that range. |
+| `device limit must be between 1 and 50` | Connections at once. | A number in that range. |
+| `… devices requested; at most … per customer` | Device files are capped at 64. | |
 | `expiry is in the past` | The expiry date has already passed. | Pick a future date, or leave it empty for no expiry. |
 | `unknown reset cycle "…"` | | `none`, `daily`, `weekly` or `monthly`. |
 | `the duration cannot be negative` | Start-on-first-use days below zero. | Zero or more. |
@@ -70,7 +71,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` | | Something like `roya` or `roya.k`. |
 | `the username "…" is already used on …` | Usernames are unique per OpenVPN tunnel. | Another name. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` | | |
-| `device limit reached` (400) | The customer has as many devices as their plan allows. | Raise the limit, or remove a device. |
+| `device limit reached` (400) | The customer already holds 64 device files, the most one can. | Remove a device. |
 | `address pool exhausted` (400) | The tunnel's subnet has no free address. | A larger subnet on the interface, or another interface. |
 | `no interfaces configured; create one before adding customers` (log) | A customer was created before any tunnel. | Create an interface first. |
 

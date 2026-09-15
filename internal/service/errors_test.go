@@ -70,7 +70,7 @@ func TestClientInputErrors(t *testing.T) {
 		{"no name", CreateInput{InterfaceIDs: []uint{1}}, wantErr{"name", "name is required"}},
 		{"no interface", CreateInput{Name: "x"}, wantErr{"interfaceId", "choose at least one server for this customer"}},
 		{"unknown interface", CreateInput{Name: "x", InterfaceIDs: []uint{99}}, wantErr{"", "not found: interface 99"}},
-		{"device limit", CreateInput{Name: "x", InterfaceIDs: []uint{1}, DeviceLimit: 65}, wantErr{"deviceLimit", "device limit must be between 1 and 64"}},
+		{"device limit", CreateInput{Name: "x", InterfaceIDs: []uint{1}, DeviceLimit: 65}, wantErr{"deviceLimit", "device limit must be between 1 and 50"}},
 		{"expiry in the past", CreateInput{Name: "x", InterfaceIDs: []uint{1}, ExpiresAt: &past}, wantErr{"expiresAt", "expiry is in the past"}},
 	}
 	for _, c := range cases {

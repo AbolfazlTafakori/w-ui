@@ -315,7 +315,7 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 		in.DeviceLimit = 1
 	}
 	if in.DeviceLimit > 50 {
-		return nil, invalidField("deviceLimit", "device limit must be between 1 and 64")
+		return nil, invalidField("deviceLimit", "device limit must be between 1 and 50")
 	}
 	switch in.ResetCycle {
 	case "":
@@ -339,12 +339,20 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 	if len(names) == 0 {
 		names = []string{"device-1"}
 	}
-	if len(names) > in.DeviceLimit {
-		return nil, fmt.Errorf("%w: %d devices requested but the limit is %d",
-			ErrInvalid, len(names), in.DeviceLimit)
+	// Files are not the limit; connections at once are, and the reconciler
+	// holds a customer to those. A single-user plan may well hold a file for
+	// every device its owner has, used one at a time.
+	if len(names) > maxDeviceFiles {
+		return nil, fmt.Errorf("%w: %d devices requested; at most %d per customer",
+			ErrInvalid, len(names), maxDeviceFiles)
 	}
 	return names, nil
 }
+
+// maxDeviceFiles caps the files one customer can hold. Connections at once
+// are the plan's limit and enforced live; this only keeps a runaway script
+// from filling a subnet under one name.
+const maxDeviceFiles = 64
 
 // AddDevice adds one device to an existing client.
 func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) ([]*model.Account, error) {
@@ -357,7 +365,7 @@ func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) ([]*mo
 	// per device, and counting rows here would refuse their second device on
 	// the grounds that they already have three.
 	devices := deviceNames(client.Accounts)
-	if len(devices) >= client.DeviceLimit {
+	if len(devices) >= maxDeviceFiles {
 		return nil, &FieldError{
 			Field: "deviceLimit",
 			// Deliberately not opened with the customer's name. Messages are
@@ -365,9 +373,8 @@ func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) ([]*mo
 			// "iPhone user" would be shown back as "IPhone user". The name is
 			// on the page this appears on regardless.
 			Err: fmt.Errorf(
-				"%w: this customer already has %d of %d devices (%s). Raise their "+
-					"device limit to issue another",
-				ErrDeviceLimit, len(devices), client.DeviceLimit, client.Name),
+				"%w: this customer already has %d devices (%s), which is the most one can hold",
+				ErrDeviceLimit, len(devices), client.Name),
 		}
 	}
 
@@ -839,14 +846,11 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		}
 	}
 	if in.DeviceLimit != nil {
-		// Devices, not accounts. A customer on three servers holds three
-		// accounts per device, and counting rows here refuses an operator
-		// raising the limit from two to three on the grounds that they already
-		// have six — which is the same mistake AddDevice used to make.
-		issued := len(deviceNames(client.Accounts))
-		if *in.DeviceLimit < issued {
-			return nil, fmt.Errorf("%w: limit %d is below the %d devices already issued",
-				ErrInvalid, *in.DeviceLimit, issued)
+		// Connections at once, not files: a customer keeps every file they
+		// hold when the limit is lowered, and simply cannot use as many of
+		// them together.
+		if *in.DeviceLimit < 1 || *in.DeviceLimit > 50 {
+			return nil, fmt.Errorf("%w: device limit must be between 1 and 50", ErrInvalid)
 		}
 		fields["device_limit"] = *in.DeviceLimit
 	}

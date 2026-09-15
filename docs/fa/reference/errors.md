@@ -58,7 +58,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `choose at least one server for this customer` | هیچ اینترفیسی تیک نخورده. | تانل‌(های) مجاز مشتری را تیک بزن. |
 | `Not found: …` | آی‌دی اینترفیسی که وجود ندارد — معمولاً صفحهٔ کهنه بعد از حذف. | رفرش کن؛ تانل موجود را انتخاب کن. |
 | `one of those inbounds does not exist` / `choose at least one inbound` | همان، در ساخت گروهی. |  |
-| `device limit must be between 1 and 64` |  | عددی در همان بازه. |
+| `device limit must be between 1 and 50` | اتصال هم‌زمان. | عددی در همان بازه. |
+| `… devices requested; at most … per customer` | سقف فایل دستگاه ۶۴ است. |  |
 | `expiry is in the past` | تاریخ انقضا گذشته است. | تاریخ آینده بده، یا خالی بگذار تا منقضی نشود. |
 | `unknown reset cycle "…"` |  | `none`، `daily`، `weekly` یا `monthly`. |
 | `the duration cannot be negative` | روزهای شروع-با-اولین-اتصال زیر صفر. | صفر یا بیشتر. |
@@ -70,7 +71,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` |  | چیزی مثل `roya` یا `roya.k`. |
 | `the username "…" is already used on …` | نام کاربری روی هر تانل OpenVPN یکتاست. | نام دیگری. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` |  |  |
-| `device limit reached` (400) | مشتری به سقف دستگاه پلنش رسیده. | سقف را بالا ببر، یا دستگاهی را حذف کن. |
+| `device limit reached` (400) | مشتری همین حالا ۶۴ فایل دستگاه دارد، بیشترین ممکن. | دستگاهی را حذف کن. |
 | `address pool exhausted` (400) | زیرشبکهٔ تانل آدرس آزاد ندارد. | زیرشبکهٔ بزرگ‌تر روی اینترفیس، یا اینترفیس دیگر. |
 | `no interfaces configured; create one before adding customers` (log) | مشتری قبل از هر تانلی ساخته شده. | اول یک اینترفیس بساز. |
 
