@@ -42,6 +42,8 @@ Settings → Subscription → **Template** picks one of twenty-one looks. **Prev
 | `mesh` | a slow multicolour mesh behind dark glass |
 | `retro` | synthwave: a striped sun and a grid running to the horizon |
 
+The page refreshes itself every few seconds while it is open: usage, remaining data, the bar and the rings, downloaded/uploaded, last online, and the dot in the header — **Online** while a device has a fresh handshake, **Idle** when the plan is active but nothing is connected, **Off** when the plan is not active.
+
 Every look keeps the same content and the same controls — the theme toggle, the language, the download and copy buttons — only the dress changes.
 
 ## The link

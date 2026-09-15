@@ -73,6 +73,16 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 	if view == "raw" || r.URL.Query().Get("format") != "" {
 		return false
 	}
+	// The figures alone, for the page to refresh itself with while it is open.
+	if view == "status" {
+		page, err := s.subs.StatusFor(r.Context(), token)
+		if err != nil {
+			http.NotFound(w, r)
+			return true
+		}
+		s.serveSubStatus(w, page, token)
+		return true
+	}
 	wantsHTML := view == "html" ||
 		strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
 	if !wantsHTML {
@@ -95,6 +105,83 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 // renderSubPage writes the page for one customer -- or, for a preview, for
 // nobody in particular.
 func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, token string, preview bool) {
+	v := newSubView(page, token, preview)
+
+	var buf bytes.Buffer
+	if err := subPageTemplate.Execute(&buf, v); err != nil {
+		s.log.Error("could not render the subscription page", "error", err)
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	h := w.Header()
+	// This page's own policy, replacing the panel's. It needs one inline style
+	// block and one inline script, both of which are ours and both of which are
+	// named by nonce rather than by opening the door to every inline script on
+	// the page. Nothing may be loaded from anywhere else at all -- except the
+	// page's own address, which it asks for fresh figures.
+	h.Set("Content-Security-Policy",
+		"default-src 'none'; "+
+			"img-src 'self' data:; "+
+			"connect-src 'self'; "+
+			"style-src 'nonce-"+v.Nonce+"'; "+
+			"script-src 'nonce-"+v.Nonce+"'; "+
+			"form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "no-referrer")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
+}
+
+// subStatus is what the page polls: the figures that move while a customer
+// is connected, in the same words the page was rendered with.
+type subLiveStatus struct {
+	Active     bool    `json:"active"`
+	Online     bool    `json:"online"`
+	StatusKey  string  `json:"statusKey"`
+	HasQuota   bool    `json:"hasQuota"`
+	Used       string  `json:"used"`
+	Total      string  `json:"total"`
+	Remained   string  `json:"remained"`
+	Percent    float64 `json:"percent"`
+	PercentTxt string  `json:"percentTxt"`
+	Down       string  `json:"down"`
+	Up         string  `json:"up"`
+	Expiry     string  `json:"expiry"`
+	ExpiryChip string  `json:"expiryChip"`
+	ExpiryCls  string  `json:"expiryCls"`
+	LastOnline string  `json:"lastOnline"`
+	Devices    int     `json:"devices"`
+}
+
+// onlineWindow is how recent a handshake has to be for a device to count as
+// connected: WireGuard renews every two minutes while traffic flows.
+const onlineWindow = 3 * time.Minute
+
+func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, token string) {
+	v := newSubView(page, token, false)
+	st := subLiveStatus{
+		Active: v.Active, StatusKey: v.StatusKey, HasQuota: v.HasQuota,
+		Used: v.Used, Total: v.Total, Remained: v.Remained,
+		Percent: v.Percent, PercentTxt: v.PercentTxt,
+		Down: humanBytes(page.DownBytes), Up: humanBytes(page.UpBytes),
+		Expiry: v.Expiry, ExpiryChip: v.ExpiryChip, ExpiryCls: v.ExpiryCls,
+		LastOnline: v.LastOnline, Devices: len(page.Devices),
+	}
+	if page.LastOnline != nil && time.Since(*page.LastOnline) < onlineWindow {
+		st.Online = true
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/json; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Content-Type-Options", "nosniff")
+	_ = json.NewEncoder(w).Encode(st)
+}
+
+// newSubView works the page's figures out from the customer's record.
+func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 	v := subPageView{
 		Page:     page,
 		Nonce:    newNonce(),
@@ -187,31 +274,7 @@ func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, tok
 	}
 	dict, _ := json.Marshal(subPageStrings)
 	v.Strings = template.JS(dict)
-
-	var buf bytes.Buffer
-	if err := subPageTemplate.Execute(&buf, v); err != nil {
-		s.log.Error("could not render the subscription page", "error", err)
-		http.Error(w, "unavailable", http.StatusServiceUnavailable)
-		return
-	}
-
-	h := w.Header()
-	// This page's own policy, replacing the panel's. It needs one inline style
-	// block and one inline script, both of which are ours and both of which are
-	// named by nonce rather than by opening the door to every inline script on
-	// the page. Nothing may be loaded from anywhere else at all.
-	h.Set("Content-Security-Policy",
-		"default-src 'none'; "+
-			"img-src 'self' data:; "+
-			"style-src 'nonce-"+v.Nonce+"'; "+
-			"script-src 'nonce-"+v.Nonce+"'; "+
-			"form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
-	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Cache-Control", "no-store")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Referrer-Policy", "no-referrer")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(buf.Bytes())
+	return v
 }
 
 // subPageStrings are the page's words in both languages, keyed as the classic panel's
@@ -225,6 +288,7 @@ var subPageStrings = map[string]map[string]string{
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
 		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language",
+		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
 	},
 	"fa": {
@@ -235,6 +299,7 @@ var subPageStrings = map[string]map[string]string{
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
 		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان",
+		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
 	},
 }
@@ -730,6 +795,9 @@ a.row-title:hover { text-decoration: underline; }
 .hero-live { display: inline-flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: 0; color: var(--ok); }
 .hero-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: blink 1.4s ease-in-out infinite; }
 .hero-live.off, .hero-live.off i { color: var(--faint); background: var(--faint); animation: none; }
+.app-fixed { flex: none; }
+.tag-config { margin: 0; font-weight: 600; letter-spacing: .3px; }
+.hero-live.idle, .hero-live.idle i { color: var(--muted); background: var(--muted); animation: none; }
 @keyframes blink { 50% { opacity: .35; } }
 .hero h1 { margin: 2px 0 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
 .hero p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
@@ -757,7 +825,7 @@ a.row-title:hover { text-decoration: underline; }
           <span class="anticon" data-theme-icon="dark">{{ index .Icons "MoonOutlined" }}</span>
           <span class="anticon" data-theme-icon="ultra">{{ index .Icons "MoonFilled" }}</span>
         </button>{{ end }}
-        <div class="app" style="flex: none">
+        <div class="app app-fixed">
           <button class="btn toolbar-btn" type="button" data-menu="lang" data-i-title="language"><span class="anticon">{{ index .Icons "TranslationOutlined" }}</span></button>
           <div class="menu lang-menu" id="menu-lang">
             <button type="button" data-lang="en"><span>🇬🇧</span><span>English</span></button>
@@ -770,52 +838,52 @@ a.row-title:hover { text-decoration: underline; }
       <div class="hero">
         <div class="hero-icon"><span class="anticon">{{ index .Icons "ThunderboltOutlined" }}</span></div>
         <div class="hero-copy">
-          <div class="hero-meta"><span data-i="subSettings">Subscription</span><span class="hero-live{{ if not .Active }} off{{ end }}"><i></i>{{ if .Active }}Live{{ else }}Off{{ end }}</span></div>
+          <div class="hero-meta"><span data-i="subSettings">Subscription</span><span class="hero-live{{ if not .Active }} off{{ end }}" id="lv-live"><i></i><span data-i="{{ if .Active }}live{{ else }}offline{{ end }}">{{ if .Active }}Live{{ else }}Off{{ end }}</span></span></div>
           <h1>{{ .Page.Title }}</h1>
           <p>{{ .Page.Name }}</p>
         </div>
       </div>
       <div class="quick">
         <div>
-          <div class="ring" style="--p: 100; --c: {{ if .Active }}var(--ok){{ else }}var(--bad){{ end }}"><span>{{ len .Devices }}</span></div>
-          <div><div class="stat-k" data-i="status">Status</div><div class="stat-v">{{ if eq .StatusKey "inactive" }}<span data-i="inactive">Inactive</span>{{ else if eq .StatusKey "unlimited" }}<span data-i="unlimited">Unlimited</span>{{ else }}<span data-i="active">Active</span>{{ end }}</div><div class="stat-s">{{ len .Devices }} configs</div></div>
+          <div class="ring" id="lv-ring-status" data-p="100" data-c="{{ if .Active }}var(--ok){{ else }}var(--bad){{ end }}"><span>{{ len .Devices }}</span></div>
+          <div><div class="stat-k" data-i="status">Status</div><div class="stat-v" id="lv-status">{{ if eq .StatusKey "inactive" }}<span data-i="inactive">Inactive</span>{{ else if eq .StatusKey "unlimited" }}<span data-i="unlimited">Unlimited</span>{{ else }}<span data-i="active">Active</span>{{ end }}</div><div class="stat-s">{{ len .Devices }} configs</div></div>
         </div>
         <div>
-          <div class="ring" style="--p: {{ if .HasQuota }}{{ .PercentTxt }}{{ else }}100{{ end }}; --c: {{ if ge .Percent 90.0 }}var(--bad){{ else if ge .Percent 75.0 }}var(--warn){{ else }}var(--ok){{ end }}"><span dir="ltr">{{ if .HasQuota }}{{ .PercentTxt }}%{{ else }}∞{{ end }}</span></div>
-          <div><div class="stat-k" data-i="usage">Data</div><div class="stat-v" dir="ltr">{{ if .HasQuota }}{{ .Remained }}{{ else }}{{ .Used }}{{ end }}</div><div class="stat-s" dir="ltr">{{ if .HasQuota }}{{ .Used }} / {{ .Total }}{{ else }}<span data-i="unlimited">Unlimited</span>{{ end }}</div></div>
+          <div class="ring" id="lv-ring-usage" data-p="{{ if .HasQuota }}{{ .PercentTxt }}{{ else }}100{{ end }}" data-c="{{ if ge .Percent 90.0 }}var(--bad){{ else if ge .Percent 75.0 }}var(--warn){{ else }}var(--ok){{ end }}"><span dir="ltr" id="lv-pct">{{ if .HasQuota }}{{ .PercentTxt }}%{{ else }}∞{{ end }}</span></div>
+          <div><div class="stat-k" data-i="usage">Data</div><div class="stat-v" dir="ltr" id="lv-data">{{ if .HasQuota }}{{ .Remained }}{{ else }}{{ .Used }}{{ end }}</div><div class="stat-s" dir="ltr" id="lv-data-sub">{{ if .HasQuota }}{{ .Used }} / {{ .Total }}{{ else }}<span data-i="unlimited">Unlimited</span>{{ end }}</div></div>
         </div>
         <div>
-          <div class="ring" style="--p: {{ if .ExpiryChip }}100{{ else }}100{{ end }}; --c: {{ if eq .ExpiryCls "red" }}var(--bad){{ else if eq .ExpiryCls "orange" }}var(--warn){{ else }}var(--accent){{ end }}"><span class="anticon">{{ index .Icons "ClockCircleOutlined" }}</span></div>
-          <div><div class="stat-k" data-i="expiry">Time</div><div class="stat-v" dir="ltr">{{ if .ExpiryChip }}{{ if eq .ExpiryChip "expired" }}<span data-i="expired">Expired</span>{{ else }}{{ .ExpiryChip }}{{ end }}{{ else }}∞{{ end }}</div><div class="stat-s" dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</div></div>
+          <div class="ring" data-p="100" data-c="{{ if eq .ExpiryCls "red" }}var(--bad){{ else if eq .ExpiryCls "orange" }}var(--warn){{ else }}var(--accent){{ end }}"><span class="anticon">{{ index .Icons "ClockCircleOutlined" }}</span></div>
+          <div><div class="stat-k" data-i="expiry">Time</div><div class="stat-v" dir="ltr" id="lv-expiry">{{ if .ExpiryChip }}{{ if eq .ExpiryChip "expired" }}<span data-i="expired">Expired</span>{{ else }}{{ .ExpiryChip }}{{ end }}{{ else }}∞{{ end }}</div><div class="stat-s" dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</div></div>
         </div>
       </div>
       <table class="desc">
         <tr><th data-i="subId">Subscription ID</th><td dir="ltr">{{ .SubID }}</td></tr>
         <tr><th data-i="email">Email</th><td>{{ .Page.Name }}</td></tr>
-        <tr><th data-i="status">Status</th><td>
+        <tr><th data-i="status">Status</th><td id="lv-td-status">
           {{ if eq .StatusKey "inactive" }}<span class="tag red" data-i="inactive">Inactive</span>
           {{ else if eq .StatusKey "unlimited" }}<span class="tag purple" data-i="unlimited">Unlimited</span>
           {{ else }}<span class="tag green" data-i="active">Active</span>{{ end }}
         </td></tr>
-        <tr><th data-i="downloaded">Downloaded</th><td dir="ltr">{{ bytes .Page.DownBytes }}</td></tr>
-        <tr><th data-i="uploaded">Uploaded</th><td dir="ltr">{{ bytes .Page.UpBytes }}</td></tr>
-        <tr><th data-i="usage">Usage</th><td dir="ltr">{{ .Used }}</td></tr>
+        <tr><th data-i="downloaded">Downloaded</th><td dir="ltr" id="lv-down">{{ bytes .Page.DownBytes }}</td></tr>
+        <tr><th data-i="uploaded">Uploaded</th><td dir="ltr" id="lv-up">{{ bytes .Page.UpBytes }}</td></tr>
+        <tr><th data-i="usage">Usage</th><td dir="ltr" id="lv-used">{{ .Used }}</td></tr>
         <tr><th data-i="totalQuota">Total Quota</th><td dir="ltr">{{ .Total }}</td></tr>
-        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td dir="ltr">{{ .Remained }}</td></tr>{{ end }}
-        <tr><th data-i="lastOnline">Last Online</th><td dir="ltr">{{ if .LastOnline }}{{ .LastOnline }}{{ else }}-{{ end }}</td></tr>
+        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td dir="ltr" id="lv-remained">{{ .Remained }}</td></tr>{{ end }}
+        <tr><th data-i="lastOnline">Last Online</th><td dir="ltr" id="lv-last">{{ if .LastOnline }}{{ .LastOnline }}{{ else }}-{{ end }}</td></tr>
         <tr><th data-i="expiry">Expiry</th><td dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</td></tr>
       </table>
 
       <div class="usage{{ if not .Active }} inactive{{ end }}">
         <div class="usage-head">
-          <div class="usage-labels" dir="ltr"><span class="usage-used">{{ .Used }}</span><span class="usage-sep">/</span><span class="usage-total">{{ .Total }}</span></div>
+          <div class="usage-labels" dir="ltr"><span class="usage-used" id="lv-bar-used">{{ .Used }}</span><span class="usage-sep">/</span><span class="usage-total" id="lv-bar-total">{{ .Total }}</span></div>
           <div class="usage-chips">
             {{ if not .HasQuota }}<span class="tag purple"><span class="anticon">{{ index .Icons "ThunderboltOutlined" }}</span><span data-i="unlimited">Unlimited</span></span>{{ end }}
             {{ if .ExpiryChip }}<span class="tag {{ .ExpiryCls }}"><span class="anticon">{{ index .Icons "ClockCircleOutlined" }}</span>{{ if eq .ExpiryChip "expired" }}<span data-i="expired">Expired</span>{{ else }}{{ .ExpiryChip }}{{ end }}</span>{{ end }}
           </div>
         </div>
-        {{ if .HasQuota }}<div class="bar"><i class="{{ if ge .Percent 90.0 }}red{{ else if ge .Percent 75.0 }}orange{{ else }}green{{ end }}" style="width: {{ .PercentTxt }}%"></i></div>{{ end }}
-        <div class="usage-foot">{{ if .HasQuota }}<span dir="ltr">{{ .Remained }}</span><span class="usage-pct" dir="ltr">{{ .PercentTxt }}%</span>{{ end }}</div>
+        {{ if .HasQuota }}<div class="bar"><i id="lv-bar" class="{{ if ge .Percent 90.0 }}red{{ else if ge .Percent 75.0 }}orange{{ else }}green{{ end }}" data-w="{{ .PercentTxt }}"></i></div>{{ end }}
+        <div class="usage-foot">{{ if .HasQuota }}<span dir="ltr" id="lv-foot-remained">{{ .Remained }}</span><span class="usage-pct" dir="ltr" id="lv-foot-pct">{{ .PercentTxt }}%</span>{{ end }}</div>
       </div>
 
       {{ if .Page.SubURL }}
@@ -844,7 +912,7 @@ a.row-title:hover { text-decoration: underline; }
         <div class="cfg">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag {{ if eq $.Page.Protocol "wireguard" }}cyan{{ else }}orange{{ end }}" style="margin:0;font-weight:600;letter-spacing:.3px" data-i="{{ if eq $.Page.Protocol "wireguard" }}config{{ else }}ovpnConfig{{ end }}">Config</span>
+            <span class="tag tag-config {{ if eq $.Page.Protocol "wireguard" }}cyan{{ else }}orange{{ end }}" data-i="{{ if eq $.Page.Protocol "wireguard" }}config{{ else }}ovpnConfig{{ end }}">Config</span>
             <span class="cfg-meta">{{ .Name }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
             <div class="row-actions">
               <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
@@ -893,6 +961,11 @@ a.row-title:hover { text-decoration: underline; }
 <script nonce="{{ .Nonce }}">
 (function () {
   var S = {{ .Strings }};
+  window.__wuiDict = S;
+  // Values the server rendered as data attributes: the page's policy allows
+  // no style attributes, and setting them from here is allowed.
+  document.querySelectorAll('[data-p]').forEach(function (el) { el.style.setProperty('--p', el.getAttribute('data-p')); el.style.setProperty('--c', el.getAttribute('data-c')); });
+  document.querySelectorAll('[data-w]').forEach(function (el) { el.style.width = el.getAttribute('data-w') + '%'; });
   var html = document.documentElement;
   var $ = function (s, r) { return (r || document).querySelectorAll(s); };
 
@@ -976,6 +1049,60 @@ a.row-title:hover { text-decoration: underline; }
       requestAnimationFrame(frame);
     })();
   }
+})();
+
+// Live figures. The page asks its own address for the numbers every few
+// seconds while it is on screen, so a customer watching it sees the data
+// move as they use it and the dot turn green when a device connects.
+(function () {
+  var $id = function (i) { return document.getElementById(i); };
+  if (!$id('lv-data')) return;
+  var url = location.pathname + '?view=status';
+  var timer = null, failures = 0;
+  function cls(p) { return p >= 90 ? 'red' : p >= 75 ? 'orange' : 'green'; }
+  function colour(p) { return p >= 90 ? 'var(--bad)' : p >= 75 ? 'var(--warn)' : 'var(--ok)'; }
+  function word(key) { var d = window.__wuiDict || {}; var l = document.documentElement.getAttribute('lang') || 'en'; return (d[l] && d[l][key]) || (d.en && d.en[key]) || key; }
+  function set(id, text) { var el = $id(id); if (el && el.textContent !== text) el.textContent = text; }
+  function apply(st) {
+    if (st.hasQuota) {
+      set('lv-data', st.remained); set('lv-data-sub', st.used + ' / ' + st.total);
+      set('lv-pct', st.percentTxt + '%');
+      set('lv-remained', st.remained); set('lv-foot-remained', st.remained); set('lv-foot-pct', st.percentTxt + '%');
+      var ring = $id('lv-ring-usage'); if (ring) { ring.style.setProperty('--p', st.percentTxt); ring.style.setProperty('--c', colour(st.percent)); }
+      var bar = $id('lv-bar'); if (bar) { bar.style.width = st.percentTxt + '%'; bar.className = cls(st.percent); }
+    } else {
+      set('lv-data', st.used);
+    }
+    set('lv-bar-used', st.used); set('lv-bar-total', st.total);
+    set('lv-used', st.used); set('lv-down', st.down); set('lv-up', st.up);
+    set('lv-last', st.lastOnline || '-');
+    set('lv-expiry', st.expiryChip === 'expired' ? word('expired') : (st.expiryChip || '\u221e'));
+    var live = $id('lv-live');
+    if (live) {
+      live.classList.toggle('off', !st.online);
+      live.classList.toggle('idle', st.active && !st.online);
+      var t = live.querySelector('span'); if (t) t.textContent = st.online ? word('online') : (st.active ? word('idle') : word('offline'));
+    }
+    var sr = $id('lv-ring-status'); if (sr) sr.style.setProperty('--c', st.active ? 'var(--ok)' : 'var(--bad)');
+    var key = st.statusKey === 'inactive' ? 'inactive' : st.statusKey === 'unlimited' ? 'unlimited' : 'active';
+    set('lv-status', word(key));
+    var td = $id('lv-td-status'); if (td) { var tag = td.querySelector('.tag'); if (tag) { tag.textContent = word(key); tag.className = 'tag ' + (key === 'inactive' ? 'red' : key === 'unlimited' ? 'purple' : 'green'); } }
+    var usage = document.querySelector('.usage'); if (usage) usage.classList.toggle('inactive', !st.active);
+  }
+  function tick() {
+    if (document.hidden) return;
+    fetch(url, { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (st) { failures = 0; apply(st); })
+      .catch(function () { failures++; });
+  }
+  function schedule() {
+    clearInterval(timer);
+    // Every 3 seconds on screen; a page that keeps failing backs off to 30.
+    timer = setInterval(function () { tick(); if (failures > 5) { clearInterval(timer); timer = setInterval(tick, 30000); } }, 3000);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); schedule(); } });
+  tick(); schedule();
 })();
 </script>
 </body>

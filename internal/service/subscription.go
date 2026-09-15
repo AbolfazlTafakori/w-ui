@@ -639,6 +639,35 @@ func bundleFormatName(format string) string {
 }
 
 // PageFor builds what a customer sees when they open their link in a browser.
+// StatusFor is PageFor without the configurations: the counters and the
+// freshest handshake, which is all a page refreshing itself needs, and
+// cheap enough to answer every few seconds for every page that is open.
+func (s *Subscriptions) StatusFor(ctx context.Context, token string) (*SubPage, error) {
+	c, err := s.byToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	page := &SubPage{
+		Name:       c.Name,
+		Status:     string(c.Status),
+		Protocol:   string(c.Protocol),
+		UpdatedAt:  time.Now().UTC(),
+		QuotaBytes: c.QuotaBytes,
+		UsedBytes:  c.UsedBytes,
+		UpBytes:    c.UpBytes,
+		DownBytes:  c.DownBytes,
+		ExpiresAt:  c.ExpiresAt,
+	}
+	for _, a := range c.Accounts {
+		if hs := a.LastHandshake; hs != nil && (page.LastOnline == nil || hs.After(*page.LastOnline)) {
+			t := *hs
+			page.LastOnline = &t
+		}
+		page.Devices = append(page.Devices, SubPageDevice{ID: a.ID, Name: a.DeviceName, Address: a.IP})
+	}
+	return page, nil
+}
+
 func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*SubPage, error) {
 	c, err := s.byToken(ctx, token)
 	if err != nil {
