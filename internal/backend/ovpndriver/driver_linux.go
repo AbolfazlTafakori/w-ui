@@ -618,6 +618,13 @@ func StopServer(ctx context.Context, iface *model.Interface) error {
 	if exec.CommandContext(ctx, "ip", "link", "show", "dev", iface.Name).Run() == nil {
 		_ = exec.CommandContext(ctx, "ip", "link", "del", "dev", iface.Name).Run()
 	}
+	// The directory goes with the tunnel. Everything in it is written again
+	// from the record when a tunnel of this name next comes up -- the keys
+	// live in the database -- and one left behind shows up in the status
+	// menu as a tunnel that is "not running" long after it was deleted.
+	if err := os.RemoveAll(l.Dir); err != nil {
+		return fmt.Errorf("ovpndriver: remove %s: %w", l.Dir, err)
+	}
 	return nil
 }
 

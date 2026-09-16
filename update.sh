@@ -36,7 +36,7 @@ curl -fsSL "https://raw.githubusercontent.com/${REPO}/${REF}/install.sh" -o "$li
 WUI_LIB_ONLY=1 source "$lib"
 
 detect_os
-printf '\n  %sW-UI update%s\n' "$B" "$N"
+printf '\n  %s%sW-UI%s  %s·%s  WireGuard · AmneziaWG · OpenVPN   %supdate%s\n' "${P:-}" "$B" "$N" "$D" "$N" "$D" "$N"
 printf '  %s%s · kernel %s · %s%s\n' "$D" "$OS_NAME" "$KERNEL" "$ARCH" "$N"
 
 [[ -f "$UNIT" || -x "$BIN_PATH" ]] || die "W-UI is not installed on this machine; run install.sh instead"

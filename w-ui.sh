@@ -12,23 +12,93 @@ red='\033[0;31m'
 green='\033[0;32m'
 blue='\033[0;34m'
 yellow='\033[0;33m'
+cyan='\033[0;36m'
+bold='\033[1m'
+dim='\033[2m'
 plain='\033[0m'
+# The panel's own colour, for what is ours rather than a state.
+brand='\033[38;5;203m'
 
-#Add some basic function here
+# One glyph and one colour per kind of line, the same on every screen: a
+# tick for done, a cross for failed, a bang for a warning, a faint line for
+# what only matters when something has gone wrong.
 function LOGD() {
-    echo -e "${yellow}[DEG] $* ${plain}"
+    echo -e "  ${dim}· $*${plain}"
 }
 
 function LOGE() {
-    echo -e "${red}[ERR] $* ${plain}"
+    echo -e "  ${red}✗ $*${plain}"
 }
 
 function LOGI() {
-    echo -e "${green}[INF] $* ${plain}"
+    echo -e "  ${green}✓${plain} $*"
 }
 
 function LOGW() {
-    echo -e "${yellow}[WRN] $* ${plain}"
+    echo -e "  ${yellow}! $*${plain}"
+}
+
+# ── drawing ──────────────────────────────────────────────────────────────────
+# The menu is a box, and a box is only a box when every line ends in the same
+# column. Colour codes take no space on the screen but do in the string, so
+# the padding is worked out on the text with the codes stripped.
+BOX_W=54
+
+visible_len() {
+    local t
+    t=$(printf '%b' "$1" | sed 's/\x1b\[[0-9;]*m//g')
+    printf '%s' "${#t}"
+}
+
+box_top()  { printf '  ╭%s╮\n' "$(printf '─%.0s' $(seq 1 $BOX_W))"; }
+box_mid()  { printf '  ├%s┤\n' "$(printf '─%.0s' $(seq 1 $BOX_W))"; }
+box_end()  { printf '  ╰%s╯\n' "$(printf '─%.0s' $(seq 1 $BOX_W))"; }
+# box_row TEXT: one line inside the box, padded to the border.
+box_row() {
+    local text="$1" pad
+    pad=$((BOX_W - 2 - $(visible_len "$text")))
+    [[ $pad -lt 0 ]] && pad=0
+    printf '  │ %b%*s │\n' "$text" "$pad" ""
+}
+# box_item NUMBER LABEL: a numbered choice, the numbers in one column.
+box_item() {
+    box_row "$(printf '%b%3s%b  %s' "$cyan" "$1" "$plain" "$2")"
+}
+# box_section TITLE: a faint heading between groups of choices.
+box_section() {
+    box_row "$(printf '%b%s%b' "$dim" "$1" "$plain")"
+}
+# box_kv LABEL VALUE: a state line, the value already coloured.
+box_kv() {
+    box_row "$(printf '%-22s %b' "$1" "$2")"
+}
+
+# The name, the way the panel writes it, above every screen.
+banner() {
+    local ver
+    ver=$(panel_version)
+    echo
+    echo -e "  ${brand}${bold}W-UI${plain}  ${dim}·${plain}  WireGuard · AmneziaWG · OpenVPN   ${dim}${ver}${plain}"
+}
+
+panel_version() {
+    if [[ -x "$BIN_PATH" ]]; then
+        "$BIN_PATH" version 2> /dev/null | head -1
+    fi
+}
+
+# menu_item NUMBER LABEL: one choice of a sub-menu, numbers in one column.
+menu_item() {
+    echo -e "  ${cyan}$(printf '%3s' "$1")${plain}  $2"
+}
+
+# ask VAR "question" [default]: a prompt that looks the same everywhere.
+prompt() {
+    if [[ -n "${2:-}" ]]; then
+        echo -ne "  ${cyan}▸${plain} $1 ${dim}[$2]${plain}: "
+    else
+        echo -ne "  ${cyan}▸${plain} $1: "
+    fi
 }
 
 # Port helpers: detect listener and owning process (best effort)
@@ -88,7 +158,6 @@ else
     echo "Failed to check the system OS, please contact the author!" >&2
     exit 1
 fi
-echo "The OS release is: $release"
 
 os_version=""
 os_version=$(grep "^VERSION_ID" /etc/os-release | cut -d '=' -f2 | tr -d '"' | tr -d '.')
@@ -122,12 +191,12 @@ confirm() {
     # end-of-file the default would otherwise be taken, and the default for
     # "update?" is yes -- which is how a piped run once reinstalled a panel.
     if [[ $# -gt 1 ]]; then
-        echo && read -rp "$1 [Default $2]: " temp || return 1
+        echo && prompt "$1" "$2" && read -r temp || return 1
         if [[ "${temp}" == "" ]]; then
             temp=$2
         fi
     else
-        read -rp "$1 [y/n]: " temp || return 1
+        prompt "$1" "y/n" && read -r temp || return 1
     fi
     if [[ "${temp}" == "y" || "${temp}" == "Y" ]]; then
         return 0
@@ -146,7 +215,7 @@ confirm_restart() {
 }
 
 before_show_menu() {
-    echo && echo -n -e "${yellow}Press enter to return to the main menu: ${plain}" && read -r temp
+    echo && echo -n -e "  ${dim}Press Enter to return to the menu${plain} " && read -r temp
     show_menu
 }
 
@@ -371,12 +440,12 @@ reset_user() {
         return 0
     fi
 
-    read -rp "Please set the login username [default is a random username]: " config_account
+    prompt "Please set the login username" "random" && read -r config_account
     [[ -z $config_account ]] && config_account=$(gen_random_string 10)
-    read -rp "Please set the login password [default is a random password]: " config_password
+    prompt "Please set the login password" "random" && read -r config_password
     [[ -z $config_password ]] && config_password=$(gen_random_string 18)
 
-    read -rp "Do you want to disable currently configured two-factor authentication? (y/n): " twoFactorConfirm
+    prompt "Do you want to disable currently configured two-factor authentication?" "y/n" && read -r twoFactorConfirm
     if [[ $twoFactorConfirm != "y" && $twoFactorConfirm != "Y" ]]; then
         panel_cli admin reset --username "${config_account}" --password "${config_password}" --quiet > /dev/null 2>&1
     else
@@ -400,7 +469,7 @@ gen_random_string() {
 reset_webbasepath() {
     echo -e "${yellow}Resetting Web Base Path${plain}"
 
-    read -rp "Are you sure you want to reset the web base path? (y/n): " confirm
+    prompt "Are you sure you want to reset the web base path?" "y/n" && read -r confirm
     if [[ $confirm != "y" && $confirm != "Y" ]]; then
         echo -e "${yellow}Operation canceled.${plain}"
         return
@@ -456,7 +525,7 @@ detect_server_ip() {
 ask_server_ip() {
     local server_ip=""
     while [[ -z "$server_ip" ]]; do
-        read -rp "Please enter your server's public IPv4 address: " server_ip
+        prompt "Please enter your server's public IPv4 address" && read -r server_ip
         server_ip="${server_ip// /}"
         if [[ ! "$server_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo -e "${red}Invalid IPv4 address. Please try again.${plain}"
@@ -519,7 +588,7 @@ check_config() {
     else
         echo -e "${red}⚠ WARNING: No SSL certificate configured!${plain}"
         echo -e "${yellow}You can get a Let's Encrypt certificate for your IP address (valid ~6 days, auto-renews).${plain}"
-        read -rp "Generate SSL certificate for IP now? [y/N]: " gen_ssl
+        prompt "Generate SSL certificate for IP now?" "y/N" && read -r gen_ssl
         if [[ "$gen_ssl" == "y" || "$gen_ssl" == "Y" ]]; then
             stop 0 > /dev/null 2>&1
             ssl_cert_issue_for_ip
@@ -654,10 +723,10 @@ disable() {
 }
 
 show_log() {
-    echo -e "${green}\t1.${plain} Debug Log"
-    echo -e "${green}\t2.${plain} Clear All logs"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
-    read -rp "Choose an option: " choice
+    menu_item 1 "Debug Log"
+    menu_item 2 "Clear All logs"
+    menu_item 0 "Back to Main Menu"
+    prompt "Choose an option" && read -r choice
 
     case "$choice" in
         0)
@@ -683,10 +752,10 @@ show_log() {
 }
 
 bbr_menu() {
-    echo -e "${green}\t1.${plain} Enable BBR"
-    echo -e "${green}\t2.${plain} Disable BBR"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
-    read -rp "Choose an option: " choice
+    menu_item 1 "Enable BBR"
+    menu_item 2 "Disable BBR"
+    menu_item 0 "Back to Main Menu"
+    prompt "Choose an option" && read -r choice
     case "$choice" in
         0)
             show_menu
@@ -840,15 +909,15 @@ show_status() {
     check_status
     case $? in
         0)
-            echo -e "Panel state: ${green}Running${plain}"
+            box_kv "Panel" "${green}● Running${plain}"
             show_enable_status
             ;;
         1)
-            echo -e "Panel state: ${yellow}Not Running${plain}"
+            box_kv "Panel" "${yellow}● Not running${plain}"
             show_enable_status
             ;;
         2)
-            echo -e "Panel state: ${red}Not Installed${plain}"
+            box_kv "Panel" "${red}● Not installed${plain}"
             ;;
     esac
     show_tunnel_status
@@ -857,9 +926,9 @@ show_status() {
 show_enable_status() {
     check_enabled
     if [[ $? == 0 ]]; then
-        echo -e "Start automatically: ${green}Yes${plain}"
+        box_kv "Start on boot" "${green}Yes${plain}"
     else
-        echo -e "Start automatically: ${red}No${plain}"
+        box_kv "Start on boot" "${red}No${plain}"
     fi
 }
 
@@ -870,7 +939,7 @@ show_tunnel_status() {
     if have wg; then
         for dev in $(wg show interfaces 2> /dev/null); do
             any=1; seen+="$dev "
-            echo -e "WireGuard ${dev} (udp/$(wg show "$dev" listen-port 2> /dev/null)): ${green}Running${plain}"
+            box_kv "WireGuard ${dev}" "${dim}udp/$(wg show "$dev" listen-port 2> /dev/null)${plain}  ${green}● Running${plain}"
         done
     fi
     # AmneziaWG tunnels answer to awg, not wg.
@@ -878,7 +947,7 @@ show_tunnel_status() {
         for dev in $(awg show interfaces 2> /dev/null); do
             [[ "$seen" == *" $dev "* ]] && continue
             any=1
-            echo -e "AmneziaWG ${dev} (udp/$(awg show "$dev" listen-port 2> /dev/null)): ${green}Running${plain}"
+            box_kv "AmneziaWG ${dev}" "${dim}udp/$(awg show "$dev" listen-port 2> /dev/null)${plain}  ${green}● Running${plain}"
         done
     fi
     local conf
@@ -890,26 +959,26 @@ show_tunnel_status() {
         port=$(grep -E '^port ' "$conf" | awk '{print $2}')
         proto=$(grep -E '^proto ' "$conf" | awk '{print $2}')
         if pgrep -f "openvpn.*${name}" > /dev/null 2>&1 || ip link show "$name" > /dev/null 2>&1; then
-            echo -e "OpenVPN ${name} (${proto:-udp}/${port}): ${green}Running${plain}"
+            box_kv "OpenVPN ${name}" "${dim}${proto:-udp}/${port}${plain}  ${green}● Running${plain}"
         else
-            echo -e "OpenVPN ${name} (${proto:-udp}/${port}): ${red}Not Running${plain}"
+            box_kv "OpenVPN ${name}" "${dim}${proto:-udp}/${port}${plain}  ${red}● Not running${plain}"
         fi
     done
     if [[ $any == 0 ]]; then
-        echo -e "tunnel state: ${red}Not Running${plain}"
+        box_kv "Tunnels" "${dim}none running${plain}"
     fi
 }
 
 firewall_menu() {
-    echo -e "${green}\t1.${plain} ${green}Install${plain} Firewall"
-    echo -e "${green}\t2.${plain} Port List [numbered]"
-    echo -e "${green}\t3.${plain} ${green}Open${plain} Ports"
-    echo -e "${green}\t4.${plain} ${red}Delete${plain} Ports from List"
-    echo -e "${green}\t5.${plain} ${green}Enable${plain} Firewall"
-    echo -e "${green}\t6.${plain} ${red}Disable${plain} Firewall"
-    echo -e "${green}\t7.${plain} Firewall Status"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
-    read -rp "Choose an option: " choice
+    menu_item 1 "${green}Install${plain} Firewall"
+    menu_item 2 "Port List [numbered]"
+    menu_item 3 "${green}Open${plain} Ports"
+    menu_item 4 "${red}Delete${plain} Ports from List"
+    menu_item 5 "${green}Enable${plain} Firewall"
+    menu_item 6 "${red}Disable${plain} Firewall"
+    menu_item 7 "Firewall Status"
+    menu_item 0 "Back to Main Menu"
+    prompt "Choose an option" && read -r choice
     case "$choice" in
         0)
             show_menu
@@ -991,7 +1060,7 @@ install_firewall() {
 
 open_ports() {
     # Prompt the user to enter the ports they want to open
-    read -rp "Enter the ports you want to open (e.g. 80,443,2053 or range 400-500): " ports
+    prompt "Enter the ports you want to open (e.g. 80,443,2053 or range 400-500)" && read -r ports
 
     # Check if the input is valid
     if ! [[ $ports =~ ^([0-9]+|[0-9]+-[0-9]+)(,([0-9]+|[0-9]+-[0-9]+))*$ ]]; then
@@ -1039,11 +1108,11 @@ delete_ports() {
     echo "Do you want to delete rules by:"
     echo "1) Rule numbers"
     echo "2) Ports"
-    read -rp "Enter your choice (1 or 2): " choice
+    prompt "Enter your choice" "1 or 2" && read -r choice
 
     if [[ $choice -eq 1 ]]; then
         # Deleting by rule numbers
-        read -rp "Enter the rule numbers you want to delete (1, 2, etc.): " rule_numbers
+        prompt "Enter the rule numbers you want to delete (1, 2, etc.)" && read -r rule_numbers
 
         # Validate the input
         if ! [[ $rule_numbers =~ ^([0-9]+)(,[0-9]+)*$ ]]; then
@@ -1062,7 +1131,7 @@ delete_ports() {
 
     elif [[ $choice -eq 2 ]]; then
         # Deleting by ports
-        read -rp "Enter the ports you want to delete (e.g. 80,443,2053 or range 400-500): " ports
+        prompt "Enter the ports you want to delete (e.g. 80,443,2053 or range 400-500)" && read -r ports
 
         # Validate the input
         if ! [[ $ports =~ ^([0-9]+|[0-9]+-[0-9]+)(,([0-9]+|[0-9]+-[0-9]+))*$ ]]; then
@@ -1163,10 +1232,10 @@ run_geo_update() {
 }
 
 update_geo() {
-    echo -e "${green}\t1.${plain} ipverse country lists (every country in use)"
-    echo -e "${green}\t2.${plain} Fetch one country now (e.g. ir, ru, cn)"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
-    read -rp "Choose an option: " choice
+    menu_item 1 "ipverse country lists (every country in use)"
+    menu_item 2 "Fetch one country now (e.g. ir, ru, cn)"
+    menu_item 0 "Back to Main Menu"
+    prompt "Choose an option" && read -r choice
 
     case "$choice" in
         0)
@@ -1176,7 +1245,7 @@ update_geo() {
             run_geo_update "geo files" update_geofiles
             ;;
         2)
-            read -rp "Country code: " cc
+            prompt "Country code" && read -r cc
             cc=$(echo "$cc" | tr 'A-Z' 'a-z' | tr -d '[:space:]')
             if [[ ! "$cc" =~ ^[a-z]{2}$ ]]; then
                 echo -e "${red}A country is two letters, like ir.${plain}"
@@ -1315,15 +1384,15 @@ set_panel_cert() {
 }
 
 ssl_cert_issue_main() {
-    echo -e "${green}\t1.${plain} Get SSL (Domain)"
-    echo -e "${green}\t2.${plain} Revoke & Remove"
-    echo -e "${green}\t3.${plain} Force Renew"
-    echo -e "${green}\t4.${plain} Show Existing Domains"
-    echo -e "${green}\t5.${plain} Set Cert paths for the panel"
-    echo -e "${green}\t6.${plain} Get SSL for IP Address (6-day cert, auto-renews)"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
+    menu_item 1 "Get SSL (Domain)"
+    menu_item 2 "Revoke & Remove"
+    menu_item 3 "Force Renew"
+    menu_item 4 "Show Existing Domains"
+    menu_item 5 "Set Cert paths for the panel"
+    menu_item 6 "Get SSL for IP Address (6-day cert, auto-renews)"
+    menu_item 0 "Back to Main Menu"
 
-    read -rp "Choose an option: " choice
+    prompt "Choose an option" && read -r choice
     case "$choice" in
         0)
             show_menu
@@ -1339,7 +1408,7 @@ ssl_cert_issue_main() {
             else
                 echo "Existing domains:"
                 echo "$domains"
-                read -rp "Please enter a domain from the list to revoke and remove the certificate: " domain
+                prompt "Please enter a domain from the list to revoke and remove the certificate" && read -r domain
                 if echo "$domains" | grep -qw "$domain"; then
                     # The IP-cert flow (option 6) stores files under certs/ip, but acme.sh
                     # tracks the cert under the actual IP address(es). Resolve those so renewal
@@ -1380,7 +1449,7 @@ ssl_cert_issue_main() {
             else
                 echo "Existing domains:"
                 echo "$domains"
-                read -rp "Please enter a domain from the list to renew the SSL certificate: " domain
+                prompt "Please enter a domain from the list to renew the SSL certificate" && read -r domain
                 if echo "$domains" | grep -qw "$domain"; then
                     local acme_ids="${domain}"
                     if [[ "${domain}" == "ip" ]]; then
@@ -1433,12 +1502,12 @@ ssl_cert_issue_main() {
             ssl_cert_issue_main
             ;;
         5)
-            echo -e "${green}\t1.${plain} Use a certificate from $CERT_ROOT"
-            echo -e "${green}\t2.${plain} Enter custom certificate file paths (e.g. certbot, /etc/letsencrypt/...)"
-            read -rp "Choose an option: " pathChoice
+            menu_item 1 "Use a certificate from $CERT_ROOT"
+            menu_item 2 "Enter custom certificate file paths (e.g. certbot, /etc/letsencrypt/...)"
+            prompt "Choose an option" && read -r pathChoice
             if [[ "$pathChoice" == "2" ]]; then
-                read -rp "Certificate file path (fullchain): " webCertFile
-                read -rp "Private key file path: " webKeyFile
+                prompt "Certificate file path (fullchain)" && read -r webCertFile
+                prompt "Private key file path" && read -r webKeyFile
                 if [[ -f "${webCertFile}" && -f "${webKeyFile}" ]]; then
                     if ! sudo -u "$SERVICE_USER" test -r "${webKeyFile}" 2> /dev/null; then
                         LOGW "The panel runs as ${SERVICE_USER}, which cannot read ${webKeyFile}; giving it access"
@@ -1463,7 +1532,7 @@ ssl_cert_issue_main() {
             else
                 echo "Available domains:"
                 echo "$domains"
-                read -rp "Please choose a domain to set the panel paths: " domain
+                prompt "Please choose a domain to set the panel paths" && read -r domain
 
                 if echo "$domains" | grep -qw "$domain"; then
                     local webCertFile="$CERT_ROOT/${domain}/fullchain.pem"
@@ -1540,7 +1609,7 @@ ssl_cert_issue_for_ip() {
 
     # Ask for optional IPv6
     local ipv6_addr=""
-    read -rp "Do you have an IPv6 address to include? (leave empty to skip): " ipv6_addr
+    prompt "Do you have an IPv6 address to include? (leave empty to skip)" && read -r ipv6_addr
     ipv6_addr="${ipv6_addr// /}" # Trim whitespace
 
     # check for acme.sh first
@@ -1569,7 +1638,7 @@ ssl_cert_issue_for_ip() {
 
     # Choose port for HTTP-01 listener (default 80, allow override)
     local WebPort=""
-    read -rp "Port to use for ACME HTTP-01 listener (default 80): " WebPort
+    prompt "Port to use for ACME HTTP-01 listener" "80" && read -r WebPort
     WebPort="${WebPort:-80}"
     if ! [[ "${WebPort}" =~ ^[0-9]+$ ]] || ((WebPort < 1 || WebPort > 65535)); then
         LOGE "Invalid port provided. Falling back to 80."
@@ -1585,7 +1654,7 @@ ssl_cert_issue_for_ip() {
             LOGI "Port ${WebPort} is currently in use."
 
             local alt_port=""
-            read -rp "Enter another port for acme.sh standalone listener (leave empty to abort): " alt_port
+            prompt "Enter another port for acme.sh standalone listener (leave empty to abort)" && read -r alt_port
             alt_port="${alt_port// /}"
             if [[ -z "${alt_port}" ]]; then
                 LOGE "Port ${WebPort} is busy; cannot proceed with issuance."
@@ -1659,7 +1728,7 @@ ssl_cert_issue_for_ip() {
     local webCertFile="${certPath}/fullchain.pem"
     local webKeyFile="${certPath}/privkey.pem"
 
-    read -rp "Would you like to set this certificate for the panel? (y/n): " setPanel
+    prompt "Would you like to set this certificate for the panel?" "y/n" && read -r setPanel
     if [[ "$setPanel" == "y" || "$setPanel" == "Y" ]]; then
         if [[ -f "$webCertFile" && -f "$webKeyFile" ]]; then
             set_panel_cert "$webCertFile" "$webKeyFile"
@@ -1706,7 +1775,7 @@ ssl_cert_issue() {
     # get the domain here, and we need to verify it
     local domain=""
     while true; do
-        read -rp "Please enter your domain name: " domain
+        prompt "Please enter your domain name" && read -r domain
         domain="${domain// /}" # Trim whitespace
 
         if [[ -z "$domain" ]]; then
@@ -1762,7 +1831,7 @@ ssl_cert_issue() {
 
     # get the port number for the standalone server
     local WebPort=80
-    read -rp "Please choose which port to use (default is 80): " WebPort
+    prompt "Please choose which port to use" "80" && read -r WebPort
     if [[ -z ${WebPort} ]]; then
         WebPort=80
     elif [[ ! ${WebPort} =~ ^[1-9][0-9]*$ || ${WebPort} -gt 65535 ]]; then
@@ -1790,12 +1859,12 @@ ssl_cert_issue() {
 
     LOGI "Default --reloadcmd for ACME is: ${yellow}w-ui restart"
     LOGI "This command will run on every certificate issue and renew."
-    read -rp "Would you like to modify --reloadcmd for ACME? (y/n): " setReloadcmd
+    prompt "Would you like to modify --reloadcmd for ACME?" "y/n" && read -r setReloadcmd
     if [[ "$setReloadcmd" == "y" || "$setReloadcmd" == "Y" ]]; then
         echo -e "\n${green}\t1.${plain} Preset: systemctl reload nginx ; w-ui restart"
-        echo -e "${green}\t2.${plain} Input your own command"
-        echo -e "${green}\t0.${plain} Keep default reloadcmd"
-        read -rp "Choose an option: " choice
+        menu_item 2 "Input your own command"
+        menu_item 0 "Keep default reloadcmd"
+        prompt "Choose an option" && read -r choice
         case "$choice" in
             1)
                 LOGI "Reloadcmd is: systemctl reload nginx ; w-ui restart"
@@ -1803,7 +1872,7 @@ ssl_cert_issue() {
                 ;;
             2)
                 LOGD "It's recommended to put w-ui restart at the end, so it won't raise an error if other services fails"
-                read -rp "Please enter your reloadcmd (example: systemctl reload nginx ; w-ui restart): " reloadCmd
+                prompt "Please enter your reloadcmd (example: systemctl reload nginx ; w-ui restart)" && read -r reloadCmd
                 LOGI "Your reloadcmd is: ${reloadCmd}"
                 ;;
             *)
@@ -1851,7 +1920,7 @@ ssl_cert_issue() {
     fi
 
     # Prompt user to set panel paths after successful certificate installation
-    read -rp "Would you like to set this certificate for the panel? (y/n): " setPanel
+    prompt "Would you like to set this certificate for the panel?" "y/n" && read -r setPanel
     if [[ "$setPanel" == "y" || "$setPanel" == "Y" ]]; then
         local webCertFile="${certPath}/fullchain.pem"
         local webKeyFile="${certPath}/privkey.pem"
@@ -1897,7 +1966,7 @@ ssl_cert_issue_CF() {
         CF_Domain=""
 
         LOGD "Please set a domain name:"
-        read -rp "Input your domain here: " CF_Domain
+        prompt "Input your domain here" && read -r CF_Domain
         if [[ -z "$CF_Domain" ]]; then
             LOGE "No domain given; cancelled"
             return 1
@@ -1908,22 +1977,22 @@ ssl_cert_issue_CF() {
         # single zone) or the account-wide Global API Key. acme.sh reads
         # CF_Token for tokens, or CF_Key + CF_Email for the Global Key.
         CF_KeyType=""
-        read -rp "Are you using a Cloudflare API Token or Global API Key? (t/g) [Default t]: " CF_KeyType
+        prompt "Are you using a Cloudflare API Token or Global API Key? (t/g)" "t" && read -r CF_KeyType
         CF_KeyType=${CF_KeyType:-t}
 
         if [[ "$CF_KeyType" == "g" || "$CF_KeyType" == "G" ]]; then
             CF_GlobalKey=""
             CF_AccountEmail=""
             LOGD "Please set the Global API Key:"
-            read -rp "Input your key here: " CF_GlobalKey
+            prompt "Input your key here" && read -r CF_GlobalKey
             LOGD "Please set up the registered email:"
-            read -rp "Input your email here: " CF_AccountEmail
+            prompt "Input your email here" && read -r CF_AccountEmail
             export CF_Key="${CF_GlobalKey}"
             export CF_Email="${CF_AccountEmail}"
         else
             CF_ApiToken=""
             LOGD "Please set the API Token:"
-            read -rp "Input your token here: " CF_ApiToken
+            prompt "Input your token here" && read -r CF_ApiToken
             export CF_Token="${CF_ApiToken}"
         fi
 
@@ -1959,12 +2028,12 @@ ssl_cert_issue_CF() {
 
         LOGI "Default --reloadcmd for ACME is: ${yellow}w-ui restart"
         LOGI "This command will run on every certificate issue and renew."
-        read -rp "Would you like to modify --reloadcmd for ACME? (y/n): " setReloadcmd
+        prompt "Would you like to modify --reloadcmd for ACME?" "y/n" && read -r setReloadcmd
         if [[ "$setReloadcmd" == "y" || "$setReloadcmd" == "Y" ]]; then
             echo -e "\n${green}\t1.${plain} Preset: systemctl reload nginx ; w-ui restart"
-            echo -e "${green}\t2.${plain} Input your own command"
-            echo -e "${green}\t0.${plain} Keep default reloadcmd"
-            read -rp "Choose an option: " choice
+            menu_item 2 "Input your own command"
+            menu_item 0 "Keep default reloadcmd"
+            prompt "Choose an option" && read -r choice
             case "$choice" in
                 1)
                     LOGI "Reloadcmd is: systemctl reload nginx ; w-ui restart"
@@ -1972,7 +2041,7 @@ ssl_cert_issue_CF() {
                     ;;
                 2)
                     LOGD "It's recommended to put w-ui restart at the end, so it won't raise an error if other services fails"
-                    read -rp "Please enter your reloadcmd (example: systemctl reload nginx ; w-ui restart): " reloadCmd
+                    prompt "Please enter your reloadcmd (example: systemctl reload nginx ; w-ui restart)" && read -r reloadCmd
                     LOGI "Your reloadcmd is: ${reloadCmd}"
                     ;;
                 *)
@@ -2005,7 +2074,7 @@ ssl_cert_issue_CF() {
         fi
 
         # Prompt user to set panel paths after successful certificate installation
-        read -rp "Would you like to set this certificate for the panel? (y/n): " setPanel
+        prompt "Would you like to set this certificate for the panel?" "y/n" && read -r setPanel
         if [[ "$setPanel" == "y" || "$setPanel" == "Y" ]]; then
             local webCertFile="${certPath}/fullchain.pem"
             local webKeyFile="${certPath}/privkey.pem"
@@ -2081,17 +2150,17 @@ ip_validation() {
 # enforced by the panel itself, so the jail here guards the sign-in form.
 iplimit_main() {
     echo -e "\n${green}\t1.${plain} Install Fail2ban and configure IP Limit"
-    echo -e "${green}\t2.${plain} Change Ban Duration"
-    echo -e "${green}\t3.${plain} Unban Everyone"
-    echo -e "${green}\t4.${plain} Ban Logs"
-    echo -e "${green}\t5.${plain} Ban an IP Address"
-    echo -e "${green}\t6.${plain} Unban an IP Address"
-    echo -e "${green}\t7.${plain} Real-Time Logs"
-    echo -e "${green}\t8.${plain} Service Status"
-    echo -e "${green}\t9.${plain} Service Restart"
-    echo -e "${green}\t10.${plain} Uninstall Fail2ban and IP Limit"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
-    read -rp "Choose an option: " choice
+    menu_item 2 "Change Ban Duration"
+    menu_item 3 "Unban Everyone"
+    menu_item 4 "Ban Logs"
+    menu_item 5 "Ban an IP Address"
+    menu_item 6 "Unban an IP Address"
+    menu_item 7 "Real-Time Logs"
+    menu_item 8 "Service Status"
+    menu_item 9 "Service Restart"
+    menu_item 10 "Uninstall Fail2ban and IP Limit"
+    menu_item 0 "Back to Main Menu"
+    prompt "Choose an option" && read -r choice
     case "$choice" in
         0)
             show_menu
@@ -2105,7 +2174,7 @@ iplimit_main() {
             fi
             ;;
         2)
-            read -rp "Please enter new Ban Duration in Minutes [default 30]: " NUM
+            prompt "Please enter new Ban Duration in Minutes" "30" && read -r NUM
             if [[ $NUM =~ ^[0-9]+$ ]]; then
                 create_iplimit_jails ${NUM}
                 systemctl restart fail2ban
@@ -2131,7 +2200,7 @@ iplimit_main() {
             iplimit_main
             ;;
         5)
-            read -rp "Enter the IP address you want to ban: " ban_ip
+            prompt "Enter the IP address you want to ban" && read -r ban_ip
             ip_validation
             if [[ $ban_ip =~ $ipv4_regex || $ban_ip =~ $ipv6_regex ]]; then
                 fail2ban-client set w-ui-ipl banip "$ban_ip"
@@ -2142,7 +2211,7 @@ iplimit_main() {
             iplimit_main
             ;;
         6)
-            read -rp "Enter the IP address you want to unban: " unban_ip
+            prompt "Enter the IP address you want to unban" && read -r unban_ip
             ip_validation
             if [[ $unban_ip =~ $ipv4_regex || $unban_ip =~ $ipv6_regex ]]; then
                 fail2ban-client set w-ui-ipl unbanip "$unban_ip"
@@ -2273,10 +2342,10 @@ install_iplimit() {
 }
 
 remove_iplimit() {
-    echo -e "${green}\t1.${plain} Only remove IP Limit configurations"
-    echo -e "${green}\t2.${plain} Uninstall Fail2ban and IP Limit"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
-    read -rp "Choose an option: " num
+    menu_item 1 "Only remove IP Limit configurations"
+    menu_item 2 "Uninstall Fail2ban and IP Limit"
+    menu_item 0 "Back to Main Menu"
+    prompt "Choose an option" && read -r num
     case "$num" in
         1)
             rm -f /etc/fail2ban/filter.d/w-ui-ipl.conf
@@ -2485,7 +2554,7 @@ SSH_port_forwarding() {
     echo -e "${green}1.${plain} Set listen IP"
     echo -e "${green}2.${plain} Clear listen IP"
     echo -e "${green}0.${plain} Back to Main Menu"
-    read -rp "Choose an option: " num
+    prompt "Choose an option" && read -r num
 
     case "$num" in
         1)
@@ -2493,10 +2562,10 @@ SSH_port_forwarding() {
                 echo -e "\nNo listenIP configured. Choose an option:"
                 echo -e "1. Use default IP (127.0.0.1)"
                 echo -e "2. Set a custom IP"
-                read -rp "Select an option (1 or 2): " listen_choice
+                prompt "Select an option" "1 or 2" && read -r listen_choice
 
                 config_listenIP="127.0.0.1"
-                [[ "$listen_choice" == "2" ]] && read -rp "Enter custom IP to listen on: " config_listenIP
+                [[ "$listen_choice" == "2" ]] && prompt "Enter custom IP to listen on" && read -r config_listenIP
 
                 panel_cli setting set --listen "${config_listenIP}" > /dev/null 2>&1
                 echo -e "${green}listen IP has been set to ${config_listenIP}.${plain}"
@@ -2671,18 +2740,18 @@ migrate_engine() {
 
 postgresql_menu() {
     echo -e "\n${green}\t1.${plain} ${green}Install${plain} PostgreSQL (server + wui database)"
-    echo -e "${green}\t2.${plain} Migrate SQLite ${green}->${plain} PostgreSQL"
-    echo -e "${green}\t3.${plain} Status (server & port 5432)"
-    echo -e "${green}\t4.${plain} ${green}Start${plain} PostgreSQL"
-    echo -e "${green}\t5.${plain} ${red}Stop${plain} PostgreSQL"
-    echo -e "${green}\t6.${plain} Restart PostgreSQL"
-    echo -e "${green}\t7.${plain} ${green}Enable${plain} Autostart on boot"
-    echo -e "${green}\t8.${plain} View PostgreSQL Log"
-    echo -e "${green}\t9.${plain} Backup & Restore (either engine)"
-    echo -e "${green}\t10.${plain} Migrate PostgreSQL ${green}->${plain} SQLite"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
+    menu_item 2 "Migrate SQLite ${green}->${plain} PostgreSQL"
+    menu_item 3 "Status (server & port 5432)"
+    menu_item 4 "${green}Start${plain} PostgreSQL"
+    menu_item 5 "${red}Stop${plain} PostgreSQL"
+    menu_item 6 "Restart PostgreSQL"
+    menu_item 7 "${green}Enable${plain} Autostart on boot"
+    menu_item 8 "View PostgreSQL Log"
+    menu_item 9 "Backup & Restore (either engine)"
+    menu_item 10 "Migrate PostgreSQL ${green}->${plain} SQLite"
+    menu_item 0 "Back to Main Menu"
     echo -e "  ${yellow}Panel database now: $(db_driver_now)${plain}"
-    read -rp "Choose an option: " choice
+    prompt "Choose an option" && read -r choice
 
     case "$choice" in
         0) show_menu ;;
@@ -2706,14 +2775,14 @@ postgresql_menu() {
 # Backup & Restore: the archive carries the database from either engine.
 backup_menu() {
     echo -e "\n${green}\t1.${plain} Create a backup"
-    echo -e "${green}\t2.${plain} Restore from a backup"
-    echo -e "${green}\t3.${plain} List backups"
-    echo -e "${green}\t0.${plain} Back to Main Menu"
+    menu_item 2 "Restore from a backup"
+    menu_item 3 "List backups"
+    menu_item 0 "Back to Main Menu"
     echo -e "  ${yellow}The archive holds the database, every interface key and every${plain}"
     echo -e "  ${yellow}customer credential. Treat it like a password file.${plain}"
     echo -e "  ${yellow}It is the panel's own format: a backup from any W-UI version, on${plain}"
     echo -e "  ${yellow}SQLite or PostgreSQL, restores here.${plain}"
-    read -rp "Choose an option: " choice
+    prompt "Choose an option" && read -r choice
 
     case "$choice" in
         0) show_menu ;;
@@ -2728,7 +2797,7 @@ backup_menu() {
             backup_menu
             ;;
         2)
-            echo && read -rp "Path to the backup archive: " archive
+            echo && prompt "Path to the backup archive" && read -r archive
             if [[ ! -f "$archive" ]]; then
                 LOGE "No such file"
                 backup_menu
@@ -2802,48 +2871,51 @@ show_usage() {
 }
 
 show_menu() {
-    echo -e "
-╔────────────────────────────────────────────────╗
-│  ${green}W-UI Panel Management Script${plain}                  │
-│  ${green}0.${plain} Exit Script                               │
-│────────────────────────────────────────────────│
-│  ${green}1.${plain} Install                                   │
-│  ${green}2.${plain} Update                                    │
-│  ${green}3.${plain} Update to Dev Channel (latest commit)     │
-│  ${green}4.${plain} Update Menu                               │
-│  ${green}5.${plain} Legacy Version                            │
-│  ${green}6.${plain} Uninstall                                 │
-│────────────────────────────────────────────────│
-│  ${green}7.${plain} Reset Username & Password                 │
-│  ${green}8.${plain} Reset Web Base Path                       │
-│  ${green}9.${plain} Reset Settings                            │
-│  ${green}10.${plain} Change Port                              │
-│  ${green}11.${plain} View Current Settings                    │
-│────────────────────────────────────────────────│
-│  ${green}12.${plain} Start                                    │
-│  ${green}13.${plain} Stop                                     │
-│  ${green}14.${plain} Restart                                  │
-│  ${green}15.${plain} Restart Tunnels                          │
-│  ${green}16.${plain} Check Status                             │
-│  ${green}17.${plain} Logs Management                          │
-│────────────────────────────────────────────────│
-│  ${green}18.${plain} Enable Autostart                         │
-│  ${green}19.${plain} Disable Autostart                        │
-│────────────────────────────────────────────────│
-│  ${green}20.${plain} SSL Certificate Management               │
-│  ${green}21.${plain} Cloudflare SSL Certificate               │
-│  ${green}22.${plain} IP Limit Management                      │
-│  ${green}23.${plain} Firewall Management                      │
-│  ${green}24.${plain} SSH Port Forwarding Management           │
-│  ${green}25.${plain} PostgreSQL Management                    │
-│────────────────────────────────────────────────│
-│  ${green}26.${plain} Enable BBR                               │
-│  ${green}27.${plain} Update Geo Files                         │
-│  ${green}28.${plain} Speedtest by Ookla                       │
-╚────────────────────────────────────────────────╝
-"
+    banner
+    echo
+    box_top
+    box_item 0 "Exit"
+    box_mid
+    box_section "Install and update"
+    box_item 1 "Install"
+    box_item 2 "Update"
+    box_item 3 "Update to the dev channel (latest commit)"
+    box_item 4 "Update this menu"
+    box_item 5 "Install an older version"
+    box_item 6 "Uninstall"
+    box_mid
+    box_section "Access"
+    box_item 7 "Reset username and password"
+    box_item 8 "Reset the URL path"
+    box_item 9 "Reset settings"
+    box_item 10 "Change the port"
+    box_item 11 "Show current settings"
+    box_mid
+    box_section "Service"
+    box_item 12 "Start"
+    box_item 13 "Stop"
+    box_item 14 "Restart"
+    box_item 15 "Restart tunnels"
+    box_item 16 "Status"
+    box_item 17 "Logs"
+    box_item 18 "Enable start on boot"
+    box_item 19 "Disable start on boot"
+    box_mid
+    box_section "Server"
+    box_item 20 "SSL certificate"
+    box_item 21 "Cloudflare SSL certificate"
+    box_item 22 "Connection limit"
+    box_item 23 "Firewall"
+    box_item 24 "SSH port forwarding"
+    box_item 25 "PostgreSQL"
+    box_item 26 "Enable BBR"
+    box_item 27 "Update geo files"
+    box_item 28 "Speedtest by Ookla"
+    box_mid
     show_status
-    echo && read -rp "Please enter your selection [0-28]: " num || exit 0
+    box_end
+    echo
+    prompt "Select an option" "0-28" && read -r num || exit 0
 
     case "${num}" in
         0)

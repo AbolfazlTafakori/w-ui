@@ -134,9 +134,11 @@ INTERACTIVE=0
 
 # ── output ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
-  R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; B=$'\e[1m'; D=$'\e[2m'; N=$'\e[0m'
+  R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; C=$'\e[36m'; B=$'\e[1m'; D=$'\e[2m'; N=$'\e[0m'
+  # The panel's own colour, for its name.
+  P=$'\e[38;5;203m'
 else
-  R=""; G=""; Y=""; B=""; D=""; N=""
+  R=""; G=""; Y=""; C=""; B=""; D=""; N=""; P=""
 fi
 
 step() { printf '\n%s==>%s %s%s%s\n' "$B" "$N" "$B" "$*" "$N"; }
@@ -831,9 +833,9 @@ ask() {
   local __var="$1" __q="$2" __def="$3" __ans=""
   if [[ "$INTERACTIVE" == 1 ]]; then
     if [[ -n "$__def" ]]; then
-      tty_out '    %s [%s%s%s]: ' "$__q" "$B" "$__def" "$N"
+      tty_out '  %s▸%s %s %s[%s]%s: ' "$C" "$N" "$__q" "$D" "$__def" "$N"
     else
-      tty_out '    %s: ' "$__q"
+      tty_out '  %s▸%s %s: ' "$C" "$N" "$__q"
     fi
     IFS= read -r __ans <&3 || no_more_input
   fi
@@ -849,7 +851,7 @@ ask_secret() {
   local __var="$1" __q="$2" a="" b=""
   if [[ "$INTERACTIVE" != 1 ]]; then printf -v "$__var" '%s' ""; return 0; fi
   while true; do
-    tty_out '    %s: ' "$__q"
+    tty_out '  %s▸%s %s: ' "$C" "$N" "$__q"
     IFS= read -rs a <&3 || no_more_input
     tty_out '\n'
     if [[ -z "$a" ]]; then printf -v "$__var" '%s' ""; return 0; fi
@@ -871,7 +873,7 @@ ask_yn() {
   if [[ "$INTERACTIVE" != 1 ]]; then [[ "$def" == y ]]; return; fi
   [[ "$def" == y ]] && hint="Y/n"
   while true; do
-    tty_out '    %s [%s]: ' "$q" "$hint"
+    tty_out '  %s▸%s %s %s[%s]%s: ' "$C" "$N" "$q" "$D" "$hint" "$N"
     IFS= read -r ans <&3 || no_more_input
     ans="${ans:-$def}"
     case "${ans,,}" in
@@ -2240,10 +2242,10 @@ setup_fail2ban() {
 # the classic panel's closing box: the subcommands, so the operator's next command is
 # already on the screen.
 usage_box() {
-  printf '%s%s %s finished, it is running now...%s\n\n' "$G" "W-UI $("$BIN_PATH" version 2>/dev/null || echo)" "${1:-installation}" "$N"
-  printf '┌───────────────────────────────────────────────────────┐\n'
-  printf '│  %sw-ui control menu usages (subcommands):%s              │\n' "$B" "$N"
-  printf '│                                                       │\n'
+  printf '  %s✓%s %s%s %s finished; the panel is running.%s\n\n' "$G" "$N" "$B" "W-UI $("$BIN_PATH" version 2>/dev/null || echo)" "${1:-installation}" "$N"
+  printf '  ╭───────────────────────────────────────────────────────╮\n'
+  printf '  │  %sThe w-ui command%s                                     │\n' "$B" "$N"
+  printf '  │                                                       │\n'
   for row in "w-ui              - Admin Management Script" \
              "w-ui start        - Start" \
              "w-ui stop         - Stop" \
@@ -2258,9 +2260,9 @@ usage_box() {
              "w-ui legacy       - Legacy version" \
              "w-ui install      - Install" \
              "w-ui uninstall    - Uninstall"; do
-    printf '│  %s%-17s%s%s%-34s│\n' "$B" "${row%% - *}" "$N" "- " "${row#* - }"
+    printf '  │  %s%-17s%s%s%-34s│\n' "$C" "${row%% - *}" "$N" "- " "${row#* - }"
   done
-  printf '└───────────────────────────────────────────────────────┘\n'
+  printf '  ╰───────────────────────────────────────────────────────╯\n'
 }
 
 # ── run ──────────────────────────────────────────────────────────────────────
@@ -2271,7 +2273,7 @@ if [[ "$LIB_ONLY" == 1 ]]; then return 0 2>/dev/null || exit 0; fi
 detect_os
 [[ "$ACTION" == install ]] || do_uninstall
 
-printf '\n  %sW-UI installer%s\n' "$B" "$N"
+printf '\n  %s%sW-UI%s  %s·%s  WireGuard · AmneziaWG · OpenVPN   %sinstaller%s\n' "$P" "$B" "$N" "$D" "$N" "$D" "$N"
 printf '  %s%s · kernel %s · %s%s\n' "$D" "$OS_NAME" "$KERNEL" "$ARCH" "$N"
 
 # Asked first, so the rest runs unattended.
