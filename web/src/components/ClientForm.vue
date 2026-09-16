@@ -15,6 +15,7 @@ import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
 import TagInput from './TagInput.vue'
+import HelpTip from './HelpTip.vue'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -77,12 +78,13 @@ const form = ref(
         openvpnUsername: currentOpenVPNUsername(),
         openvpnPassword: '',
         deviceNames: [],
+        subId: props.client.subId || '',
       }
     : {
         name: '',
         note: '',
         group: '',
-        telegramId: 0,
+        telegramId: '',
         interfaceIds: props.interfaces[0] ? [props.interfaces[0].id] : [],
         quota: '',
         quotaUnit: 'GB',
@@ -97,6 +99,9 @@ const form = ref(
         openvpnUsername: '',
         openvpnPassword: '',
         deviceNames: [],
+        // Drawn now, as theirs is, so the operator sees the link's secret
+        // before the customer exists and can replace it with one of their own.
+        subId: randomHandle(16),
       },
 )
 const busy = ref(false)
@@ -153,14 +158,6 @@ async function loadSub() {
 }
 onMounted(loadSub)
 
-async function rotateSub() {
-  try {
-    sub.value = await api.post(`/api/clients/${props.client.id}/subscription/rotate`, {})
-    notify(t('client.subRotated'), 'success')
-  } catch (e) {
-    notify(e.message, 'error')
-  }
-}
 async function copy(text) {
   try {
     await navigator.clipboard.writeText(String(text))
@@ -237,9 +234,11 @@ function validate() {
   if (!form.value.name.trim()) e.name = t('client.nameRequired')
   if (!form.value.interfaceIds.length) e.servers = t('client.chooseAtLeastOne')
   if (form.value.startOnFirstUse && !(Number(form.value.durationDays) > 0)) e.durationDays = t('client.durationRequired')
+  const sid = form.value.subId.trim()
+  if (sid && !/^[A-Za-z0-9_-]{8,64}$/.test(sid)) e.subId = t('client.subIdInvalid')
   fieldError.value = e
   if (Object.keys(e).length) {
-    tab.value = 'basics'
+    tab.value = e.name || e.servers || e.durationDays ? 'basics' : 'credentials'
     return false
   }
   return true
@@ -272,6 +271,7 @@ async function submit() {
       ...(hasOpenVPN.value && user && user !== currentOpenVPNUsername() ? { openvpnUsername: user } : {}),
       ...(hasOpenVPN.value && form.value.openvpnPassword ? { openvpnPassword: form.value.openvpnPassword } : {}),
       deviceNames: form.value.deviceNames.map((d) => d.trim()).filter(Boolean),
+      ...(form.value.subId.trim() && form.value.subId.trim() !== (props.client?.subId || '') ? { subId: form.value.subId.trim() } : {}),
     })
   } finally {
     busy.value = false
@@ -281,7 +281,7 @@ async function submit() {
 
 <template>
   <div class="amodal-backdrop" @click.self="emit('close')">
-    <div class="amodal w880" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+    <div class="amodal w720" role="dialog" aria-modal="true" aria-labelledby="cf-title">
       <div class="amodal-head">
         <h2 id="cf-title" class="amodal-title">{{ editing ? t('client.edit') : t('client.create') }}</h2>
         <button class="amodal-close" :aria-label="t('action.cancel')" @click="emit('close')"><AntIcon name="CloseOutlined" /></button>
@@ -317,7 +317,7 @@ async function submit() {
               </div>
               <div class="acol6">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-quota">{{ t('client.quota') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.quotaHint')" /></label>
+                  <label class="aform-label" for="cf-quota">{{ t('client.quota') }} <HelpTip :text="t('client.quotaHint')" /></label>
                   <div class="acompact">
                     <label class="ainput number"><input id="cf-quota" v-model="form.quota" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('client.unlimited')" /></label>
                     <div class="aselect unit"><select v-model="form.quotaUnit" :aria-label="t('client.quotaUnit')"><option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option></select></div>
@@ -326,7 +326,7 @@ async function submit() {
               </div>
               <div class="acol6">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-devices">{{ t('client.deviceLimit') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.deviceLimitHint')" /></label>
+                  <label class="aform-label" for="cf-devices">{{ t('client.deviceLimit') }} <HelpTip :text="t('client.deviceLimitHint')" /></label>
                   <label class="ainput number"><input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" class="ltr" /></label>
                 </div>
               </div>
@@ -335,7 +335,7 @@ async function submit() {
             <div class="arow16">
               <div class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-expires">{{ t('client.expiresIn') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.expiresHint')" /></label>
+                  <label class="aform-label" for="cf-expires">{{ t('client.expiresIn') }} <HelpTip :text="t('client.expiresHint')" /></label>
                   <div class="acompact">
                     <label class="ainput number"><input id="cf-expires" v-model="form.expiresIn" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('client.neverExpires')" /></label>
                     <div class="aselect unit"><select v-model="form.expiresUnit" :aria-label="t('client.expiresUnit')"><option value="hours">{{ t('unit.hours') }}</option><option value="days">{{ t('unit.days') }}</option><option value="months">{{ t('unit.months') }}</option></select></div>
@@ -344,13 +344,13 @@ async function submit() {
               </div>
               <div class="acol6">
                 <div class="aform-item">
-                  <label class="aform-label">{{ t('client.delayedStart') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.startOnFirstUseHint')" /></label>
+                  <label class="aform-label">{{ t('client.delayedStart') }} <HelpTip :text="t('client.startOnFirstUseHint')" /></label>
                   <div class="switch-line"><Toggle v-model="form.startOnFirstUse" :label="t('client.startOnFirstUse')" /></div>
                 </div>
               </div>
               <div class="acol6">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-duration">{{ t('client.durationDays') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.durationHint')" /></label>
+                  <label class="aform-label" for="cf-duration">{{ t('client.durationDays') }} <HelpTip :text="t('client.durationHint')" /></label>
                   <label class="ainput number" :class="{ disabled: !form.startOnFirstUse, invalid: fieldError.durationDays }"><input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" class="ltr" :disabled="!form.startOnFirstUse" placeholder="0" /></label>
                   <p v-if="fieldError.durationDays" class="field-error">{{ fieldError.durationDays }}</p>
                 </div>
@@ -360,7 +360,7 @@ async function submit() {
             <div class="arow16">
               <div class="acol6">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-rate">{{ t('client.rate') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.rateHint')" /></label>
+                  <label class="aform-label" for="cf-rate">{{ t('client.rate') }} <HelpTip :text="t('client.rateHint')" /></label>
                   <label class="ainput number"><input id="cf-rate" v-model="form.rateMbit" type="number" min="0" step="1" class="ltr" placeholder="0" /><span class="ainput-suffix">Mbit/s</span></label>
                 </div>
               </div>
@@ -372,8 +372,8 @@ async function submit() {
               </div>
               <div class="acol6">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-tgid">{{ t('client.telegramId') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.telegramIdHint')" /></label>
-                  <label class="ainput number"><input id="cf-tgid" v-model.number="form.telegramId" type="number" min="0" class="ltr" placeholder="0" /></label>
+                  <label class="aform-label" for="cf-tgid">{{ t('client.telegramId') }} <HelpTip :text="t('client.telegramIdHint')" /></label>
+                  <label class="ainput number"><input id="cf-tgid" v-model.number="form.telegramId" type="number" min="0" class="ltr" :placeholder="t('client.telegramIdPlaceholder')" /></label>
                 </div>
               </div>
             </div>
@@ -387,7 +387,7 @@ async function submit() {
               </div>
               <div class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-group">{{ t('client.group') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.groupHint')" /></label>
+                  <label class="aform-label" for="cf-group">{{ t('client.group') }} <HelpTip :text="t('client.groupHint')" /></label>
                   <label class="ainput block"><input id="cf-group" v-model="form.group" list="cf-groups" :placeholder="t('client.groupPlaceholder')" /></label>
                   <datalist id="cf-groups"><option v-for="g in groupNames" :key="g" :value="g" /></datalist>
                 </div>
@@ -418,14 +418,14 @@ async function submit() {
           <div v-show="tab === 'credentials'">
             <template v-if="hasOpenVPN">
               <div class="aform-item">
-                <label class="aform-label" for="cf-ovpn-user">{{ t('client.openvpnUsername') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.openvpnHint')" /></label>
+                <label class="aform-label" for="cf-ovpn-user">{{ t('client.openvpnUsername') }} <HelpTip :text="t('client.openvpnHint')" /></label>
                 <div class="acompact">
                   <label class="ainput block"><input id="cf-ovpn-user" v-model="form.openvpnUsername" class="ltr" autocomplete="off" maxlength="48" :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" /></label>
                   <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="form.openvpnUsername = randomHandle(12)"><AntIcon name="ReloadOutlined" /></button>
                 </div>
               </div>
               <div class="aform-item">
-                <label class="aform-label" for="cf-ovpn-pass">{{ t('client.openvpnPassword') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.openvpnPasswordHint')" /></label>
+                <label class="aform-label" for="cf-ovpn-pass">{{ t('client.openvpnPassword') }} <HelpTip :text="t('client.openvpnPasswordHint')" /></label>
                 <div class="acompact">
                   <label class="ainput block"><input id="cf-ovpn-pass" v-model="form.openvpnPassword" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" /></label>
                   <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="form.openvpnPassword = randomSecret()"><AntIcon name="ReloadOutlined" /></button>
@@ -434,30 +434,31 @@ async function submit() {
             </template>
             <div v-else class="aalert info"><AntIcon name="InfoCircleOutlined" /><span>{{ t('client.credsNoOpenVPN') }}</span></div>
 
+            <div class="aform-item">
+              <label class="aform-label" for="cf-subid">{{ t('client.subscriptionId') }} <HelpTip :text="t('client.subIdHint')" /></label>
+              <div class="acompact">
+                <label class="ainput block" :class="{ invalid: fieldError.subId }"><input id="cf-subid" v-model="form.subId" class="ltr" autocomplete="off" maxlength="64" /></label>
+                <button type="button" class="abtn icon" :title="t('client.rotateSub')" :aria-label="t('client.rotateSub')" @click="form.subId = randomHandle(16)"><AntIcon name="ReloadOutlined" /></button>
+              </div>
+              <p v-if="fieldError.subId" class="field-error">{{ fieldError.subId }}</p>
+              <p v-else-if="editing && form.subId.trim() !== (props.client.subId || '')" class="hint">{{ t('client.subIdChangeHint') }}</p>
+            </div>
+
             <template v-if="!editing">
               <div class="aform-item">
-                <label class="aform-label">{{ t('client.deviceNames') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.deviceNamesHint')" /></label>
+                <label class="aform-label">{{ t('client.deviceNames') }} <HelpTip :text="t('client.deviceNamesHint')" /></label>
                 <TagInput v-model="form.deviceNames" placeholder="device-1" />
                 <p class="hint">{{ t('client.deviceNamesHint') }}</p>
               </div>
             </template>
             <template v-else>
               <div class="aform-item">
-                <label class="aform-label">{{ t('client.devices') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.devicesOnPage')" /></label>
+                <label class="aform-label">{{ t('client.devices') }} <HelpTip :text="t('client.devicesOnPage')" /></label>
                 <div class="device-list">
                   <span v-for="d in devices" :key="d.id" class="atag">{{ d.deviceName }}</span>
                   <span v-if="!devices.length" class="hint">—</span>
                 </div>
                 <p class="hint">{{ t('client.devicesOnPage') }}</p>
-              </div>
-              <div class="aform-item">
-                <label class="aform-label">{{ t('client.subscriptionId') }} <AntIcon name="QuestionCircleOutlined" class="ahelp" :title="t('client.subscriptionIdHint')" /></label>
-                <div class="acompact">
-                  <label class="ainput block disabled"><input class="ltr" :value="sub?.token || (subEnabled ? '' : t('client.subDisabled'))" readonly /></label>
-                  <button type="button" class="abtn icon" :title="t('action.copy')" :aria-label="t('action.copy')" :disabled="!sub?.token" @click="copy(sub.token)"><AntIcon name="CopyOutlined" /></button>
-                  <button type="button" class="abtn icon" :title="t('client.rotateSub')" :aria-label="t('client.rotateSub')" :disabled="!subEnabled" @click="rotateSub"><AntIcon name="ReloadOutlined" /></button>
-                </div>
-                <p class="hint">{{ t('client.subscriptionIdHint') }}</p>
               </div>
             </template>
           </div>
@@ -474,7 +475,7 @@ async function submit() {
                   <button type="button" class="abtn icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(sub.link)"><AntIcon name="CopyOutlined" /></button>
                   <a class="abtn icon" :href="sub.link" target="_blank" rel="noopener noreferrer" :title="t('client.openSubPage')"><AntIcon name="LinkOutlined" /></a>
                 </div>
-                <p v-else class="hint">{{ t('client.subDisabled') }}</p>
+                <p v-else class="hint">{{ subEnabled ? t('client.linksAfterCreate') : t('client.subDisabled') }}</p>
               </div>
               <div class="aform-item">
                 <label class="aform-label">{{ t('client.deviceFiles') }}</label>
@@ -497,7 +498,7 @@ async function submit() {
 </template>
 
 <style scoped>
-.amodal.w880 { width: min(880px, calc(100vw - 32px)); }
+.amodal.w720 { width: min(720px, calc(100vw - 32px)); }
 .cf-body { max-height: 72vh; overflow-y: auto; overflow-x: hidden; }
 .cf-form { padding-top: 4px; }
 
@@ -508,12 +509,19 @@ async function submit() {
 .arow16 > [class^='acol'] { padding-inline: 8px; min-width: 0; }
 .acol12 { grid-column: span 12; }
 .acol6 { grid-column: span 6; }
+/* Their xs={24} for the wide fields and xs={12} for the small numbers: on
+   a phone the numbers sit two to a row rather than one under another. And
+   as Ant's modal does on a phone, the dialog takes the width less 8px a
+   side and the page scrolls rather than a box inside the dialog, so no
+   scrollbar sits on top of the controls. */
 @media (max-width: 768px) {
-  .acol12, .acol6 { grid-column: 1 / -1; }
+  .acol12 { grid-column: 1 / -1; }
+  .acol6 { grid-column: span 12; }
+  .amodal.w720 { width: calc(100vw - 16px); padding: 16px; }
+  .amodal-backdrop { padding: 16px 8px; align-items: flex-start; }
+  .cf-body { max-height: none; overflow: visible; }
 }
 
-.aform-label .ahelp { margin-inline-start: 4px; color: var(--faint); cursor: help; vertical-align: -1px; font-size: 14px; }
-.aform-label .ahelp:hover { color: var(--ink-2); }
 .aform-label.required::before { content: '*'; margin-inline-end: 4px; color: var(--bad); }
 
 .ainput.invalid, .ainput.invalid:hover { border-color: var(--bad); }

@@ -66,6 +66,13 @@ type CreateInput struct {
 	// and a fact in an import, and only the importer may say which.
 	Historical bool `json:"-"`
 
+	// SubID is the secret in the customer's subscription link, when the
+	// operator wants to choose it -- a reseller carrying customers over from
+	// another panel keeps their links working by keeping their ids. Left
+	// empty one is generated. 8 to 64 characters of letters, digits, - and _,
+	// unique across customers.
+	SubID string `json:"subId"`
+
 	// Enabled, when given and false, creates the customer switched off: a
 	// plan sold ahead of time, or a row prepared for a customer who has not
 	// paid yet. Absent, they are active.
@@ -123,6 +130,18 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 	if in.Enabled != nil && !*in.Enabled {
 		client.Status = model.StatusDisabled
 	}
+	// The link's secret is settled now rather than the first time the link
+	// is asked for, so the id shown on the form is the id that works.
+	subID, err := s.checkSubID(ctx, 0, in.SubID)
+	if err != nil {
+		return nil, err
+	}
+	if subID == "" {
+		if subID, err = newSubToken(); err != nil {
+			return nil, err
+		}
+	}
+	client.SubToken = subID
 
 	// A deferred plan carries a duration instead of a date. Keeping both would
 	// leave two answers to "when does this end", and the wrong one would be
@@ -794,6 +813,10 @@ type UpdateInput struct {
 	ResetCycle     *model.ResetCycle   `json:"resetCycle"`
 	Status         *model.ClientStatus `json:"status"`
 
+	// SubID replaces the secret in the customer's subscription link; the old
+	// link stops working. Empty leaves it.
+	SubID string `json:"subId"`
+
 	// OpenVPNUsername and OpenVPNPassword rename the customer's first device
 	// on every OpenVPN tunnel it is on, and are what a tunnel added here
 	// issues. Either may be given alone; empty leaves things as they are.
@@ -875,6 +898,13 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 			return nil, fmt.Errorf("%w: device limit must be between 1 and 50", ErrInvalid)
 		}
 		fields["device_limit"] = *in.DeviceLimit
+	}
+	if in.SubID != "" && in.SubID != client.SubToken {
+		subID, err := s.checkSubID(ctx, client.ID, in.SubID)
+		if err != nil {
+			return nil, err
+		}
+		fields["sub_token"] = subID
 	}
 	if in.RateBitsPerSec != nil {
 		fields["rate_bits_per_sec"] = *in.RateBitsPerSec
@@ -1618,4 +1648,34 @@ func (s *Clients) setOpenVPNCredentials(ctx context.Context, client *model.Clien
 		}
 		return nil
 	})
+}
+
+// checkSubID validates a subscription id an operator typed and makes sure
+// no other customer holds it. Empty is allowed and means "generate one".
+func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", nil
+	}
+	if len(id) < 8 || len(id) > 64 {
+		return "", invalidField("subId", "a subscription id is 8 to 64 characters")
+	}
+	for _, r := range id {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			continue
+		}
+		return "", invalidField("subId", "a subscription id can only contain letters, digits, - and _ (found %q)", string(r))
+	}
+	var n int64
+	q := s.db.WithContext(ctx).Model(&model.Client{}).Where("sub_token = ?", id)
+	if selfID != 0 {
+		q = q.Where("id <> ?", selfID)
+	}
+	if err := q.Count(&n).Error; err != nil {
+		return "", fmt.Errorf("service: check subscription id: %w", err)
+	}
+	if n > 0 {
+		return "", invalidField("subId", "the subscription id %q belongs to another customer", id)
+	}
+	return id, nil
 }

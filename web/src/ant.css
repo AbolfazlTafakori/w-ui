@@ -524,7 +524,9 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .amodal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Above the phone drawer's handle (1100) and level with the other modal
+     backdrop, so a dialog is never sat on by the menu button. */
+  z-index: 1150;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -561,6 +563,9 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 }
 .amodal-close:hover { background: var(--surface-3); color: var(--ink); }
 .amodal-body { font-size: 14px; line-height: 22px; }
+/* The page's tables keep a floor width and scroll in their wrapper; a table
+   inside a dialog has no wrapper to scroll in and fits the dialog instead. */
+.amodal table { min-width: 0; }
 .amodal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .aform-item { margin-bottom: 24px; }
 .aform-label { display: block; margin-bottom: 8px; font-size: 14px; line-height: 22px; color: var(--ink); }

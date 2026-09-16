@@ -291,7 +291,9 @@ const expiryText = computed(() => {
 </template>
 
 <style>
-.info-table { width: 100%; border-collapse: collapse; }
+.info-table { width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; }
+.info-table td { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 480px) { .info-table td:first-child { width: 104px; white-space: normal; } }
 .info-table.block { margin-bottom: 10px; }
 .info-table td { padding: 4px 8px; vertical-align: top; }
 .info-table td:first-child { width: 140px; font-size: 13px; opacity: 0.75; white-space: nowrap; }

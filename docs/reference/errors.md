@@ -71,6 +71,8 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` | | Something like `roya` or `roya.k`. |
 | `the username "…" is already used on …` | Usernames are unique per OpenVPN tunnel. | Another name. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` | | |
+| `a subscription id is 8 to 64 characters` / `a subscription id can only contain letters, digits, - and _ (found "…")` | The subscription id typed on the Credentials tab. | Something like `roya-2024-link`, or leave it empty to have one drawn. |
+| `the subscription id "…" belongs to another customer` | Each customer's link secret is unique. | Another id. |
 | `device limit reached` (400) | The customer already holds 64 device files, the most one can. | Remove a device. |
 | `address pool exhausted` (400) | The tunnel's subnet has no free address. | A larger subnet on the interface, or another interface. |
 | `no interfaces configured; create one before adding customers` (log) | A customer was created before any tunnel. | Create an interface first. |

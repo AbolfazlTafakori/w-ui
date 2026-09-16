@@ -57,6 +57,14 @@ The count spans every server: a device on a node is one of the customer's connec
 
 What counts: a credential with bytes moving in the last 75 seconds is one connection, whichever address it comes from — a phone walking from wifi onto mobile data changes address once and is still one person. One file used on two devices at the same time shows as an address that keeps flipping back and forth, and that counts as two. So a customer with ten files and a plan for one can use any of them, one after the other; using two together holds the second off.
 
+## The client dialog
+
+**Add client** and the pencil on a row open the same dialog, in three tabs:
+
+- **Basics** — name (the ↻ draws a random one), data allowance with its unit, connections at once, how long the plan is valid, On hold with the plan length, speed limit, traffic reset, Telegram ID, note, group, the servers the customer may use (Select all / Clear all), and the **Enabled** switch. The question mark beside a label explains it on hover.
+- **Credentials** — the OpenVPN username and password when an OpenVPN server is selected (each with ↻ to generate), the devices to issue on creation, and the **Subscription ID**: the secret in the customer's link. Type one to keep a link a customer already has (8–64 characters: letters, digits, `-`, `_`, unique), or ↻ for a new one; changing it stops the old link.
+- **Links** — for an existing customer, the subscription link with copy and open; the files themselves are on the customer's page.
+
 ## OpenVPN username and password
 
 OpenVPN logs in with a username and a password rather than a key. When an OpenVPN tunnel is among the servers chosen for a customer, two fields appear under the server picker: **OpenVPN username** and **OpenVPN password**. Type what the customer should use, or leave them empty and the panel generates a pair. On the edit form the username shows the current one; a new password only has to be typed when it should change.

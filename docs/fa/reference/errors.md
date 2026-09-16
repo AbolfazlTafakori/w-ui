@@ -71,6 +71,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` |  | چیزی مثل `roya` یا `roya.k`. |
 | `the username "…" is already used on …` | نام کاربری روی هر تانل OpenVPN یکتاست. | نام دیگری. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` |  |  |
+| `a subscription id is 8 to 64 characters` / `a subscription id can only contain letters, digits, - and _ (found "…")` | شناسهٔ اشتراکی که در تب Credentials تایپ شده. | چیزی مثل `roya-2024-link`، یا خالی بگذار تا ساخته شود. |
+| `the subscription id "…" belongs to another customer` | رازِ لینک هر مشتری یکتاست. | شناسهٔ دیگری. |
 | `device limit reached` (400) | مشتری همین حالا ۶۴ فایل دستگاه دارد، بیشترین ممکن. | دستگاهی را حذف کن. |
 | `address pool exhausted` (400) | زیرشبکهٔ تانل آدرس آزاد ندارد. | زیرشبکهٔ بزرگ‌تر روی اینترفیس، یا اینترفیس دیگر. |
 | `no interfaces configured; create one before adding customers` (log) | مشتری قبل از هر تانلی ساخته شده. | اول یک اینترفیس بساز. |

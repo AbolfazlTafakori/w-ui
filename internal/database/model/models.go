@@ -256,10 +256,11 @@ type Client struct {
 
 	Status ClientStatus `gorm:"size:16;not null;index;default:active" json:"status"`
 
-	// SubToken is the secret in a customer's subscription link. Whoever holds it
-	// gets the configuration, so it is never returned by the list endpoints —
-	// only by the one call that exists to show it.
-	SubToken string `gorm:"size:64;index" json:"-"`
+	// SubToken is the secret in a customer's subscription link -- the
+	// subscription id an operator sees and may set. Whoever holds it gets
+	// the configuration; it goes to the administrator's own API and nowhere
+	// else, and never to a node.
+	SubToken string `gorm:"size:64;index" json:"subId,omitempty"`
 
 	Accounts []Account `gorm:"foreignKey:ClientID;constraint:OnDelete:CASCADE" json:"accounts,omitempty"`
 

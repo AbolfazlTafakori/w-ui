@@ -800,7 +800,8 @@ tbody tr:hover {
   position: fixed;
   inset-block-end: 20px;
   inset-inline-end: 20px;
-  z-index: 60;
+  /* Above every dialog: a save that fails inside one has to be seen. */
+  z-index: 1400;
   padding: 13px 18px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -857,6 +858,7 @@ tbody tr:hover {
   flex: 1 1 auto;
   min-height: 0;
 }
+.modal table { min-width: 0; }
 .modal-foot {
   flex-shrink: 0;
   display: flex;

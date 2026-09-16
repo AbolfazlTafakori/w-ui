@@ -254,7 +254,7 @@ export function activeFilterCount(f) {
 .fd-scrim {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 1150;
   display: flex;
   justify-content: flex-end;
   background: rgba(0, 0, 0, 0.45);
