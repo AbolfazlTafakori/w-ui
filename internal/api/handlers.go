@@ -445,8 +445,7 @@ func (s *Server) handleInterfaceProfile(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h := w.Header()
-	h.Set("Content-Type", "text/plain; charset=utf-8")
-	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	setDownload(h, name)
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)

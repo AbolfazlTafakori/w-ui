@@ -2,6 +2,7 @@ package api
 
 import (
 	"html/template"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -231,5 +232,30 @@ func TestQRLimitIsBelowATypicalOpenVPNProfile(t *testing.T) {
 	const wireguardProfile = 420
 	if subPageQRLimit <= wireguardProfile {
 		t.Errorf("the limit of %d would drop the QR from a WireGuard profile", subPageQRLimit)
+	}
+}
+
+// A phone's browser appends ".txt" to a text/plain download, and the VPN
+// app then does not recognise the file. Each kind of file gets a type of
+// its own and keeps its name.
+func TestDeviceDownloadsKeepTheirName(t *testing.T) {
+	for name, want := range map[string]string{
+		"device-1.ovpn": "application/x-openvpn-profile",
+		"device-1.conf": "application/x-wireguard-profile",
+		"other.bin":     "application/octet-stream",
+	} {
+		h := http.Header{}
+		setDownload(h, name)
+		if got := h.Get("Content-Type"); got != want {
+			t.Errorf("%s served as %q, want %q", name, got, want)
+		}
+		if cd := h.Get("Content-Disposition"); !strings.Contains(cd, `filename="`+name+`"`) || !strings.Contains(cd, "filename*=UTF-8''"+name) {
+			t.Errorf("%s disposition %q", name, cd)
+		}
+	}
+	h := http.Header{}
+	setDownload(h, "گوشی.ovpn")
+	if cd := h.Get("Content-Disposition"); !strings.Contains(cd, `filename="____.ovpn"`) || !strings.Contains(cd, "filename*=UTF-8''%DA%AF") {
+		t.Errorf("a non-ascii name: %q", cd)
 	}
 }

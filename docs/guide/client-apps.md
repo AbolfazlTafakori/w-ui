@@ -38,7 +38,7 @@ Import is the same as WireGuard: QR, file, or pasted text.
 | Windows / macOS | OpenVPN Connect, or the OpenVPN GUI / Tunnelblick |
 | Linux | `openvpn --config customer.ovpn` |
 
-The `.ovpn` the panel produces is self-contained — CA, `tls-crypt` key, and the server address are inside — so it imports with one tap. The device's **username and password** ride inside the file, so it connects without a prompt; the same pair is what to type into a client too old to read the block (OpenVPN before 2.5). There is no per-client certificate to install.
+On a phone, download the file from the subscription page (the ⤓ beside the device) — it arrives as `device-1.ovpn`, not as a `.txt`, and opens straight in OpenVPN Connect. The `.ovpn` the panel produces is self-contained — CA, `tls-crypt` key, and the server address are inside — so it imports with one tap. The device's **username and password** ride inside the file, so it connects without a prompt; the same pair is what to type into a client too old to read the block (OpenVPN before 2.5). There is no per-client certificate to install.
 
 ## Subscription links
 

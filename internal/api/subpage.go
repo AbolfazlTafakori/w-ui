@@ -10,6 +10,8 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -343,8 +345,7 @@ func (s *Server) maybeServeSubDevice(w http.ResponseWriter, r *http.Request, tok
 	}
 
 	h := w.Header()
-	h.Set("Content-Type", "text/plain; charset=utf-8")
-	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", profile.Filename))
+	setDownload(h, profile.Filename)
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
@@ -1136,3 +1137,37 @@ a.row-title:hover { text-decoration: underline; }
 </body>
 </html>
 `))
+
+// setDownload names a configuration file the way phones expect it.
+//
+// Served as text/plain, Android's browsers append ".txt" to whatever the
+// file is called -- "device-1.ovpn.txt" -- and the VPN app no longer
+// recognises it. A type of its own for each kind of file keeps the name as
+// written, and the name is also given in the encoded form so one with a
+// customer's own script in it survives the header.
+func setDownload(h http.Header, filename string) {
+	ctype := "application/octet-stream"
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".ovpn":
+		ctype = "application/x-openvpn-profile"
+	case ".conf":
+		ctype = "application/x-wireguard-profile"
+	}
+	h.Set("Content-Type", ctype)
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s",
+		asciiFilename(filename), url.PathEscape(filename)))
+}
+
+// asciiFilename is the plain form of a name for the header's first field,
+// for clients that read only that one.
+func asciiFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' {
+			b.WriteByte('_')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
