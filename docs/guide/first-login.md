@@ -27,7 +27,7 @@ WUI_DB_TYPE=sqlite
 If you missed them:
 
 ```bash
-w-ui              # menu → 11 (View Current Settings)
+w-ui              # menu → 11 (Show current settings)
 w-ui settings     # the one-shot form
 ```
 
@@ -39,15 +39,15 @@ There is no default `admin` / `admin` to change — both are generated — but i
 
 A non-default port and a long random **path** are what keep the panel off scanners' lists. Both are random by default; to change them later:
 
-- **`w-ui` → 8 — Reset Web Base Path** (randomises it)
-- **`w-ui` → 10 — Change Port**
+- **`w-ui` → 8 — Reset the URL path** (randomises it)
+- **`w-ui` → 10 — Change the port**
 - or Settings → General
 
 Both apply at the next restart; note the new address first.
 
 ## Change the administrator
 
-- **`w-ui` → 7 — Reset Username & Password** (generated unless typed)
+- **`w-ui` → 7 — Reset username and password** (generated unless typed)
 - or Settings → Security
 
 Changing the password signs every session out.

@@ -6,45 +6,53 @@ description: "کنار پنل نصب می‌شود. w-ui منو را باز می
 
 کنار پنل نصب می‌شود. `w-ui` منو را باز می‌کند، `w-ui <subcommand>` یک کار را انجام می‌دهد. منو همان منوی کلاسیک است، شماره به شماره؛ آنچه آن‌جا Xray است این‌جا تانل‌هاست.
 
-```
-╔────────────────────────────────────────────────╗
-│  W-UI Panel Management Script                  │
-│  0. Exit Script                                │
-│────────────────────────────────────────────────│
-│  1. Install                                    │
-│  2. Update                                     │
-│  3. Update to Dev Channel (latest commit)      │
-│  4. Update Menu                                │
-│  5. Legacy Version                             │
-│  6. Uninstall                                  │
-│────────────────────────────────────────────────│
-│  7. Reset Username & Password                  │
-│  8. Reset Web Base Path                        │
-│  9. Reset Settings                             │
-│  10. Change Port                               │
-│  11. View Current Settings                     │
-│────────────────────────────────────────────────│
-│  12. Start                                     │
-│  13. Stop                                      │
-│  14. Restart                                   │
-│  15. Restart Tunnels                           │
-│  16. Check Status                              │
-│  17. Logs Management                           │
-│────────────────────────────────────────────────│
-│  18. Enable Autostart                          │
-│  19. Disable Autostart                         │
-│────────────────────────────────────────────────│
-│  20. SSL Certificate Management                │
-│  21. Cloudflare SSL Certificate                │
-│  22. IP Limit Management                       │
-│  23. Firewall Management                       │
-│  24. SSH Port Forwarding Management            │
-│  25. PostgreSQL Management                     │
-│────────────────────────────────────────────────│
-│  26. Enable BBR                                │
-│  27. Update Geo Files                          │
-│  28. Speedtest by Ookla                        │
-╚────────────────────────────────────────────────╝
+```text
+  W-UI  ·  WireGuard · AmneziaWG · OpenVPN   v1.0.0
+
+  ╭──────────────────────────────────────────────────────╮
+  │   0  Exit                                            │
+  ├──────────────────────────────────────────────────────┤
+  │ Install and update                                   │
+  │   1  Install                                         │
+  │   2  Update                                          │
+  │   3  Update to the dev channel (latest commit)       │
+  │   4  Update this menu                                │
+  │   5  Install an older version                        │
+  │   6  Uninstall                                       │
+  ├──────────────────────────────────────────────────────┤
+  │ Access                                               │
+  │   7  Reset username and password                     │
+  │   8  Reset the URL path                              │
+  │   9  Reset settings                                  │
+  │  10  Change the port                                 │
+  │  11  Show current settings                           │
+  ├──────────────────────────────────────────────────────┤
+  │ Service                                              │
+  │  12  Start                                           │
+  │  13  Stop                                            │
+  │  14  Restart                                         │
+  │  15  Restart tunnels                                 │
+  │  16  Status                                          │
+  │  17  Logs                                            │
+  │  18  Enable start on boot                            │
+  │  19  Disable start on boot                           │
+  ├──────────────────────────────────────────────────────┤
+  │ Server                                               │
+  │  20  SSL certificate                                 │
+  │  21  Cloudflare SSL certificate                      │
+  │  22  Connection limit                                │
+  │  23  Firewall                                        │
+  │  24  SSH port forwarding                             │
+  │  25  PostgreSQL                                      │
+  │  26  Enable BBR                                      │
+  │  27  Update geo files                                │
+  │  28  Speedtest by Ookla                              │
+  ├──────────────────────────────────────────────────────┤
+  │ Panel                  ● Running                     │
+  │ Start on boot          Yes                           │
+  │ WireGuard wg0          udp/443  ● Running            │
+  │ OpenVPN OpenVpn        tcp/2053  ● Running           │
+  ╰──────────────────────────────────────────────────────╯
 ```
 
 زیر جعبه: وضعیت پنل، اینکه با بوت بالا می‌آید یا نه، و یک خط برای هر تانل.

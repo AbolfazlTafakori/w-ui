@@ -27,7 +27,7 @@ WUI_DB_TYPE=sqlite
 اگر از دستش دادی:
 
 ```bash
-w-ui              # منو → 11 (View Current Settings)
+w-ui              # منو → 11 (Show current settings)
 w-ui settings     # فرم یک‌خطی
 ```
 
@@ -39,15 +39,15 @@ w-ui settings     # فرم یک‌خطی
 
 پورت غیرپیش‌فرض و **مسیر** بلند و رندوم چیزی است که پنل را از لیست اسکنرها دور نگه می‌دارد. هر دو پیش‌فرض رندوم‌اند؛ برای تغییر بعدی:
 
-- **`w-ui` → 8 — Reset Web Base Path** (رندوم می‌کند)
-- **`w-ui` → 10 — Change Port**
+- **`w-ui` → 8 — Reset the URL path** (رندوم می‌کند)
+- **`w-ui` → 10 — Change the port**
 - یا تنظیمات → General
 
 هر دو در ریستارت بعدی اعمال می‌شوند؛ آدرس جدید را اول یادداشت کن.
 
 ## عوض کردن مدیر
 
-- **`w-ui` → 7 — Reset Username & Password** (تولیدشده مگر بنویسی)
+- **`w-ui` → 7 — Reset username and password** (تولیدشده مگر بنویسی)
 - یا تنظیمات → Security
 
 تغییر رمز همهٔ نشست‌ها را خارج می‌کند.
