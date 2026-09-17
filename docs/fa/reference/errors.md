@@ -58,7 +58,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `choose at least one server for this customer` | هیچ اینترفیسی تیک نخورده. | تانل‌(های) مجاز مشتری را تیک بزن. |
 | `Not found: …` | آی‌دی اینترفیسی که وجود ندارد — معمولاً صفحهٔ کهنه بعد از حذف. | رفرش کن؛ تانل موجود را انتخاب کن. |
 | `one of those inbounds does not exist` / `choose at least one inbound` | همان، در ساخت گروهی. |  |
-| `device limit must be between 1 and 50` | اتصال هم‌زمان. | عددی در همان بازه. |
+| `device limit must be between 0 and 50` | اتصال هم‌زمان. | عددی در همان بازه. |
 | `… devices requested; at most … per customer` | سقف فایل دستگاه ۶۴ است. |  |
 | `expiry is in the past` | تاریخ انقضا گذشته است. | تاریخ آینده بده، یا خالی بگذار تا منقضی نشود. |
 | `unknown reset cycle "…"` |  | `none`، `daily`، `weekly` یا `monthly`. |

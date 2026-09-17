@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -338,11 +339,13 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 	if in.Name == "" {
 		return nil, invalidField("name", "name is required")
 	}
-	if in.DeviceLimit < 1 {
-		in.DeviceLimit = 1
+	// 0 is unlimited: the customer may be connected from as many places as
+	// they like. Anything above 50 is a typo.
+	if in.DeviceLimit < 0 {
+		in.DeviceLimit = 0
 	}
 	if in.DeviceLimit > 50 {
-		return nil, invalidField("deviceLimit", "device limit must be between 1 and 50")
+		return nil, invalidField("deviceLimit", "device limit must be between 0 and 50")
 	}
 	switch in.ResetCycle {
 	case "":
@@ -802,12 +805,14 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 
 // UpdateInput carries the fields an operator may change.
 type UpdateInput struct {
-	Name           *string             `json:"name"`
-	Note           *string             `json:"note"`
-	Group          *string             `json:"group"`
-	TelegramID     *int64              `json:"telegramId"`
-	QuotaBytes     *uint64             `json:"quotaBytes"`
-	ExpiresAt      **time.Time         `json:"expiresAt"`
+	Name       *string `json:"name"`
+	Note       *string `json:"note"`
+	Group      *string `json:"group"`
+	TelegramID *int64  `json:"telegramId"`
+	QuotaBytes *uint64 `json:"quotaBytes"`
+	// ExpiresAt: absent leaves the date alone, null clears it (no expiry),
+	// a time sets it. A plain pointer could not tell the first two apart.
+	ExpiresAt      OptionalTime        `json:"expiresAt"`
 	DeviceLimit    *int                `json:"deviceLimit"`
 	RateBitsPerSec *uint64             `json:"rateBitsPerSec"`
 	ResetCycle     *model.ResetCycle   `json:"resetCycle"`
@@ -865,8 +870,8 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 	if in.QuotaBytes != nil {
 		fields["quota_bytes"] = *in.QuotaBytes
 	}
-	if in.ExpiresAt != nil {
-		fields["expires_at"] = *in.ExpiresAt
+	if in.ExpiresAt.Set {
+		fields["expires_at"] = in.ExpiresAt.Value
 	}
 	if in.StartOnFirstUse != nil || in.DurationDays != nil {
 		on := client.StartOnFirstUse
@@ -894,8 +899,8 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		// Connections at once, not files: a customer keeps every file they
 		// hold when the limit is lowered, and simply cannot use as many of
 		// them together.
-		if *in.DeviceLimit < 1 || *in.DeviceLimit > 50 {
-			return nil, fmt.Errorf("%w: device limit must be between 1 and 50", ErrInvalid)
+		if *in.DeviceLimit < 0 || *in.DeviceLimit > 50 {
+			return nil, fmt.Errorf("%w: device limit must be between 0 and 50", ErrInvalid)
 		}
 		fields["device_limit"] = *in.DeviceLimit
 	}
@@ -1046,8 +1051,8 @@ func (s *Clients) revives(client *model.Client, in UpdateInput) bool {
 	if client.Status == model.StatusExhausted && in.QuotaBytes != nil && *in.QuotaBytes > client.UsedBytes {
 		return true
 	}
-	if client.Status == model.StatusExpired && in.ExpiresAt != nil {
-		exp := *in.ExpiresAt
+	if client.Status == model.StatusExpired && in.ExpiresAt.Set {
+		exp := in.ExpiresAt.Value
 		return exp == nil || exp.After(time.Now())
 	}
 	return false
@@ -1679,3 +1684,37 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 	}
 	return id, nil
 }
+
+// OptionalTime is a time that can be absent, null or set, for the fields an
+// edit may leave alone, clear or change.
+type OptionalTime struct {
+	Set   bool
+	Value *time.Time
+}
+
+// UnmarshalJSON records that the field was present; null leaves Value nil.
+func (o *OptionalTime) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(b) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var t time.Time
+	if err := json.Unmarshal(b, &t); err != nil {
+		return err
+	}
+	o.Value = &t
+	return nil
+}
+
+// MarshalJSON writes the value, or null.
+func (o OptionalTime) MarshalJSON() ([]byte, error) {
+	if !o.Set || o.Value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(o.Value)
+}
+
+// At is the OptionalTime for a given time; Clear is one that removes the date.
+func At(t time.Time) OptionalTime { return OptionalTime{Set: true, Value: &t} }
+func ClearTime() OptionalTime     { return OptionalTime{Set: true} }

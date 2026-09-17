@@ -70,16 +70,15 @@ func TestHoldsReachTheNodesDataPlane(t *testing.T) {
 		t.Fatalf("direct hold reached %v (n=%d), want [%d]", got, n, laptop.ID)
 	}
 
-	// An older panel that sends no limit: the node's count is the files it
-	// holds, so its fallback holds nobody.
+	// No limit sent -- unlimited, or an older panel: the fallback holds nobody.
 	if err := ns.Apply(context.Background(), 1, managedState(nil, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Where("origin_id = ?", 7).First(&c).Error; err != nil {
 		t.Fatal(err)
 	}
-	if c.DeviceLimit != 2 {
-		t.Fatalf("device limit with none sent = %d, want 2", c.DeviceLimit)
+	if c.DeviceLimit != 0 {
+		t.Fatalf("device limit with none sent = %d, want 0", c.DeviceLimit)
 	}
 }
 

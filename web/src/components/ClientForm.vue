@@ -16,6 +16,7 @@ import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
 import TagInput from './TagInput.vue'
 import HelpTip from './HelpTip.vue'
+import AutoComplete from './AutoComplete.vue'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -65,12 +66,14 @@ const form = ref(
         interfaceIds: [...new Set((props.client.accounts || []).map((a) => a.interfaceId))],
         quota: quotaToUnit(props.client.quotaBytes).value,
         quotaUnit: quotaToUnit(props.client.quotaBytes).unit,
-        expiresIn: durationToUnit(hoursLeft(props.client.expiresAt)).value,
-        expiresUnit: durationToUnit(hoursLeft(props.client.expiresAt)).unit,
-        deviceLimit: props.client.deviceLimit,
+        expiresIn: props.client.startOnFirstUse
+          ? props.client.durationDays || ''
+          : durationToUnit(hoursLeft(props.client.expiresAt)).value,
+        expiresUnit: props.client.startOnFirstUse ? 'days' : durationToUnit(hoursLeft(props.client.expiresAt)).unit,
+        // 0 is unlimited and shown as an empty box, as the quota is.
+        deviceLimit: props.client.deviceLimit || '',
         rateMbit: props.client.rateBitsPerSec ? props.client.rateBitsPerSec / 1e6 : '',
         startOnFirstUse: !!props.client.startOnFirstUse,
-        durationDays: props.client.durationDays || '',
         resetCycle: props.client.resetCycle || 'none',
         enabled: props.client.status !== 'disabled',
         // The name their first OpenVPN device logs in with, so it can be read
@@ -90,10 +93,9 @@ const form = ref(
         quotaUnit: 'GB',
         expiresIn: '',
         expiresUnit: 'days',
-        deviceLimit: 1,
+        deviceLimit: '',
         rateMbit: '',
         startOnFirstUse: false,
-        durationDays: '',
         resetCycle: 'none',
         enabled: true,
         openvpnUsername: '',
@@ -167,6 +169,13 @@ async function copy(text) {
   }
 }
 
+// The plan length in days while On hold is on: the expiry box, whatever
+// unit it is in, rounded up to whole days.
+function planDays() {
+  const h = unitToHours(form.value.expiresIn, form.value.expiresUnit)
+  return h > 0 ? Math.ceil(h / 24) : 0
+}
+
 const chosen = computed(() => props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)))
 // Whether any tunnel picked is OpenVPN: those log in with a username and
 // password, and a reseller may want to choose them rather than be handed
@@ -233,12 +242,12 @@ function validate() {
   const e = {}
   if (!form.value.name.trim()) e.name = t('client.nameRequired')
   if (!form.value.interfaceIds.length) e.servers = t('client.chooseAtLeastOne')
-  if (form.value.startOnFirstUse && !(Number(form.value.durationDays) > 0)) e.durationDays = t('client.durationRequired')
+  if (form.value.startOnFirstUse && !(planDays() > 0)) e.expiresIn = t('client.durationRequired')
   const sid = form.value.subId.trim()
   if (sid && !/^[A-Za-z0-9_-]{8,64}$/.test(sid)) e.subId = t('client.subIdInvalid')
   fieldError.value = e
   if (Object.keys(e).length) {
-    tab.value = e.name || e.servers || e.durationDays ? 'basics' : 'credentials'
+    tab.value = e.name || e.servers || e.expiresIn ? 'basics' : 'credentials'
     return false
   }
   return true
@@ -250,7 +259,10 @@ async function submit() {
   try {
     // Sold in whatever unit was chosen -- half a gigabyte, thirty-six hours --
     // and stored in bytes and a timestamp, which is what is enforced.
-    const hours = unitToHours(form.value.expiresIn, form.value.expiresUnit)
+    // Empty or 0 is no expiry, on creation and on an edit alike: null on the
+    // wire clears a date the customer had. While On hold is on the same box
+    // is the plan length, counted from their first connection instead.
+    const hours = form.value.startOnFirstUse ? 0 : unitToHours(form.value.expiresIn, form.value.expiresUnit)
     const expiresAt = hours > 0 ? new Date(Date.now() + hours * 3600e3).toISOString() : null
     const user = form.value.openvpnUsername.trim()
 
@@ -262,10 +274,10 @@ async function submit() {
       interfaceIds: form.value.interfaceIds,
       quotaBytes: unitToBytes(form.value.quota, form.value.quotaUnit),
       expiresAt,
-      deviceLimit: Number(form.value.deviceLimit) || 1,
+      deviceLimit: Number(form.value.deviceLimit) || 0,
       rateBitsPerSec: Math.max(0, Math.round(Number(form.value.rateMbit) * 1e6)) || 0,
       startOnFirstUse: form.value.startOnFirstUse,
-      durationDays: form.value.startOnFirstUse ? Number(form.value.durationDays) || 0 : 0,
+      durationDays: form.value.startOnFirstUse ? planDays() : 0,
       resetCycle: form.value.resetCycle,
       ...(editing.value ? { status: form.value.enabled ? 'active' : 'disabled' } : { enabled: form.value.enabled }),
       ...(hasOpenVPN.value && user && user !== currentOpenVPNUsername() ? { openvpnUsername: user } : {}),
@@ -327,7 +339,7 @@ async function submit() {
               <div class="acol6">
                 <div class="aform-item">
                   <label class="aform-label" for="cf-devices">{{ t('client.deviceLimit') }} <HelpTip :text="t('client.deviceLimitHint')" /></label>
-                  <label class="ainput number"><input id="cf-devices" v-model="form.deviceLimit" type="number" min="1" max="50" class="ltr" /></label>
+                  <label class="ainput number"><input id="cf-devices" v-model="form.deviceLimit" type="number" min="0" max="50" class="ltr" :placeholder="t('client.unlimited')" /></label>
                 </div>
               </div>
             </div>
@@ -335,24 +347,18 @@ async function submit() {
             <div class="arow16">
               <div class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-expires">{{ t('client.expiresIn') }} <HelpTip :text="t('client.expiresHint')" /></label>
+                  <label class="aform-label" for="cf-expires">{{ form.startOnFirstUse ? t('client.expireDays') : t('client.expiresIn') }} <HelpTip :text="form.startOnFirstUse ? t('client.durationHint') : t('client.expiresHint')" /></label>
                   <div class="acompact">
-                    <label class="ainput number"><input id="cf-expires" v-model="form.expiresIn" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('client.neverExpires')" /></label>
+                    <label class="ainput number" :class="{ invalid: fieldError.expiresIn }"><input id="cf-expires" v-model="form.expiresIn" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="form.startOnFirstUse ? '30' : t('client.neverExpires')" /></label>
                     <div class="aselect unit"><select v-model="form.expiresUnit" :aria-label="t('client.expiresUnit')"><option value="hours">{{ t('unit.hours') }}</option><option value="days">{{ t('unit.days') }}</option><option value="months">{{ t('unit.months') }}</option></select></div>
                   </div>
+                  <p v-if="fieldError.expiresIn" class="field-error">{{ fieldError.expiresIn }}</p>
                 </div>
               </div>
               <div class="acol6">
                 <div class="aform-item">
                   <label class="aform-label">{{ t('client.delayedStart') }} <HelpTip :text="t('client.startOnFirstUseHint')" /></label>
                   <div class="switch-line"><Toggle v-model="form.startOnFirstUse" :label="t('client.startOnFirstUse')" /></div>
-                </div>
-              </div>
-              <div class="acol6">
-                <div class="aform-item">
-                  <label class="aform-label" for="cf-duration">{{ t('client.durationDays') }} <HelpTip :text="t('client.durationHint')" /></label>
-                  <label class="ainput number" :class="{ disabled: !form.startOnFirstUse, invalid: fieldError.durationDays }"><input id="cf-duration" v-model="form.durationDays" type="number" min="1" max="3650" step="1" class="ltr" :disabled="!form.startOnFirstUse" placeholder="0" /></label>
-                  <p v-if="fieldError.durationDays" class="field-error">{{ fieldError.durationDays }}</p>
                 </div>
               </div>
             </div>
@@ -388,8 +394,7 @@ async function submit() {
               <div class="acol12">
                 <div class="aform-item">
                   <label class="aform-label" for="cf-group">{{ t('client.group') }} <HelpTip :text="t('client.groupHint')" /></label>
-                  <label class="ainput block"><input id="cf-group" v-model="form.group" list="cf-groups" :placeholder="t('client.groupPlaceholder')" /></label>
-                  <datalist id="cf-groups"><option v-for="g in groupNames" :key="g" :value="g" /></datalist>
+                  <AutoComplete id="cf-group" v-model="form.group" :options="groupNames" :placeholder="t('client.groupPlaceholder')" />
                 </div>
               </div>
             </div>

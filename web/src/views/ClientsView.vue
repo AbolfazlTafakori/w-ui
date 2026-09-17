@@ -1017,9 +1017,9 @@ async function submitForm(input) {
                     <!-- Connections in use right now against what the plan allows at once,
                          the way the classic panel shows its IP count: a file on two devices
                          used one at a time is one connection; both at once is two. -->
-                    <span class="sub ltr" :class="{ over: (c.onlineNow || 0) > c.deviceLimit }"
+                    <span class="sub ltr" :class="{ over: c.deviceLimit > 0 && (c.onlineNow || 0) > c.deviceLimit }"
                           :title="t('client.connectionsNow', { n: c.onlineNow || 0, limit: c.deviceLimit, files: c.accounts?.length ?? 0 })">
-                      {{ c.onlineNow || 0 }} / {{ c.deviceLimit }}
+                      {{ c.onlineNow || 0 }} / {{ c.deviceLimit || '∞' }}
                     </span>
                     <span v-if="c.note" class="sub" :title="c.note">{{ c.note }}</span>
                   </div>

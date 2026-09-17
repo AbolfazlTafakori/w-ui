@@ -61,7 +61,9 @@ What counts: a credential with bytes moving in the last 75 seconds is one connec
 
 **Add client** and the pencil on a row open the same dialog, in three tabs:
 
-- **Basics** — name (the ↻ draws a random one), data allowance with its unit, connections at once, how long the plan is valid, On hold with the plan length, speed limit, traffic reset, Telegram ID, note, group, the servers the customer may use (Select all / Clear all), and the **Enabled** switch. The question mark beside a label explains it on hover.
+- **Basics** — name (the ↻ draws a random one), data allowance with its unit, connections at once, how long the plan is valid, On hold, speed limit, traffic reset, Telegram ID, note, group (a drop-down of the groups that exist, or type a new one), the servers the customer may use (Select all / Clear all), and the **Enabled** switch. The question mark beside a label explains it on hover.
+
+  **Empty or 0 means unlimited** for the allowance, the validity and the connections at once — on creation and on an edit alike: clearing the box on an existing customer removes the limit. With **On hold** switched on, the validity box becomes **Expire days**: how many days the plan runs once the customer first connects.
 - **Credentials** — the OpenVPN username and password when an OpenVPN server is selected (each with ↻ to generate), the devices to issue on creation, and the **Subscription ID**: the secret in the customer's link. Type one to keep a link a customer already has (8–64 characters: letters, digits, `-`, `_`, unique), or ↻ for a new one; changing it stops the old link.
 - **Links** — for an existing customer, the subscription link with copy and open; the files themselves are on the customer's page.
 

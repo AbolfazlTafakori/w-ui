@@ -294,7 +294,7 @@ async function copy(text) {
         <div class="metric">
           <dt>{{ t('client.deviceLimit') }}</dt>
           <dd class="ltr">
-            {{ deviceCount }} / {{ client.deviceLimit }}
+            {{ deviceCount }} / {{ client.deviceLimit || '∞' }}
             <span v-if="serverCount > 1" class="muted small">
               · {{ tn('client.acrossServers', serverCount) }}
             </span>
@@ -327,8 +327,8 @@ async function copy(text) {
           />
           <button
             class="btn sm primary"
-            :disabled="deviceCount >= client.deviceLimit"
-            :title="deviceCount >= client.deviceLimit ? t('error.deviceLimitReached') : ''"
+            :disabled="deviceCount >= 64"
+            :title="deviceCount >= 64 ? t('error.deviceLimitReached') : ''"
             @click="addDevice"
           >
             <Icon name="plus" :size="13" />{{ t('device.add') }}

@@ -58,7 +58,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `choose at least one server for this customer` | No interface was ticked. | Tick the tunnel(s) the customer may use. |
 | `Not found: …` | An interface id that does not exist — usually a stale page after a deletion. | Reload; pick an existing tunnel. |
 | `one of those inbounds does not exist` / `choose at least one inbound` | The same, on bulk creation. | |
-| `device limit must be between 1 and 50` | Connections at once. | A number in that range. |
+| `device limit must be between 0 and 50` | Connections at once; 0 is unlimited. | A number in that range. |
 | `… devices requested; at most … per customer` | Device files are capped at 64. | |
 | `expiry is in the past` | The expiry date has already passed. | Pick a future date, or leave it empty for no expiry. |
 | `unknown reset cycle "…"` | | `none`, `daily`, `weekly` or `monthly`. |

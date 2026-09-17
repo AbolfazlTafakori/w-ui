@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -65,4 +66,52 @@ func TestSubscriptionIDIsChosenOrDrawnAndUnique(t *testing.T) {
 type subIDResult struct {
 	id  uint
 	sub string
+}
+
+// Empty means unlimited, and stays so on an edit: an expiry can be cleared,
+// a quota set back to nothing, the connections limit lifted.
+func TestEmptyMeansUnlimitedOnEditToo(t *testing.T) {
+	db := testDB(t)
+	svc, ifaces, _ := seedServers(t, db, 0)
+	expires := time.Now().Add(24 * time.Hour)
+	c, err := svc.Create(context.Background(), CreateInput{
+		Name: "Roya", InterfaceIDs: []uint{ifaces[0].ID}, ExpiresAt: &expires, QuotaBytes: 5 << 30, DeviceLimit: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zero := uint64(0)
+	none := 0
+	got, err := svc.Update(context.Background(), c.ID, UpdateInput{ExpiresAt: ClearTime(), QuotaBytes: &zero, DeviceLimit: &none})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ExpiresAt != nil || got.QuotaBytes != 0 || got.DeviceLimit != 0 {
+		t.Fatalf("after clearing: expires=%v quota=%d limit=%d", got.ExpiresAt, got.QuotaBytes, got.DeviceLimit)
+	}
+	// An edit that says nothing about the date leaves it alone.
+	later := time.Now().Add(48 * time.Hour)
+	if _, err := svc.Update(context.Background(), c.ID, UpdateInput{ExpiresAt: At(later)}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = svc.Update(context.Background(), c.ID, UpdateInput{QuotaBytes: &zero})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ExpiresAt == nil {
+		t.Fatal("an edit without a date cleared it")
+	}
+	// And the wire form: null clears, absence keeps.
+	var in UpdateInput
+	if err := json.Unmarshal([]byte(`{"expiresAt":null}`), &in); err != nil || !in.ExpiresAt.Set || in.ExpiresAt.Value != nil {
+		t.Fatalf("null on the wire: %+v %v", in.ExpiresAt, err)
+	}
+	in = UpdateInput{}
+	if err := json.Unmarshal([]byte(`{"name":"x"}`), &in); err != nil || in.ExpiresAt.Set {
+		t.Fatalf("absence on the wire: %+v %v", in.ExpiresAt, err)
+	}
+	// A plan with no connections limit is a limit of none.
+	if in.DeviceLimit != nil {
+		t.Fatal("absent limit decoded as set")
+	}
 }

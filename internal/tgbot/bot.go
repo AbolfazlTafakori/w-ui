@@ -471,12 +471,11 @@ func (b *Bot) setField(ctx context.Context, chat int64, id uint, field, value st
 			b.send(ctx, chat, b.t("badNumber"), nil)
 			return
 		}
-		var t *time.Time
 		if days > 0 {
-			at := time.Now().Add(time.Duration(days) * 24 * time.Hour)
-			t = &at
+			in.ExpiresAt = service.At(time.Now().Add(time.Duration(days) * 24 * time.Hour))
+		} else {
+			in.ExpiresAt = service.ClearTime()
 		}
-		in.ExpiresAt = &t
 	case "devices":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 1 {

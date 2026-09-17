@@ -227,11 +227,11 @@ func (s *NodeSync) upsertClients(tx *gorm.DB, iface *model.Interface, want []Nod
 		// plan decides. Enabled is the decision arriving.
 		c.QuotaBytes = 0
 		c.ExpiresAt = nil
+		// 0 is unlimited -- also what a panel older than this field sends,
+		// and such a panel never held anybody, so the fallback holds nobody.
 		c.DeviceLimit = wc.DeviceLimit
-		if c.DeviceLimit <= 0 {
-			// A panel older than this field sends none; its own count is
-			// then the only one, and the fallback must not hold anybody.
-			c.DeviceLimit = len(wc.Accounts)
+		if c.DeviceLimit < 0 {
+			c.DeviceLimit = 0
 		}
 		if wc.Enabled {
 			c.Status = model.StatusActive
