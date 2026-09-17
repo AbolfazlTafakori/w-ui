@@ -52,7 +52,7 @@ Every look keeps the same content and the same controls — the theme toggle, th
 
 ## Always current
 
-Nothing is stored for the link: every fetch renders the configurations from the records at that moment. Whatever changed in the panel — an endpoint or port, the DNS, a host added, a device renamed, an OpenVPN username or password, a customer put on another server — is in the next fetch, and the answer is sent with `Cache-Control: no-store` so nothing in between keeps an old copy. The customer's page reloads itself on open; an app refetches on the interval it is told (`Profile-Update-Interval`, **1 hour** by default, set under Settings → Subscription), so a change reaches every app within the hour without anyone being sent a new file.
+Nothing is stored for the link: every fetch renders the configurations from the records at that moment. Whatever changed in the panel — an endpoint or port, the DNS, a host added, a device renamed, an OpenVPN username or password, a customer put on another server — is in the next fetch, and the answer is sent with `Cache-Control: no-store` so nothing in between keeps an old copy. The customer's page keeps itself current while it is open: every three seconds it asks for its figures and a fingerprint of the files it was made from, and the moment the fingerprint differs it loads itself again — a device renamed, an address moved, a server added or a username changed is in front of the customer within seconds, with no tap. Usage and the online dot move without a reload; an app refetches on the interval it is told (`Profile-Update-Interval`, **1 hour** by default, set under Settings → Subscription), so a change reaches every app within the hour without anyone being sent a new file.
 
 ## Formats
 
