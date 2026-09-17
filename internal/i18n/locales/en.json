@@ -1658,7 +1658,7 @@
   "client.openvpnPassword": "OpenVPN password",
   "client.openvpnGenerated": "generated if left empty",
   "client.openvpnKeep": "leave empty to keep",
-  "client.openvpnHint": "Used on every OpenVPN tunnel this customer is on. A second device on the same tunnel gets the name with a number after it.",
+  "client.openvpnHint": "Each user logs in to OpenVPN as themselves: one username and password per user, on every OpenVPN tunnel this customer is on, carried inside their file. Left empty they are generated. Usernames are unique per tunnel.",
   "status.onHold": "On hold",
   "client.connectionsNow": "{n} connected now of {limit} users ({files} files issued)",
   "client.tabBasics": "Basics",
@@ -1691,5 +1691,7 @@
   "client.subIdHint": "The secret in the customer's subscription link. Type one to keep a link a customer already has; changing it makes the old link stop working. Letters, digits, - and _, 8 to 64 characters.",
   "client.subIdInvalid": "8 to 64 characters: letters, digits, - and _.",
   "client.subIdChangeHint": "Saving with a different id makes the old link stop working; hand the customer the new one.",
-  "client.expireDays": "Expire days"
+  "client.expireDays": "Expire days",
+  "client.userN": "User {n}",
+  "client.openvpnLogin": "OpenVPN login"
 }

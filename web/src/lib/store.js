@@ -57,8 +57,16 @@ export function setNavigating(on) {
   store.navigating = on
 }
 
-export function t(key) {
-  return store.messages[key] || key
+export function t(key, vars) {
+  let text = store.messages[key] || key
+  // {name} placeholders, filled from the second argument when one is given;
+  // a number is written the locale's way.
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      text = text.split(`{${k}}`).join(typeof v === 'number' ? v.toLocaleString(store.locale) : String(v))
+    }
+  }
+  return text
 }
 
 // tn picks the right form for a count and substitutes it.

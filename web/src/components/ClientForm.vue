@@ -43,10 +43,13 @@ function randomSecret(n = 16) {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
 }
 
-function currentOpenVPNUsername() {
-  const ovpn = new Set((props.interfaces || []).filter((i) => i.protocol === 'openvpn').map((i) => i.id))
-  const acc = (props.client?.accounts || []).find((a) => ovpn.has(a.interfaceId) && a.username)
-  return acc ? acc.username : ''
+// The usernames the customer's OpenVPN users have now, in the plan's
+// order (user 1 first), from the first OpenVPN tunnel they are on.
+function currentOpenVPNUsernames() {
+  const ovpn = (props.interfaces || []).filter((i) => i.protocol === 'openvpn').map((i) => i.id)
+  if (!ovpn.length) return []
+  const on = (props.client?.accounts || []).filter((a) => a.interfaceId === ovpn[0]).sort((a, b) => a.id - b.id)
+  return on.map((a) => a.username || '')
 }
 function hoursLeft(iso) {
   if (!iso) return 0
@@ -77,8 +80,7 @@ const form = ref(
         enabled: props.client.status !== 'disabled',
         // The name their first OpenVPN device logs in with, so it can be read
         // and changed here rather than looked up on the devices page.
-        openvpnUsername: currentOpenVPNUsername(),
-        openvpnPassword: '',
+        openvpnUsers: currentOpenVPNUsernames().map((u) => ({ username: u, password: '' })),
         deviceNames: [],
         subId: props.client.subId || '',
       }
@@ -97,8 +99,7 @@ const form = ref(
         startOnFirstUse: false,
         resetCycle: 'none',
         enabled: true,
-        openvpnUsername: '',
-        openvpnPassword: '',
+        openvpnUsers: [],
         deviceNames: [],
         // Drawn now, as theirs is, so the operator sees the link's secret
         // before the customer exists and can replace it with one of their own.
@@ -173,6 +174,25 @@ async function copy(text) {
 function planDays() {
   const h = unitToHours(form.value.expiresIn, form.value.expiresUnit)
   return h > 0 ? Math.ceil(h / 24) : 0
+}
+
+// One login per user: the rows follow the Users count. On an edit a row
+// starts with the user's current name; a blank password keeps theirs.
+const openvpnRows = computed(() => {
+  const n = Math.max(1, Number(form.value.deviceLimit) || 1)
+  while (form.value.openvpnUsers.length < n) form.value.openvpnUsers.push({ username: '', password: '' })
+  return form.value.openvpnUsers.slice(0, n)
+})
+// What to send: only what differs from what the user has now, by position,
+// with blanks for the rest so positions line up.
+function openvpnChanges() {
+  const now = currentOpenVPNUsernames()
+  const rows = openvpnRows.value.map((r, i) => ({
+    username: r.username.trim() && r.username.trim() !== (now[i] || '') ? r.username.trim() : '',
+    password: r.password || '',
+  }))
+  while (rows.length && !rows[rows.length - 1].username && !rows[rows.length - 1].password) rows.pop()
+  return rows
 }
 
 const chosen = computed(() => props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)))
@@ -263,7 +283,6 @@ async function submit() {
     // is the plan length, counted from their first connection instead.
     const hours = form.value.startOnFirstUse ? 0 : unitToHours(form.value.expiresIn, form.value.expiresUnit)
     const expiresAt = hours > 0 ? new Date(Date.now() + hours * 3600e3).toISOString() : null
-    const user = form.value.openvpnUsername.trim()
 
     await emit('submit', {
       name: form.value.name.trim(),
@@ -279,8 +298,7 @@ async function submit() {
       durationDays: form.value.startOnFirstUse ? planDays() : 0,
       resetCycle: form.value.resetCycle,
       ...(editing.value ? { status: form.value.enabled ? 'active' : 'disabled' } : { enabled: form.value.enabled }),
-      ...(hasOpenVPN.value && user && user !== currentOpenVPNUsername() ? { openvpnUsername: user } : {}),
-      ...(hasOpenVPN.value && form.value.openvpnPassword ? { openvpnPassword: form.value.openvpnPassword } : {}),
+      ...(hasOpenVPN.value && openvpnChanges().length ? { openvpnUsers: openvpnChanges() } : {}),
       deviceNames: form.value.deviceNames.map((d) => d.trim()).filter(Boolean),
       ...(form.value.subId.trim() && form.value.subId.trim() !== (props.client?.subId || '') ? { subId: form.value.subId.trim() } : {}),
     })
@@ -421,18 +439,28 @@ async function submit() {
           <!-- ══ Credentials ══ -->
           <div v-show="tab === 'credentials'">
             <template v-if="hasOpenVPN">
-              <div class="aform-item">
-                <label class="aform-label" for="cf-ovpn-user">{{ t('client.openvpnUsername') }} <HelpTip :text="t('client.openvpnHint')" /></label>
-                <div class="acompact">
-                  <label class="ainput block"><input id="cf-ovpn-user" v-model="form.openvpnUsername" class="ltr" autocomplete="off" maxlength="48" :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" /></label>
-                  <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="form.openvpnUsername = randomHandle(12)"><AntIcon name="ReloadOutlined" /></button>
-                </div>
-              </div>
-              <div class="aform-item">
-                <label class="aform-label" for="cf-ovpn-pass">{{ t('client.openvpnPassword') }} <HelpTip :text="t('client.openvpnPasswordHint')" /></label>
-                <div class="acompact">
-                  <label class="ainput block"><input id="cf-ovpn-pass" v-model="form.openvpnPassword" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="editing ? t('client.openvpnKeep') : t('client.openvpnGenerated')" /></label>
-                  <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="form.openvpnPassword = randomSecret()"><AntIcon name="ReloadOutlined" /></button>
+              <!-- One login per user, in the plan's order. A plan for
+                   several is several people, each logging in as
+                   themselves. -->
+              <div v-for="(row, i) in openvpnRows" :key="i" class="aform-item ovpn-user">
+                <label class="aform-label">
+                  <template v-if="openvpnRows.length > 1">{{ t('client.userN', { n: i + 1 }) }}</template>
+                  <template v-else>{{ t('client.openvpnLogin') }}</template>
+                  <HelpTip v-if="i === 0" :text="t('client.openvpnHint')" />
+                </label>
+                <div class="arow16">
+                  <div class="acol12">
+                    <div class="acompact">
+                      <label class="ainput block"><input v-model="row.username" class="ltr" autocomplete="off" maxlength="48" :placeholder="editing && row.username === '' ? t('client.openvpnKeep') : t('client.openvpnUsername') + ' — ' + t('client.openvpnGenerated')" /></label>
+                      <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="row.username = randomHandle(12)"><AntIcon name="ReloadOutlined" /></button>
+                    </div>
+                  </div>
+                  <div class="acol12">
+                    <div class="acompact">
+                      <label class="ainput block"><input v-model="row.password" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="editing ? t('client.openvpnPassword') + ' — ' + t('client.openvpnKeep') : t('client.openvpnPassword') + ' — ' + t('client.openvpnGenerated')" /></label>
+                      <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="row.password = randomSecret()"><AntIcon name="ReloadOutlined" /></button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </template>

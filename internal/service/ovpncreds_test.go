@@ -56,13 +56,13 @@ func TestOpenVPNCredentialsAreWhatWasTyped(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := accountsOn(t, db, c.ID, ov.ID)
-	if len(got) != 2 || got[0].Username != "roya" || got[1].Username != "roya-2" {
+	// The pair given is user 1's; user 2 is another person and gets a login
+	// of their own, generated here since none was typed.
+	if len(got) != 2 || got[0].Username != "roya" || got[0].Secret != "s3cret-pass" {
 		t.Fatalf("usernames: %+v", got)
 	}
-	for _, a := range got {
-		if a.Secret != "s3cret-pass" {
-			t.Fatalf("password not applied: %q", a.Secret)
-		}
+	if got[1].Username == "roya" || got[1].Username == "" || got[1].Secret == "s3cret-pass" || got[1].Secret == "" {
+		t.Fatalf("user 2 did not get a login of their own: %+v", got[1])
 	}
 	for _, a := range accountsOn(t, db, c.ID, wg.ID) {
 		if a.Username != "" {
@@ -126,5 +126,39 @@ func TestOpenVPNCredentialsCanBeChangedLater(t *testing.T) {
 	_, err = svc.Update(context.Background(), c.ID, UpdateInput{OpenVPNPassword: "short"})
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("short password accepted: %v", err)
+	}
+}
+
+// A plan for several: each user is given their own login, and two users
+// cannot be given the same one.
+func TestEachUserHasTheirOwnOpenVPNLogin(t *testing.T) {
+	db := testDB(t)
+	svc, _, ov := seedOpenVPN(t, db)
+	c, err := svc.Create(context.Background(), CreateInput{
+		Name: "Roya", InterfaceIDs: []uint{ov.ID}, DeviceLimit: 3,
+		OpenVPNUsers: []OpenVPNUser{{"roya-a", "pass-a-1"}, {"roya-b", "pass-b-2"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := accountsOn(t, db, c.ID, ov.ID)
+	if len(got) != 3 || got[0].Username != "roya-a" || got[0].Secret != "pass-a-1" || got[1].Username != "roya-b" || got[1].Secret != "pass-b-2" {
+		t.Fatalf("logins: %+v", got)
+	}
+	if got[2].Username == "" || got[2].Secret == "" || got[2].Username == "roya-b" {
+		t.Fatalf("user 3, untyped, did not get a login of their own: %+v", got[2])
+	}
+	// Changing only user 2's password leaves the others alone.
+	if _, err := svc.Update(context.Background(), c.ID, UpdateInput{OpenVPNUsers: []OpenVPNUser{{}, {Password: "new-pass-2"}}}); err != nil {
+		t.Fatal(err)
+	}
+	got = accountsOn(t, db, c.ID, ov.ID)
+	if got[0].Secret != "pass-a-1" || got[1].Secret != "new-pass-2" || got[1].Username != "roya-b" {
+		t.Fatalf("after changing user 2's password: %+v", got)
+	}
+	// The same username for two users is refused.
+	_, err = svc.Update(context.Background(), c.ID, UpdateInput{OpenVPNUsers: []OpenVPNUser{{Username: "same-1"}, {Username: "same-1"}}})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("two users with one username accepted: %v", err)
 	}
 }

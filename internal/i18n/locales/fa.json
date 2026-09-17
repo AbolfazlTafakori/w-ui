@@ -1658,7 +1658,7 @@
   "client.openvpnPassword": "رمز OpenVPN",
   "client.openvpnGenerated": "خالی بماند تولید می‌شود",
   "client.openvpnKeep": "خالی بماند تغییری نمی‌کند",
-  "client.openvpnHint": "روی هر تانل OpenVPN که این مشتری روی آن است استفاده می‌شود. دستگاه دوم روی همان تانل، همین نام را با یک شماره می‌گیرد.",
+  "client.openvpnHint": "هر کاربر با هویت خودش به OpenVPN وارد می‌شود: برای هر کاربر یک نام کاربری و رمز، روی هر تانل OpenVPN که این مشتری روی آن است، داخل فایل خودش. خالی بماند تولید می‌شود. نام کاربری روی هر تانل یکتاست.",
   "status.onHold": "On hold",
   "client.connectionsNow": "{n} اتصال فعال از {limit} کاربر ({files} فایل صادر شده)",
   "client.tabBasics": "Basics",
@@ -1691,5 +1691,7 @@
   "client.subIdHint": "رازِ لینک سابسکریپشن مشتری. برای نگه داشتن لینکی که مشتری از قبل دارد خودت تایپ کن؛ تغییرش لینک قبلی را از کار می‌اندازد. حروف، ارقام، - و _، ۸ تا ۶۴ کاراکتر.",
   "client.subIdInvalid": "۸ تا ۶۴ کاراکتر: حروف، ارقام، - و _.",
   "client.subIdChangeHint": "ذخیره با شناسهٔ دیگر لینک قبلی را از کار می‌اندازد؛ لینک جدید را به مشتری بده.",
-  "client.expireDays": "روزهای اعتبار"
+  "client.expireDays": "روزهای اعتبار",
+  "client.userN": "کاربر {n}",
+  "client.openvpnLogin": "ورود OpenVPN"
 }

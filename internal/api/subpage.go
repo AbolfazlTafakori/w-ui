@@ -590,6 +590,7 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-user-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px; }
 .cfg-user-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cfg-user-head .row-actions { margin-inline-start: auto; }
+.cfg-user-login { margin-inline-start: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 400; color: var(--muted); }
 .cfg-user-body { display: none; padding: 0 16px 14px; }
 .cfg-user.open .cfg-user-body { display: block; }
 .cfg-user .btn.show .anticon { transition: transform .3s; }
@@ -983,7 +984,7 @@ a.row-title:hover { text-decoration: underline; }
             {{ range .Devices }}
             <div class="cfg-user">
               <div class="cfg-user-head">
-                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
+                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (eq .Protocol "openvpn") .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
                   <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
                   <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>

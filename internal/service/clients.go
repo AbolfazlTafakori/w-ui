@@ -89,6 +89,13 @@ type CreateInput struct {
 	OpenVPNUsername string `json:"openvpnUsername"`
 	OpenVPNPassword string `json:"openvpnPassword"`
 
+	// OpenVPNUsers are the credentials per user, in the plan's order: the
+	// first entry is user 1's, the second user 2's. A plan for several is
+	// several people, and each logs in as themselves -- which is what keeps
+	// a two-user plan two single-user plans. An empty entry is generated;
+	// the two fields above are the same thing for a plan of one.
+	OpenVPNUsers []OpenVPNUser `json:"openvpnUsers"`
+
 	// DeviceNames seeds the first devices. When empty one device is created,
 	// because a client with no device has nothing to hand the customer.
 	DeviceNames []string `json:"deviceNames"`
@@ -176,7 +183,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 		releases = append(releases, rel)
 	}
 
-	creds, err := s.checkOpenVPNCredentials(ctx, ifaces, 0, in.OpenVPNUsername, in.OpenVPNPassword)
+	creds, err := s.checkOpenVPNCredentials(ctx, ifaces, 0, openvpnUsersOf(in.OpenVPNUsers, in.OpenVPNUsername, in.OpenVPNPassword))
 	if err != nil {
 		for _, rel := range releases {
 			rel()
@@ -853,6 +860,9 @@ type UpdateInput struct {
 	// issues. Either may be given alone; empty leaves things as they are.
 	OpenVPNUsername string `json:"openvpnUsername"`
 	OpenVPNPassword string `json:"openvpnPassword"`
+	// OpenVPNUsers sets each user's credentials by position; an empty
+	// username or password in an entry leaves that one as it is.
+	OpenVPNUsers []OpenVPNUser `json:"openvpnUsers"`
 
 	// StartOnFirstUse and DurationDays: a plan whose clock starts at the
 	// first connection. Turning it on clears any fixed expiry; turning it
@@ -995,8 +1005,8 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 	}
 
 	// After the servers, so a tunnel added in the same save gets the name.
-	if in.OpenVPNUsername != "" || in.OpenVPNPassword != "" {
-		if err := s.setOpenVPNCredentials(ctx, client, in.OpenVPNUsername, in.OpenVPNPassword); err != nil {
+	if users := openvpnUsersOf(in.OpenVPNUsers, in.OpenVPNUsername, in.OpenVPNPassword); len(users) > 0 {
+		if err := s.setOpenVPNCredentials(ctx, client, users); err != nil {
 			return nil, err
 		}
 	} else if len(fields) == 0 && in.InterfaceIDs == nil {
@@ -1584,36 +1594,51 @@ func (s *Clients) ByName(ctx context.Context, name string) (*model.Client, error
 	return &c, nil
 }
 
-// openvpnCreds is a checked wish for the credentials of a customer's
-// OpenVPN devices.
-type openvpnCreds struct {
-	username, password string
+// OpenVPNUser is one user's login on the customer's OpenVPN tunnels.
+type OpenVPNUser struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
-// apply puts the wish on an account: the first device gets the name as
-// typed, later ones a number after it, and every one the password.
-func (c openvpnCreds) apply(acc *model.Account, iface *model.Interface, deviceIndex int) {
-	if iface.Protocol != model.ProtocolOpenVPN {
+// openvpnUsersOf is the list form of what was sent: the per-user list, or
+// the single pair an older caller sends for user 1. Nil when nothing was.
+func openvpnUsersOf(users []OpenVPNUser, username, password string) []OpenVPNUser {
+	if len(users) > 0 {
+		return users
+	}
+	if strings.TrimSpace(username) != "" || password != "" {
+		return []OpenVPNUser{{Username: username, Password: password}}
+	}
+	return nil
+}
+
+// openvpnCreds is a checked wish for the credentials of a customer's
+// OpenVPN users, by position.
+type openvpnCreds struct {
+	users []OpenVPNUser
+}
+
+// apply puts the wish for one user on their account; a user with no wish
+// keeps what they have or what was generated.
+func (c openvpnCreds) apply(acc *model.Account, iface *model.Interface, userIndex int) {
+	if iface.Protocol != model.ProtocolOpenVPN || userIndex >= len(c.users) {
 		return
 	}
-	if c.username != "" {
-		if deviceIndex == 0 {
-			acc.Username = c.username
-		} else {
-			acc.Username = fmt.Sprintf("%s-%d", c.username, deviceIndex+1)
-		}
+	u := c.users[userIndex]
+	if u.Username != "" {
+		acc.Username = u.Username
 	}
-	if c.password != "" {
-		acc.Secret = c.password
+	if u.Password != "" {
+		acc.Secret = u.Password
 	}
 }
 
-// checkOpenVPNCredentials validates what was typed and makes sure the name
-// is free on every OpenVPN tunnel it would be used on. selfID is the
-// customer whose own accounts do not count as a clash.
-func (s *Clients) checkOpenVPNCredentials(ctx context.Context, ifaces []*model.Interface, selfID uint, username, password string) (openvpnCreds, error) {
-	username = strings.TrimSpace(username)
-	if username == "" && password == "" {
+// checkOpenVPNCredentials validates what was typed for each user and makes
+// sure every name is free on every OpenVPN tunnel it would be used on, and
+// that no two users were given the same one. selfID is the customer whose
+// own accounts do not count as a clash.
+func (s *Clients) checkOpenVPNCredentials(ctx context.Context, ifaces []*model.Interface, selfID uint, users []OpenVPNUser) (openvpnCreds, error) {
+	if len(users) == 0 {
 		return openvpnCreds{}, nil
 	}
 	hasOVPN := false
@@ -1622,52 +1647,71 @@ func (s *Clients) checkOpenVPNCredentials(ctx context.Context, ifaces []*model.I
 			hasOVPN = true
 		}
 	}
+	given := false
+	for _, u := range users {
+		if strings.TrimSpace(u.Username) != "" || u.Password != "" {
+			given = true
+		}
+	}
+	if !given {
+		return openvpnCreds{}, nil
+	}
 	if !hasOVPN {
 		return openvpnCreds{}, invalidField("openvpnUsername", "an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel")
 	}
-	if username != "" {
-		if len(username) < 3 || len(username) > 48 {
-			return openvpnCreds{}, invalidField("openvpnUsername", "an OpenVPN username is 3 to 48 characters")
+	seen := map[string]bool{}
+	out := make([]OpenVPNUser, len(users))
+	for i, u := range users {
+		username := strings.TrimSpace(u.Username)
+		if username != "" {
+			if len(username) < 3 || len(username) > 48 {
+				return openvpnCreds{}, invalidField("openvpnUsername", "an OpenVPN username is 3 to 48 characters")
+			}
+			for _, r := range username {
+				if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' || r == '@' {
+					continue
+				}
+				return openvpnCreds{}, invalidField("openvpnUsername", "an OpenVPN username can only contain letters, digits, - _ . and @ (found %q)", string(r))
+			}
+			if seen[strings.ToLower(username)] {
+				return openvpnCreds{}, invalidField("openvpnUsername", "two users were given the same username %q; each logs in as themselves", username)
+			}
+			seen[strings.ToLower(username)] = true
+			for _, f := range ifaces {
+				if f.Protocol != model.ProtocolOpenVPN {
+					continue
+				}
+				var n int64
+				q := s.db.WithContext(ctx).Model(&model.Account{}).Where("interface_id = ? AND username = ?", f.ID, username)
+				if selfID != 0 {
+					q = q.Where("client_id <> ?", selfID)
+				}
+				if err := q.Count(&n).Error; err != nil {
+					return openvpnCreds{}, fmt.Errorf("service: check username: %w", err)
+				}
+				if n > 0 {
+					return openvpnCreds{}, invalidField("openvpnUsername", "the username %q is already used on %s", username, f.Name)
+				}
+			}
 		}
-		for _, r := range username {
-			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' || r == '@' {
-				continue
+		if u.Password != "" {
+			if len(u.Password) < 6 || len(u.Password) > 64 {
+				return openvpnCreds{}, invalidField("openvpnPassword", "an OpenVPN password is 6 to 64 characters")
 			}
-			return openvpnCreds{}, invalidField("openvpnUsername", "an OpenVPN username can only contain letters, digits, - _ . and @ (found %q)", string(r))
-		}
-		for _, f := range ifaces {
-			if f.Protocol != model.ProtocolOpenVPN {
-				continue
-			}
-			var n int64
-			q := s.db.WithContext(ctx).Model(&model.Account{}).Where("interface_id = ? AND username = ?", f.ID, username)
-			if selfID != 0 {
-				q = q.Where("client_id <> ?", selfID)
-			}
-			if err := q.Count(&n).Error; err != nil {
-				return openvpnCreds{}, fmt.Errorf("service: check username: %w", err)
-			}
-			if n > 0 {
-				return openvpnCreds{}, invalidField("openvpnUsername", "the username %q is already used on %s", username, f.Name)
+			if strings.ContainsAny(u.Password, " \t\r\n") {
+				return openvpnCreds{}, invalidField("openvpnPassword", "an OpenVPN password cannot contain spaces")
 			}
 		}
+		out[i] = OpenVPNUser{Username: username, Password: u.Password}
 	}
-	if password != "" {
-		if len(password) < 6 || len(password) > 64 {
-			return openvpnCreds{}, invalidField("openvpnPassword", "an OpenVPN password is 6 to 64 characters")
-		}
-		if strings.ContainsAny(password, " \t\r\n") {
-			return openvpnCreds{}, invalidField("openvpnPassword", "an OpenVPN password cannot contain spaces")
-		}
-	}
-	return openvpnCreds{username: username, password: password}, nil
+	return openvpnCreds{users: out}, nil
 }
 
 // setOpenVPNCredentials renames and re-passwords the customer's existing
-// OpenVPN devices, first device as typed, the rest numbered. The tunnel
-// picks the change up on the next reconcile; a session under the old name
-// is ended by it, as any removed account is.
-func (s *Clients) setOpenVPNCredentials(ctx context.Context, client *model.Client, username, password string) error {
+// OpenVPN users, each by their position in the plan. The tunnel picks the
+// change up on the next reconcile; a session under the old name is ended
+// by it, as any removed account is.
+func (s *Clients) setOpenVPNCredentials(ctx context.Context, client *model.Client, users []OpenVPNUser) error {
 	var accounts []model.Account
 	if err := s.db.WithContext(ctx).Where("client_id = ?", client.ID).Order("interface_id, id").Find(&accounts).Error; err != nil {
 		return fmt.Errorf("service: load accounts: %w", err)
@@ -1687,7 +1731,7 @@ func (s *Clients) setOpenVPNCredentials(ctx context.Context, client *model.Clien
 			ovpn = append(ovpn, f)
 		}
 	}
-	creds, err := s.checkOpenVPNCredentials(ctx, ovpn, client.ID, username, password)
+	creds, err := s.checkOpenVPNCredentials(ctx, ovpn, client.ID, users)
 	if err != nil {
 		return err
 	}

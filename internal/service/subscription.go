@@ -621,6 +621,9 @@ type SubPageDevice struct {
 	// plan of one, or a file with a name of its own).
 	Tunnel string
 	User   int
+	// Username is the OpenVPN login this file carries, shown beside the
+	// user's line so a seller can read it off the page.
+	Username string
 	// The host this entry was written for, when it was written for one.
 	HostID          uint
 	HostName        string
@@ -764,6 +767,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			Label:    label,
 			Tunnel:   tunnel,
 			User:     user,
+			Username: d.Account.Username,
 		}
 		if d.Host != nil {
 			dev.HostID = d.Host.ID
