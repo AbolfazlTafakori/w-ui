@@ -1831,8 +1831,10 @@ func seatNames(n int, taken []string) []string {
 		}
 		return nil
 	}
+	// Numbered on from the files the customer holds, so the one they had
+	// as a plan of one is user 1 and the next issued is user 2.
 	var out []string
-	for i := 1; len(taken)+len(out) < n; i++ {
+	for i := len(taken) + 1; len(taken)+len(out) < n; i++ {
 		name := fmt.Sprintf("user-%d", i)
 		if have[strings.ToLower(name)] {
 			continue

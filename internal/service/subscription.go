@@ -737,6 +737,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		SubURL:     subURL,
 	}
 	several := len(deviceNames(c.Accounts)) > 1
+	nth := map[uint]int{}
 	for _, d := range rendered {
 		if hs := d.Account.LastHandshake; hs != nil && (page.LastOnline == nil || hs.After(*page.LastOnline)) {
 			t := *hs
@@ -751,11 +752,13 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			tunnel = iface.Name
 			label += " · " + iface.Name
 		}
+		// In a plan for several, a user is their place among the files on
+		// that tunnel, in the order they were issued: the file a customer
+		// had as a plan of one is user 1 whatever it was called.
 		user := 0
 		if several {
-			if n, err := strconv.Atoi(strings.TrimPrefix(d.Account.DeviceName, "user-")); err == nil && strings.HasPrefix(d.Account.DeviceName, "user-") {
-				user = n
-			}
+			nth[d.Account.InterfaceID]++
+			user = nth[d.Account.InterfaceID]
 		}
 		dev := SubPageDevice{
 			ID:       d.Account.ID,
