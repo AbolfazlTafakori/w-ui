@@ -153,14 +153,41 @@ func lastLogLine(dir, name string) string {
 
 // ── OpenVPN ──────────────────────────────────────────────────────────────────
 
-// Profile directives that would let the far side rewrite this server's
-// routing. Routes pushed by the upstream are refused on the command line;
-// the same lines inside the profile itself are dropped here.
-var ovpnDropDirectives = []string{
-	"redirect-gateway", "route ", "route-ipv6", "route-gateway", "dhcp-option",
-	"dev ", "dev-type", "daemon", "log ", "log-append", "up ", "down ",
-	"script-security", "management", "writepid", "status ", "auth-user-pass",
-	"route-nopull", "pull-filter", "ifconfig ", "ifconfig-ipv6 ",
+// Profile directives that would let the far side -- or whoever wrote the
+// profile -- rewrite this server's routing, run a program on it, or read a
+// file from it. Routes pushed by the upstream are refused on the command
+// line; the same lines inside the profile itself are dropped here, matched
+// on the directive's own word so a tab or a doubled space does not slip one
+// past. Anything that names a script, a plugin, a file to include, a user
+// to become or a directory to move into is out: an OpenVPN outbound is a
+// tunnel, not a place to run things.
+var ovpnDropDirectives = map[string]bool{
+	"redirect-gateway": true, "route": true, "route-ipv6": true, "route-gateway": true,
+	"dhcp-option": true, "dev": true, "dev-type": true, "daemon": true, "log": true,
+	"log-append": true, "up": true, "down": true, "up-restart": true, "route-up": true,
+	"route-pre-down": true, "ipchange": true, "client-connect": true,
+	"client-disconnect": true, "learn-address": true, "tls-verify": true,
+	"auth-user-pass-verify": true, "plugin": true, "script-security": true,
+	"management": true, "management-client": true, "management-hold": true,
+	"management-log-cache": true, "management-query-passwords": true,
+	"management-client-auth": true, "management-external-key": true,
+	"management-external-cert": true, "writepid": true, "status": true,
+	"status-version": true, "auth-user-pass": true, "route-nopull": true,
+	"pull-filter": true, "ifconfig": true, "ifconfig-ipv6": true, "setenv": true,
+	"setenv-safe": true, "config": true, "cd": true, "chroot": true, "user": true,
+	"group": true, "tmp-dir": true, "iproute": true, "askpass": true, "echo": true,
+	"crl-verify": true, "ca": true, "cert": true, "key": true, "pkcs12": true,
+	"dh": true, "tls-auth": true, "tls-crypt": true, "tls-crypt-v2": true,
+	"secret": true, "extra-certs": true, "x509-username-field": true,
+}
+
+// ovpnFileDirectives are the ones above that may still appear when the
+// material is inline (<ca>...</ca>) rather than a path: the block form is
+// kept, the path form is dropped, since a path is a read of this server.
+var ovpnInlineBlocks = map[string]bool{
+	"ca": true, "cert": true, "key": true, "pkcs12": true, "dh": true,
+	"tls-auth": true, "tls-crypt": true, "tls-crypt-v2": true, "secret": true,
+	"extra-certs": true, "crl-verify": true,
 }
 
 func cleanOpenVPNProfile(profile string) string {
@@ -168,9 +195,12 @@ func cleanOpenVPNProfile(profile string) string {
 	inBlock := ""
 	for _, line := range strings.Split(strings.ReplaceAll(profile, "\r\n", "\n"), "\n") {
 		trim := strings.TrimSpace(line)
-		// Inline blocks (<ca>...</ca>) are copied whole.
+		// Inline blocks (<ca>...</ca>) are copied whole, for the material
+		// a profile carries; a block of any other name is dropped whole.
 		if inBlock != "" {
-			b.WriteString(line + "\n")
+			if ovpnInlineBlocks[inBlock] {
+				b.WriteString(line + "\n")
+			}
 			if trim == "</"+inBlock+">" {
 				inBlock = ""
 			}
@@ -178,18 +208,17 @@ func cleanOpenVPNProfile(profile string) string {
 		}
 		if strings.HasPrefix(trim, "<") && !strings.HasPrefix(trim, "</") && strings.HasSuffix(trim, ">") {
 			inBlock = strings.Trim(trim, "<>")
-			b.WriteString(line + "\n")
-			continue
-		}
-		drop := false
-		for _, d := range ovpnDropDirectives {
-			if trim == strings.TrimSpace(d) || strings.HasPrefix(trim, d) {
-				drop = true
-				break
+			if ovpnInlineBlocks[inBlock] {
+				b.WriteString(line + "\n")
 			}
-		}
-		if drop {
 			continue
+		}
+		fields := strings.Fields(trim)
+		if len(fields) > 0 {
+			word := strings.TrimLeft(fields[0], "-")
+			if ovpnDropDirectives[word] {
+				continue
+			}
 		}
 		b.WriteString(line + "\n")
 	}

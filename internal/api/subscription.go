@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/service"
 )
@@ -39,6 +41,24 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	// A token with a slash in it is a path traversal attempt or a broken link;
 	// either way it is not one we issued.
 	if token == "" || strings.ContainsAny(token, "/\\") {
+		http.NotFound(w, r)
+		return
+	}
+
+	// An address that keeps asking for links that do not exist is a scan,
+	// and is told to wait; a link that exists is served regardless of what
+	// went before, so a customer behind the same address is not punished.
+	ip, now := clientIP(r), time.Now()
+	if exists, err := s.subs.TokenExists(r.Context(), token); err != nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	} else if !exists {
+		if blocked, wait := s.subMiss.blocked(ip, now); blocked {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+			http.Error(w, "too many requests", http.StatusTooManyRequests)
+			return
+		}
+		s.subMiss.miss(ip, now)
 		http.NotFound(w, r)
 		return
 	}

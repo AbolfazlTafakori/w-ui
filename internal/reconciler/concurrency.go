@@ -182,6 +182,14 @@ func (c *concurrency) remember(accounts []model.Account, localNode uint) {
 		c.originOf[a.ID] = a.OriginID
 		c.clientOf[a.ID] = a.ClientID
 	}
+	// What was deleted is forgotten, so a panel that issues and removes
+	// devices all day does not carry every one of them in memory.
+	for id := range c.acts {
+		if _, ok := c.clientOf[id]; !ok {
+			delete(c.acts, id)
+			delete(c.held, id)
+		}
+	}
 }
 
 // connections is how many devices one credential is carrying right now:

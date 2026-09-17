@@ -996,3 +996,17 @@ func clientFilename(client, device, base string, single bool) string {
 	}
 	return name + ext
 }
+
+// TokenExists reports whether a link's secret belongs to a customer, for
+// the throttle on guessed links; it is one indexed lookup.
+func (s *Subscriptions) TokenExists(ctx context.Context, token string) (bool, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false, nil
+	}
+	var n int64
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).Where("sub_token = ?", token).Count(&n).Error; err != nil {
+		return false, fmt.Errorf("service: read subscription: %w", err)
+	}
+	return n > 0, nil
+}

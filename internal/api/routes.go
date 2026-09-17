@@ -27,6 +27,13 @@ type Route struct {
 	// Auth reports whether a bearer token is required.
 	Auth bool `json:"auth"`
 
+	// Operator marks what only a signed-in administrator may do. An API
+	// token is a machine's -- another panel using this one as a node -- and
+	// a machine has no business changing who administers this panel,
+	// minting further tokens, restoring backups or registering nodes: a
+	// token that leaked would otherwise be a way to keep the door open.
+	Operator bool `json:"operator,omitempty"`
+
 	// Body is an example request body, if it takes one.
 	Body string `json:"body,omitempty"`
 
@@ -54,24 +61,24 @@ func (s *Server) routes() []Route {
 			Summary: "Interface strings for a language.",
 			handler: s.handleMessages},
 
-		{Method: "GET", Path: "/api/auth/me", Group: "Authentication", Auth: true,
+		{Method: "GET", Path: "/api/auth/me", Group: "Authentication", Auth: true, Operator: true,
 			Summary: "The signed-in administrator.", handler: s.handleMe},
-		{Method: "PATCH", Path: "/api/auth/me", Group: "Authentication", Auth: true,
+		{Method: "PATCH", Path: "/api/auth/me", Group: "Authentication", Auth: true, Operator: true,
 			Summary: "Change your own preferences.", Body: `{"locale":"fa"}`,
 			handler: s.handleUpdateMe},
-		{Method: "POST", Path: "/api/auth/password", Group: "Authentication", Auth: true,
+		{Method: "POST", Path: "/api/auth/password", Group: "Authentication", Auth: true, Operator: true,
 			Summary: "Change your username, your password, or both.",
 			Body:    `{"currentPassword":"…","newUsername":"…","newPassword":"…"}`,
 			Note:    "Every session ends, including this one.",
 			handler: s.handleChangePassword},
-		{Method: "POST", Path: "/api/auth/totp/start", Group: "Authentication", Auth: true,
+		{Method: "POST", Path: "/api/auth/totp/start", Group: "Authentication", Auth: true, Operator: true,
 			Summary: "Begin enrolling a second factor. Returns a secret and an otpauth URI.",
 			Note:    "Nothing is stored until the code is confirmed.",
 			handler: s.handleTOTPStart},
-		{Method: "POST", Path: "/api/auth/totp/confirm", Group: "Authentication", Auth: true,
+		{Method: "POST", Path: "/api/auth/totp/confirm", Group: "Authentication", Auth: true, Operator: true,
 			Summary: "Prove the code works and store the secret.",
 			Body:    `{"secret":"…","code":"123456"}`, handler: s.handleTOTPConfirm},
-		{Method: "POST", Path: "/api/auth/totp/disable", Group: "Authentication", Auth: true,
+		{Method: "POST", Path: "/api/auth/totp/disable", Group: "Authentication", Auth: true, Operator: true,
 			Summary: "Turn the second factor off.", Body: `{"password":"…"}`,
 			Note:    "The password is required again, so a borrowed session cannot remove it.",
 			handler: s.handleTOTPDisable},
@@ -410,10 +417,10 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/engine/reset", Group: "Engine", Auth: true,
 			Summary: "Put the engine settings back to their defaults.",
 			handler: s.handleResetEngine},
-		{Method: "GET", Path: "/api/template", Group: "Engine", Auth: true,
+		{Method: "GET", Path: "/api/template", Group: "Engine", Auth: true, Operator: true,
 			Summary: "The whole configuration as one JSON document: inbounds, outbounds, routing, balancers, DNS.",
 			handler: s.handleGetTemplate},
-		{Method: "PUT", Path: "/api/template", Group: "Engine", Auth: true,
+		{Method: "PUT", Path: "/api/template", Group: "Engine", Auth: true, Operator: true,
 			Summary: "Apply a configuration document. Takes section=complete|inbounds|outbounds|routing.",
 			Body:    `{"inbounds":[…],"outbounds":[…],"routing":{"basic":{…},"rules":[…]},"balancers":[…],"dns":{…}}`,
 			Note:    "Rows are matched by name or tag: known ones are updated, new ones created. Nothing is deleted.",
@@ -545,32 +552,32 @@ func (s *Server) routes() []Route {
 		{Method: "GET", Path: "/api/nodes", Group: "Nodes", Auth: true,
 			Summary: "Every server this panel watches, with what the last probe found.",
 			handler: s.handleListNodes},
-		{Method: "POST", Path: "/api/nodes", Group: "Nodes", Auth: true,
+		{Method: "POST", Path: "/api/nodes", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Register another W-UI panel as a node.",
 			Body:    `{"name":"frankfurt","address":"https://vpn2.example.com:2096","token":"wui_…"}`,
 			Note:    "The token is issued on that panel, under Settings. It is probed immediately.",
 			handler: s.handleCreateNode},
-		{Method: "PATCH", Path: "/api/nodes/{id}", Group: "Nodes", Auth: true,
+		{Method: "PATCH", Path: "/api/nodes/{id}", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Change a node.", Body: `{"name":"frankfurt","address":"https://…","enabled":true}`,
 			Note:    "An empty token leaves the stored one alone.",
 			handler: s.handleUpdateNode},
-		{Method: "DELETE", Path: "/api/nodes/{id}", Group: "Nodes", Auth: true,
+		{Method: "DELETE", Path: "/api/nodes/{id}", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Remove a node. Refused while it still carries interfaces.",
 			handler: s.handleDeleteNode},
 		{Method: "POST", Path: "/api/nodes/{id}/probe", Group: "Nodes", Auth: true,
 			Summary: "Ask one node right now instead of waiting for the schedule.",
 			handler: s.handleProbeNode},
-		{Method: "GET", Path: "/api/tokens", Group: "Nodes", Auth: true,
+		{Method: "GET", Path: "/api/tokens", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Access tokens issued for machine use.",
 			handler: s.handleListTokens},
-		{Method: "POST", Path: "/api/tokens", Group: "Nodes", Auth: true,
+		{Method: "POST", Path: "/api/tokens", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Issue a token another panel can use against this one.",
 			Body:    `{"name":"frankfurt panel"}`,
 			Note:    "The secret is returned once and stored only as a hash.",
 			handler: s.handleIssueToken},
-		{Method: "DELETE", Path: "/api/tokens/{id}", Group: "Nodes", Auth: true,
+		{Method: "DELETE", Path: "/api/tokens/{id}", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Revoke a token.", handler: s.handleRevokeToken},
-		{Method: "PATCH", Path: "/api/tokens/{id}", Group: "Nodes", Auth: true,
+		{Method: "PATCH", Path: "/api/tokens/{id}", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Pause or resume a token without reissuing it.",
 			Body:    `{"enabled":false}`, handler: s.handleUpdateToken},
 
@@ -600,12 +607,12 @@ func (s *Server) routes() []Route {
 			Summary: "Panel settings and the shipped defaults.",
 			Note:    "The bot token comes back as a placeholder and is never returned in full.",
 			handler: s.handleGetSettings},
-		{Method: "PUT", Path: "/api/settings", Group: "Settings", Auth: true,
+		{Method: "PUT", Path: "/api/settings", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Save panel settings.",
 			Body:    `{"sessionMaxAge":720,"defaultLocale":"en","defaultDeviceLimit":1,"defaultResetCycle":"none"}`,
 			Note:    "Sending the token placeholder back leaves the stored token alone.",
 			handler: s.handleSaveSettings},
-		{Method: "POST", Path: "/api/panel/restart", Group: "Settings", Auth: true,
+		{Method: "POST", Path: "/api/panel/restart", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Restart the panel so saved listen, path and certificate settings apply.",
 			Note:    "The process exits and the service manager starts it again; expect a few seconds away.",
 			handler: s.handleRestartPanel},
@@ -683,7 +690,7 @@ func (s *Server) routes() []Route {
 			Note: "The public half only; the key stays here, which is why a certificate " +
 				"is worth more than a token. Minted the first time it is asked for.",
 			handler: s.handleMTLSIdentity},
-		{Method: "POST", Path: "/api/nodes/mtls/trust", Group: "Nodes", Auth: true,
+		{Method: "POST", Path: "/api/nodes/mtls/trust", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Require the panel managing this one to present a client certificate.",
 			Body: `{"caCert":"-----BEGIN CERTIFICATE-----
 …"}`,
@@ -697,23 +704,23 @@ func (s *Server) routes() []Route {
 				"right now. Do it from a network you trust, and check the fingerprint " +
 				"against the node itself if you can.",
 			handler: s.handleFetchPin},
-		{Method: "GET", Path: "/api/backups", Group: "Settings", Auth: true,
+		{Method: "GET", Path: "/api/backups", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Backups on disk, newest first.", handler: s.handleListBackups},
-		{Method: "POST", Path: "/api/backups", Group: "Settings", Auth: true,
+		{Method: "POST", Path: "/api/backups", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Take a backup now.", handler: s.handleCreateBackup},
-		{Method: "GET", Path: "/api/backups/{name}", Group: "Settings", Auth: true,
+		{Method: "GET", Path: "/api/backups/{name}", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Download an archive.",
 			Note:    "It holds every key and credential. Treat it like a password file.",
 			handler: s.handleDownloadBackup},
-		{Method: "DELETE", Path: "/api/backups/{name}", Group: "Settings", Auth: true,
+		{Method: "DELETE", Path: "/api/backups/{name}", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Delete an archive.", handler: s.handleDeleteBackup},
-		{Method: "POST", Path: "/api/backups/upload", Group: "Settings", Auth: true,
+		{Method: "POST", Path: "/api/backups/upload", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Upload an archive taken on another server.",
 			Note: "Sent as multipart/form-data with the archive in a field named " +
 				"\"archive\", not as JSON. Checked before it is kept, and not " +
 				"restored until you ask.",
 			handler: s.handleUploadBackup},
-		{Method: "POST", Path: "/api/backups/{name}/restore", Group: "Settings", Auth: true,
+		{Method: "POST", Path: "/api/backups/{name}/restore", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Replace everything with the contents of an archive.",
 			Note: "The current state is saved first, so this can be undone. " +
 				"The panel restarts itself; under systemd it comes straight back.",
@@ -725,7 +732,10 @@ func (s *Server) routes() []Route {
 func (s *Server) register(mux *http.ServeMux) {
 	for _, r := range s.routes() {
 		h := r.handler
-		if r.Auth {
+		if r.Operator {
+			h = s.requireOperator(h)
+		}
+		if r.Auth || r.Operator {
 			h = s.requireAuth(h)
 		}
 		mux.HandleFunc(r.Method+" "+r.Path, h)

@@ -110,7 +110,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]bool{"needCode": true})
 			return
 		}
-		if !totp.Validate(admin.TOTPSecret, req.Code, time.Now()) {
+		if !totp.Validate(admin.TOTPSecret, req.Code, time.Now()) || s.totpReplayed(admin.ID, req.Code, now) {
 			// A wrong code counts as a failed attempt too. Otherwise someone
 			// holding the password could try every one of the million codes
 			// without ever being slowed down.
@@ -259,6 +259,19 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// requireOperator refuses a machine token: what is behind it is an
+// administrator's to do. Runs inside requireAuth, so the context carries
+// the admin when there is one.
+func (s *Server) requireOperator(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if adminFrom(r.Context()) == nil {
+			writeError(w, http.StatusForbidden, "this needs a signed-in administrator, not an API token")
+			return
+		}
+		next(w, r)
+	}
+}
+
 // adminFrom returns the signed-in admin attached by requireAuth.
 func adminFrom(ctx context.Context) *model.Admin {
 	admin, _ := ctx.Value(ctxAdmin).(*model.Admin)
@@ -387,4 +400,27 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 
 	s.log.Warn("second factor disabled", "username", admin.Username, "ip", clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+}
+
+// totpReplayed reports whether this code was already accepted for this
+// administrator in the last little while, and remembers it otherwise. A code
+// is good for a window of a minute or so, and one read over a shoulder or
+// off a screen must not open a second session inside that window.
+func (s *Server) totpReplayed(adminID uint, code string, now time.Time) bool {
+	code = strings.TrimSpace(code)
+	s.totpMu.Lock()
+	defer s.totpMu.Unlock()
+	if s.totpUsed == nil {
+		s.totpUsed = map[uint]usedCode{}
+	}
+	if u, ok := s.totpUsed[adminID]; ok && u.code == code && now.Sub(u.at) < 2*time.Minute {
+		return true
+	}
+	s.totpUsed[adminID] = usedCode{code: code, at: now}
+	return false
+}
+
+type usedCode struct {
+	code string
+	at   time.Time
 }

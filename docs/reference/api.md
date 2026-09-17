@@ -22,6 +22,10 @@ or use an **API token** — the one the installer printed, or one from Nodes →
 Authorization: Bearer wui_…
 ```
 
+::: warning What a token cannot do
+A token is a machine's. What only an administrator may do answers `403 this needs a signed-in administrator, not an API token`: the administrator's own account and two-factor, issuing or revoking tokens, backups, registering nodes and their trust, the panel's settings and template, a restart. Everything about customers, devices, tunnels, hosts, outbounds and routing is open to a token — that is what it is for.
+:::
+
 ## The documentation is in the panel
 
 **API** in the sidebar lists every endpoint, grouped, with an example body and a `curl` command carrying the address you reached the panel on. The page is built from the same table the routes are registered from, so it can only describe endpoints that exist, and a new one is documented by being added.

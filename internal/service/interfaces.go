@@ -249,6 +249,15 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	if in.EndpointHost == "" {
 		return invalidField("endpointHost", "endpoint host is required; it is what clients dial")
 	}
+	if err := checkEndpointHost(in.EndpointHost); err != nil {
+		return err
+	}
+	if err := checkDNSList(in.DNS); err != nil {
+		return err
+	}
+	if err := checkNetDevice(in.NATInterface); err != nil {
+		return err
+	}
 	if _, err := netip.ParsePrefix(in.Subnet); err != nil {
 		return invalidField("subnet", "subnet %q: %v", in.Subnet, err)
 	}
@@ -533,6 +542,9 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		if host == "" {
 			return nil, invalidField("endpointHost", "endpoint host is required")
 		}
+		if err := checkEndpointHost(host); err != nil {
+			return nil, err
+		}
 		fields["endpoint_host"] = host
 	}
 	if in.MTU != nil {
@@ -542,9 +554,15 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		fields["mtu"] = *in.MTU
 	}
 	if in.DNS != nil {
+		if err := checkDNSList(strings.TrimSpace(*in.DNS)); err != nil {
+			return nil, err
+		}
 		fields["dns"] = strings.TrimSpace(*in.DNS)
 	}
 	if in.NATInterface != nil {
+		if err := checkNetDevice(strings.TrimSpace(*in.NATInterface)); err != nil {
+			return nil, err
+		}
 		fields["nat_interface"] = strings.TrimSpace(*in.NATInterface)
 	}
 
@@ -815,4 +833,63 @@ func NewAWGParams() model.AWGParams {
 		H3: uint32(between(10000000, 50000000)),
 		H4: uint32(between(100000000, 500000000)),
 	}
+}
+
+// checkEndpointHost accepts a hostname, an IPv4 or a bracketed IPv6 -- what
+// goes on the Endpoint line of every customer's file. A space, a quote or
+// a newline there would put a line of the operator's choosing into those
+// files, and none belongs in an address anyway.
+func checkEndpointHost(host string) error {
+	if len(host) > 253 {
+		return invalidField("endpointHost", "the endpoint host is too long")
+	}
+	if ip, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+		if ip.Is6() && !strings.HasPrefix(host, "[") {
+			return invalidField("endpointHost", "an IPv6 endpoint goes in brackets, as in [2001:db8::1]")
+		}
+		return nil
+	}
+	for _, r := range host {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' {
+			continue
+		}
+		return invalidField("endpointHost", "the endpoint host can only contain letters, digits, . and - (found %q)", string(r))
+	}
+	return nil
+}
+
+// checkDNSList accepts a comma-separated list of addresses, which is what
+// the DNS line of a customer's file carries.
+func checkDNSList(list string) error {
+	if strings.TrimSpace(list) == "" {
+		return nil
+	}
+	for _, part := range strings.Split(list, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, err := netip.ParseAddr(part); err != nil {
+			return invalidField("dns", "DNS %q is not an IP address; give one or more, separated by commas", part)
+		}
+	}
+	return nil
+}
+
+// checkNetDevice is the kernel's own rule for a device name, for the
+// interface customers leave by.
+func checkNetDevice(name string) error {
+	if name == "" {
+		return nil
+	}
+	if len(name) > 15 {
+		return invalidField("natInterface", "a device name is at most 15 characters")
+	}
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_' {
+			continue
+		}
+		return invalidField("natInterface", "a device name can only contain letters, digits, . - and _ (found %q)", string(r))
+	}
+	return nil
 }

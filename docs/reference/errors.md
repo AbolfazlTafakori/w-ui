@@ -28,6 +28,8 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `that password or code is not right` | Turning two-factor on or off needs your current password (and code, when on). | Retype it. |
 | `too many attempts from this address; try again in … ` (429) | Sign-in is throttled per address and per account after repeated failures. | Wait the time shown. If it was not you, `w-ui` → 22 shows who is knocking. |
 | `your session has ended; sign in again` | No token was sent, or the token's cookie is missing — a token copied out of one browser into another does not work on its own. | Sign in again in this browser. |
+| `this needs a signed-in administrator, not an API token` (403) | An API token — a machine's — tried something only an administrator may do: the administrator's own account or two-factor, issuing tokens, backups, registering nodes, the panel's settings, a restart. | Do it signed in to the panel. A token is for automation and for another panel using this one as a node. |
+| `too many requests` (429, subscription link) | This address asked for many subscription links that do not exist — a scan. Real links are still served; only the guessing is slowed. | Wait the time in `Retry-After`. |
 | `session expired, sign in again` | The token is past its life (Settings → Security → session duration) or is not one this panel issued. | Sign in again. |
 | `you were signed out everywhere; sign in again` | The password was changed or **Sign out everywhere** was used since this token was issued. | Sign in again. |
 | `that access token is not valid` | A `wui_…` API token that was revoked or never existed. | Issue one on the API page, or `wui token issue --name NAME`. |
@@ -81,6 +83,9 @@ An error that says **internal error** is a bug or a broken server, not bad input
 
 | Message | Meaning | What to do |
 |---|---|---|
+| `the endpoint host can only contain letters, digits, . and - (found "…")` / `the endpoint host is too long` / `an IPv6 endpoint goes in brackets, as in [2001:db8::1]` | What goes on the Endpoint line of every customer's file: a hostname or an address, nothing else. | `vpn.example.com`, `203.0.113.5` or `[2001:db8::1]`. |
+| `DNS "…" is not an IP address; give one or more, separated by commas` | The DNS field carries resolver addresses. | `1.1.1.1` or `1.1.1.1, 8.8.8.8`. |
+| `a device name is at most 15 characters` / `a device name can only contain letters, digits, . - and _ (found "…")` | The NAT interface is a kernel device name. | `eth0`, `ens3`. |
 | `a tunnel needs a name` / `name is required` | | |
 | `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | Names are unique per server. | Another name. |
 | `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | The name becomes the kernel device (`wg0`); a domain typed here would fail at bring-up. | Something like `wg0` or `ir443`; the domain goes in **Endpoint**. |

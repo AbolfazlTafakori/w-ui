@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -58,6 +59,9 @@ type Server struct {
 	hosts     *service.Hosts
 	router    *routing.Applier
 	subs      *service.Subscriptions
+	subMiss   *subMisses
+	totpMu    sync.Mutex
+	totpUsed  map[uint]usedCode
 	previews  subPreviews
 	obSubs    *service.OutboundSubs
 	balancers *service.Balancers
@@ -147,6 +151,7 @@ func New(o Options) *Server {
 		hosts:     service.NewHosts(o.DB, o.Logger),
 		router:    o.Router,
 		subs:      o.Subs,
+		subMiss:   newSubMisses(),
 		obSubs:    service.NewOutboundSubs(o.DB, o.Outbounds, o.Logger),
 		balancers: service.NewBalancers(o.DB, o.Logger),
 		providers: service.NewProviders(o.DB, o.Outbounds, o.Logger),

@@ -28,6 +28,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `that password or code is not right` | روشن/خاموش کردن دومرحله‌ای رمز فعلی (و اگر روشن است، کد) را می‌خواهد. | دوباره وارد کن. |
 | `too many attempts from this address; try again in … ` (429) | بعد از چند تلاش ناموفق، ورود برای آن آدرس و آن حساب محدود می‌شود. | زمان گفته‌شده صبر کن. اگر تو نبودی، `w-ui` → ۲۲ نشان می‌دهد چه کسی در می‌زند. |
 | `your session has ended; sign in again` | توکنی فرستاده نشده، یا کوکیِ توکن نیست — توکنی که از یک مرورگر به مرورگر دیگر کپی شود به‌تنهایی کار نمی‌کند. | در همین مرورگر دوباره وارد شو. |
+| `this needs a signed-in administrator, not an API token` (403) | یک توکن API — که مال ماشین است — کاری را خواسته که فقط مدیر می‌تواند: حساب و دو‌مرحله‌ای خودِ مدیر، صدور توکن، بکاپ، ثبت نود، تنظیمات پنل، ریستارت. | با ورود به پنل انجامش بده. توکن برای اتوماسیون و برای پنلی است که این را به‌عنوان نود استفاده می‌کند. |
+| `too many requests` (429، لینک سابسکریپشن) | این آدرس لینک‌های سابسکریپشن زیادی خواسته که وجود ندارند — اسکن. لینک‌های واقعی همچنان داده می‌شوند؛ فقط حدس زدن کند می‌شود. | به اندازهٔ `Retry-After` صبر کن. |
 | `session expired, sign in again` | عمر توکن تمام شده (تنظیمات → امنیت → مدت سشن) یا توکنی نیست که این پنل صادر کرده باشد. | دوباره وارد شو. |
 | `you were signed out everywhere; sign in again` | از وقتی این توکن صادر شده، رمز عوض شده یا **خروج از همه‌جا** زده شده. | دوباره وارد شو. |
 | `that access token is not valid` | توکن API `wui_…` که باطل شده یا هرگز وجود نداشته. | از صفحهٔ API یکی بساز، یا `wui token issue --name NAME`. |
@@ -81,6 +83,9 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 
 | پیام | معنی | چه کنی |
 |---|---|---|
+| `the endpoint host can only contain letters, digits, . and - (found "…")` / `the endpoint host is too long` / `an IPv6 endpoint goes in brackets, as in [2001:db8::1]` | چیزی که روی خط Endpoint فایل هر مشتری می‌رود: نام دامنه یا آدرس، نه چیز دیگر. | `vpn.example.com`، `203.0.113.5` یا `[2001:db8::1]`. |
+| `DNS "…" is not an IP address; give one or more, separated by commas` | فیلد DNS آدرس resolver می‌گیرد. | `1.1.1.1` یا `1.1.1.1, 8.8.8.8`. |
+| `a device name is at most 15 characters` / `a device name can only contain letters, digits, . - and _ (found "…")` | اینترفیس NAT نام دستگاه کرنل است. | `eth0`، `ens3`. |
 | `a tunnel needs a name` / `name is required` |  |  |
 | `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | نام‌ها در هر سرور یکتا هستند. | نام دیگری. |
 | `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | نام، نام دستگاه کرنل می‌شود (`wg0`)؛ دامنه این‌جا موقع بالا آمدن شکست می‌خورد. | چیزی مثل `wg0` یا `ir443`؛ دامنه در **Endpoint** می‌رود. |
