@@ -116,11 +116,20 @@ func (e *Engine) Defaults() EngineSettings {
 		MaskAddress:      false,
 		ProbeInterval:    60,
 		ProbeConcurrency: true,
+		// The resolver is on from the start, answering at the tunnel's own
+		// address, for two reasons a customer notices. It answers only for
+		// IPv4: the tunnels carry IPv4, and a name that also came back with an
+		// IPv6 address made a phone try that first, wait for it to fail, and
+		// only then load the page -- or not load it at all in an app that does
+		// not fall back. And it caches, so the second lookup costs nothing.
 		DNS: dnsproxy.Config{
-			Enabled:       false,
-			QueryStrategy: "UseIP",
+			Enabled:       true,
+			QueryStrategy: "UseIPv4",
 			Hosts:         []dnsproxy.Host{},
-			Servers:       []dnsproxy.Server{},
+			Servers: []dnsproxy.Server{
+				{Address: "1.1.1.1"},
+				{Address: "8.8.8.8"},
+			},
 		},
 	}
 }
