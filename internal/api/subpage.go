@@ -328,7 +328,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "Remaining", "lastOnline": "Last Online", "expiry": "Expiry", "noExpiry": "No expiry",
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
-		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "total": "Total", "allUsers": "All users",
+		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "total": "Total", "allUsers": "All users", "tunnel": "Tunnel",
 		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
 	},
@@ -339,7 +339,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "باقی‌مانده", "lastOnline": "آخرین فعالیت", "expiry": "انقضا", "noExpiry": "بدون انقضا",
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
-		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "total": "جمع", "allUsers": "همهٔ کاربران",
+		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "total": "جمع", "allUsers": "همهٔ کاربران", "tunnel": "تانل",
 		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
 	},
@@ -612,6 +612,8 @@ a.row-title:hover { text-decoration: underline; }
 .usage-grid tbody th { font-weight: 600; }
 .usage-grid td { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
 .usage-grid .usage-sum { font-weight: 700; }
+.usage-corner { color: var(--faint) !important; font-weight: 500 !important; }
+.usage-arrow { display: inline-block; margin: 0 2px; opacity: .6; }
 .usage-grid .usage-all th, .usage-grid .usage-all td { border-top: 2px solid var(--line); }
 
 /* Apps row */
@@ -977,7 +979,7 @@ a.row-title:hover { text-decoration: underline; }
         <div class="cfg-body usage-body">
           <div class="usage-scroll">
             <table class="usage-grid">
-              <thead><tr><th></th>{{ range .Usage.Tunnels }}<th>{{ . }}</th>{{ end }}<th class="usage-sum" data-i="total">Total</th></tr></thead>
+              <thead><tr><th class="usage-corner"><span data-i="user">User</span> <span class="usage-arrow">\</span> <span data-i="tunnel">Tunnel</span></th>{{ range .Usage.Tunnels }}<th>{{ . }}</th>{{ end }}<th class="usage-sum" data-i="total">Total</th></tr></thead>
               <tbody>
                 {{ range .Usage.Rows }}
                 <tr><th>{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}</th>{{ range .Cells }}<td dir="ltr">{{ . }}</td>{{ end }}<td class="usage-sum" dir="ltr">{{ .Total }}</td></tr>
