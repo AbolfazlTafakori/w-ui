@@ -567,6 +567,11 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
    scroll rather than a wall past the bottom of the window. */
 .amodal { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); }
 .amodal-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; font-size: 14px; line-height: 22px; }
+@media (max-width: 768px) {
+  /* On a phone a dialog's body scrolls with no bar drawn over it. */
+  .amodal-body { scrollbar-width: none; }
+  .amodal-body::-webkit-scrollbar { display: none; }
+}
 /* The page's tables keep a floor width and scroll in their wrapper; a table
    inside a dialog has no wrapper to scroll in and fits the dialog instead. */
 .amodal table { min-width: 0; }
