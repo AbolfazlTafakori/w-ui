@@ -117,6 +117,12 @@ func hostOf(endpoint string) string {
 		return ""
 	}
 	if host, _, err := net.SplitHostPort(endpoint); err == nil {
+		// A relay on this same machine hands every customer's packets on
+		// from loopback, and only the port tells the flows apart; the port
+		// is kept then, so the sharing report still has something to say.
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			return endpoint
+		}
 		return host
 	}
 	// Already a bare address, which is what the WireGuard driver reports when

@@ -63,6 +63,8 @@ In the client form switch on **On hold** and give a **Plan length** in days. Unt
 
 The count spans every server: a device on a node is one of the customer's connections too, and one held off there is held through the node — see [Nodes](/panel/nodes#connections-at-once-across-servers).
 
+Behind a relay (a tunnel that forwards customers' packets from another server), every device arrives from the relay's one address; the panel tells them apart by the port the relay gives each flow, so the count and the fight check work there too.
+
 What counts: a credential with bytes moving in the last 75 seconds is one connection, whichever address it comes from — a phone walking from wifi onto mobile data changes address once and is still one person. One file used on two devices at the same time shows as an address that keeps flipping back and forth, and that counts as two. So a customer with ten files and a plan for one can use any of them, one after the other; using two together holds the second off.
 
 ## The client dialog

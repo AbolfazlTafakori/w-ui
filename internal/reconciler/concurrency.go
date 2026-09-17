@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -151,7 +152,7 @@ func (c *concurrency) observe(stats []backend.Stat, now time.Time) {
 		if a == nil {
 			// First sight: remembered, not counted. A peer that was on before
 			// the panel started would otherwise look live for a window.
-			c.acts[s.AccountID] = &activity{bytes: total, addr: hostOf(s.Endpoint), addrs: map[string]time.Time{}}
+			c.acts[s.AccountID] = &activity{bytes: total, addr: whereFrom(s.Endpoint), addrs: map[string]time.Time{}}
 			continue
 		}
 		if total == a.bytes {
@@ -169,9 +170,9 @@ func (c *concurrency) observe(stats []backend.Stat, now time.Time) {
 		if !wasLive {
 			a.since = now
 			a.flips = 0
-			c.events = append(c.events, Event{Kind: "connected", Account: s.AccountID, Name: c.nameOf[s.AccountID], Addr: hostOf(s.Endpoint)})
+			c.events = append(c.events, Event{Kind: "connected", Account: s.AccountID, Name: c.nameOf[s.AccountID], Addr: whereFrom(s.Endpoint)})
 		}
-		host := hostOf(s.Endpoint)
+		host := whereFrom(s.Endpoint)
 		if host != "" {
 			if a.addr != "" && host != a.addr {
 				if now.Sub(a.flipAt) > activeWindow {
@@ -492,4 +493,15 @@ func (c *concurrency) liveClients(now time.Time) []uint {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
+}
+
+// whereFrom is the identity of the place a session comes from: the address
+// with its port. The port matters. Behind a relay every customer arrives
+// from the relay's one address, and only the port tells one device from
+// another -- a relay hands each flow a port of its own -- so on the host
+// alone two devices fighting over a file would look like one. A single
+// device keeps its port for a session; a NAT that rebinds moves it once,
+// which is one flip, not the back-and-forth the fight check looks for.
+func whereFrom(endpoint string) string {
+	return strings.TrimSpace(endpoint)
 }

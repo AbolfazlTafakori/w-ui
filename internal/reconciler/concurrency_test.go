@@ -221,7 +221,7 @@ func TestANodeReportsItsLiveManagedSessions(t *testing.T) {
 	if len(got) != 1 || got[0].OriginID != 40 || got[0].Connections != 1 || got[0].AgeSeconds != 10 {
 		t.Fatalf("sessions = %+v", got)
 	}
-	if len(got[0].Addrs) != 1 || got[0].Addrs[0] != "1.1.1.1" {
+	if len(got[0].Addrs) != 1 || got[0].Addrs[0] != "1.1.1.1:51820" {
 		t.Fatalf("addrs = %v", got[0].Addrs)
 	}
 }
@@ -272,7 +272,7 @@ func TestConnectAndDisconnectAreNoticedOnce(t *testing.T) {
 	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
 	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
 	ev := c.Events()
-	if len(ev) != 1 || ev[0].Kind != "connected" || ev[0].Name != "Roya / phone" || ev[0].Addr != "1.1.1.1" {
+	if len(ev) != 1 || ev[0].Kind != "connected" || ev[0].Name != "Roya / phone" || ev[0].Addr != "1.1.1.1:51820" {
 		t.Fatalf("events after connecting: %+v", ev)
 	}
 	c.observe([]backend.Stat{stat(10, 300, "1.1.1.1")}, t0.Add(4*time.Second))
@@ -288,5 +288,26 @@ func TestConnectAndDisconnectAreNoticedOnce(t *testing.T) {
 	c.remember(accs, names, 1, later.Add(time.Minute))
 	if ev := c.Events(); len(ev) != 0 {
 		t.Fatalf("a quiet device was announced again: %+v", ev)
+	}
+}
+
+// Behind a relay every device arrives from one address and only the port
+// differs; a file on two devices still shows as the fight it is.
+func TestTwoDevicesBehindARelayAreToldApartByPort(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{{ID: 10, ClientID: 1, NodeID: 1}}
+	c.remember(accs, nil, 1, t0)
+	ep := func(port string, b uint64) []backend.Stat {
+		return []backend.Stat{{AccountID: 10, RX: b, Endpoint: "127.0.0.1:" + port}}
+	}
+	c.observe(ep("7273", 100), t0)
+	c.observe(ep("7273", 200), t0.Add(2*time.Second))
+	c.observe(ep("55854", 300), t0.Add(4*time.Second))
+	c.observe(ep("7273", 400), t0.Add(6*time.Second))
+	got := c.enforce(client, accs, t0.Add(6*time.Second))
+	if len(got) != 1 {
+		t.Fatalf("two devices on one file behind a relay were not caught: %+v", got)
 	}
 }
