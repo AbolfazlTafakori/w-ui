@@ -385,3 +385,16 @@ func TestPortRangesAreCheckedBothWays(t *testing.T) {
 		t.Fatalf("ranges parsed wrong: %+v", got)
 	}
 }
+
+// Every TCP connection through the tunnel is told at the handshake how big
+// a segment fits, so a site that ignores "fragmentation needed" does not
+// stall on its large responses.
+func TestTCPSegmentsAreClampedToTheRouteMTU(t *testing.T) {
+	out, err := BuildRuleset(customerPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "tcp flags syn tcp option maxseg size set rt mtu") {
+		t.Fatal("the MSS is not clamped")
+	}
+}

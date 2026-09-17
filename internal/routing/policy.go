@@ -228,6 +228,16 @@ func BuildRuleset(p Policy) (string, error) {
 	fmt.Fprintf(&b, "\n\tchain wui_block {\n")
 	fmt.Fprintf(&b, "\t\ttype filter hook forward priority %d; policy accept;\n", dropPriority)
 
+	// TCP through the tunnel is told, at the handshake, how big a segment
+	// fits: the route's MTU, which for a customer is the tunnel's. Without
+	// this a site on the far side sends full 1500-byte segments, the kernel
+	// answers with "fragmentation needed", and a site that ignores that --
+	// plenty of them do, behind load balancers that drop ICMP -- stalls on
+	// every large response: the page starts and never finishes. Clamping
+	// the MSS makes the size known up front, so nothing has to be said
+	// later. Both directions, so what the customer sends fits too.
+	b.WriteString("\t\ttcp flags syn tcp option maxseg size set rt mtu\n")
+
 	// Named destinations an operator has forbidden.
 	//
 	// Only for what the customers send. The default list blocks the private
