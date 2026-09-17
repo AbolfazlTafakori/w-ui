@@ -612,6 +612,10 @@ type SubPageDevice struct {
 	// Protocol of the tunnel this device is on: a customer on both a
 	// WireGuard and an OpenVPN tunnel sees each file labelled for its app.
 	Protocol string
+	// Label is what the row is called on the page: the customer's name,
+	// the device when they hold several, and the tunnel -- never the
+	// panel's own "device-1", which means nothing to the person reading.
+	Label string
 	// The host this entry was written for, when it was written for one.
 	HostID          uint
 	HostName        string
@@ -724,10 +728,18 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		ExpiresAt:  c.ExpiresAt,
 		SubURL:     subURL,
 	}
+	several := len(deviceNames(c.Accounts)) > 1
 	for _, d := range rendered {
 		if hs := d.Account.LastHandshake; hs != nil && (page.LastOnline == nil || hs.After(*page.LastOnline)) {
 			t := *hs
 			page.LastOnline = &t
+		}
+		label := c.Name
+		if several {
+			label += " · " + d.Account.DeviceName
+		}
+		if iface, ok := byID[d.Account.InterfaceID]; ok && iface.Name != "" {
+			label += " · " + iface.Name
 		}
 		dev := SubPageDevice{
 			ID:       d.Account.ID,
@@ -736,6 +748,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			Filename: d.Profile.Filename,
 			Config:   string(d.Profile.Body),
 			Protocol: string(byID[d.Account.InterfaceID].Protocol),
+			Label:    label,
 		}
 		if d.Host != nil {
 			dev.HostID = d.Host.ID

@@ -950,12 +950,12 @@ a.row-title:hover { text-decoration: underline; }
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
             <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else }}config{{ end }}">Config</span>
-            <span class="cfg-meta">{{ .Name }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
+            <span class="cfg-meta">{{ if .Label }}{{ .Label }}{{ else }}{{ .Name }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
             <div class="row-actions">
               <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
               <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
               {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
-              <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ .Name }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
+              <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ if .Label }}{{ .Label }}{{ else }}{{ .Name }}{{ end }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
             </div>
           </div>
           <div class="cfg-body"><code class="cfg-text">{{ .Config }}</code></div>
