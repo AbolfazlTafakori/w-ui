@@ -276,6 +276,18 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Flush passes a stream's writes through: a page holding an event stream
+// needs each line sent as it is written, not when the response ends.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the writer underneath, for
+// the deadline a stream lifts.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 // maxUint keeps a node id usable when the caller left it unset.
 func maxUint(v, floor uint) uint {
 	if v < floor {

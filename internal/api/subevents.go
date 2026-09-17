@@ -67,14 +67,16 @@ func (h *subHub) count() int {
 // the way -- a proxy, a NAT -- closes it as idle. The page reacts to any
 // line by fetching its status, which carries the fingerprint it compares.
 func (s *Server) serveSubEvents(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok || s.subHub.count() >= maxSubStreams {
+	// Through whatever wrapped the writer on the way here.
+	rc := http.NewResponseController(w)
+	flusher := http.Flusher(flushVia{rc})
+	if s.subHub.count() >= maxSubStreams {
 		http.Error(w, "streaming unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	// The server's write deadline is for requests that answer and finish;
 	// this one stays open on purpose, so its deadline is lifted.
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-store")
@@ -105,3 +107,8 @@ func (s *Server) serveSubEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// flushVia flushes through http.ResponseController, which walks Unwrap.
+type flushVia struct{ rc *http.ResponseController }
+
+func (f flushVia) Flush() { _ = f.rc.Flush() }
