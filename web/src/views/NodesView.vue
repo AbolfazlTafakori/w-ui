@@ -25,7 +25,7 @@ const nodeMenu = ref(null)
 function openNodeMenu(n, e) {
   e.stopPropagation()
   const r = e.currentTarget.getBoundingClientRect()
-  nodeMenu.value = nodeMenu.value?.node?.id === n.id ? null : { node: n, x: Math.max(8, r.right - 180), y: r.bottom + 4 }
+  nodeMenu.value = nodeMenu.value?.node?.id === n.id ? null : { node: n, rect: r, x: Math.max(8, r.right - 180), y: r.bottom + 4 }
 }
 function nodeAction(key) {
   const n = nodeMenu.value?.node
@@ -446,8 +446,7 @@ function latencyTone(ms) {
         </div>
       </div>
       <Teleport to="body">
-        <div v-if="nodeMenu" v-fit class="rowmenu" role="menu" :style="{ top: nodeMenu.y + 'px', left: nodeMenu.x + 'px' }">
-          <div class="menu-title">{{ nodeMenu.node.name }}</div>
+        <div v-if="nodeMenu" v-fit="nodeMenu.rect" class="rowmenu" role="menu" :style="{ top: nodeMenu.y + 'px', left: nodeMenu.x + 'px' }">
           <button class="menu-item" role="menuitem" @click="nodeAction('probe')"><AntIcon name="ThunderboltOutlined" />{{ t('node.probe') }}</button>
           <button class="menu-item" role="menuitem" @click="nodeAction('update')"><AntIcon name="DownloadOutlined" />{{ t('update.askNode') }}</button>
           <button class="menu-item" role="menuitem" @click="nodeAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>

@@ -85,7 +85,7 @@ const cardMenu = ref(null)
 function openCardMenu(c, e) {
   e.stopPropagation()
   const r = e.currentTarget.getBoundingClientRect()
-  cardMenu.value = cardMenu.value?.client?.id === c.id ? null : { client: c, x: Math.max(8, r.right - 180), y: r.bottom + 4 }
+  cardMenu.value = cardMenu.value?.client?.id === c.id ? null : { client: c, rect: r, x: Math.max(8, r.right - 180), y: r.bottom + 4 }
 }
 function cardAction(key) {
   const c = cardMenu.value?.client
@@ -605,7 +605,7 @@ function openMore(e) {
     return
   }
   const r = e.currentTarget.getBoundingClientRect()
-  moreOpen.value = { x: r.left, y: r.bottom + 4 }
+  moreOpen.value = { rect: r, x: r.left, y: r.bottom + 4 }
 }
 
 // Their two menus: one for the page, one for a selection. Same items, same
@@ -962,8 +962,7 @@ async function submitForm(input) {
           <div v-if="speedOf(c) !== '—'" class="client-card-speed"><span class="atag blue ltr" style="margin: 0">{{ speedOf(c) }}</span></div>
         </div>
         <Teleport to="body">
-          <div v-if="cardMenu" v-fit class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
-            <div class="menu-title">{{ cardMenu.client.name }}</div>
+          <div v-if="cardMenu" v-fit="cardMenu.rect" class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
             <button class="menu-item" role="menuitem" @click="cardAction('qr')"><AntIcon name="QrcodeOutlined" />{{ t('client.qrCode') }}</button>
             <button class="menu-item" role="menuitem" @click="cardAction('reset')"><AntIcon name="RetweetOutlined" />{{ t('outbound.resetTraffic') }}</button>
             <button class="menu-item" role="menuitem" @click="cardAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>
@@ -1110,7 +1109,7 @@ async function submitForm(input) {
   </div>
 
   <Teleport to="body">
-    <div v-if="moreOpen" v-fit class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
+    <div v-if="moreOpen" v-fit="moreOpen.rect" class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
       <template v-for="(m, i) in moreItems" :key="m.key || `d${i}`">
         <hr v-if="m.divider" class="amenu-divider" />
         <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickMore(m.key)">

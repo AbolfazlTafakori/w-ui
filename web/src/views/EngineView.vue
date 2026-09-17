@@ -205,7 +205,7 @@ function openRowMenu(b, e) {
     return
   }
   const r = e.currentTarget.getBoundingClientRect()
-  rowMenu.value = { b, x: r.left, y: r.bottom + 4 }
+  rowMenu.value = { b, rect: r, x: r.left, y: r.bottom + 4 }
 }
 function onDocClick(e) {
   if (rowMenu.value && !e.target.closest?.('.amenu') && !e.target.closest?.('.abtn')) rowMenu.value = null
@@ -690,7 +690,7 @@ onMounted(() => {
 
     <!-- ── the balancer's row menu ── -->
     <Teleport to="body">
-      <div v-if="rowMenu" v-fit class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
+      <div v-if="rowMenu" v-fit="rowMenu.rect" class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
         <button class="amenu-item danger" role="menuitem" @click="askDeleteBalancer = rowMenu.b; rowMenu = null"><AntIcon name="DeleteOutlined" /> {{ t('eng.delete') }}</button>
       </div>
     </Teleport>
