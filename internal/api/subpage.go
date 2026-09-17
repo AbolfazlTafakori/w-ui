@@ -40,11 +40,15 @@ var subLogoPNG []byte
 var subLogo = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(subLogoPNG))
 
 type subPageView struct {
-	Logo       template.URL
-	Page       *service.SubPage
-	Nonce      string
-	SubID      string
-	Devices    []subPageDevice
+	Logo    template.URL
+	Page    *service.SubPage
+	Nonce   string
+	SubID   string
+	Devices []subPageDevice
+	// Groups is the files by tunnel: a plan for one shows one row per
+	// tunnel with the actions on it; a plan for several shows one row per
+	// tunnel that opens on the users, each with their own actions.
+	Groups     []subGroup
 	HasWG      bool // any device on a WireGuard tunnel: its apps are offered
 	HasOVPN    bool // any on OpenVPN
 	HasQuota   bool
@@ -299,6 +303,7 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 			v.HasWG = true
 		}
 	}
+	v.Groups = groupDevices(v.Devices)
 	dict, _ := json.Marshal(subPageStrings)
 	v.Strings = template.JS(dict)
 	return v
@@ -314,7 +319,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "Remaining", "lastOnline": "Last Online", "expiry": "Expiry", "noExpiry": "No expiry",
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
-		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language",
+		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show",
 		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
 	},
@@ -325,7 +330,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "باقی‌مانده", "lastOnline": "آخرین فعالیت", "expiry": "انقضا", "noExpiry": "بدون انقضا",
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
-		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان",
+		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش",
 		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
 	},
@@ -572,6 +577,19 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-meta { font-size: 12px; opacity: .85; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cfg-body { display: none; padding: 16px; border-top: 1px solid var(--line); background: var(--surface); }
 .cfg.open .cfg-body { display: block; }
+/* A plan for several: the tunnel's row opens on one line per user, each
+   with its own actions; a user's own file opens under their line. */
+.cfg-count { margin-inline-start: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cfg-users { padding: 4px 0; }
+.cfg-user { border-top: 1px solid var(--line-soft); }
+.cfg-user:first-child { border-top: 0; }
+.cfg-user-head { display: flex; align-items: center; gap: 8px; padding: 10px 16px; }
+.cfg-user-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfg-user-head .row-actions { margin-inline-start: auto; }
+.cfg-user-body { display: none; padding: 0 16px 14px; }
+.cfg-user.open .cfg-user-body { display: block; }
+.cfg-user .btn.show .anticon { transition: transform .3s; }
+.cfg-user.open .btn.show .anticon { transform: rotate(90deg); }
 .cfg-text { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
 
 /* Apps row */
@@ -945,7 +963,8 @@ a.row-title:hover { text-decoration: underline; }
           <span class="row-title" data-i="copyAll">Copy all configs</span>
           <div class="row-actions"><button class="btn sm copy-all" type="button" data-i-title="copyAll"><span class="anticon">{{ index .Icons "CopyOutlined" }}</span></button></div>
         </div>
-        {{ range .Devices }}
+        {{ range .Groups }}
+        {{ if .Single }}{{ with .One }}
         <div class="cfg">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
@@ -960,6 +979,35 @@ a.row-title:hover { text-decoration: underline; }
           </div>
           <div class="cfg-body"><code class="cfg-text">{{ .Config }}</code></div>
         </div>
+        {{ end }}{{ else }}
+        <!-- A plan for several: one row for the tunnel, which opens on the
+             users, each with the actions for their own file. -->
+        <div class="cfg cfg-group">
+          <div class="cfg-head">
+            <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
+            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else }}config{{ end }}">Config</span>
+            <span class="cfg-meta">{{ .Title }}{{ if .Tunnel }} · {{ .Tunnel }}{{ end }}</span>
+            <span class="cfg-count"><span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span></span>
+          </div>
+          <div class="cfg-body cfg-users">
+            {{ range .Devices }}
+            <div class="cfg-user">
+              <div class="cfg-user-head">
+                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
+                <div class="row-actions">
+                  <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
+                  <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
+                  {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
+                  <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ .Label }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
+                  <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
+                </div>
+              </div>
+              <div class="cfg-user-body"><code class="cfg-text">{{ .Config }}</code></div>
+            </div>
+            {{ end }}
+          </div>
+        </div>
+        {{ end }}
         {{ end }}
       </div>
       {{ end }}
@@ -1061,6 +1109,7 @@ a.row-title:hover { text-decoration: underline; }
   $('button.qr').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); var p = b.nextElementSibling; var was = p.classList.contains('open'); closeMenus(); if (!was) p.classList.add('open'); }); });
   $('.cfg-head').forEach(function (h) { h.addEventListener('click', function () { h.parentNode.classList.toggle('open'); }); });
   $('.cfg-head .row-actions').forEach(function (a) { a.addEventListener('click', function (e) { e.stopPropagation(); }); });
+  $('.cfg-user .btn.show').forEach(function (b) { b.addEventListener('click', function () { b.closest('.cfg-user').classList.toggle('open'); }); });
   $('.pop').forEach(function (p) { p.addEventListener('click', function (e) { if (e.target === p) closeMenus(); }); });
   $('.pop-card').forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); }); });
   document.addEventListener('click', closeMenus);
@@ -1196,4 +1245,54 @@ func asciiFilename(name string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// subGroup is a tunnel's files on the page.
+type subGroup struct {
+	Protocol string
+	Tunnel   string
+	Title    string
+	Devices  []subPageDevice
+	// Single is a group of one file, shown as a row of its own with the
+	// actions on it; One is that file.
+	Single bool
+	One    subPageDevice
+}
+
+// groupDevices arranges the files by tunnel, in the order they came. A
+// tunnel with one file is a row; a tunnel with several is a row that opens
+// on the users. When the customer reaches one tunnel only, its name is
+// left off the row: there is nothing to tell apart.
+func groupDevices(devices []subPageDevice) []subGroup {
+	var groups []subGroup
+	index := map[string]int{}
+	tunnels := map[string]bool{}
+	for _, d := range devices {
+		key := d.Protocol + "/" + d.Tunnel
+		tunnels[d.Tunnel] = true
+		i, ok := index[key]
+		if !ok {
+			title := "WireGuard"
+			if d.Protocol == "openvpn" {
+				title = "OpenVPN"
+			}
+			index[key] = len(groups)
+			groups = append(groups, subGroup{Protocol: d.Protocol, Tunnel: d.Tunnel, Title: title})
+			i = index[key]
+		}
+		groups[i].Devices = append(groups[i].Devices, d)
+	}
+	for i := range groups {
+		if len(groups[i].Devices) == 1 {
+			groups[i].Single = true
+			groups[i].One = groups[i].Devices[0]
+		}
+		if len(tunnels) <= 1 {
+			groups[i].Tunnel = ""
+		}
+		// The tag already says which protocol; the title is not repeated
+		// beside it.
+		groups[i].Title = ""
+	}
+	return groups
 }

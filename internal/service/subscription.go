@@ -616,6 +616,11 @@ type SubPageDevice struct {
 	// the device when they hold several, and the tunnel -- never the
 	// panel's own "device-1", which means nothing to the person reading.
 	Label string
+	// Tunnel is the interface's name, for grouping a plan's files by
+	// tunnel; User is the user's number in a plan for several (0 for a
+	// plan of one, or a file with a name of its own).
+	Tunnel string
+	User   int
 	// The host this entry was written for, when it was written for one.
 	HostID          uint
 	HostName        string
@@ -738,8 +743,16 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		if several {
 			label += " · " + d.Account.DeviceName
 		}
+		tunnel := ""
 		if iface, ok := byID[d.Account.InterfaceID]; ok && iface.Name != "" {
+			tunnel = iface.Name
 			label += " · " + iface.Name
+		}
+		user := 0
+		if several {
+			if n, err := strconv.Atoi(strings.TrimPrefix(d.Account.DeviceName, "user-")); err == nil && strings.HasPrefix(d.Account.DeviceName, "user-") {
+				user = n
+			}
 		}
 		dev := SubPageDevice{
 			ID:       d.Account.ID,
@@ -749,6 +762,8 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			Config:   string(d.Profile.Body),
 			Protocol: string(byID[d.Account.InterfaceID].Protocol),
 			Label:    label,
+			Tunnel:   tunnel,
+			User:     user,
 		}
 		if d.Host != nil {
 			dev.HostID = d.Host.ID

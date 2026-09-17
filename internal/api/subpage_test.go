@@ -137,6 +137,13 @@ func TestNonceIsUniqueAndNotEmpty(t *testing.T) {
 // A customer on a network that blocks a CDN, or with no route to one, still
 // gets a page that works.
 func TestSubPageLoadsNothingExternal(t *testing.T) {
+	devices := []subPageDevice{{
+		SubPageDevice: service.SubPageDevice{
+			ID: 1, Name: "phone", Address: "10.0.0.2", Filename: "phone.conf",
+			Config: "[Interface]",
+		},
+		QR: "data:image/png;base64,AAAA",
+	}}
 	var buf strings.Builder
 	err := subPageTemplate.Execute(&buf, subPageView{
 		Page: &service.SubPage{
@@ -146,13 +153,8 @@ func TestSubPageLoadsNothingExternal(t *testing.T) {
 		},
 		Nonce: "abc", Lang: "en", HasQuota: true, StatusKey: "active", Used: "250 B", Total: "1000 B",
 		Strings: "{}", Icons: map[string]template.HTML{},
-		Devices: []subPageDevice{{
-			SubPageDevice: service.SubPageDevice{
-				ID: 1, Name: "phone", Address: "10.0.0.2", Filename: "phone.conf",
-				Config: "[Interface]",
-			},
-			QR: "data:image/png;base64,AAAA",
-		}},
+		Devices: devices,
+		Groups:  groupDevices(devices),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -257,5 +259,26 @@ func TestDeviceDownloadsKeepTheirName(t *testing.T) {
 	setDownload(h, "گوشی.ovpn")
 	if cd := h.Get("Content-Disposition"); !strings.Contains(cd, `filename="____.ovpn"`) || !strings.Contains(cd, "filename*=UTF-8''%DA%AF") {
 		t.Errorf("a non-ascii name: %q", cd)
+	}
+}
+
+// A plan for one is a row per tunnel with the actions on it; a plan for
+// several is a row per tunnel that opens on the users, each with their
+// own. The tunnel's name is shown only when there is more than one.
+func TestFilesAreGroupedByTunnelForAPlanOfSeveral(t *testing.T) {
+	one := groupDevices([]subPageDevice{
+		{SubPageDevice: service.SubPageDevice{ID: 1, Protocol: "wireguard", Tunnel: "wg0", Label: "Ali · wg0"}},
+	})
+	if len(one) != 1 || !one[0].Single || one[0].Tunnel != "" {
+		t.Fatalf("a plan of one: %+v", one)
+	}
+	several := groupDevices([]subPageDevice{
+		{SubPageDevice: service.SubPageDevice{ID: 1, Protocol: "wireguard", Tunnel: "wg0", User: 1}},
+		{SubPageDevice: service.SubPageDevice{ID: 2, Protocol: "wireguard", Tunnel: "wg0", User: 2}},
+		{SubPageDevice: service.SubPageDevice{ID: 3, Protocol: "openvpn", Tunnel: "ovpn", User: 1}},
+		{SubPageDevice: service.SubPageDevice{ID: 4, Protocol: "openvpn", Tunnel: "ovpn", User: 2}},
+	})
+	if len(several) != 2 || several[0].Single || len(several[0].Devices) != 2 || several[0].Tunnel != "wg0" || several[1].Tunnel != "ovpn" {
+		t.Fatalf("a plan of two on two tunnels: %+v", several)
 	}
 }
