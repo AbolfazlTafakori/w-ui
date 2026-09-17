@@ -528,7 +528,7 @@ async function submit() {
 
 <style scoped>
 .amodal.w720 { width: min(720px, calc(100vw - 32px)); }
-.cf-body { max-height: 72vh; overflow-y: auto; overflow-x: hidden; }
+.cf-body { overflow-x: hidden; }
 .cf-form { padding-top: 4px; }
 
 /* Their Row gutter={16}: 8px each side, pulled off the row so the outer
@@ -539,16 +539,18 @@ async function submit() {
 .acol12 { grid-column: span 12; }
 .acol6 { grid-column: span 6; }
 /* Their xs={24} for the wide fields and xs={12} for the small numbers: on
-   a phone the numbers sit two to a row rather than one under another. And
-   as Ant's modal does on a phone, the dialog takes the width less 8px a
-   side and the page scrolls rather than a box inside the dialog, so no
-   scrollbar sits on top of the controls. */
+   a phone the numbers sit two to a row rather than one under another, and
+   the dialog takes the width less 8px a side. Its body scrolls inside the
+   dialog, as every dialog's does, so the head and the Save button stay
+   where they are and nothing spills over the page behind. */
 @media (max-width: 768px) {
   .acol12 { grid-column: 1 / -1; }
   .acol6 { grid-column: span 12; }
   .amodal.w720 { width: calc(100vw - 16px); padding: 16px; }
   .amodal-backdrop { padding: 16px 8px; align-items: flex-start; }
-  .cf-body { max-height: none; overflow: visible; }
+  .amodal.w720 { max-height: calc(100dvh - 32px); }
+  /* Room for the thin scrollbar, so it does not sit on the controls. */
+  .cf-body { scrollbar-width: thin; padding-inline-end: 6px; }
 }
 
 .aform-label.required::before { content: '*'; margin-inline-end: 4px; color: var(--bad); }
