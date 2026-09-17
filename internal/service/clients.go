@@ -367,8 +367,12 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 			names = append(names, n)
 		}
 	}
+	// One file per user. A plan for one is one file; a plan for three is
+	// three files, each its own person's, each allowed one device at a
+	// time -- so a two-user plan is two single-user plans that share an
+	// allowance, which is the simplest thing to sell and to check.
 	if len(names) == 0 {
-		names = []string{"device-1"}
+		names = seatNames(in.DeviceLimit, nil)
 	}
 	// Files are not the limit; connections at once are, and the reconciler
 	// holds a customer to those. A single-user plan may well hold a file for
@@ -917,6 +921,7 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 			fields["duration_days"] = 0
 		}
 	}
+	var seats *int
 	if in.DeviceLimit != nil {
 		// Connections at once, not files: a customer keeps every file they
 		// hold when the limit is lowered, and simply cannot use as many of
@@ -925,6 +930,7 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 			return nil, fmt.Errorf("%w: device limit must be between 0 and 50", ErrInvalid)
 		}
 		fields["device_limit"] = *in.DeviceLimit
+		seats = in.DeviceLimit
 	}
 	if in.SubID != "" && in.SubID != client.SubToken {
 		subID, err := s.checkSubID(ctx, client.ID, in.SubID)
@@ -935,6 +941,14 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 	}
 	if in.RateBitsPerSec != nil {
 		fields["rate_bits_per_sec"] = *in.RateBitsPerSec
+	}
+	// The files follow the users: a plan raised from one to three gets two
+	// more files, one lowered from three to one loses the two newest. Done
+	// before the plan is saved, so a failure here leaves the plan as it was.
+	if seats != nil && *seats > 0 {
+		if err := s.fitSeats(ctx, client, *seats); err != nil {
+			return nil, err
+		}
 	}
 	if in.ResetCycle != nil {
 		fields["reset_cycle"] = *in.ResetCycle
@@ -1758,3 +1772,62 @@ func (o OptionalTime) MarshalJSON() ([]byte, error) {
 // At is the OptionalTime for a given time; Clear is one that removes the date.
 func At(t time.Time) OptionalTime { return OptionalTime{Set: true, Value: &t} }
 func ClearTime() OptionalTime     { return OptionalTime{Set: true} }
+
+// seatNames names the files of a plan for n users: a plan for one keeps
+// the one name a single file has always had, a plan for more numbers them,
+// skipping any name the customer already holds.
+func seatNames(n int, taken []string) []string {
+	have := map[string]bool{}
+	for _, t := range taken {
+		have[strings.ToLower(t)] = true
+	}
+	if n <= 1 {
+		if len(taken) == 0 {
+			return []string{"device-1"}
+		}
+		return nil
+	}
+	var out []string
+	for i := 1; len(taken)+len(out) < n; i++ {
+		name := fmt.Sprintf("user-%d", i)
+		if have[strings.ToLower(name)] {
+			continue
+		}
+		have[strings.ToLower(name)] = true
+		out = append(out, name)
+	}
+	return out
+}
+
+// fitSeats makes the customer hold exactly one file per user: issuing the
+// ones missing, removing the newest beyond the count.
+func (s *Clients) fitSeats(ctx context.Context, client *model.Client, seats int) error {
+	fresh, err := s.Get(ctx, client.ID)
+	if err != nil {
+		return err
+	}
+	devices := deviceNames(fresh.Accounts)
+	// A single-user plan whose one file has the old name keeps it: renaming
+	// would invalidate a file already installed for nothing.
+	for _, name := range seatNames(seats, devices) {
+		if _, err := s.AddDevice(ctx, client.ID, name); err != nil {
+			return err
+		}
+	}
+	if len(devices) > seats {
+		// Newest first, by the order they were issued, so the file the
+		// customer has had longest is the one that stays.
+		extra := devices[seats:]
+		for _, name := range extra {
+			for _, a := range fresh.Accounts {
+				if strings.EqualFold(a.DeviceName, name) {
+					if err := s.RemoveDevice(ctx, a.ID); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		s.log.Info("files removed to fit the plan", "client", client.Name, "removed", strings.Join(extra, ", "), "users", seats)
+	}
+	return nil
+}

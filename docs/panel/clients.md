@@ -1,10 +1,10 @@
 ---
-description: "Customers. One client is one plan, allowed a number of connections at once; each device file has its own key and address."
+description: "Customers. One client is one plan for a number of users; each user has a file of their own that works on one device at a time."
 ---
 
 # Clients
 
-Customers. One client is one plan, allowed a number of **connections at once**. Each device file (account) has its own key and address, and no more files are issued than connections allowed. The number beside the name is how many places the customer is connected from right now, counted from the public addresses their credentials are live from — a file used on two devices one after the other is one connection, both at the same time is two.
+Customers. One client is one plan for a number of **users** — one by default. Each user has a file of their own (its own key and address, on every server the customer is allowed), and each file works on one device at a time. The number beside the name is how many are connected right now against how many users the plan has.
 
 ## The summary card
 
@@ -57,23 +57,21 @@ A plan can be sold as "30 days from the first connection" instead of a fixed dat
 
 In the client form switch on **On hold** and give a **Plan length** in days. Until the customer connects the row shows an **On hold** tag and the expiry column shows the days; the moment their first connection arrives the countdown begins and the expiry date appears.
 
-## Connections at once
+## Users
 
-**Connections at once** (the device limit) is enforced, not just shown. Every two seconds the panel looks at which of the customer's credentials have traffic moving and where it comes from; when more are connected than the plan allows, the newest are **held off for two minutes** — a WireGuard peer is removed and comes back on its own when the hold ends, an OpenVPN session is ended. The device that was already connected stays. The log says `connection limit reached; device held off` with the client, the device and until when.
+A plan is for a number of **users**, one by default. Each user gets a file of their own — `Roya.conf` for a plan of one, `Roya-user-1.conf`, `Roya-user-2.conf`… for more — on every server the customer is allowed, and each file works on **one device at a time**. So a two-user plan is two single-user plans sharing one allowance and one expiry: simple to sell, simple to check.
 
-The count spans every server: a device on a node is one of the customer's connections too, and one held off there is held through the node — see [Nodes](/panel/nodes#connections-at-once-across-servers).
+Raising the number on an existing customer issues the missing files at once (and the subscription page shows them the same instant); lowering it removes the newest files, so the one the customer has had longest keeps working. Empty means no limit: one file, any number of devices.
 
-Behind a relay (a tunnel that forwards customers' packets from another server), every device arrives from the relay's one address; the panel tells them apart by the port the relay gives each flow, so the count and the fight check work there too.
-
-What counts: a credential with bytes moving in the last 75 seconds is one connection, whichever address it comes from — a phone walking from wifi onto mobile data changes address once and is still one person. One file used on two devices at the same time shows as an address that keeps flipping back and forth, and that counts as two. So a customer with ten files and a plan for one can use any of them, one after the other; using two together holds the second off.
+**Enforcement** is live and spans every server. Every two seconds the panel looks at which files have traffic moving and where it comes from; a file used from two places at once — its address keeps flipping back and forth — is over its one device, and more files live than the plan has users is over the plan; in either case the newest is **held off for two minutes** (a WireGuard peer removed and back on its own when the hold ends, an OpenVPN session ended). A phone walking from wifi onto mobile data changes address once and is not held. Behind a relay, where every device arrives from one address, the port the relay gives each flow tells them apart. The log says `connection limit reached; device held off` with the customer, the file and until when.
 
 ## The client dialog
 
 **Add client** and the pencil on a row open the same dialog, in three tabs:
 
-- **Basics** — name (the ↻ draws a random one), data allowance with its unit, connections at once, how long the plan is valid, On hold, speed limit, traffic reset, Telegram ID, note, group (a drop-down of the groups that exist, or type a new one), the servers the customer may use (Select all / Clear all), and the **Enabled** switch. The question mark beside a label explains it on hover.
+- **Basics** — name (the ↻ draws a random one), data allowance with its unit, users, how long the plan is valid, On hold, speed limit, traffic reset, Telegram ID, note, group (a drop-down of the groups that exist, or type a new one), the servers the customer may use (Select all / Clear all), and the **Enabled** switch. The question mark beside a label explains it on hover.
 
-  **Empty or 0 means unlimited** for the allowance, the validity and the connections at once — on creation and on an edit alike: clearing the box on an existing customer removes the limit. With **On hold** switched on, the validity box becomes **Expire days**: how many days the plan runs once the customer first connects.
+  **Empty or 0 means unlimited** for the allowance and the validity, and for users it means one file with no device limit — on creation and on an edit alike: clearing the box on an existing customer removes the limit. With **On hold** switched on, the validity box becomes **Expire days**: how many days the plan runs once the customer first connects.
 - **Credentials** — the OpenVPN username and password when an OpenVPN server is selected (each with ↻ to generate), the devices to issue on creation, and the **Subscription ID**: the secret in the customer's link. Type one to keep a link a customer already has (8–64 characters: letters, digits, `-`, `_`, unique), or ↻ for a new one; changing it stops the old link.
 - **Links** — for an existing customer, the subscription link with copy and open; the files themselves are on the customer's page.
 

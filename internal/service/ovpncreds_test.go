@@ -95,7 +95,7 @@ func TestOpenVPNCredentialsCanBeChangedLater(t *testing.T) {
 	svc, wg, ov := seedOpenVPN(t, db)
 	expires := time.Now().Add(24 * time.Hour)
 	c, err := svc.Create(context.Background(), CreateInput{
-		Name: "Roya", InterfaceIDs: []uint{wg.ID}, ExpiresAt: &expires, DeviceLimit: 2,
+		Name: "Roya", InterfaceIDs: []uint{wg.ID}, ExpiresAt: &expires, DeviceLimit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)

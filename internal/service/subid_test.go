@@ -137,3 +137,56 @@ func TestFilesAreNamedAfterTheCustomer(t *testing.T) {
 		}
 	}
 }
+
+// A plan for n users is n files: one each, issued with the plan, added when
+// the plan grows, the newest removed when it shrinks.
+func TestAPlanForNUsersIsNFiles(t *testing.T) {
+	db := testDB(t)
+	svc, ifaces, _ := seedServers(t, db, 0)
+	c, err := svc.Create(context.Background(), CreateInput{
+		Name: "Roya", InterfaceIDs: []uint{ifaces[0].ID}, DeviceLimit: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := func() []string {
+		got, err := svc.Get(context.Background(), c.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return deviceNames(got.Accounts)
+	}
+	if n := names(); len(n) != 3 || n[0] != "user-1" || n[2] != "user-3" {
+		t.Fatalf("files for a plan of three: %v", n)
+	}
+	five := 5
+	if _, err := svc.Update(context.Background(), c.ID, UpdateInput{DeviceLimit: &five}); err != nil {
+		t.Fatal(err)
+	}
+	if n := names(); len(n) != 5 || n[4] != "user-5" {
+		t.Fatalf("files after growing to five: %v", n)
+	}
+	one := 1
+	if _, err := svc.Update(context.Background(), c.ID, UpdateInput{DeviceLimit: &one}); err != nil {
+		t.Fatal(err)
+	}
+	if n := names(); len(n) != 1 || n[0] != "user-1" {
+		t.Fatalf("files after shrinking to one: %v", n)
+	}
+	// A single-user plan is one file with the plain name.
+	d, err := svc.Create(context.Background(), CreateInput{Name: "Sina", InterfaceIDs: []uint{ifaces[0].ID}, DeviceLimit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := deviceNames(d.Accounts); len(n) != 1 || n[0] != "device-1" {
+		t.Fatalf("files for a plan of one: %v", n)
+	}
+	// Unlimited leaves the files alone.
+	zero := 0
+	if _, err := svc.Update(context.Background(), c.ID, UpdateInput{DeviceLimit: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	if n := names(); len(n) != 1 {
+		t.Fatalf("files after unlimited: %v", n)
+	}
+}

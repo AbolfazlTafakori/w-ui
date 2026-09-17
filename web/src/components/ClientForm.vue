@@ -14,7 +14,6 @@ import { quotaToUnit, unitToBytes, durationToUnit, unitToHours } from '../lib/fo
 import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
-import TagInput from './TagInput.vue'
 import HelpTip from './HelpTip.vue'
 import AutoComplete from './AutoComplete.vue'
 
@@ -93,7 +92,7 @@ const form = ref(
         quotaUnit: 'GB',
         expiresIn: '',
         expiresUnit: 'days',
-        deviceLimit: '',
+        deviceLimit: 1,
         rateMbit: '',
         startOnFirstUse: false,
         resetCycle: 'none',
@@ -449,14 +448,9 @@ async function submit() {
               <p v-else-if="editing && form.subId.trim() !== (props.client.subId || '')" class="hint">{{ t('client.subIdChangeHint') }}</p>
             </div>
 
-            <template v-if="!editing">
-              <div class="aform-item">
-                <label class="aform-label">{{ t('client.deviceNames') }} <HelpTip :text="t('client.deviceNamesHint')" /></label>
-                <TagInput v-model="form.deviceNames" placeholder="device-1" />
-                <p class="hint">{{ t('client.deviceNamesHint') }}</p>
-              </div>
-            </template>
-            <template v-else>
+            <!-- Files follow the Users count: one per user, issued with the
+                 plan. Nothing to type here on creation. -->
+            <template v-if="editing">
               <div class="aform-item">
                 <label class="aform-label">{{ t('client.devices') }} <HelpTip :text="t('client.devicesOnPage')" /></label>
                 <div class="device-list">
