@@ -53,3 +53,24 @@ html[lang='fa'] body {
 .VPNavBarTitle .logo { height: 34px; width: auto; margin-right: 0; }
 .VPHero .image-src { max-width: 320px; max-height: 220px; width: auto; height: auto; object-fit: contain; }
 @media (min-width: 960px) { .VPHero .image-src { max-width: 380px; max-height: 260px; } }
+
+/* On a phone, a shell command wraps rather than scrolling off the edge: the
+   install line is the one thing a reader copies, and it has to be seen
+   whole. Other listings (the menu, a config file) keep their columns and
+   scroll sideways in their own box, as the theme does. Long words in prose
+   and in tables break rather than push the page wider. */
+@media (max-width: 640px) {
+  .vp-doc div[class*='language-bash'] pre,
+  .vp-doc div[class*='language-sh'] pre,
+  .vp-doc div[class*='language-shell'] pre {
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .vp-doc p, .vp-doc li, .vp-doc td, .vp-doc th, .vp-doc h1, .vp-doc h2, .vp-doc h3 {
+    overflow-wrap: anywhere;
+  }
+  .vp-doc h1 { font-size: 28px; line-height: 1.25; }
+  .vp-doc h2 { font-size: 22px; }
+  .VPHero .name, .VPHero .text { font-size: 30px; line-height: 1.2; }
+  .VPHero .tagline { font-size: 16px; }
+}
