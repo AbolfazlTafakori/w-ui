@@ -26,7 +26,7 @@ Total sent / received, total usage, and how many interfaces exist.
 | Port | the listen port |
 | Protocol | `wireguard` / `openvpn`, the transport, and **AmneziaWG** when obfuscated |
 | Clients | total, active, disabled, depleted, online |
-| Traffic | used / limit |
+| Traffic | used / limit — what crossed *this* tunnel, read from its own per-file counters. A customer on WireGuard and OpenVPN both spends one allowance, but each tunnel is charged only with its own bytes, on the panel and on nodes alike |
 | Speed | live rate |
 | Duration | expiry, when set |
 

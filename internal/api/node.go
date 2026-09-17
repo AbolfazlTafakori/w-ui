@@ -78,7 +78,15 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 	if usage == nil {
 		usage = []service.NodeUsage{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"usage": usage})
+	devices, err := s.nodeSync.DrainDevices(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if devices == nil {
+		devices = []service.NodeDeviceUsage{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"usage": usage, "devices": devices})
 }
 
 // handleNodeSessions reports what is live on this server, for the panel that

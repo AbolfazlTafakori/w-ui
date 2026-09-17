@@ -108,6 +108,9 @@ type Reconciler struct {
 
 	// conc holds customers to the connections their plan allows.
 	conc *concurrency
+	// meter turns each tunnel's cumulative counters into what each file
+	// carried since the last tick.
+	meter *deviceMeter
 	// OnHold carries a hold decided here to the node serving the device.
 	// Set by the panel's node syncer; nil when there are no nodes.
 	OnHold func(nodeID uint, hold service.NodeHold)
@@ -133,6 +136,7 @@ func New(o Options) *Reconciler {
 	}
 	return &Reconciler{
 		conc:     newConcurrency(),
+		meter:    newDeviceMeter(),
 		db:       o.DB,
 		enforcer: o.Enforcer,
 		shaper:   o.Shaper,
@@ -186,6 +190,15 @@ func (r *Reconciler) Start(ctx context.Context) {
 // package is the only thing that talks to the data plane and imports nothing
 // that imports it back; a shared struct here would be the first strand of a
 // cycle.
+// AddDeviceUsage folds what a node saw one file carry into that file's
+// own counters, for the tunnel's total on the interfaces page.
+func (r *Reconciler) AddDeviceUsage(accountID uint, up, down uint64) {
+	if accountID == 0 || up+down == 0 {
+		return
+	}
+	r.writer.submit(trafficUpdate{AccountID: accountID, DevUp: up, DevDown: down, At: time.Now().UTC()})
+}
+
 func (r *Reconciler) AddNodeUsage(clientID uint, total, up, down uint64) {
 	if clientID == 0 || total == 0 {
 		return
@@ -295,14 +308,21 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	// Handshakes and endpoints come from the drivers, not from nftables, and
 	// are what the online indicator and the sharing detector read.
 	seen := map[uint]string{}
+	metered := map[uint]bool{}
+	allRead := true
 	for ifaceID, b := range r.pool.All() {
 		stats, err := b.Stats(ctx)
 		if err != nil {
 			r.log.Warn("driver stats unavailable", "interface", ifaceID, "error", err)
+			allRead = false
 			continue
 		}
 		r.conc.observe(stats, now)
 		for _, s := range stats {
+			metered[s.AccountID] = true
+			if up, down, ok := r.meter.step(s.AccountID, s.RX, s.TX); ok {
+				r.writer.submit(trafficUpdate{AccountID: s.AccountID, DevUp: up, DevDown: down, At: now})
+			}
 			if s.LastHandshake.IsZero() {
 				continue
 			}
@@ -319,6 +339,10 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 				seen[s.AccountID] = s.Endpoint
 			}
 		}
+	}
+
+	if allRead {
+		r.meter.keep(metered)
 	}
 
 	// Written straight through rather than queued behind the traffic writer:

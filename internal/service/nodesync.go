@@ -113,6 +113,14 @@ type NodeUsage struct {
 	Down     uint64 `json:"down"`
 }
 
+// NodeDeviceUsage is what one file carried on its tunnel here, by the
+// file's id on the panel, for that tunnel's own total.
+type NodeDeviceUsage struct {
+	OriginID uint   `json:"originId"`
+	Up       uint64 `json:"up"`
+	Down     uint64 `json:"down"`
+}
+
 // NodeSync applies and reports state on the panel acting as a node.
 //
 // It does not touch the address allocator: a node is told which addresses to
@@ -363,6 +371,32 @@ func (s *NodeSync) Drain(ctx context.Context) ([]NodeUsage, error) {
 				"used_bytes": 0, "up_bytes": 0, "down_bytes": 0,
 				"updated_at": time.Now().UTC(),
 			}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DrainDevices reports what each file carried on its tunnel here and
+// resets the counters, the same read-and-zero as Drain.
+func (s *NodeSync) DrainDevices(ctx context.Context) ([]NodeDeviceUsage, error) {
+	var out []NodeDeviceUsage
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var accounts []model.Account
+		if err := tx.Where("origin_id > 0 AND (up_bytes > 0 OR down_bytes > 0)").Find(&accounts).Error; err != nil {
+			return fmt.Errorf("read managed device usage: %w", err)
+		}
+		if len(accounts) == 0 {
+			return nil
+		}
+		ids := make([]uint, 0, len(accounts))
+		for _, a := range accounts {
+			out = append(out, NodeDeviceUsage{OriginID: a.OriginID, Up: a.UpBytes, Down: a.DownBytes})
+			ids = append(ids, a.ID)
+		}
+		return tx.Model(&model.Account{}).Where("id IN ?", ids).
+			UpdateColumns(map[string]any{"up_bytes": 0, "down_bytes": 0}).Error
 	})
 	if err != nil {
 		return nil, err

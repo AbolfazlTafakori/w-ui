@@ -320,6 +320,14 @@ type Account struct {
 
 	Enabled bool `gorm:"not null;default:true" json:"enabled"`
 
+	// UpBytes and DownBytes are what this one file has carried on its own
+	// tunnel, read from the tunnel's own counters, so a tunnel's traffic is
+	// the sum of its files and not of the customers on it: a customer on
+	// WireGuard and OpenVPN both spends one allowance, but each tunnel is
+	// charged only with what crossed it.
+	UpBytes   uint64 `gorm:"not null;default:0" json:"upBytes"`
+	DownBytes uint64 `gorm:"not null;default:0" json:"downBytes"`
+
 	// OriginID is this account's id on the panel that owns it.
 	//
 	// Only set on a node, where it is what usage is reported against: the

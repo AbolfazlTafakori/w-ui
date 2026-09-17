@@ -59,6 +59,9 @@ type Syncer struct {
 	// usage is where drained node counters are handed back to the caller, which
 	// folds them into the same per-customer total the local kernel feeds.
 	usage func([]service.NodeUsage)
+	// Devices, when set, is called with what each file carried on a node's
+	// tunnels, by the file's id on this panel.
+	Devices func([]service.NodeDeviceUsage)
 
 	// Sessions is where what a node reports live on it is handed back, for
 	// the connections limit. Holds answers which devices the panel has
@@ -214,7 +217,8 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 	// the tunnels the node should still have, so one deleted here is taken
 	// down there.
 	var reply struct {
-		Usage []service.NodeUsage `json:"usage"`
+		Usage   []service.NodeUsage       `json:"usage"`
+		Devices []service.NodeDeviceUsage `json:"devices"`
 	}
 	if err := s.post(ctx, node, "/api/node/usage", map[string]any{"keep": keep}, &reply); err != nil {
 		s.report(node, fmt.Errorf("reading its usage: %w", err))
@@ -234,6 +238,11 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 
 	if len(reply.Usage) > 0 && s.usage != nil {
 		s.usage(scale(reply.Usage, node.UsageCoefficient))
+	}
+	// What each file carried is the tunnel's own count, not a price: it
+	// goes on unscaled, so the interfaces page adds up to what the wire saw.
+	if len(reply.Devices) > 0 && s.Devices != nil {
+		s.Devices(reply.Devices)
 	}
 	s.report(node, nil)
 }

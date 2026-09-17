@@ -385,13 +385,30 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 		out[c.InterfaceID] = Load{Clients: c.Clients, Devices: c.Devices}
 	}
 
-	// A client's devices all live on one interface, so summing each client once
-	// per interface gives that interface's traffic without double counting.
+	// A tunnel's traffic is the sum of its own files' counters: a customer
+	// on two tunnels spends one allowance, but each tunnel is charged with
+	// what crossed it and no more. The customers' states are counted once
+	// per customer on the tunnel.
 	var usage []struct {
 		InterfaceID uint
-		Used        uint64
 		Up          uint64
 		Down        uint64
+	}
+	err = s.db.WithContext(ctx).Model(&model.Account{}).
+		Select("interface_id, COALESCE(SUM(up_bytes), 0) AS up, COALESCE(SUM(down_bytes), 0) AS down").
+		Group("interface_id").
+		Scan(&usage).Error
+	if err != nil {
+		return nil, fmt.Errorf("service: sum interface traffic: %w", err)
+	}
+	for _, u := range usage {
+		l := out[u.InterfaceID]
+		l.UpBytes, l.DownBytes, l.UsedBytes = u.Up, u.Down, u.Up+u.Down
+		out[u.InterfaceID] = l
+	}
+
+	var states []struct {
+		InterfaceID uint
 		Active      int64
 		Disabled    int64
 		Depleted    int64
@@ -400,19 +417,17 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 		Table("(?) AS a", s.db.Model(&model.Account{}).
 			Select("DISTINCT client_id, interface_id")).
 		Joins("JOIN clients c ON c.id = a.client_id").
-		Select("a.interface_id AS interface_id, COALESCE(SUM(c.used_bytes), 0) AS used, " +
-			"COALESCE(SUM(c.up_bytes), 0) AS up, COALESCE(SUM(c.down_bytes), 0) AS down, " +
+		Select("a.interface_id AS interface_id, " +
 			"SUM(CASE WHEN c.status = 'active' THEN 1 ELSE 0 END) AS active, " +
 			"SUM(CASE WHEN c.status = 'disabled' THEN 1 ELSE 0 END) AS disabled, " +
 			"SUM(CASE WHEN c.status IN ('expired','exhausted') THEN 1 ELSE 0 END) AS depleted").
 		Group("a.interface_id").
-		Scan(&usage).Error
+		Scan(&states).Error
 	if err != nil {
-		return nil, fmt.Errorf("service: sum interface traffic: %w", err)
+		return nil, fmt.Errorf("service: count customer states: %w", err)
 	}
-	for _, u := range usage {
+	for _, u := range states {
 		l := out[u.InterfaceID]
-		l.UsedBytes, l.UpBytes, l.DownBytes = u.Used, u.Up, u.Down
 		l.Active, l.Disabled, l.Depleted = u.Active, u.Disabled, u.Depleted
 		out[u.InterfaceID] = l
 	}

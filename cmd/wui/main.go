@@ -475,6 +475,13 @@ func run() error {
 	// this kernel sees, and a device it holds off on a node is told to that
 	// node at once and again with every push.
 	syncer.Sessions = rec.SetRemoteSessions
+	// What each file carried on a node's tunnel goes on that file, so the
+	// interfaces page charges a tunnel on a node as it does one here.
+	syncer.Devices = func(devices []service.NodeDeviceUsage) {
+		for _, d := range devices {
+			rec.AddDeviceUsage(d.OriginID, d.Up, d.Down)
+		}
+	}
 	syncer.Holds = rec.Holds
 	rec.OnHold = syncer.PushHold
 	service.ConnectionsNow = rec.ConnectionsNow

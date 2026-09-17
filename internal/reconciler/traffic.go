@@ -47,6 +47,11 @@ type trafficUpdate struct {
 	Handshake time.Time
 	Endpoint  string
 
+	// Set for a device update: what one file carried on its own tunnel
+	// since the last reading, by direction, for the tunnel's own total.
+	DevUp   uint64
+	DevDown uint64
+
 	At time.Time
 }
 
@@ -57,6 +62,7 @@ type trafficWriter struct {
 
 	mu       sync.Mutex
 	usage    map[uint]usageDelta // client id -> bytes since last flush
+	devices  map[uint]usageDelta // account id -> bytes on its tunnel since last flush
 	liveness map[uint]trafficUpdate
 	dropped  uint64
 }
@@ -74,6 +80,7 @@ func newTrafficWriter(db *gorm.DB, log *slog.Logger) *trafficWriter {
 		log:      log,
 		ch:       make(chan trafficUpdate, queueSize),
 		usage:    map[uint]usageDelta{},
+		devices:  map[uint]usageDelta{},
 		liveness: map[uint]trafficUpdate{},
 	}
 }
@@ -124,7 +131,12 @@ func (w *trafficWriter) absorb(u trafficUpdate) {
 			w.usage[id] = d
 		}
 	}
-	if u.AccountID != 0 {
+	if u.AccountID != 0 && (u.DevUp > 0 || u.DevDown > 0) {
+		d := w.devices[u.AccountID]
+		d.Up += u.DevUp
+		d.Down += u.DevDown
+		w.devices[u.AccountID] = d
+	} else if u.AccountID != 0 {
 		w.liveness[u.AccountID] = u
 	}
 }
@@ -147,9 +159,11 @@ func (w *trafficWriter) flush(ctx context.Context) {
 
 	w.mu.Lock()
 	usage := w.usage
+	devices := w.devices
 	liveness := w.liveness
 	dropped := w.dropped
 	w.usage = map[uint]usageDelta{}
+	w.devices = map[uint]usageDelta{}
 	w.liveness = map[uint]trafficUpdate{}
 	w.dropped = 0
 	w.mu.Unlock()
@@ -158,7 +172,7 @@ func (w *trafficWriter) flush(ctx context.Context) {
 		w.log.Warn("traffic updates dropped; the write queue is saturated",
 			"count", dropped)
 	}
-	if len(usage) == 0 && len(liveness) == 0 {
+	if len(usage) == 0 && len(liveness) == 0 && len(devices) == 0 {
 		return
 	}
 
@@ -223,6 +237,16 @@ func (w *trafficWriter) flush(ctx context.Context) {
 				}).Error; err != nil {
 					return err
 				}
+			}
+		}
+
+		for accountID, d := range devices {
+			if err := tx.Model(&model.Account{}).Where("id = ?", accountID).
+				UpdateColumns(map[string]any{
+					"up_bytes":   gorm.Expr("up_bytes + ?", d.Up),
+					"down_bytes": gorm.Expr("down_bytes + ?", d.Down),
+				}).Error; err != nil {
+				return err
 			}
 		}
 
