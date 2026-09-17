@@ -12,7 +12,7 @@ Clients, online, depleted, depleting, disabled, active — six figures with a co
 
 ## The toolbar
 
-**Add Clients** (one, or many from a prefix and a count), **more** (bulk enable / disable / delete / reset / extend for the selection, export), and with rows selected a **Delete**. Under it the filter bar: search (name, comment, sub id, key, password), **Filter** with a badge showing how many filters are on, sort, clear all, and "shown of total".
+**Add Clients**, **more** → **Add Bulk** (the classic bulk dialog: a quantity, a name method — random, prefix + number from a start, or prefix + random + postfix — with a live example, then the plan they all share), **more** (bulk enable / disable / delete / reset / extend for the selection, export), and with rows selected a **Delete**. Under it the filter bar: search (name, comment, sub id, key, password), **Filter** with a badge showing how many filters are on, sort, clear all, and "shown of total".
 
 ## The table
 

@@ -6,6 +6,7 @@ import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, relative, dateTime, percent, unitToBytes, unitToHours } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
+import BulkClientForm from '../components/BulkClientForm.vue'
 import ClientQrModal from '../components/ClientQrModal.vue'
 import ClientInfoModal from '../components/ClientInfoModal.vue'
 import AntIcon from '../components/AntIcon.vue'
@@ -76,7 +77,8 @@ const formFor = ref(null)
 const shareFor = ref(null)
 const infoFor = ref(null)
 const dialog = ref(null) // { kind }
-const form = ref({ group: '', addDays: '', addUnit: 'days', quotaGB: '', quotaUnit: 'GB', resetCycle: '', prefix: '', count: 10 })
+const bulkOpen = ref(false)
+const form = ref({ group: '', addDays: '', addUnit: 'days', quotaGB: '', quotaUnit: 'GB', resetCycle: '' })
 const selected = ref(new Set())
 // On a phone the table becomes a list of cards, as the classic panel's clients do,
 // and each card's actions live behind one menu.
@@ -692,9 +694,7 @@ function pickMore(key) {
     })
   }
   if (key === 'batch') {
-    form.value.prefix = ''
-    form.value.count = 10
-    dialog.value = { kind: 'batch' }
+    bulkOpen.value = true
     return
   }
   if (key === 'export') {
@@ -762,19 +762,6 @@ async function submitDialog() {
       const res = await api.adjustClients(payload)
       notify(`${t('client.bulkDone')} — ${nf(res.affected)}`, 'success')
       selected.value = new Set()
-    } else if (d.kind === 'batch') {
-      const iface = interfaces.value[0]
-      const res = await api.createBatch({
-        prefix: form.value.prefix.trim(),
-        count: Number(form.value.count),
-        start: 1,
-        interfaceId: iface?.id,
-        deviceLimit: 1,
-        quotaBytes: unitToBytes(form.value.quotaGB, form.value.quotaUnit),
-        resetCycle: 'none',
-        deviceNames: [],
-      })
-      notify(`${t('client.created')} — ${nf(res.created)}`, 'success')
     }
     dialog.value = null
     await Promise.all([load(), loadGroups()])
@@ -782,6 +769,19 @@ async function submitDialog() {
     notify(err.message, 'error')
   } finally {
     busy.value = false
+  }
+}
+
+// A batch is created in one call and reported as one number; a failure
+// part way names how many were made, from the server's own message.
+async function submitBulk(input) {
+  try {
+    const res = await api.createBatch(input)
+    notify(`${t('client.created')} — ${nf(res.created)}`, 'success')
+    bulkOpen.value = false
+    await Promise.all([load(), loadGroups()])
+  } catch (err) {
+    notify(err.message, 'error')
   }
 }
 
@@ -1126,7 +1126,7 @@ async function submitForm(input) {
           {{ dialog.kind === 'group' ? t('client.addToGroup')
             : dialog.kind === 'adjust' ? t('client.adjust')
             : dialog.kind === 'attach' ? t('client.attachServers')
-            : dialog.kind === 'detach' ? t('client.detachServers') : t('client.batchAdd') }}
+            : t('client.detachServers') }}
         </h2>
         <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="dialog = null">
           <Icon name="close" :size="15" />
@@ -1134,7 +1134,7 @@ async function submitForm(input) {
       </div>
 
       <form id="cd-form" class="card-body" @submit.prevent="submitDialog">
-        <p v-if="dialog.kind !== 'batch'" class="target muted small">
+        <p class="target muted small">
           {{ t('action.selected') }}: <b>{{ nf(selected.size) }}</b>
         </p>
 
@@ -1201,28 +1201,6 @@ async function submitForm(input) {
           </div>
         </template>
 
-        <template v-else>
-          <div class="grid-2">
-            <div class="field">
-              <label for="cd-prefix"><span class="req">*</span>{{ t('client.batchPrefix') }}</label>
-              <input id="cd-prefix" v-model="form.prefix" placeholder="batch-sep" required autofocus />
-            </div>
-            <div class="field">
-              <label for="cd-count"><span class="req">*</span>{{ t('client.batchCount') }}</label>
-              <input id="cd-count" v-model="form.count" type="number" min="1" max="200" required />
-            </div>
-          </div>
-          <div class="field">
-            <label for="cd-bquota">{{ t('client.quota') }}</label>
-            <div class="unit-field">
-              <input id="cd-bquota" v-model="form.quotaGB" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.unlimited')" />
-              <select v-model="form.quotaUnit" class="unit-select" :aria-label="t('client.quotaUnit')">
-                <option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option>
-              </select>
-            </div>
-            <span class="hint">{{ t('client.batchHint') }}</span>
-          </div>
-        </template>
       </form>
 
       <div class="modal-foot">
@@ -1242,6 +1220,7 @@ async function submitForm(input) {
     @close="formFor = null"
     @submit="submitForm"
   />
+  <BulkClientForm v-if="bulkOpen" :interfaces="interfaces" @close="bulkOpen = false" @submit="submitBulk" />
   <ClientQrModal v-if="shareFor" :client="shareFor" :interfaces="interfaces" @close="shareFor = null" />
   <ClientInfoModal v-if="infoFor" :client="infoFor" :interfaces="interfaces" @close="infoFor = null" />
 

@@ -1385,12 +1385,49 @@ func (s *Clients) DeleteByStatus(ctx context.Context, status model.ClientStatus)
 	return s.Bulk(ctx, BulkDelete, ids)
 }
 
-// BatchInput creates several clients in one go, numbering them from a prefix.
+// BatchInput creates several clients in one go, named by a method the
+// classic panel's bulk dialog offers: a random handle, a prefix with a
+// running number, or a prefix, a random handle and a postfix.
 type BatchInput struct {
 	CreateInput
-	Prefix string `json:"prefix"`
-	Count  int    `json:"count"`
-	Start  int    `json:"start"`
+	Count int `json:"count"`
+	// Method is "random", "prefixNumber" (the default) or "prefixRandom".
+	Method  string `json:"method"`
+	Prefix  string `json:"prefix"`
+	Postfix string `json:"postfix"`
+	Start   int    `json:"start"`
+}
+
+const (
+	batchRandom       = "random"
+	batchPrefixNumber = "prefixNumber"
+	batchPrefixRandom = "prefixRandom"
+)
+
+// batchName is the name of the i-th client of a batch, counted from 0.
+func batchName(in BatchInput, i int) (string, error) {
+	prefix := strings.TrimSpace(in.Prefix)
+	postfix := strings.TrimSpace(in.Postfix)
+	switch in.Method {
+	case batchRandom:
+		h, err := ovpnconf.NewSecret(10)
+		if err != nil {
+			return "", err
+		}
+		return strings.ToLower(h), nil
+	case batchPrefixRandom:
+		h, err := ovpnconf.NewSecret(8)
+		if err != nil {
+			return "", err
+		}
+		return prefix + strings.ToLower(h) + postfix, nil
+	default:
+		start := in.Start
+		if start < 1 {
+			start = 1
+		}
+		return fmt.Sprintf("%s%d%s", prefix, start+i, postfix), nil
+	}
 }
 
 // CreateBatch issues a run of clients that share a plan.
@@ -1400,21 +1437,29 @@ type BatchInput struct {
 // successful ones intact rather than rolling back a whole batch.
 func (s *Clients) CreateBatch(ctx context.Context, in BatchInput) ([]model.Client, error) {
 	if in.Count < 1 || in.Count > 200 {
-		return nil, fmt.Errorf("%w: count must be between 1 and 200", ErrInvalid)
+		return nil, invalidField("count", "how many is between 1 and 200")
 	}
-	prefix := strings.TrimSpace(in.Prefix)
-	if prefix == "" {
-		return nil, fmt.Errorf("%w: a name prefix is required", ErrInvalid)
+	if in.Method == "" {
+		in.Method = batchPrefixNumber
 	}
-	start := in.Start
-	if start < 1 {
-		start = 1
+	if in.Method != batchRandom && strings.TrimSpace(in.Prefix) == "" {
+		return nil, invalidField("prefix", "a name prefix is required for this naming")
+	}
+	if len(strings.TrimSpace(in.Prefix))+len(strings.TrimSpace(in.Postfix)) > 48 {
+		return nil, invalidField("prefix", "the prefix and postfix together are at most 48 characters")
 	}
 
 	out := make([]model.Client, 0, in.Count)
 	for i := 0; i < in.Count; i++ {
 		spec := in.CreateInput
-		spec.Name = fmt.Sprintf("%s-%d", prefix, start+i)
+		name, err := batchName(in, i)
+		if err != nil {
+			return out, err
+		}
+		spec.Name = name
+		// Each of a batch gets a link of its own; a subId given would be
+		// one link for all of them, which is not what a batch is.
+		spec.SubID = ""
 		created, err := s.Create(ctx, spec)
 		if err != nil {
 			if len(out) > 0 {
@@ -1425,7 +1470,7 @@ func (s *Clients) CreateBatch(ctx context.Context, in BatchInput) ([]model.Clien
 		}
 		out = append(out, *created)
 	}
-	s.log.Info("client batch created", "prefix", prefix, "count", len(out))
+	s.log.Info("client batch created", "method", in.Method, "prefix", strings.TrimSpace(in.Prefix), "count", len(out))
 	return out, nil
 }
 
