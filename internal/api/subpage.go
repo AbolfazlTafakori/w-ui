@@ -602,32 +602,38 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-user.open .btn.show .anticon { transform: rotate(90deg); }
 .cfg-text { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
 
-/* The usage table: the layout of the description table above it -- the
-   same header tint, the same soft lines, the same radius -- so it reads as
-   one more table of the page rather than a spreadsheet dropped into it.
-   Numbers are right-aligned in a tabular face, the totals column and
-   row are tinted so the eye finds the sums, and on a phone the grid
-   scrolls sideways rather than squeezing. Every colour is a theme token,
-   so it follows dark, black and light alike. */
+/* The usage table. One container -- the fold-out panel -- and nothing
+   boxed inside it: the grid is grouped by rhythm and two rules, one under
+   the head and one above the sum, both drawn in the page's visible line
+   colour so they read on every theme. Names lead in the ink colour; the
+   numbers sit right-aligned in tabular figures so columns of them line
+   up; the sums are heavier, not tinted; zeros step back to the muted
+   colour, which still clears 4.5:1 on each theme. On a phone the first
+   column stays put while the rest scrolls under it. */
 .usage-table { margin-top: 12px; }
-.usage-body { padding: 12px 16px 16px; }
-.usage-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line-soft); border-radius: 8px; }
-.usage-grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 20px; }
-.usage-grid th, .usage-grid td { padding: 9px 14px; white-space: nowrap; border-bottom: 1px solid var(--line-soft); }
-.usage-grid tr:last-child th, .usage-grid tr:last-child td { border-bottom: 0; }
-.usage-grid thead th { background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 500; text-align: end; }
-.usage-grid thead th:first-child, .usage-grid tbody th { text-align: start; }
-.usage-grid tbody th { font-weight: 500; color: var(--ink); background: var(--surface-2); border-inline-end: 1px solid var(--line-soft); }
+.usage-body { padding: 4px 0 8px; }
+.usage-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.usage-grid { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 22px; }
+.usage-grid th, .usage-grid td { padding: 8px 16px; white-space: nowrap; vertical-align: middle; }
+.usage-grid thead th { padding-top: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .01em; text-align: end; }
+.usage-grid thead th:first-child { text-align: start; }
+.usage-grid tbody th { text-align: start; font-weight: 500; color: var(--ink); }
+.usage-grid tbody tr + tr th, .usage-grid tbody tr + tr td { border-top: 1px solid var(--line-soft); }
 .usage-grid td { text-align: end; color: var(--ink); font-variant-numeric: tabular-nums; direction: ltr; }
-.usage-grid tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
-.usage-grid .usage-sum { background: var(--tag-purple-bg); color: var(--tag-purple-ink); font-weight: 600; border-inline-start: 1px solid var(--line-soft); }
-.usage-grid thead .usage-sum { color: var(--tag-purple-ink); font-weight: 600; }
-.usage-grid .usage-all th, .usage-grid .usage-all td { border-top: 1px solid var(--line); font-weight: 600; background: var(--surface-2); }
-.usage-grid .usage-all td.usage-sum { background: var(--tag-purple-bg); }
-.usage-corner { color: var(--faint) !important; font-weight: 400 !important; }
-.usage-arrow { display: inline-block; margin: 0 3px; opacity: .55; }
-.usage-zero { color: var(--faint); }
-@media (max-width: 480px) { .usage-body { padding: 8px 8px 12px; } .usage-grid th, .usage-grid td { padding: 8px 10px; } }
+.usage-grid .usage-sum { font-weight: 600; }
+.usage-grid thead .usage-sum { color: var(--ink); }
+.usage-grid tfoot th, .usage-grid tfoot td { border-top: 1px solid var(--line); padding-top: 10px; padding-bottom: 10px; font-weight: 600; color: var(--ink); }
+.usage-grid tfoot th { text-align: start; }
+.usage-grid td.usage-zero { color: var(--muted); font-weight: 400; }
+.usage-dot { display: inline-block; width: 7px; height: 7px; margin-inline-end: 7px; border-radius: 50%; vertical-align: 1px; }
+.usage-dot.cyan { background: var(--tag-cyan-ink); }
+.usage-dot.orange { background: var(--tag-orange-ink); }
+.usage-grid tbody tr:hover th, .usage-grid tbody tr:hover td { background: var(--surface-2); }
+@media (max-width: 560px) {
+  .usage-grid th, .usage-grid td { padding-inline: 12px; }
+  .usage-grid th:first-child { position: sticky; inset-inline-start: 0; background: var(--surface); z-index: 1; }
+  .usage-grid tbody tr:hover th:first-child { background: var(--surface-2); }
+}
 
 /* Apps row */
 .apps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; }
@@ -982,7 +988,9 @@ a.row-title:hover { text-decoration: underline; }
       <!-- Who spent what, and where: a row per user, a column per tunnel,
            a total at the end of each row and under each column. A plan
            shared by several people, and paid for by them together, is
-           settled from this. -->
+           settled from this. One container, no frame inside it: the
+           rows are grouped by rhythm and two rules -- under the head and
+           above the sum -- rather than by boxes. -->
       <div class="cfg usage-table">
         <div class="cfg-head">
           <span class="anticon caret">{{ index .Icons "RightOutlined" }}</span>
@@ -992,13 +1000,17 @@ a.row-title:hover { text-decoration: underline; }
         <div class="cfg-body usage-body">
           <div class="usage-scroll">
             <table class="usage-grid">
-              <thead><tr><th class="usage-corner"><span data-i="user">User</span> <span class="usage-arrow">\</span> <span data-i="tunnel">Tunnel</span></th>{{ range .Usage.Tunnels }}<th>{{ . }}</th>{{ end }}<th class="usage-sum" data-i="total">Total</th></tr></thead>
+              <thead><tr>
+                <th class="usage-corner"><span data-i="user">User</span></th>
+                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
+                <th class="usage-sum" data-i="total">Total</th>
+              </tr></thead>
               <tbody>
                 {{ range .Usage.Rows }}
                 <tr><th>{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}</th>{{ range .Cells }}<td{{ if eq . "0 B" }} class="usage-zero"{{ end }}>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Total }}</td></tr>
                 {{ end }}
-                {{ if gt (len .Usage.Rows) 1 }}<tr class="usage-all"><th data-i="allUsers">All users</th>{{ range .Usage.Totals }}<td>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Usage.Grand }}</td></tr>{{ end }}
               </tbody>
+              {{ if gt (len .Usage.Rows) 1 }}<tfoot><tr class="usage-all"><th data-i="allUsers">All users</th>{{ range .Usage.Totals }}<td>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Usage.Grand }}</td></tr></tfoot>{{ end }}
             </table>
           </div>
         </div>
@@ -1299,10 +1311,17 @@ func asciiFilename(name string) string {
 // subUsage is the usage table: the tunnels across, the users down, and
 // what each spent on each, with totals along both edges.
 type subUsage struct {
-	Tunnels []string
+	Tunnels []subUsageTunnel
 	Rows    []subUsageRow
 	Totals  []string
 	Grand   string
+}
+
+// subUsageTunnel heads a column: the tunnel's name and its protocol,
+// which colours the mark beside the name the way the config tags are.
+type subUsageTunnel struct {
+	Name     string
+	Protocol string
 }
 
 type subUsageRow struct {
@@ -1321,7 +1340,7 @@ func usageTable(devices []subPageDevice, customer string) *subUsage {
 	if len(devices) == 0 {
 		return nil
 	}
-	var tunnels []string
+	var tunnels []subUsageTunnel
 	col := map[string]int{}
 	type key struct {
 		user int
@@ -1352,7 +1371,7 @@ func usageTable(devices []subPageDevice, customer string) *subUsage {
 		if !ok {
 			c = len(tunnels)
 			col[tunnel] = c
-			tunnels = append(tunnels, tunnel)
+			tunnels = append(tunnels, subUsageTunnel{Name: tunnel, Protocol: d.Protocol})
 		}
 		k := key{user: d.User}
 		if d.User == 0 && named {

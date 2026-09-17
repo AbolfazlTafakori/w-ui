@@ -296,7 +296,7 @@ func TestUsageTableIsUsersDownAndTunnelsAcross(t *testing.T) {
 		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", User: 1, UsedBytes: 512 << 20}},
 		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", User: 2, UsedBytes: 0}},
 	}, "Ali")
-	if len(u.Tunnels) != 2 || u.Tunnels[0] != "wg0" || u.Tunnels[1] != "ovpn" {
+	if len(u.Tunnels) != 2 || u.Tunnels[0].Name != "wg0" || u.Tunnels[1].Name != "ovpn" || u.Tunnels[1].Protocol != "openvpn" {
 		t.Fatalf("tunnels across: %v", u.Tunnels)
 	}
 	if len(u.Rows) != 2 || u.Rows[0].User != 1 || u.Rows[1].User != 2 {
