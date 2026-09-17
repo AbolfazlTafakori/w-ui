@@ -602,19 +602,32 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-user.open .btn.show .anticon { transform: rotate(90deg); }
 .cfg-text { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
 
-/* The usage table: scrolls sideways on a phone rather than squeezing. */
+/* The usage table: the layout of the description table above it -- the
+   same header tint, the same soft lines, the same radius -- so it reads as
+   one more table of the page rather than a spreadsheet dropped into it.
+   Numbers are right-aligned in a tabular face, the totals column and
+   row are tinted so the eye finds the sums, and on a phone the grid
+   scrolls sideways rather than squeezing. Every colour is a theme token,
+   so it follows dark, black and light alike. */
 .usage-table { margin-top: 12px; }
-.usage-body { padding: 0; }
-.usage-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.usage-grid { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 0; }
-.usage-grid th, .usage-grid td { padding: 10px 14px; text-align: start; white-space: nowrap; border-top: 1px solid var(--line-soft); }
-.usage-grid thead th { border-top: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
-.usage-grid tbody th { font-weight: 600; }
-.usage-grid td { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
-.usage-grid .usage-sum { font-weight: 700; }
-.usage-corner { color: var(--faint) !important; font-weight: 500 !important; }
-.usage-arrow { display: inline-block; margin: 0 2px; opacity: .6; }
-.usage-grid .usage-all th, .usage-grid .usage-all td { border-top: 2px solid var(--line); }
+.usage-body { padding: 12px 16px 16px; }
+.usage-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line-soft); border-radius: 8px; }
+.usage-grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 20px; }
+.usage-grid th, .usage-grid td { padding: 9px 14px; white-space: nowrap; border-bottom: 1px solid var(--line-soft); }
+.usage-grid tr:last-child th, .usage-grid tr:last-child td { border-bottom: 0; }
+.usage-grid thead th { background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 500; text-align: end; }
+.usage-grid thead th:first-child, .usage-grid tbody th { text-align: start; }
+.usage-grid tbody th { font-weight: 500; color: var(--ink); background: var(--surface-2); border-inline-end: 1px solid var(--line-soft); }
+.usage-grid td { text-align: end; color: var(--ink); font-variant-numeric: tabular-nums; direction: ltr; }
+.usage-grid tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.usage-grid .usage-sum { background: var(--tag-purple-bg); color: var(--tag-purple-ink); font-weight: 600; border-inline-start: 1px solid var(--line-soft); }
+.usage-grid thead .usage-sum { color: var(--tag-purple-ink); font-weight: 600; }
+.usage-grid .usage-all th, .usage-grid .usage-all td { border-top: 1px solid var(--line); font-weight: 600; background: var(--surface-2); }
+.usage-grid .usage-all td.usage-sum { background: var(--tag-purple-bg); }
+.usage-corner { color: var(--faint) !important; font-weight: 400 !important; }
+.usage-arrow { display: inline-block; margin: 0 3px; opacity: .55; }
+.usage-zero { color: var(--faint); }
+@media (max-width: 480px) { .usage-body { padding: 8px 8px 12px; } .usage-grid th, .usage-grid td { padding: 8px 10px; } }
 
 /* Apps row */
 .apps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; }
@@ -982,9 +995,9 @@ a.row-title:hover { text-decoration: underline; }
               <thead><tr><th class="usage-corner"><span data-i="user">User</span> <span class="usage-arrow">\</span> <span data-i="tunnel">Tunnel</span></th>{{ range .Usage.Tunnels }}<th>{{ . }}</th>{{ end }}<th class="usage-sum" data-i="total">Total</th></tr></thead>
               <tbody>
                 {{ range .Usage.Rows }}
-                <tr><th>{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}</th>{{ range .Cells }}<td dir="ltr">{{ . }}</td>{{ end }}<td class="usage-sum" dir="ltr">{{ .Total }}</td></tr>
+                <tr><th>{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}</th>{{ range .Cells }}<td{{ if eq . "0 B" }} class="usage-zero"{{ end }}>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Total }}</td></tr>
                 {{ end }}
-                {{ if gt (len .Usage.Rows) 1 }}<tr class="usage-all"><th data-i="allUsers">All users</th>{{ range .Usage.Totals }}<td dir="ltr">{{ . }}</td>{{ end }}<td class="usage-sum" dir="ltr">{{ .Usage.Grand }}</td></tr>{{ end }}
+                {{ if gt (len .Usage.Rows) 1 }}<tr class="usage-all"><th data-i="allUsers">All users</th>{{ range .Usage.Totals }}<td>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Usage.Grand }}</td></tr>{{ end }}
               </tbody>
             </table>
           </div>
