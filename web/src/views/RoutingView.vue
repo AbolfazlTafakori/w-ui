@@ -878,7 +878,7 @@ async function testRoute() {
     </div>
 
     <Teleport to="body">
-      <div v-if="menu" class="rowmenu" role="menu" :style="{ top: menu.y + 'px', left: menu.x + 'px' }">
+      <div v-if="menu" v-fit class="rowmenu" role="menu" :style="{ top: menu.y + 'px', left: menu.x + 'px' }">
         <button
           v-for="m in menuFor(menu.idx)"
           :key="m.key"

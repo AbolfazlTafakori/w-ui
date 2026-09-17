@@ -727,6 +727,7 @@ async function runImport() {
     <Teleport to="body">
     <div
       v-if="menu"
+      v-fit
       class="rowmenu"
       role="menu"
       :style="{ top: menu.y + 'px', left: menu.x + 'px' }"

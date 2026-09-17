@@ -4,6 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { store, bootstrap, signOut, notify, t, setNavigating } from './lib/store.js'
 import { initTheme } from './lib/theme.js'
+import { vFit } from './lib/fitmenu.js'
 
 // Fonts are bundled rather than linked. The panel is often reached from
 // networks where a font CDN is unreachable, and falling back to a system font
@@ -119,5 +120,5 @@ bootstrap()
   })
   .finally(() => {
     store.ready = true
-    createApp(App).use(router).mount('#app')
+    createApp(App).use(router).directive('fit', vFit).mount('#app')
   })

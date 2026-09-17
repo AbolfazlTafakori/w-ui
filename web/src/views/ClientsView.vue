@@ -962,7 +962,8 @@ async function submitForm(input) {
           <div v-if="speedOf(c) !== '—'" class="client-card-speed"><span class="atag blue ltr" style="margin: 0">{{ speedOf(c) }}</span></div>
         </div>
         <Teleport to="body">
-          <div v-if="cardMenu" class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
+          <div v-if="cardMenu" v-fit class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
+            <div class="menu-title">{{ cardMenu.client.name }}</div>
             <button class="menu-item" role="menuitem" @click="cardAction('qr')"><AntIcon name="QrcodeOutlined" />{{ t('client.qrCode') }}</button>
             <button class="menu-item" role="menuitem" @click="cardAction('reset')"><AntIcon name="RetweetOutlined" />{{ t('outbound.resetTraffic') }}</button>
             <button class="menu-item" role="menuitem" @click="cardAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>
@@ -1109,7 +1110,7 @@ async function submitForm(input) {
   </div>
 
   <Teleport to="body">
-    <div v-if="moreOpen" class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
+    <div v-if="moreOpen" v-fit class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
       <template v-for="(m, i) in moreItems" :key="m.key || `d${i}`">
         <hr v-if="m.divider" class="amenu-divider" />
         <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickMore(m.key)">

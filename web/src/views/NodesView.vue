@@ -446,7 +446,8 @@ function latencyTone(ms) {
         </div>
       </div>
       <Teleport to="body">
-        <div v-if="nodeMenu" class="rowmenu" role="menu" :style="{ top: nodeMenu.y + 'px', left: nodeMenu.x + 'px' }">
+        <div v-if="nodeMenu" v-fit class="rowmenu" role="menu" :style="{ top: nodeMenu.y + 'px', left: nodeMenu.x + 'px' }">
+          <div class="menu-title">{{ nodeMenu.node.name }}</div>
           <button class="menu-item" role="menuitem" @click="nodeAction('probe')"><AntIcon name="ThunderboltOutlined" />{{ t('node.probe') }}</button>
           <button class="menu-item" role="menuitem" @click="nodeAction('update')"><AntIcon name="DownloadOutlined" />{{ t('update.askNode') }}</button>
           <button class="menu-item" role="menuitem" @click="nodeAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>

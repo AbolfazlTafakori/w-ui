@@ -690,7 +690,7 @@ onMounted(() => {
 
     <!-- ── the balancer's row menu ── -->
     <Teleport to="body">
-      <div v-if="rowMenu" class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
+      <div v-if="rowMenu" v-fit class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
         <button class="amenu-item danger" role="menuitem" @click="askDeleteBalancer = rowMenu.b; rowMenu = null"><AntIcon name="DeleteOutlined" /> {{ t('eng.delete') }}</button>
       </div>
     </Teleport>

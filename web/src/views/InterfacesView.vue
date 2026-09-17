@@ -979,7 +979,7 @@ async function submitForm(input) {
   </div>
 
   <Teleport to="body">
-    <div v-if="rowMenu" class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
+    <div v-if="rowMenu" v-fit class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
       <template v-for="(m, idx) in rowItems(rowMenu.iface)" :key="m.key || `d${idx}`">
         <hr v-if="m.divider" class="amenu-divider" />
         <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickRow(rowMenu.iface, m.key)">

@@ -1245,6 +1245,46 @@ td.center { text-align: center; }
   background: var(--surface-2);
   box-shadow: var(--shadow);
 }
+/* On a phone a row or card menu is a sheet along the bottom edge: full
+   width, 44px items a thumb can hit, a handle, and the safe area under
+   it. The directive decides; this only draws. Inline top/left from the
+   anchor are overridden, which is what the !important is for. */
+.rowmenu.sheet, .amenu.sheet {
+  position: fixed;
+  top: auto !important;
+  left: 0 !important;
+  right: 0;
+  bottom: 0;
+  z-index: 1300;
+  min-width: 0;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--surface);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+  animation: sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.rowmenu.sheet::before, .amenu.sheet::before {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 2px auto 10px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.rowmenu.sheet .menu-item, .amenu.sheet .amenu-item {
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 15px;
+  border-radius: 8px;
+}
+/* The sheet names what it is for, since the card it came from may be
+   under it; the floating box sits on that card and needs no title. */
+.menu-title { display: none; }
+.rowmenu.sheet .menu-title { display: block; padding: 0 14px 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
 .rowmenu.below {
   position: absolute;
   top: calc(100% + 4px);
