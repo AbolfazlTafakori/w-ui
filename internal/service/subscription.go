@@ -624,6 +624,9 @@ type SubPageDevice struct {
 	// Username is the OpenVPN login this file carries, shown beside the
 	// user's line so a seller can read it off the page.
 	Username string
+	// UsedBytes is what this one file carried on its tunnel, for the
+	// usage table: who spent what, and where.
+	UsedBytes uint64
 	// The host this entry was written for, when it was written for one.
 	HostID          uint
 	HostName        string
@@ -761,16 +764,17 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			user = nth[d.Account.InterfaceID]
 		}
 		dev := SubPageDevice{
-			ID:       d.Account.ID,
-			Name:     d.Account.DeviceName,
-			Address:  d.Account.IP,
-			Filename: d.Profile.Filename,
-			Config:   string(d.Profile.Body),
-			Protocol: string(byID[d.Account.InterfaceID].Protocol),
-			Label:    label,
-			Tunnel:   tunnel,
-			User:     user,
-			Username: d.Account.Username,
+			ID:        d.Account.ID,
+			Name:      d.Account.DeviceName,
+			Address:   d.Account.IP,
+			Filename:  d.Profile.Filename,
+			Config:    string(d.Profile.Body),
+			Protocol:  string(byID[d.Account.InterfaceID].Protocol),
+			Label:     label,
+			Tunnel:    tunnel,
+			User:      user,
+			Username:  d.Account.Username,
+			UsedBytes: d.Account.UpBytes + d.Account.DownBytes,
 		}
 		if d.Host != nil {
 			dev.HostID = d.Host.ID

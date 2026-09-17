@@ -48,7 +48,11 @@ type subPageView struct {
 	// Groups is the files by tunnel: a plan for one shows one row per
 	// tunnel with the actions on it; a plan for several shows one row per
 	// tunnel that opens on the users, each with their own actions.
-	Groups     []subGroup
+	Groups []subGroup
+	// Usage is who spent what on which tunnel: a row per user, a column
+	// per tunnel, a total at the end of each. For people sharing a plan
+	// and its cost.
+	Usage      *subUsage
 	HasWG      bool // any device on a WireGuard tunnel: its apps are offered
 	HasOVPN    bool // any on OpenVPN
 	HasQuota   bool
@@ -308,6 +312,7 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 		}
 	}
 	v.Groups = groupDevices(v.Devices, page.Name)
+	v.Usage = usageTable(v.Devices, page.Name)
 	dict, _ := json.Marshal(subPageStrings)
 	v.Strings = template.JS(dict)
 	return v
@@ -323,7 +328,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "Remaining", "lastOnline": "Last Online", "expiry": "Expiry", "noExpiry": "No expiry",
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
-		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user",
+		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "total": "Total", "allUsers": "All users",
 		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
 	},
@@ -334,7 +339,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "باقی‌مانده", "lastOnline": "آخرین فعالیت", "expiry": "انقضا", "noExpiry": "بدون انقضا",
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
-		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر",
+		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "total": "جمع", "allUsers": "همهٔ کاربران",
 		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
 	},
@@ -596,6 +601,18 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-user .btn.show .anticon { transition: transform .3s; }
 .cfg-user.open .btn.show .anticon { transform: rotate(90deg); }
 .cfg-text { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
+
+/* The usage table: scrolls sideways on a phone rather than squeezing. */
+.usage-table { margin-top: 12px; }
+.usage-body { padding: 0; }
+.usage-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.usage-grid { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 0; }
+.usage-grid th, .usage-grid td { padding: 10px 14px; text-align: start; white-space: nowrap; border-top: 1px solid var(--line-soft); }
+.usage-grid thead th { border-top: 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.usage-grid tbody th { font-weight: 600; }
+.usage-grid td { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.usage-grid .usage-sum { font-weight: 700; }
+.usage-grid .usage-all th, .usage-grid .usage-all td { border-top: 2px solid var(--line); }
 
 /* Apps row */
 .apps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; }
@@ -946,6 +963,33 @@ a.row-title:hover { text-decoration: underline; }
         <div class="usage-foot">{{ if .HasQuota }}<span dir="ltr" id="lv-foot-remained">{{ .Remained }}</span><span class="usage-pct" dir="ltr" id="lv-foot-pct">{{ .PercentTxt }}%</span>{{ end }}</div>
       </div>
 
+      {{ if .Usage }}
+      <!-- Who spent what, and where: a row per user, a column per tunnel,
+           a total at the end of each row and under each column. A plan
+           shared by several people, and paid for by them together, is
+           settled from this. -->
+      <div class="cfg usage-table">
+        <div class="cfg-head">
+          <span class="anticon caret">{{ index .Icons "RightOutlined" }}</span>
+          <span class="tag tag-config purple" data-i="usageTable">Usage by user and tunnel</span>
+          <span class="cfg-count" dir="ltr">{{ .Usage.Grand }}</span>
+        </div>
+        <div class="cfg-body usage-body">
+          <div class="usage-scroll">
+            <table class="usage-grid">
+              <thead><tr><th></th>{{ range .Usage.Tunnels }}<th>{{ . }}</th>{{ end }}<th class="usage-sum" data-i="total">Total</th></tr></thead>
+              <tbody>
+                {{ range .Usage.Rows }}
+                <tr><th>{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}</th>{{ range .Cells }}<td dir="ltr">{{ . }}</td>{{ end }}<td class="usage-sum" dir="ltr">{{ .Total }}</td></tr>
+                {{ end }}
+                {{ if gt (len .Usage.Rows) 1 }}<tr class="usage-all"><th data-i="allUsers">All users</th>{{ range .Usage.Totals }}<td dir="ltr">{{ . }}</td>{{ end }}<td class="usage-sum" dir="ltr">{{ .Usage.Grand }}</td></tr>{{ end }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {{ end }}
+
       {{ if .Page.SubURL }}
       <div class="divider"><span data-i="title">Subscription info</span></div>
       <div class="links">
@@ -1235,6 +1279,100 @@ func asciiFilename(name string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// subUsage is the usage table: the tunnels across, the users down, and
+// what each spent on each, with totals along both edges.
+type subUsage struct {
+	Tunnels []string
+	Rows    []subUsageRow
+	Totals  []string
+	Grand   string
+}
+
+type subUsageRow struct {
+	Name  string // the row's name when it is not a numbered user
+	User  int    // the user's number, 0 for a named row
+	Cells []string
+	Total string
+}
+
+// usageTable arranges what each file carried by user and tunnel. A user
+// is the same person across tunnels -- user 2 on WireGuard and user 2 on
+// OpenVPN are one row -- so what a plan for several cost each of them is
+// read off one line. A plan for one is one row, named after the customer.
+// A file with a name of its own is a row of its own.
+func usageTable(devices []subPageDevice, customer string) *subUsage {
+	if len(devices) == 0 {
+		return nil
+	}
+	var tunnels []string
+	col := map[string]int{}
+	type key struct {
+		user int
+		name string
+	}
+	var order []key
+	cells := map[key]map[int]uint64{}
+	// A file with no user number is the customer's own in a plan for one,
+	// and a named file of its own when a tunnel holds several such.
+	unnumbered := map[string]int{}
+	for _, d := range devices {
+		if d.User == 0 {
+			unnumbered[d.Tunnel]++
+		}
+	}
+	named := false
+	for _, n := range unnumbered {
+		if n > 1 {
+			named = true
+		}
+	}
+	for _, d := range devices {
+		tunnel := d.Tunnel
+		if tunnel == "" {
+			tunnel = d.Protocol
+		}
+		c, ok := col[tunnel]
+		if !ok {
+			c = len(tunnels)
+			col[tunnel] = c
+			tunnels = append(tunnels, tunnel)
+		}
+		k := key{user: d.User}
+		if d.User == 0 && named {
+			k.name = d.Name
+		}
+		if _, ok := cells[k]; !ok {
+			cells[k] = map[int]uint64{}
+			order = append(order, k)
+		}
+		cells[k][c] += d.UsedBytes
+	}
+	u := &subUsage{Tunnels: tunnels}
+	sums := make([]uint64, len(tunnels))
+	var grand uint64
+	for _, k := range order {
+		row := subUsageRow{User: k.user, Name: k.name}
+		if row.User == 0 && row.Name == "" {
+			row.Name = customer
+		}
+		var total uint64
+		for c := range tunnels {
+			n := cells[k][c]
+			row.Cells = append(row.Cells, humanBytes(n))
+			total += n
+			sums[c] += n
+		}
+		row.Total = humanBytes(total)
+		grand += total
+		u.Rows = append(u.Rows, row)
+	}
+	for _, n := range sums {
+		u.Totals = append(u.Totals, humanBytes(n))
+	}
+	u.Grand = humanBytes(grand)
+	return u
 }
 
 // subGroup is a tunnel's files on the page: a menu that opens on its users.

@@ -9,6 +9,7 @@ The page a customer sees when they open their subscription link in a browser. It
 ## What is on it
 
 - how much of the plan is used, how much is left, when it ends, when they were last online;
+- **Usage by user and tunnel** — a fold-out table: one row per user, one column per tunnel, what each spent on each, and a total at the end of every row and under every column. A plan shared by several people, and paid for together, is settled from it;
 - one block per device **per host** — the config text, a copy button, a download, and a QR code that opens centred over the page;
 - the subscription link itself as a QR, for apps that speak subscriptions;
 - a language switch (English / Persian) and a theme switch;

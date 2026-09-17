@@ -285,3 +285,41 @@ func TestEveryTunnelIsAMenuOfItsUsers(t *testing.T) {
 		t.Fatalf("rows: %+v", several[1].Devices)
 	}
 }
+
+// The usage table is one row per user across every tunnel, with a total
+// at the end of each row and under each column; a plan for one is one
+// row named after the customer.
+func TestUsageTableIsUsersDownAndTunnelsAcross(t *testing.T) {
+	u := usageTable([]subPageDevice{
+		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", User: 1, UsedBytes: 1 << 30}},
+		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", User: 2, UsedBytes: 2 << 30}},
+		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", User: 1, UsedBytes: 512 << 20}},
+		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", User: 2, UsedBytes: 0}},
+	}, "Ali")
+	if len(u.Tunnels) != 2 || u.Tunnels[0] != "wg0" || u.Tunnels[1] != "ovpn" {
+		t.Fatalf("tunnels across: %v", u.Tunnels)
+	}
+	if len(u.Rows) != 2 || u.Rows[0].User != 1 || u.Rows[1].User != 2 {
+		t.Fatalf("users down: %+v", u.Rows)
+	}
+	if u.Rows[0].Cells[1] != humanBytes(512<<20) || u.Rows[0].Total != humanBytes(1<<30+512<<20) {
+		t.Fatalf("user 1: %+v", u.Rows[0])
+	}
+	if u.Totals[0] != humanBytes(3<<30) || u.Grand != humanBytes(3<<30+512<<20) {
+		t.Fatalf("totals: %v %s", u.Totals, u.Grand)
+	}
+	one := usageTable([]subPageDevice{
+		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", Name: "device-1", UsedBytes: 5}},
+		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", Name: "device-1", UsedBytes: 7}},
+	}, "Ali")
+	if len(one.Rows) != 1 || one.Rows[0].Name != "Ali" || one.Rows[0].Total != humanBytes(12) {
+		t.Fatalf("a plan for one is one row named after the customer: %+v", one.Rows)
+	}
+	named := usageTable([]subPageDevice{
+		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", Name: "phone", UsedBytes: 5}},
+		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", Name: "tablet", UsedBytes: 7}},
+	}, "Ali")
+	if len(named.Rows) != 2 || named.Rows[1].Name != "tablet" {
+		t.Fatalf("named files are rows of their own: %+v", named.Rows)
+	}
+}
