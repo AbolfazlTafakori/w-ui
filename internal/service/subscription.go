@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net"
@@ -120,9 +122,9 @@ func validSubTemplate(v string) bool {
 // SubDefaults is the shape a panel that has never been configured has.
 func (s *Subscriptions) Defaults() SubSettings {
 	return SubSettings{
-		Enabled:     false,
-		Path:        DefaultSubPath,
-		Title:       "W-UI",
+		Enabled: false,
+		Path:    DefaultSubPath,
+		Title:   "W-UI",
 		// An hour: what the operator changes -- an endpoint, a port, the DNS,
 		// a renamed device -- reaches every app within the hour on its own.
 		// The link is rendered from the records on every fetch, so the wait
@@ -574,6 +576,10 @@ func (s *Subscriptions) renderer(interfaceID uint, protocol model.Protocol) (bac
 // decides what a customer may see about their own account is this package, and
 // so the page cannot accidentally grow a field the API would not have exposed.
 type SubPage struct {
+	// Rev changes whenever anything the page shows could have: the page
+	// polls it and reloads itself the moment it differs, so what the
+	// operator changes is in front of the customer within seconds.
+	Rev       string
 	Title     string
 	Name      string
 	Status    string
@@ -674,6 +680,7 @@ func (s *Subscriptions) StatusFor(ctx context.Context, token string) (*SubPage, 
 		}
 		page.Devices = append(page.Devices, SubPageDevice{ID: a.ID, Name: a.DeviceName, Address: a.IP})
 	}
+	page.Rev = s.revision(ctx, c)
 	return page, nil
 }
 
@@ -703,6 +710,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 	}
 
 	page := &SubPage{
+		Rev:        s.revision(ctx, c),
 		Title:      cfg.Title,
 		Template:   cfg.Template,
 		Name:       c.Name,
@@ -1013,4 +1021,31 @@ func (s *Subscriptions) TokenExists(ctx context.Context, token string) (bool, er
 		return false, fmt.Errorf("service: read subscription: %w", err)
 	}
 	return n > 0, nil
+}
+
+// revision is a fingerprint of what the customer's page and files are made
+// of: every file as it would be handed out right now, the plan's own
+// figures, and the page's title and look. Any change on the panel that
+// reaches the customer changes one of those; the open page notices on its
+// next poll and reloads. Deliberately not a timestamp: the customer's row
+// and their devices are written to every few seconds with usage and
+// handshakes, and a page that reloaded on each of those would never hold
+// still. Rendering a few files every three seconds is cheap.
+func (s *Subscriptions) revision(ctx context.Context, c *model.Client) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "c:%s:%s:%d:%d:%v:%d|", c.Name, c.Status, c.QuotaBytes, c.DeviceLimit, c.ExpiresAt, c.DurationDays)
+	if cfg, err := s.Settings(ctx); err == nil {
+		fmt.Fprintf(h, "s:%s:%s:%s:%s:%d|", cfg.Title, cfg.Template, cfg.Announce, cfg.SupportURL, cfg.UpdateHours)
+	}
+	var ifaces []model.Interface
+	if err := s.db.WithContext(ctx).Find(&ifaces).Error; err == nil {
+		if byID, err := s.interfacesWithHosts(ctx, ifaces); err == nil {
+			if rendered, err := s.renderDevicesFor(ctx, c, byID, "page"); err == nil {
+				for _, d := range rendered {
+					fmt.Fprintf(h, "d:%d:%s:%s|", d.Account.ID, d.Profile.Filename, d.Profile.Body)
+				}
+			}
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }

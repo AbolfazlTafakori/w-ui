@@ -151,6 +151,7 @@ func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, tok
 // subStatus is what the page polls: the figures that move while a customer
 // is connected, in the same words the page was rendered with.
 type subLiveStatus struct {
+	Rev        string  `json:"rev"`
 	Active     bool    `json:"active"`
 	Online     bool    `json:"online"`
 	StatusKey  string  `json:"statusKey"`
@@ -176,6 +177,7 @@ const onlineWindow = 3 * time.Minute
 func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, token string) {
 	v := newSubView(page, token, false)
 	st := subLiveStatus{
+		Rev:    page.Rev,
 		Active: v.Active, StatusKey: v.StatusKey, HasQuota: v.HasQuota,
 		Used: v.Used, Total: v.Total, Remained: v.Remained,
 		Percent: v.Percent, PercentTxt: v.PercentTxt,
@@ -417,7 +419,7 @@ var subPageFuncs = template.FuncMap{
 }
 
 var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).Parse(`<!doctype html>
-<html lang="{{ .Lang }}" dir="ltr" data-lang="{{ .Lang }}" data-layout="{{ .Template }}">
+<html lang="{{ .Lang }}" dir="ltr" data-lang="{{ .Lang }}" data-layout="{{ .Template }}" data-rev="{{ .Page.Rev }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1118,11 +1120,19 @@ a.row-title:hover { text-decoration: underline; }
     var td = $id('lv-td-status'); if (td) { var tag = td.querySelector('.tag'); if (tag) { tag.textContent = word(key); tag.className = 'tag ' + (key === 'inactive' ? 'red' : key === 'unlimited' ? 'purple' : 'green'); } }
     var usage = document.querySelector('.usage'); if (usage) usage.classList.toggle('inactive', !st.active);
   }
+  // The page's own fingerprint. When the panel's answer carries a
+  // different one, something on this page changed -- a device, an
+  // address, a file -- and the page is loaded again rather than patched.
+  var rev = document.documentElement.getAttribute('data-rev') || '';
   function tick() {
     if (document.hidden) return;
     fetch(url, { cache: 'no-store', credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (st) { failures = 0; apply(st); })
+      .then(function (st) {
+        failures = 0;
+        if (rev && st.rev && st.rev !== rev) { rev = st.rev; location.reload(); return; }
+        apply(st);
+      })
       .catch(function () { failures++; });
   }
   function schedule() {
