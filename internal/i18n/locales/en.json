@@ -1658,7 +1658,7 @@
   "client.openvpnPassword": "OpenVPN password",
   "client.openvpnGenerated": "generated if left empty",
   "client.openvpnKeep": "leave empty to keep",
-  "client.openvpnHint": "Each user logs in to OpenVPN as themselves: one username and password per user, on every OpenVPN tunnel this customer is on, carried inside their file. Left empty they are generated. Usernames are unique per tunnel.",
+  "client.openvpnHint": "Each user logs in to OpenVPN as themselves: one username and password per user, on every OpenVPN tunnel this customer is on, carried inside their file. Issued with the file; shown here as they are, so they can be read off or typed over to change them. Left empty for a new user, they are generated. Usernames are unique per tunnel.",
   "status.onHold": "On hold",
   "client.connectionsNow": "{n} connected now of {limit} users ({files} files issued)",
   "client.tabBasics": "Basics",

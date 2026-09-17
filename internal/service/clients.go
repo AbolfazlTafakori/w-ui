@@ -833,6 +833,15 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 	if err := s.fillOnlineNow(ctx, one); err != nil {
 		return nil, err
 	}
+	// The operator reading one customer sees each OpenVPN user's password,
+	// so it can be told to them or changed; a WireGuard file has no such
+	// thing, and the list never carries any.
+	for i := range one[0].Accounts {
+		a := &one[0].Accounts[i]
+		if a.Username != "" {
+			a.Password = a.Secret
+		}
+	}
 	return &one[0], nil
 }
 

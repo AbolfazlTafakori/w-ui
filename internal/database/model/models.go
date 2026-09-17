@@ -317,6 +317,11 @@ type Account struct {
 	// credentials and must be protected accordingly.
 	Username string `gorm:"size:64;index" json:"username,omitempty"`
 	Secret   string `gorm:"size:128" json:"-"`
+	// Password is Secret, shown: filled only when one customer is read
+	// for the operator's own dialog, so the password each user logs in
+	// with can be read off the form and changed there. Never stored, and
+	// absent from lists.
+	Password string `gorm:"-" json:"password,omitempty"`
 
 	Enabled bool `gorm:"not null;default:true" json:"enabled"`
 

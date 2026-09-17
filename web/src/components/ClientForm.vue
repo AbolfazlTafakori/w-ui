@@ -43,13 +43,15 @@ function randomSecret(n = 16) {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
 }
 
-// The usernames the customer's OpenVPN users have now, in the plan's
-// order (user 1 first), from the first OpenVPN tunnel they are on.
-function currentOpenVPNUsernames() {
+// The logins the customer's OpenVPN users have now, in the plan's order
+// (user 1 first), from the first OpenVPN tunnel they are on. Every user
+// has one -- issued with their file -- and the form shows it as it is,
+// so it can be read off and told to them, or typed over to change it.
+function currentOpenVPNLogins() {
   const ovpn = (props.interfaces || []).filter((i) => i.protocol === 'openvpn').map((i) => i.id)
   if (!ovpn.length) return []
   const on = (props.client?.accounts || []).filter((a) => a.interfaceId === ovpn[0]).sort((a, b) => a.id - b.id)
-  return on.map((a) => a.username || '')
+  return on.map((a) => ({ username: a.username || '', password: a.password || '' }))
 }
 function hoursLeft(iso) {
   if (!iso) return 0
@@ -80,7 +82,7 @@ const form = ref(
         enabled: props.client.status !== 'disabled',
         // The name their first OpenVPN device logs in with, so it can be read
         // and changed here rather than looked up on the devices page.
-        openvpnUsers: currentOpenVPNUsernames().map((u) => ({ username: u, password: '' })),
+        openvpnUsers: currentOpenVPNLogins().map((u) => ({ ...u })),
         deviceNames: [],
         subId: props.client.subId || '',
       }
@@ -177,7 +179,7 @@ function planDays() {
 }
 
 // One login per user: the rows follow the Users count. On an edit a row
-// starts with the user's current name; a blank password keeps theirs.
+// starts with the user's current name and password, as they are.
 const openvpnRows = computed(() => {
   const n = Math.max(1, Number(form.value.deviceLimit) || 1)
   while (form.value.openvpnUsers.length < n) form.value.openvpnUsers.push({ username: '', password: '' })
@@ -186,10 +188,10 @@ const openvpnRows = computed(() => {
 // What to send: only what differs from what the user has now, by position,
 // with blanks for the rest so positions line up.
 function openvpnChanges() {
-  const now = currentOpenVPNUsernames()
+  const now = currentOpenVPNLogins()
   const rows = openvpnRows.value.map((r, i) => ({
-    username: r.username.trim() && r.username.trim() !== (now[i] || '') ? r.username.trim() : '',
-    password: r.password || '',
+    username: r.username.trim() && r.username.trim() !== (now[i]?.username || '') ? r.username.trim() : '',
+    password: r.password && r.password !== (now[i]?.password || '') ? r.password : '',
   }))
   while (rows.length && !rows[rows.length - 1].username && !rows[rows.length - 1].password) rows.pop()
   return rows
@@ -451,13 +453,13 @@ async function submit() {
                 <div class="arow16">
                   <div class="acol12">
                     <div class="acompact">
-                      <label class="ainput block"><input v-model="row.username" class="ltr" autocomplete="off" maxlength="48" :placeholder="editing && row.username === '' ? t('client.openvpnKeep') : t('client.openvpnUsername') + ' — ' + t('client.openvpnGenerated')" /></label>
+                      <label class="ainput block"><input v-model="row.username" class="ltr" autocomplete="off" maxlength="48" :placeholder="t('client.openvpnUsername') + ' — ' + t('client.openvpnGenerated')" /></label>
                       <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="row.username = randomHandle(12)"><AntIcon name="ReloadOutlined" /></button>
                     </div>
                   </div>
                   <div class="acol12">
                     <div class="acompact">
-                      <label class="ainput block"><input v-model="row.password" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="editing ? t('client.openvpnPassword') + ' — ' + t('client.openvpnKeep') : t('client.openvpnPassword') + ' — ' + t('client.openvpnGenerated')" /></label>
+                      <label class="ainput block"><input v-model="row.password" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="t('client.openvpnPassword') + ' — ' + t('client.openvpnGenerated')" /></label>
                       <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="row.password = randomSecret()"><AntIcon name="ReloadOutlined" /></button>
                     </div>
                   </div>
