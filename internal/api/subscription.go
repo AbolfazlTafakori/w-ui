@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/service"
@@ -92,7 +93,8 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	if cfg.Announce != "" {
 		h.Set("Announce", "base64:"+b64(cfg.Announce))
 	}
-	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", bundle.Filename))
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s",
+		asciiFilename(bundle.Filename), url.PathEscape(bundle.Filename)))
 	body := bundle.Body
 	if cfg.Encode && strings.HasPrefix(bundle.ContentType, "text/") {
 		body = []byte(base64.StdEncoding.EncodeToString(bundle.Body))

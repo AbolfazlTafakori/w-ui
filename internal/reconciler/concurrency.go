@@ -424,3 +424,26 @@ func (c *concurrency) connectionsNow(clientIDs []uint, now time.Time) map[uint]i
 	}
 	return out
 }
+
+// liveClients is every customer with a connection in use right now, across
+// every server, for the counters and the online filter.
+func (c *concurrency) liveClients(now time.Time) []uint {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seen := map[uint]bool{}
+	var out []uint
+	for acc, client := range c.clientOf {
+		if seen[client] {
+			continue
+		}
+		if until, ok := c.held[acc]; ok && now.Before(until) {
+			continue
+		}
+		if _, _, ok := c.lookup(acc, now); ok {
+			seen[client] = true
+			out = append(out, client)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}

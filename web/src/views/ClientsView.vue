@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, relative, dateTime, percent, isOnline, unitToBytes, unitToHours } from '../lib/format.js'
+import { bytes, relative, dateTime, percent, unitToBytes, unitToHours } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
 import ClientQrModal from '../components/ClientQrModal.vue'
 import ClientInfoModal from '../components/ClientInfoModal.vue'
@@ -186,7 +186,7 @@ const showSkeleton = useDelayed(firstLoad)
 const refiltering = computed(() => loading.value && !!page.value)
 
 useLive(load, {
-  every: 5000,
+  every: 3000,
   // Not while something is open over the top of the list.
   busy: () => !!formFor.value || !!shareFor.value || !!ask.value,
 })
@@ -332,7 +332,10 @@ function toggleOne(id, checked) {
   selected.value = next
 }
 
-const clientOnline = (c) => (c.accounts || []).some((a) => isOnline(a.lastHandshake))
+// Online is what the reconciler sees moving right now -- bytes in the last
+// window, counted every two seconds -- rather than a handshake written to
+// the database a flush later. A device that connects shows within a poll.
+const clientOnline = (c) => (c.onlineNow || 0) > 0
 const usedPercent = (c) => percent(c.usedBytes, c.quotaBytes)
 
 // Current throughput, derived from consecutive readings of the stored total.
@@ -367,7 +370,10 @@ function barColor(c) {
 // glance: purple is unlimited, green healthy, orange running low, red stopped.
 
 function statusTag(c) {
-  if (c.status === 'exhausted' || c.status === 'expired') return { color: 'red', label: t('stat.depleted') }
+  // Ended plans say why: out of data, or past their date. The switch beside
+  // them is off, because the panel switched them off.
+  if (c.status === 'exhausted') return { color: 'red', label: t('status.exhausted') }
+  if (c.status === 'expired') return { color: 'red', label: t('status.expired') }
   if (c.status !== 'disabled' && clientOnline(c)) return { color: 'green', label: t('status.online'), dot: true }
   if (c.status === 'disabled') return { color: 'grey', label: t('status.disabled') }
   // A plan that has not started: on hold until the first connection.

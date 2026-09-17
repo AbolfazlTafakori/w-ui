@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"gorm.io/gorm"
 
@@ -503,6 +504,7 @@ func (s *Subscriptions) renderDevicesFor(
 ) ([]RenderedDevice, error) {
 	var out []RenderedDevice
 
+	single := len(deviceNames(c.Accounts)) <= 1
 	for i := range c.Accounts {
 		acc := c.Accounts[i]
 		iface, ok := byID[acc.InterfaceID]
@@ -523,7 +525,7 @@ func (s *Subscriptions) renderDevicesFor(
 					"client", c.Name, "account", acc.ID, "error", err)
 				continue
 			}
-			profile.Filename = variantFilename(profile.Filename, v)
+			profile.Filename = variantFilename(clientFilename(c.Name, acc.DeviceName, profile.Filename, single), v)
 			out = append(out, RenderedDevice{Account: acc, Profile: profile, Host: v.Host})
 		}
 	}
@@ -899,14 +901,15 @@ func userInfo(c *model.Client) string {
 }
 
 // safeFilename keeps a customer's name out of the response headers as anything
-// but plain characters. A name with a quote or a newline in it would otherwise
-// let the customer write their own headers.
+// but letters and digits -- in any script, so a customer named in Persian
+// gets a file named in Persian; the header carries it encoded. A name with a
+// quote, a slash or a newline in it would otherwise let the customer write
+// their own headers or path.
 func safeFilename(name string) string {
 	var b strings.Builder
 	for _, r := range name {
 		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
-			r == '-', r == '_':
+		case unicode.IsLetter(r), unicode.IsDigit(r), r == '-', r == '_':
 			b.WriteRune(r)
 		case r == ' ':
 			b.WriteByte('-')
@@ -916,8 +919,8 @@ func safeFilename(name string) string {
 	if out == "" {
 		return "config"
 	}
-	if len(out) > 48 {
-		out = out[:48]
+	if rs := []rune(out); len(rs) > 48 {
+		out = string(rs[:48])
 	}
 	return out
 }
@@ -969,4 +972,27 @@ func checkSubPath(p string) error {
 		return invalidField("path", "that path is too short to be worth having")
 	}
 	return nil
+}
+
+// clientFilename names a device's file after the customer: "Hossein.conf"
+// for a customer with one device, "Hossein-laptop.conf" when they hold
+// several, keeping the extension the driver chose. A WireGuard app takes
+// the tunnel's name from the file and allows fifteen characters of it, so a
+// .conf is cut to fit; a long name on the panel is not a broken import.
+func clientFilename(client, device, base string, single bool) string {
+	ext := ""
+	if i := strings.LastIndex(base, "."); i > 0 {
+		ext = base[i:]
+	}
+	name := safeFilename(client)
+	if !single {
+		name += "-" + safeFilename(device)
+	}
+	if rs := []rune(name); ext == ".conf" && len(rs) > 15 {
+		name = strings.Trim(string(rs[:15]), "-_")
+	}
+	if name == "" {
+		return base
+	}
+	return name + ext
 }

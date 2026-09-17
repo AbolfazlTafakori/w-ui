@@ -897,3 +897,6 @@ func (r *Reconciler) Holds() map[uint]time.Time { return r.conc.holds(time.Now()
 func (r *Reconciler) ConnectionsNow(clientIDs []uint) map[uint]int {
 	return r.conc.connectionsNow(clientIDs, time.Now().UTC())
 }
+
+// LiveClients is every customer connected right now, for the counters.
+func (r *Reconciler) LiveClients() []uint { return r.conc.liveClients(time.Now().UTC()) }

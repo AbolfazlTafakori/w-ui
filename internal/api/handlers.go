@@ -560,9 +560,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, profile)
 		return
 	}
-	w.Header().Set("Content-Type", profile.MIMEType)
-	w.Header().Set("Content-Disposition",
-		fmt.Sprintf("attachment; filename=%q", profile.Filename))
+	setDownload(w.Header(), profile.Filename)
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(profile.Body)); err != nil {
 		s.log.Error("write profile", "error", err)

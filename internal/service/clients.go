@@ -594,6 +594,13 @@ func bucketWhere(bucket string) (string, []any) {
 		return "status = ? AND quota_bytes > 0 AND used_bytes * 100 >= quota_bytes * ?",
 			[]any{model.StatusActive, depletingPercent}
 	case "online":
+		if LiveClients != nil {
+			ids := LiveClients()
+			if len(ids) == 0 {
+				return "1 = 0", nil
+			}
+			return "id IN ?", []any{ids}
+		}
 		return "id IN (SELECT client_id FROM accounts WHERE last_handshake > ?)",
 			[]any{time.Now().UTC().Add(-onlineWithin())}
 	}
@@ -744,6 +751,11 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 // enforced on. Set by the panel from its reconciler; a CLI leaves it nil and
 // the list falls back to the addresses on record.
 var ConnectionsNow func(clientIDs []uint) map[uint]int
+
+// LiveClients, when set, lists the customers connected right now, by the
+// same reckoning; the overview counter and the online filter use it so
+// they agree with the list. Nil falls back to recent handshakes.
+var LiveClients func() []uint
 
 // fillOnlineNow counts, for each listed customer, the connections in use:
 // one per device with traffic moving, or more when one file is on two
@@ -1431,9 +1443,13 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 
 	// A peer is considered present if it handshook within the window after
 	// which WireGuard itself treats a session as stale.
-	cutoff := time.Now().UTC().Add(-onlineWithin())
-	if err := count(&o.Online, &model.Account{}, "last_handshake > ?", cutoff); err != nil {
-		return nil, err
+	if LiveClients != nil {
+		o.Online = int64(len(LiveClients()))
+	} else {
+		cutoff := time.Now().UTC().Add(-onlineWithin())
+		if err := count(&o.Online, &model.Account{}, "last_handshake > ?", cutoff); err != nil {
+			return nil, err
+		}
 	}
 
 	var sums struct {

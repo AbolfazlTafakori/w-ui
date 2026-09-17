@@ -115,3 +115,25 @@ func TestEmptyMeansUnlimitedOnEditToo(t *testing.T) {
 		t.Fatal("absent limit decoded as set")
 	}
 }
+
+// A device's file is named after the customer, in their own script, and a
+// WireGuard file keeps to the fifteen characters the app allows.
+func TestFilesAreNamedAfterTheCustomer(t *testing.T) {
+	for _, tc := range []struct {
+		client, device, base string
+		single               bool
+		want                 string
+	}{
+		{"Hossein", "device-1", "device-1.conf", true, "Hossein.conf"},
+		{"Hossein", "laptop", "laptop.conf", false, "Hossein-laptop.conf"},
+		{"Hossein", "device-1", "device-1.ovpn", true, "Hossein.ovpn"},
+		{"حسین رضایی", "device-1", "device-1.ovpn", true, "حسین-رضایی.ovpn"},
+		{"a very long customer name", "phone", "phone.conf", false, "a-very-long-cus.conf"},
+		{"a very long customer name", "phone", "phone.ovpn", false, "a-very-long-customer-name-phone.ovpn"},
+		{"\"; rm -rf /", "d", "d.conf", true, "rm--rf.conf"},
+	} {
+		if got := clientFilename(tc.client, tc.device, tc.base, tc.single); got != tc.want {
+			t.Errorf("clientFilename(%q, %q, %q, %v) = %q, want %q", tc.client, tc.device, tc.base, tc.single, got, tc.want)
+		}
+	}
+}
