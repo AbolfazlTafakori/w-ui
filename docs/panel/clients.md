@@ -20,7 +20,7 @@ Clients, online, depleted, depleting, disabled, active — six figures with a co
 |--------|--|
 | Actions | QR code, client information, reset traffic, edit, delete |
 | Enabled | a switch; disabled when the plan is expired or exhausted |
-| Online | with the last time they were seen |
+| Online | live: a device with traffic moving in the last 75 seconds, on any server, counted every two seconds — a device that connects shows within a few seconds |
 | Client | name, connections in use / allowed at once (red when over), comment |
 | Group | click to filter |
 | Attached inbounds | which interfaces the plan is on |
@@ -42,6 +42,14 @@ Everything about one plan on one screen: status, quota, expiry, devices, every l
 ## Statuses
 
 `active`, `disabled`, `exhausted`, `expired`. Anything but `active` has its peers removed from the kernel; raising the quota or extending the expiry brings them back at once.
+
+## Device files
+
+A device's file is named after the customer: `Hossein.conf` or `Hossein.ovpn` for a customer with one device, `Hossein-laptop.conf` when they hold several, in whatever script the name is written. A WireGuard app takes the tunnel's name from the file and allows fifteen characters, so a `.conf` is cut to fit.
+
+## Ended plans
+
+A customer who has used their allowance or passed their date is switched off by the panel itself, within a tick: the row shows **Out of data** or **Expired**, the Enabled switch is off, and their devices are removed from every server. Raising the allowance or extending the date brings them back at once.
 
 ## Start on first use
 

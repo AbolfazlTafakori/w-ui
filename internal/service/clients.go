@@ -812,7 +812,11 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: load client: %w", err)
 	}
-	return &client, nil
+	one := []model.Client{client}
+	if err := s.fillOnlineNow(ctx, one); err != nil {
+		return nil, err
+	}
+	return &one[0], nil
 }
 
 // UpdateInput carries the fields an operator may change.
