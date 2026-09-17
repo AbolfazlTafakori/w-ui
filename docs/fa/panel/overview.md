@@ -19,6 +19,25 @@ description: "اولین صفحه بعد از ورود: بار سرور، وضع
 | **System** | این باینری چیست، کرنل چه چیزی را پشتیبانی می‌کند، آیا اعمال محدودیت دقیق است |
 | **Settings** | صفحه‌های تنظیمات |
 
+## لاگ
+
+**Logs** لاگ پنل را باز می‌کند: خط‌هایی که همین پروسه نوشته (چند هزار خط آخر، در حافظه) یا journal همان پنل روی دیسک که بعد از ریستارت هم می‌ماند. فیلتر سطح، جست‌وجوی کلمه، دنبال کردن زنده.
+
+چه چیزی در آن هست، هر کدام یک خط:
+
+| خط | فیلدها | کِی |
+|------|--------|------|
+| `action` / `action refused` / `action failed` | `action` (متد و مسیر)، `by` (مدیر، یا `token`)، `ip`، `status`، `took`، و برای رد شدن `reason` | هر تغییری که از API انجام شود — ساخت، ویرایش، حذف، تنظیمات، ریستارت |
+| `client created` / `client updated` / `client deleted` | `name`، `id`؛ برای ویرایش `changed` نام ستون‌ها را می‌گوید (`quota_bytes, expires_at`) | خودِ تغییر، کنار action‌ی که آن را خواسته |
+| `device connected` / `device disconnected` | `device` به شکل `مشتری / دستگاه`، `from` (آدرس عمومی)، `after` (چقدر وصل بود) | شروع ترافیک یک اعتبار، و توقفش به مدت ۷۵ ثانیه |
+| `connection limit reached; device held off` / `device held off by the panel` | `client`، `device`، `on` (این‌جا یا نود)، `limit`، `until` | پلنی که از سقف اتصال هم‌زمان گذشته |
+| `clients cut off for reaching their allowance` / `clients expired` | `count`، `clients` (نام‌ها) | جاروی reconciler، هر دو ثانیه |
+| `admin signed in` / `failed sign-in` / `failed second factor` | `username`، `ip`، `lockout` | صفحهٔ ورود |
+| `interface created` / `updated` / `deleted` / `restarted`، `driver state changed` | `name`، `port`، `added`، `removed` | تانل‌ها و peerهایشان |
+| `node …` | `node`، `error` | دور نودها، فقط وقتی وضعیت نود عوض شود |
+
+خواندن‌ها لاگ نمی‌شوند: باز کردن یک لیست رویداد نیست. ترافیک بین پنل و نودهایش هم همین‌طور.
+
 ## نوار آمار
 
 آنلاین الان، در حال اتمام، حجم تمام‌شده، منقضی، فعال، و تعداد مشتری‌ها — هر کدام لینکی به صفحهٔ مشتری‌ها با همان فیلتر.

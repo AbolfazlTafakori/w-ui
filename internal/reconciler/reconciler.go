@@ -375,7 +375,7 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 		return 0, 0, res.Error
 	}
 	if res.RowsAffected > 0 {
-		r.log.Info("clients cut off for reaching their allowance", "count", res.RowsAffected)
+		r.log.Info("clients cut off for reaching their allowance", "count", res.RowsAffected, "clients", strings.Join(exhaustedNames, ", "))
 		r.announce(notify.KindExhausted, "Allowance used up", exhaustedNames,
 			"stopped: their data allowance is gone")
 	}
@@ -394,7 +394,7 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 		return 0, 0, res2.Error
 	}
 	if res2.RowsAffected > 0 {
-		r.log.Info("clients expired", "count", res2.RowsAffected)
+		r.log.Info("clients expired", "count", res2.RowsAffected, "clients", strings.Join(expiredNames, ", "))
 		r.announce(notify.KindExpired, "Access expired", expiredNames,
 			"stopped: their time is up")
 	}
@@ -635,7 +635,21 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	// a device on another node is one of their connections. So every
 	// account is grouped by customer for the limit, and only the local ones
 	// go on to the desired set.
-	r.conc.remember(accounts, r.localNodeID)
+	clientNames := make(map[uint]string, len(clients))
+	for _, c := range clients {
+		clientNames[c.ID] = c.Name
+	}
+	r.conc.remember(accounts, clientNames, r.localNodeID, time.Now().UTC())
+	// What the tunnels saw since the last tick: a device that came on, one
+	// that went quiet. One line each, the way a session log reads.
+	for _, ev := range r.conc.Events() {
+		switch ev.Kind {
+		case "connected":
+			r.log.Info("device connected", "device", ev.Name, "from", ev.Addr)
+		case "disconnected":
+			r.log.Info("device disconnected", "device", ev.Name, "last", ev.Addr, "after", ev.For.Round(time.Second).String())
+		}
+	}
 	allByClient := make(map[uint][]model.Account, len(clients))
 	for _, a := range accounts {
 		allByClient[a.ClientID] = append(allByClient[a.ClientID], a)

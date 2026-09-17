@@ -99,6 +99,11 @@ type concurrency struct {
 	originOf map[uint]uint
 	// clientOf is each account's customer, for the connections count.
 	clientOf map[uint]uint
+	// nameOf is "customer / device" for each account, for the log.
+	nameOf map[uint]string
+	// gone is what observe and expire noticed this tick, for the log: a
+	// device that came on, one that went quiet.
+	events []Event
 
 	// panelHeard is when a managing panel last spoke to this server, for
 	// the fallback on a node.
@@ -113,7 +118,27 @@ func newConcurrency() *concurrency {
 		nodeOf:   map[uint]uint{},
 		originOf: map[uint]uint{},
 		clientOf: map[uint]uint{},
+		nameOf:   map[uint]string{},
 	}
+}
+
+// Event is one thing worth a line in the log: a device connecting or
+// going quiet, with where from and for how long.
+type Event struct {
+	Kind    string // "connected" | "disconnected"
+	Account uint
+	Name    string
+	Addr    string
+	For     time.Duration // how long it was on, when it went quiet
+}
+
+// Events hands back what was noticed since the last call.
+func (c *concurrency) Events() []Event {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.events
+	c.events = nil
+	return out
 }
 
 // observe folds one tick's readings from this server's own tunnels in.
@@ -144,6 +169,7 @@ func (c *concurrency) observe(stats []backend.Stat, now time.Time) {
 		if !wasLive {
 			a.since = now
 			a.flips = 0
+			c.events = append(c.events, Event{Kind: "connected", Account: s.AccountID, Name: c.nameOf[s.AccountID], Addr: hostOf(s.Endpoint)})
 		}
 		host := hostOf(s.Endpoint)
 		if host != "" {
@@ -166,13 +192,15 @@ func (c *concurrency) observe(stats []backend.Stat, now time.Time) {
 }
 
 // remember refreshes which node, which panel id and which customer each
-// account belongs to, from this tick's records.
-func (c *concurrency) remember(accounts []model.Account, localNode uint) {
+// account belongs to, from this tick's records, and notices the devices
+// that have gone quiet since the last tick.
+func (c *concurrency) remember(accounts []model.Account, clientNames map[uint]string, localNode uint, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.nodeOf = make(map[uint]uint, len(accounts))
 	c.originOf = make(map[uint]uint, len(accounts))
 	c.clientOf = make(map[uint]uint, len(accounts))
+	c.nameOf = make(map[uint]string, len(accounts))
 	for _, a := range accounts {
 		node := a.NodeID
 		if node == localNode {
@@ -181,6 +209,16 @@ func (c *concurrency) remember(accounts []model.Account, localNode uint) {
 		c.nodeOf[a.ID] = node
 		c.originOf[a.ID] = a.OriginID
 		c.clientOf[a.ID] = a.ClientID
+		c.nameOf[a.ID] = clientNames[a.ClientID] + " / " + a.DeviceName
+	}
+	// A device whose bytes stopped moving a window ago has gone. Said once:
+	// the mark is cleared so the next quiet tick does not say it again.
+	for id, a := range c.acts {
+		if !a.since.IsZero() && !a.moved.IsZero() && now.Sub(a.moved) >= activeWindow {
+			c.events = append(c.events, Event{Kind: "disconnected", Account: id, Name: c.nameOf[id], Addr: a.addr, For: a.moved.Sub(a.since)})
+			a.since = time.Time{}
+			a.moved = time.Time{}
+		}
 	}
 	// What was deleted is forgotten, so a panel that issues and removes
 	// devices all day does not carry every one of them in memory.

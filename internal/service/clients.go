@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"sort"
 	"strings"
 	"time"
 
@@ -958,6 +959,20 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		if err := s.setInterfaces(ctx, client, in.InterfaceIDs); err != nil {
 			return nil, err
 		}
+	}
+
+	// What changed, by column, so the log says "quota_bytes, expires_at"
+	// rather than only that something did.
+	if len(fields) > 0 || in.InterfaceIDs != nil {
+		changed := make([]string, 0, len(fields)+1)
+		for k := range fields {
+			changed = append(changed, k)
+		}
+		sort.Strings(changed)
+		if in.InterfaceIDs != nil {
+			changed = append(changed, "servers")
+		}
+		s.log.Info("client updated", "id", id, "name", client.Name, "changed", strings.Join(changed, ", "))
 	}
 
 	// After the servers, so a tunnel added in the same save gets the name.

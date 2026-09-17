@@ -736,7 +736,8 @@ func (s *Server) register(mux *http.ServeMux) {
 			h = s.requireOperator(h)
 		}
 		if r.Auth || r.Operator {
-			h = s.requireAuth(h)
+			// Inside requireAuth, so the line can say who.
+			h = s.requireAuth(s.logAction(r.Method, h))
 		}
 		mux.HandleFunc(r.Method+" "+r.Path, h)
 	}

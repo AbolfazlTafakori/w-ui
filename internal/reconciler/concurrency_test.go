@@ -143,7 +143,7 @@ func TestLimitSpansNodes(t *testing.T) {
 		{ID: 10, ClientID: 1, NodeID: 1, InterfaceID: 1, DeviceName: "phone-here"},
 		{ID: 11, ClientID: 1, NodeID: 5, InterfaceID: 9, DeviceName: "laptop-on-node"},
 	}
-	c.remember(accs, 1)
+	c.remember(accs, nil, 1, t0)
 
 	// The phone is live on this server.
 	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
@@ -175,7 +175,7 @@ func TestTheOlderConnectionOnANodeIsKept(t *testing.T) {
 		{ID: 10, NodeID: 1, InterfaceID: 1},
 		{ID: 11, NodeID: 5, InterfaceID: 9},
 	}
-	c.remember(accs, 1)
+	c.remember(accs, nil, 1, t0)
 	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1, AgeSeconds: 60}}, t0)
 	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
 	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
@@ -192,7 +192,7 @@ func TestAStaleNodeReportIsNotCounted(t *testing.T) {
 	t0 := time.Now()
 	client := &model.Client{ID: 1, DeviceLimit: 1}
 	accs := []model.Account{{ID: 10, NodeID: 1}, {ID: 11, NodeID: 5}}
-	c.remember(accs, 1)
+	c.remember(accs, nil, 1, t0)
 	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1}}, t0)
 	later := t0.Add(remoteTTL + 5*time.Second)
 	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, later)
@@ -211,7 +211,7 @@ func TestANodeReportsItsLiveManagedSessions(t *testing.T) {
 		{ID: 1, NodeID: 1, OriginID: 40},
 		{ID: 2, NodeID: 1, OriginID: 41},
 		{ID: 3, NodeID: 1, OriginID: 0}, // this server's own customer: not the panel's business
-	}, 1)
+	}, nil, 1, t0)
 	all := func(b uint64) []backend.Stat {
 		return []backend.Stat{stat(1, b, "1.1.1.1"), stat(2, b, "2.2.2.2"), stat(3, b, "3.3.3.3")}
 	}
@@ -259,5 +259,34 @@ func TestANodeFallsBackOnlyWhenThePanelIsQuiet(t *testing.T) {
 	}
 	if !c.panelSilent(t0.Add(panelSilence + time.Second)) {
 		t.Fatal("not silent after the panel went quiet")
+	}
+}
+
+// A device coming on and going quiet is said once each, by name and address.
+func TestConnectAndDisconnectAreNoticedOnce(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	accs := []model.Account{{ID: 10, ClientID: 1, NodeID: 1, DeviceName: "phone"}}
+	names := map[uint]string{1: "Roya"}
+	c.remember(accs, names, 1, t0)
+	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
+	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
+	ev := c.Events()
+	if len(ev) != 1 || ev[0].Kind != "connected" || ev[0].Name != "Roya / phone" || ev[0].Addr != "1.1.1.1" {
+		t.Fatalf("events after connecting: %+v", ev)
+	}
+	c.observe([]backend.Stat{stat(10, 300, "1.1.1.1")}, t0.Add(4*time.Second))
+	if ev := c.Events(); len(ev) != 0 {
+		t.Fatalf("a live device was announced again: %+v", ev)
+	}
+	later := t0.Add(4*time.Second + activeWindow)
+	c.remember(accs, names, 1, later)
+	ev = c.Events()
+	if len(ev) != 1 || ev[0].Kind != "disconnected" || ev[0].For < 2*time.Second {
+		t.Fatalf("events after going quiet: %+v", ev)
+	}
+	c.remember(accs, names, 1, later.Add(time.Minute))
+	if ev := c.Events(); len(ev) != 0 {
+		t.Fatalf("a quiet device was announced again: %+v", ev)
 	}
 }
