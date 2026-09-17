@@ -747,6 +747,11 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	return &Page{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage}, nil
 }
 
+// SubscriptionsChanged, when set, tells every open subscription page that
+// something changed on the panel. Set by the API server; the reconciler
+// calls it when it ends or starts plans on its own.
+var SubscriptionsChanged func()
+
 // ConnectionsNow, when set, answers how many connections each of these
 // customers has right now across every server -- the same count the limit is
 // enforced on. Set by the panel from its reconciler; a CLI leaves it nil and

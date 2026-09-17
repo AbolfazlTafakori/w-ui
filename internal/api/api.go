@@ -60,6 +60,7 @@ type Server struct {
 	router    *routing.Applier
 	subs      *service.Subscriptions
 	subMiss   *subMisses
+	subHub    *subHub
 	totpMu    sync.Mutex
 	totpUsed  map[uint]usedCode
 	previews  subPreviews
@@ -152,6 +153,7 @@ func New(o Options) *Server {
 		router:    o.Router,
 		subs:      o.Subs,
 		subMiss:   newSubMisses(),
+		subHub:    newSubHub(),
 		obSubs:    service.NewOutboundSubs(o.DB, o.Outbounds, o.Logger),
 		balancers: service.NewBalancers(o.DB, o.Logger),
 		providers: service.NewProviders(o.DB, o.Outbounds, o.Logger),
@@ -172,6 +174,9 @@ func New(o Options) *Server {
 	// Built last because it asks the server which engines are running, and that
 	// question needs the enforcer, shaper and router the server was just given.
 	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, srv.engineHealth)
+	// What the reconciler changes on its own -- a plan ended, one started
+	// on first use -- reaches the open pages the same way an edit does.
+	service.SubscriptionsChanged = srv.subHub.Broadcast
 	return srv
 }
 

@@ -376,6 +376,9 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	}
 	if res.RowsAffected > 0 {
 		r.log.Info("clients cut off for reaching their allowance", "count", res.RowsAffected, "clients", strings.Join(exhaustedNames, ", "))
+		if service.SubscriptionsChanged != nil {
+			service.SubscriptionsChanged()
+		}
 		r.announce(notify.KindExhausted, "Allowance used up", exhaustedNames,
 			"stopped: their data allowance is gone")
 	}
@@ -395,6 +398,9 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	}
 	if res2.RowsAffected > 0 {
 		r.log.Info("clients expired", "count", res2.RowsAffected, "clients", strings.Join(expiredNames, ", "))
+		if service.SubscriptionsChanged != nil {
+			service.SubscriptionsChanged()
+		}
 		r.announce(notify.KindExpired, "Access expired", expiredNames,
 			"stopped: their time is up")
 	}

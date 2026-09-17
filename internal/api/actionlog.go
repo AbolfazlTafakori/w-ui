@@ -52,6 +52,11 @@ func (s *Server) logAction(method string, next http.HandlerFunc) http.HandlerFun
 			// wrong rather than only that something was.
 			attrs = append(attrs, "reason", rec.reason())
 		}
+		if rec.status < 400 && s.subHub != nil {
+			// Whatever changed, every open subscription page hears of it
+			// now; each asks whether its own files moved.
+			s.subHub.Broadcast()
+		}
 		switch {
 		case rec.status >= 500:
 			s.log.Error("action failed", attrs...)

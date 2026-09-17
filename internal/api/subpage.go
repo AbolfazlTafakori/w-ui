@@ -86,6 +86,12 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 	if view == "raw" || r.URL.Query().Get("format") != "" {
 		return false
 	}
+	// The stream a page holds open to be told the moment something changed.
+	// Only for a link that exists, which the caller has already checked.
+	if view == "events" {
+		s.serveSubEvents(w, r)
+		return true
+	}
 	// The figures alone, for the page to refresh itself with while it is open.
 	if view == "status" {
 		page, err := s.subs.StatusFor(r.Context(), token)
@@ -1141,6 +1147,16 @@ a.row-title:hover { text-decoration: underline; }
     timer = setInterval(function () { tick(); if (failures > 5) { clearInterval(timer); timer = setInterval(tick, 30000); } }, 3000);
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); schedule(); } });
+  // The stream: the panel writes a line the moment something changed, and
+  // the page asks for its fingerprint right then rather than at the next
+  // poll. The browser reopens the stream on its own if it drops; the poll
+  // covers the time in between.
+  if (window.EventSource) {
+    try {
+      var es = new EventSource(location.pathname + '?view=events');
+      es.addEventListener('changed', function () { tick(); });
+    } catch (e) {}
+  }
   tick(); schedule();
 })();
 </script>
