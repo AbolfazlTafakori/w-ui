@@ -1693,5 +1693,6 @@
   "client.subIdChangeHint": "ذخیره با شناسهٔ دیگر لینک قبلی را از کار می‌اندازد؛ لینک جدید را به مشتری بده.",
   "client.expireDays": "روزهای اعتبار",
   "client.userN": "کاربر {n}",
-  "client.openvpnLogin": "ورود OpenVPN"
+  "client.openvpnLogin": "ورود OpenVPN",
+  "client.users": "کاربران"
 }

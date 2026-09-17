@@ -1242,7 +1242,7 @@ async function submitForm(input) {
     @close="formFor = null"
     @submit="submitForm"
   />
-  <ClientQrModal v-if="shareFor" :client="shareFor" @close="shareFor = null" />
+  <ClientQrModal v-if="shareFor" :client="shareFor" :interfaces="interfaces" @close="shareFor = null" />
   <ClientInfoModal v-if="infoFor" :client="infoFor" :interfaces="interfaces" @close="infoFor = null" />
 
   <ConfirmDialog

@@ -1693,5 +1693,6 @@
   "client.subIdChangeHint": "Saving with a different id makes the old link stop working; hand the customer the new one.",
   "client.expireDays": "Expire days",
   "client.userN": "User {n}",
-  "client.openvpnLogin": "OpenVPN login"
+  "client.openvpnLogin": "OpenVPN login",
+  "client.users": "Users"
 }

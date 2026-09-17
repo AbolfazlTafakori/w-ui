@@ -48,12 +48,22 @@ async function load() {
       sub.value = await api.get(`/api/clients/${props.client.id}/subscription`, { background: true }).catch(() => null)
     }
     const out = []
-    for (const d of fresh.accounts || []) {
+    // Files in the order they were issued, so the first on a tunnel is
+    // user 1, as the subscription page counts them.
+    const accounts = [...(fresh.accounts || [])].sort((a, b) => a.id - b.id)
+    const nth = {}
+    const perTunnel = {}
+    for (const d of accounts) perTunnel[d.interfaceId] = (perTunnel[d.interfaceId] || 0) + 1
+    for (const d of accounts) {
+      const iface = ifaceById.value[d.interfaceId] || {}
+      const protocol = iface.protocol || fresh.protocol || 'wireguard'
+      nth[d.interfaceId] = (nth[d.interfaceId] || 0) + 1
+      const who = perTunnel[d.interfaceId] > 1 ? t('client.userN', { n: nth[d.interfaceId] }) : fresh.name
       try {
         // One block per host on the device's inbound, as the subscription
         // hands them out.
         for (const p of await api.get(`/api/devices/${d.id}/profiles`, { background: true })) {
-          out.push({ key: `${d.id}-${p.hostId || 0}`, device: d, hostName: p.hostName || '', body: p.body, filename: p.filename })
+          out.push({ key: `${d.id}-${p.hostId || 0}`, device: d, who, tunnel: iface.name || '', protocol, hostName: p.hostName || '', body: p.body, filename: p.filename })
         }
       } catch {
         /* a device whose profile cannot be rendered is left out */
@@ -240,19 +250,26 @@ const expiryText = computed(() => {
         </template>
 
         <template v-if="configs.length">
-          <div class="adivider"><span class="adivider-text">{{ c.protocol === 'wireguard' ? t('client.wireguardConfig') : t('client.openvpnConfig') }}</span></div>
+          <div class="adivider"><span class="adivider-text">{{ t('client.config') }}</span></div>
           <div v-for="cf in configs" :key="cf.key" class="acollapse config-block" :class="{ open: openCfg.has(cf.key) }">
             <div class="acollapse-item" :class="{ open: openCfg.has(cf.key) }">
               <div class="acollapse-header" role="button" tabindex="0" :aria-expanded="openCfg.has(cf.key)" @click="toggleCfg(cf.key)" @keydown.enter="toggleCfg(cf.key)">
                 <span class="acollapse-expand"><AntIcon name="RightOutlined" /></span>
-                <span class="acollapse-label"><span class="atag" :class="c.protocol === 'wireguard' ? 'cyan' : 'orange'" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ configs.length > 1 ? cf.device.deviceName : t('client.config') }}</span><span v-if="cf.hostName" style="margin-inline-start: 6px; font-size: 12px; opacity: 0.85">{{ cf.hostName }}</span></span>
+                <span class="acollapse-label"><span class="atag" :class="cf.protocol === 'wireguard' ? 'cyan' : 'orange'" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ cf.protocol === 'wireguard' ? t('client.wireguardConfig') : t('client.openvpnConfig') }}</span><span class="cfg-who">{{ cf.who }}</span><span v-if="cf.tunnel" class="cfg-meta">{{ cf.tunnel }}</span><span v-if="cf.hostName" class="cfg-meta">{{ cf.hostName }}</span></span>
                 <div class="acollapse-extra config-block-actions" @click.stop>
                   <button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.body)"><AntIcon name="CopyOutlined" /></button>
                   <button class="abtn small icon" :title="t('action.download')" :aria-label="t('action.download')" @click="downloadText(cf.body, cf.filename)"><AntIcon name="DownloadOutlined" /></button>
-                  <button v-if="c.protocol === 'wireguard'" class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr(`cfg-${cf.key}`, cf.body, `${c.name} — ${cf.device.deviceName}${cf.hostName ? ' — ' + cf.hostName : ''}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
+                  <button v-if="cf.protocol === 'wireguard'" class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr(`cfg-${cf.key}`, cf.body, `${c.name} — ${cf.device.deviceName}${cf.hostName ? ' — ' + cf.hostName : ''}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
                 </div>
               </div>
-              <div v-if="openCfg.has(cf.key)" class="acollapse-content"><div class="acollapse-box"><code class="config-block-text">{{ cf.body }}</code></div></div>
+              <div v-if="openCfg.has(cf.key)" class="acollapse-content"><div class="acollapse-box">
+                <!-- An OpenVPN user's login, read off here for passing on. -->
+                <div v-if="cf.protocol === 'openvpn' && cf.device.username" class="cfg-login">
+                  <span class="hint">{{ t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
+                  <span class="hint">{{ t('client.openvpnPassword') }}</span><code class="ltr">{{ cf.device.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.password)"><AntIcon name="CopyOutlined" /></button>
+                </div>
+                <code class="config-block-text">{{ cf.body }}</code>
+              </div></div>
             </div>
           </div>
         </template>
@@ -318,4 +335,8 @@ const expiryText = computed(() => {
 .ip-row:last-child { border-bottom: 0; }
 .ip-name { font-weight: 500; }
 .ip-row .hint { font-size: 12px; opacity: 0.55; margin-inline-start: auto; }
+.cfg-who { margin-inline-start: 8px; font-weight: 500; }
+.cfg-meta { margin-inline-start: 6px; font-size: 12px; opacity: 0.75; }
+.cfg-login { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 8px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--line); }
+.cfg-login code { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 </style>
