@@ -1705,5 +1705,8 @@
   "client.batchPostfix": "Postfix",
   "client.batchStart": "Start from",
   "client.batchExample": "For example",
-  "client.batchCreate": "Create {n}"
+  "client.batchCreate": "Create {n}",
+  "client.nUsers": "{n} users",
+  "client.oneUser": "1 user",
+  "client.show": "Show"
 }

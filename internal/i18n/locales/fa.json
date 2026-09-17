@@ -1705,5 +1705,8 @@
   "client.batchPostfix": "پسوند",
   "client.batchStart": "شروع از",
   "client.batchExample": "مثلاً",
-  "client.batchCreate": "ساخت {n} مشتری"
+  "client.batchCreate": "ساخت {n} مشتری",
+  "client.nUsers": "{n} کاربر",
+  "client.oneUser": "۱ کاربر",
+  "client.show": "نمایش"
 }

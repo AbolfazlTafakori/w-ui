@@ -19,6 +19,21 @@ const c = ref(props.client)
 const sub = ref(null) // { link, token }
 const configs = ref([]) // { device, body, filename }
 const openCfg = ref(new Set())
+// Every tunnel is a menu, as on the subscription page: one row per
+// tunnel that opens on its users, each with their own actions.
+const groups = computed(() => {
+  const out = []
+  const index = {}
+  for (const cf of configs.value) {
+    const key = `${cf.protocol}/${cf.tunnel}`
+    if (!(key in index)) {
+      index[key] = out.length
+      out.push({ key, protocol: cf.protocol, tunnel: cf.tunnel, items: [] })
+    }
+    out[index[key]].items.push(cf)
+  }
+  return out
+})
 const qrFor = ref(null) // { key, value, remark, x, y }
 const devicesOpen = ref(false)
 const loading = ref(false)
@@ -249,27 +264,39 @@ const expiryText = computed(() => {
           </div>
         </template>
 
-        <template v-if="configs.length">
+        <template v-if="groups.length">
           <div class="adivider"><span class="adivider-text">{{ t('client.config') }}</span></div>
-          <div v-for="cf in configs" :key="cf.key" class="acollapse config-block" :class="{ open: openCfg.has(cf.key) }">
-            <div class="acollapse-item" :class="{ open: openCfg.has(cf.key) }">
-              <div class="acollapse-header" role="button" tabindex="0" :aria-expanded="openCfg.has(cf.key)" @click="toggleCfg(cf.key)" @keydown.enter="toggleCfg(cf.key)">
+          <!-- A tunnel is a menu: the row names the protocol and the tunnel,
+               and opens on one line per user, each with copy, download
+               and QR of their own file and the file itself under it. -->
+          <div v-for="g in groups" :key="g.key" class="acollapse config-block" :class="{ open: openCfg.has(g.key) }">
+            <div class="acollapse-item" :class="{ open: openCfg.has(g.key) }">
+              <div class="acollapse-header" role="button" tabindex="0" :aria-expanded="openCfg.has(g.key)" @click="toggleCfg(g.key)" @keydown.enter="toggleCfg(g.key)">
                 <span class="acollapse-expand"><AntIcon name="RightOutlined" /></span>
-                <span class="acollapse-label"><span class="atag" :class="cf.protocol === 'wireguard' ? 'cyan' : 'orange'" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ cf.protocol === 'wireguard' ? t('client.wireguardConfig') : t('client.openvpnConfig') }}</span><span class="cfg-who">{{ cf.who }}</span><span v-if="cf.tunnel" class="cfg-meta">{{ cf.tunnel }}</span><span v-if="cf.hostName" class="cfg-meta">{{ cf.hostName }}</span></span>
-                <div class="acollapse-extra config-block-actions" @click.stop>
-                  <button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.body)"><AntIcon name="CopyOutlined" /></button>
-                  <button class="abtn small icon" :title="t('action.download')" :aria-label="t('action.download')" @click="downloadText(cf.body, cf.filename)"><AntIcon name="DownloadOutlined" /></button>
-                  <button v-if="cf.protocol === 'wireguard'" class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr(`cfg-${cf.key}`, cf.body, `${c.name} — ${cf.device.deviceName}${cf.hostName ? ' — ' + cf.hostName : ''}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
+                <span class="acollapse-label"><span class="atag" :class="g.protocol === 'wireguard' ? 'cyan' : 'orange'" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ g.protocol === 'wireguard' ? t('client.wireguardConfig') : t('client.openvpnConfig') }}</span><span v-if="g.tunnel" class="cfg-meta">{{ g.tunnel }}</span></span>
+                <span class="cfg-count">{{ g.items.length > 1 ? t('client.nUsers', { n: g.items.length }) : t('client.oneUser') }}</span>
+              </div>
+              <div v-if="openCfg.has(g.key)" class="acollapse-content cfg-users">
+                <div v-for="cf in g.items" :key="cf.key" class="cfg-user" :class="{ open: openCfg.has(cf.key) }">
+                  <div class="cfg-user-head">
+                    <span class="cfg-user-name">{{ cf.who }}<span v-if="cf.hostName" class="cfg-meta">{{ cf.hostName }}</span><code v-if="cf.protocol === 'openvpn' && cf.device.username" class="cfg-user-login ltr">{{ cf.device.username }}</code></span>
+                    <div class="config-block-actions">
+                      <button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.body)"><AntIcon name="CopyOutlined" /></button>
+                      <button class="abtn small icon" :title="t('action.download')" :aria-label="t('action.download')" @click="downloadText(cf.body, cf.filename)"><AntIcon name="DownloadOutlined" /></button>
+                      <button v-if="cf.protocol === 'wireguard'" class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr(`cfg-${cf.key}`, cf.body, `${c.name} — ${cf.device.deviceName}${cf.hostName ? ' — ' + cf.hostName : ''}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
+                      <button class="abtn small icon cfg-show" :title="t('client.show')" :aria-label="t('client.show')" :aria-expanded="openCfg.has(cf.key)" @click="toggleCfg(cf.key)"><AntIcon name="RightOutlined" /></button>
+                    </div>
+                  </div>
+                  <div v-if="openCfg.has(cf.key)" class="cfg-user-body">
+                    <!-- An OpenVPN user's login, read off here for passing on. -->
+                    <div v-if="cf.protocol === 'openvpn' && cf.device.username" class="cfg-login">
+                      <span class="hint">{{ t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
+                      <span class="hint">{{ t('client.openvpnPassword') }}</span><code class="ltr">{{ cf.device.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.password)"><AntIcon name="CopyOutlined" /></button>
+                    </div>
+                    <code class="config-block-text">{{ cf.body }}</code>
+                  </div>
                 </div>
               </div>
-              <div v-if="openCfg.has(cf.key)" class="acollapse-content"><div class="acollapse-box">
-                <!-- An OpenVPN user's login, read off here for passing on. -->
-                <div v-if="cf.protocol === 'openvpn' && cf.device.username" class="cfg-login">
-                  <span class="hint">{{ t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
-                  <span class="hint">{{ t('client.openvpnPassword') }}</span><code class="ltr">{{ cf.device.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.password)"><AntIcon name="CopyOutlined" /></button>
-                </div>
-                <code class="config-block-text">{{ cf.body }}</code>
-              </div></div>
             </div>
           </div>
         </template>
@@ -335,7 +362,17 @@ const expiryText = computed(() => {
 .ip-row:last-child { border-bottom: 0; }
 .ip-name { font-weight: 500; }
 .ip-row .hint { font-size: 12px; opacity: 0.55; margin-inline-start: auto; }
-.cfg-who { margin-inline-start: 8px; font-weight: 500; }
+.cfg-count { margin-inline-start: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cfg-users { padding: 4px 0; }
+.cfg-user { border-top: 1px solid var(--line-soft); }
+.cfg-user:first-child { border-top: 0; }
+.cfg-user-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.cfg-user-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfg-user-head .config-block-actions { margin-inline-start: auto; }
+.cfg-user-login { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 400; color: var(--muted); }
+.cfg-user-body { padding: 0 12px 12px; }
+.cfg-show .anticon { transition: transform 0.3s; }
+.cfg-user.open .cfg-show .anticon { transform: rotate(90deg); }
 .cfg-meta { margin-inline-start: 6px; font-size: 12px; opacity: 0.75; }
 .cfg-login { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 8px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--line); }
 .cfg-login code { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
