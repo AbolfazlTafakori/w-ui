@@ -123,7 +123,11 @@ func (s *Subscriptions) Defaults() SubSettings {
 		Enabled:     false,
 		Path:        DefaultSubPath,
 		Title:       "W-UI",
-		UpdateHours: 12,
+		// An hour: what the operator changes -- an endpoint, a port, the DNS,
+		// a renamed device -- reaches every app within the hour on its own.
+		// The link is rendered from the records on every fetch, so the wait
+		// is only the app's, never the panel's.
+		UpdateHours: 1,
 		Template:    "classic",
 	}
 }

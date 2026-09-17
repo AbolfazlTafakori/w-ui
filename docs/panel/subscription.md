@@ -50,6 +50,10 @@ Every look keeps the same content and the same controls — the theme toggle, th
 
 `https://host:port/sub/TOKEN`. The token is per customer and can be rotated from the client's row; the old link stops working at once. When the subscription service sits on its own port, the link carries that port and scheme.
 
+## Always current
+
+Nothing is stored for the link: every fetch renders the configurations from the records at that moment. Whatever changed in the panel — an endpoint or port, the DNS, a host added, a device renamed, an OpenVPN username or password, a customer put on another server — is in the next fetch, and the answer is sent with `Cache-Control: no-store` so nothing in between keeps an old copy. The customer's page reloads itself on open; an app refetches on the interval it is told (`Profile-Update-Interval`, **1 hour** by default, set under Settings → Subscription), so a change reaches every app within the hour without anyone being sent a new file.
+
 ## Formats
 
 The same token serves apps too: `?format=conf` for a WireGuard file, `base64`, `zip` for every device at once, and the per-device, per-host download the page links to.
