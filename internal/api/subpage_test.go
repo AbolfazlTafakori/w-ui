@@ -154,7 +154,7 @@ func TestSubPageLoadsNothingExternal(t *testing.T) {
 		Nonce: "abc", Lang: "en", HasQuota: true, StatusKey: "active", Used: "250 B", Total: "1000 B",
 		Strings: "{}", Icons: map[string]template.HTML{},
 		Devices: devices,
-		Groups:  groupDevices(devices),
+		Groups:  groupDevices(devices, "Ali"),
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -262,23 +262,26 @@ func TestDeviceDownloadsKeepTheirName(t *testing.T) {
 	}
 }
 
-// A plan for one is a row per tunnel with the actions on it; a plan for
-// several is a row per tunnel that opens on the users, each with their
-// own. The tunnel's name is shown only when there is more than one.
-func TestFilesAreGroupedByTunnelForAPlanOfSeveral(t *testing.T) {
+// Every tunnel is a menu that opens on its users: one line named after
+// the customer for a plan of one, "User n" lines for a plan of several.
+// The tunnel's name is shown only when there is more than one.
+func TestEveryTunnelIsAMenuOfItsUsers(t *testing.T) {
 	one := groupDevices([]subPageDevice{
-		{SubPageDevice: service.SubPageDevice{ID: 1, Protocol: "wireguard", Tunnel: "wg0", Label: "Ali · wg0"}},
-	})
-	if len(one) != 1 || !one[0].Single || one[0].Tunnel != "" {
+		{SubPageDevice: service.SubPageDevice{ID: 1, Protocol: "wireguard", Tunnel: "wg0", Name: "device-1"}},
+	}, "Ali")
+	if len(one) != 1 || one[0].Tunnel != "" || len(one[0].Devices) != 1 || one[0].Devices[0].Row != "Ali" {
 		t.Fatalf("a plan of one: %+v", one)
 	}
 	several := groupDevices([]subPageDevice{
 		{SubPageDevice: service.SubPageDevice{ID: 1, Protocol: "wireguard", Tunnel: "wg0", User: 1}},
 		{SubPageDevice: service.SubPageDevice{ID: 2, Protocol: "wireguard", Tunnel: "wg0", User: 2}},
 		{SubPageDevice: service.SubPageDevice{ID: 3, Protocol: "openvpn", Tunnel: "ovpn", User: 1}},
-		{SubPageDevice: service.SubPageDevice{ID: 4, Protocol: "openvpn", Tunnel: "ovpn", User: 2}},
-	})
-	if len(several) != 2 || several[0].Single || len(several[0].Devices) != 2 || several[0].Tunnel != "wg0" || several[1].Tunnel != "ovpn" {
+		{SubPageDevice: service.SubPageDevice{ID: 4, Protocol: "openvpn", Tunnel: "ovpn", Name: "tablet"}},
+	}, "Ali")
+	if len(several) != 2 || len(several[0].Devices) != 2 || several[0].Tunnel != "wg0" || several[1].Tunnel != "ovpn" {
 		t.Fatalf("a plan of two on two tunnels: %+v", several)
+	}
+	if several[1].Devices[1].Row != "tablet" || several[0].Devices[0].Row != "" {
+		t.Fatalf("rows: %+v", several[1].Devices)
 	}
 }

@@ -77,6 +77,10 @@ type subPageView struct {
 type subPageDevice struct {
 	service.SubPageDevice
 	QR template.URL
+	// Row is what the user's line is called inside a tunnel's menu: the
+	// customer's own name for a plan of one, "User n" for a plan of
+	// several, a file's own name when it was given one.
+	Row string
 }
 
 // maybeServeSubPage answers with the customer's page when a browser asked.
@@ -303,7 +307,7 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 			v.HasWG = true
 		}
 	}
-	v.Groups = groupDevices(v.Devices)
+	v.Groups = groupDevices(v.Devices, page.Name)
 	dict, _ := json.Marshal(subPageStrings)
 	v.Strings = template.JS(dict)
 	return v
@@ -319,7 +323,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "Remaining", "lastOnline": "Last Online", "expiry": "Expiry", "noExpiry": "No expiry",
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
-		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show",
+		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user",
 		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
 	},
@@ -330,7 +334,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "باقی‌مانده", "lastOnline": "آخرین فعالیت", "expiry": "انقضا", "noExpiry": "بدون انقضا",
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
-		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش",
+		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر",
 		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
 	},
@@ -964,36 +968,22 @@ a.row-title:hover { text-decoration: underline; }
           <div class="row-actions"><button class="btn sm copy-all" type="button" data-i-title="copyAll"><span class="anticon">{{ index .Icons "CopyOutlined" }}</span></button></div>
         </div>
         {{ range .Groups }}
-        {{ if .Single }}{{ with .One }}
-        <div class="cfg">
-          <div class="cfg-head">
-            <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else }}config{{ end }}">Config</span>
-            <span class="cfg-meta">{{ if .Label }}{{ .Label }}{{ else }}{{ .Name }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
-            <div class="row-actions">
-              <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
-              <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
-              {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
-              <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ if .Label }}{{ .Label }}{{ else }}{{ .Name }}{{ end }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
-            </div>
-          </div>
-          <div class="cfg-body"><code class="cfg-text">{{ .Config }}</code></div>
-        </div>
-        {{ end }}{{ else }}
-        <!-- A plan for several: one row for the tunnel, which opens on the
-             users, each with the actions for their own file. -->
+        <!-- A tunnel is a menu: the row names the protocol (and the tunnel
+             when there are several), and opens on one line per user, each
+             with copy, download and QR of their own file. A plan for one
+             opens on one line, named after the customer. -->
         <div class="cfg cfg-group">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
             <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else }}config{{ end }}">Config</span>
-            <span class="cfg-meta">{{ .Title }}{{ if .Tunnel }} · {{ .Tunnel }}{{ end }}</span>
-            <span class="cfg-count"><span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span></span>
+            {{ if .Tunnel }}<span class="cfg-meta">{{ .Tunnel }}</span>{{ end }}
+            <span class="cfg-count">{{ if gt (len .Devices) 1 }}<span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span>{{ else }}<span data-i="oneUser">1 user</span>{{ end }}</span>
           </div>
           <div class="cfg-body cfg-users">
             {{ range .Devices }}
             <div class="cfg-user">
               <div class="cfg-user-head">
-                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
+                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}</span>
                 <div class="row-actions">
                   <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
                   <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
@@ -1007,7 +997,6 @@ a.row-title:hover { text-decoration: underline; }
             {{ end }}
           </div>
         </div>
-        {{ end }}
         {{ end }}
       </div>
       {{ end }}
@@ -1247,23 +1236,19 @@ func asciiFilename(name string) string {
 	return b.String()
 }
 
-// subGroup is a tunnel's files on the page.
+// subGroup is a tunnel's files on the page: a menu that opens on its users.
 type subGroup struct {
 	Protocol string
 	Tunnel   string
-	Title    string
 	Devices  []subPageDevice
-	// Single is a group of one file, shown as a row of its own with the
-	// actions on it; One is that file.
-	Single bool
-	One    subPageDevice
 }
 
-// groupDevices arranges the files by tunnel, in the order they came. A
-// tunnel with one file is a row; a tunnel with several is a row that opens
-// on the users. When the customer reaches one tunnel only, its name is
-// left off the row: there is nothing to tell apart.
-func groupDevices(devices []subPageDevice) []subGroup {
+// groupDevices arranges the files by tunnel, in the order they came. When
+// the customer reaches one tunnel only, its name is left off the row:
+// there is nothing to tell apart. Each user's line is named for the
+// reader: "User n" in a plan for several, the customer's own name in a
+// plan for one, a file's own name when it was given one.
+func groupDevices(devices []subPageDevice, customer string) []subGroup {
 	var groups []subGroup
 	index := map[string]int{}
 	tunnels := map[string]bool{}
@@ -1272,27 +1257,27 @@ func groupDevices(devices []subPageDevice) []subGroup {
 		tunnels[d.Tunnel] = true
 		i, ok := index[key]
 		if !ok {
-			title := "WireGuard"
-			if d.Protocol == "openvpn" {
-				title = "OpenVPN"
-			}
 			index[key] = len(groups)
-			groups = append(groups, subGroup{Protocol: d.Protocol, Tunnel: d.Tunnel, Title: title})
+			groups = append(groups, subGroup{Protocol: d.Protocol, Tunnel: d.Tunnel})
 			i = index[key]
 		}
 		groups[i].Devices = append(groups[i].Devices, d)
 	}
 	for i := range groups {
-		if len(groups[i].Devices) == 1 {
-			groups[i].Single = true
-			groups[i].One = groups[i].Devices[0]
-		}
 		if len(tunnels) <= 1 {
 			groups[i].Tunnel = ""
 		}
-		// The tag already says which protocol; the title is not repeated
-		// beside it.
-		groups[i].Title = ""
+		for j := range groups[i].Devices {
+			d := &groups[i].Devices[j]
+			switch {
+			case d.User > 0:
+				d.Row = ""
+			case len(groups[i].Devices) > 1:
+				d.Row = d.Name
+			default:
+				d.Row = customer
+			}
+		}
 	}
 	return groups
 }
