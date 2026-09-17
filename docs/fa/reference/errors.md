@@ -71,6 +71,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `a tag prefix can only contain letters, digits, - and _` / `a tag cannot contain a comma or a space` |  |  |
 | `an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel` | برای مشتری‌ای که تانل OpenVPN ندارد نام کاربری/رمز وارد شده. | یک تانل OpenVPN تیک بزن، یا فیلدها را خالی بگذار. |
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` |  | چیزی مثل `roya` یا `roya.k`. |
+| `two users were given the same username "…"; each logs in as themselves` | دو ردیف تب Credentials یک نام کاربری دارند. | برای هر کاربر یکی متفاوت. |
 | `the username "…" is already used on …` | نام کاربری روی هر تانل OpenVPN یکتاست. | نام دیگری. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` |  |  |
 | `a subscription id is 8 to 64 characters` / `a subscription id can only contain letters, digits, - and _ (found "…")` | شناسهٔ اشتراکی که در تب Credentials تایپ شده. | چیزی مثل `roya-2024-link`، یا خالی بگذار تا ساخته شود. |

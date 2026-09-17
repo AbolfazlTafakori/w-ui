@@ -71,6 +71,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `a tag prefix can only contain letters, digits, - and _` / `a tag cannot contain a comma or a space` | | |
 | `an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel` | Credentials were typed for a customer with no OpenVPN tunnel ticked. | Tick an OpenVPN tunnel, or leave the fields empty. |
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` | | Something like `roya` or `roya.k`. |
+| `two users were given the same username "…"; each logs in as themselves` | Two rows on the Credentials tab carry one username. | A different one per user. |
 | `the username "…" is already used on …` | Usernames are unique per OpenVPN tunnel. | Another name. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` | | |
 | `a subscription id is 8 to 64 characters` / `a subscription id can only contain letters, digits, - and _ (found "…")` | The subscription id typed on the Credentials tab. | Something like `roya-2024-link`, or leave it empty to have one drawn. |
