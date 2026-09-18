@@ -1079,6 +1079,8 @@ a.row-title:hover { text-decoration: underline; }
       </div>
       {{ end }}
 
+      <!-- The apps only: the files are handed out per user in the rows
+           above, and repeating them here made the menu a second list. -->
       <div class="apps">
         <div class="app">
           <button class="btn lg primary" type="button" data-menu="android"><span class="anticon">{{ index .Icons "AndroidOutlined" }}</span> Android <span class="anticon">{{ index .Icons "DownOutlined" }}</span></button>
@@ -1089,7 +1091,6 @@ a.row-title:hover { text-decoration: underline; }
             {{ end }}{{ if .HasOVPN }}
             <a href="https://play.google.com/store/apps/details?id=net.openvpn.openvpn" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
             {{ end }}
-            {{ range .Devices }}<a href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}
           </div>
         </div>
         <div class="app">
@@ -1101,7 +1102,6 @@ a.row-title:hover { text-decoration: underline; }
             {{ end }}{{ if .HasOVPN }}
             <a href="https://apps.apple.com/app/openvpn-connect/id590379981" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
             {{ end }}
-            {{ range .Devices }}<a href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span>{{ .Filename }}</a>{{ end }}
           </div>
         </div>
       </div>
