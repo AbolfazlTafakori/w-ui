@@ -163,12 +163,19 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 
 // ListGroupNames returns the distinct group labels, for the picker on the
 // client form.
+//
+// A group exists two ways: as a label on a customer, and as a row made on
+// the groups page before anyone is in it. The picker offers both, so a
+// group made empty there is there to choose here.
 func (s *Clients) ListGroupNames(ctx context.Context) ([]string, error) {
 	var names []string
 	err := s.db.WithContext(ctx).Raw(`
-		SELECT DISTINCT COALESCE("group", '') AS g
-		FROM clients
-		WHERE COALESCE("group", '') <> ''
+		SELECT g FROM (
+			SELECT DISTINCT COALESCE("group", '') AS g FROM clients
+			UNION
+			SELECT name AS g FROM groups
+		) AS all_groups
+		WHERE COALESCE(g, '') <> ''
 		ORDER BY g ASC`).
 		Scan(&names).Error
 	if err != nil {
