@@ -61,7 +61,7 @@ func TestOneAddressIsNotSharing(t *testing.T) {
 	seedSharing(t, db, now)
 
 	r := &Reconciler{db: db, log: quietLog()}
-	if err := recordEndpoints(context.Background(), db, map[uint]string{1: "203.0.113.7:1"}, now); err != nil {
+	if err := recordEndpoints(context.Background(), db, map[uint]string{1: "203.0.113.7:1"}, nil, now); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestTwoAddressesAreNotYetSharing(t *testing.T) {
 	// A phone moving between wifi and mobile data reaches two addresses on its
 	// own. Reporting that would cry wolf on ordinary customers.
 	for _, addr := range []string{"203.0.113.7:1", "198.51.100.4:2"} {
-		if err := recordEndpoints(ctx, db, map[uint]string{1: addr}, now); err != nil {
+		if err := recordEndpoints(ctx, db, map[uint]string{1: addr}, nil, now); err != nil {
 			t.Fatalf("record: %v", err)
 		}
 	}
@@ -105,7 +105,7 @@ func TestThreeLiveAddressesAreReported(t *testing.T) {
 	ctx := context.Background()
 
 	for _, addr := range []string{"203.0.113.7:1", "198.51.100.4:2", "192.0.2.9:3"} {
-		if err := recordEndpoints(ctx, db, map[uint]string{1: addr}, now); err != nil {
+		if err := recordEndpoints(ctx, db, map[uint]string{1: addr}, nil, now); err != nil {
 			t.Fatalf("record: %v", err)
 		}
 	}
@@ -138,11 +138,11 @@ func TestAddressesOutsideTheWindowDoNotCount(t *testing.T) {
 	// three at once.
 	old := now.Add(-2 * sharingWindow)
 	for _, addr := range []string{"203.0.113.7:1", "198.51.100.4:2"} {
-		if err := recordEndpoints(ctx, db, map[uint]string{1: addr}, old); err != nil {
+		if err := recordEndpoints(ctx, db, map[uint]string{1: addr}, nil, old); err != nil {
 			t.Fatalf("record: %v", err)
 		}
 	}
-	if err := recordEndpoints(ctx, db, map[uint]string{1: "192.0.2.9:3"}, now); err != nil {
+	if err := recordEndpoints(ctx, db, map[uint]string{1: "192.0.2.9:3"}, nil, now); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 
@@ -163,10 +163,10 @@ func TestReconnectingKeepsTheOriginalFirstSeen(t *testing.T) {
 	ctx := context.Background()
 
 	first := now.Add(-time.Hour)
-	if err := recordEndpoints(ctx, db, map[uint]string{1: "203.0.113.7:1"}, first); err != nil {
+	if err := recordEndpoints(ctx, db, map[uint]string{1: "203.0.113.7:1"}, nil, first); err != nil {
 		t.Fatalf("record: %v", err)
 	}
-	if err := recordEndpoints(ctx, db, map[uint]string{1: "203.0.113.7:2"}, now); err != nil {
+	if err := recordEndpoints(ctx, db, map[uint]string{1: "203.0.113.7:2"}, nil, now); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 
@@ -193,11 +193,11 @@ func TestPruneDropsOnlyLongDeadAddresses(t *testing.T) {
 	seedSharing(t, db, now)
 	ctx := context.Background()
 
-	if err := recordEndpoints(ctx, db, map[uint]string{1: "203.0.113.7:1"},
+	if err := recordEndpoints(ctx, db, map[uint]string{1: "203.0.113.7:1"}, nil,
 		now.Add(-endpointRetention-time.Hour)); err != nil {
 		t.Fatalf("record: %v", err)
 	}
-	if err := recordEndpoints(ctx, db, map[uint]string{2: "198.51.100.4:1"}, now); err != nil {
+	if err := recordEndpoints(ctx, db, map[uint]string{2: "198.51.100.4:1"}, nil, now); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 
@@ -221,7 +221,7 @@ func TestAnEmptyEndpointIsIgnored(t *testing.T) {
 
 	// A peer that has never handshaken reports no endpoint. Storing a blank
 	// would create a phantom address shared by every idle account.
-	if err := recordEndpoints(context.Background(), db, map[uint]string{1: ""}, now); err != nil {
+	if err := recordEndpoints(context.Background(), db, map[uint]string{1: ""}, nil, now); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 
@@ -321,5 +321,26 @@ func TestAStartedPlanIsNeverRestarted(t *testing.T) {
 	db.First(&check, c.ID)
 	if !check.ExpiresAt.Equal(expires.Truncate(time.Second)) && check.ExpiresAt.After(expires.Add(time.Second)) {
 		t.Errorf("expiry moved from %v to %v", expires, check.ExpiresAt)
+	}
+}
+
+// An address that many customers arrive from at once is a relay, and the
+// port is kept for it so the sharing report can still tell flows apart;
+// a household behind one router is not.
+func TestARelayIsRecognisedByTheCustomersItCarries(t *testing.T) {
+	seen := map[uint]string{}
+	clientOf := map[uint]uint{}
+	for i := uint(1); i <= 5; i++ {
+		seen[i] = "198.51.100.9:" + string(rune('0'+i)) + "0000"
+		clientOf[i] = i
+	}
+	seen[10], clientOf[10] = "203.0.113.7:4000", 10
+	seen[11], clientOf[11] = "203.0.113.7:4001", 11
+	relays := relayHosts(seen, clientOf)
+	if !relays["198.51.100.9"] {
+		t.Fatal("five customers from one address is a relay")
+	}
+	if relays["203.0.113.7"] {
+		t.Fatal("two customers from one address is a household")
 	}
 }

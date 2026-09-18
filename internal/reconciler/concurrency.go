@@ -255,6 +255,17 @@ func (a *activity) liveAddrs(now time.Time) []string {
 	return out
 }
 
+// clients is a copy of which customer each account belongs to.
+func (c *concurrency) clients() map[uint]uint {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[uint]uint, len(c.clientOf))
+	for k, v := range c.clientOf {
+		out[k] = v
+	}
+	return out
+}
+
 // lookup is what is known of one account right now, from wherever it is
 // served: this server's own readings, or the last report from its node.
 func (c *concurrency) lookup(id uint, now time.Time) (n int, since time.Time, ok bool) {

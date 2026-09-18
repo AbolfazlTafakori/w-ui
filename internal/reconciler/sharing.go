@@ -63,14 +63,20 @@ type SharingReport struct {
 //
 // The address is reduced to its host: a customer's source port changes on every
 // reconnect, so keeping it would turn one sharer into a hundred.
-func recordEndpoints(ctx context.Context, db *gorm.DB, seen map[uint]string, now time.Time) error {
+func recordEndpoints(ctx context.Context, db *gorm.DB, seen map[uint]string, clientOf map[uint]uint, now time.Time) error {
 	if len(seen) == 0 {
 		return nil
 	}
 
+	relays := relayHosts(seen, clientOf)
 	rows := make([]model.AccountEndpoint, 0, len(seen))
 	for accountID, endpoint := range seen {
 		host := hostOf(endpoint)
+		if relays[host] {
+			// Behind a relay every customer arrives from the relay's own
+			// address, and only the port tells their flows apart.
+			host = strings.TrimSpace(endpoint)
+		}
 		if host == "" {
 			continue
 		}
@@ -108,6 +114,38 @@ func recordEndpoints(ctx context.Context, db *gorm.DB, seen map[uint]string, now
 		return fmt.Errorf("record endpoints: %w", err)
 	}
 	return nil
+}
+
+// relayMinClients is how many different customers one address must be
+// carrying at once before it is taken for a relay rather than a household.
+// A family behind one router is two or three of a panel's customers; a
+// relay in front of the server is all of them.
+const relayMinClients = 5
+
+// relayHosts names the addresses that are relays: whatever this server's
+// traffic arrives through -- a forwarder on another machine, a tunnel
+// endpoint, a load balancer -- shows as one address carrying many
+// customers at once. Recognised by that rather than configured, so a
+// panel works the same behind any relay, or none.
+func relayHosts(seen map[uint]string, clientOf map[uint]uint) map[string]bool {
+	clients := map[string]map[uint]bool{}
+	for accountID, endpoint := range seen {
+		host := hostOf(endpoint)
+		if host == "" {
+			continue
+		}
+		if clients[host] == nil {
+			clients[host] = map[uint]bool{}
+		}
+		clients[host][clientOf[accountID]] = true
+	}
+	out := map[string]bool{}
+	for host, c := range clients {
+		if len(c) >= relayMinClients {
+			out[host] = true
+		}
+	}
+	return out
 }
 
 // hostOf strips the port from an endpoint.

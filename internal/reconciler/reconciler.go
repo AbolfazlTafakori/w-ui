@@ -349,7 +349,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	// this is an upsert of at most one row per connected account, and it must
 	// not be dropped when that buffer is full, because a missed address is a
 	// missed sharing case rather than a few bytes of usage.
-	if err := recordEndpoints(ctx, r.db, seen, now); err != nil {
+	if err := recordEndpoints(ctx, r.db, seen, r.conc.clients(), now); err != nil {
 		r.log.Warn("could not record connection addresses", "error", err)
 	}
 	r.maybePrune(ctx, now)
