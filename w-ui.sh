@@ -2252,23 +2252,27 @@ setup_fail2ban_iplimit() {
         # default to `banaction = nftables-multiport`, but the `nftables`
         # package isn't pulled in as a dependency on most minimal images.
         case "${release}" in
-            ubuntu)
-                apt-get update
-                if [[ "${os_version}" -ge 2400 ]]; then
-                    apt-get install python3-pip -y
-                    python3 -m pip install pyasynchat --break-system-packages
+            ubuntu | debian | armbian)
+                # Straight to the install: the package lists were refreshed
+                # minutes ago by the installer, and refreshing them again
+                # was most of the wait. Only a failed install refreshes and
+                # tries once more. Recommends are left out -- they pull in
+                # whois, iptables and a mail agent -- except python3-systemd,
+                # which the journal backend needs.
+                export DEBIAN_FRONTEND=noninteractive
+                if ! apt-get install -y -qq --no-install-recommends fail2ban nftables python3-systemd >/dev/null 2>&1; then
+                    apt-get update -qq >/dev/null 2>&1
+                    apt-get install -y -qq --no-install-recommends fail2ban nftables python3-systemd
                 fi
-                apt-get install fail2ban nftables -y
-                ;;
-            debian)
-                apt-get update
-                if [ "$os_version" -ge 12 ]; then
-                    apt-get install -y python3-systemd
+                # fail2ban 1.0 on Python 3.12 needs asynchat, which left the
+                # standard library. Fetched from pip only when the server
+                # module really cannot be imported -- most images ship a
+                # patched package and skip this entirely.
+                if ! python3 -c 'import fail2ban.server.asyncserver' >/dev/null 2>&1; then
+                    apt-get install -y -qq --no-install-recommends python3-pip >/dev/null 2>&1
+                    python3 -m pip install -q pyasynchat --break-system-packages >/dev/null 2>&1 \
+                        || python3 -m pip install -q pyasynchat >/dev/null 2>&1
                 fi
-                apt-get install -y fail2ban nftables
-                ;;
-            armbian)
-                apt-get update && apt-get install fail2ban nftables -y
                 ;;
             fedora | amzn | virtuozzo | rhel | almalinux | rocky | ol)
                 if [[ "${release}" != "fedora" ]] && ! dnf repolist enabled 2> /dev/null | grep -qiw epel; then

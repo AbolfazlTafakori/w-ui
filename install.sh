@@ -2232,6 +2232,7 @@ setup_fail2ban() {
   have_systemd || return 0
   [[ -x "$MENU_PATH" ]] || return 0
   step "Setting up Fail2ban for the IP Limit feature"
+  info "installing fail2ban from the distribution; a minute on a fresh image"
   if "$MENU_PATH" setup-fail2ban </dev/null >/dev/null 2>&1; then
     ok "Fail2ban setup complete"
   else
