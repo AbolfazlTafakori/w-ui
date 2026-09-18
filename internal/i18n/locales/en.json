@@ -1711,5 +1711,16 @@
   "client.show": "Show",
   "client.noGroupsYet": "No groups yet — type a name and this customer starts one; it is offered here from then on.",
   "client.groups": "Groups",
-  "common.addNamed": "Add “{name}”"
+  "common.addNamed": "Add “{name}”",
+  "secwarn.enforcement-inactive": "Data limits are not being enforced",
+  "secwarn.routing-inactive": "Outbounds and routing rules are not being applied",
+  "secwarn.shaping-inactive": "Speed limits are not being applied",
+  "secwarn.admin-username": "The administrator is still called “admin”",
+  "secwarn.no-totp": "Two-factor authentication is off",
+  "secwarn.never-signed-in": "The generated password has never been changed",
+  "secwarn.well-known-sub-path": "The subscription path “{path}” is well known",
+  "secwarn.short-sub-path": "The subscription path is short enough to stumble onto",
+  "secwarn.listening-everywhere": "The panel is reachable from any address",
+  "secwarn.stale-tokens": "{n} access token(s) have not been used in three months",
+  "secwarn.node-plain-http": "{n} node(s) are reached over plain HTTP"
 }

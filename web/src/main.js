@@ -11,6 +11,12 @@ import { vFit } from './lib/fitmenu.js'
 // mid-render is worse for Persian than for Latin.
 import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
+// Vazirmatn for Persian: the system face has no Persian of its own on
+// most machines and falls back glyph by glyph. Bundled like the mono, for
+// the same reason.
+import '@fontsource/vazirmatn/400.css'
+import '@fontsource/vazirmatn/500.css'
+import '@fontsource/vazirmatn/700.css'
 
 import './style.css'
 import './ant.css'

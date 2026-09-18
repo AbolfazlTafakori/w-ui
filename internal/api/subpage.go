@@ -154,6 +154,7 @@ func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, tok
 	h.Set("Content-Security-Policy",
 		"default-src 'none'; "+
 			"img-src 'self' data:; "+
+			"font-src 'self'; "+
 			"connect-src 'self'; "+
 			"style-src 'nonce-"+v.Nonce+"'; "+
 			"script-src 'nonce-"+v.Nonce+"'; "+
@@ -485,11 +486,25 @@ html[data-theme="light"] {
   --row-bg-h: rgba(0, 0, 0, 0.05); --row-line-h: rgba(0, 0, 0, 0.14);
 }
 * { box-sizing: border-box; }
+/* Persian is set in Vazirmatn, declared for the Arabic script only, so
+   the Latin and the figures keep each template's own face -- the
+   terminal's monospace, the paper's serif -- and only the Persian words
+   stop falling back glyph by glyph. */
+@font-face { font-family: 'Vazirmatn'; font-style: normal; font-weight: 400; font-display: swap; src: url('/sub-font/vazirmatn-400.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFC, U+200C-200E; }
+@font-face { font-family: 'Vazirmatn'; font-style: normal; font-weight: 700; font-display: swap; src: url('/sub-font/vazirmatn-700.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFC, U+200C-200E; }
 body {
   margin: 0; min-height: 100vh; background: var(--ground); color: var(--ink);
-  font: 14px/1.5714 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  font: 14px/1.5714 'Vazirmatn', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 }
-[dir="rtl"] body { }
+/* Persian text runs a touch larger in Vazirmatn than Latin in the system
+   face; the line height stays, so nothing moves. */
+html[lang="fa"] body { font-size: 14.5px; }
+/* Tracking spreads a joined script apart; the templates that letter-space
+   their headings do so for Latin, and Persian keeps its joins. */
+html[lang="fa"] .card-head, html[lang="fa"] .divider, html[lang="fa"] .tag { letter-spacing: 0 !important; }
+/* Each run of text takes its direction from its first letter, so a
+   Persian sentence keeps its full stop at its own end. */
+html[lang="fa"] :is(p, .desc th, .desc td, .stat-k, .stat-s, .row-title, .cfg-user-name, .card-title, .divider span, .pop-hint, .preview-bar, .menu a, .menu button) { unicode-bidi: plaintext; }
 .anticon { display: inline-flex; align-items: center; line-height: 0; vertical-align: -0.125em; }
 .content { padding: 24px 12px; }
 .col { width: 100%; margin: 0 auto; }
@@ -691,8 +706,8 @@ a.row-title:hover { text-decoration: underline; }
 [data-layout="network"] .live-bg { display: block; background: #050608; }
 [data-layout="network"] canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .9; }
 [data-layout="network"] .card { border-radius: 6px; border-color: #232833; box-shadow: 0 0 0 1px rgba(224,46,61,.15), 0 30px 60px -30px rgba(0,0,0,.9); }
-[data-layout="network"] .card-head { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .5px; }
-[data-layout="network"] .desc td, [data-layout="network"] .usage-labels, [data-layout="network"] .stat-v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+[data-layout="network"] .card-head { font-family: 'Vazirmatn', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .5px; }
+[data-layout="network"] .desc td, [data-layout="network"] .usage-labels, [data-layout="network"] .stat-v { font-family: 'Vazirmatn', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 [data-layout="network"] .desc, [data-layout="network"] .usage, [data-layout="network"] .cfg, [data-layout="network"] .row, [data-layout="network"] .btn, [data-layout="network"] .tag, [data-layout="network"] .quick > div { border-radius: 4px; }
 [data-layout="network"] .hero, [data-layout="network"] .quick { display: flex; }
 
@@ -767,7 +782,7 @@ a.row-title:hover { text-decoration: underline; }
 [data-layout="neon"] .live-bg { display: block; background: radial-gradient(700px 400px at 0% 0%, rgba(255,43,214,.18), transparent 60%), radial-gradient(700px 400px at 100% 100%, rgba(0,229,255,.16), transparent 60%), #050008; }
 [data-layout="neon"] .grid { position: absolute; inset: 0; background-image: linear-gradient(to right, rgba(255,43,214,.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,229,255,.08) 1px, transparent 1px); background-size: 32px 32px; }
 [data-layout="neon"] .card { border-radius: 8px; border-color: rgba(255,43,214,.6); box-shadow: 0 0 0 1px rgba(255,43,214,.25), 0 0 30px -6px rgba(255,43,214,.7), inset 0 0 40px -30px rgba(0,229,255,.6); }
-[data-layout="neon"] .card-head { text-shadow: 0 0 12px rgba(255,43,214,.8); border-bottom-color: rgba(255,43,214,.4); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; text-transform: uppercase; }
+[data-layout="neon"] .card-head { text-shadow: 0 0 12px rgba(255,43,214,.8); border-bottom-color: rgba(255,43,214,.4); font-family: 'Vazirmatn', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 1px; text-transform: uppercase; }
 [data-layout="neon"] .btn.lg.primary { box-shadow: 0 0 20px -4px #00e5ff; }
 [data-layout="neon"] .hero, [data-layout="neon"] .quick { display: flex; }
 
@@ -783,7 +798,7 @@ a.row-title:hover { text-decoration: underline; }
 
 /* paper: warm cream, serif headings, ruled lines */
 [data-layout="paper"] { color-scheme: light; --ok: #1a7f3c; --warn: #8a6206; --bad: #c62f28; --tag-green-bg: #f6ffed; --tag-green-line: #b7eb8f; --tag-green-ink: #389e0d; --tag-red-bg: #fff2f0; --tag-red-line: #ffccc7; --tag-red-ink: #cf1322; --tag-orange-bg: #fff7e6; --tag-orange-line: #ffd591; --tag-orange-ink: #d46b08; --tag-purple-bg: #f9f0ff; --tag-purple-line: #d3adf7; --tag-purple-ink: #531dab; --tag-blue-bg: #e6f4ff; --tag-blue-line: #91caff; --tag-blue-ink: #0958d9; --tag-cyan-bg: #e6fffb; --tag-cyan-line: #87e8de; --tag-cyan-ink: #08979c; --row-bg: #fff; --row-line: #e8e8e8; --row-bg-h: #fafafa; --row-line-h: #d0d0d0; --ground: #f4efe6; --surface: #fbf8f2; --surface-2: #f3eee4; --surface-3: #ebe4d6; --line: #d9d0be; --line-soft: #e8e1d2; --ink: #2b241c; --muted: #6f6355; --faint: #9a8f80; --accent: #9c2f2f; --accent-hover: #7f2424; --row-bg: #fbf8f2; --row-line: #e3dbcb; --row-bg-h: #f6f1e7; --row-line-h: #cfc4ae; }
-[data-layout="paper"] body, [data-layout="paper"] .card-head, [data-layout="paper"] .hero h1, [data-layout="paper"] .divider { font-family: Georgia, 'Times New Roman', 'Noto Serif', serif; }
+[data-layout="paper"] body, [data-layout="paper"] .card-head, [data-layout="paper"] .hero h1, [data-layout="paper"] .divider { font-family: 'Vazirmatn', Georgia, 'Times New Roman', 'Noto Serif', serif; }
 [data-layout="paper"] .card { border-radius: 4px; border-color: var(--line); box-shadow: 0 1px 0 #fff inset, 0 12px 30px -20px rgba(43,36,28,.35); background-image: repeating-linear-gradient(0deg, transparent 0 27px, rgba(43,36,28,.035) 27px 28px); }
 [data-layout="paper"] .card-head { border-bottom: 2px solid var(--ink); font-size: 21px; }
 [data-layout="paper"] .hero, [data-layout="paper"] .quick { display: flex; }
@@ -791,7 +806,7 @@ a.row-title:hover { text-decoration: underline; }
 
 /* terminal: green phosphor on black, scanlines */
 [data-layout="terminal"] { --ground: #020402; --surface: #050a05; --surface-2: #08110a; --surface-3: #0c180f; --line: #1d3d24; --line-soft: #12271a; --ink: #b6f7c1; --muted: #63b072; --faint: #3f7a4c; --accent: #37ff6e; --accent-hover: #7bff9d; --accent-ink: #020402; --ok: #37ff6e; --row-bg: rgba(55,255,110,.04); --row-line: rgba(55,255,110,.25); --row-bg-h: rgba(55,255,110,.08); --row-line-h: rgba(55,255,110,.5); --tag-green-bg: #05200c; --tag-green-line: #1e6b33; --tag-green-ink: #37ff6e; --tag-red-bg: #200808; --tag-red-line: #6b1e1e; --tag-red-ink: #ff6b6b; --tag-orange-bg: #201a08; --tag-orange-line: #6b5a1e; --tag-orange-ink: #ffd166; --tag-purple-bg: #0c0c1c; --tag-purple-line: #2b2b6b; --tag-purple-ink: #9d9dff; --tag-blue-bg: #06141c; --tag-blue-line: #1e4a6b; --tag-blue-ink: #66c7ff; --tag-cyan-bg: #061c1a; --tag-cyan-line: #1e6b66; --tag-cyan-ink: #66ffe6; }
-[data-layout="terminal"] body, [data-layout="terminal"] .card, [data-layout="terminal"] .btn, [data-layout="terminal"] .tag, [data-layout="terminal"] .desc td, [data-layout="terminal"] .stat-v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+[data-layout="terminal"] body, [data-layout="terminal"] .card, [data-layout="terminal"] .btn, [data-layout="terminal"] .tag, [data-layout="terminal"] .desc td, [data-layout="terminal"] .stat-v { font-family: 'Vazirmatn', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
 [data-layout="terminal"] .live-bg { display: block; background: #020402; }
 [data-layout="terminal"] .grid { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0 2px, transparent 2px 4px); mix-blend-mode: multiply; opacity: .6; }
 [data-layout="terminal"] .card { border-radius: 2px; border: 1px solid #1d3d24; box-shadow: 0 0 0 1px rgba(55,255,110,.12), 0 0 40px -10px rgba(55,255,110,.35); }
@@ -813,8 +828,8 @@ a.row-title:hover { text-decoration: underline; }
 [data-layout="royal"] { --ground: #070b1a; --surface: #0d1330; --surface-2: #121a3c; --surface-3: #1a2450; --line: #2a3566; --line-soft: #1c2650; --ink: #f4f0e4; --muted: #b9b39c; --faint: #7f7a68; --accent: #d4af37; --accent-hover: #e6c65a; --accent-ink: #070b1a; --row-bg: rgba(255,255,255,0.04); --row-line: rgba(255,255,255,0.1); --row-bg-h: rgba(255,255,255,0.07); --row-line-h: rgba(255,255,255,0.2); }
 [data-layout="royal"] .live-bg { display: block; background: radial-gradient(900px 600px at 50% -20%, rgba(212,175,55,.18), transparent 60%), linear-gradient(180deg, #070b1a, #0b1128); }
 [data-layout="royal"] .card { border-radius: 14px; border: 1px solid rgba(212,175,55,.45); box-shadow: 0 0 0 4px #0d1330, 0 0 0 5px rgba(212,175,55,.35), 0 40px 80px -40px #000; }
-[data-layout="royal"] .card-head { border-bottom: 1px solid rgba(212,175,55,.35); font-family: Georgia, 'Times New Roman', serif; letter-spacing: .5px; }
-[data-layout="royal"] .hero h1 { font-family: Georgia, 'Times New Roman', serif; }
+[data-layout="royal"] .card-head { border-bottom: 1px solid rgba(212,175,55,.35); font-family: 'Vazirmatn', Georgia, 'Times New Roman', serif; letter-spacing: .5px; }
+[data-layout="royal"] .hero h1 { font-family: 'Vazirmatn', Georgia, 'Times New Roman', serif; }
 [data-layout="royal"] .hero, [data-layout="royal"] .quick { display: flex; }
 
 /* sakura: white and blossom pink, soft and round, light */
@@ -863,7 +878,7 @@ a.row-title:hover { text-decoration: underline; }
 [data-layout="retro"] .grid { position: absolute; left: -50%; right: -50%; top: 46%; bottom: 0; background-image: linear-gradient(to right, rgba(255,0,153,.55) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,0,153,.55) 1px, transparent 1px); background-size: 60px 60px; transform: perspective(400px) rotateX(60deg); transform-origin: 50% 0; animation: gridrun 3s linear infinite; }
 @keyframes gridrun { from { background-position: 0 0; } to { background-position: 0 60px; } }
 [data-layout="retro"] .card { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 6px; box-shadow: 0 0 0 1px rgba(255,0,153,.25), 0 0 40px -10px rgba(255,0,153,.7); }
-[data-layout="retro"] .card-head { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 10px rgba(255,0,153,.8); }
+[data-layout="retro"] .card-head { font-family: 'Vazirmatn', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 10px rgba(255,0,153,.8); }
 [data-layout="retro"] .hero, [data-layout="retro"] .quick { display: flex; }
 
 /* The hero and quick stats the non-classic looks open with. */

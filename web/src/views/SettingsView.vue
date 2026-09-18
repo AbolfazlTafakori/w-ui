@@ -269,7 +269,14 @@ const warnings = ref([])
 onMounted(async () => {
   try {
     const res = await api.get('/api/security/warnings', { background: true })
-    warnings.value = (res.warnings || []).map((w) => w.title || w.detail || String(w))
+    // Each warning is named by its id, so it reads in the panel's language;
+    // a number or a path in the English title is carried over into the
+    // translation. One without a translation shows as the server wrote it.
+    warnings.value = (res.warnings || []).map((w) => {
+      const key = 'secwarn.' + (w.id || '')
+      const text = t(key, { n: (String(w.title || '').match(/\d+/) || [''])[0], path: (String(w.title || '').match(/"([^"]+)"/) || ['', ''])[1] })
+      return text === key ? w.title || w.detail || String(w) : text
+    })
   } catch {
     warnings.value = []
   }

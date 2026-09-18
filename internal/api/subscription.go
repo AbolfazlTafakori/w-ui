@@ -213,8 +213,9 @@ func (s *Server) SubscriptionRouter(next http.Handler) http.Handler {
 			return
 		}
 
-		// A template preview the settings page just asked for.
-		if s.serveSubPreview(w, r) {
+		// The Persian face the page links to, and a template preview the
+		// settings page just asked for.
+		if serveSubFont(w, r) || s.serveSubPreview(w, r) {
 			return
 		}
 

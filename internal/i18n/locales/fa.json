@@ -1711,5 +1711,16 @@
   "client.show": "نمایش",
   "client.noGroupsYet": "هنوز گروهی نیست — یک اسم بنویس تا این مشتری اولین عضوش شود؛ از آن به بعد اینجا پیشنهاد می‌شود.",
   "client.groups": "گروه‌ها",
-  "common.addNamed": "افزودن «{name}»"
+  "common.addNamed": "افزودن «{name}»",
+  "secwarn.enforcement-inactive": "سقف حجم اعمال نمی‌شود",
+  "secwarn.routing-inactive": "خروجی‌ها و قوانین مسیریابی اعمال نمی‌شوند",
+  "secwarn.shaping-inactive": "محدودیت سرعت اعمال نمی‌شود",
+  "secwarn.admin-username": "نام مدیر هنوز «admin» است",
+  "secwarn.no-totp": "ورود دومرحله‌ای خاموش است",
+  "secwarn.never-signed-in": "رمز تولیدشدهٔ نصب هرگز عوض نشده",
+  "secwarn.well-known-sub-path": "مسیر سابسکریپشن «{path}» شناخته‌شده است",
+  "secwarn.short-sub-path": "مسیر سابسکریپشن آن‌قدر کوتاه است که حدس زده می‌شود",
+  "secwarn.listening-everywhere": "پنل از هر آدرسی در دسترس است",
+  "secwarn.stale-tokens": "{n} توکن دسترسی سه ماه است استفاده نشده",
+  "secwarn.node-plain-http": "{n} نود از طریق HTTP ساده وصل می‌شود"
 }

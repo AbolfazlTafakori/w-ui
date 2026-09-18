@@ -137,6 +137,22 @@
   --t-xl: 1.5rem;     /* 24px — page titles */
 }
 
+/* In Persian the page is set in Vazirmatn -- Latin and figures included,
+   which it draws well -- rather than the system face falling back for
+   every Persian glyph. */
+html[lang='fa'] {
+  --font: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji';
+}
+/* The page is not mirrored in Persian, so each run of text takes its own
+   direction from its first letter: a Persian sentence then ends with its
+   full stop on the left, where it belongs, instead of the stop jumping to
+   the far end of an LTR line. */
+html[lang='fa'] :is(p, li, h1, h2, h3, h4, label, td, th, small, .aalert, .aalert *, .banner, .banner *, .hint, .aform-extra, .muted, .stat-label, .amodal-title, .acollapse-label, .menu-item, .amenu-item):not(.ltr):not(.num) {
+  unicode-bidi: plaintext;
+}
+
 /*
  * Three themes, the way the classic panel offers them: light, dark, and a pure-black
  * variant for an operator working at night or on an OLED screen.

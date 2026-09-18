@@ -127,9 +127,9 @@ func previewPage(tpl string) *service.SubPage {
 		LastOnline: &seen,
 		SubURL:     "https://example.com/subscribe/sampletoken",
 		Devices: []service.SubPageDevice{
-			{ID: 0, Name: "Phone", Address: "10.66.0.2", Filename: "sample-phone.conf",
+			{ID: 0, Name: "Phone", Protocol: "wireguard", Tunnel: "wg0", Address: "10.66.0.2", Filename: "sample-phone.conf",
 				Config: "[Interface]\nPrivateKey = (sample)\nAddress = 10.66.0.2/32\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = (sample)\nEndpoint = example.com:51820\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25"},
-			{ID: 0, Name: "Laptop", Address: "10.66.0.3", Filename: "sample-laptop.conf",
+			{ID: 0, Name: "Laptop", Protocol: "wireguard", Tunnel: "wg0", Address: "10.66.0.3", Filename: "sample-laptop.conf",
 				Config: "[Interface]\nPrivateKey = (sample)\nAddress = 10.66.0.3/32\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = (sample)\nEndpoint = example.com:51820\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25"},
 		},
 	}
