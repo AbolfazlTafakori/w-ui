@@ -639,7 +639,12 @@ a.row-title:hover { text-decoration: underline; }
 .apps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px; }
 .app { position: relative; flex: 1 1 calc(50% - 4px); text-align: center; }
 @media (max-width: 575px) { .app { flex: 1 1 100%; } .app .btn { width: 100%; } }
-.menu { position: absolute; top: calc(100% + 4px); inset-inline-start: 50%; transform: translateX(-50%); z-index: 6; display: none; min-width: 160px; padding: 4px; border-radius: 8px; background: var(--surface-3); box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); text-align: start; }
+/* The app menus sit on the last row of the page, so they open upward,
+   over the card, rather than down past its foot; a long one (an app per
+   protocol and a file per user) scrolls inside itself. The language and
+   theme menus at the head of the page still open downward. */
+.menu { position: absolute; top: calc(100% + 4px); inset-inline-start: 50%; transform: translateX(-50%); z-index: 6; display: none; min-width: 200px; max-height: 60vh; overflow-y: auto; padding: 4px; border-radius: 8px; background: var(--surface-3); box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); text-align: start; }
+.app .menu { top: auto; bottom: calc(100% + 4px); box-shadow: 0 -6px 16px rgba(0,0,0,.08), 0 -3px 6px -4px rgba(0,0,0,.12), 0 -9px 28px 8px rgba(0,0,0,.05); }
 .menu.open { display: block; }
 .menu a, .menu button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 5px 12px; border: 0; border-radius: 4px; background: none; color: var(--ink); font: inherit; font-size: 14px; line-height: 22px; text-decoration: none; cursor: pointer; text-align: start; }
 .menu a:hover, .menu button:hover { background: var(--surface-2); }
@@ -676,7 +681,8 @@ a.row-title:hover { text-decoration: underline; }
 [data-layout="waves"] .wave.one { background: linear-gradient(90deg, #e02e3d, #7a1f2b); }
 [data-layout="waves"] .wave.two { background: linear-gradient(90deg, #2f6df6, #17b3a6); bottom: -18vh; opacity: .25; animation-duration: 22s; animation-direction: reverse; }
 @keyframes tide { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-[data-layout="waves"] .card { border-radius: 14px; overflow: hidden; }
+[data-layout="waves"] .card { border-radius: 14px; overflow: clip; overflow-clip-margin: 0; }
+[data-layout="waves"] .card:has(.menu.open) { overflow: visible; }
 [data-layout="waves"] .card-head { background: linear-gradient(90deg, rgba(224,46,61,.35), rgba(47,109,246,.25)); border-bottom-color: rgba(255,255,255,.1); }
 [data-layout="waves"] .hero, [data-layout="waves"] .quick { display: flex; }
 
