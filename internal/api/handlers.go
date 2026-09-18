@@ -615,13 +615,14 @@ func (s *Server) handleRenameGroup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAssignGroup(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Group string `json:"group"`
-		IDs   []uint `json:"ids"`
+		Group  string `json:"group"`
+		IDs    []uint `json:"ids"`
+		Remove bool   `json:"remove"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
-	n, err := s.clients.AssignGroup(r.Context(), body.Group, body.IDs)
+	n, err := s.clients.AssignGroup(r.Context(), body.Group, body.IDs, body.Remove)
 	if err != nil {
 		fail(w, s.log, err)
 		return

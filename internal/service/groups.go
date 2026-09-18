@@ -8,15 +8,98 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
+// groupsOf is the list form of what was sent: the list, or the one label
+// an older caller sends. Trimmed, emptied of blanks, and deduplicated
+// without regard to case, the first spelling kept.
+func groupsOf(list []string, one string) []string {
+	src := list
+	if len(src) == 0 && strings.TrimSpace(one) != "" {
+		src = []string{one}
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, g := range src {
+		g = strings.TrimSpace(g)
+		if g == "" || seen[strings.ToLower(g)] {
+			continue
+		}
+		seen[strings.ToLower(g)] = true
+		out = append(out, g)
+	}
+	return out
+}
+
+func firstGroup(groups []string) string {
+	if len(groups) == 0 {
+		return ""
+	}
+	return groups[0]
+}
+
+// setGroups makes the customer's groups exactly these.
+func setGroups(db *gorm.DB, clientID uint, groups []string) error {
+	for _, g := range groups {
+		if len(g) > 64 {
+			return invalidField("groups", "group names are limited to 64 characters")
+		}
+	}
+	if err := db.Where("client_id = ?", clientID).Delete(&model.ClientGroup{}).Error; err != nil {
+		return fmt.Errorf("service: clear groups: %w", err)
+	}
+	for _, g := range groups {
+		if err := db.Create(&model.ClientGroup{ClientID: clientID, Name: g}).Error; err != nil {
+			return fmt.Errorf("service: set groups: %w", err)
+		}
+	}
+	return syncGroupLabel(db, []uint{clientID})
+}
+
+// syncGroupLabel keeps the one-label column on each customer equal to the
+// first of their groups, for anything that still reads it.
+func syncGroupLabel(db *gorm.DB, ids []uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return db.Exec(`UPDATE clients SET "group" = COALESCE((SELECT MIN(name) FROM client_groups g WHERE g.client_id = clients.id), '') WHERE id IN ?`, ids).Error
+}
+
+// fillGroups reads each customer's groups, in one query for the lot.
+func fillGroups(db *gorm.DB, items []model.Client) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+		items[i].Groups = []string{}
+	}
+	var rows []model.ClientGroup
+	if err := db.Where("client_id IN ?", ids).Order("name").Find(&rows).Error; err != nil {
+		return fmt.Errorf("service: read groups: %w", err)
+	}
+	by := map[uint][]string{}
+	for _, r := range rows {
+		by[r.ClientID] = append(by[r.ClientID], r.Name)
+	}
+	for i := range items {
+		if g := by[items[i].ID]; g != nil {
+			items[i].Groups = g
+		}
+	}
+	return nil
+}
+
 // GroupSummary is one row of the groups page.
 //
-// A group is not stored anywhere: it is the distinct values of clients.group,
-// aggregated. That is deliberate — an operator creates a group by typing a name
-// on a client, and it stops existing when the last member leaves.
+// A group is the customers in it, aggregated from their membership rows,
+// plus a row of its own for a note and for existing before anyone is in
+// it. A customer can be in several, so the sums of the groups add up to
+// more than the customers when they overlap.
 type GroupSummary struct {
 	Name      string `json:"name"`
 	Clients   int64  `json:"clients"`
@@ -61,16 +144,16 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 	// already-quoted name into an invalid one. The SQL below is standard and
 	// runs unchanged on both supported engines.
 	err := db.Raw(`
-		SELECT COALESCE("group", '') AS name,
-		       COUNT(*)              AS clients,
-		       SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS active,
-		       COALESCE(SUM(up_bytes), 0)   AS up_bytes,
-		       COALESCE(SUM(down_bytes), 0) AS down_bytes,
-		       COALESCE(SUM(used_bytes), 0) AS used_bytes
-		FROM clients
-		WHERE COALESCE("group", '') <> ''
-		GROUP BY COALESCE("group", '')
-		ORDER BY COALESCE("group", '') ASC`, model.StatusActive).
+		SELECT g.name AS name,
+		       COUNT(*) AS clients,
+		       SUM(CASE WHEN c.status = ? THEN 1 ELSE 0 END) AS active,
+		       COALESCE(SUM(c.up_bytes), 0)   AS up_bytes,
+		       COALESCE(SUM(c.down_bytes), 0) AS down_bytes,
+		       COALESCE(SUM(c.used_bytes), 0) AS used_bytes
+		FROM client_groups g
+		JOIN clients c ON c.id = g.client_id
+		GROUP BY g.name
+		ORDER BY g.name ASC`, model.StatusActive).
 		Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("service: aggregate groups: %w", err)
@@ -84,11 +167,10 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 		Devices int64
 	}
 	err = db.Raw(`
-		SELECT COALESCE(c."group", '') AS name, COUNT(*) AS devices
+		SELECT g.name AS name, COUNT(*) AS devices
 		FROM accounts a
-		JOIN clients c ON c.id = a.client_id
-		WHERE COALESCE(c."group", '') <> ''
-		GROUP BY COALESCE(c."group", '')`).
+		JOIN client_groups g ON g.client_id = a.client_id
+		GROUP BY g.name`).
 		Scan(&devRows).Error
 	if err != nil {
 		return nil, fmt.Errorf("service: count group devices: %w", err)
@@ -154,7 +236,7 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 	}
 
 	if err := db.Raw(
-		`SELECT COUNT(*) FROM clients WHERE COALESCE("group", '') = ''`).
+		`SELECT COUNT(*) FROM clients WHERE NOT EXISTS (SELECT 1 FROM client_groups g WHERE g.client_id = clients.id)`).
 		Scan(&out.Totals.Ungrouped).Error; err != nil {
 		return nil, fmt.Errorf("service: count ungrouped: %w", err)
 	}
@@ -171,7 +253,7 @@ func (s *Clients) ListGroupNames(ctx context.Context) ([]string, error) {
 	var names []string
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT g FROM (
-			SELECT DISTINCT COALESCE("group", '') AS g FROM clients
+			SELECT DISTINCT name AS g FROM client_groups
 			UNION
 			SELECT name AS g FROM groups
 		) AS all_groups
@@ -206,11 +288,19 @@ func (s *Clients) RenameGroup(ctx context.Context, from, to string) (int64, erro
 
 	var moved int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.Client{}).Where(`"group" = ?`, from).Update("group", to)
+		// A member of both keeps one row, the new name's; otherwise the
+		// rename would give them the same row twice.
+		if err := tx.Exec(`DELETE FROM client_groups WHERE name = ? AND client_id IN (SELECT client_id FROM client_groups WHERE name = ?)`, from, to).Error; err != nil {
+			return fmt.Errorf("merge members: %w", err)
+		}
+		res := tx.Model(&model.ClientGroup{}).Where("name = ?", from).Update("name", to)
 		if res.Error != nil {
 			return fmt.Errorf("rename members: %w", res.Error)
 		}
 		moved = res.RowsAffected
+		if err := tx.Exec(`UPDATE clients SET "group" = ? WHERE "group" = ?`, to, from).Error; err != nil {
+			return fmt.Errorf("rename label: %w", err)
+		}
 
 		// The row moves too. Leaving it behind would keep the old name alive as
 		// an empty group and lose the new one's note.
@@ -227,9 +317,10 @@ func (s *Clients) RenameGroup(ctx context.Context, from, to string) (int64, erro
 	return moved, nil
 }
 
-// AssignGroup puts the given clients into a group. An empty name takes them out
-// of whatever group they were in.
-func (s *Clients) AssignGroup(ctx context.Context, name string, ids []uint) (int64, error) {
+// AssignGroup adds the given clients to a group, or with remove takes them
+// out of it; their other groups are untouched. An empty name takes them
+// out of every group, which is what an older caller meant by it.
+func (s *Clients) AssignGroup(ctx context.Context, name string, ids []uint, remove bool) (int64, error) {
 	name = strings.TrimSpace(name)
 	if len(name) > 64 {
 		return 0, fmt.Errorf("%w: group names are limited to 64 characters", ErrInvalid)
@@ -237,13 +328,36 @@ func (s *Clients) AssignGroup(ctx context.Context, name string, ids []uint) (int
 	if len(ids) == 0 {
 		return 0, fmt.Errorf("%w: no clients selected", ErrInvalid)
 	}
-
-	res := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("id IN ?", ids).Update("group", name)
-	if res.Error != nil {
-		return 0, fmt.Errorf("service: assign group: %w", res.Error)
+	var n int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		switch {
+		case name == "":
+			res := tx.Where("client_id IN ?", ids).Delete(&model.ClientGroup{})
+			n = res.RowsAffected
+			if res.Error != nil {
+				return res.Error
+			}
+		case remove:
+			res := tx.Where("client_id IN ? AND name = ?", ids, name).Delete(&model.ClientGroup{})
+			n = res.RowsAffected
+			if res.Error != nil {
+				return res.Error
+			}
+		default:
+			for _, id := range ids {
+				res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.ClientGroup{ClientID: id, Name: name})
+				if res.Error != nil {
+					return res.Error
+				}
+				n += res.RowsAffected
+			}
+		}
+		return syncGroupLabel(tx, ids)
+	})
+	if err != nil {
+		return 0, fmt.Errorf("service: assign group: %w", err)
 	}
-	return res.RowsAffected, nil
+	return n, nil
 }
 
 // GroupAction is an operation applied to every member of a group.
@@ -275,7 +389,9 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 	}
 
 	db := s.db.WithContext(ctx)
-	scope := func() *gorm.DB { return db.Model(&model.Client{}).Where(`"group" = ?`, group) }
+	scope := func() *gorm.DB {
+		return db.Model(&model.Client{}).Where("id IN (SELECT client_id FROM client_groups WHERE name = ?)", group)
+	}
 	now := time.Now().UTC()
 
 	switch op.Action {
@@ -353,8 +469,14 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 		return res.RowsAffected, wrapBulk(res.Error)
 
 	case GroupClear:
-		res := scope().Update("group", "")
-		return res.RowsAffected, wrapBulk(res.Error)
+		var ids []uint
+		if err := scope().Pluck("id", &ids).Error; err != nil {
+			return 0, fmt.Errorf("service: list group members: %w", err)
+		}
+		if len(ids) == 0 {
+			return 0, nil
+		}
+		return s.AssignGroup(ctx, group, ids, true)
 
 	case GroupDeleteClients:
 		var ids []uint
@@ -415,11 +537,20 @@ func (s *Clients) DeleteGroup(ctx context.Context, name string) (int64, error) {
 
 	var ungrouped int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Exec(`UPDATE clients SET "group" = '' WHERE "group" = ?`, name)
+		var ids []uint
+		if err := tx.Model(&model.ClientGroup{}).Where("name = ?", name).Pluck("client_id", &ids).Error; err != nil {
+			return fmt.Errorf("list members: %w", err)
+		}
+		res := tx.Where("name = ?", name).Delete(&model.ClientGroup{})
 		if res.Error != nil {
 			return fmt.Errorf("ungroup members: %w", res.Error)
 		}
 		ungrouped = res.RowsAffected
+		if len(ids) > 0 {
+			if err := syncGroupLabel(tx, ids); err != nil {
+				return err
+			}
+		}
 
 		if err := tx.Where("name = ?", name).Delete(&model.Group{}).Error; err != nil {
 			return fmt.Errorf("delete group: %w", err)

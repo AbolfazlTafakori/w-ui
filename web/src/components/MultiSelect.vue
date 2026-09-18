@@ -18,6 +18,16 @@ const props = defineProps({
   placeholder: { type: String, default: '' },
   listHeight: { type: Number, default: 220 },
   invalid: { type: Boolean, default: false },
+  // creatable lets a value be typed that is not on the list -- a group comes
+  // into being by being named -- offered as "Add …" at the top of the list
+  // and taken by Enter. Chosen values that are not options show as
+  // themselves.
+  creatable: { type: Boolean, default: false },
+  // Which way the list opens: up, as it must near the foot of a dialog, or
+  // down for a control that sits in the middle of one.
+  direction: { type: String, default: 'up' },
+  // What the list says when it has nothing to offer and nothing is typed.
+  empty: { type: String, default: '' },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -30,14 +40,17 @@ const tagRow = ref(null)
 
 const chosen = computed(() =>
   props.modelValue
-    .map((v) => props.options.find((o) => o.value === v))
+    .map((v) => props.options.find((o) => o.value === v) || (props.creatable ? { value: v, label: v } : null))
     .filter(Boolean),
 )
 
 const shown = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q) return props.options
-  return props.options.filter((o) => String(o.label).toLowerCase().includes(q))
+  const raw = query.value.trim()
+  const q = raw.toLowerCase()
+  const list = q ? props.options.filter((o) => String(o.label).toLowerCase().includes(q)) : props.options
+  if (!props.creatable || !raw) return list
+  const exists = props.options.some((o) => String(o.label).toLowerCase() === q) || props.modelValue.some((v) => String(v).toLowerCase() === q)
+  return exists ? list : [{ value: raw, label: raw, create: true }, ...list]
 })
 
 // How many tags fit on the control's single line. Ant Design calls this
@@ -84,6 +97,11 @@ function toggle(value) {
   const next = new Set(props.modelValue)
   next.has(value) ? next.delete(value) : next.add(value)
   emit('update:modelValue', [...next])
+  // A value just made is done with; the box is ready for the next.
+  if (props.creatable && query.value) {
+    query.value = ''
+    active.value = -1
+  }
 }
 
 function remove(value) {
@@ -118,9 +136,9 @@ function onKey(e) {
     active.value = (active.value + step + n) % n
     return
   }
-  if (e.key === 'Enter' && open.value && active.value >= 0) {
+  if (e.key === 'Enter' && open.value && (active.value >= 0 || (props.creatable && query.value.trim()))) {
     e.preventDefault()
-    toggle(shown.value[active.value].value)
+    toggle(shown.value[Math.max(0, active.value)].value)
     return
   }
   // Backspace on an empty query takes the last tag off, which is what every
@@ -166,7 +184,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="ms" :class="{ open, invalid }">
+  <div ref="root" class="ms" :class="{ open, invalid, down: direction === 'down' }">
     <div class="ms-control" @click="openList">
       <div ref="tagRow" class="ms-tags">
         <template v-if="chosen.length">
@@ -218,15 +236,15 @@ onBeforeUnmount(() => {
         @mouseenter="active = idx"
         @click="toggle(o.value)"
       >
-        <span class="ms-check"><Icon v-if="modelValue.includes(o.value)" name="check" :size="13" /></span>
-        <span class="ms-label">{{ o.label }}</span>
+        <span class="ms-check"><Icon v-if="o.create" name="plus" :size="13" /><Icon v-else-if="modelValue.includes(o.value)" name="check" :size="13" /></span>
+        <span class="ms-label">{{ o.create ? t('common.addNamed', { name: o.label }) : o.label }}</span>
         <span v-for="tag in o.tags || []" :key="tag.text" class="tag" :class="tag.kind">
           {{ tag.text }}
         </span>
         <span v-if="o.note" class="ms-note num ltr">{{ o.note }}</span>
       </button>
 
-      <p v-if="!shown.length" class="ms-empty">{{ t('common.noResults') }}</p>
+      <p v-if="!shown.length" class="ms-empty">{{ !query.trim() && empty ? empty : t('common.noResults') }}</p>
     </div>
   </div>
 </template>
@@ -333,6 +351,7 @@ onBeforeUnmount(() => {
   background: var(--surface);
   box-shadow: var(--elev-3);
 }
+.ms.down .ms-list { bottom: auto; top: calc(100% + 4px); }
 .ms-opt {
   display: flex;
   align-items: center;

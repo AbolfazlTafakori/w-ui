@@ -33,10 +33,13 @@ func NewClients(db *gorm.DB, pools *ipam.Pools, log *slog.Logger) *Clients {
 
 // CreateInput describes a new client.
 type CreateInput struct {
-	Name       string `json:"name"`
-	Note       string `json:"note"`
-	Group      string `json:"group"`
-	TelegramID int64  `json:"telegramId"`
+	Name string `json:"name"`
+	Note string `json:"note"`
+	// Groups the customer is in; Group is the one-label form an older
+	// caller sends, taken as a list of one.
+	Group      string   `json:"group"`
+	Groups     []string `json:"groups"`
+	TelegramID int64    `json:"telegramId"`
 	// InterfaceID is the tunnel a customer is placed on. Kept for callers that
 	// sell one server, and it is the first entry of InterfaceIDs when both are
 	// given.
@@ -123,7 +126,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 	client := model.Client{
 		Name:           in.Name,
 		Note:           in.Note,
-		Group:          strings.TrimSpace(in.Group),
+		Group:          firstGroup(groupsOf(in.Groups, in.Group)),
 		TelegramID:     in.TelegramID,
 		Protocol:       iface.Protocol,
 		QuotaBytes:     in.QuotaBytes,
@@ -194,6 +197,9 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&client).Error; err != nil {
 			return fmt.Errorf("create client: %w", err)
+		}
+		if err := setGroups(tx, client.ID, groupsOf(in.Groups, in.Group)); err != nil {
+			return err
 		}
 		for _, f := range ifaces {
 			for i, name := range names {
@@ -681,7 +687,7 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 		q = q.Where("protocol = ?", f.Protocol)
 	}
 	if f.Group != "" {
-		q = q.Where(`"group" = ?`, f.Group)
+		q = q.Where("id IN (SELECT client_id FROM client_groups WHERE name = ?)", f.Group)
 	}
 
 	// Several buckets ticked means any of them, so they are OR-ed together and
@@ -705,7 +711,7 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 		q = q.Where("protocol IN ?", f.Protocols)
 	}
 	if len(f.Groups) > 0 {
-		q = q.Where(`"group" IN ?`, f.Groups)
+		q = q.Where("id IN (SELECT client_id FROM client_groups WHERE name IN ?)", f.Groups)
 	}
 	// A customer is on a server through their devices, so this asks about those
 	// rather than about the customer row.
@@ -750,6 +756,9 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 		Find(&items).Error
 	if err != nil {
 		return nil, fmt.Errorf("service: list clients: %w", err)
+	}
+	if err := fillGroups(s.db.WithContext(ctx), items); err != nil {
+		return nil, err
 	}
 	if err := s.fillOnlineNow(ctx, items); err != nil {
 		return nil, err
@@ -833,6 +842,9 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 	if err := s.fillOnlineNow(ctx, one); err != nil {
 		return nil, err
 	}
+	if err := fillGroups(s.db.WithContext(ctx), one); err != nil {
+		return nil, err
+	}
 	// The operator reading one customer sees each OpenVPN user's password,
 	// so it can be told to them or changed; a WireGuard file has no such
 	// thing, and the list never carries any.
@@ -847,11 +859,14 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 
 // UpdateInput carries the fields an operator may change.
 type UpdateInput struct {
-	Name       *string `json:"name"`
-	Note       *string `json:"note"`
-	Group      *string `json:"group"`
-	TelegramID *int64  `json:"telegramId"`
-	QuotaBytes *uint64 `json:"quotaBytes"`
+	Name *string `json:"name"`
+	Note *string `json:"note"`
+	// Groups replaces the customer's groups; Group, from an older caller,
+	// is a list of one. Absent, they are left alone.
+	Group      *string   `json:"group"`
+	Groups     *[]string `json:"groups"`
+	TelegramID *int64    `json:"telegramId"`
+	QuotaBytes *uint64   `json:"quotaBytes"`
 	// ExpiresAt: absent leaves the date alone, null clears it (no expiry),
 	// a time sets it. A plain pointer could not tell the first two apart.
 	ExpiresAt      OptionalTime        `json:"expiresAt"`
@@ -906,8 +921,15 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 	if in.Note != nil {
 		fields["note"] = *in.Note
 	}
-	if in.Group != nil {
-		fields["group"] = strings.TrimSpace(*in.Group)
+	var groups []string
+	setGroupsToo := false
+	if in.Groups != nil {
+		groups, setGroupsToo = groupsOf(*in.Groups, ""), true
+	} else if in.Group != nil {
+		groups, setGroupsToo = groupsOf(nil, *in.Group), true
+	}
+	if setGroupsToo {
+		fields["group"] = firstGroup(groups)
 	}
 	if in.TelegramID != nil {
 		fields["telegram_id"] = *in.TelegramID
@@ -986,6 +1008,11 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		if err := s.db.WithContext(ctx).Model(&model.Client{}).
 			Where("id = ?", id).Updates(fields).Error; err != nil {
 			return nil, fmt.Errorf("service: update client: %w", err)
+		}
+	}
+	if setGroupsToo {
+		if err := setGroups(s.db.WithContext(ctx), id, groups); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1160,6 +1187,9 @@ func (s *Clients) Delete(ctx context.Context, id uint) error {
 			Where("client_id = ? AND to_ts IS NULL", id).
 			Update("to_ts", now).Error; err != nil {
 			return err
+		}
+		if err := tx.Where("client_id = ?", id).Delete(&model.ClientGroup{}).Error; err != nil {
+			return fmt.Errorf("delete group rows: %w", err)
 		}
 		if err := tx.Where("client_id = ?", id).Delete(&model.Account{}).Error; err != nil {
 			return err

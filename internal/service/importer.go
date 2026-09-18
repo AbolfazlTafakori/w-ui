@@ -43,6 +43,7 @@ type ClientRecord struct {
 	Name           string     `json:"name"`
 	Note           string     `json:"note"`
 	Group          string     `json:"group"`
+	Groups         []string   `json:"groups"`
 	QuotaBytes     uint64     `json:"quotaBytes"`
 	UsedBytes      uint64     `json:"usedBytes"`
 	ExpiresAt      *time.Time `json:"expiresAt"`
@@ -191,6 +192,7 @@ func importToCreate(row ClientRecord, name string, ifaceID uint) CreateInput {
 		Name:            name,
 		Note:            row.Note,
 		Group:           row.Group,
+		Groups:          row.Groups,
 		InterfaceID:     ifaceID,
 		QuotaBytes:      row.QuotaBytes,
 		ExpiresAt:       row.ExpiresAt,
@@ -207,7 +209,6 @@ func importToCreate(row ClientRecord, name string, ifaceID uint) CreateInput {
 func (s *Clients) replaceFromImport(ctx context.Context, id uint, row ClientRecord) error {
 	updates := map[string]any{
 		"note":              row.Note,
-		"group":             row.Group,
 		"quota_bytes":       row.QuotaBytes,
 		"expires_at":        row.ExpiresAt,
 		"rate_bits_per_sec": row.RateBitsPerSec,
@@ -225,7 +226,7 @@ func (s *Clients) replaceFromImport(ctx context.Context, id uint, row ClientReco
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
-	return nil
+	return setGroups(s.db.WithContext(ctx), id, groupsOf(row.Groups, row.Group))
 }
 
 // restoredStatus decides what an imported client should come back as.
@@ -268,6 +269,7 @@ func ToRecord(c model.Client) ClientRecord {
 		Name:            c.Name,
 		Note:            c.Note,
 		Group:           c.Group,
+		Groups:          c.Groups,
 		QuotaBytes:      c.QuotaBytes,
 		UsedBytes:       c.UsedBytes,
 		ExpiresAt:       c.ExpiresAt,

@@ -488,8 +488,9 @@ func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 		}
 	}
 	for _, g := range splitList(in.Groups) {
+		// A group exists as a row of its own or as somebody's membership.
 		var n int64
-		if err := s.db.WithContext(ctx).Model(&model.Group{}).Where("name = ?", g).Count(&n).Error; err != nil {
+		if err := s.db.WithContext(ctx).Raw(`SELECT (SELECT COUNT(*) FROM groups WHERE name = ?) + (SELECT COUNT(*) FROM client_groups WHERE name = ?)`, g, g).Scan(&n).Error; err != nil {
 			return fmt.Errorf("service: check group: %w", err)
 		}
 		if n == 0 {
@@ -871,11 +872,11 @@ func (s *Routing) addressesFor(ctx context.Context, r model.RoutingRule) []netip
 	groups := splitList(r.Groups)
 	switch {
 	case len(ids) > 0 && len(groups) > 0:
-		q = q.Where("accounts.client_id IN ? OR clients.\"group\" IN ?", ids, groups)
+		q = q.Where("accounts.client_id IN ? OR clients.id IN (SELECT client_id FROM client_groups WHERE name IN ?)", ids, groups)
 	case len(ids) > 0:
 		q = q.Where("accounts.client_id IN ?", ids)
 	case len(groups) > 0:
-		q = q.Where("clients.\"group\" IN ?", groups)
+		q = q.Where("clients.id IN (SELECT client_id FROM client_groups WHERE name IN ?)", groups)
 	default:
 		return nil
 	}
@@ -1275,13 +1276,10 @@ func (s *Routing) ruleMatches(
 			}
 		}
 		if !ok && r.Groups != "" {
-			var c model.Client
-			if err := s.db.WithContext(ctx).Select("\"group\"").First(&c, in.ClientID).Error; err == nil {
-				for _, g := range splitList(r.Groups) {
-					if c.Group != "" && c.Group == g {
-						ok = true
-					}
-				}
+			var n int64
+			if err := s.db.WithContext(ctx).Model(&model.ClientGroup{}).
+				Where("client_id = ? AND name IN ?", in.ClientID, splitList(r.Groups)).Count(&n).Error; err == nil && n > 0 {
+				ok = true
 			}
 		}
 		if !ok {

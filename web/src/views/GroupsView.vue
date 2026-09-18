@@ -307,7 +307,7 @@ const memberChoices = computed(() => {
   const { group, mode } = members.value
   const q = memberSearch.value.trim().toLowerCase()
   return allClients.value
-    .filter((c) => (mode === 'add' ? c.group !== group.name : c.group === group.name))
+    .filter((c) => (mode === 'add' ? !(c.groups || []).includes(group.name) : (c.groups || []).includes(group.name)))
     .filter((c) => !q || c.name.toLowerCase().includes(q))
 })
 
@@ -322,10 +322,12 @@ async function applyMembers() {
   if (!chosen.size) return
   busy.value = true
   try {
-    // One endpoint serves both: assigning to a group and assigning to nothing.
+    // One endpoint serves both: adding to this group, and taking out of
+    // this group only -- a customer's other groups are theirs to keep.
     await api.post('/api/groups/assign', {
-      group: mode === 'add' ? group.name : '',
+      group: group.name,
       ids: [...chosen],
+      remove: mode !== 'add',
     })
     notify(tn(mode === 'add' ? 'group.clientsAdded' : 'group.clientsRemoved', chosen.size), 'ok')
     members.value = null
@@ -478,7 +480,7 @@ function viewMembers(g) {
                 @change="toggleMember(c.id)"
               />
               <span class="pick-name">{{ c.name }}</span>
-              <span v-if="c.group" class="tag geekblue">{{ c.group }}</span>
+              <span v-for="g in c.groups || []" :key="g" class="tag geekblue">{{ g }}</span>
               <span class="muted small ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
             </label>
           </li>

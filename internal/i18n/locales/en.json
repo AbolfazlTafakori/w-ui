@@ -322,8 +322,8 @@
   "group.confirmDeleteClients": "Delete every client in this group, with all their devices?",
   "group.applied": "Applied",
   "client.group": "Group",
-  "client.groupPlaceholder": "e.g. reseller-a",
-  "client.groupHint": "Logical label used to bucket related clients (e.g. team, customer, region). Filterable from the toolbar.",
+  "client.groupPlaceholder": "Pick or type a group",
+  "client.groupHint": "Labels to bucket customers by — a reseller, a region, a plan. A customer can be in several. Pick from the ones that exist or type a new name to start one; the groups page and the filter work on them.",
   "action.more": "More",
   "action.filters": "Filters",
   "filter.allGroups": "All groups",
@@ -1709,5 +1709,7 @@
   "client.nUsers": "{n} users",
   "client.oneUser": "1 user",
   "client.show": "Show",
-  "client.noGroupsYet": "No groups yet — type a name and this customer starts one; it is offered here from then on."
+  "client.noGroupsYet": "No groups yet — type a name and this customer starts one; it is offered here from then on.",
+  "client.groups": "Groups",
+  "common.addNamed": "Add “{name}”"
 }

@@ -645,8 +645,8 @@ func (b *Bot) clientInfo(c *model.Client) string {
 	if last != nil {
 		fmt.Fprintf(&sb, "%s: %s\n", b.t("lastOnline"), last.Local().Format("2006-01-02 15:04"))
 	}
-	if c.Group != "" {
-		fmt.Fprintf(&sb, "%s: %s\n", b.t("group"), html.EscapeString(c.Group))
+	if len(c.Groups) > 0 {
+		fmt.Fprintf(&sb, "%s: %s\n", b.t("group"), html.EscapeString(strings.Join(c.Groups, ", ")))
 	}
 	if c.TelegramID != 0 {
 		fmt.Fprintf(&sb, "%s: <code>%d</code>\n", b.t("tgID"), c.TelegramID)

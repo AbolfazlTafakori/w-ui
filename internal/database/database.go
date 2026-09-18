@@ -100,6 +100,16 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(model.AllModels()...); err != nil {
 		return fmt.Errorf("database: migrate: %w", err)
 	}
+	// A customer used to carry one group as a column; they now carry any
+	// number as rows. The column's label becomes the first row, once, for
+	// every customer who has the label and no rows yet.
+	if err := db.Exec(`
+		INSERT INTO client_groups (client_id, name)
+		SELECT id, "group" FROM clients
+		WHERE COALESCE("group", '') <> ''
+		  AND NOT EXISTS (SELECT 1 FROM client_groups g WHERE g.client_id = clients.id)`).Error; err != nil {
+		return fmt.Errorf("database: carry groups over: %w", err)
+	}
 	return nil
 }
 

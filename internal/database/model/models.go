@@ -209,7 +209,12 @@ type Client struct {
 	// Group is a free-text label, not a foreign key. A group has no identity of
 	// its own: the groups page is a GROUP BY over this column, so creating one
 	// is typing a name and deleting one is clearing it from its members.
-	Group string `gorm:"size:64;index" json:"group"`
+	//
+	// A customer can be in several groups -- a reseller's and a region's,
+	// say -- kept in ClientGroup rows. Group here is the first of them,
+	// kept for anything that still reads one label; Groups is the list.
+	Group  string   `gorm:"size:64;index" json:"group"`
+	Groups []string `gorm:"-" json:"groups"`
 	// TelegramID is the customer's Telegram account, for the bot to answer
 	// them about their own plan. Zero is nobody.
 	TelegramID int64 `gorm:"index" json:"telegramId"`
@@ -424,6 +429,14 @@ type Group struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// ClientGroup is one customer's membership of one group. A customer in
+// three groups has three rows; a group with nobody in it has none, and
+// lives on as a Group row.
+type ClientGroup struct {
+	ClientID uint   `gorm:"primaryKey;autoIncrement:false" json:"clientId"`
+	Name     string `gorm:"primaryKey;size:64" json:"name"`
+}
+
 // AccountEndpoint is one public address an account has connected from.
 //
 // A credential is sold to one person. Two people using it at once show up as
@@ -453,6 +466,7 @@ func AllModels() []any {
 		&Admin{},
 		&APIToken{},
 		&Group{},
+		&ClientGroup{},
 		&AccountEndpoint{},
 		&Outbound{},
 		&OutboundSub{},

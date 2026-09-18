@@ -13,7 +13,6 @@ import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
 import HelpTip from './HelpTip.vue'
-import AutoComplete from './AutoComplete.vue'
 
 const props = defineProps({ interfaces: { type: Array, required: true } })
 const emit = defineEmits(['close', 'submit'])
@@ -33,7 +32,7 @@ const form = ref({
   rateMbit: '',
   startOnFirstUse: false,
   resetCycle: 'none',
-  group: '',
+  groups: [],
   enabled: true,
 })
 const busy = ref(false)
@@ -57,6 +56,7 @@ onMounted(async () => {
   }
 })
 const groupNames = ref([])
+const groupOptions = computed(() => groupNames.value.map((g) => ({ value: g, label: g })))
 onMounted(async () => {
   try {
     groupNames.value = await api.groupNames()
@@ -133,7 +133,7 @@ async function submit() {
       startOnFirstUse: form.value.startOnFirstUse,
       durationDays: form.value.startOnFirstUse ? planDays() : 0,
       resetCycle: form.value.resetCycle,
-      group: form.value.group.trim(),
+      groups: form.value.groups,
       enabled: form.value.enabled,
       deviceNames: [],
     })
@@ -254,8 +254,8 @@ async function submit() {
             </div>
             <div class="acol12">
               <div class="aform-item">
-                <label class="aform-label" for="bf-group">{{ t('client.group') }} <HelpTip :text="t('client.groupHint')" /></label>
-                <AutoComplete id="bf-group" v-model="form.group" :options="groupNames" :empty="t('client.noGroupsYet')" :placeholder="t('client.groupPlaceholder')" maxlength="64" />
+                <label class="aform-label">{{ t('client.groups') }} <HelpTip :text="t('client.groupHint')" /></label>
+                <MultiSelect v-model="form.groups" :options="groupOptions" creatable direction="down" :empty="t('client.noGroupsYet')" :placeholder="t('client.groupPlaceholder')" />
               </div>
             </div>
           </div>

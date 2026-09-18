@@ -981,7 +981,7 @@ async function submitForm(input) {
                 <th style="width: 80px">{{ t('table.enabled') }}</th>
                 <th style="width: 90px">{{ t('status.online') }}</th>
                 <th style="width: 220px">{{ t('client.menu.client') }}</th>
-                <th v-if="hasGroups" style="width: 130px">{{ t('client.group') }}</th>
+                <th v-if="hasGroups" style="width: 130px">{{ t('client.groups') }}</th>
                 <th style="width: 170px">{{ t('client.attachedInbounds') }}</th>
                 <th style="width: 300px">{{ t('client.traffic') }}</th>
                 <th class="center" style="width: 216px">{{ t('client.speed') }}</th>
@@ -1031,7 +1031,9 @@ async function submitForm(input) {
                   </div>
                 </td>
                 <td v-if="hasGroups">
-                  <span v-if="c.group" class="atag geekblue" :style="{ margin: 0, cursor: 'pointer', opacity: groupFilter === c.group ? 0.6 : 1 }" @click="groupFilter = c.group">{{ c.group }}</span>
+                  <template v-if="(c.groups || []).length">
+                    <span v-for="g in c.groups" :key="g" class="atag geekblue" :style="{ margin: '0 4px 2px 0', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" @click="groupFilter = g">{{ g }}</span>
+                  </template>
                   <span v-else class="cell-empty">—</span>
                 </td>
                 <td>

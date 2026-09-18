@@ -225,9 +225,9 @@ const expiryText = computed(() => {
               <td>{{ t('client.telegramId') }}</td>
               <td><span class="atag info-large-tag ltr">{{ c.telegramId }}</span></td>
             </tr>
-            <tr v-if="c.group">
-              <td>{{ t('client.group') }}</td>
-              <td><span class="atag geekblue">{{ c.group }}</span></td>
+            <tr v-if="(c.groups || []).length">
+              <td>{{ t('client.groups') }}</td>
+              <td><span v-for="g in c.groups" :key="g" class="atag geekblue">{{ g }}</span></td>
             </tr>
             <tr v-if="c.note">
               <td>{{ t('client.comment') }}</td>

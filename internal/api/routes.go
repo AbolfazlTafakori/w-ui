@@ -256,7 +256,7 @@ func (s *Server) routes() []Route {
 			Summary: "Rename a group.", Body: `{"from":"reseller-a","to":"reseller-north"}`,
 			handler: s.handleRenameGroup},
 		{Method: "POST", Path: "/api/groups/assign", Group: "Groups", Auth: true,
-			Summary: "Put customers into a group.", Body: `{"group":"reseller-a","ids":[1,2]}`,
+			Summary: "Add customers to a group, or with remove take them out of it; their other groups stay.", Body: `{"group":"reseller-a","ids":[1,2],"remove":false}`,
 			handler: s.handleAssignGroup},
 		{Method: "POST", Path: "/api/groups/action", Group: "Groups", Auth: true,
 			Summary: "Act on every member of a group.",

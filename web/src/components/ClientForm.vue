@@ -15,7 +15,6 @@ import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
 import HelpTip from './HelpTip.vue'
-import AutoComplete from './AutoComplete.vue'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -64,7 +63,7 @@ const form = ref(
     ? {
         name: props.client.name,
         note: props.client.note || '',
-        group: props.client.group || '',
+        groups: [...(props.client.groups || (props.client.group ? [props.client.group] : []))],
         telegramId: props.client.telegramId || 0,
         // Every server this customer already reaches, from their accounts.
         interfaceIds: [...new Set((props.client.accounts || []).map((a) => a.interfaceId))],
@@ -89,7 +88,7 @@ const form = ref(
     : {
         name: '',
         note: '',
-        group: '',
+        groups: [],
         telegramId: '',
         interfaceIds: props.interfaces[0] ? [props.interfaces[0].id] : [],
         quota: '',
@@ -139,6 +138,7 @@ onMounted(async () => {
 // Existing names are offered as suggestions rather than a fixed list: a group
 // comes into being by being typed, so the field must stay free text.
 const groupNames = ref([])
+const groupOptions = computed(() => groupNames.value.map((g) => ({ value: g, label: g })))
 onMounted(async () => {
   try {
     groupNames.value = await api.groupNames()
@@ -289,7 +289,7 @@ async function submit() {
     await emit('submit', {
       name: form.value.name.trim(),
       note: form.value.note.trim(),
-      group: form.value.group.trim(),
+      groups: form.value.groups,
       telegramId: Number(form.value.telegramId) || 0,
       interfaceIds: form.value.interfaceIds,
       quotaBytes: unitToBytes(form.value.quota, form.value.quotaUnit),
@@ -412,8 +412,8 @@ async function submit() {
               </div>
               <div class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="cf-group">{{ t('client.group') }} <HelpTip :text="t('client.groupHint')" /></label>
-                  <AutoComplete id="cf-group" v-model="form.group" :options="groupNames" :empty="t('client.noGroupsYet')" :placeholder="t('client.groupPlaceholder')" />
+                  <label class="aform-label">{{ t('client.groups') }} <HelpTip :text="t('client.groupHint')" /></label>
+                  <MultiSelect v-model="form.groups" :options="groupOptions" creatable direction="down" :empty="t('client.noGroupsYet')" :placeholder="t('client.groupPlaceholder')" />
                 </div>
               </div>
             </div>

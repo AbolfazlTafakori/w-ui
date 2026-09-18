@@ -34,6 +34,12 @@ func TestTheFilterDrawerActuallyNarrowsTheList(t *testing.T) {
 		if err := db.Create(&seed[i]).Error; err != nil {
 			t.Fatalf("seed %s: %v", seed[i].Name, err)
 		}
+		// The label is a membership row now; the column is only its echo.
+		if seed[i].Group != "" {
+			if err := db.Create(&model.ClientGroup{ClientID: seed[i].ID, Name: seed[i].Group}).Error; err != nil {
+				t.Fatalf("group %s: %v", seed[i].Name, err)
+			}
+		}
 	}
 
 	names := func(f ListFilter) []string {
