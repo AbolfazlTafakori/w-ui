@@ -290,8 +290,6 @@ async function submit() {
   .acol6 { grid-column: span 12; }
   .amodal.w720 { width: calc(100vw - 16px); padding: 16px; max-height: calc(100dvh - 32px); }
   .amodal-backdrop { padding: 16px 8px; align-items: flex-start; }
-  .cf-body { scrollbar-width: none; }
-  .cf-body::-webkit-scrollbar { display: none; }
 }
 .aform-label.required::before { content: '*'; margin-inline-end: 4px; color: var(--bad); }
 .ainput.invalid, .ainput.invalid:hover { border-color: var(--bad); }

@@ -549,10 +549,6 @@ async function submit() {
   .amodal.w720 { width: calc(100vw - 16px); padding: 16px; }
   .amodal-backdrop { padding: 16px 8px; align-items: flex-start; }
   .amodal.w720 { max-height: calc(100dvh - 32px); }
-  /* It scrolls, but shows no bar: a phone's thumb needs none, and the
-     bar was sitting on the controls. */
-  .cf-body { scrollbar-width: none; padding-inline-end: 0; }
-  .cf-body::-webkit-scrollbar { display: none; }
 }
 
 .aform-label.required::before { content: '*'; margin-inline-end: 4px; color: var(--bad); }
