@@ -11,6 +11,9 @@ const props = defineProps({
   options: { type: Array, default: () => [] },
   placeholder: { type: String, default: '' },
   id: { type: String, default: '' },
+  // What the empty list says, so a box with nothing to offer yet still
+  // tells the reader it is a list and how it fills.
+  empty: { type: String, default: '' },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -50,6 +53,11 @@ function onKey(e) {
     open.value = false
   }
 }
+// The caret opens and closes the list, as a select's does.
+function toggle() {
+  open.value = !open.value
+  if (open.value) root.value?.querySelector('input')?.focus()
+}
 function onDoc(e) {
   if (root.value && !root.value.contains(e.target)) open.value = false
 }
@@ -72,8 +80,12 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDoc))
         @keydown="onKey"
       />
       <button v-if="modelValue" type="button" class="acomplete-clear" :aria-label="'×'" @mousedown.prevent @click="pick('')"><AntIcon name="CloseCircleFilled" /></button>
+      <button type="button" class="acomplete-caret" :class="{ open }" tabindex="-1" aria-hidden="true" @mousedown.prevent @click="toggle"><AntIcon name="DownOutlined" /></button>
     </label>
-    <div v-if="open && matches.length" class="acomplete-menu" role="listbox">
+    <div v-if="open && !matches.length && empty" class="acomplete-menu" role="listbox">
+      <div class="acomplete-empty">{{ empty }}</div>
+    </div>
+    <div v-else-if="open && matches.length" class="acomplete-menu" role="listbox">
       <div
         v-for="(o, i) in matches"
         :key="o"
@@ -102,6 +114,19 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDoc))
   cursor: pointer;
 }
 .acomplete-clear:hover { color: var(--ink-2); }
+.acomplete-caret {
+  display: inline-flex;
+  margin-inline-start: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.acomplete-caret.open { transform: rotate(180deg); }
+.acomplete-empty { padding: 8px 12px; font-size: 13px; color: var(--muted); }
 /* Ant's dropdown: 4px under the box, 4px padding, 8px radius, items on a
    32px line with the hovered one tinted and the chosen one in bold. */
 .acomplete-menu {

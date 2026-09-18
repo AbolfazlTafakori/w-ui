@@ -255,7 +255,7 @@ async function submit() {
             <div class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="bf-group">{{ t('client.group') }} <HelpTip :text="t('client.groupHint')" /></label>
-                <AutoComplete id="bf-group" v-model="form.group" :options="groupNames" :placeholder="t('client.groupPlaceholder')" maxlength="64" />
+                <AutoComplete id="bf-group" v-model="form.group" :options="groupNames" :empty="t('client.noGroupsYet')" :placeholder="t('client.groupPlaceholder')" maxlength="64" />
               </div>
             </div>
           </div>
@@ -279,7 +279,10 @@ async function submit() {
 
 <style scoped>
 .amodal.w720 { width: min(720px, calc(100vw - 32px)); }
-.cf-body { overflow-x: hidden; }
+/* The rows pull 8px past the body's edges for their gutter; the body
+   is widened by the same so a scroll container has nothing to scroll
+   sideways to, and the outer labels are never clipped. */
+.cf-body { overflow-x: hidden; padding-inline: 8px; margin-inline: -8px; }
 .cf-form { padding-top: 4px; }
 .arow16 { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); margin-inline: -8px; }
 .arow16 > [class^='acol'] { padding-inline: 8px; min-width: 0; }

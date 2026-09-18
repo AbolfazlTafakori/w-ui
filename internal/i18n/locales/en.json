@@ -1708,5 +1708,6 @@
   "client.batchCreate": "Create {n}",
   "client.nUsers": "{n} users",
   "client.oneUser": "1 user",
-  "client.show": "Show"
+  "client.show": "Show",
+  "client.noGroupsYet": "No groups yet — type a name and this customer starts one; it is offered here from then on."
 }

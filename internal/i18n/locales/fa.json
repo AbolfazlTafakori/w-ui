@@ -1708,5 +1708,6 @@
   "client.batchCreate": "ساخت {n} مشتری",
   "client.nUsers": "{n} کاربر",
   "client.oneUser": "۱ کاربر",
-  "client.show": "نمایش"
+  "client.show": "نمایش",
+  "client.noGroupsYet": "هنوز گروهی نیست — یک اسم بنویس تا این مشتری اولین عضوش شود؛ از آن به بعد اینجا پیشنهاد می‌شود."
 }
