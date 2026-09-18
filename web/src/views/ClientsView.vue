@@ -1031,8 +1031,12 @@ async function submitForm(input) {
                   </div>
                 </td>
                 <td v-if="hasGroups">
+                  <!-- As the inbounds cell: the first group as a chip, the rest
+                       folded into a +N that names them on hover, so a customer
+                       in five groups is still one row high. -->
                   <template v-if="(c.groups || []).length">
-                    <span v-for="g in c.groups" :key="g" class="atag geekblue" :style="{ margin: '0 4px 2px 0', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" @click="groupFilter = g">{{ g }}</span>
+                    <span v-for="g in c.groups.slice(0, INBOUND_CHIP_LIMIT)" :key="g" class="atag geekblue" :style="{ margin: '2px', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" :title="g" @click="groupFilter = g">{{ g }}</span>
+                    <span v-if="c.groups.length > INBOUND_CHIP_LIMIT" class="atag default" style="margin: 2px; cursor: pointer" :title="c.groups.slice(INBOUND_CHIP_LIMIT).join(', ')" @click="groupFilter = c.groups[INBOUND_CHIP_LIMIT]">+{{ c.groups.length - INBOUND_CHIP_LIMIT }}</span>
                   </template>
                   <span v-else class="cell-empty">—</span>
                 </td>
