@@ -711,10 +711,16 @@ func buildServer(
 	// The subscription service sits ahead of the frontend so it can answer on
 	// whatever path the operator configured, and is checked before the
 	// single-page fallback swallows the request as a route.
-	handler := apiSrv.SubscriptionRouter(app)
+	// With the service on a listener of its own, the panel's leaves
+	// subscriptions to it -- the same condition run() starts it on.
+	if sc, err := subs.Settings(context.Background()); err == nil && sc.Port > 0 &&
+		net.JoinHostPort(sc.Listen, strconv.Itoa(sc.Port)) != cfg.Listen {
+		apiSrv.SubscriptionOnOwnListener(true)
+	}
+	handler := apiSrv.SubscriptionRouter(app, false)
 
 	// The subscription service alone, for a listener of its own.
-	subOnly := api.LogRequests(log, api.SecureHeaders(apiSrv.SubscriptionRouter(http.NotFoundHandler())))
+	subOnly := api.LogRequests(log, api.SecureHeaders(apiSrv.SubscriptionRouter(http.NotFoundHandler(), true)))
 
 	// Nothing below TLS 1.2 is offered. The clients that need less are
 	// older than any browser an operator will be signing in from.

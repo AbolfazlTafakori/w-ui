@@ -49,7 +49,7 @@ Every look keeps the same content and the same controls — the theme toggle, th
 
 ## The link
 
-`https://host:port/sub/TOKEN`. The token is per customer and can be rotated from the client's row; the old link stops working at once. When the subscription service sits on its own port, the link carries that port and scheme.
+`https://host:port/sub/TOKEN`. The token is per customer and can be rotated from the client's row; the old link stops working at once. When the subscription service sits on its own port, the link carries that port and scheme — and **only that port answers**: the panel's port stops serving subscriptions, as the classic panel's does, so a customer's app never touches the panel's listener. **Listen Domain**, when set, is the only host the service answers to (any other name gets a 404) and the host the link is built with; leave it blank to answer on every name and IP. **Reverse Proxy URI** overrides both for the link when the service is reached through a proxy.
 
 ## Always current
 

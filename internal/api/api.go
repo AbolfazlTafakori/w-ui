@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -30,46 +31,49 @@ import (
 
 // Server holds the API's dependencies.
 type Server struct {
-	db        *gorm.DB
-	clients   *service.Clients
-	ifaces    *service.Interfaces
-	catalog   *i18n.Catalog
-	enforcer  enforce.Enforcer
-	settings  *service.Settings
-	nodes     *service.Nodes
-	prober    *nodes.Prober
-	throttle  *throttle
-	notifier  *notify.Notifier
-	backups   *backup.Service
-	shaper    shaper.Shaper
-	jwtSecret []byte
-	log       *slog.Logger
-	version   string
-	listen    string
-	basePath  string
-	tlsCert   string
-	tlsKey    string
-	proxies   string
-	dbDriver  string
-	dbSource  string
-	sys       *sysinfo.Collector
-	rec       *reconciler.Reconciler
-	outbounds *service.Outbounds
-	routing   *service.Routing
-	hosts     *service.Hosts
-	router    *routing.Applier
-	subs      *service.Subscriptions
-	subMiss   *subMisses
-	subHub    *subHub
-	totpMu    sync.Mutex
-	totpUsed  map[uint]usedCode
-	previews  subPreviews
-	obSubs    *service.OutboundSubs
-	balancers *service.Balancers
-	providers *service.Providers
-	audit     *service.Audit
-	pool      *backend.Pool
-	nodeSync  *service.NodeSync
+	// subOwnListener is set when the subscription service is serving on
+	// a listener of its own, so the panel's stops answering subscriptions.
+	subOwnListener atomic.Bool
+	db             *gorm.DB
+	clients        *service.Clients
+	ifaces         *service.Interfaces
+	catalog        *i18n.Catalog
+	enforcer       enforce.Enforcer
+	settings       *service.Settings
+	nodes          *service.Nodes
+	prober         *nodes.Prober
+	throttle       *throttle
+	notifier       *notify.Notifier
+	backups        *backup.Service
+	shaper         shaper.Shaper
+	jwtSecret      []byte
+	log            *slog.Logger
+	version        string
+	listen         string
+	basePath       string
+	tlsCert        string
+	tlsKey         string
+	proxies        string
+	dbDriver       string
+	dbSource       string
+	sys            *sysinfo.Collector
+	rec            *reconciler.Reconciler
+	outbounds      *service.Outbounds
+	routing        *service.Routing
+	hosts          *service.Hosts
+	router         *routing.Applier
+	subs           *service.Subscriptions
+	subMiss        *subMisses
+	subHub         *subHub
+	totpMu         sync.Mutex
+	totpUsed       map[uint]usedCode
+	previews       subPreviews
+	obSubs         *service.OutboundSubs
+	balancers      *service.Balancers
+	providers      *service.Providers
+	audit          *service.Audit
+	pool           *backend.Pool
+	nodeSync       *service.NodeSync
 	// localNodeID is which node this panel is, for the state another panel
 	// pushes here.
 	localNodeID uint
@@ -309,3 +313,7 @@ func newNodeSync(o Options) *service.NodeSync {
 	}
 	return ns
 }
+
+// SubscriptionOnOwnListener tells the panel's router that the subscription
+// service answers on a listener of its own, and the panel's need not.
+func (s *Server) SubscriptionOnOwnListener(on bool) { s.subOwnListener.Store(on) }

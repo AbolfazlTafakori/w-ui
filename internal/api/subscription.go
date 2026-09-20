@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -199,7 +200,14 @@ func (s *Server) handleRotateSubscription(w http.ResponseWriter, r *http.Request
 // restart is exactly what they are trying to avoid by having a settings page.
 // Checking here costs one string comparison per request and lets the change
 // take effect on the next one.
-func (s *Server) SubscriptionRouter(next http.Handler) http.Handler {
+//
+// own says this router is the subscription service's own listener. When
+// the service has one, the panel's listener no longer answers
+// subscriptions at all -- as the classic panel's does not -- so a link
+// that names the panel's port stops working the day the service moves to
+// its own, rather than quietly keeping two doors open. The page previews
+// and the font stay on the panel, where the settings page opens them.
+func (s *Server) SubscriptionRouter(next http.Handler, own bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only GET and HEAD. A subscription is a read, and answering a POST
 		// here would give a cross-site form somewhere a way to reach it.
@@ -227,6 +235,25 @@ func (s *Server) SubscriptionRouter(next http.Handler) http.Handler {
 		if !strings.HasPrefix(r.URL.Path, cfg.Path) {
 			next.ServeHTTP(w, r)
 			return
+		}
+		if !own && s.subOwnListener.Load() {
+			// The service answers on its own port now; the panel's says
+			// nothing about it, as it says nothing about any other path.
+			next.ServeHTTP(w, r)
+			return
+		}
+		// A listen domain, when set, is the only name the service answers
+		// to: asked for by any other host it is not there. The classic
+		// panel's sub domain works the same way.
+		if domain := service.ListenDomain(cfg.Host); domain != "" {
+			host := r.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if !strings.EqualFold(strings.TrimSuffix(host, "."), domain) {
+				http.NotFound(w, r)
+				return
+			}
 		}
 
 		s.handleSubscription(w, r)

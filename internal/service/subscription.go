@@ -313,12 +313,53 @@ func (s *Subscriptions) LinkFor(ctx context.Context, token, requestHost string) 
 	}
 	// A subscription service on its own port is reached on that port, as
 	// the classic panel's is: the link says so, or the customer's app knocks on the
-	// panel's instead. A host the operator typed with a port of its own
-	// already says where it lives.
+	// panel's instead -- and the panel no longer answers there. The port
+	// the request came in on, the panel's, is replaced; a host the
+	// operator typed with a port of its own already says where it lives.
 	if cfg.Port > 0 {
+		if cfg.Host == "" {
+			host = stripPort(host)
+		}
 		host = withPort(host, cfg.Port)
 	}
 	return scheme + host + cfg.Path + token, nil
+}
+
+// stripPort takes the port off a host that names one.
+func stripPort(host string) string {
+	prefix := ""
+	if i := strings.Index(host, "://"); i >= 0 {
+		prefix, host = host[:i+3], host[i+3:]
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		if strings.Contains(h, ":") {
+			h = "[" + h + "]"
+		}
+		return prefix + h
+	}
+	return prefix + host
+}
+
+// ListenDomain is the bare domain in the Host setting -- what the
+// subscription service answers to -- or "" when the setting is empty or
+// names an address rather than a domain. A scheme or port typed with it is
+// for the link and is not part of the name.
+func ListenDomain(host string) string {
+	host = strings.TrimSpace(strings.TrimRight(host, "/"))
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.Index(host, "/"); i >= 0 {
+		host = host[:i]
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" || net.ParseIP(host) != nil {
+		return ""
+	}
+	return strings.ToLower(host)
 }
 
 // withPort puts a port on a host that names none.
