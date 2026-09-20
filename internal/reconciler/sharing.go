@@ -179,6 +179,7 @@ func (r *Reconciler) Sharing(ctx context.Context) ([]SharingReport, error) {
 		DeviceName string
 		Addr       string
 		FirstSeen  time.Time
+		LastSeen   time.Time
 	}
 
 	// Raw SQL because this is a three-way join with a window filter, and
@@ -189,7 +190,8 @@ func (r *Reconciler) Sharing(ctx context.Context) ([]SharingReport, error) {
 		       c.name         AS client_name,
 		       a.device_name  AS device_name,
 		       e.addr         AS addr,
-		       e.first_seen   AS first_seen
+		       e.first_seen   AS first_seen,
+		       e.last_seen    AS last_seen
 		FROM account_endpoints e
 		JOIN accounts a ON a.id = e.account_id
 		JOIN clients  c ON c.id = a.client_id
@@ -206,9 +208,22 @@ func (r *Reconciler) Sharing(ctx context.Context) ([]SharingReport, error) {
 		return nil, fmt.Errorf("sharing report: %w", err)
 	}
 
+	// Behind a relay the addresses are one host and many ports, and a port
+	// is a flow, not a device: every reconnect -- a phone waking, a walk
+	// from wifi to data -- is a new one. Three ports in ten minutes is one
+	// device three times over unless the flows were alive together. So
+	// for those the report counts only flows that overlapped in time, and
+	// says nothing of an account whose flows never did.
+	spans := map[uint][]span{}
+	for _, row := range rows {
+		spans[row.AccountID] = append(spans[row.AccountID], span{row.Addr, row.FirstSeen, row.LastSeen})
+	}
 	byAccount := map[uint]*SharingReport{}
 	var order []uint
 	for _, row := range rows {
+		if ports := spans[row.AccountID]; sameHost(ports) && concurrent(ports) < sharingThreshold {
+			continue
+		}
 		rep, ok := byAccount[row.AccountID]
 		if !ok {
 			rep = &SharingReport{
@@ -232,6 +247,60 @@ func (r *Reconciler) Sharing(ctx context.Context) ([]SharingReport, error) {
 		out = append(out, *byAccount[id])
 	}
 	return out, nil
+}
+
+// span is when one address was in use.
+type span struct {
+	addr        string
+	first, last time.Time
+}
+
+// sameHost reports whether every address is the same host on different
+// ports -- what a relay in front of the server looks like.
+func sameHost(spans []span) bool {
+	if len(spans) < 2 {
+		return false
+	}
+	host := ""
+	for _, s := range spans {
+		h, _, err := net.SplitHostPort(s.addr)
+		if err != nil {
+			return false
+		}
+		if host == "" {
+			host = h
+		} else if h != host {
+			return false
+		}
+	}
+	return true
+}
+
+// concurrent is the most addresses that were in use at one moment: a
+// sweep over their first and last sightings.
+func concurrent(spans []span) int {
+	type edge struct {
+		at    time.Time
+		delta int
+	}
+	var edges []edge
+	for _, s := range spans {
+		edges = append(edges, edge{s.first, +1}, edge{s.last, -1})
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].at.Equal(edges[j].at) {
+			return edges[i].delta < edges[j].delta // an end before a start at the same instant
+		}
+		return edges[i].at.Before(edges[j].at)
+	})
+	n, most := 0, 0
+	for _, e := range edges {
+		n += e.delta
+		if n > most {
+			most = n
+		}
+	}
+	return most
 }
 
 // pruneEndpoints drops addresses nobody has used for a long time.

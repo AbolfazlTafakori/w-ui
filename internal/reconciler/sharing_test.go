@@ -344,3 +344,22 @@ func TestARelayIsRecognisedByTheCustomersItCarries(t *testing.T) {
 		t.Fatal("two customers from one address is a household")
 	}
 }
+
+// Behind a relay a port is a flow, not a device: three ports that were
+// never alive together are one device reconnecting, and no report; three
+// that overlapped are three devices.
+func TestRelayPortsCountOnlyWhenTheyOverlap(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	m := func(n int) time.Time { return t0.Add(time.Duration(n) * time.Minute) }
+	one := []span{{"127.0.0.1:1", m(0), m(2)}, {"127.0.0.1:2", m(3), m(5)}, {"127.0.0.1:3", m(6), m(8)}}
+	if !sameHost(one) || concurrent(one) != 1 {
+		t.Fatalf("one device reconnecting: sameHost %v concurrent %d", sameHost(one), concurrent(one))
+	}
+	three := []span{{"127.0.0.1:1", m(0), m(9)}, {"127.0.0.1:2", m(1), m(9)}, {"127.0.0.1:3", m(2), m(9)}}
+	if concurrent(three) != 3 {
+		t.Fatalf("three at once: %d", concurrent(three))
+	}
+	if sameHost([]span{{"1.2.3.4", m(0), m(1)}, {"5.6.7.8", m(0), m(1)}}) {
+		t.Fatal("different hosts are not a relay")
+	}
+}
