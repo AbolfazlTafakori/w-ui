@@ -432,6 +432,11 @@ func humanBytes(n uint64) string {
 		div *= unit
 		exp++
 	}
+	// Two decimals from GiB up, so a figure moves by about ten megabytes
+	// rather than a hundred; one below, where a tenth is already fine.
+	if exp >= 2 {
+		return fmt.Sprintf("%.2f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+	}
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
@@ -659,7 +664,7 @@ a.row-title:hover { text-decoration: underline; }
    protocol and a file per user) scrolls inside itself. The language and
    theme menus at the head of the page still open downward. */
 .menu { position: absolute; top: calc(100% + 4px); inset-inline-start: 50%; transform: translateX(-50%); z-index: 6; display: none; min-width: 200px; max-height: 420px; overflow-y: auto; padding: 4px; border-radius: 8px; background: var(--surface-3); box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); text-align: start; }
-.app .menu { top: auto; bottom: calc(100% + 4px); box-shadow: 0 -6px 16px rgba(0,0,0,.08), 0 -3px 6px -4px rgba(0,0,0,.12), 0 -9px 28px 8px rgba(0,0,0,.05); }
+.apps .app .menu { top: auto; bottom: calc(100% + 4px); box-shadow: 0 -6px 16px rgba(0,0,0,.08), 0 -3px 6px -4px rgba(0,0,0,.12), 0 -9px 28px 8px rgba(0,0,0,.05); }
 .menu.open { display: block; }
 .menu a, .menu button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 5px 12px; border: 0; border-radius: 4px; background: none; color: var(--ink); font: inherit; font-size: 14px; line-height: 22px; text-decoration: none; cursor: pointer; text-align: start; }
 .menu a:hover, .menu button:hover { background: var(--surface-2); }
@@ -890,10 +895,12 @@ a.row-title:hover { text-decoration: underline; }
 .hero-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .hero-live { display: inline-flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: 0; color: var(--ok); }
 .hero-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: blink 1.4s ease-in-out infinite; }
-.hero-live.off, .hero-live.off i { color: var(--faint); background: var(--faint); animation: none; }
+.hero-live.off { color: var(--faint); }
+.hero-live.off i { background: var(--faint); animation: none; }
 .app-fixed { flex: none; }
 .tag-config { margin: 0; font-weight: 600; letter-spacing: .3px; }
-.hero-live.idle, .hero-live.idle i { color: var(--muted); background: var(--muted); animation: none; }
+.hero-live.idle { color: var(--muted); }
+.hero-live.idle i { background: var(--muted); animation: none; }
 @keyframes blink { 50% { opacity: .35; } }
 .hero h1 { margin: 2px 0 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
 .hero p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }

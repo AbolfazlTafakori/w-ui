@@ -78,7 +78,7 @@ func TestHumanBytes(t *testing.T) {
 	cases := map[uint64]string{
 		0: "0 B", 512: "512 B", 1024: "1.0 KiB",
 		1536: "1.5 KiB", 1048576: "1.0 MiB", 5242880: "5.0 MiB",
-		1073741824: "1.0 GiB",
+		1073741824: "1.00 GiB", 23407191982: "21.80 GiB",
 	}
 	for in, want := range cases {
 		if got := humanBytes(in); got != want {

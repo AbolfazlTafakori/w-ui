@@ -14,7 +14,9 @@ export function bytes(n, locale = 'en') {
     scaled /= 1024
     i++
   }
-  const digits = scaled < 10 && i > 0 ? 2 : scaled < 100 && i > 0 ? 1 : 0
+  // Two decimals from GB up, so a figure moves by about ten megabytes;
+  // below that, precision scales with the size.
+  const digits = i >= 3 ? 2 : scaled < 10 && i > 0 ? 2 : scaled < 100 && i > 0 ? 1 : 0
   return `${scaled.toLocaleString(locale, {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
