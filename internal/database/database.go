@@ -110,6 +110,21 @@ func Migrate(db *gorm.DB) error {
 		  AND NOT EXISTS (SELECT 1 FROM client_groups g WHERE g.client_id = clients.id)`).Error; err != nil {
 		return fmt.Errorf("database: carry groups over: %w", err)
 	}
+	// The per-tunnel counters once summed the tunnels' own counts, which
+	// include their encryption overhead and ran a few percent above the
+	// customer's total. Where they still add up to more than the total,
+	// they are scaled down to it, keeping each file's share.
+	if err := db.Exec(`
+		UPDATE accounts SET
+		  up_bytes   = CAST(up_bytes   * (SELECT CAST(c.used_bytes AS REAL) FROM clients c WHERE c.id = accounts.client_id)
+		                / (SELECT SUM(a2.up_bytes + a2.down_bytes) FROM accounts a2 WHERE a2.client_id = accounts.client_id) AS BIGINT),
+		  down_bytes = CAST(down_bytes * (SELECT CAST(c.used_bytes AS REAL) FROM clients c WHERE c.id = accounts.client_id)
+		                / (SELECT SUM(a2.up_bytes + a2.down_bytes) FROM accounts a2 WHERE a2.client_id = accounts.client_id) AS BIGINT)
+		WHERE (SELECT SUM(a2.up_bytes + a2.down_bytes) FROM accounts a2 WHERE a2.client_id = accounts.client_id)
+		      > (SELECT c.used_bytes FROM clients c WHERE c.id = accounts.client_id)
+		  AND (SELECT c.used_bytes FROM clients c WHERE c.id = accounts.client_id) > 0`).Error; err != nil {
+		return fmt.Errorf("database: rescale tunnel counters: %w", err)
+	}
 	return nil
 }
 

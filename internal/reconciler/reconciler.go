@@ -295,6 +295,14 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 
 	var total uint64
 	now := time.Now().UTC()
+	// What each customer used this tick, by the kernel's count, for sharing
+	// out among their files below.
+	billed := map[uint]usageDelta{}
+	for _, d := range drained {
+		if id, ok := clientIDFromKey(d.Key); ok && d.Bytes > 0 {
+			billed[id] = usageDelta{Bytes: d.Bytes, Up: d.Up, Down: d.Down}
+		}
+	}
 	for _, d := range drained {
 		if d.Bytes == 0 {
 			continue // idle clients are not worth a write
@@ -308,6 +316,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	// Handshakes and endpoints come from the drivers, not from nftables, and
 	// are what the online indicator and the sharing detector read.
 	seen := map[uint]string{}
+	grown := map[uint]usageDelta{} // account -> what its tunnel counted this tick
 	metered := map[uint]bool{}
 	allRead := true
 	for ifaceID, b := range r.pool.All() {
@@ -321,7 +330,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 		for _, s := range stats {
 			metered[s.AccountID] = true
 			if up, down, ok := r.meter.step(s.AccountID, s.RX, s.TX); ok {
-				r.writer.submit(trafficUpdate{AccountID: s.AccountID, DevUp: up, DevDown: down, At: now})
+				grown[s.AccountID] = usageDelta{Up: up, Down: down}
 			}
 			if s.LastHandshake.IsZero() {
 				continue
@@ -343,6 +352,9 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 
 	if allRead {
 		r.meter.keep(metered)
+	}
+	for acc, d := range apportion(billed, grown, r.conc.clients()) {
+		r.writer.submit(trafficUpdate{AccountID: acc, DevUp: d.Up, DevDown: d.Down, At: now})
 	}
 
 	// Written straight through rather than queued behind the traffic writer:
