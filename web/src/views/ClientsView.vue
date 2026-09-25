@@ -998,7 +998,7 @@ async function submitForm(input) {
             <thead>
               <tr>
                 <th class="sel"><input type="checkbox" class="acheck" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" /></th>
-                <th style="width: 200px">{{ t('table.actions') }}</th>
+                <th style="width: 236px">{{ t('table.actions') }}</th>
                 <th style="width: 80px">{{ t('table.enabled') }}</th>
                 <th style="width: 90px">{{ t('status.online') }}</th>
                 <th style="width: 220px">{{ t('client.menu.client') }}</th>
