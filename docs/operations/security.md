@@ -14,6 +14,7 @@ description: "What the panel does to protect itself and what you should do on to
 - **A strict Content-Security-Policy** with a per-request nonce.
 - **An unprivileged service account.** The panel runs as `wui` with `CAP_NET_ADMIN` and `CAP_NET_BIND_SERVICE` only, `ProtectSystem=strict`, and one writable directory.
 - **Secrets stay put.** Passwords are bcrypt hashes; API tokens are stored as hashes and shown once; interface and device private keys never appear in anything the panel renders for display — only in the customer's own file.
+- **A word before the certificate runs out.** Settings → Security warns when the certificate the panel or the subscription service is served with has less than two weeks left, and says so louder once it has passed. Renewal is still the installer's and acme.sh's job; this is the panel making sure an expiry is not something you hear about from a customer.
 - **Signed releases.** A panel built with the project's public key refuses an update whose signature does not match.
 
 ## What you should do

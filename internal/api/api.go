@@ -177,7 +177,7 @@ func New(o Options) *Server {
 
 	// Built last because it asks the server which engines are running, and that
 	// question needs the enforcer, shaper and router the server was just given.
-	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, srv.engineHealth)
+	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, o.TLSCert, srv.engineHealth)
 	// What the reconciler changes on its own -- a plan ended, one started
 	// on first use -- reaches the open pages the same way an edit does.
 	service.SubscriptionsChanged = srv.subHub.Broadcast
