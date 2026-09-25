@@ -1726,5 +1726,13 @@
   "client.rotateKeys": "New keys",
   "client.rotateKeysConfirm": "Issue {name} fresh keys? Every configuration they hold stops working within seconds, and they need the new files. Their address, usage and plan are kept.",
   "client.rotateKeysDone": "New keys issued — {n} file(s)",
-  "client.rotateKeysHint": "Issues a new WireGuard key pair and preshared key, and a new OpenVPN password, for every file this customer holds. What was copied or shared before stops working; rotating the subscription link alone does not do this."
+  "client.rotateKeysHint": "Issues a new WireGuard key pair and preshared key, and a new OpenVPN password, for every file this customer holds. What was copied or shared before stops working; rotating the subscription link alone does not do this.",
+  "client.rotateAllConfirm": "Issue {name} a fresh link and fresh keys? Every configuration they hold stops working within seconds, their subscription link changes, and they need the new one. Their address, usage and plan are kept.",
+  "client.rotateAllHint": "Rotates the subscription link, every WireGuard key pair and preshared key, and every OpenVPN password. Nothing handed out before keeps working.",
+  "client.rotateOne": "Replace a user's keys",
+  "client.rotateOneHint": "Issues one user fresh credentials for one kind of file, and only that: their other files, the other users and the subscription link are untouched. What that file held stops working within seconds.",
+  "client.rotateOneConfirm": "Issue user {n} a fresh {kind} file? The one they hold stops working within seconds.",
+  "client.rotateWireGuard": "WireGuard",
+  "client.rotateOpenVPN": "OpenVPN",
+  "client.thisCustomer": "This customer"
 }

@@ -108,6 +108,43 @@ const form = ref(
       },
 )
 const busy = ref(false)
+const rotating = ref(false)
+const rotated = ref('')
+
+// How many users the plan has files for, counted the way the panel does:
+// the customer's files on one tunnel, in the order they were issued.
+const userCount = computed(() => {
+  const accounts = props.client?.accounts || []
+  if (!accounts.length) return 0
+  const per = {}
+  for (const a of accounts) per[a.interfaceId] = (per[a.interfaceId] || 0) + 1
+  return Math.max(...Object.values(per))
+})
+
+// One user's files of one kind, replaced now. The dialog stays open: the
+// operator usually rotates and then reads the new login off the Links tab.
+async function rotateUser(user, protocol) {
+  if (!props.client) return
+  if (!window.confirm(t('client.rotateOneConfirm', { n: user, kind: protocol === 'openvpn' ? 'OpenVPN' : 'WireGuard' }))) return
+  rotating.value = true
+  rotated.value = ''
+  try {
+    const res = await api.rotateKeys(props.client.id, { user, protocol })
+    rotated.value = t('client.rotateKeysDone', { n: res?.rotated || 0 })
+    notify(rotated.value, 'success')
+    // The OpenVPN password on this form is now the old one; the fresh
+    // credentials are read back so what is shown is what works.
+    const fresh = await api.client(props.client.id)
+    if (fresh?.accounts) {
+      props.client.accounts = fresh.accounts
+      form.value.openvpnUsers = currentOpenVPNLogins().map((u) => ({ ...u }))
+    }
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    rotating.value = false
+  }
+}
 
 // A new customer starts from the defaults on the settings page, so a reseller
 // selling one plan does not retype it for every customer. Editing an existing
@@ -440,6 +477,23 @@ async function submit() {
 
           <!-- ══ Credentials ══ -->
           <div v-show="tab === 'credentials'">
+            <!-- A user's own files, rotated one at a time. Done here and
+                 now rather than on save: it is an action, not a field, and
+                 what it replaces stops working within seconds. -->
+            <div v-if="editing && userCount" class="aform-item">
+              <label class="aform-label">{{ t('client.rotateOne') }} <HelpTip :text="t('client.rotateOneHint')" /></label>
+              <div v-for="n in userCount" :key="`rot-${n}`" class="rotate-row">
+                <span class="rotate-who">{{ userCount > 1 ? t('client.userN', { n }) : t('client.thisCustomer') }}</span>
+                <button type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'wireguard')">
+                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateWireGuard') }}</span>
+                </button>
+                <button v-if="hasOpenVPN" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'openvpn')">
+                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateOpenVPN') }}</span>
+                </button>
+              </div>
+              <p v-if="rotated" class="hint ok-hint">{{ rotated }}</p>
+            </div>
+
             <template v-if="hasOpenVPN">
               <!-- One login per user, in the plan's order. A plan for
                    several is several people, each logging in as
@@ -574,6 +628,9 @@ async function submit() {
 .hint { margin: 4px 0 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
 .foot-hint { margin-top: 0; }
 .field-error { margin: 4px 0 0; font-size: 12px; color: var(--bad); }
+.rotate-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.rotate-who { min-width: 90px; font-size: 14px; color: var(--ink); }
+.ok-hint { color: var(--ok); }
 .tab-lead { margin: 0 0 16px; font-size: 14px; color: var(--muted); }
 .device-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
 .aalert { margin-bottom: 24px; }

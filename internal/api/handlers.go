@@ -620,17 +620,32 @@ func (s *Server) handleRotateKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		AccountIDs []uint `json:"accountIds"`
+		service.RotateInput
+		// SubToken rotates the subscription link in the same breath, for
+		// the button that means "everything this customer holds".
+		SubToken bool `json:"subToken"`
 	}
 	if r.ContentLength != 0 && !decodeLenient(w, r, &body) {
 		return
 	}
-	n, err := s.clients.RotateKeys(r.Context(), id, body.AccountIDs)
+	n, err := s.clients.RotateKeys(r.Context(), id, body.RotateInput)
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rotated": n})
+	out := map[string]any{"rotated": n}
+	if body.SubToken {
+		token, err := s.subs.RotateToken(r.Context(), id)
+		if err != nil {
+			fail(w, s.log, err)
+			return
+		}
+		if link, err := s.subs.LinkFor(r.Context(), token, r.Host); err == nil {
+			out["link"] = link
+		}
+		out["token"] = token
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleAssignGroup(w http.ResponseWriter, r *http.Request) {

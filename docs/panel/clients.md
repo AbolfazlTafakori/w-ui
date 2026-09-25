@@ -45,7 +45,11 @@ The key on a customer's row issues them fresh credentials: a new WireGuard key p
 
 Kept: their address, their device and user names, their OpenVPN usernames, their plan and their usage — only the secrets change, so routing rules, the IP log and the traffic figures still point at the same customer.
 
-Rotating the **subscription link** is a different thing and does not do this: it changes where the files are fetched from, not what is inside them, so a file that leaked keeps working until its keys are rotated. From the API: `POST /api/clients/{id}/rotate-keys`, with `accountIds` to rotate named files only.
+The key on the row is everything at once: every file **and** the subscription link. To replace one user's file on its own, open the customer, go to **Credentials**, and use the WireGuard or OpenVPN button on that user's line — only that file changes; the other users, their other files and the link are untouched.
+
+An OpenVPN password that changes also ends the session it was logged in with, so a rotated password takes effect now rather than at the customer's next reconnect.
+
+Rotating the **subscription link** alone is a different thing and does not do this: it changes where the files are fetched from, not what is inside them, so a file that leaked keeps working until its keys are rotated. From the API: `POST /api/clients/{id}/rotate-keys`, with `accountIds` to rotate named files only.
 
 ## Statuses
 

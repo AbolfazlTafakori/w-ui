@@ -48,11 +48,23 @@ type Driver struct {
 	// byName maps a username to the account it belongs to, so sessions read
 	// from the management interface can be attributed without a database query.
 	byName map[string]uint
+	// bySecret is each username's password, as a fingerprint. A password
+	// that changed has to end the session it was logged in with: OpenVPN
+	// checks credentials at connect and never again, so an old password
+	// stays good for as long as the customer stays connected, which is
+	// exactly what rotating it is meant to stop.
+	bySecret map[string]string
 }
 
 // New builds an unopened driver.
 func New() *Driver {
-	return &Driver{log: slog.Default(), byName: map[string]uint{}}
+	return &Driver{log: slog.Default(), byName: map[string]uint{}, bySecret: map[string]string{}}
+}
+
+// secretPrint is what a password is remembered as: never the password.
+func secretPrint(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:8])
 }
 
 // SetLogger attaches the panel's logger.
@@ -269,9 +281,21 @@ func (d *Driver) Sync(ctx context.Context, desired []backend.DesiredAccount) (ba
 	// Removing the credential only stops the next login. A customer who is
 	// already connected stays connected until their session is cut, which for a
 	// customer who has just run out of data is the whole point.
-	for _, username := range dd.remove {
+	//
+	// The same goes for a password that changed: the session it opened is
+	// ended too, so a rotated password takes effect now rather than at the
+	// customer's next reconnect.
+	cut := append([]string{}, dd.remove...)
+	d.mu.Lock()
+	for username, a := range want {
+		if was, ok := d.bySecret[username]; ok && was != secretPrint(a.Secret) {
+			cut = append(cut, username)
+		}
+	}
+	d.mu.Unlock()
+	for _, username := range cut {
 		if err := d.kill(ctx, l, username); err != nil {
-			d.log.Warn("could not disconnect a removed account",
+			d.log.Warn("could not disconnect an account",
 				"username", username, "error", err)
 		}
 	}
@@ -306,11 +330,14 @@ func (d *Driver) currentAssignments(l ovpnconf.Layout) (map[string]string, error
 
 func (d *Driver) rememberNames(want accountSet) {
 	names := make(map[string]uint, len(want))
+	secrets := make(map[string]string, len(want))
 	for username, a := range want {
 		names[username] = a.ID
+		secrets[username] = secretPrint(a.Secret)
 	}
 	d.mu.Lock()
 	d.byName = names
+	d.bySecret = secrets
 	d.mu.Unlock()
 }
 

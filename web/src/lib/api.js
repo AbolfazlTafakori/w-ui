@@ -276,7 +276,7 @@ export const api = {
   resetAllTraffic: () => request('POST', '/api/clients/reset-all', {}),
   purgeClients: (status) => request('POST', '/api/clients/purge', { status }),
   createBatch: (input) => request('POST', '/api/clients/batch', input),
-  rotateKeys: (id, accountIds) => request('POST', `/api/clients/${id}/rotate-keys`, { accountIds: accountIds || [] }),
+  rotateKeys: (id, input) => request('POST', `/api/clients/${id}/rotate-keys`, input || {}),
   addDevice: (id, name) => request('POST', `/api/clients/${id}/devices`, { name }),
 
   groups: (opts) => request('GET', '/api/groups', undefined, opts),

@@ -494,11 +494,13 @@ function rotateKeysFor(c) {
   ask.value = {
     title: t('client.rotateKeys'),
     subject: c.name,
-    body: t('client.rotateKeysConfirm', { name: c.name }),
-    consequences: [t('client.rotateKeysHint')],
+    body: t('client.rotateAllConfirm', { name: c.name }),
+    consequences: [t('client.rotateAllHint')],
     confirmLabel: t('client.rotateKeys'),
     run: async () => {
-      const res = await api.rotateKeys(c.id)
+      // Everything this customer holds: every file, and the link they
+      // fetch them from.
+      const res = await api.rotateKeys(c.id, { subToken: true })
       notify(t('client.rotateKeysDone', { n: res?.rotated || 0 }), 'success')
       await load()
     },
