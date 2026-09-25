@@ -1734,5 +1734,7 @@
   "client.rotateOneConfirm": "برای کاربر {n} فایل تازهٔ {kind} صادر شود؟ فایلی که دارد ظرف چند ثانیه از کار می‌افتد.",
   "client.rotateWireGuard": "وایرگارد",
   "client.rotateOpenVPN": "OpenVPN",
-  "client.thisCustomer": "همین مشتری"
+  "client.thisCustomer": "همین مشتری",
+  "secwarn.certificate-expiring": "گواهی تا کمتر از دو هفتهٔ دیگر منقضی می‌شود",
+  "secwarn.certificate-expired": "گواهی منقضی شده است"
 }

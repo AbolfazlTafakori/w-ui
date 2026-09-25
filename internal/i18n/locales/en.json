@@ -1734,5 +1734,7 @@
   "client.rotateOneConfirm": "Issue user {n} a fresh {kind} file? The one they hold stops working within seconds.",
   "client.rotateWireGuard": "WireGuard",
   "client.rotateOpenVPN": "OpenVPN",
-  "client.thisCustomer": "This customer"
+  "client.thisCustomer": "This customer",
+  "secwarn.certificate-expiring": "The certificate expires within two weeks",
+  "secwarn.certificate-expired": "The certificate has expired"
 }

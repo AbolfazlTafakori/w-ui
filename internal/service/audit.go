@@ -41,6 +41,9 @@ type Audit struct {
 	db     *gorm.DB
 	subs   *Subscriptions
 	listen string
+	// tlsCert is the certificate the panel itself is served with, read for
+	// how long it has left; empty when the panel is not serving TLS.
+	tlsCert string
 	// engines reports why each engine is not running, keyed by name, and is
 	// empty when everything is working. Supplied as a function so this package
 	// does not have to know what an nftables or a tc is.
@@ -48,10 +51,10 @@ type Audit struct {
 }
 
 func NewAudit(
-	db *gorm.DB, subs *Subscriptions, listen string,
+	db *gorm.DB, subs *Subscriptions, listen, tlsCert string,
 	engines func(context.Context) map[string]string,
 ) *Audit {
-	return &Audit{db: db, subs: subs, listen: listen, engines: engines}
+	return &Audit{db: db, subs: subs, listen: listen, tlsCert: tlsCert, engines: engines}
 }
 
 // Run collects the warnings that currently apply.
@@ -62,6 +65,7 @@ func (a *Audit) Run(ctx context.Context) []Warning {
 	out = append(out, a.checkAdmins(ctx)...)
 	out = append(out, a.checkSubscription(ctx)...)
 	out = append(out, a.checkExposure()...)
+	out = append(out, a.checkCertificates(ctx)...)
 	out = append(out, a.checkTokens(ctx)...)
 	out = append(out, a.checkNodes(ctx)...)
 
