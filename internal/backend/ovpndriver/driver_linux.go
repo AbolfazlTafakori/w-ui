@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -162,7 +163,15 @@ func (d *Driver) ensureRunning(ctx context.Context, iface *model.Interface, l ov
 	pid, alive := runningPID(l.PIDFile())
 	if alive {
 		have, _ := os.ReadFile(stampPath)
-		if strings.TrimSpace(string(have)) == want {
+		switch {
+		case strings.TrimSpace(string(have)) != want:
+			d.log.Info("openvpn configuration changed; restarting",
+				"interface", iface.Name, "pid", pid)
+		case dirIsReadOnlyFor(pid, l.TempDir()):
+			d.log.Warn("the running openvpn server can no longer write its own "+
+				"directory, so every login would fail; restarting",
+				"interface", iface.Name, "pid", pid)
+		default:
 			// Already running the configuration we want. Leaving it alone is
 			// the difference between a panel restart being invisible and it
 			// disconnecting every customer on the interface.
@@ -170,8 +179,6 @@ func (d *Driver) ensureRunning(ctx context.Context, iface *model.Interface, l ov
 				"interface", iface.Name, "pid", pid)
 			return nil
 		}
-		d.log.Info("openvpn configuration changed; restarting",
-			"interface", iface.Name, "pid", pid)
 		stop(pid)
 	}
 
@@ -540,6 +547,34 @@ func runningPID(path string) (int, bool) {
 		return pid, false
 	}
 	return pid, true
+}
+
+// dirIsReadOnlyFor reports whether the process holding pid sees dir as a
+// read-only filesystem.
+//
+// A server the panel adopts was started by an earlier run of the panel, and it
+// kept that run's mount namespace. The unit makes everything but the data
+// directory read-only, so a server carried across an upgrade that changed which
+// paths are writable ends up with a read-only view of its own directory. It
+// still listens, and its configuration fingerprint still matches, so the panel
+// adopts it for ever -- but OpenVPN writes a deferred-authentication file for
+// every login, and it cannot. Every customer is refused with AUTH_FAILED, and
+// the server cannot even write the log line that says why.
+//
+// /proc/<pid>/root is that process's own view of the filesystem, so a probe
+// written through it meets exactly the restriction OpenVPN would meet. Only a
+// read-only filesystem is taken as an answer: anything else -- no such
+// directory, no permission to look -- is left to the checks that follow, rather
+// than restarting a server that is carrying traffic on a guess.
+func dirIsReadOnlyFor(pid int, dir string) bool {
+	probe := filepath.Join("/proc", strconv.Itoa(pid), "root", dir, ".writable")
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err == nil {
+		_ = f.Close()
+		_ = os.Remove(probe)
+		return false
+	}
+	return errors.Is(err, syscall.EROFS)
 }
 
 // stop ends a running server and waits for it to go.

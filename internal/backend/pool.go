@@ -183,7 +183,16 @@ func (p *Pool) Sync(ctx context.Context, ifaces []model.Interface) {
 		p.mu.RUnlock()
 
 		if have && e.drv != nil && e.fp == fingerprint(&iface) {
-			continue // unchanged and working; leave its customers alone
+			// Unchanged -- but "unchanged" is not the same as "working". An
+			// engine the panel launched can die without the panel: the
+			// interface would then be shaped and billed every tick while no
+			// customer could connect, and nothing would ever bring it back.
+			err := e.drv.Health(ctx)
+			if err == nil {
+				continue // leave its customers alone
+			}
+			p.log.Warn("an open tunnel reports itself unhealthy; reopening",
+				"interface", iface.Name, "error", err)
 		}
 		_ = p.openLocked(ctx, &iface, false)
 	}

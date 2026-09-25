@@ -6,6 +6,19 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- An OpenVPN server carried across a panel upgrade no longer refuses every
+  customer. It kept the mount namespace of the panel that started it, so once
+  the unit's writable paths changed it saw its own directory as read-only and
+  could not write the file OpenVPN makes for each login — every attempt came
+  back as "user authentication failed", with no room left to log why. The panel
+  now checks that a server it adopts can still write there, and restarts it
+  when it cannot.
+- A tunnel whose engine died is brought back up. Its driver was kept as long as
+  the interface's settings were unchanged, so the panel went on shaping and
+  billing an interface nobody could reach; an open tunnel that reports itself
+  unhealthy is reopened on the next tick.
+
 ## [1.1.0] — 2026-09-25
 
 ### Added
