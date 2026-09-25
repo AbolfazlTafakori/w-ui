@@ -94,6 +94,7 @@ function cardAction(key) {
   cardMenu.value = null
   if (!c) return
   if (key === 'qr') shareFor.value = c
+  else if (key === 'rotate') rotateKeysFor(c)
   else if (key === 'reset') resetOne(c)
   else if (key === 'edit') formFor.value = { client: c }
   else if (key === 'delete') removeOne(c)
@@ -487,6 +488,23 @@ const isPending = (id) => pending.value.has(id)
 // Zeroing one customer's counters. Fast on a small panel and not fast on a
 // large one, and until it came back the button gave nothing at all — so the
 // operator's second click reset the traffic they had just reset.
+// Fresh credentials for every file this customer holds. Asked for
+// plainly: what they are holding stops working, and they have to be told.
+function rotateKeysFor(c) {
+  ask.value = {
+    title: t('client.rotateKeys'),
+    subject: c.name,
+    body: t('client.rotateKeysConfirm', { name: c.name }),
+    consequences: [t('client.rotateKeysHint')],
+    confirmLabel: t('client.rotateKeys'),
+    run: async () => {
+      const res = await api.rotateKeys(c.id)
+      notify(t('client.rotateKeysDone', { n: res?.rotated || 0 }), 'success')
+      await load()
+    },
+  }
+}
+
 async function resetOne(c) {
   hold(c.id)
   try {
@@ -964,6 +982,7 @@ async function submitForm(input) {
         <Teleport to="body">
           <div v-if="cardMenu" v-fit="cardMenu.rect" class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
             <button class="menu-item" role="menuitem" @click="cardAction('qr')"><AntIcon name="QrcodeOutlined" />{{ t('client.qrCode') }}</button>
+            <button class="menu-item" role="menuitem" @click="cardAction('rotate')"><AntIcon name="KeyOutlined" />{{ t('client.rotateKeys') }}</button>
             <button class="menu-item" role="menuitem" @click="cardAction('reset')"><AntIcon name="RetweetOutlined" />{{ t('outbound.resetTraffic') }}</button>
             <button class="menu-item" role="menuitem" @click="cardAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>
             <button class="menu-item danger" role="menuitem" @click="cardAction('delete')"><AntIcon name="DeleteOutlined" />{{ t('action.delete') }}</button>
@@ -1004,6 +1023,7 @@ async function submitForm(input) {
                   <div class="aspace" style="gap: 4px; flex-wrap: nowrap">
                     <button class="abtn text sm" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="shareFor = c"><AntIcon name="QrcodeOutlined" /></button>
                     <button class="abtn text sm" :title="t('client.menu.clientInfo')" :aria-label="t('client.menu.clientInfo')" @click="infoFor = c"><AntIcon name="InfoCircleOutlined" /></button>
+                    <button class="abtn text sm" :title="t('client.rotateKeys')" :aria-label="t('client.rotateKeys')" :disabled="isPending(c.id)" @click="rotateKeysFor(c)"><AntIcon name="KeyOutlined" /></button>
                     <button class="abtn text sm" :title="t('outbound.resetTraffic')" :aria-label="t('outbound.resetTraffic')" :disabled="isPending(c.id)" @click="resetOne(c)"><AntIcon name="RetweetOutlined" /></button>
                     <button class="abtn text sm" :title="t('action.edit')" :aria-label="t('action.edit')" @click="formFor = { client: c }"><AntIcon name="EditOutlined" /></button>
                     <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="removeOne(c)"><AntIcon name="DeleteOutlined" /></button>

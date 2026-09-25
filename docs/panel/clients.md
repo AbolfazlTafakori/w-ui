@@ -18,7 +18,7 @@ Clients, online, depleted, depleting, disabled, active — six figures with a co
 
 | Column | |
 |--------|--|
-| Actions | QR code, client information, reset traffic, edit, delete |
+| Actions | QR code, client information, **new keys**, reset traffic, edit, delete |
 | Enabled | a switch; disabled when the plan is expired or exhausted |
 | Online | live: a device with traffic moving in the last 75 seconds, on any server, counted every two seconds — a device that connects shows within a few seconds |
 | Client | name, connections in use / allowed at once (red when over), comment |
@@ -38,6 +38,14 @@ One QR per device, per host — a customer on two hosts gets two codes per devic
 ## Client information
 
 Everything about one plan on one screen: status, quota, expiry, devices, every link (config file, subscription, per host), the Telegram id, the sub id, when they were last seen and from where.
+
+## New keys
+
+The key on a customer's row issues them fresh credentials: a new WireGuard key pair and preshared key, and a new OpenVPN password, for every file they hold. Whatever was copied, forwarded or sold on stops working within seconds, and the customer takes the new files from their link.
+
+Kept: their address, their device and user names, their OpenVPN usernames, their plan and their usage — only the secrets change, so routing rules, the IP log and the traffic figures still point at the same customer.
+
+Rotating the **subscription link** is a different thing and does not do this: it changes where the files are fetched from, not what is inside them, so a file that leaked keeps working until its keys are rotated. From the API: `POST /api/clients/{id}/rotate-keys`, with `accountIds` to rotate named files only.
 
 ## Statuses
 

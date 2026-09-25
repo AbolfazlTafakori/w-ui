@@ -1722,5 +1722,9 @@
   "secwarn.short-sub-path": "The subscription path is short enough to stumble onto",
   "secwarn.listening-everywhere": "The panel is reachable from any address",
   "secwarn.stale-tokens": "{n} access token(s) have not been used in three months",
-  "secwarn.node-plain-http": "{n} node(s) are reached over plain HTTP"
+  "secwarn.node-plain-http": "{n} node(s) are reached over plain HTTP",
+  "client.rotateKeys": "New keys",
+  "client.rotateKeysConfirm": "Issue {name} fresh keys? Every configuration they hold stops working within seconds, and they need the new files. Their address, usage and plan are kept.",
+  "client.rotateKeysDone": "New keys issued — {n} file(s)",
+  "client.rotateKeysHint": "Issues a new WireGuard key pair and preshared key, and a new OpenVPN password, for every file this customer holds. What was copied or shared before stops working; rotating the subscription link alone does not do this."
 }

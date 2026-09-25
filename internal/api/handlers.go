@@ -613,6 +613,26 @@ func (s *Server) handleRenameGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"affected": n})
 }
 
+// handleRotateKeys issues a customer fresh credentials for their files.
+func (s *Server) handleRotateKeys(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		AccountIDs []uint `json:"accountIds"`
+	}
+	if r.ContentLength != 0 && !decodeLenient(w, r, &body) {
+		return
+	}
+	n, err := s.clients.RotateKeys(r.Context(), id, body.AccountIDs)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rotated": n})
+}
+
 func (s *Server) handleAssignGroup(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Group  string `json:"group"`
