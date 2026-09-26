@@ -285,6 +285,12 @@ export const api = {
   assignGroup: (group, ids) => request('POST', '/api/groups/assign', { group, ids }),
   groupAction: (op) => request('POST', '/api/groups/action', op),
 
+  admins: (opts) => request('GET', '/api/admins', undefined, opts),
+  createAdmin: (input) => request('POST', '/api/admins', input),
+  updateAdmin: (id, input) => request('PATCH', `/api/admins/${id}`, input),
+  deleteAdmin: (id, clients) => request('DELETE', `/api/admins/${id}?clients=${clients}`),
+  resetAdminUsage: (id) => request('POST', `/api/admins/${id}/reset-usage`, {}),
+
   removeDevice: (id) => request('DELETE', `/api/devices/${id}`),
   profile: (id) => request('GET', `/api/devices/${id}/profile`),
   downloadProfile: (id) => saveFile(`/api/devices/${id}/profile?download=1`, `device-${id}.conf`),

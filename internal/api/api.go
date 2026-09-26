@@ -72,6 +72,7 @@ type Server struct {
 	balancers      *service.Balancers
 	providers      *service.Providers
 	audit          *service.Audit
+	admins         *service.Admins
 	pool           *backend.Pool
 	nodeSync       *service.NodeSync
 	// localNodeID is which node this panel is, for the state another panel
@@ -138,6 +139,7 @@ func New(o Options) *Server {
 		enforcer:  o.Enforcer,
 		settings:  o.Settings,
 		nodes:     service.NewNodes(o.DB, o.Logger),
+		admins:    service.NewAdmins(o.DB, o.Logger),
 		prober:    o.Prober,
 		throttle:  newThrottle(),
 		notifier:  o.Notifier,

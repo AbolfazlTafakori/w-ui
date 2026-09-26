@@ -707,6 +707,40 @@ func (s *Server) routes() []Route {
 				"right now. Do it from a network you trust, and check the fingerprint " +
 				"against the node itself if you can.",
 			handler: s.handleFetchPin},
+		// ── Operators ──
+		{Method: "GET", Path: "/api/admins", Group: "Operators", Auth: true, Operator: true,
+			Summary: "Every operator who can sign in, with their ceiling and how much of it is spent.",
+			handler: s.handleListAdmins},
+		{Method: "POST", Path: "/api/admins", Group: "Operators", Auth: true, Operator: true,
+			Summary: "Add an operator.",
+			Body: `{"username":"reza","password":"…","role":"reseller","clientLimit":50,` +
+				`"quotaBytes":1099511627776,"expiresAt":"2026-01-01T00:00:00Z","interfaceIds":[1,2]}`,
+			Note: "A reseller sees only the customers they create, on the servers named " +
+				"here, and is stopped when any of the three ceilings is reached. Their " +
+				"customers are filed under a group of the owner's that the reseller is " +
+				"never shown. Role \"admin\" is a second pair of hands over every " +
+				"customer, with no ceiling and no reach into the machine.",
+			handler: s.handleCreateAdmin},
+		{Method: "GET", Path: "/api/admins/{id}", Group: "Operators", Auth: true, Operator: true,
+			Summary: "One operator.", handler: s.handleGetAdmin},
+		{Method: "PATCH", Path: "/api/admins/{id}", Group: "Operators", Auth: true, Operator: true,
+			Summary: "Change an operator: their ceiling, their servers, their password, or switch them off.",
+			Body:    `{"enabled":false}`,
+			Note: "Switching one off stops every customer they hold, at once, without " +
+				"touching those customers' own switches -- so switching them back on " +
+				"restores the service they had rather than reviving plans that were " +
+				"stopped deliberately. A new password ends their open sessions.",
+			handler: s.handleUpdateAdmin},
+		{Method: "DELETE", Path: "/api/admins/{id}", Group: "Operators", Auth: true, Operator: true,
+			Summary: "Remove an operator.",
+			Note: "Add ?clients=keep to take their customers over yourself, or " +
+				"?clients=delete to remove them too. Refused without one when they " +
+				"still hold any, because both answers are expensive to get wrong.",
+			handler: s.handleDeleteAdmin},
+		{Method: "POST", Path: "/api/admins/{id}/reset-usage", Group: "Operators", Auth: true, Operator: true,
+			Summary: "Start a reseller's allowance again, for the next month they have paid for.",
+			handler: s.handleResetAdminUsage},
+
 		{Method: "GET", Path: "/api/backups", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Backups on disk, newest first.", handler: s.handleListBackups},
 		{Method: "POST", Path: "/api/backups", Group: "Settings", Auth: true, Operator: true,
@@ -731,10 +765,58 @@ func (s *Server) routes() []Route {
 	}
 }
 
+// Who a route is for, worked out from the heading it is documented under.
+//
+// Derived rather than declared per route on purpose. A hundred and thirty
+// routes each carrying a flag is a hundred and thirty chances to leave one
+// off, and the one left off is the one that hands a reseller the routing
+// table. Here the default is the strictest -- the machine is the owner's --
+// and everything a reseller legitimately needs is named, so a new endpoint
+// is closed until somebody decides otherwise.
+var (
+	// operatorGroups are the headings every signed-in operator reaches.
+	// What is behind them is narrowed to their own customers by the
+	// database itself, so a reseller calling them sees only theirs.
+	operatorGroups = map[string]bool{
+		"Authentication": true,
+		"Customers":      true,
+		"Clients":        true,
+		"Devices":        true,
+		"Groups":         true,
+	}
+
+	// operatorRoutes are the few endpoints under an owner's heading that a
+	// reseller cannot do their own job without.
+	operatorRoutes = map[string]bool{
+		// The server picker on the customer form. Narrowed to the tunnels
+		// the owner allowed them, in the handler.
+		"GET /api/interfaces": true,
+		// How many rows a page holds and which calendar dates are shown
+		// in. Answered with those alone for anyone but the owner.
+		"GET /api/settings": true,
+		// One customer's subscription link, and reissuing it.
+		"GET /api/clients/{id}/subscription":         true,
+		"POST /api/clients/{id}/subscription/rotate": true,
+	}
+)
+
+// forOwner reports whether a route is the owner's alone.
+func (r Route) forOwner() bool {
+	if r.Group == "Operators" {
+		return true
+	}
+	return !operatorGroups[r.Group] && !operatorRoutes[r.Method+" "+r.Path]
+}
+
 // register wires the table into a mux.
 func (s *Server) register(mux *http.ServeMux) {
 	for _, r := range s.routes() {
 		h := r.handler
+		if r.Group == "Operators" {
+			h = s.requireAdminManager(h)
+		} else if r.forOwner() {
+			h = s.requireManager(h)
+		}
 		if r.Operator {
 			h = s.requireOperator(h)
 		}
@@ -755,7 +837,7 @@ type APIGroup struct {
 // handleAPIDocs describes the API from the same table that serves it.
 func (s *Server) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
 	order := []string{"Authentication", "Customers", "Devices", "Interfaces",
-		"Groups", "Nodes", "Server", "Settings"}
+		"Groups", "Operators", "Nodes", "Server", "Settings"}
 	rank := map[string]int{}
 	for i, g := range order {
 		rank[g] = i

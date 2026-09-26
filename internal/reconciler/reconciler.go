@@ -637,6 +637,13 @@ func (r *Reconciler) clearRouteErr() {
 	}
 }
 
+// serviceableFor reports whether this customer's devices belong on the
+// tunnels right now: their own plan says so, and the operator who sold it
+// to them is still in good standing.
+func serviceableFor(c *model.Client, suspended map[uint]bool) bool {
+	return c.Status.Serviceable() && !suspended[c.OwnerID]
+}
+
 // readDesired builds the target state from the database in two queries.
 func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	db := r.db.WithContext(ctx)
@@ -714,6 +721,20 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	// and for managed ones only while that panel has gone quiet.
 	panelSilent := r.conc.panelSilent(now)
 
+	// A reseller switched off, out of time or out of allowance takes their
+	// customers off the tunnels with them.
+	//
+	// Applied here, where service is decided, rather than by writing
+	// anything onto those customers. Their own switches are left exactly as
+	// they are, so restoring the reseller restores the service they had
+	// rather than reviving plans that were stopped on purpose -- and the
+	// customer rows never have to be written back when it happens.
+	suspended, err := service.SuspendedOwners(ctx, r.db, now)
+	if err != nil {
+		r.log.Warn("could not read which operators are suspended", "error", err)
+		suspended = nil
+	}
+
 	d := &desired{
 		rules:      make([]enforce.Rule, 0, len(clients)),
 		shaping:    make([]shaper.Client, 0, len(clients)),
@@ -728,7 +749,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		accs := byClient[c.ID]
 		// A customer with every device on other nodes still has a limit to
 		// be held to, so the limit runs before the local check below.
-		if c.Status.Serviceable() && (c.OriginID == 0 || panelSilent) {
+		if serviceableFor(&c, suspended) && (c.OriginID == 0 || panelSilent) {
 			r.holdOver(ctx, &c, allByClient[c.ID], now)
 		}
 		if len(accs) == 0 {
@@ -742,7 +763,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 			}
 		}
 
-		serviceable := c.Status.Serviceable()
+		serviceable := serviceableFor(&c, suspended)
 
 		// Every client gets a rule, including the cut-off ones. A rule that
 		// drops is how the kernel refuses their traffic in the instant between

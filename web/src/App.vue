@@ -21,12 +21,21 @@ const signedIn = computed(() => !!store.admin)
 // beside the thing it is about, rather than appended where it would read as
 // something else — Sharing reports on customers, so it sits with Customers,
 // not between Routing and Settings where it looked like an admin page.
+// Which of these an operator is shown depends on who they are. A reseller
+// gets the two pages that are theirs and nothing else -- not a menu of
+// things that would refuse them -- and a panel administrator gets everything
+// about customers without the machine underneath. The server decides the
+// same thing again on every request; this is so the panel reads as one built
+// for them rather than one with most of it locked.
+//
+// `sells` marks a page a reseller has. Everything unmarked is the owner's,
+// and `everyone` marks what an administrator gets on top.
 const nav = [
-  { to: '/', key: 'nav.overview', icon: 'DashboardOutlined', exact: true },
+  { to: '/', key: 'nav.overview', icon: 'DashboardOutlined', exact: true, everyone: true },
   { to: '/interfaces', key: 'nav.interfaces', icon: 'ImportOutlined' },
-  { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined' },
+  { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true },
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
-  { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined' },
+  { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true },
   { to: '/nodes', key: 'nav.nodes', icon: 'ClusterOutlined' },
   { to: '/hosts', key: 'nav.hosts', icon: 'GlobalOutlined' },
   { to: '/outbounds', key: 'nav.outbounds', icon: 'ExportOutlined' },
@@ -45,6 +54,7 @@ const nav = [
       { to: '/settings/telegram', key: 'settings.tab.notify', icon: 'MessageOutlined' },
       { to: '/settings/email', key: 'settings.tab.email', icon: 'MailOutlined' },
       { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'CloudServerOutlined' },
+      { to: '/settings/admins', key: 'settings.tab.admins', icon: 'UserSwitchOutlined' },
     ],
   },
   {
@@ -64,6 +74,14 @@ const nav = [
   },
   { to: '/api-docs', key: 'nav.api', icon: 'ApiOutlined' },
 ]
+
+// What this operator is shown, from what the server said they may reach.
+const visibleNav = computed(() => {
+  const me = store.admin
+  if (!me || me.managesPanel) return nav
+  const keep = (item) => (me.seesEveryone ? item.everyone || item.sells : item.sells)
+  return nav.filter((item) => !item.children && keep(item))
+})
 
 // Which collapsible groups are open. A group containing the current page opens
 // itself, so arriving by URL never leaves the menu pointing somewhere else.
@@ -289,7 +307,7 @@ function reload() {
 
       <!-- Their inline Menu: items, and two submenus that open in place. -->
       <ul class="amenu-inline sider-nav" role="menu">
-        <template v-for="item in nav" :key="item.key || item.to">
+        <template v-for="item in visibleNav" :key="item.key || item.to">
           <li v-if="!item.children" role="none">
             <RouterLink :to="item.to" class="amenu-item" :class="{ selected: isActive(item) }" role="menuitem" :title="expanded ? '' : t(item.key)">
               <AntIcon :name="item.icon" />

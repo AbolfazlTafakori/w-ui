@@ -281,10 +281,34 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
+	// Anyone but the owner gets the handful of display preferences the
+	// pages they do have need -- how many rows a table holds, which
+	// calendar dates are shown in, how close to the line counts as running
+	// out -- and nothing else. The rest of this object is the machine: the
+	// address the panel listens on, the secret path it is mounted under,
+	// the subscription host, tokens. None of it is a reseller's.
+	if admin := adminFrom(r.Context()); admin == nil || !admin.Role.ManagesPanel() {
+		writeJSON(w, http.StatusOK, panelSettingsResponse{
+			Settings: displayOnly(current),
+			Defaults: displayOnly(s.settings.Defaults()),
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, panelSettingsResponse{
 		Settings: s.withEffective(maskToken(current)),
 		Defaults: s.withEffective(s.settings.Defaults()),
 	})
+}
+
+// displayOnly keeps the preferences that change how a page is drawn and
+// drops everything that describes the server.
+func displayOnly(in service.PanelSettings) service.PanelSettings {
+	return service.PanelSettings{
+		PageSize:    in.PageSize,
+		Datepicker:  in.Datepicker,
+		ExpireDiff:  in.ExpireDiff,
+		TrafficDiff: in.TrafficDiff,
+	}
 }
 
 // withEffective fills the fields that are empty until an operator saves

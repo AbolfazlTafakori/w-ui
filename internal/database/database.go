@@ -20,6 +20,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/config"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/scope"
 )
 
 // Open connects to the configured database and applies migrations.
@@ -55,6 +56,11 @@ func Open(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 		if err := tuneSQLite(db); err != nil {
 			return nil, err
 		}
+	}
+	// Registered before anything can run a statement, so there is no window
+	// in which a scoped request reaches an unguarded handle.
+	if err := scope.Register(db); err != nil {
+		return nil, fmt.Errorf("database: register access scoping: %w", err)
 	}
 	if err := Migrate(db); err != nil {
 		return nil, err
@@ -97,8 +103,29 @@ func tuneSQLite(db *gorm.DB) error {
 
 // Migrate brings the schema up to date.
 func Migrate(db *gorm.DB) error {
+	// A group's name used to be unique across the panel; it is now unique
+	// per operator, so two resellers can each have a "trial". AutoMigrate
+	// adds the new index but will not drop the old one, and leaving it
+	// would refuse the second reseller their own name.
+	//
+	// Dropped by every name the two supported drivers give it, and IF
+	// EXISTS on all of them: a panel that never had the old index, and one
+	// that has already been through this, both run it without noticing.
+	for _, idx := range []string{"idx_groups_name", "uni_groups_name", "groups_name_key"} {
+		if err := db.Exec(`DROP INDEX IF EXISTS ` + idx).Error; err != nil {
+			return fmt.Errorf("database: drop old group name index: %w", err)
+		}
+	}
+
 	if err := db.AutoMigrate(model.AllModels()...); err != nil {
 		return fmt.Errorf("database: migrate: %w", err)
+	}
+	// Whoever was already administering this panel owns it. The column
+	// defaults to owner, which covers the single account every existing
+	// install has; this names it explicitly for any row that predates the
+	// default and would otherwise come up with an empty role.
+	if err := db.Exec(`UPDATE admins SET role = 'owner' WHERE COALESCE(role, '') = ''`).Error; err != nil {
+		return fmt.Errorf("database: set administrator roles: %w", err)
 	}
 	// A customer used to carry one group as a column; they now carry any
 	// number as rows. The column's label becomes the first row, once, for

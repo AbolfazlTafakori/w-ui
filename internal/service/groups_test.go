@@ -42,7 +42,7 @@ func TestACustomerCanBeInSeveralGroups(t *testing.T) {
 	if err := db.Create(&c).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := setGroups(db, c.ID, groupsOf([]string{" vip ", "tehran", "VIP", ""}, "")); err != nil {
+	if err := setGroups(context.Background(), db, c.ID, groupsOf([]string{" vip ", "tehran", "VIP", ""}, "")); err != nil {
 		t.Fatal(err)
 	}
 	got, err := svc.Get(ctx, c.ID)

@@ -60,6 +60,12 @@ type NodeInput struct {
 	// both as they are; zero in either means no cap and no automatic reset.
 	DataLimitBytes *uint64 `json:"dataLimitBytes"`
 	ResetDay       *int    `json:"resetDay"`
+
+	// OwnerID reserves the machine for one reseller. Zero, the default, is
+	// shared: the owner adds capacity and everyone selling on the panel
+	// gets it. Set, it is the machine that reseller brought or paid for,
+	// and no other operator's customers are placed on its tunnels.
+	OwnerID *uint `json:"ownerId"`
 }
 
 // List returns every node, the local one first.
@@ -110,6 +116,7 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		Token:               in.Token,
 		Note:                in.Note,
 		Enabled:             in.Enabled == nil || *in.Enabled,
+		OwnerID:             deref(in.OwnerID),
 	}
 	if err := s.db.WithContext(ctx).Create(&node).Error; err != nil {
 		return nil, fmt.Errorf("service: create node: %w", err)
@@ -170,6 +177,9 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 	}
 	if in.AllowPrivateAddress != nil {
 		updates["allow_private_address"] = *in.AllowPrivateAddress
+	}
+	if in.OwnerID != nil {
+		updates["owner_id"] = *in.OwnerID
 	}
 	if in.DataLimitBytes != nil {
 		updates["data_limit_bytes"] = *in.DataLimitBytes

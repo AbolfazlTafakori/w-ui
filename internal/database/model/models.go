@@ -13,6 +13,13 @@ type Node struct {
 	Enabled bool     `gorm:"not null;default:true" json:"enabled"`
 	Note    string   `gorm:"size:256" json:"note"`
 
+	// OwnerID reserves this machine for one reseller. Zero, which is every
+	// node until somebody says otherwise, means it is shared: the owner
+	// adds capacity and everyone selling on the panel gets it. Set, it is
+	// the node that reseller brought or paid for, and no other operator's
+	// customers are placed on its tunnels.
+	OwnerID uint `gorm:"index;not null;default:0" json:"ownerId"`
+
 	// Token authenticates this panel to the remote one. A node is another W-UI
 	// panel rather than a purpose-built agent, so the thing being spoken to is
 	// the same API served here — which means one implementation to secure and
@@ -196,6 +203,18 @@ type Client struct {
 	Name     string   `gorm:"size:128;not null;index" json:"name"`
 	Note     string   `gorm:"size:512" json:"note"`
 	Protocol Protocol `gorm:"size:16;not null;index" json:"protocol"`
+
+	// OwnerID is the operator this customer belongs to, and zero is the
+	// owner's own.
+	//
+	// It is the whole of the separation between resellers: every read and
+	// every write a reseller makes is narrowed to their own id before it
+	// reaches the database, so a customer of theirs cannot be listed,
+	// fetched, changed or deleted by anyone else selling on this panel.
+	// Zero rather than a foreign key to the owner's row so that an existing
+	// panel's customers are the owner's the moment the column appears,
+	// without a backfill that has to guess.
+	OwnerID uint `gorm:"index;not null;default:0" json:"ownerId"`
 
 	// OriginID is this customer's id on the panel that owns them.
 	//
@@ -384,6 +403,13 @@ type IPLease struct {
 
 // Admin is a panel operator. Customers never get an account here; configs are
 // handed to them out of band.
+//
+// An operator is also the unit resale is sold in. A reseller signs in here
+// with their own username and password, sees the customers they created and
+// nobody else's, and is held to the ceiling on this row. Which is why the
+// plan fields sit on the operator rather than in a table beside it: there is
+// no reseller without a login, and a login with no plan is simply one with
+// no ceiling.
 type Admin struct {
 	ID           uint       `gorm:"primaryKey" json:"id"`
 	Username     string     `gorm:"size:64;uniqueIndex;not null" json:"username"`
@@ -392,6 +418,58 @@ type Admin struct {
 	Locale       string     `gorm:"size:8;not null;default:en" json:"locale"`
 	LastLoginAt  *time.Time `json:"lastLoginAt"`
 	LastLoginIP  string     `gorm:"size:45" json:"lastLoginIp"`
+
+	// Role is how much of the panel this operator reaches. Defaulted to
+	// owner so that the single administrator every existing panel has keeps
+	// everything they had when this column appears under them.
+	Role AdminRole `gorm:"size:16;not null;default:owner;index" json:"role"`
+
+	Note string `gorm:"size:256" json:"note"`
+
+	// Enabled is the owner's switch over a reseller.
+	//
+	// Turning it off stops every customer the reseller holds, at once and
+	// without touching their rows: what each customer's own switch says is
+	// left exactly as it was, so turning the reseller back on restores the
+	// service the customers had rather than reviving ones that were
+	// deliberately stopped. Nothing here is written to clients, which is
+	// what makes that true.
+	Enabled bool `gorm:"not null;default:true;index" json:"enabled"`
+
+	// The ceiling, for a reseller. Zero is no limit in each case.
+	//
+	// QuotaBytes is measured in what the reseller's customers have actually
+	// carried, not in what was promised to them: a reseller who sells ten
+	// unlimited plans that nobody uses has spent nothing. UsedBytes is that
+	// sum, kept here rather than computed, because the page that shows it
+	// and the sweep that enforces it both read it on every pass and a
+	// hundred thousand customers make that a table scan each time.
+	ClientLimit int        `gorm:"not null;default:0" json:"clientLimit"`
+	QuotaBytes  uint64     `gorm:"not null;default:0" json:"quotaBytes"`
+	UsedBytes   uint64     `gorm:"not null;default:0" json:"usedBytes"`
+	ExpiresAt   *time.Time `gorm:"index" json:"expiresAt"`
+
+	// GroupName is the label every customer this operator creates is put
+	// in, and which they are never shown.
+	//
+	// The reseller has their own groups and arranges them as they like; this
+	// one is the owner's, so that filtering the customer list by it answers
+	// "whose customers are these" without the reseller being able to
+	// rename it, delete it, or take a customer out of it. Empty for the
+	// owner and for an administrator, who sell nothing of their own.
+	GroupName string `gorm:"size:64" json:"groupName"`
+
+	// InterfaceIDs is which tunnels this reseller may put a customer on.
+	// Not stored here -- AdminInterface holds the rows -- and always filled
+	// on the way out, because the form that edits an operator needs it.
+	//
+	// Empty means none, not all: a reseller who has not been given a tunnel
+	// cannot sell one. The owner and an administrator ignore it.
+	InterfaceIDs []uint `gorm:"-" json:"interfaceIds"`
+
+	// Clients is how many customers this operator holds, filled by the list
+	// for the page that shows it against ClientLimit.
+	Clients int64 `gorm:"-" json:"clients"`
 
 	// SessionEpoch is what makes a session endable.
 	//
@@ -403,6 +481,43 @@ type Admin struct {
 	SessionEpoch int       `gorm:"not null;default:1" json:"-"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// QuotaExceeded reports whether the reseller's customers have between them
+// carried the allowance the owner sold them.
+func (a *Admin) QuotaExceeded() bool {
+	return a.Role.Capped() && a.QuotaBytes > 0 && a.UsedBytes >= a.QuotaBytes
+}
+
+// Expired reports whether the reseller's own term is up.
+func (a *Admin) Expired(now time.Time) bool {
+	return a.Role.Capped() && a.ExpiresAt != nil && !a.ExpiresAt.After(now)
+}
+
+// Suspended reports whether this operator's customers should be off right
+// now: the owner switched them off, their term ended, or their allowance is
+// gone.
+//
+// Computed, never stored. A stored copy would have to be written back onto
+// every customer to take effect, and writing a customer's own switch is
+// exactly what must not happen -- a customer stopped by hand before the
+// reseller was suspended has to stay stopped after they are restored.
+func (a *Admin) Suspended(now time.Time) bool {
+	if a.Role == RoleOwner {
+		return false
+	}
+	return !a.Enabled || a.Expired(now) || a.QuotaExceeded()
+}
+
+// AdminInterface is one tunnel a reseller is allowed to sell.
+//
+// A row rather than a list on the operator: the set is read as a join when
+// a customer is created and as a list when the form is opened, and a
+// tunnel being deleted should take its permissions with it rather than
+// leaving ids behind that no longer resolve.
+type AdminInterface struct {
+	AdminID     uint `gorm:"primaryKey;autoIncrement:false" json:"adminId"`
+	InterfaceID uint `gorm:"primaryKey;autoIncrement:false" json:"interfaceId"`
 }
 
 // Setting is a key/value row for panel configuration that an operator can
@@ -421,9 +536,17 @@ type Setting struct {
 // last member leaving. Without it "create a group" is not an action an operator
 // can take — they can only type a name onto a customer and hope.
 type Group struct {
-	ID   uint   `gorm:"primaryKey" json:"id"`
-	Name string `gorm:"size:64;uniqueIndex;not null" json:"name"`
-	Note string `gorm:"size:256" json:"note"`
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	// OwnerID is the operator whose group this is; zero is the owner's own.
+	//
+	// The name is unique per operator rather than across the panel. Two
+	// resellers who both call a group "trial" are naming their own things,
+	// and a panel that refused the second would be leaking the first one's
+	// arrangements through an error message.
+	OwnerID uint   `gorm:"not null;default:0;uniqueIndex:idx_groups_owner_name" json:"ownerId"`
+	Name    string `gorm:"size:64;not null;uniqueIndex:idx_groups_owner_name" json:"name"`
+	Note    string `gorm:"size:256" json:"note"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -464,6 +587,7 @@ func AllModels() []any {
 		&TrafficSample{},
 		&IPLease{},
 		&Admin{},
+		&AdminInterface{},
 		&APIToken{},
 		&Group{},
 		&ClientGroup{},

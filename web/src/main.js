@@ -29,6 +29,7 @@ import ClientDetailView from './views/ClientDetailView.vue'
 import InterfacesView from './views/InterfacesView.vue'
 import GroupsView from './views/GroupsView.vue'
 import SettingsView from './views/SettingsView.vue'
+import AdminsView from './views/AdminsView.vue'
 import SharingView from './views/SharingView.vue'
 import ApiView from './views/ApiView.vue'
 import NodesView from './views/NodesView.vue'
@@ -49,10 +50,15 @@ const router = createRouter({
   history: createWebHistory(routerBase),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
-    { path: '/', name: 'overview', component: OverviewView },
-    { path: '/clients', name: 'clients', component: ClientsView },
-    { path: '/clients/:id', name: 'client', component: ClientDetailView, props: true },
-    { path: '/groups', name: 'groups', component: GroupsView },
+    // meta.sells marks a page a reseller has; meta.everyone one a panel
+    // administrator has on top of those. Everything unmarked is the
+    // owner's. The guard below turns that into a redirect, and every
+    // endpoint behind these pages checks again for itself -- a route table
+    // is a convenience, never the thing that keeps anybody out.
+    { path: '/', name: 'overview', component: OverviewView, meta: { everyone: true } },
+    { path: '/clients', name: 'clients', component: ClientsView, meta: { sells: true } },
+    { path: '/clients/:id', name: 'client', component: ClientDetailView, props: true, meta: { sells: true } },
+    { path: '/groups', name: 'groups', component: GroupsView, meta: { sells: true } },
     { path: '/interfaces', name: 'interfaces', component: InterfacesView },
     { path: '/nodes', name: 'nodes', component: NodesView },
     { path: '/hosts', name: 'hosts', component: HostsView },
@@ -61,6 +67,9 @@ const router = createRouter({
     { path: '/sharing', name: 'sharing', component: SharingView },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },
+    // Ahead of the :tab route below, which would otherwise swallow it and
+    // open the settings page on a section that does not exist.
+    { path: '/settings/admins', name: 'admins', component: AdminsView },
     // The menu links straight to a settings section. Each is the same page with
     // its tab already chosen, so a bookmark lands where it was taken from.
     { path: '/settings/:tab', name: 'settings-tab', component: SettingsView, props: true },
@@ -73,7 +82,7 @@ const router = createRouter({
     { path: '/configs', redirect: '/configs/engine' },
     // Shown rather than redirected: silently swallowing a typo leaves the
     // operator unsure whether they mistyped or the page moved.
-    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView, meta: { sells: true, everyone: true } },
   ],
 })
 
@@ -87,8 +96,23 @@ router.beforeEach((to) => {
   if (to.meta.public) {
     return store.admin ? { name: 'overview' } : true
   }
-  return store.admin ? true : { name: 'login', query: { next: to.fullPath } }
+  if (!store.admin) return { name: 'login', query: { next: to.fullPath } }
+  if (!allowed(to)) {
+    // Sent to the page they do have rather than shown a refusal. A
+    // reseller following an old bookmark into the routing table has not
+    // done anything wrong; there is simply nothing there for them.
+    return { name: store.admin.managesPanel || store.admin.seesEveryone ? 'overview' : 'clients' }
+  }
+  return true
 })
+
+// allowed answers the question the sidebar answers for its own items.
+function allowed(to) {
+  const me = store.admin
+  if (!me || me.managesPanel) return true
+  if (me.seesEveryone) return !!(to.meta.everyone || to.meta.sells)
+  return !!to.meta.sells
+}
 
 // A token can expire between page loads. When any request comes back 401 the
 // api layer raises this, and the app returns to the sign-in screen rather than

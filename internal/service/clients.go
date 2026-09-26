@@ -110,6 +110,9 @@ type CreateInput struct {
 // account only exists on an interface, and an interface serves exactly one
 // protocol, so accepting both would allow them to disagree.
 func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, error) {
+	if err := s.checkCeiling(ctx, 1); err != nil {
+		return nil, err
+	}
 	ifaces, err := s.loadInterfaces(ctx, in.chosenInterfaces())
 	if err != nil {
 		return nil, err
@@ -124,6 +127,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 	iface := ifaces[0]
 
 	client := model.Client{
+		OwnerID:        OwnerOf(ctx),
 		Name:           in.Name,
 		Note:           in.Note,
 		Group:          firstGroup(groupsOf(in.Groups, in.Group)),
@@ -198,7 +202,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 		if err := tx.Create(&client).Error; err != nil {
 			return fmt.Errorf("create client: %w", err)
 		}
-		if err := setGroups(tx, client.ID, groupsOf(in.Groups, in.Group)); err != nil {
+		if err := setGroups(ctx, tx, client.ID, groupsOf(in.Groups, in.Group)); err != nil {
 			return err
 		}
 		for _, f := range ifaces {
@@ -265,8 +269,14 @@ func (s *Clients) loadInterfaces(ctx context.Context, ids []uint) ([]*model.Inte
 	if len(ids) == 0 {
 		return nil, invalidField("interfaceId", "choose at least one server for this customer")
 	}
+	sc := ScopeOf(ctx)
 	out := make([]*model.Interface, 0, len(ids))
 	for _, id := range ids {
+		// Checked before the tunnel is read, so a reseller probing ids
+		// learns the same thing for one that exists and one that does not.
+		if !sc.Allows(id) {
+			return nil, invalidField("interfaceIds", "that server is not one of yours")
+		}
 		iface, err := s.loadInterface(ctx, id)
 		if err != nil {
 			return nil, err
@@ -274,6 +284,34 @@ func (s *Clients) loadInterfaces(ctx context.Context, ids []uint) ([]*model.Inte
 		out = append(out, iface)
 	}
 	return out, nil
+}
+
+// checkCeiling refuses a create that would take a reseller past what the
+// owner sold them.
+//
+// Read here rather than in the handler so that every way of making a
+// customer goes through it: the form, the batch, the importer and the
+// Telegram bot alike.
+func (s *Clients) checkCeiling(ctx context.Context, adding int) error {
+	sc := ScopeOf(ctx)
+	if !sc.Restricted {
+		return nil
+	}
+	if sc.Barred != "" {
+		return fmt.Errorf("%w: %s", ErrInvalid, sc.Barred)
+	}
+	if sc.ClientLimit <= 0 {
+		return nil
+	}
+	var held int64
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).Count(&held).Error; err != nil {
+		return fmt.Errorf("service: count your customers: %w", err)
+	}
+	if held+int64(adding) > int64(sc.ClientLimit) {
+		return invalidField("name",
+			"you may have %d customers and you have %d", sc.ClientLimit, held)
+	}
+	return nil
 }
 
 // buildAccount generates the credentials for one device.
@@ -757,7 +795,7 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: list clients: %w", err)
 	}
-	if err := fillGroups(s.db.WithContext(ctx), items); err != nil {
+	if err := fillGroups(ctx, s.db.WithContext(ctx), items); err != nil {
 		return nil, err
 	}
 	if err := s.fillOnlineNow(ctx, items); err != nil {
@@ -842,7 +880,7 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 	if err := s.fillOnlineNow(ctx, one); err != nil {
 		return nil, err
 	}
-	if err := fillGroups(s.db.WithContext(ctx), one); err != nil {
+	if err := fillGroups(ctx, s.db.WithContext(ctx), one); err != nil {
 		return nil, err
 	}
 	// The operator reading one customer sees each OpenVPN user's password,
@@ -1011,7 +1049,7 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		}
 	}
 	if setGroupsToo {
-		if err := setGroups(s.db.WithContext(ctx), id, groups); err != nil {
+		if err := setGroups(ctx, s.db.WithContext(ctx), id, groups); err != nil {
 			return nil, err
 		}
 	}

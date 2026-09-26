@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/totp"
 )
 
@@ -255,7 +257,70 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxAdmin, admin)
-		next(w, r.WithContext(ctx))
+		// Attached here, once, for every authenticated request. Below this
+		// line the database narrows itself to this operator on its own, so
+		// a handler cannot serve another operator's customers by forgetting
+		// to ask whose they are.
+		sc, err := s.scopeFor(ctx, admin)
+		if err != nil {
+			fail(w, s.log, err)
+			return
+		}
+		next(w, r.WithContext(service.WithScope(ctx, sc)))
+	}
+}
+
+// scopeFor works out how much of the panel this operator sees, and what
+// they are allowed to sell.
+func (s *Server) scopeFor(ctx context.Context, admin *model.Admin) (service.Scope, error) {
+	sc := service.ScopeFor(admin)
+	if !sc.Restricted {
+		return sc, nil
+	}
+	allowed, err := s.admins.AllowedInterfaces(ctx, admin)
+	if err != nil {
+		return sc, err
+	}
+	sc.Interfaces = allowed
+	sc.ClientLimit = admin.ClientLimit
+	switch {
+	case !admin.Enabled:
+		sc.Barred = "your account has been switched off"
+	case admin.Expired(time.Now().UTC()):
+		sc.Barred = "your account's term has ended"
+	case admin.QuotaExceeded():
+		sc.Barred = "your data allowance is used up"
+	}
+	return sc, nil
+}
+
+// requireManager refuses anyone but the panel's owner.
+//
+// What is behind it is the machine: the tunnels, the nodes, where traffic
+// goes, the engine, the settings and the backups. A reseller has no
+// business there, and neither has an administrator brought in to help with
+// customers -- the point of that role is a second pair of hands over the
+// customers without the server underneath.
+func (s *Server) requireManager(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		admin := adminFrom(r.Context())
+		if admin == nil || !admin.Role.ManagesPanel() {
+			writeError(w, http.StatusForbidden, "this part of the panel is the owner's")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// requireAdminManager refuses anyone but the owner from the operator list.
+func (s *Server) requireAdminManager(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		admin := adminFrom(r.Context())
+		if admin == nil || !admin.Role.ManagesAdmins() {
+			writeError(w, http.StatusForbidden, "only the panel's owner manages operators")
+			return
+		}
+		next(w, r)
 	}
 }
 
@@ -287,10 +352,44 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 	// The secret itself is never serialised. Only whether one is set, which is
 	// what the settings page needs to know to show the right control.
-	writeJSON(w, http.StatusOK, struct {
+	// What the interface needs to draw itself: the role, and the three
+	// questions it asks about it. Sent as answers rather than leaving the
+	// page to work them out from the role, so the menu and the server can
+	// never disagree about who may reach what.
+	//
+	// Hiding a page is not what keeps anyone out -- every endpoint behind
+	// it checks for itself. It is so the panel a reseller signs in to has
+	// only the two pages that are theirs on it, rather than a menu of
+	// things that refuse them.
+	view := struct {
 		*model.Admin
-		TwoFactor bool `json:"twoFactor"`
-	}{Admin: admin, TwoFactor: admin.TOTPSecret != ""})
+		TwoFactor     bool `json:"twoFactor"`
+		ManagesPanel  bool `json:"managesPanel"`
+		ManagesAdmins bool `json:"managesAdmins"`
+		SeesEveryone  bool `json:"seesEveryone"`
+	}{
+		Admin:         admin,
+		TwoFactor:     admin.TOTPSecret != "",
+		ManagesPanel:  admin.Role.ManagesPanel(),
+		ManagesAdmins: admin.Role.ManagesAdmins(),
+		SeesEveryone:  admin.Role.SeesEveryone(),
+	}
+	// The label the owner files this operator's customers under is not
+	// theirs to see, and it is on the row that answers this call.
+	if !admin.Role.SeesEveryone() {
+		clone := *admin
+		clone.GroupName = ""
+		view.Admin = &clone
+	}
+	if ids, err := s.admins.AllowedInterfaces(r.Context(), admin); err == nil && ids != nil {
+		list := make([]uint, 0, len(ids))
+		for id := range ids {
+			list = append(list, id)
+		}
+		sort.Slice(list, func(i, j int) bool { return list[i] < list[j] })
+		view.Admin.InterfaceIDs = list
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 // Enrolling a second factor.

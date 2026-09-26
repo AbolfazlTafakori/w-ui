@@ -226,7 +226,7 @@ func (s *Clients) replaceFromImport(ctx context.Context, id uint, row ClientReco
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
-	return setGroups(s.db.WithContext(ctx), id, groupsOf(row.Groups, row.Group))
+	return setGroups(ctx, s.db.WithContext(ctx), id, groupsOf(row.Groups, row.Group))
 }
 
 // restoredStatus decides what an imported client should come back as.

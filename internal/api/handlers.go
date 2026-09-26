@@ -197,6 +197,33 @@ func (s *Server) handleListInterfaces(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
+	// A reseller reaches this only because the customer form needs a server
+	// picker, and the picker must offer what the owner allowed them and
+	// nothing else. What comes back is also thinner: a tunnel's load, its
+	// address pool and which node runs it are the owner's business, and a
+	// reseller reading them would be reading every other reseller's
+	// customers in aggregate.
+	sc := service.ScopeOf(r.Context())
+	if sc.Restricted {
+		allowed := make([]interfaceView, 0, len(out))
+		for _, v := range out {
+			if !sc.Allows(v.Interface.ID) {
+				continue
+			}
+			allowed = append(allowed, interfaceView{
+				Interface: model.Interface{
+					ID:           v.Interface.ID,
+					Name:         v.Interface.Name,
+					Protocol:     v.Interface.Protocol,
+					Enabled:      v.Interface.Enabled,
+					EndpointHost: v.Interface.EndpointHost,
+					ListenPort:   v.Interface.ListenPort,
+				},
+				Running: v.Running,
+			})
+		}
+		out = allowed
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

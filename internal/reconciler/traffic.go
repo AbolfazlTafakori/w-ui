@@ -180,8 +180,37 @@ func (w *trafficWriter) flush(ctx context.Context) {
 	now := time.Now().UTC()
 	bucket := now.Truncate(5 * time.Minute)
 
+	// Which reseller each of these customers belongs to, read once for the
+	// batch. A reseller's allowance is what their customers have carried
+	// between them, and it is kept as a running total rather than summed on
+	// demand: the page that shows it and the sweep that enforces it both
+	// read it every pass, and a panel with a hundred thousand customers
+	// cannot aggregate that each time.
+	owners := map[uint]uint{}
+	if len(usage) > 0 {
+		ids := make([]uint, 0, len(usage))
+		for id := range usage {
+			ids = append(ids, id)
+		}
+		var rows []struct {
+			ID      uint
+			OwnerID uint
+		}
+		if err := db.Model(&model.Client{}).Select("id, owner_id").
+			Where("id IN ? AND owner_id <> 0", ids).Scan(&rows).Error; err != nil {
+			w.log.Warn("could not read which operator these customers belong to", "error", err)
+		}
+		for _, row := range rows {
+			owners[row.ID] = row.OwnerID
+		}
+	}
+	byOwner := map[uint]uint64{}
+
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for id, d := range usage {
+			if owner := owners[id]; owner != 0 {
+				byOwner[owner] += d.Bytes
+			}
 			// Incremented in SQL rather than read-modify-written in Go, so a
 			// concurrent reset from the UI cannot be silently overwritten by a
 			// stale total.
@@ -260,6 +289,19 @@ func (w *trafficWriter) flush(ctx context.Context) {
 			}
 			if err := tx.Model(&model.Account{}).
 				Where("id = ?", accountID).Updates(fields).Error; err != nil {
+				return err
+			}
+		}
+
+		// The resellers' running totals move with the same deltas, in the
+		// same transaction, so the two can never differ by more than a tick
+		// that failed for both.
+		for ownerID, delta := range byOwner {
+			if delta == 0 {
+				continue
+			}
+			if err := tx.Model(&model.Admin{}).Where("id = ?", ownerID).
+				UpdateColumn("used_bytes", gorm.Expr("used_bytes + ?", delta)).Error; err != nil {
 				return err
 			}
 		}
