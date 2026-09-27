@@ -6,7 +6,49 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Resellers** is a page of its own in the main menu, laid out as the customer
+  list is: a summary across the top, and a row per reseller with customers,
+  traffic and time left in the customer list's colours. The owner is no longer
+  listed on it. On a phone each reseller is a card.
+- The reseller dialog is the customer dialog's shape and fits one screen. The
+  username and password are drawn for you, side by side with a button to draw
+  again, and one copy button puts the address, username and password on the
+  clipboard together.
+- A reseller's term is picked from a calendar, Gregorian or Jalali as the panel
+  is set, with +1 month, +3 months and +1 year counted from the date already
+  set -- or put **on hold**: a number of days that starts at their first
+  sign-in.
+- The owner chooses what a reseller's customers are filed under, from their own
+  groups or a new name; changing it moves the customers already there.
+- A reseller's own customer list opens with **Your account**: customers against
+  their limit, traffic left and time left, and the reason when their account
+  is paused.
+
 ### Fixed
+- One reseller could delete any other operator's customer's device by its
+  number. Devices are not narrowed to their operator the way customers are, and
+  the delete never asked whose customer the device was; it now does, and
+  answers not found.
+- A reseller switched off by the owner could sign straight back in. Switched
+  off now means out; a reseller whose term ended or whose traffic ran out may
+  still sign in, read-only, to see why.
+- The group actions -- extend a group, set its allowance, reset it -- and moving
+  customers between servers in bulk wrote the plan directly, past the refusal a
+  paused reseller meets everywhere else.
+- When the owner took a server back from a reseller, every edit to a customer
+  still on it failed, even a rename. Only a server being added is checked
+  against what the reseller may sell now.
+- The label the owner files a reseller's customers under reached the reseller
+  anyway, in the one-label field on every customer row, in the export and in
+  the answer to changing their language.
+- A reseller's server picker now marks the AmneziaWG ones, which need a
+  different app.
+- Removing a reseller cleared the group they were filed under from every
+  customer on the panel, the owner's own included, when the owner had used one
+  of their groups for them.
+- The Resellers menu entry and the dropdown arrow on free-text pickers had no
+  icon.
 - An OpenVPN server carried across a panel upgrade no longer refuses every
   customer. It kept the mount namespace of the panel that started it, so once
   the unit's writable paths changed it saw its own directory as read-only and

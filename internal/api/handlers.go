@@ -215,6 +215,7 @@ func (s *Server) handleListInterfaces(w http.ResponseWriter, r *http.Request) {
 					ID:           v.Interface.ID,
 					Name:         v.Interface.Name,
 					Protocol:     v.Interface.Protocol,
+					Mode:         v.Interface.Mode,
 					Enabled:      v.Interface.Enabled,
 					EndpointHost: v.Interface.EndpointHost,
 					ListenPort:   v.Interface.ListenPort,

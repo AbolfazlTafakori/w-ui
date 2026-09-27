@@ -59,7 +59,23 @@ type AdminInput struct {
 	// is a real thing to want -- a reseller kept on the panel with nothing
 	// left to sell.
 	InterfaceIDs []uint `json:"interfaceIds"`
+
+	// DurationDays puts the term on hold until the reseller first signs in.
+	// Above zero it wins over ExpiresAt, which is left empty until then.
+	// Nil leaves it alone.
+	DurationDays *int `json:"durationDays"`
+
+	// GroupName is the owner's label for this reseller's customers -- what
+	// the customer list is filtered by to answer "whose are these". Empty
+	// on creation takes the default, reseller:<username>. Nil leaves it
+	// alone.
+	GroupName *string `json:"groupName"`
 }
+
+// maxTermDays bounds a term on hold. Ten years is past any plan anybody
+// sells, and low enough that the date it turns into is one a database of
+// either kind stores without complaint.
+const maxTermDays = 3650
 
 // Create adds an operator.
 func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error) {
@@ -109,6 +125,25 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 		if in.ExpiresAt.Set {
 			admin.ExpiresAt = in.ExpiresAt.Value
 		}
+		if in.DurationDays != nil {
+			if *in.DurationDays < 0 || *in.DurationDays > maxTermDays {
+				return nil, invalidField("durationDays", "a term of 1 to %d days", maxTermDays)
+			}
+			if *in.DurationDays > 0 {
+				admin.DurationDays = *in.DurationDays
+				admin.ExpiresAt = nil
+			}
+		}
+	}
+
+	wantGroup := ""
+	if in.Role.Capped() && in.GroupName != nil {
+		wantGroup = strings.TrimSpace(*in.GroupName)
+		if wantGroup != "" {
+			if err := s.checkOwnerGroup(ctx, 0, wantGroup); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -116,7 +151,15 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 			return fmt.Errorf("create operator: %w", err)
 		}
 		if admin.Role.Capped() {
-			name, err := s.makeOwnerGroup(tx, &admin)
+			var (
+				name string
+				err  error
+			)
+			if wantGroup != "" {
+				name, err = ensureOwnerGroup(tx, wantGroup, admin.Username)
+			} else {
+				name, err = s.makeOwnerGroup(tx, &admin)
+			}
 			if err != nil {
 				return err
 			}
@@ -175,6 +218,116 @@ func (s *Admins) makeOwnerGroup(tx *gorm.DB, admin *model.Admin) (string, error)
 		return "", fmt.Errorf("create the operator's own group: %w", err)
 	}
 	return name, nil
+}
+
+// checkOwnerGroup refuses a label that would mislead or hide something.
+//
+// Two resellers under one label would make "whose customers are these" a
+// question the list can no longer answer. And a label that is one of this
+// reseller's own group names would be hidden from them along with the
+// owner's -- the group they made would vanish from their own page.
+func (s *Admins) checkOwnerGroup(ctx context.Context, self uint, name string) error {
+	if len(name) > 64 {
+		return invalidField("groupName", "group names are limited to 64 characters")
+	}
+	db := s.db.WithContext(ctx)
+	var clash int64
+	if err := db.Model(&model.Admin{}).
+		Where("id <> ? AND LOWER(group_name) = LOWER(?)", self, name).
+		Count(&clash).Error; err != nil {
+		return fmt.Errorf("service: check the label: %w", err)
+	}
+	if clash > 0 {
+		return invalidField("groupName", "another reseller's customers are already filed under %q", name)
+	}
+	if self != 0 {
+		if err := db.Model(&model.Group{}).
+			Where("owner_id = ? AND LOWER(name) = LOWER(?)", self, name).
+			Count(&clash).Error; err != nil {
+			return fmt.Errorf("service: check the label: %w", err)
+		}
+		if clash > 0 {
+			return invalidField("groupName", "%q is one of this reseller's own groups", name)
+		}
+	}
+	return nil
+}
+
+// ensureOwnerGroup makes sure the owner has a group of that name, creating
+// it when there is none, and returns the name as the group spells it. An
+// existing one is used as it is -- the owner may file a reseller's
+// customers beside customers of their own on purpose -- and in its own
+// spelling, so "vip" typed against an existing "VIP" does not leave the
+// customers under one name and the group under another.
+func ensureOwnerGroup(tx *gorm.DB, name, username string) (string, error) {
+	var existing []string
+	if err := tx.Model(&model.Group{}).
+		Where("owner_id = 0 AND LOWER(name) = LOWER(?)", name).
+		Limit(1).Pluck("name", &existing).Error; err != nil {
+		return "", fmt.Errorf("check the operator's own group: %w", err)
+	}
+	if len(existing) > 0 {
+		return existing[0], nil
+	}
+	// A group can exist only as the customers filed under it, never having
+	// been made on the groups page. Its spelling is theirs.
+	if err := tx.Model(&model.ClientGroup{}).
+		Where("LOWER(name) = LOWER(?)", name).
+		Limit(1).Pluck("name", &existing).Error; err != nil {
+		return "", fmt.Errorf("check the operator's own group: %w", err)
+	}
+	if len(existing) > 0 {
+		name = existing[0]
+	}
+	g := model.Group{OwnerID: 0, Name: name, Note: "Customers of " + username}
+	if err := tx.Create(&g).Error; err != nil {
+		return "", fmt.Errorf("create the operator's own group: %w", err)
+	}
+	return name, nil
+}
+
+// dropOwnerGroupIfUnused removes the owner's group of that name once nothing
+// is filed under it and no reseller is labelled with it. A label shared with
+// the owner's own customers stays where it is.
+func dropOwnerGroupIfUnused(tx *gorm.DB, name string, except uint) error {
+	var members, labels int64
+	if err := tx.Model(&model.ClientGroup{}).Where("name = ?", name).Count(&members).Error; err != nil {
+		return fmt.Errorf("check the old label: %w", err)
+	}
+	if err := tx.Model(&model.Admin{}).
+		Where("id <> ? AND group_name = ?", except, name).Count(&labels).Error; err != nil {
+		return fmt.Errorf("check the old label: %w", err)
+	}
+	if members > 0 || labels > 0 {
+		return nil
+	}
+	if err := tx.Where("owner_id = 0 AND name = ?", name).Delete(&model.Group{}).Error; err != nil {
+		return fmt.Errorf("remove the old label: %w", err)
+	}
+	return nil
+}
+
+// refileCustomers moves one reseller's customers from one label to another.
+func refileCustomers(tx *gorm.DB, ownerID uint, from, to string) error {
+	var ids []uint
+	if err := tx.Model(&model.Client{}).Where("owner_id = ?", ownerID).Pluck("id", &ids).Error; err != nil {
+		return fmt.Errorf("list the reseller's customers: %w", err)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	// A customer already in the new group keeps that one row rather than
+	// being given a second: the pair is the key.
+	if err := tx.Where("name = ? AND client_id IN ? AND client_id IN (SELECT client_id FROM client_groups WHERE name = ?)",
+		to, ids, from).Delete(&model.ClientGroup{}).Error; err != nil {
+		return fmt.Errorf("refile the reseller's customers: %w", err)
+	}
+	if err := tx.Model(&model.ClientGroup{}).
+		Where("name = ? AND client_id IN ?", from, ids).
+		Update("name", to).Error; err != nil {
+		return fmt.Errorf("refile the reseller's customers: %w", err)
+	}
+	return syncGroupLabel(tx, ids)
 }
 
 // Update changes an operator.
@@ -257,11 +410,40 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 		}
 		if in.ExpiresAt.Set {
 			fields["expires_at"] = in.ExpiresAt.Value
+			if in.ExpiresAt.Value != nil {
+				fields["duration_days"] = 0
+			}
+		}
+		if in.DurationDays != nil {
+			d := *in.DurationDays
+			if d < 0 || d > maxTermDays {
+				return nil, invalidField("durationDays", "a term of 1 to %d days", maxTermDays)
+			}
+			fields["duration_days"] = d
+			if d > 0 {
+				fields["expires_at"] = nil
+			}
 		}
 	case admin.Role.Capped():
 		fields["client_limit"] = 0
 		fields["quota_bytes"] = uint64(0)
 		fields["expires_at"] = nil
+		fields["duration_days"] = 0
+	}
+
+	// The label moves only for a reseller, and only when it changes.
+	newGroup := ""
+	if role.Capped() && admin.Role.Capped() && in.GroupName != nil {
+		want := strings.TrimSpace(*in.GroupName)
+		if want == "" {
+			return nil, invalidField("groupName", "a reseller's customers have to be filed under something")
+		}
+		if want != admin.GroupName {
+			if err := s.checkOwnerGroup(ctx, admin.ID, want); err != nil {
+				return nil, err
+			}
+			newGroup = want
+		}
 	}
 
 	if err := s.checkInterfaces(ctx, admin.ID, role, in.InterfaceIDs); err != nil {
@@ -269,9 +451,27 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if newGroup != "" {
+			canonical, err := ensureOwnerGroup(tx, newGroup, admin.Username)
+			if err != nil {
+				return err
+			}
+			newGroup = canonical
+			if admin.GroupName != "" {
+				if err := refileCustomers(tx, admin.ID, admin.GroupName, newGroup); err != nil {
+					return err
+				}
+			}
+			fields["group_name"] = newGroup
+		}
 		if len(fields) > 0 {
 			if err := tx.Model(&model.Admin{}).Where("id = ?", admin.ID).Updates(fields).Error; err != nil {
 				return fmt.Errorf("update operator: %w", err)
+			}
+		}
+		if newGroup != "" && admin.GroupName != "" {
+			if err := dropOwnerGroupIfUnused(tx, admin.GroupName, admin.ID); err != nil {
+				return err
 			}
 		}
 		if in.InterfaceIDs != nil {
@@ -344,6 +544,13 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients *
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Read before they are handed over, when they can still be told
+		// apart from the owner's own.
+		var kept []uint
+		if err := tx.Model(&model.Client{}).Where("owner_id = ?", admin.ID).
+			Pluck("id", &kept).Error; err != nil {
+			return fmt.Errorf("list the operator's customers: %w", err)
+		}
 		// Anything left is kept, and the owner administers it.
 		if err := tx.Model(&model.Client{}).Where("owner_id = ?", admin.ID).
 			Update("owner_id", 0).Error; err != nil {
@@ -353,13 +560,20 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients *
 			return fmt.Errorf("delete the operator's groups: %w", err)
 		}
 		if admin.GroupName != "" {
-			if err := tx.Where("owner_id = 0 AND name = ?", admin.GroupName).
-				Delete(&model.Group{}).Error; err != nil {
-				return fmt.Errorf("delete the operator's own group: %w", err)
+			// This reseller's customers leave the label, and nobody else's:
+			// the owner may have filed customers of their own under the same
+			// name, and those are not the departing reseller's to take.
+			if len(kept) > 0 {
+				if err := tx.Where("name = ? AND client_id IN ?", admin.GroupName, kept).
+					Delete(&model.ClientGroup{}).Error; err != nil {
+					return fmt.Errorf("clear the operator's own group: %w", err)
+				}
+				if err := syncGroupLabel(tx, kept); err != nil {
+					return fmt.Errorf("clear the operator's own group: %w", err)
+				}
 			}
-			if err := tx.Where("name = ?", admin.GroupName).
-				Delete(&model.ClientGroup{}).Error; err != nil {
-				return fmt.Errorf("clear the operator's own group: %w", err)
+			if err := dropOwnerGroupIfUnused(tx, admin.GroupName, admin.ID); err != nil {
+				return err
 			}
 		}
 		if err := tx.Where("admin_id = ?", admin.ID).Delete(&model.AdminInterface{}).Error; err != nil {

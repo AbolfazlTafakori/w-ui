@@ -135,8 +135,45 @@ function filterParams() {
 // would show an empty table and look like the filter matched nothing.
 watch(filters, () => { currentPage.value = 1; load() }, { deep: true })
 
+// A reseller's own account, over their customers: how many they may still
+// add, how much traffic and how many days they have left. Read again with
+// the list, because the traffic moves with every customer's.
+const reseller = computed(() => store.admin?.role === 'reseller')
+const account = ref(null)
+async function loadAccount() {
+  if (!reseller.value) return
+  try {
+    account.value = await api.me()
+  } catch {
+    /* the strip stays as it was; the list is what matters */
+  }
+}
+const accountStrip = computed(() => {
+  const a = account.value || store.admin
+  if (!reseller.value || !a) return null
+  const DAY = 86400e3
+  const left = a.quotaBytes ? Math.max(0, a.quotaBytes - a.usedBytes) : null
+  const spentPct = a.quotaBytes ? Math.min(100, Math.round((a.usedBytes / a.quotaBytes) * 100)) : null
+  const days = a.expiresAt ? Math.ceil((new Date(a.expiresAt).getTime() - Date.now()) / DAY) : null
+  let reason = ''
+  if (!a.enabled) reason = t('admins.switchedOff')
+  else if (days !== null && days <= 0) reason = t('admins.termEnded')
+  else if (a.quotaBytes && a.usedBytes >= a.quotaBytes) reason = t('admins.allowanceSpent')
+  return {
+    customers: a.clientLimit ? `${nf(a.clients)} / ${nf(a.clientLimit)}` : `${nf(a.clients)} / ∞`,
+    customersColor: a.clientLimit && a.clients >= a.clientLimit ? 'orange' : 'green',
+    traffic: left === null ? '∞' : bytes(left, store.locale),
+    trafficColor: left === null ? 'purple' : spentPct >= 100 ? 'red' : spentPct >= DEPLETING_AT ? 'orange' : 'green',
+    time: days === null ? '∞' : days <= 0 ? t('admins.termEnded') : t('admins.daysLeft', { n: nf(days) }),
+    timeColor: days === null ? 'purple' : days <= 0 ? 'red' : days <= 7 ? 'orange' : 'green',
+    timeTitle: a.expiresAt ? dateTime(a.expiresAt, store.locale) : '',
+    reason,
+  }
+})
+
 async function load(quiet = false) {
   if (!quiet) loading.value = true
+  loadAccount()
   try {
     const [p, o] = await Promise.all([
       api.clients(
@@ -839,6 +876,19 @@ async function submitForm(input) {
   />
 
   <div class="antpage clients">
+  <!-- A reseller's own account: what they bought and how much of it is left. -->
+  <div v-if="accountStrip" class="acard small account-card">
+    <div class="acard-body">
+      <div class="account-row">
+        <span class="account-title"><AntIcon name="ShopOutlined" /> {{ t('admins.you.title') }}</span>
+        <span class="account-item">{{ t('admins.you.customers') }} <span class="atag ltr" :class="accountStrip.customersColor">{{ accountStrip.customers }}</span></span>
+        <span class="account-item">{{ t('admins.you.trafficLeft') }} <span class="atag ltr" :class="accountStrip.trafficColor">{{ accountStrip.traffic }}</span></span>
+        <span class="account-item">{{ t('admins.you.timeLeft') }} <span class="atag" :class="accountStrip.timeColor" :title="accountStrip.timeTitle">{{ accountStrip.time }}</span></span>
+      </div>
+      <p v-if="accountStrip.reason" class="account-barred">{{ t('admins.you.barred', { reason: accountStrip.reason }) }}</p>
+    </div>
+  </div>
+
   <!-- Their summary Card: size="small", six Statistics with a coloured dot. -->
   <div v-if="stats" class="acard small summary-card">
     <div class="acard-body">
@@ -873,7 +923,10 @@ async function submitForm(input) {
 
   <div v-if="!interfaces.length" class="aalert warning">
     <AntIcon name="ExclamationCircleFilled" />
-    <div class="aalert-body"><span class="aalert-title">{{ t('interface.noneYet') }} <a href="#" @click.prevent="router.push('/interfaces')">{{ t('interface.create') }}</a></span></div>
+    <div class="aalert-body">
+      <span v-if="reseller" class="aalert-title">{{ t('admins.noServersGiven') }}</span>
+      <span v-else class="aalert-title">{{ t('interface.noneYet') }} <a href="#" @click.prevent="router.push('/interfaces')">{{ t('interface.create') }}</a></span>
+    </div>
   </div>
 
   <!-- Their list Card: size="small", the title a toolbar of Add Clients (or
@@ -1312,6 +1365,13 @@ async function submitForm(input) {
 .client-traffic-cell-bar { flex: 1 1 60px; min-width: 48px; }
 .client-traffic-cell.is-unlimited .client-traffic-cell-bar > span { border: 1px solid rgba(114, 46, 209, 0.55); }
 .client-traffic-cell-infinity { display: inline-flex; align-items: center; color: var(--tag-purple-ink); font-size: 14px; line-height: 1; }
+
+.account-card { margin-bottom: 16px; }
+.account-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
+.account-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.account-item { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.account-item .atag { margin: 0; }
+.account-barred { margin: 8px 0 0; color: var(--bad); font-size: 13px; }
 
 .clients-empty { padding: 32px 0; text-align: center; color: var(--muted); }
 .clients-empty .anticon { display: block; margin: 0 auto 8px; }

@@ -36,7 +36,7 @@ const nav = [
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true },
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
   { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true },
-  { to: '/admins', key: 'nav.admins', icon: 'UserSwitchOutlined' },
+  { to: '/admins', key: 'nav.admins', icon: 'ShopOutlined' },
   { to: '/nodes', key: 'nav.nodes', icon: 'ClusterOutlined' },
   { to: '/hosts', key: 'nav.hosts', icon: 'GlobalOutlined' },
   { to: '/outbounds', key: 'nav.outbounds', icon: 'ExportOutlined' },

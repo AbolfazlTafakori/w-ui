@@ -108,6 +108,16 @@ func fillGroups(ctx context.Context, db *gorm.DB, items []model.Client) error {
 		if g := by[items[i].ID]; g != nil {
 			items[i].Groups = g
 		}
+		// The one-label column is the first of all their groups, hidden
+		// one included, so it says the owner's label out loud to the very
+		// operator it is kept from -- on every row, and in the export. It
+		// is recomputed from what they may see.
+		if sc.Restricted {
+			items[i].Group = ""
+			if len(items[i].Groups) > 0 {
+				items[i].Group = items[i].Groups[0]
+			}
+		}
 	}
 	return nil
 }
@@ -528,6 +538,12 @@ type GroupOp struct {
 
 // ApplyToGroup runs an action across every client carrying the label.
 func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
+	// These write the plan directly -- a group extended by thirty days, a
+	// group's quota set -- rather than through Update, so they carry the
+	// same refusal themselves.
+	if err := checkBarred(ctx); err != nil {
+		return 0, err
+	}
 	group := strings.TrimSpace(op.Group)
 	if group == "" {
 		return 0, fmt.Errorf("%w: no group named", ErrInvalid)

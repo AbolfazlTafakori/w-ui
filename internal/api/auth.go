@@ -101,6 +101,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Switched off by the owner means out. Asked only once the password is
+	// right, so it tells someone guessing nothing; and before the second
+	// factor, since a code for an account that cannot come in is a question
+	// with no point. A reseller whose term ran out or whose allowance is
+	// spent is let in, read-only, to see why and pay: that is a lapse, and
+	// this is a decision.
+	if admin.Role != model.RoleOwner && !admin.Enabled {
+		s.log.Warn("sign-in refused: account switched off",
+			"username", admin.Username, "ip", clientIP(r))
+		writeError(w, http.StatusForbidden, "your account has been switched off")
+		return
+	}
+
 	// The second factor is checked only once the password is right. Asking for
 	// a code before that would tell an attacker which accounts have one, and
 	// would let them confirm a username without knowing the password.
@@ -133,6 +146,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	s.throttle.succeed(ipKey)
 	s.throttle.succeed(userKey)
+
+	// A term on hold starts now. Written with a condition on the row, so two
+	// sign-ins racing each other cannot both start the clock.
+	if admin.Role.Capped() && admin.ExpiresAt == nil && admin.DurationDays > 0 {
+		ends := time.Now().UTC().Add(time.Duration(admin.DurationDays) * 24 * time.Hour)
+		res := s.db.WithContext(r.Context()).Model(&model.Admin{}).
+			Where("id = ? AND expires_at IS NULL AND duration_days > 0", admin.ID).
+			Updates(map[string]any{"expires_at": ends, "duration_days": 0})
+		if res.Error != nil {
+			s.log.Error("start a reseller's term", "username", admin.Username, "error", res.Error)
+		} else if res.RowsAffected > 0 {
+			s.log.Info("reseller's term started on first sign-in",
+				"username", admin.Username, "days", admin.DurationDays, "until", ends)
+			admin.ExpiresAt, admin.DurationDays = &ends, 0
+		}
+	}
 
 	ip := clientIP(r)
 	if err := s.db.WithContext(r.Context()).Model(&admin).
@@ -380,6 +409,13 @@ func (s *Server) adminView(ctx context.Context, admin *model.Admin) *adminView {
 		clone := *admin
 		clone.GroupName = ""
 		view.Admin = &clone
+	}
+	if admin.Role.Capped() {
+		var held int64
+		if err := s.db.WithContext(ctx).Model(&model.Client{}).
+			Where("owner_id = ?", admin.ID).Count(&held).Error; err == nil {
+			view.Admin.Clients = held
+		}
 	}
 	if ids, err := s.admins.AllowedInterfaces(ctx, admin); err == nil && ids != nil {
 		list := make([]uint, 0, len(ids))

@@ -595,6 +595,19 @@ func (s *Clients) RemoveDevice(ctx context.Context, accountID uint) error {
 	if err != nil {
 		return fmt.Errorf("service: load device: %w", err)
 	}
+	// Devices are not narrowed to their operator the way customers are, so
+	// whose device this is has to be asked -- through the customers table,
+	// which is. Without it a reseller could delete any customer's device on
+	// the panel by counting up from one. Refused as not found, the same
+	// answer an id that does not exist gets, so probing learns nothing.
+	var visible int64
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).
+		Where("id = ?", acc.ClientID).Count(&visible).Error; err != nil {
+		return fmt.Errorf("service: load device: %w", err)
+	}
+	if visible == 0 {
+		return fmt.Errorf("%w: device %d", ErrNotFound, accountID)
+	}
 
 	now := time.Now().UTC()
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1124,9 +1137,9 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 // customer, not to a server, which is the whole reason one purchase can span
 // several.
 func (s *Clients) setInterfaces(ctx context.Context, client *model.Client, want []uint) error {
-	ifaces, err := s.loadInterfaces(ctx, dedupe(want))
-	if err != nil {
-		return err
+	want = dedupe(want)
+	if len(want) == 0 {
+		return invalidField("interfaceId", "choose at least one server for this customer")
 	}
 
 	have := map[uint]bool{}
@@ -1134,8 +1147,26 @@ func (s *Clients) setInterfaces(ctx context.Context, client *model.Client, want 
 		have[id] = true
 	}
 	keep := map[uint]bool{}
-	for _, f := range ifaces {
-		keep[f.ID] = true
+	var adding []uint
+	for _, id := range want {
+		keep[id] = true
+		if !have[id] {
+			adding = append(adding, id)
+		}
+	}
+
+	// Only a server being added is checked against what this operator may
+	// sell. One the customer already has is not a new sale: when the owner
+	// takes a server back from a reseller, the customers on it keep working,
+	// and the reseller must still be able to rename them, extend them, or
+	// take them off it -- which a check on every server they hold would
+	// refuse, the whole edit failing on a server nobody was touching.
+	var ifaces []*model.Interface
+	if len(adding) > 0 {
+		var err error
+		if ifaces, err = s.loadInterfaces(ctx, adding); err != nil {
+			return err
+		}
 	}
 
 	devices := deviceNames(client.Accounts)
@@ -1147,9 +1178,6 @@ func (s *Clients) setInterfaces(ctx context.Context, client *model.Client, want 
 	// still reaches everything they did before rather than having been moved
 	// off the old one for nothing.
 	for _, f := range ifaces {
-		if have[f.ID] {
-			continue
-		}
 		addrs, release, err := s.reserve(ctx, f.ID, len(devices))
 		if err != nil {
 			return err

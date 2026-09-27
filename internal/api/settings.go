@@ -255,7 +255,9 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	admin.Locale = locale
-	writeJSON(w, http.StatusOK, admin)
+	// The same operator /me answers with. The bare record carries the label
+	// the owner files a reseller's customers under, which is kept from them.
+	writeJSON(w, http.StatusOK, s.adminView(r.Context(), admin))
 }
 
 func slicesContains(haystack []string, needle string) bool {

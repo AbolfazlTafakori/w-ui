@@ -57,11 +57,19 @@ func (s *Clients) moveServers(ctx context.Context, ids, interfaceIDs []uint, add
 	if len(interfaceIDs) == 0 {
 		return nil, fmt.Errorf("%w: no servers chosen", ErrInvalid)
 	}
+	if err := checkBarred(ctx); err != nil {
+		return nil, err
+	}
 
 	// Checked once rather than per customer: naming a tunnel that does not
-	// exist is a mistake about the request, not about any one of them.
-	if _, err := s.loadInterfaces(ctx, interfaceIDs); err != nil {
-		return nil, err
+	// exist, or one this operator may not sell, is a mistake about the
+	// request, not about any one of them. Only when adding: taking customers
+	// off a server the owner has since taken back is exactly what a reseller
+	// should be able to do.
+	if add {
+		if _, err := s.loadInterfaces(ctx, interfaceIDs); err != nil {
+			return nil, err
+		}
 	}
 
 	var clients []model.Client

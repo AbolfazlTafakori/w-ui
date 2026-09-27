@@ -449,6 +449,13 @@ type Admin struct {
 	UsedBytes   uint64     `gorm:"not null;default:0" json:"usedBytes"`
 	ExpiresAt   *time.Time `gorm:"index" json:"expiresAt"`
 
+	// DurationDays is a term on hold: how long the reseller has, counted
+	// from the first time they sign in rather than from today. While it is
+	// set ExpiresAt is empty; the first sign-in writes the date and clears
+	// this. A reseller sold "thirty days" on Friday who first signs in on
+	// Monday gets thirty days, not twenty-seven.
+	DurationDays int `gorm:"not null;default:0" json:"durationDays"`
+
 	// GroupName is the label every customer this operator creates is put
 	// in, and which they are never shown.
 	//
