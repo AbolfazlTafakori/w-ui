@@ -36,6 +36,7 @@ const nav = [
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true },
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
   { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true },
+  { to: '/admins', key: 'nav.admins', icon: 'UserSwitchOutlined' },
   { to: '/nodes', key: 'nav.nodes', icon: 'ClusterOutlined' },
   { to: '/hosts', key: 'nav.hosts', icon: 'GlobalOutlined' },
   { to: '/outbounds', key: 'nav.outbounds', icon: 'ExportOutlined' },
@@ -54,7 +55,6 @@ const nav = [
       { to: '/settings/telegram', key: 'settings.tab.notify', icon: 'MessageOutlined' },
       { to: '/settings/email', key: 'settings.tab.email', icon: 'MailOutlined' },
       { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'CloudServerOutlined' },
-      { to: '/settings/admins', key: 'settings.tab.admins', icon: 'UserSwitchOutlined' },
     ],
   },
   {

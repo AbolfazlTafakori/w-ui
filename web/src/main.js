@@ -67,9 +67,12 @@ const router = createRouter({
     { path: '/sharing', name: 'sharing', component: SharingView },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },
-    // Ahead of the :tab route below, which would otherwise swallow it and
-    // open the settings page on a section that does not exist.
-    { path: '/settings/admins', name: 'admins', component: AdminsView },
+    // Who sells on this panel, in the menu proper rather than under settings.
+    { path: '/admins', name: 'admins', component: AdminsView },
+    // Where it used to live. Kept so a bookmark or an open tab still lands on
+    // the page rather than on a settings section that does not exist -- and
+    // ahead of the :tab route below, which would otherwise swallow it.
+    { path: '/settings/admins', redirect: '/admins' },
     // The menu links straight to a settings section. Each is the same page with
     // its tab already chosen, so a bookmark lands where it was taken from.
     { path: '/settings/:tab', name: 'settings-tab', component: SettingsView, props: true },

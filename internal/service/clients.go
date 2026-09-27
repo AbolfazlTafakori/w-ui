@@ -286,6 +286,24 @@ func (s *Clients) loadInterfaces(ctx context.Context, ids []uint) ([]*model.Inte
 	return out, nil
 }
 
+// checkBarred refuses a change from an operator who has been switched off,
+// whose term has ended, or whose allowance is gone.
+//
+// Their customers are already off -- the reconciler suspends everything a
+// barred operator holds, so nothing they edit is being served. What this
+// stops is the storing up: a reseller with a week left could otherwise push
+// every customer a year out and top each one to half a terabyte, and all of
+// it would come into effect the moment they were switched back on. Reading
+// is left alone, so they can still see the book they are being asked to pay
+// for.
+func checkBarred(ctx context.Context) error {
+	sc := ScopeOf(ctx)
+	if !sc.Restricted || sc.Barred == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrInvalid, sc.Barred)
+}
+
 // checkCeiling refuses a create that would take a reseller past what the
 // owner sold them.
 //
@@ -297,8 +315,8 @@ func (s *Clients) checkCeiling(ctx context.Context, adding int) error {
 	if !sc.Restricted {
 		return nil
 	}
-	if sc.Barred != "" {
-		return fmt.Errorf("%w: %s", ErrInvalid, sc.Barred)
+	if err := checkBarred(ctx); err != nil {
+		return err
 	}
 	if sc.ClientLimit <= 0 {
 		return nil
@@ -442,6 +460,9 @@ const maxDeviceFiles = 64
 
 // AddDevice adds one device to an existing client.
 func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) ([]*model.Account, error) {
+	if err := checkBarred(ctx); err != nil {
+		return nil, err
+	}
 	client, err := s.Get(ctx, subID)
 	if err != nil {
 		return nil, err
@@ -563,6 +584,9 @@ func clientInterfaces(accounts []model.Account) []uint {
 
 // RemoveDevice deletes a device and returns its address to the pool.
 func (s *Clients) RemoveDevice(ctx context.Context, accountID uint) error {
+	if err := checkBarred(ctx); err != nil {
+		return err
+	}
 	var acc model.Account
 	err := s.db.WithContext(ctx).First(&acc, accountID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -943,6 +967,9 @@ type UpdateInput struct {
 
 // Update applies changes to a client.
 func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.Client, error) {
+	if err := checkBarred(ctx); err != nil {
+		return nil, err
+	}
 	client, err := s.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -1194,6 +1221,9 @@ func (s *Clients) revives(client *model.Client, in UpdateInput) bool {
 
 // ResetTraffic zeroes usage and reactivates a client that had run out.
 func (s *Clients) ResetTraffic(ctx context.Context, id uint) (*model.Client, error) {
+	if err := checkBarred(ctx); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	fields := map[string]any{"used_bytes": 0, "last_reset_at": now}
 
@@ -1214,6 +1244,9 @@ func (s *Clients) ResetTraffic(ctx context.Context, id uint) (*model.Client, err
 
 // Delete removes a client and returns its addresses to the pool.
 func (s *Clients) Delete(ctx context.Context, id uint) error {
+	if err := checkBarred(ctx); err != nil {
+		return err
+	}
 	client, err := s.Get(ctx, id)
 	if err != nil {
 		return err
@@ -1273,6 +1306,9 @@ const (
 // operator renewing a few hundred customers at the start of a month should not
 // pay for one round trip each.
 func (s *Clients) Bulk(ctx context.Context, action BulkAction, ids []uint) (int64, error) {
+	if err := checkBarred(ctx); err != nil {
+		return 0, err
+	}
 	if len(ids) == 0 {
 		return 0, fmt.Errorf("%w: no clients selected", ErrInvalid)
 	}
@@ -1342,6 +1378,9 @@ type AdjustInput struct {
 
 // Adjust applies an expiry/quota/renewal change to the selected clients.
 func (s *Clients) Adjust(ctx context.Context, in AdjustInput) (int64, error) {
+	if err := checkBarred(ctx); err != nil {
+		return 0, err
+	}
 	if len(in.IDs) == 0 {
 		return 0, fmt.Errorf("%w: no clients selected", ErrInvalid)
 	}
@@ -1402,6 +1441,9 @@ func (s *Clients) Adjust(ctx context.Context, in AdjustInput) (int64, error) {
 
 // ResetAllTraffic zeroes usage for every client and revives the exhausted.
 func (s *Clients) ResetAllTraffic(ctx context.Context) (int64, error) {
+	if err := checkBarred(ctx); err != nil {
+		return 0, err
+	}
 	res := s.db.WithContext(ctx).Model(&model.Client{}).
 		Where("1 = 1").
 		Updates(map[string]any{
@@ -1422,6 +1464,9 @@ func (s *Clients) ResetAllTraffic(ctx context.Context) (int64, error) {
 // DeleteByStatus removes every client in a given state, which is how an
 // operator clears out the customers who never renewed.
 func (s *Clients) DeleteByStatus(ctx context.Context, status model.ClientStatus) (int64, error) {
+	if err := checkBarred(ctx); err != nil {
+		return 0, err
+	}
 	var ids []uint
 	switch status {
 	case model.StatusExhausted, model.StatusExpired, model.StatusDisabled:
@@ -1604,19 +1649,47 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 		model.StatusActive, depletingPercent); err != nil {
 		return nil, err
 	}
-	if err := count(&o.Devices, &model.Account{}); err != nil {
+	// Customers are narrowed for us, because the callback covers that table.
+	// Devices, tunnels and who is online are counted over tables it does not,
+	// so a reseller asking for their own tiles would otherwise be handed the
+	// panel's totals -- how many devices are on this machine, how many tunnels
+	// it runs, how many people are connected to it. Their own numbers, or
+	// nothing.
+	sc := ScopeOf(ctx)
+	devices := db.Model(&model.Account{})
+	if sc.Restricted {
+		devices = devices.Where(
+			"client_id IN (SELECT id FROM clients WHERE owner_id = ?)", sc.AdminID)
+	}
+	if err := devices.Count(&o.Devices).Error; err != nil {
 		return nil, err
 	}
-	if err := count(&o.Interfaces, &model.Interface{}); err != nil {
-		return nil, err
+
+	switch {
+	case !sc.Restricted:
+		if err := count(&o.Interfaces, &model.Interface{}); err != nil {
+			return nil, err
+		}
+	case sc.Interfaces != nil:
+		// The tunnels they were given to sell, which is what "interfaces"
+		// means from where they are standing.
+		o.Interfaces = int64(len(sc.Interfaces))
 	}
 
 	// A peer is considered present if it handshook within the window after
 	// which WireGuard itself treats a session as stale.
-	if LiveClients != nil {
+	cutoff := time.Now().UTC().Add(-onlineWithin())
+	switch {
+	case sc.Restricted:
+		online := db.Model(&model.Account{}).
+			Where("last_handshake > ?", cutoff).
+			Where("client_id IN (SELECT id FROM clients WHERE owner_id = ?)", sc.AdminID)
+		if err := online.Count(&o.Online).Error; err != nil {
+			return nil, err
+		}
+	case LiveClients != nil:
 		o.Online = int64(len(LiveClients()))
-	} else {
-		cutoff := time.Now().UTC().Add(-onlineWithin())
+	default:
 		if err := count(&o.Online, &model.Account{}, "last_handshake > ?", cutoff); err != nil {
 			return nil, err
 		}

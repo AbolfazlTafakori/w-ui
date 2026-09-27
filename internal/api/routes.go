@@ -794,6 +794,12 @@ var (
 		// How many rows a page holds and which calendar dates are shown
 		// in. Answered with those alone for anyone but the owner.
 		"GET /api/settings": true,
+		// The tiles over the customer list -- how many they hold, how many
+		// are active, how much traffic they have sold. Counted over their own
+		// customers alone. The customer list asks for this in the same breath
+		// as the rows, so refusing it left a reseller with the one page they
+		// have showing nothing at all.
+		"GET /api/overview": true,
 		// One customer's subscription link, and reissuing it.
 		"GET /api/clients/{id}/subscription":         true,
 		"POST /api/clients/{id}/subscription/rotate": true,

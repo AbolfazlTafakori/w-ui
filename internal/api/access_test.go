@@ -58,6 +58,9 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		// The few under an owner's heading they cannot work without.
 		"GET /api/interfaces",
 		"GET /api/settings",
+		// The tiles over their own customer list, counted over their own
+		// customers alone.
+		"GET /api/overview",
 		"GET /api/clients/{id}/subscription",
 		"POST /api/clients/{id}/subscription/rotate",
 	}

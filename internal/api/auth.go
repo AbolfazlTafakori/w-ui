@@ -43,9 +43,9 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	Token     string       `json:"token"`
-	ExpiresAt time.Time    `json:"expiresAt"`
-	Admin     *model.Admin `json:"admin"`
+	Token     string     `json:"token"`
+	ExpiresAt time.Time  `json:"expiresAt"`
+	Admin     *adminView `json:"admin"`
 
 	// NeedCode tells the sign-in page to ask for a second factor. It is only
 	// ever sent after the password was correct, so it reveals nothing to
@@ -148,7 +148,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Body:  fmt.Sprintf("%s from %s", admin.Username, ip),
 		})
 	}
-	writeJSON(w, http.StatusOK, loginResponse{Token: token, ExpiresAt: expires, Admin: &admin})
+	writeJSON(w, http.StatusOK, loginResponse{
+		Token: token, ExpiresAt: expires, Admin: s.adminView(r.Context(), &admin)})
 }
 
 // issueToken mints a session and the cookie half that has to come with it.
@@ -343,31 +344,30 @@ func adminFrom(ctx context.Context) *model.Admin {
 	return admin
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	admin := adminFrom(r.Context())
-	if admin == nil {
-		writeError(w, http.StatusUnauthorized, "not signed in")
-		return
-	}
+// adminView is the operator as the panel needs them to draw itself.
+//
+// The secret itself is never serialised. Only whether one is set, which is
+// what the settings page needs to know to show the right control. The three
+// questions the interface asks about a role are sent as answers rather than
+// leaving the page to work them out, so the menu and the server can never
+// disagree about who may reach what.
+//
+// Hiding a page is not what keeps anyone out -- every endpoint behind it
+// checks for itself. It is so the panel a reseller signs in to has only the
+// pages that are theirs on it, rather than a menu of things that refuse them.
+type adminView struct {
+	*model.Admin
+	TwoFactor     bool `json:"twoFactor"`
+	ManagesPanel  bool `json:"managesPanel"`
+	ManagesAdmins bool `json:"managesAdmins"`
+	SeesEveryone  bool `json:"seesEveryone"`
+}
 
-	// The secret itself is never serialised. Only whether one is set, which is
-	// what the settings page needs to know to show the right control.
-	// What the interface needs to draw itself: the role, and the three
-	// questions it asks about it. Sent as answers rather than leaving the
-	// page to work them out from the role, so the menu and the server can
-	// never disagree about who may reach what.
-	//
-	// Hiding a page is not what keeps anyone out -- every endpoint behind
-	// it checks for itself. It is so the panel a reseller signs in to has
-	// only the two pages that are theirs on it, rather than a menu of
-	// things that refuse them.
-	view := struct {
-		*model.Admin
-		TwoFactor     bool `json:"twoFactor"`
-		ManagesPanel  bool `json:"managesPanel"`
-		ManagesAdmins bool `json:"managesAdmins"`
-		SeesEveryone  bool `json:"seesEveryone"`
-	}{
+// adminView builds it. Sign-in and the /me call both answer with this: an
+// operator whose sign-in answered with less would be shown a menu for
+// somebody else until the first time they reloaded the page.
+func (s *Server) adminView(ctx context.Context, admin *model.Admin) *adminView {
+	view := &adminView{
 		Admin:         admin,
 		TwoFactor:     admin.TOTPSecret != "",
 		ManagesPanel:  admin.Role.ManagesPanel(),
@@ -381,7 +381,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		clone.GroupName = ""
 		view.Admin = &clone
 	}
-	if ids, err := s.admins.AllowedInterfaces(r.Context(), admin); err == nil && ids != nil {
+	if ids, err := s.admins.AllowedInterfaces(ctx, admin); err == nil && ids != nil {
 		list := make([]uint, 0, len(ids))
 		for id := range ids {
 			list = append(list, id)
@@ -389,7 +389,16 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		sort.Slice(list, func(i, j int) bool { return list[i] < list[j] })
 		view.Admin.InterfaceIDs = list
 	}
-	writeJSON(w, http.StatusOK, view)
+	return view
+}
+
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	admin := adminFrom(r.Context())
+	if admin == nil {
+		writeError(w, http.StatusUnauthorized, "not signed in")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.adminView(r.Context(), admin))
 }
 
 // Enrolling a second factor.
