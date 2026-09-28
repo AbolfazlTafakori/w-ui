@@ -48,6 +48,11 @@ const currentPage = ref(1)
 // the sizes Ant offers.
 const PAGE_SIZES = [10, 25, 50, 100, 200]
 const pageSize = ref(store.panel?.pageSize > 0 ? store.panel.pageSize : 25)
+// "25 / page", number first, in every language. Persian digits are
+// right-to-left characters, so "۲۵ / صفحه" would turn round as one run; a
+// left-to-right mark after the number keeps it in front.
+const LRM = String.fromCharCode(0x200e)
+const pageSizeLabel = (n) => `${nf(n)}${LRM} / ${t('client.perPage')}`
 function setPageSize(n) {
   pageSize.value = Number(n)
   currentPage.value = 1
@@ -1064,7 +1069,7 @@ async function submitForm(input) {
             <li class="apagination-total">{{ nf(page.total) }}</li>
             <li><button class="apage" :disabled="currentPage <= 1" :aria-label="t('action.prev')" @click="goPage(currentPage - 1)"><AntIcon name="LeftOutlined" /></button></li>
             <li v-for="(it, i) in pageItems" :key="i">
-              <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" @click="goPage(it)">{{ it }}</button>
+              <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" :aria-current="it === currentPage ? 'page' : null" @click="goPage(it)">{{ nf(it) }}</button>
               <button v-else class="apage jump" @click="goPage(it === 'prev' ? Math.max(1, currentPage - 5) : Math.min(totalPages, currentPage + 5))">•••</button>
             </li>
             <li><button class="apage" :disabled="currentPage >= totalPages" :aria-label="t('action.next')" @click="goPage(currentPage + 1)"><AntIcon name="RightOutlined" /></button></li>
@@ -1206,12 +1211,16 @@ async function submitForm(input) {
           <li class="apagination-total">{{ nf(page.total) }}</li>
           <li><button class="apage" :disabled="currentPage <= 1" :aria-label="t('action.prev')" @click="goPage(currentPage - 1)"><AntIcon name="LeftOutlined" /></button></li>
           <li v-for="(it, i) in pageItems" :key="i">
-            <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" @click="goPage(it)">{{ it }}</button>
+            <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" :aria-current="it === currentPage ? 'page' : null" @click="goPage(it)">{{ nf(it) }}</button>
             <button v-else class="apage jump" :aria-label="it === 'prev' ? t('action.prev') : t('action.next')" @click="goPage(it === 'prev' ? Math.max(1, currentPage - 5) : Math.min(totalPages, currentPage + 5))">•••</button>
           </li>
           <li><button class="apage" :disabled="currentPage >= totalPages" :aria-label="t('action.next')" @click="goPage(currentPage + 1)"><AntIcon name="RightOutlined" /></button></li>
-          <li v-if="page.total > 10" class="aselect apage-size"><select :value="pageSize" :aria-label="t('client.pageSize')" @change="setPageSize($event.target.value)">
-            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }} / {{ t('client.perPage') }}</option>
+          <!-- The label is drawn here and the select lies invisibly over it, its
+               menu and keyboard still the browser's: Chromium draws a closed
+               select's text right to left once it holds a Persian word, whatever
+               its direction and marks say. -->
+          <li v-if="page.total > 10" class="aselect apage-size"><span class="apage-size-label" dir="ltr" aria-hidden="true">{{ pageSizeLabel(pageSize) }}</span><select :value="pageSize" :aria-label="t('client.pageSize')" @change="setPageSize($event.target.value)">
+            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ pageSizeLabel(n) }}</option>
           </select></li>
         </ul>
       </template>
@@ -1438,10 +1447,14 @@ async function submitForm(input) {
 .clients-empty { padding: 32px 0; text-align: center; color: var(--muted); }
 .clients-empty .anticon { display: block; margin: 0 auto 8px; }
 
-.apagination { align-items: center; }
-.apagination-total { display: inline-flex; align-items: center; height: 32px; margin-inline-end: 8px; color: var(--ink); font-size: 14px; }
+.apagination-total { align-items: center; height: 32px; color: var(--ink); font-size: 14px; }
+.apagination.small .apagination-total { height: 24px; }
 .apage.jump { border-color: transparent; background: transparent; letter-spacing: 2px; color: var(--faint); }
-.apage-size { height: 32px; min-width: 100px; }
-.apage-size select { height: 30px; }
+/* The size changer is as wide as its words, 16px past the arrow as Ant's
+   is -- not the full-width select a form field is. */
+.apagination > .apage-size { width: auto; margin-inline-start: 8px; }
+.apage-size { padding: 0 32px 0 11px; font-size: 14px; }
+.apage-size-label { white-space: nowrap; color: var(--ink); }
+.apage-size select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .apage .anticon { font-size: 12px; }
 </style>

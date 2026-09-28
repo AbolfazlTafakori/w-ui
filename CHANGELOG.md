@@ -6,6 +6,17 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.2.2] — 2026-09-28
+
+### Fixed
+- **The clients pager is Ant's again.** It sits at the right end under the
+  table and reads left to right in every language: the total, the arrows,
+  the pages and the page size. The page-size box used to stretch across the
+  whole row and push the pager to the other side. Only the current page has
+  a border; the other pages and the arrows are bare until hovered.
+- "25 / page" keeps the number first in Persian, where "۲۵ / صفحه" used to
+  turn round, and page numbers use the same digits as the total.
+
 ## [2.2.1] — 2026-09-28
 
 ### Changed
@@ -249,7 +260,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.1...v2.1.2
