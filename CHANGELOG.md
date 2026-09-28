@@ -6,53 +6,70 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-09-28
+
+The panel can be sold on. A second kind of operator signs in beside the
+owner — a reseller who manages only their own customers, within a ceiling the
+owner sets — and the whole panel has had a security and accessibility pass.
+
+Upgrading keeps everything as it was: the account that administers the panel
+today becomes its owner, and the database takes its new tables on first start.
+
 ### Added
-- **Resellers** is a page of its own in the main menu, laid out as the customer
-  list is: a summary across the top, and a row per reseller with customers,
-  traffic and time left in the customer list's colours. The owner is no longer
-  listed on it. On a phone each reseller is a card.
+- **Resellers.** A reseller signs in with their own username and password and
+  manages only the customers they create, on the servers the owner gives them,
+  within a ceiling of customers, traffic and time. They never reach the machine:
+  no interfaces, nodes, routing, settings or backups, and no sight of anyone
+  else's customers. The separation is enforced by the database on every query,
+  not by the menu.
+- A **panel administrator** role: every customer on the panel, no ceiling, and
+  nothing about the server itself.
+- **Resellers** is a page in the main menu, laid out as the customer list is: a
+  summary across the top, and a row per reseller with customers, traffic and
+  time left in the customer list's colours. On a phone each is a card.
 - The reseller dialog is the customer dialog's shape and fits one screen. The
   username and password are drawn for you, side by side with a button to draw
   again, and one copy button puts the address, username and password on the
-  clipboard together.
-- A reseller's term is picked from a calendar, Gregorian or Jalali as the panel
-  is set, with +1 month, +3 months and +1 year counted from the date already
-  set -- or put **on hold**: a number of days that starts at their first
+  clipboard together. Presets fill a typical reseller plan.
+- A reseller's term is picked from a calendar — Gregorian or Jalali, as the
+  panel is set — with +1 month, +3 months and +1 year counted from the date
+  already set, or put **on hold**: a number of days that starts at their first
   sign-in.
-- The owner chooses what a reseller's customers are filed under, from their own
-  groups or a new name; changing it moves the customers already there.
+- The owner files each reseller's customers under a group of their choosing,
+  which the reseller never sees; changing it moves the customers already there.
 - A reseller's own customer list opens with **Your account**: customers against
-  their limit, traffic left and time left, and the reason when their account
-  is paused.
+  their limit, traffic left and time left, and the reason when it is paused.
+- Switching a reseller off stops every customer they hold and signs them out;
+  a term that ends or traffic that runs out stops them the same way, and they
+  may still sign in, read-only, to see why. Nothing is written to their
+  customers, so switching them back on restores exactly what was running.
+- Removing a reseller asks whether to keep their customers under the owner or
+  delete them too.
 
 ### Security
-- A subscription link chosen by hand is unique across the whole panel. Checked
-  only among one reseller's own customers, two resellers could both pick the
-  same id, and one link then served one reseller's customer the other's files.
-  The refusal no longer says whose the link is, and a reseller who keeps
-  choosing taken ids is stopped after five in an hour, so it cannot be used to
-  find out which links exist.
-- Importing with "replace" wrote plans directly, past the refusal a paused
-  reseller meets everywhere else.
 - Changing your own password and turning off the second factor are throttled
   as sign-in is. With a borrowed session either could be used to guess the
   password, or a six-digit code, as fast as requests could be sent.
 - A new username chosen on the security page follows the same rules as a new
-  operator's, case-insensitively: a reseller could rename themselves "Admin"
-  beside the owner's "admin".
+  operator's, case-insensitively, so nobody can become "Admin" beside "admin".
+- A subscription link chosen by hand is unique across the whole panel, and
+  asking for taken ones over and over is stopped, so it cannot be used to find
+  out which links exist.
 - Customer and device names and notes are held to their columns and to one
   line. A longer one was a database error on PostgreSQL; a line break in one
   reached the log, the export and Telegram messages.
 - After signing in, the panel only follows a `next` address on itself.
+- A device is removed, and its configuration read, only by an operator who can
+  see its customer.
 
 ### Accessibility
-- Secondary text meets 4.5:1 in both themes; it was 3.6:1 on every page.
-  Red text uses a lighter red on dark surfaces, and filled danger buttons a
-  darker one, so white on them reads.
-- Gold server chips were unreadable in the light theme (1.9:1), and the
-  upload and download figures failed in one theme or the other.
-- Tabbing through a table of row actions showed no focus at all: the
-  buttons' own shadow cancelled the focus ring.
+- Secondary text meets 4.5:1 in both themes; it was 3.6:1 on every page. Red
+  text uses a lighter red on dark surfaces, and filled danger buttons a darker
+  one, so white on them reads.
+- Gold server chips were unreadable in the light theme (1.9:1), and the upload
+  and download figures failed in one theme or the other.
+- Tabbing through a table of row actions showed no focus at all: the buttons'
+  own shadow cancelled the focus ring.
 - Every page names itself in the browser tab and carries a heading for a
   screen reader.
 - The × buttons on alerts, search boxes and chips take a tap 24px across
@@ -61,40 +78,17 @@ All notable changes to W-UI are recorded here. The format follows
   close when focus leaves by keyboard, and its clear button says what it does.
 
 ### Fixed
-- One reseller could delete any other operator's customer's device by its
-  number. Devices are not narrowed to their operator the way customers are, and
-  the delete never asked whose customer the device was; it now does, and
-  answers not found.
-- A reseller switched off by the owner could sign straight back in. Switched
-  off now means out; a reseller whose term ended or whose traffic ran out may
-  still sign in, read-only, to see why.
-- The group actions -- extend a group, set its allowance, reset it -- and moving
-  customers between servers in bulk wrote the plan directly, past the refusal a
-  paused reseller meets everywhere else.
-- When the owner took a server back from a reseller, every edit to a customer
-  still on it failed, even a rename. Only a server being added is checked
-  against what the reseller may sell now.
-- The label the owner files a reseller's customers under reached the reseller
-  anyway, in the one-label field on every customer row, in the export and in
-  the answer to changing their language.
-- A reseller's server picker now marks the AmneziaWG ones, which need a
-  different app.
-- Removing a reseller cleared the group they were filed under from every
-  customer on the panel, the owner's own included, when the owner had used one
-  of their groups for them.
-- The Resellers menu entry and the dropdown arrow on free-text pickers had no
-  icon.
 - An OpenVPN server carried across a panel upgrade no longer refuses every
   customer. It kept the mount namespace of the panel that started it, so once
   the unit's writable paths changed it saw its own directory as read-only and
   could not write the file OpenVPN makes for each login — every attempt came
-  back as "user authentication failed", with no room left to log why. The panel
-  now checks that a server it adopts can still write there, and restarts it
-  when it cannot.
+  back as "user authentication failed". The panel now checks that a server it
+  adopts can still write there, and restarts it when it cannot.
 - A tunnel whose engine died is brought back up. Its driver was kept as long as
   the interface's settings were unchanged, so the panel went on shaping and
   billing an interface nobody could reach; an open tunnel that reports itself
   unhealthy is reopened on the next tick.
+- The dropdown arrow on free-text pickers had no icon.
 
 ## [1.1.0] — 2026-09-25
 
@@ -173,6 +167,7 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/AbolfazlTafakori/w-ui/releases/tag/v1.0.0
