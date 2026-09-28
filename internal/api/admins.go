@@ -73,6 +73,11 @@ func (s *Server) handleUpdateAdmin(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
+	// Switching a reseller off, moving their date or their allowance decides
+	// whether every one of their customers is served. That is applied now --
+	// peers removed or restored, sessions cut -- rather than on the next
+	// tick, because the owner who flipped the switch is watching for it.
+	s.reconcileNow()
 	writeJSON(w, http.StatusOK, admin)
 }
 

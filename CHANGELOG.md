@@ -6,6 +6,15 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-09-28
+
+### Fixed
+- Switching a reseller off or on, or changing their date or allowance, now
+  takes their customers off the tunnels -- or puts them back -- the moment it
+  is saved, rather than on the panel's next pass. Their customers' own
+  switches are still never written: a customer switched off before the pause,
+  or during it, stays off when the reseller comes back.
+
 ## [2.1.0] — 2026-09-28
 
 ### Added
@@ -189,7 +198,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v1.0.0...v1.1.0
