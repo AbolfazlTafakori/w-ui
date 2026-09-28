@@ -416,8 +416,16 @@ function statusTag(c) {
   if (c.status === 'expired') return { color: 'red', label: t('status.expired') }
   // Their own plan is fine but the reseller who sold it is paused, so they
   // cannot connect. Said here, or "Active" would be a lie told on every row.
+  // One short word in the column; the reason is on the tag's tooltip.
   if (c.ownerPaused) {
-    return { color: 'red', label: store.admin?.role === 'reseller' ? t('client.accountPaused') : t('client.resellerPaused') }
+    return {
+      color: 'red',
+      label: t('client.paused'),
+      // The switch is shown off while paused, so the tooltip is where their
+      // own setting -- what they return to -- is still told.
+      title: (store.admin?.role === 'reseller' ? t('client.accountPausedHint') : t('client.resellerPausedHint'))
+        + ' ' + (c.status === 'disabled' ? t('client.pausedStaysOff') : t('client.pausedComesBack')),
+    }
   }
   if (c.status !== 'disabled' && clientOnline(c)) return { color: 'green', label: t('status.online'), dot: true }
   if (c.status === 'disabled') return { color: 'grey', label: t('status.disabled') }
@@ -1072,7 +1080,7 @@ async function submitForm(input) {
             <span v-else-if="remainingTag(c).color === 'orange' || expiryTag(c).color === 'orange'" class="atag orange status-tag">{{ t('stat.depleting') }}</span>
             <div class="card-actions">
               <button type="button" class="row-action-trigger" :aria-label="t('client.menu.clientInfo')" @click="infoFor = c"><AntIcon name="InfoCircleOutlined" /></button>
-              <Toggle :model-value="c.status === 'active'" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted'" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" />
+              <span :title="c.ownerPaused ? statusTag(c).title : ''" class="toggle-wrap"><Toggle :model-value="c.status === 'active' && !c.ownerPaused" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted' || !!c.ownerPaused" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" /></span>
               <button type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="cardMenu?.client?.id === c.id" @click="openCardMenu(c, $event)"><AntIcon name="MoreOutlined" /></button>
             </div>
           </div>
@@ -1138,10 +1146,10 @@ async function submitForm(input) {
                   </div>
                 </td>
                 <td>
-                  <Toggle :model-value="c.status === 'active'" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted'" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" />
+                  <span :title="c.ownerPaused ? statusTag(c).title : ''" class="toggle-wrap"><Toggle :model-value="c.status === 'active' && !c.ownerPaused" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted' || !!c.ownerPaused" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" /></span>
                 </td>
                 <td>
-                  <span class="atag" :class="statusTag(c).color === 'grey' ? '' : statusTag(c).color" :title="lastOnlineTitle(c)" style="margin: 0">
+                  <span class="atag" :class="statusTag(c).color === 'grey' ? '' : statusTag(c).color" :title="statusTag(c).title || lastOnlineTitle(c)" style="margin: 0">
                     <i v-if="statusTag(c).dot" class="online-dot"></i>{{ statusTag(c).label }}
                   </span>
                 </td>
@@ -1406,6 +1414,7 @@ async function submitForm(input) {
 .email-cell .sub.over { color: var(--danger, #e5484d); font-weight: 600; }
 .email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .cell-empty { color: var(--faint); }
+.toggle-wrap { display: inline-flex; }
 .online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }
 @keyframes online-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }

@@ -6,6 +6,15 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-09-28
+
+### Changed
+- **A paused reseller's customers read "Paused"**, a short tag that fits the
+  column, and their switch shows off and cannot be flipped, since flipping it
+  could not bring them back. The tag's tooltip says why, and whether the
+  customer's own switch is on -- that is, whether they come back with the
+  reseller. Nothing is written to the customer: their own setting is kept.
+
 ## [2.2.0] — 2026-09-28
 
 ### Added
@@ -240,7 +249,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.0...v2.1.1

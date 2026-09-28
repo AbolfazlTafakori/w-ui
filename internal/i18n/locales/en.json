@@ -1831,8 +1831,6 @@
   "admins.sort.traffic": "Most traffic used",
   "admins.sort.timeLeft": "Ending first",
   "admins.sort.newest": "Newest first",
-  "client.resellerPaused": "Reseller paused",
-  "client.accountPaused": "Account paused",
   "admins.bulk.nResellers": "{n} resellers",
   "admins.bulk.done": "Applied to {n} reseller(s).",
   "admins.bulk.extend": "Extend term",
@@ -1852,5 +1850,10 @@
   "admins.bulk.resetBody": "Each reseller's traffic allowance starts again from zero, and a reseller paused for using it up is back at once. Their customers' own usage is not touched.",
   "admins.removeAskMany": "{name} are about to be removed. What should happen to their customers?",
   "client.bulkResetBody": "The usage of every selected customer goes back to zero, and a customer stopped for running out of traffic is back at once.",
-  "client.bulkRotateBody": "Every selected customer is given new keys and a new subscription link. The files and links they hold now stop working within seconds; each has to fetch new ones."
+  "client.bulkRotateBody": "Every selected customer is given new keys and a new subscription link. The files and links they hold now stop working within seconds; each has to fetch new ones.",
+  "client.paused": "Paused",
+  "client.resellerPausedHint": "Off because the reseller who sold this plan is paused.",
+  "client.accountPausedHint": "Off because your account is paused.",
+  "client.pausedComesBack": "Their own switch is on: they come back when the reseller does.",
+  "client.pausedStaysOff": "Their own switch is off: they stay off when the reseller is back."
 }

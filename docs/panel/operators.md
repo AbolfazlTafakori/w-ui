@@ -96,7 +96,7 @@ The moment you save the change:
 - their customers' traffic is **dropped by the kernel**,
 - their devices are **taken off the tunnels** (WireGuard peers removed),
 - **connected OpenVPN sessions are cut**,
-- on the Clients page each of them reads **Reseller paused** (**Account paused** to the reseller), and their own switch still shows its real state, so you can see who will come back,
+- on the Clients page each of them reads **Paused** and their switch shows off and cannot be flipped; the tag's tooltip says why, and whether their own switch is on — that is, whether they come back with the reseller,
 - their subscription page says they are **inactive**, without saying why.
 
 The same happens by itself when the date passes or the traffic runs out. If the panel cannot read the resellers' standing for a moment — a database hiccup — it keeps the last answer rather than letting paused customers back on.
