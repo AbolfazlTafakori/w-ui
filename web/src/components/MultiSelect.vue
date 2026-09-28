@@ -376,7 +376,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   flex: none;
   width: 13px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .ms-label {
   flex: 1 1 auto;

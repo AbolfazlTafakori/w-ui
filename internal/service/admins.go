@@ -677,6 +677,11 @@ func (s *Admins) fill(ctx context.Context, admins []*model.Admin) error {
 	return nil
 }
 
+// CheckUsername is the same test, for an operator renaming themselves.
+func (s *Admins) CheckUsername(ctx context.Context, self uint, name string) (string, error) {
+	return s.checkUsername(ctx, self, name)
+}
+
 // checkUsername validates a name and refuses one already taken.
 func (s *Admins) checkUsername(ctx context.Context, self uint, name string) (string, error) {
 	name = strings.TrimSpace(name)

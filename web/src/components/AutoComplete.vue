@@ -1,4 +1,5 @@
 <script setup>
+import { t } from '../lib/store.js'
 // Ant's AutoComplete: a text box that offers what already exists. Focus it
 // and the known values drop down; type and they narrow; pick one or keep
 // typing a new one; the small cross clears. A group comes into being by
@@ -61,12 +62,20 @@ function toggle() {
 function onDoc(e) {
   if (root.value && !root.value.contains(e.target)) open.value = false
 }
+// Leaving by keyboard closes it too. Only the mouse did, so tabbing on left
+// the list open over whatever field came next.
+function onFocusOut(e) {
+  if (root.value && !root.value.contains(e.relatedTarget)) {
+    open.value = false
+    active.value = -1
+  }
+}
 document.addEventListener('mousedown', onDoc)
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDoc))
 </script>
 
 <template>
-  <div ref="root" class="acomplete">
+  <div ref="root" class="acomplete" @focusout="onFocusOut">
     <label class="ainput block">
       <input
         :id="id"
@@ -79,7 +88,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDoc))
         @focus="open = true"
         @keydown="onKey"
       />
-      <button v-if="modelValue" type="button" class="acomplete-clear" :aria-label="'×'" @mousedown.prevent @click="pick('')"><AntIcon name="CloseCircleFilled" /></button>
+      <button v-if="modelValue" type="button" class="acomplete-clear" :aria-label="t('action.clear')" @mousedown.prevent @click="pick('')"><AntIcon name="CloseCircleFilled" /></button>
       <button type="button" class="acomplete-caret" :class="{ open }" tabindex="-1" aria-hidden="true" @mousedown.prevent @click="toggle"><AntIcon name="DownOutlined" /></button>
     </label>
     <div v-if="open && !matches.length && empty" class="acomplete-menu" role="listbox">

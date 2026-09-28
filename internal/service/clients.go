@@ -9,7 +9,10 @@ import (
 	"net/netip"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -24,6 +27,50 @@ type Clients struct {
 	db    *gorm.DB
 	pools *ipam.Pools
 	log   *slog.Logger
+
+	// subClashes counts, per reseller, the subscription ids refused as
+	// taken. See checkSubID.
+	subClashes clashCounter
+}
+
+// clashCounter is a small sliding window of refusals per operator.
+type clashCounter struct {
+	mu   sync.Mutex
+	seen map[uint][]time.Time
+}
+
+const (
+	clashWindow = time.Hour
+	clashLimit  = 5
+)
+
+func (c *clashCounter) prune(id uint, now time.Time) []time.Time {
+	kept := c.seen[id][:0]
+	for _, t := range c.seen[id] {
+		if now.Sub(t) < clashWindow {
+			kept = append(kept, t)
+		}
+	}
+	c.seen[id] = kept
+	return kept
+}
+
+func (c *clashCounter) blocked(id uint, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.seen == nil {
+		return false
+	}
+	return len(c.prune(id, now)) >= clashLimit
+}
+
+func (c *clashCounter) miss(id uint, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.seen == nil {
+		c.seen = map[uint][]time.Time{}
+	}
+	c.seen[id] = append(c.prune(id, now), now)
 }
 
 // NewClients builds the client service.
@@ -404,10 +451,44 @@ func (s *Clients) reserve(ctx context.Context, interfaceID uint, n int) ([]netip
 	return addrs, release, nil
 }
 
+// checkText refuses a value longer than its column, or one carrying control
+// characters.
+//
+// The columns are sized, and PostgreSQL enforces the size: a name past it was
+// a database error and a 500 rather than a sentence about the name. A line
+// break or an escape sequence in a name is never meant, and it is carried into
+// places that read lines -- the log, the CSV export, a Telegram message.
+func checkText(field, value string, limit int) error {
+	if utf8.RuneCountInString(value) > limit {
+		return invalidField(field, "at most %d characters", limit)
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return invalidField(field, "no line breaks or control characters")
+		}
+	}
+	return nil
+}
+
+// The sizes of the columns these are written to.
+const (
+	maxClientName = 128
+	maxClientNote = 512
+	maxDeviceName = 64
+)
+
 func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
 		return nil, invalidField("name", "name is required")
+	}
+	if err := checkText("name", in.Name, maxClientName); err != nil {
+		return nil, err
+	}
+	if len(in.Note) > 0 {
+		if utf8.RuneCountInString(in.Note) > maxClientNote {
+			return nil, invalidField("note", "at most %d characters", maxClientNote)
+		}
 	}
 	// 0 is unlimited: the customer may be connected from as many places as
 	// they like. Anything above 50 is a typo.
@@ -433,6 +514,9 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 	names := make([]string, 0, len(in.DeviceNames))
 	for _, n := range in.DeviceNames {
 		if n = strings.TrimSpace(n); n != "" {
+			if err := checkText("deviceNames", n, maxDeviceName); err != nil {
+				return nil, err
+			}
 			names = append(names, n)
 		}
 	}
@@ -488,6 +572,9 @@ func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) ([]*mo
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = fmt.Sprintf("device-%d", len(devices)+1)
+	}
+	if err := checkText("name", name, maxDeviceName); err != nil {
+		return nil, err
 	}
 	for _, existing := range devices {
 		if strings.EqualFold(existing, name) {
@@ -994,9 +1081,15 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		if name == "" {
 			return nil, fmt.Errorf("%w: name cannot be empty", ErrInvalid)
 		}
+		if err := checkText("name", name, maxClientName); err != nil {
+			return nil, err
+		}
 		fields["name"] = name
 	}
 	if in.Note != nil {
+		if utf8.RuneCountInString(*in.Note) > maxClientNote {
+			return nil, invalidField("note", "at most %d characters", maxClientNote)
+		}
 		fields["note"] = *in.Note
 	}
 	var groups []string
@@ -1992,8 +2085,21 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 		}
 		return "", invalidField("subId", "a subscription id can only contain letters, digits, - and _ (found %q)", string(r))
 	}
+	// Asked across the whole panel, not only this operator's customers. A
+	// link is one URL on the internet whoever sold it: narrowed to one
+	// reseller, two of them could each pick "12345678", and one link would
+	// then hand one reseller's customer the other's files.
+	//
+	// Across the whole panel the answer is also a way to ask whether a link
+	// exists, and an existing link is a customer's private keys. So a
+	// reseller who keeps choosing taken ids is stopped after a few, and the
+	// refusal does not say whose it is.
+	sc := ScopeOf(ctx)
+	if sc.Restricted && s.subClashes.blocked(sc.AdminID, time.Now()) {
+		return "", invalidField("subId", "too many subscription ids refused; wait a while, or leave it empty for one to be drawn")
+	}
 	var n int64
-	q := s.db.WithContext(ctx).Model(&model.Client{}).Where("sub_token = ?", id)
+	q := s.db.WithContext(WithScope(ctx, Scope{})).Model(&model.Client{}).Where("sub_token = ?", id)
 	if selfID != 0 {
 		q = q.Where("id <> ?", selfID)
 	}
@@ -2001,7 +2107,10 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 		return "", fmt.Errorf("service: check subscription id: %w", err)
 	}
 	if n > 0 {
-		return "", invalidField("subId", "the subscription id %q belongs to another customer", id)
+		if sc.Restricted {
+			s.subClashes.miss(sc.AdminID, time.Now())
+		}
+		return "", invalidField("subId", "that subscription id cannot be used; choose another, or leave it empty for one to be drawn")
 	}
 	return id, nil
 }

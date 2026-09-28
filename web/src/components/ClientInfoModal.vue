@@ -352,7 +352,7 @@ const expiryText = computed(() => {
 .link-row-tag { margin: 0; flex-shrink: 0; font-weight: 600; letter-spacing: 0.3px; }
 .link-row-title { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
-.link-row-title-anchor { color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); transition: text-decoration-color 120ms ease; }
+.link-row-title-anchor { color: var(--accent-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); transition: text-decoration-color 120ms ease; }
 .link-row-title-anchor:hover { text-decoration-color: var(--accent); }
 .config-block { margin-bottom: 8px; }
 .config-block-actions { display: flex; gap: 4px; }

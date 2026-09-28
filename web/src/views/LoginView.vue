@@ -47,7 +47,10 @@ async function submit() {
       document.getElementById('login-code')?.focus()
       return
     }
-    router.replace(route.query.next || '/')
+    // Only a path on this panel: a link crafted with another site in it
+    // would otherwise be followed straight after a correct password.
+    const next = typeof route.query.next === 'string' ? route.query.next : ''
+    router.replace(/^\/(?![/\\])/.test(next) ? next : '/')
   } catch (err) {
     error.value = err.message
   } finally {
@@ -216,7 +219,7 @@ const localeIcon = (l) => (l === 'fa' ? '🇮🇷' : '🇬🇧')
 .toolbar-btn .anticon { font-size: 18px; }
 .lang { position: relative; }
 .lang-menu { position: absolute; top: calc(100% + 4px); inset-inline-end: 0; min-width: 160px; }
-.lang-menu .amenu-item.selected { color: var(--accent); background: var(--accent-soft); }
+.lang-menu .amenu-item.selected { color: var(--accent-text); background: var(--accent-soft); }
 
 .login-wrapper { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
 .login-card {

@@ -75,6 +75,28 @@ const nav = [
   { to: '/api-docs', key: 'nav.api', icon: 'ApiOutlined' },
 ]
 
+// The page's name, from the menu entry it belongs to -- the longest `to`
+// the current path starts with, so /clients/12 is Clients and
+// /settings/security is Security rather than Settings.
+const pageTitle = computed(() => {
+  let best = null
+  const visit = (items) => {
+    for (const item of items) {
+      if (item.children) visit(item.children)
+      else if (item.to && (route.path === item.to || (item.to !== '/' && route.path.startsWith(item.to + '/')))) {
+        if (!best || item.to.length > best.to.length) best = item
+      }
+    }
+  }
+  visit(nav)
+  return best ? t(best.key) : ''
+})
+// Every tab and every history entry said "W-UI", so ten open tabs were ten
+// guesses. The page comes first, where a narrow tab still shows it.
+watch(pageTitle, (name) => {
+  document.title = name ? `${name} · W-UI` : 'W-UI'
+}, { immediate: true })
+
 // What this operator is shown, from what the server said they may reach.
 const visibleNav = computed(() => {
   const me = store.admin
@@ -426,6 +448,10 @@ function reload() {
     </Transition>
 
     <main class="main">
+      <!-- The page's name, for a screen reader: pages here have no visible
+           title -- the menu shows where you are -- and without one there is
+           nothing to jump to, and nothing that says which page opened. -->
+      <h1 v-if="pageTitle" class="sr-only">{{ pageTitle }}</h1>
       <div
         v-if="store.admin && store.meta && !store.meta.enforcementActive"
         class="banner warn"

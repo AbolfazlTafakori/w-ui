@@ -771,7 +771,7 @@ const uptime = computed(() => {
               </div></div>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelOutbound') }}</div><div class="setting-list-description">{{ t('set.panelOutboundDesc') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.panelOutbound">
+                <div class="acol"><div class="aselect"><select v-model="form.panelOutbound" :aria-label="t('set.panelOutbound')">
                   <option value="">{{ t('set.panelOutboundPh') }}</option>
                   <optgroup v-if="balancerTags.length" :label="t('nav.outbounds')"><option v-for="tag in outboundTags" :key="tag" :value="tag">{{ tag }}</option></optgroup>
                   <template v-else><option v-for="tag in outboundTags" :key="tag" :value="tag">{{ tag }}</option></template>
@@ -784,7 +784,7 @@ const uptime = computed(() => {
               </div></div>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.language') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.defaultLocale">
+                <div class="acol"><div class="aselect"><select v-model="form.defaultLocale" :aria-label="t('set.language')">
                   <option value="en">🇬🇧&nbsp;&nbsp;English</option>
                   <option value="fa">🇮🇷&nbsp;&nbsp;فارسی</option>
                 </select></div></div>
@@ -831,7 +831,7 @@ const uptime = computed(() => {
               </div></div>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.datepicker') }}</div><div class="setting-list-description">{{ t('set.datepickerDescription') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.datepicker">
+                <div class="acol"><div class="aselect"><select v-model="form.datepicker" :aria-label="t('set.datepicker')">
                   <option value="gregorian">{{ t('set.calendarGregorian') }}</option>
                   <option value="jalalian">{{ t('set.calendarJalalian') }}</option>
                 </select></div></div>
@@ -857,7 +857,7 @@ const uptime = computed(() => {
               </div></div>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defReset') }}<span v-if="isDefault('defaultResetCycle')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defResetDesc') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.defaultResetCycle">
+                <div class="acol"><div class="aselect"><select v-model="form.defaultResetCycle" :aria-label="t('set.defReset')">
                   <option value="none">{{ t('reset.none') }}</option>
                   <option value="daily">{{ t('reset.daily') }}</option>
                   <option value="weekly">{{ t('reset.weekly') }}</option>
@@ -960,7 +960,7 @@ const uptime = computed(() => {
               </div></div>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramBotLanguage') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.notifyLang">
+                <div class="acol"><div class="aselect"><select v-model="form.notifyLang" :aria-label="t('set.telegramBotLanguage')">
                   <option value="en">🇬🇧&nbsp;&nbsp;English</option>
                   <option value="fa">🇮🇷&nbsp;&nbsp;فارسی</option>
                 </select></div></div>
@@ -983,7 +983,7 @@ const uptime = computed(() => {
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramNotifyTime') }}</div><div class="setting-list-description">{{ t('set.telegramNotifyTimeDesc') }}</div></div></div>
                 <div class="acol"><div class="aspace-v">
-                  <div class="aselect"><select v-model="notifyMode">
+                  <div class="aselect"><select v-model="notifyMode" :aria-label="t('set.telegramNotifyTime')">
                     <option value="every">{{ t('set.notifyTime.every') }}</option>
                     <option value="@hourly">{{ t('set.notifyTime.hourly') }}</option>
                     <option value="@daily">{{ t('set.notifyTime.daily') }}</option>
@@ -1075,7 +1075,7 @@ const uptime = computed(() => {
               </div></div>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpEncryption') }}</div><div class="setting-list-description">{{ t('set.smtpEncryptionDesc') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.mailEncryption">
+                <div class="acol"><div class="aselect"><select v-model="form.mailEncryption" :aria-label="t('set.smtpEncryption')">
                   <option value="none">{{ t('set.smtpEncryptionNone') }}</option>
                   <option value="starttls">{{ t('set.smtpEncryptionStartTLS') }}</option>
                   <option value="tls">{{ t('set.smtpEncryptionTLS') }}</option>
@@ -1275,7 +1275,7 @@ const uptime = computed(() => {
             <div class="setting-list-item"><div class="arow">
               <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('settings.recentLog') }}</div><div class="setting-list-description">{{ t('settings.recentLogDesc') }}</div></div></div>
               <div class="acol"><div class="aspace">
-                <div class="aselect" style="width: 160px"><select v-model="logLevel" @change="loadLogs">
+                <div class="aselect" style="width: 160px"><select v-model="logLevel" @change="loadLogs" :aria-label="t('settings.recentLog')">
                   <option value="">{{ t('settings.logAll') }}</option>
                   <option value="INFO">{{ t('settings.logInfo') }}</option>
                   <option value="WARN">{{ t('settings.logWarn') }}</option>
@@ -1443,7 +1443,7 @@ const uptime = computed(() => {
   .header-info { justify-content: flex-start; margin-top: 8px; }
 }
 .conf-alert { margin-bottom: 10px; }
-.abtn.danger-primary { background: var(--bad); border-color: var(--bad); color: #fff; }
+.abtn.danger-primary { background: var(--bad-fill, var(--bad)); border-color: var(--bad-fill, var(--bad)); color: #fff; }
 .abtn.danger-primary:hover:not(:disabled) { opacity: 0.85; }
 .abtn:disabled { color: var(--faint); background: var(--surface-2); border-color: var(--line); box-shadow: none; cursor: not-allowed; }
 .abtn.text.danger-text { color: var(--bad); }

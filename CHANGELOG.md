@@ -25,6 +25,41 @@ All notable changes to W-UI are recorded here. The format follows
   their limit, traffic left and time left, and the reason when their account
   is paused.
 
+### Security
+- A subscription link chosen by hand is unique across the whole panel. Checked
+  only among one reseller's own customers, two resellers could both pick the
+  same id, and one link then served one reseller's customer the other's files.
+  The refusal no longer says whose the link is, and a reseller who keeps
+  choosing taken ids is stopped after five in an hour, so it cannot be used to
+  find out which links exist.
+- Importing with "replace" wrote plans directly, past the refusal a paused
+  reseller meets everywhere else.
+- Changing your own password and turning off the second factor are throttled
+  as sign-in is. With a borrowed session either could be used to guess the
+  password, or a six-digit code, as fast as requests could be sent.
+- A new username chosen on the security page follows the same rules as a new
+  operator's, case-insensitively: a reseller could rename themselves "Admin"
+  beside the owner's "admin".
+- Customer and device names and notes are held to their columns and to one
+  line. A longer one was a database error on PostgreSQL; a line break in one
+  reached the log, the export and Telegram messages.
+- After signing in, the panel only follows a `next` address on itself.
+
+### Accessibility
+- Secondary text meets 4.5:1 in both themes; it was 3.6:1 on every page.
+  Red text uses a lighter red on dark surfaces, and filled danger buttons a
+  darker one, so white on them reads.
+- Gold server chips were unreadable in the light theme (1.9:1), and the
+  upload and download figures failed in one theme or the other.
+- Tabbing through a table of row actions showed no focus at all: the
+  buttons' own shadow cancelled the focus ring.
+- Every page names itself in the browser tab and carries a heading for a
+  screen reader.
+- The × buttons on alerts, search boxes and chips take a tap 24px across
+  without looking any larger, and chips and small links are 24px tall.
+- The settings selects are named, the suggestions under a free-text field
+  close when focus leaves by keyboard, and its clear button says what it does.
+
 ### Fixed
 - One reseller could delete any other operator's customer's device by its
   number. Devices are not narrowed to their operator the way customers are, and

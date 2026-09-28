@@ -29,11 +29,14 @@
   --ink: #f4f1f2;
   --ink-2: #d2cbce;
   --muted: #a1959b;
-  --faint: #746a71;
+  --faint: #8c8188; /* 4.6:1 on --surface-2: text AA, not a hint the eye has to hunt for */
 
   --accent: #e02e3d;
   --accent-hover: #f2404f;
   --accent-ink: #ffffff;
+  /* The accent as the colour of text on a dark surface. The accent itself is
+     a fill for white text; as text it falls to 3.5:1 on the raised surfaces. */
+  --accent-text: #e75d69;
   --accent-soft: #2c1217;
   --accent-line: #55202a;
 
@@ -45,6 +48,9 @@
   --warn: #e0ab34;
   --warn-soft: #2d2411;
   --bad: #f4655f;
+  /* A filled red with white text on it. --bad is a colour for text on the
+     dark surface and is too light to carry white at 4.5:1. */
+  --bad-fill: #c62f28;
   --bad-soft: #331714;
 
   /* Chips. Dark: a deep fill with a bright letter. */
@@ -57,6 +63,7 @@
   --tag-orange-bg: #2b1d11;
   --tag-orange-line: #593815;
   --tag-orange-ink: #e89a3c;
+  --tag-gold-ink: #d4b106;
   --switch-off: rgba(255, 255, 255, 0.25);
   --tag-purple-bg: #1a1325;
   --tag-purple-line: #3a2a5c;
@@ -206,13 +213,14 @@ body.light {
   --ink: #141113;
   --ink-2: #3d363b;
   --muted: #6b6169;
-  --faint: #8d838a;
+  --faint: #766c73; /* 4.6:1 on --surface-2 */
 
   /* The accent darkens: the light one was chosen to carry against near-black
      and drops to roughly 3:1 on white, which is not enough for text. */
   --accent: #c81f2e;
   --accent-hover: #a81826;
   --accent-ink: #ffffff;
+  --accent-text: #c81f2e;
   --accent-soft: #fdeaec;
   --accent-line: #f3c3c8;
 
@@ -221,6 +229,7 @@ body.light {
   --warn: #8a6206;
   --warn-soft: #fdf3dd;
   --bad: #c62f28;
+  --bad-fill: #c62f28;
   --bad-soft: #fdeae9;
 
   /* Light: the relationship inverts — a pale fill with a dark letter. A deep
@@ -234,6 +243,7 @@ body.light {
   --tag-orange-bg: #fdf3dd;
   --tag-orange-line: #f0d9a0;
   --tag-orange-ink: #8a6206;
+  --tag-gold-ink: #826d04;
   --switch-off: rgba(0, 0, 0, 0.25);
   --tag-purple-bg: #f2ecfd;
   --tag-purple-line: #d8c8f5;
@@ -311,7 +321,7 @@ h4 {
 }
 
 a {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: none;
 }
 a:hover {
@@ -552,7 +562,7 @@ option {
   color: var(--ink-2);
 }
 .field label .req {
-  color: var(--accent);
+  color: var(--accent-text);
   margin-inline-end: 3px;
 }
 .field .hint {
@@ -1090,7 +1100,7 @@ td.center { text-align: center; }
 }
 .act.round:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--surface);
 }
 .act.round.primary {
@@ -1205,8 +1215,8 @@ td.center { text-align: center; }
   gap: 4px;
   font-size: 12px;
 }
-.traffic .up { color: #008771; }
-.traffic .down { color: #3c89e8; }
+.traffic .up { color: var(--tag-green-ink); }
+.traffic .down { color: var(--tag-blue-ink); }
 
 /* The Save bar over the outbounds page: their header Card, the button on
    the left and the warning Alert on the right. */
@@ -1362,7 +1372,7 @@ tr.off td {
 .btn.danger-ghost {
   border-color: var(--accent-line, var(--accent));
   background: none;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .btn.danger-ghost:hover:not(:disabled) {
   background: var(--accent-soft);
@@ -2553,7 +2563,7 @@ textarea.bad:focus {
   color: var(--ink-2);
 }
 .tab.on {
-  color: var(--accent);
+  color: var(--accent-text);
   border-bottom-color: var(--accent);
 }
 .tab svg {
@@ -2692,7 +2702,7 @@ textarea.bad:focus {
   padding-inline: 9px;
 }
 .chip.ghost:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
@@ -3424,7 +3434,7 @@ tbody tr.decided .step {
 .bk-all {
   display: inline-block;
   margin-bottom: 12px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: var(--t-sm);
 }
 .bk-all:hover {
@@ -3508,7 +3518,7 @@ tbody tr.decided .step {
 }
 .hs-range.on {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .hs-note {
   font-size: var(--t-xs);

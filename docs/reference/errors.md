@@ -36,7 +36,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `not signed in` | `/api/auth/me` was called without a session. | Sign in. |
 | `the current password is incorrect` (403) | Changing the password needs the old one. | Retype it; forgotten: `w-ui` → 7. |
 | `the new password must be at least 8 characters` | | Choose a longer one. |
-| `the username can be at most 64 characters` | | Choose a shorter one. |
+| `a username of at least 3 characters` / `that username is too long` / `a username uses letters, digits, and - _ . only` / `"…" is taken` | The same rules as a new operator, case-insensitively. | Another name. |
 | `give a new username, a new password, or both` | The change form was submitted empty. | Fill in what should change. |
 
 ## Requests the panel cannot read
@@ -75,7 +75,8 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `the username "…" is already used on …` | Usernames are unique per OpenVPN tunnel. | Another name. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` | | |
 | `a subscription id is 8 to 64 characters` / `a subscription id can only contain letters, digits, - and _ (found "…")` | The subscription id typed on the Credentials tab. | Something like `roya-2024-link`, or leave it empty to have one drawn. |
-| `the subscription id "…" belongs to another customer` | Each customer's link secret is unique. | Another id. |
+| `that subscription id cannot be used; choose another, or leave it empty for one to be drawn` | Each link is unique across the whole panel; whose it is is not said. | Another id, or none. |
+| `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | Five taken ids in an hour from one reseller: a way of asking which links exist. | Leave it empty. |
 | `device limit reached` (400) | The customer already holds 64 device files, the most one can. | Remove a device. |
 | `address pool exhausted` (400) | The tunnel's subnet has no free address. | A larger subnet on the interface, or another interface. |
 | `no interfaces configured; create one before adding customers` (log) | A customer was created before any tunnel. | Create an interface first. |

@@ -527,13 +527,27 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	// Either proof will do: the password, or a code from the app being
 	// removed, which is what the classic panel asks for and what an operator holding the
 	// phone has to hand.
-	switch {
-	case req.Password != "" && bcrypt.CompareHashAndPassword([]byte(stored.PasswordHash), []byte(req.Password)) == nil:
-	case req.Code != "" && stored.TOTPSecret != "" && totp.Validate(stored.TOTPSecret, req.Code, time.Now()):
-	default:
-		writeError(w, http.StatusUnauthorized, "that password or code is not right")
+	// Throttled as sign-in is: a six-digit code tried as fast as a borrowed
+	// session can send requests falls in well under an hour.
+	key := fmt.Sprintf("totpoff:%d", admin.ID)
+	now := time.Now()
+	if wait := s.throttle.retryAfter(key, now); wait > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, lockoutMessage(wait))
 		return
 	}
+	switch {
+	case req.Password != "" && bcrypt.CompareHashAndPassword([]byte(stored.PasswordHash), []byte(req.Password)) == nil:
+	case req.Code != "" && stored.TOTPSecret != "" && totp.Validate(stored.TOTPSecret, req.Code, now) &&
+		!s.totpReplayed(stored.ID, req.Code, now):
+	default:
+		s.throttle.fail(key, now)
+		s.log.Warn("wrong proof when turning off the second factor",
+			"username", admin.Username, "ip", clientIP(r))
+		writeError(w, http.StatusForbidden, "that password or code is not right")
+		return
+	}
+	s.throttle.succeed(key)
 
 	err := s.db.WithContext(r.Context()).Model(&model.Admin{}).
 		Where("id = ?", admin.ID).Update("totp_secret", "").Error

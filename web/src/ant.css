@@ -306,7 +306,7 @@ th.right .sorters .title { text-align: end; }
 }
 .sorter .anticon { font-size: 11px; }
 .sorter .down { margin-top: -0.3em; }
-th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); }
+th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent-text); }
 
 /* Selection column: 32px, checkbox 16 */
 .atable th.sel, .atable td.sel { width: 32px; text-align: center; padding: 8px; }
@@ -355,7 +355,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
   transition: color 0.3s;
 }
 .atab:hover { color: var(--accent-hover); }
-.atab.active { color: var(--accent); text-shadow: 0 0 0.25px currentcolor; }
+.atab.active { color: var(--accent-text); text-shadow: 0 0 0.25px currentcolor; }
 .atab.active::after {
   content: '';
   position: absolute;
@@ -515,7 +515,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .setting-list-title { font-size: 14px; color: var(--ink); font-weight: 500; }
 .setting-list-title .atag { margin-inline-start: 8px; margin-inline-end: 0; }
 .setting-list-description { font-size: 14px; color: var(--faint); line-height: 1.5715; }
-.setting-list-description a { color: var(--accent); }
+.setting-list-description a { color: var(--accent-text); }
 
 /* Space, vertical */
 .aspace-v { display: flex; flex-direction: column; gap: 8px; width: 100%; }
@@ -609,8 +609,8 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
   cursor: pointer;
   transition: all 0.2s;
 }
-.apage:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.apage.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.apage:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
+.apage.active { border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .apage:disabled { color: var(--faint); cursor: not-allowed; }
 
 /* Radio.Group buttonStyle="solid": a row of 32px segments sharing borders,
@@ -632,14 +632,14 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 }
 .aradio-btn:first-child { border-inline-start-width: 1px; border-start-start-radius: 6px; border-end-start-radius: 6px; }
 .aradio-btn:last-child { border-start-end-radius: 6px; border-end-end-radius: 6px; }
-.aradio-btn:hover { color: var(--accent); }
+.aradio-btn:hover { color: var(--accent-text); }
 .aradio-btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); z-index: 1; }
 .aradio-btn.active + .aradio-btn { border-inline-start-color: var(--accent); }
 
 /* Button shape="circle" size="small": a 24px disc. */
 .abtn.circle { width: 24px; height: 24px; min-width: 24px; padding: 0; border-radius: 50%; font-size: 14px; }
 .abtn.small { height: 24px; padding: 0 7px; border-radius: 4px; font-size: 14px; }
-.abtn.danger-primary { background: var(--bad); border-color: var(--bad); color: #fff; }
+.abtn.danger-primary { background: var(--bad-fill, var(--bad)); border-color: var(--bad-fill, var(--bad)); color: #fff; }
 .abtn.danger-primary:hover { opacity: 0.85; color: #fff; }
 .abtn:disabled { color: var(--faint); background: var(--surface-2); border-color: var(--line); box-shadow: none; cursor: not-allowed; }
 .abtn .anticon.spin { animation: aspin 1s linear infinite; }
@@ -710,7 +710,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
   inset: 0;
   z-index: 4;
   max-height: 400px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 14px;
   text-align: center;
 }
@@ -848,7 +848,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .atag.cyan { background: var(--tag-cyan-bg, #112123); border-color: var(--tag-cyan-line, #144848); color: var(--tag-cyan-ink, #33bcb7); }
 .atag.geekblue { background: var(--tag-geek-bg); border-color: var(--tag-geek-line); color: var(--tag-geek-ink); }
 .atag.orange { background: var(--tag-orange-bg); border-color: var(--tag-orange-line); color: var(--tag-orange-ink); }
-.atag.gold { background: var(--tag-orange-bg); border-color: var(--tag-orange-line); color: #d4b106; }
+.atag.gold { background: var(--tag-orange-bg); border-color: var(--tag-orange-line); color: var(--tag-gold-ink, #d4b106); }
 .atag.default { background: var(--surface-3); border-color: var(--line); color: var(--ink); }
 
 /* ── phones: cards instead of tables ─────────────────────────────────────
@@ -887,7 +887,7 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .bulk-count {
   font-size: 12px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
   border-radius: 10px;
   padding: 0 8px;
   line-height: 20px;
@@ -1037,3 +1037,65 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent); 
 .abadge-dot.red { background: var(--bad); }
 .abadge-dot.orange { background: var(--warn); }
 .abadge-dot.green { background: var(--ok); }
+
+/* Touch targets.
+   Every control gets at least a 24px square to hit (WCAG 2.2, 2.5.8), and
+   the small icon buttons -- the × that closes an alert or clears a search,
+   the × on a chip -- keep the size they are drawn at: an invisible area
+   around them takes the tap instead. A 12px × is a precise click with a
+   mouse and a coin toss with a thumb. */
+.aalert-close,
+.ainput-clear,
+.chip-x,
+button.ov-version {
+  position: relative;
+}
+.aalert-close::before,
+.ainput-clear::before,
+.chip-x::before,
+button.ov-version::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+.chip,
+.linkbtn {
+  min-height: 24px;
+}
+a.spacer.small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+/* Present to a screen reader, absent from the screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus. The global ring is a box-shadow on :focus-visible, and a
+   component rule that sets its own box-shadow -- .abtn.text sets none -- is
+   more specific and wins, so tabbing through a table of row actions showed
+   nothing at all. These restate the ring at a specificity that beats every
+   component's own shadow, for keyboard focus only: a click leaves no ring. */
+.abtn:focus-visible,
+.abtn.text:focus-visible,
+.abtn.primary:focus-visible,
+.acheck:focus-visible,
+.aradio-btn:focus-visible,
+.atab:focus-visible,
+.amodal-close:focus-visible,
+.amenu-item:focus-visible,
+.amenu-submenu-title:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}

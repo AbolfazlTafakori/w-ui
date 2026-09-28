@@ -105,7 +105,7 @@
 .brand-actions > *:hover,
 .brand-actions > *:focus-visible {
   background-color: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
   transform: scale(1.08);
   outline: none;
 }
@@ -192,15 +192,15 @@
 .amenu-inline .amenu-item:hover:not(.selected),
 .amenu-inline .amenu-submenu-title:hover:not(.selected) {
   background-color: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .amenu-inline .amenu-item.selected {
   background-color: color-mix(in srgb, var(--accent) 20%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .amenu-inline .amenu-submenu.open > .amenu-submenu-title,
 .amenu-inline .amenu-submenu.active > .amenu-submenu-title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* The submenu arrow: two 6px bars meeting at a point, turning up when open. */
@@ -326,11 +326,11 @@
 .amenu-popup .amenu-item .anticon + .amenu-title { margin-inline-start: 10px; }
 .amenu-popup .amenu-item:hover:not(.selected) {
   background-color: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .amenu-popup .amenu-item.selected {
   background-color: color-mix(in srgb, var(--accent) 20%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 @keyframes amenu-zoom {
   from { opacity: 0; transform: scale(0.8); }
@@ -361,7 +361,7 @@
 
 .sider-version:hover,
 .sider-version:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
   outline: none;
 }
 
@@ -456,7 +456,7 @@
 }
 .drawer-header-actions > *:hover {
   background-color: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .drawer-header-actions > .drawer-close:hover {
   background: var(--surface-3);

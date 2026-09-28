@@ -36,7 +36,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `not signed in` | `/api/auth/me` بدون سشن صدا زده شده. | وارد شو. |
 | `the current password is incorrect` (403) | تغییر رمز، رمز قبلی را می‌خواهد. | دوباره وارد کن؛ فراموش شده: `w-ui` → ۷. |
 | `the new password must be at least 8 characters` |  | رمز بلندتری انتخاب کن. |
-| `the username can be at most 64 characters` |  | کوتاه‌ترش کن. |
+| `a username of at least 3 characters` / `that username is too long` / `a username uses letters, digits, and - _ . only` / `"…" is taken` | همان قواعد ساخت ادمین، بدون حساسیت به حروف بزرگ و کوچک. | نام دیگری. |
 | `give a new username, a new password, or both` | فرم تغییر خالی ارسال شده. | چیزی که باید عوض شود را پر کن. |
 
 ## درخواست‌هایی که پنل نمی‌تواند بخواند
@@ -75,7 +75,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `the username "…" is already used on …` | نام کاربری روی هر تانل OpenVPN یکتاست. | نام دیگری. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` |  |  |
 | `a subscription id is 8 to 64 characters` / `a subscription id can only contain letters, digits, - and _ (found "…")` | شناسهٔ اشتراکی که در تب Credentials تایپ شده. | چیزی مثل `roya-2024-link`، یا خالی بگذار تا ساخته شود. |
-| `the subscription id "…" belongs to another customer` | رازِ لینک هر مشتری یکتاست. | شناسهٔ دیگری. |
+| `that subscription id cannot be used; choose another, or leave it empty for one to be drawn` | هر لینک در کل پنل یکتاست؛ اینکه مال کیست گفته نمی‌شود. | شناسهٔ دیگر، یا خالی. |
+| `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | پنج شناسهٔ تکراری در یک ساعت از یک نماینده: راهی برای فهمیدن اینکه کدام لینک‌ها وجود دارند. | خالی بگذار. |
 | `device limit reached` (400) | مشتری همین حالا ۶۴ فایل دستگاه دارد، بیشترین ممکن. | دستگاهی را حذف کن. |
 | `address pool exhausted` (400) | زیرشبکهٔ تانل آدرس آزاد ندارد. | زیرشبکهٔ بزرگ‌تر روی اینترفیس، یا اینترفیس دیگر. |
 | `no interfaces configured; create one before adding customers` (log) | مشتری قبل از هر تانلی ساخته شده. | اول یک اینترفیس بساز. |

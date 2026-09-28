@@ -219,6 +219,6 @@ function open(r) {
 }
 .card-empty .anticon { margin-bottom: 8px; color: var(--ok); }
 .cell-link { color: var(--ink); text-decoration: none; }
-.cell-link:hover { color: var(--accent); }
+.cell-link:hover { color: var(--accent-text); }
 .muted { color: var(--faint); }
 </style>

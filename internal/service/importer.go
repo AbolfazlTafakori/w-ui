@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
@@ -81,6 +82,13 @@ type ImportReport struct {
 
 // Import loads a client list.
 func (s *Clients) Import(ctx context.Context, in ImportInput) (*ImportReport, error) {
+	// "Replace" writes an existing customer's plan directly, past Update, so
+	// it carries the refusal a paused reseller meets everywhere else: a file
+	// of their own customers' names with a year on each is the same storing
+	// up as extending them one at a time.
+	if err := checkBarred(ctx); err != nil {
+		return nil, err
+	}
 	if len(in.Clients) == 0 {
 		return nil, fmt.Errorf("%w: the file contains no clients", ErrInvalid)
 	}
@@ -207,6 +215,9 @@ func importToCreate(row ClientRecord, name string, ifaceID uint) CreateInput {
 // replaceFromImport updates an existing client's plan and leaves its devices
 // alone, so the configuration the customer already holds keeps working.
 func (s *Clients) replaceFromImport(ctx context.Context, id uint, row ClientRecord) error {
+	if utf8.RuneCountInString(row.Note) > maxClientNote {
+		return invalidField("note", "at most %d characters", maxClientNote)
+	}
 	updates := map[string]any{
 		"note":              row.Note,
 		"quota_bytes":       row.QuotaBytes,

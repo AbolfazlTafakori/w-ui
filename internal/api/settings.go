@@ -180,14 +180,36 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "the new password must be at least 8 characters")
 		return
 	}
-	if req.NewUsername != "" && len(req.NewUsername) > 64 {
-		writeError(w, http.StatusBadRequest, "the username can be at most 64 characters")
+	// The same rules as a new operator's name, and the same clash test: case
+	// insensitive, so a reseller cannot become "Admin" beside the owner's
+	// "admin" and be told apart by capitalisation alone.
+	if req.NewUsername != "" && req.NewUsername != admin.Username {
+		name, err := s.admins.CheckUsername(r.Context(), admin.ID, req.NewUsername)
+		if err != nil {
+			fail(w, s.log, err)
+			return
+		}
+		req.NewUsername = name
+	}
+
+	// Throttled as sign-in is. Whoever holds this session -- which may not be
+	// the operator -- could otherwise try passwords here as fast as they
+	// liked, and learn the one the operator may use elsewhere too.
+	key := fmt.Sprintf("pwchange:%d", admin.ID)
+	now := time.Now()
+	if wait := s.throttle.retryAfter(key, now); wait > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, lockoutMessage(wait))
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(req.CurrentPassword)) != nil {
+		s.throttle.fail(key, now)
+		s.log.Warn("wrong current password on a credential change",
+			"username", admin.Username, "ip", clientIP(r))
 		writeError(w, http.StatusForbidden, "the current password is incorrect")
 		return
 	}
+	s.throttle.succeed(key)
 
 	updates := map[string]any{"session_epoch": gorm.Expr("session_epoch + 1")}
 	if req.NewUsername != "" {
