@@ -10,6 +10,7 @@
   <a href="https://github.com/AbolfazlTafakori/w-ui/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AbolfazlTafakori/w-ui/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://abolfazltafakori.github.io/w-ui/"><img alt="Docs" src="https://img.shields.io/badge/docs-en%20%7C%20fa-blue"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green"></a>
+  <a href="https://t.me/wuipanel"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@wuipanel-26A5E4?logo=telegram&logoColor=white"></a>
   <img alt="Go" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white">
   <img alt="Vue" src="https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white">
 </p>
@@ -19,7 +20,8 @@
   <a href="https://abolfazltafakori.github.io/w-ui/fa/">مستندات فارسی</a> ·
   <a href="https://github.com/AbolfazlTafakori/w-ui/releases">Releases</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="SECURITY.md">Security</a>
+  <a href="SECURITY.md">Security</a> ·
+  <a href="https://t.me/wuipanel">Telegram channel</a>
 </p>
 
 ![Overview](docs/screenshots/overview.png)

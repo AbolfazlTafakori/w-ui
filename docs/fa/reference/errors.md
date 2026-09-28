@@ -57,6 +57,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | پیام | معنی | چه کنی |
 |---|---|---|
 | `name is required` |  | به مشتری نام بده. |
+| `at most … characters` / `no line breaks or control characters` | نام مشتری یا دستگاه، یا یادداشت، از ستونش بلندتر است (نام ۱۲۸، دستگاه ۶۴، یادداشت ۵۱۲) یا شکستِ خط دارد. | کوتاه‌ترش کن و در یک خط بنویس. |
 | `choose at least one server for this customer` | هیچ اینترفیسی تیک نخورده. | تانل‌(های) مجاز مشتری را تیک بزن. |
 | `Not found: …` | آی‌دی اینترفیسی که وجود ندارد — معمولاً صفحهٔ کهنه بعد از حذف. | رفرش کن؛ تانل موجود را انتخاب کن. |
 | `one of those inbounds does not exist` / `choose at least one inbound` | همان، در ساخت گروهی. |  |
@@ -80,6 +81,38 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `device limit reached` (400) | مشتری همین حالا ۶۴ فایل دستگاه دارد، بیشترین ممکن. | دستگاهی را حذف کن. |
 | `address pool exhausted` (400) | زیرشبکهٔ تانل آدرس آزاد ندارد. | زیرشبکهٔ بزرگ‌تر روی اینترفیس، یا اینترفیس دیگر. |
 | `no interfaces configured; create one before adding customers` (log) | مشتری قبل از هر تانلی ساخته شده. | اول یک اینترفیس بساز. |
+
+## نمایندگان و اپراتورها
+
+آنچه به نماینده گفته می‌شود، و آنچه در صفحه‌ی نمایندگان به مالک گفته می‌شود.
+
+### حساب خودِ نماینده
+
+| پیام | معنی | چه کنی |
+|---|---|---|
+| `your account has been switched off` | هنگام ورود: مالک این حساب را غیرفعال کرده. همه‌ی کاربرانش هم قطع‌اند. | از مالک بخواه دوباره فعالش کند. |
+| `your account has been switched off` / `your account's term has ended` / `your data allowance is used up` | روی هر تغییری — کاربر جدید، ویرایش، صفر کردن، دستگاه جدید. حساب متوقف است، پس کاربرانش قطع‌اند و تا تمدید چیزی درباره‌شان تغییر نمی‌کند. دیدنشان کار می‌کند. | از مالک بخواه فعالش کند، تاریخ را تمدید کند، یا حجم را از نو شروع کند. |
+| `that server is not one of yours` | سروری که انتخاب شده جزو سرورهایی نیست که مالک به این نماینده داده، یا پس گرفته شده. کاربرانی که از قبل رویش هستند کار می‌کنند و هنوز می‌شود ویرایششان کرد یا از آن برداشت. | سروری از فهرستِ نمایش‌داده‌شده انتخاب کن. |
+| `you may have … customers and you have …` | به سقف تعداد کاربر رسیده‌ای. | یک کاربر را حذف کن، یا از مالک سقف بیشتر بخواه. |
+| `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | ظرف یک ساعت پنج شناسه‌ی سابسکریپشن تکراری انتخاب شده. | شناسه را خالی بگذار تا خودکار ساخته شود. |
+| `this part of the panel is the owner's` | صفحه یا درخواستی که فقط مالک می‌تواند استفاده کند. | — |
+
+### صفحه‌ی نمایندگان
+
+| پیام | معنی | چه کنی |
+|---|---|---|
+| `only the panel's owner manages operators` | فقط مالک می‌تواند نماینده اضافه، ویرایش یا حذف کند. | با حساب مالک وارد شو. |
+| `a username of at least 3 characters` / `a username uses letters, digits, and - _ . only` / `"…" is taken` | نام کاربری با قواعد نمی‌خواند، یا اپراتور دیگری آن را دارد — با هر ترکیبی از حروف بزرگ و کوچک. | نام دیگری بزن؛ دکمه‌ی ساخت خودکار نامی می‌سازد که می‌خواند. |
+| `a password of at least 8 characters` |  | از دکمه‌ی ساخت خودکار استفاده کن. |
+| `a term of 1 to … days` | برای *شروع از اولین ورود* تعداد روزی خارج از محدوده داده شده. | عددی بین ۱ تا ۳۶۵۰ بزن، یا این گزینه را خاموش کن و تاریخ انتخاب کن. |
+| `another reseller's customers are already filed under "…"` | دو نماینده زیر یک گروه در لیست کاربران از هم جدا نمی‌شوند. | نام گروه دیگری بزن. |
+| `"…" is one of this reseller's own groups` | گروه همراه گروه مالک از نماینده پنهان می‌شد و گروه خودش از صفحه‌اش ناپدید می‌شد. | نام دیگری بزن. |
+| `a reseller's customers have to be filed under something` | گروه پاک شده. | یک نام گروه وارد کن. |
+| `one of those servers no longer exists` | وقتی پنجره باز بوده سروری حذف شده. | پنجره را دوباره باز کن. |
+| `one of those servers is on a machine reserved for another operator` | نودی که این سرور رویش است برای نماینده‌ی دیگری رزرو شده. | سروری روی نود دیگر انتخاب کن، یا مالک نود را عوض کن. |
+| `the panel has one owner and it cannot be handed over from here` / `the owner's role cannot be changed` / `the owner cannot be switched off` / `the panel's owner cannot be deleted` | مالک تنها حسابی است که نمی‌شود سطحش را پایین آورد، متوقفش کرد یا حذفش کرد. | — |
+| `change your own account from the security settings, not from here` / `you cannot delete the account you are signed in with` | ردیف خود مالک از این صفحه ویرایش نمی‌شود. | تنظیمات ← امنیت. |
+| `… has … customers: say whether to keep them under your own account or delete them with the operator` | حذف نماینده‌ای که کاربر دارد نیاز به تصمیم درباره‌ی آن کاربران دارد. | *بمانند، زیر حساب من* یا *آن‌ها هم حذف شوند* را انتخاب کن. |
 
 ## اینترفیس‌ها (تانل‌ها)
 

@@ -118,9 +118,11 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		Enabled:             in.Enabled == nil || *in.Enabled,
 		OwnerID:             deref(in.OwnerID),
 	}
-	if err := s.db.WithContext(ctx).Create(&node).Error; err != nil {
+	enabled := node.Enabled
+	if err := createKeepingSwitch(s.db.WithContext(ctx), &node, enabled); err != nil {
 		return nil, fmt.Errorf("service: create node: %w", err)
 	}
+	node.Enabled = enabled
 	s.log.Info("node added", "node", node.Name, "address", node.Address)
 	return &node, nil
 }

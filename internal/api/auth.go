@@ -107,10 +107,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// with no point. A reseller whose term ran out or whose allowance is
 	// spent is let in, read-only, to see why and pay: that is a lapse, and
 	// this is a decision.
-	if admin.Role != model.RoleOwner && !admin.Enabled {
+	if refusal := signInRefusal(&admin, time.Now().UTC()); refusal != "" {
 		s.log.Warn("sign-in refused: account switched off",
 			"username", admin.Username, "ip", clientIP(r))
-		writeError(w, http.StatusForbidden, "your account has been switched off")
+		writeError(w, http.StatusForbidden, refusal)
 		return
 	}
 
@@ -313,15 +313,21 @@ func (s *Server) scopeFor(ctx context.Context, admin *model.Admin) (service.Scop
 	}
 	sc.Interfaces = allowed
 	sc.ClientLimit = admin.ClientLimit
-	switch {
-	case !admin.Enabled:
-		sc.Barred = "your account has been switched off"
-	case admin.Expired(time.Now().UTC()):
-		sc.Barred = "your account's term has ended"
-	case admin.QuotaExceeded():
-		sc.Barred = "your data allowance is used up"
-	}
+	sc.Barred = model.PauseMessage(admin.PauseReason(time.Now().UTC()))
 	return sc, nil
+}
+
+// signInRefusal is why a correct password is still turned away, or empty.
+//
+// Only the owner's decision keeps an operator out. A reseller whose term
+// ended or whose traffic ran out is paused just the same, but is let in,
+// read-only, to see why and to pay: that is a lapse, and switching them off
+// is a decision.
+func signInRefusal(admin *model.Admin, now time.Time) string {
+	if admin.PauseReason(now) == model.PauseSwitchedOff {
+		return model.PauseMessage(model.PauseSwitchedOff)
+	}
+	return ""
 }
 
 // requireManager refuses anyone but the panel's owner.

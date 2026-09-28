@@ -61,11 +61,54 @@ When you take a server back, the customers already on it keep working, and the r
 
 ## Switching one off
 
-Switching a reseller off stops every customer they hold, at once, signs them out, and keeps them out: they cannot sign in again until you switch them back on. Their customers are dropped by the kernel and taken off the tunnels within a tick, connected OpenVPN sessions are ended, and on the Clients page each of them reads *Reseller paused*. Their own subscription page says they are off, without saying why.
+### The rule
 
-A reseller whose term has ended or whose allowance is used up is stopped the same way, but may still sign in — to see why, and to pay. They can read their customers and change nothing: no new customers, no extending, no topping up, nothing that would come into effect the moment they were renewed.
+A customer is served when **two switches** both allow it: **their own**, and **their reseller's standing**.
 
-Nothing is written to their customers either way. Their own switches are left exactly as they were, so switching the reseller back on (or *start their allowance again* after the next payment) restores precisely the service that was running, rather than reviving plans that were stopped on purpose.
+- Switching a reseller off takes every one of their customers off at once.
+- Switching them back on returns each customer to what **their own** switch says.
+- Nothing is ever written to the customers by any of this. That is what makes the second point true: had the pause switched each customer off, switching the reseller back on could no longer tell who had been off before — and customers you had stopped on purpose would come back.
+
+| The customer's own switch | Reseller in good standing | Reseller paused | After the reseller is back |
+|---|---|---|---|
+| On | served | **off** | served |
+| Off (switched off before the pause) | off | off | **off** |
+| Switched off *during* the pause | — | off | **off** |
+| Switched on *during* the pause | — | **off** | served |
+| Expired or out of traffic | off | off | off |
+
+Your own customers, and other resellers' customers, are never affected.
+
+### What pauses a reseller
+
+Three things, checked in this order:
+
+1. **Switched off** by you.
+2. **Term ended** — the date passed (a term *on hold* has not started, and is not ended).
+3. **Traffic used up** — their customers between them used the whole allowance.
+
+A reseller is back only when **none** of the three applies: switching on a reseller whose term has also ended keeps their customers off until the date is extended.
+
+### What happens, and when
+
+The moment you save the change:
+
+- their customers' traffic is **dropped by the kernel**,
+- their devices are **taken off the tunnels** (WireGuard peers removed),
+- **connected OpenVPN sessions are cut**,
+- on the Clients page each of them reads **Reseller paused** (**Account paused** to the reseller), and their own switch still shows its real state, so you can see who will come back,
+- their subscription page says they are **inactive**, without saying why.
+
+The same happens by itself when the date passes or the traffic runs out. If the panel cannot read the resellers' standing for a moment — a database hiccup — it keeps the last answer rather than letting paused customers back on.
+
+### What the reseller can do meanwhile
+
+| | Can sign in | Can see their customers | Can change anything |
+|---|---|---|---|
+| Switched off | **no** — told *your account has been switched off*, and signed out of open sessions | — | — |
+| Term ended / traffic used up | yes, to see why and pay | yes | **no** — every change is refused with the reason |
+
+"Every change" includes the ones that would store value up for when they are renewed: new customers, extending, raising a quota, resetting traffic, bulk and group actions, imports, new devices and moving customers between servers.
 
 ## Removing one
 

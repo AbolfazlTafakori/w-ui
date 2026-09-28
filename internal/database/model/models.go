@@ -528,6 +528,22 @@ const (
 	PauseTrafficUsed = "trafficUsed"
 )
 
+// PauseMessage is what a paused operator is told, for each reason: the
+// refusal on every change they try, and -- for PauseSwitchedOff -- the answer
+// at sign-in. Kept beside the reasons so the rule and its wording are one
+// table, not three copies that can drift apart.
+func PauseMessage(reason string) string {
+	switch reason {
+	case PauseSwitchedOff:
+		return "your account has been switched off"
+	case PauseTermEnded:
+		return "your account's term has ended"
+	case PauseTrafficUsed:
+		return "your data allowance is used up"
+	}
+	return ""
+}
+
 // PauseReason is why this operator's customers are off right now, or empty
 // when they are not. The owner is never paused.
 func (a *Admin) PauseReason(now time.Time) string {

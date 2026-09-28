@@ -161,9 +161,11 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		iface.OpenVPN = model.JSON(params)
 	}
 
-	if err := s.db.WithContext(ctx).Create(&iface).Error; err != nil {
+	enabled := iface.Enabled
+	if err := createKeepingSwitch(s.db.WithContext(ctx), &iface, enabled); err != nil {
 		return nil, fmt.Errorf("service: create interface: %w", err)
 	}
+	iface.Enabled = enabled
 	if _, err := s.pools.Add(iface.ID, iface.Subnet); err != nil {
 		return nil, err
 	}

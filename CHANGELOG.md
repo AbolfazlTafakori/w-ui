@@ -6,6 +6,28 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-09-28
+
+### Fixed
+- A reseller, a server or a node created switched off came up switched on.
+  The schema defaults "enabled" to true, and an insert took a false for
+  nothing given: a reseller the owner meant to prepare before selling could
+  sell at once, and a server meant to be configured first came up carrying
+  traffic.
+- A reseller's pause is decided in one place and told in one set of words.
+  The three reasons were spelled out in three places, one of them in
+  different words, beside two helpers nothing called.
+
+### Documentation
+- The resellers page states the rule exactly: a customer is served when both
+  their own switch and their reseller's standing allow it, with a table of
+  every case, the order the three reasons are checked in, what happens the
+  moment a reseller is switched off, and what they can still do.
+- Every message a reseller or the Resellers page can show is in the error
+  reference, in English and Persian.
+- The Telegram channel, [@wuipanel](https://t.me/wuipanel), is linked from the
+  README and from every page of the documentation.
+
 ## [2.1.1] — 2026-09-28
 
 ### Fixed
@@ -198,7 +220,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.2...HEAD
+[2.1.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v1.1.0...v2.0.0

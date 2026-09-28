@@ -57,6 +57,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | Message | Meaning | What to do |
 |---|---|---|
 | `name is required` | | Give the customer a name. |
+| `at most … characters` / `no line breaks or control characters` | A customer or device name, or a note, is longer than its column (name 128, device 64, note 512) or carries a line break. | Shorten it; keep it on one line. |
 | `choose at least one server for this customer` | No interface was ticked. | Tick the tunnel(s) the customer may use. |
 | `Not found: …` | An interface id that does not exist — usually a stale page after a deletion. | Reload; pick an existing tunnel. |
 | `one of those inbounds does not exist` / `choose at least one inbound` | The same, on bulk creation. | |
@@ -80,6 +81,38 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `device limit reached` (400) | The customer already holds 64 device files, the most one can. | Remove a device. |
 | `address pool exhausted` (400) | The tunnel's subnet has no free address. | A larger subnet on the interface, or another interface. |
 | `no interfaces configured; create one before adding customers` (log) | A customer was created before any tunnel. | Create an interface first. |
+
+## Resellers and operators
+
+What a reseller is told, and what the owner is told on the Resellers page.
+
+### A reseller's own account
+
+| Message | Meaning | What to do |
+|---|---|---|
+| `your account has been switched off` | At sign-in: the owner switched this account off. Every customer on it is off too. | Ask the owner to switch it back on. |
+| `your account has been switched off` / `your account's term has ended` / `your data allowance is used up` | On any change — a new customer, an edit, a reset, a new device. The account is paused, so its customers are off and nothing about them can change until it is renewed. Reading them still works. | Ask the owner to switch it back on, extend the date, or start the allowance again. |
+| `that server is not one of yours` | The server chosen is not one the owner gave this reseller, or was taken back. Customers already on it keep working and can still be edited or moved off it. | Pick a server from the list offered. |
+| `you may have … customers and you have …` | The customer limit is reached. | Delete a customer, or ask the owner for a higher limit. |
+| `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | Five subscription ids already in use were chosen within an hour. | Leave the id empty; one is drawn for the customer. |
+| `this part of the panel is the owner's` | A page or request that only the owner may use. | — |
+
+### The Resellers page
+
+| Message | Meaning | What to do |
+|---|---|---|
+| `only the panel's owner manages operators` | Only the owner may add, change or remove a reseller. | Sign in as the owner. |
+| `a username of at least 3 characters` / `a username uses letters, digits, and - _ . only` / `"…" is taken` | The username breaks the rules, or another operator has it — in any capitalisation. | Choose another; the generate button draws one that fits. |
+| `a password of at least 8 characters` | | Use the generate button. |
+| `a term of 1 to … days` | *On hold* was given a number of days outside the range. | Enter 1 to 3650, or turn *On hold* off and pick a date. |
+| `another reseller's customers are already filed under "…"` | Two resellers under one group could not be told apart on the customer list. | Choose another group name. |
+| `"…" is one of this reseller's own groups` | The group would be hidden from the reseller along with the owner's, and their own group would vanish from their page. | Choose another name. |
+| `a reseller's customers have to be filed under something` | The group was cleared. | Enter a group name. |
+| `one of those servers no longer exists` | A server was deleted while the dialog was open. | Reopen the dialog. |
+| `one of those servers is on a machine reserved for another operator` | The node running it is reserved for a different reseller. | Choose a server on another node, or change the node's owner. |
+| `the panel has one owner and it cannot be handed over from here` / `the owner's role cannot be changed` / `the owner cannot be switched off` / `the panel's owner cannot be deleted` | The owner is the one account that cannot be demoted, paused or removed. | — |
+| `change your own account from the security settings, not from here` / `you cannot delete the account you are signed in with` | The owner's own row is not edited from this page. | Settings → Security. |
+| `… has … customers: say whether to keep them under your own account or delete them with the operator` | Removing a reseller who has customers needs a decision about them. | Choose *Keep them, under me* or *Delete them too*. |
 
 ## Interfaces (tunnels)
 

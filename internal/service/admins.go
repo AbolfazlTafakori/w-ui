@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -147,9 +146,11 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&admin).Error; err != nil {
+		enabled := admin.Enabled
+		if err := createKeepingSwitch(tx, &admin, enabled); err != nil {
 			return fmt.Errorf("create operator: %w", err)
 		}
+		admin.Enabled = enabled
 		if admin.Role.Capped() {
 			var (
 				name string
@@ -790,49 +791,10 @@ func (s *Admins) AllowedInterfaces(ctx context.Context, admin *model.Admin) (map
 	return out, nil
 }
 
-// RecordUsage adds to what a reseller's customers have carried between them.
-//
-// Called with the same deltas that move a customer's own counter, so the two
-// can never drift by more than one tick. Zero is the owner, who has no
-// ceiling and no row to update.
-func (s *Admins) RecordUsage(ctx context.Context, byOwner map[uint]uint64) error {
-	for ownerID, delta := range byOwner {
-		if ownerID == 0 || delta == 0 {
-			continue
-		}
-		err := s.db.WithContext(ctx).Model(&model.Admin{}).
-			Where("id = ?", ownerID).
-			UpdateColumn("used_bytes", gorm.Expr("used_bytes + ?", delta)).Error
-		if err != nil {
-			return fmt.Errorf("service: record operator usage: %w", err)
-		}
-	}
-	return nil
-}
-
-// RecomputeUsage sets every reseller's counter to the sum of their
-// customers' usage.
-//
-// The counter is incremental so that the page and the sweep do not each run
-// an aggregate over every customer. Incremental counters drift -- a customer
-// deleted, a customer's usage reset, a restore from a backup taken
-// mid-tick -- so this puts it back, and is cheap enough to run at boot and
-// whenever a reseller's customers change hands.
-func (s *Admins) RecomputeUsage(ctx context.Context) error {
-	err := s.db.WithContext(ctx).Exec(`
-		UPDATE admins SET used_bytes = COALESCE(
-			(SELECT SUM(c.used_bytes) FROM clients c WHERE c.owner_id = admins.id), 0)
-		WHERE role <> 'owner'`).Error
-	if err != nil {
-		return fmt.Errorf("service: recompute operator usage: %w", err)
-	}
-	return nil
-}
-
 // ResetUsage puts one reseller's counter back to zero -- the owner topping
-// them up for another month -- and clears the same counters on the
-// customers underneath, since the allowance they were spending is the one
-// being renewed.
+// them up for another month. Their customers' own counters are left alone:
+// each customer's plan is theirs, and a reseller renewing their allowance with
+// the owner does not renew every plan they sold.
 func (s *Admins) ResetUsage(ctx context.Context, id uint) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Admin{}).Where("id = ?", id).
@@ -845,39 +807,5 @@ func (s *Admins) ResetUsage(ctx context.Context, id uint) error {
 		return fmt.Errorf("service: %w", err)
 	}
 	s.log.Info("operator allowance reset", "admin", id)
-	return nil
-}
-
-// CheckCanCreate reports whether a reseller has room for another customer.
-//
-// Read before a customer is created rather than after, so the refusal names
-// the ceiling instead of the operator discovering it from a row that will
-// not save.
-func (s *Admins) CheckCanCreate(ctx context.Context, admin *model.Admin, adding int) error {
-	if admin == nil || !admin.Role.Capped() {
-		return nil
-	}
-	now := time.Now().UTC()
-	switch {
-	case !admin.Enabled:
-		return fmt.Errorf("%w: your account is switched off", ErrInvalid)
-	case admin.Expired(now):
-		return fmt.Errorf("%w: your account's term has ended", ErrInvalid)
-	case admin.QuotaExceeded():
-		return fmt.Errorf("%w: your data allowance is used up", ErrInvalid)
-	}
-	if admin.ClientLimit <= 0 {
-		return nil
-	}
-	var held int64
-	err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("owner_id = ?", admin.ID).Count(&held).Error
-	if err != nil {
-		return fmt.Errorf("service: count your customers: %w", err)
-	}
-	if held+int64(adding) > int64(admin.ClientLimit) {
-		return invalidField("name",
-			"you may have %d customers and you have %d", admin.ClientLimit, held)
-	}
 	return nil
 }
