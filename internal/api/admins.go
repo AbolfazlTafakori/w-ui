@@ -99,6 +99,37 @@ func (s *Server) handleDeleteAdmin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
+// handleBulkAdmins changes a selection of resellers at once. The answer says
+// how many changed and names every one that did not, and why.
+func (s *Server) handleBulkAdmins(w http.ResponseWriter, r *http.Request) {
+	var in service.AdminBulkInput
+	if !decode(w, r, &in) {
+		return
+	}
+	// The owner's own row is refused inside, with the rest of the rules;
+	// this only keeps the request from reaching the account making it.
+	if me := adminFrom(r.Context()); me != nil {
+		for _, id := range in.IDs {
+			if id == me.ID {
+				writeError(w, http.StatusBadRequest,
+					"your own account cannot be part of a selection; change it from the security settings")
+				return
+			}
+		}
+	}
+	res, err := s.admins.Bulk(r.Context(), in, s.clients)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if res.Changed > 0 {
+		s.log.Warn("resellers changed in bulk", "action", in.Action, "changed", res.Changed,
+			"by", adminName(r), "ip", clientIP(r))
+		s.reconcileNow()
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 // handleResetAdminUsage starts a reseller's allowance again -- the owner
 // taking another month's payment.
 func (s *Server) handleResetAdminUsage(w http.ResponseWriter, r *http.Request) {

@@ -10,17 +10,19 @@
 // customer is: a summary across the top, then a row each with how much of
 // what they bought is left -- customers, traffic, days -- in the same colours
 // the customer list uses, so "orange" means the same thing on both pages.
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
-import { bytes, dateTime } from '../lib/format.js'
+import { bytes, dateTime, unitToBytes } from '../lib/format.js'
 import { useIsMobile } from '../lib/mobile.js'
 import AntIcon from '../components/AntIcon.vue'
 import Toggle from '../components/Toggle.vue'
 import ErrorState from '../components/ErrorState.vue'
 import PageSpin from '../components/PageSpin.vue'
 import ResellerForm from '../components/ResellerForm.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import MultiSelect from '../components/MultiSelect.vue'
 
 const isMobile = useIsMobile()
 const route = useRoute()
@@ -246,13 +248,30 @@ async function resetUsage(a) {
   }
 }
 
+// Removing one or a selection. `removing` holds what is being removed: the
+// ids, how to name them, and how many customers they hold between them --
+// the dialog asks the same question for one reseller or forty.
+function askRemove(list) {
+  removing.value = {
+    ids: list.map((a) => a.id),
+    name: list.length === 1 ? list[0].username : t('admins.bulk.nResellers', { n: nf(list.length) }),
+    customers: list.reduce((n, a) => n + (a.clients || 0), 0),
+  }
+}
+
 async function remove(mode) {
-  const a = removing.value
-  if (!a) return
+  const r = removing.value
+  if (!r) return
   busy.value = true
   try {
-    await api.deleteAdmin(a.id, mode)
+    if (r.ids.length === 1) {
+      await api.deleteAdmin(r.ids[0], mode)
+      notify(t('admins.saved'), 'success')
+    } else {
+      report(await api.bulkAdmins({ action: 'delete', mode, ids: r.ids }))
+    }
     removing.value = null
+    selected.value = new Set()
     await load({ quiet: true })
   } catch (err) {
     notify(err.message, 'error')
@@ -260,6 +279,189 @@ async function remove(mode) {
     busy.value = false
   }
 }
+
+// --- A selection. -----------------------------------------------------------
+//
+// The customer list's selection, over resellers: a box on every row, one in
+// the header for everything shown, and the actions that apply to all of them
+// in the toolbar. Only what is on screen can be selected, and narrowing the
+// list drops whatever it hides -- an action must never reach a reseller the
+// owner can no longer see.
+const selected = ref(new Set())
+watch(shown, (list) => {
+  const visible = new Set(list.map((a) => a.id))
+  const kept = [...selected.value].filter((id) => visible.has(id))
+  if (kept.length !== selected.value.size) selected.value = new Set(kept)
+})
+const allSelected = computed(() => shown.value.length > 0 && shown.value.every((a) => selected.value.has(a.id)))
+const someSelected = computed(() => selected.value.size > 0 && !allSelected.value)
+function toggleAll(on) {
+  selected.value = on ? new Set(shown.value.map((a) => a.id)) : new Set()
+}
+function toggleOne(id, on) {
+  const next = new Set(selected.value)
+  if (on) next.add(id)
+  else next.delete(id)
+  selected.value = next
+}
+const selectedRows = computed(() => rows.value.filter((a) => selected.value.has(a.id)))
+
+// The actions, in the order the customer list has them. Those that need a
+// value -- how many days, how much traffic, which servers -- open a small
+// dialog; the rest ask first when they take service away or cannot be undone.
+const moreOpen = ref(null)
+function openMore(e) {
+  if (moreOpen.value) {
+    moreOpen.value = null
+    return
+  }
+  const r = e.currentTarget.getBoundingClientRect()
+  moreOpen.value = { rect: r, x: r.left, y: r.bottom + 4 }
+}
+function closeMore(e) {
+  if (moreOpen.value && !e.target.closest?.('.amenu') && !e.target.closest?.('.more-btn')) moreOpen.value = null
+}
+function onKey(e) {
+  if (e.key === 'Escape') moreOpen.value = null
+}
+onMounted(() => {
+  window.addEventListener('click', closeMore, true)
+  window.addEventListener('keydown', onKey)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('click', closeMore, true)
+  window.removeEventListener('keydown', onKey)
+})
+
+const bulkItems = computed(() => [
+  { key: 'enable', label: t('admins.switchOn'), icon: 'CheckCircleOutlined' },
+  { key: 'disable', label: t('admins.switchOff'), icon: 'StopOutlined', danger: true },
+  { divider: true },
+  { key: 'extend', label: t('admins.bulk.extend'), icon: 'ClockCircleOutlined' },
+  { key: 'resetUsage', label: t('admins.resetUsage'), icon: 'RetweetOutlined' },
+  { key: 'setQuota', label: t('admins.bulk.setQuota'), icon: 'BarChartOutlined' },
+  { key: 'setClientLimit', label: t('admins.bulk.setLimit'), icon: 'TeamOutlined' },
+  { divider: true },
+  { key: 'addServers', label: t('admins.bulk.addServers'), icon: 'UsergroupAddOutlined' },
+  { key: 'removeServers', label: t('admins.bulk.removeServers'), icon: 'UsergroupDeleteOutlined', danger: true },
+])
+
+// What the server answered, said once: how many changed, and every reseller
+// that was not with the reason -- a count alone leaves the owner to work out
+// which of forty is still on.
+function report(res) {
+  const failed = Object.entries(res?.failures || {})
+  if (failed.length) {
+    notify(`${t('admins.bulk.done', { n: nf(res.changed || 0) })}\n${failed.map(([who, why]) => `${who}: ${why}`).join('\n')}`, 'error')
+  } else {
+    notify(t('admins.bulk.done', { n: nf(res?.changed || 0) }), 'success')
+  }
+}
+
+async function runBulk(input) {
+  busy.value = true
+  try {
+    report(await api.bulkAdmins({ ...input, ids: [...selected.value] }))
+    selected.value = new Set()
+    await load({ quiet: true })
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+const ask = ref(null)
+async function runConfirmed() {
+  const spec = ask.value
+  if (!spec) return
+  try {
+    await spec.run()
+  } finally {
+    ask.value = null
+  }
+}
+
+// The dialog for the actions that need a value.
+const bulkDialog = ref(null) // { kind, days, quota, quotaUnit, limit, interfaceIds }
+const serverOptions = computed(() =>
+  servers.value.map((i) => ({
+    value: i.id,
+    label: i.name,
+    tags: [{ text: t(`protocol.${i.protocol}`), kind: 'proto' }, ...(i.mode === 'amnezia' ? [{ text: 'AmneziaWG' }] : [])],
+  })),
+)
+const bulkError = ref('')
+
+function pickBulk(key) {
+  moreOpen.value = null
+  const n = selected.value.size
+  const subject = t('admins.bulk.nResellers', { n: nf(n) })
+  const customers = selectedRows.value.reduce((sum, a) => sum + (a.clients || 0), 0)
+  bulkError.value = ''
+  if (key === 'enable') return runBulk({ action: 'enable' })
+  if (key === 'disable') {
+    ask.value = {
+      title: t('admins.switchOff'),
+      body: t('admins.bulk.disableBody'),
+      subject,
+      consequences: [t('admins.bulk.disableCustomers', { n: nf(customers) }), t('admins.bulk.disableSignOut')],
+      confirmLabel: t('admins.switchOff'),
+      run: () => runBulk({ action: 'disable' }),
+    }
+    return
+  }
+  if (key === 'resetUsage') {
+    ask.value = {
+      title: t('admins.resetUsage'),
+      body: t('admins.bulk.resetBody'),
+      subject,
+      confirmLabel: t('admins.resetShort'),
+      danger: false,
+      run: () => runBulk({ action: 'resetUsage' }),
+    }
+    return
+  }
+  bulkDialog.value = { kind: key, days: 30, quota: '', quotaUnit: 'GB', limit: '', interfaceIds: [] }
+}
+
+async function submitBulkDialog() {
+  const d = bulkDialog.value
+  if (!d) return
+  bulkError.value = ''
+  const input = { action: d.kind }
+  if (d.kind === 'extend') {
+    const days = Number(d.days)
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      bulkError.value = t('admins.daysRequired')
+      return
+    }
+    input.days = days
+  } else if (d.kind === 'setQuota') {
+    input.quotaBytes = unitToBytes(d.quota, d.quotaUnit)
+  } else if (d.kind === 'setClientLimit') {
+    input.clientLimit = Math.max(0, Math.floor(Number(d.limit) || 0))
+  } else if (d.kind === 'addServers' || d.kind === 'removeServers') {
+    if (!d.interfaceIds.length) {
+      bulkError.value = t('client.pickAServer')
+      return
+    }
+    input.interfaceIds = d.interfaceIds
+  }
+  bulkDialog.value = null
+  await runBulk(input)
+}
+
+const bulkTitle = computed(() => {
+  const k = bulkDialog.value?.kind
+  return {
+    extend: t('admins.bulk.extend'),
+    setQuota: t('admins.bulk.setQuota'),
+    setClientLimit: t('admins.bulk.setLimit'),
+    addServers: t('admins.bulk.addServers'),
+    removeServers: t('admins.bulk.removeServers'),
+  }[k] || ''
+})
 
 async function saved() {
   formFor.value = null
@@ -315,9 +517,21 @@ async function saved() {
       <div class="acard small">
         <div class="acard-head">
           <div class="card-toolbar">
-            <button class="abtn primary" :disabled="!servers.length" :title="servers.length ? '' : t('interface.noneYet')" @click="formFor = {}">
+            <button v-if="!selected.size" class="abtn primary" :disabled="!servers.length" :title="servers.length ? '' : t('interface.noneYet')" @click="formFor = {}">
               <AntIcon name="PlusOutlined" /><span>{{ t('admins.add') }}</span>
             </button>
+            <template v-else>
+              <span class="atag blue closable" style="padding: 4px 8px; font-size: 13px">
+                {{ t('client.menu.selectedCount').replace('{count}', nf(selected.size)) }}
+                <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
+              </span>
+              <button class="abtn more-btn" :aria-expanded="!!moreOpen" aria-haspopup="menu" :disabled="busy" @click="openMore">
+                <AntIcon name="MoreOutlined" /><span v-if="!isMobile">{{ t('outbound.more') }}</span>
+              </button>
+              <button class="abtn danger" style="margin-inline-start: auto" :disabled="busy" @click="askRemove(selectedRows)">
+                <AntIcon name="DeleteOutlined" /><span v-if="!isMobile">{{ t('action.delete') }}</span>
+              </button>
+            </template>
           </div>
         </div>
 
@@ -371,8 +585,13 @@ async function saved() {
 
           <!-- A phone gets a card each: the same figures, stacked. -->
           <div v-else-if="isMobile" class="rcards">
-            <div v-for="a in shown" :key="a.id" class="rcard" :class="{ off: !a.enabled }">
+            <label class="acheckbox card-bulk-bar">
+              <input type="checkbox" class="acheck" :checked="allSelected" :indeterminate="someSelected" @change="toggleAll($event.target.checked)" />
+              <span>{{ t('action.selectAll') }}</span>
+            </label>
+            <div v-for="a in shown" :key="a.id" class="rcard" :class="{ off: !a.enabled, picked: selected.has(a.id) }">
               <div class="rcard-head">
+                <input type="checkbox" class="acheck" :checked="selected.has(a.id)" :aria-label="a.username" @change="toggleOne(a.id, $event.target.checked)" />
                 <div class="rcard-name">
                   <span class="name">{{ a.username }}</span>
                   <span class="atag" dir="auto" :class="standing(a).color" style="margin: 0">{{ standing(a).label }}</span>
@@ -389,7 +608,7 @@ async function saved() {
               <div class="rcard-actions">
                 <button class="abtn text sm" :aria-label="t('action.edit')" @click="formFor = { admin: a }"><AntIcon name="EditOutlined" /><span>{{ t('action.edit') }}</span></button>
                 <button v-if="a.role === 'reseller' && a.quotaBytes" class="abtn text sm" :disabled="pending.has(a.id)" @click="resetUsage(a)"><AntIcon name="RetweetOutlined" /><span>{{ t('admins.resetShort') }}</span></button>
-                <button class="abtn text sm danger" @click="removing = a"><AntIcon name="DeleteOutlined" /><span>{{ t('action.delete') }}</span></button>
+                <button class="abtn text sm danger" @click="askRemove([a])"><AntIcon name="DeleteOutlined" /><span>{{ t('action.delete') }}</span></button>
               </div>
             </div>
           </div>
@@ -398,6 +617,7 @@ async function saved() {
             <table class="atable small" style="min-width: 1080px">
               <thead>
                 <tr>
+                  <th class="sel"><input type="checkbox" class="acheck" :checked="allSelected" :indeterminate="someSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" /></th>
                   <th style="width: 110px">{{ t('table.actions') }}</th>
                   <th style="width: 70px">{{ t('table.enabled') }}</th>
                   <th style="width: 200px">{{ t('admins.reseller') }}</th>
@@ -410,12 +630,13 @@ async function saved() {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="a in shown" :key="a.id" :class="{ off: !a.enabled }">
+                <tr v-for="a in shown" :key="a.id" :class="{ off: !a.enabled, picked: selected.has(a.id) }">
+                  <td class="sel keep"><input type="checkbox" class="acheck" :checked="selected.has(a.id)" :aria-label="a.username" @change="toggleOne(a.id, $event.target.checked)" /></td>
                   <td class="keep">
                     <div class="aspace" style="gap: 4px; flex-wrap: nowrap">
                       <button class="abtn text sm" :title="t('action.edit')" :aria-label="t('action.edit')" @click="formFor = { admin: a }"><AntIcon name="EditOutlined" /></button>
                       <button v-if="a.role === 'reseller' && a.quotaBytes" class="abtn text sm" :title="t('admins.resetUsage')" :aria-label="t('admins.resetUsage')" :disabled="pending.has(a.id)" @click="resetUsage(a)"><AntIcon name="RetweetOutlined" /></button>
-                      <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="removing = a"><AntIcon name="DeleteOutlined" /></button>
+                      <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="askRemove([a])"><AntIcon name="DeleteOutlined" /></button>
                     </div>
                   </td>
                   <td class="keep">
@@ -484,13 +705,83 @@ async function saved() {
         <button class="amodal-close" :aria-label="t('action.cancel')" @click="removing = null"><AntIcon name="CloseOutlined" /></button>
       </div>
       <div class="amodal-body">
-        <p class="rm-text">{{ t('admins.removeAsk', { name: removing.username }) }}</p>
-        <span class="atag red" style="margin: 0">{{ t('admins.holdsCustomers', { n: nf(removing.clients || 0) }) }}</span>
+        <p class="rm-text">{{ t(removing.ids.length > 1 ? 'admins.removeAskMany' : 'admins.removeAsk', { name: removing.name }) }}</p>
+        <span class="atag red" style="margin: 0">{{ t('admins.holdsCustomers', { n: nf(removing.customers) }) }}</span>
       </div>
       <div class="amodal-foot">
         <button class="abtn" @click="removing = null">{{ t('action.cancel') }}</button>
         <button class="abtn" :disabled="busy" @click="remove('keep')">{{ t('admins.removeKeep') }}</button>
         <button class="abtn danger" :disabled="busy" @click="remove('delete')">{{ t('admins.removeWithClients') }}</button>
+      </div>
+    </div>
+  </div>
+
+  <Teleport to="body">
+    <div v-if="moreOpen" v-fit="moreOpen.rect" class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
+      <template v-for="(m, i) in bulkItems" :key="m.key || `d${i}`">
+        <hr v-if="m.divider" class="amenu-divider" />
+        <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickBulk(m.key)">
+          <AntIcon :name="m.icon" /><span>{{ m.label }}</span>
+        </button>
+      </template>
+    </div>
+  </Teleport>
+
+  <ConfirmDialog
+    :open="!!ask"
+    :title="ask?.title || ''"
+    :body="ask?.body || ''"
+    :subject="ask?.subject || ''"
+    :consequences="ask?.consequences || []"
+    :confirm-label="ask?.confirmLabel || ''"
+    :danger="ask?.danger !== false"
+    :busy="busy"
+    @confirm="runConfirmed"
+    @cancel="ask = null"
+  />
+
+  <!-- The actions that need a value. -->
+  <div v-if="bulkDialog" class="amodal-backdrop centered" @click.self="bulkDialog = null">
+    <div class="amodal" role="dialog" aria-modal="true" aria-labelledby="bd-title">
+      <div class="amodal-head">
+        <h2 id="bd-title" class="amodal-title">{{ bulkTitle }}</h2>
+        <button class="amodal-close" :aria-label="t('action.cancel')" @click="bulkDialog = null"><AntIcon name="CloseOutlined" /></button>
+      </div>
+      <form id="bulk-form" class="amodal-body" @submit.prevent="submitBulkDialog">
+        <p class="bd-target">{{ t('admins.bulk.appliesTo', { n: nf(selected.size) }) }}</p>
+
+        <div v-if="bulkDialog.kind === 'extend'" class="aform-item">
+          <label class="aform-label" for="bd-days">{{ t('admins.bulk.days') }}</label>
+          <label class="ainput number"><input id="bd-days" v-model="bulkDialog.days" type="number" min="1" max="3650" step="1" class="ltr" autofocus /><span class="ainput-suffix">{{ t('unit.days') }}</span></label>
+          <p class="hint">{{ t('admins.bulk.extendHint') }}</p>
+        </div>
+
+        <div v-else-if="bulkDialog.kind === 'setQuota'" class="aform-item">
+          <label class="aform-label" for="bd-quota">{{ t('admins.traffic') }}</label>
+          <div class="acompact">
+            <label class="ainput number"><input id="bd-quota" v-model="bulkDialog.quota" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('client.unlimited')" autofocus /></label>
+            <div class="aselect unit"><select v-model="bulkDialog.quotaUnit" :aria-label="t('client.quotaUnit')"><option value="GB">GB</option><option value="TB">TB</option></select></div>
+          </div>
+          <p class="hint">{{ t('admins.bulk.emptyUnlimited') }}</p>
+        </div>
+
+        <div v-else-if="bulkDialog.kind === 'setClientLimit'" class="aform-item">
+          <label class="aform-label" for="bd-limit">{{ t('admins.clientLimit') }}</label>
+          <label class="ainput number"><input id="bd-limit" v-model="bulkDialog.limit" type="number" min="0" step="1" class="ltr" :placeholder="t('client.unlimited')" autofocus /></label>
+          <p class="hint">{{ t('admins.bulk.emptyUnlimited') }}</p>
+        </div>
+
+        <div v-else class="aform-item">
+          <label class="aform-label">{{ t('admins.servers') }}</label>
+          <MultiSelect v-model="bulkDialog.interfaceIds" :options="serverOptions" :placeholder="t('client.selectServers')" direction="down" />
+          <p class="hint">{{ bulkDialog.kind === 'addServers' ? t('admins.bulk.addServersHint') : t('admins.bulk.removeServersHint') }}</p>
+        </div>
+
+        <p v-if="bulkError" class="field-error">{{ bulkError }}</p>
+      </form>
+      <div class="amodal-foot">
+        <button class="abtn" type="button" @click="bulkDialog = null">{{ t('action.cancel') }}</button>
+        <button class="abtn primary" type="submit" form="bulk-form" :disabled="busy">{{ t('action.save') }}</button>
       </div>
     </div>
   </div>
@@ -564,4 +855,16 @@ tr.off td.keep { opacity: 1; }
 .rcard-actions .abtn span { margin-inline-start: 4px; }
 
 .rm-text { margin: 0 0 12px; color: var(--ink); line-height: 1.6; }
+
+/* The selection. */
+.atable th.sel, .atable td.sel { width: 40px; text-align: center; }
+tr.picked td { background: var(--accent-soft); }
+.rcard.picked { border-color: var(--accent); }
+.rcard-head .acheck { flex: none; }
+.card-bulk-bar { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
+.bd-target { margin: 0 0 16px; color: var(--muted); }
+.hint { margin: 4px 0 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
+.field-error { margin: 8px 0 0; font-size: 12px; color: var(--bad); }
+.ainput-suffix { margin-inline-start: 4px; color: var(--faint); font-size: 14px; white-space: nowrap; }
+.acompact .aselect.unit { flex: 0 0 auto; width: auto; min-width: 72px; }
 </style>

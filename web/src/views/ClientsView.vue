@@ -685,6 +685,8 @@ const moreItems = computed(() =>
         { key: 'enable', label: t('action.enable'), icon: 'CheckCircleOutlined' },
         { key: 'disable', label: t('action.disable'), icon: 'StopOutlined', danger: true },
         { key: 'adjust', label: t('client.adjust'), icon: 'ClockCircleOutlined' },
+        { key: 'reset', label: t('outbound.resetTraffic'), icon: 'RetweetOutlined' },
+        { key: 'rotate', label: t('client.rotateKeys'), icon: 'KeyOutlined', danger: true },
         { key: 'subLinks', label: t('client.menu.subLinks'), icon: 'LinkOutlined' },
       ]
     : [
@@ -735,6 +737,52 @@ function pickMore(key) {
   if (key === 'attach' || key === 'detach' || key === 'group' || key === 'adjust') return openDialog(key)
   if (key === 'ungroup') return ungroup()
   if (key === 'enable' || key === 'disable') return bulk(key)
+  if (key === 'reset') {
+    const n = selected.value.size
+    return confirmAnd({
+      title: t('outbound.resetTraffic'),
+      body: t('client.bulkResetBody'),
+      subject: tn('client.nCustomers', n),
+      confirmLabel: t('outbound.resetTraffic'),
+      run: () => guard(async () => {
+        await api.bulkClients('reset', ids())
+        selected.value = new Set()
+      }, 'client.bulkDone'),
+    })
+  }
+  if (key === 'rotate') {
+    const n = selected.value.size
+    return confirmAnd({
+      title: t('client.rotateKeys'),
+      body: t('client.bulkRotateBody'),
+      subject: tn('client.nCustomers', n),
+      consequences: [t('client.rotateAllHint')],
+      confirmLabel: t('client.rotateKeys'),
+      // Typed out past a handful, as a bulk delete is: every file of every
+      // selected customer stops working, and each has to fetch new ones.
+      requireText: n >= 5 ? String(n) : '',
+      // One customer at a time, through the same call a row's key button
+      // makes, so each is rotated whole -- files and link together -- and one
+      // failing leaves the rest done rather than none of them.
+      run: async () => {
+        const failed = []
+        let rotated = 0
+        for (const id of ids()) {
+          try {
+            const res = await api.rotateKeys(id, { subToken: true })
+            rotated += res?.rotated || 0
+          } catch (err) {
+            const c = page.value?.items.find((x) => x.id === id)
+            failed.push(`${c?.name || id}: ${err.message}`)
+          }
+        }
+        selected.value = new Set()
+        if (failed.length) notify(`${t('client.rotateKeysDone', { n: rotated })}\n${failed.join('\n')}`, 'error')
+        else notify(t('client.rotateKeysDone', { n: rotated }), 'success')
+        await load()
+      },
+    })
+  }
   if (key === 'subLinks') {
     subLinksOpen.value = true
     return

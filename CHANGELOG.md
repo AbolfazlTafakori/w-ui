@@ -6,6 +6,26 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-09-28
+
+### Added
+- **Resellers, many at once.** A box on every reseller, and one in the header
+  for everything the filters show; the toolbar then acts on the selection:
+  switch on, switch off, extend the term, start the allowance again, set the
+  traffic allowance, set the customer limit, add or remove servers, and
+  delete -- asking, as for one reseller, what becomes of their customers.
+  Switching off asks first and says how many customers go off. Each reseller
+  goes through the same checks as when changed alone; one that cannot be
+  changed does not stop the rest, and the answer names it with the reason.
+  `POST /api/admins/bulk`.
+- Extending in bulk adds the days to a running term, restarts an ended one
+  from today, adds them to a term on hold, and leaves a reseller with no end
+  date without one.
+- **Customers: reset traffic and new keys for a selection.** Both ask first;
+  new keys for five or more asks you to type how many. New keys replace every
+  file and the subscription link of each selected customer, one at a time,
+  and name any that failed.
+
 ## [2.1.2] — 2026-09-28
 
 ### Fixed
@@ -220,7 +240,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.2...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.0.0...v2.1.0

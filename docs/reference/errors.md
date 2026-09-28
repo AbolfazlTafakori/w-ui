@@ -114,6 +114,16 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `change your own account from the security settings, not from here` / `you cannot delete the account you are signed in with` | The owner's own row is not edited from this page. | Settings → Security. |
 | `… has … customers: say whether to keep them under your own account or delete them with the operator` | Removing a reseller who has customers needs a decision about them. | Choose *Keep them, under me* or *Delete them too*. |
 
+### Many resellers at once
+
+| Message | Meaning | What to do |
+|---|---|---|
+| `no resellers selected` / `… resellers selected; at most … at once` | A selection that is empty, or larger than one request takes. | Select again; split a very large selection. |
+| `the panel's owner is not changed from a selection` / `your own account cannot be part of a selection; change it from the security settings` | The owner's row is never changed in bulk. | Change it from Settings → Security. |
+| `a panel administrator has no ceiling to change` | Extending, setting a ceiling or servers only applies to resellers. | Leave administrators out of the selection. |
+| `give the traffic allowance, or 0 for no limit` / `give the customer limit, or 0 for no limit` / `choose at least one server` | The value the action needs was not given. | Fill it in the dialog. |
+| `say whether to keep their customers under your own account or delete them too` | Deleting resellers in bulk needs the same decision as deleting one. | Choose *Keep them, under me* or *Delete them too*. |
+
 ## Interfaces (tunnels)
 
 | Message | Meaning | What to do |

@@ -114,6 +114,16 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `change your own account from the security settings, not from here` / `you cannot delete the account you are signed in with` | ردیف خود مالک از این صفحه ویرایش نمی‌شود. | تنظیمات ← امنیت. |
 | `… has … customers: say whether to keep them under your own account or delete them with the operator` | حذف نماینده‌ای که کاربر دارد نیاز به تصمیم درباره‌ی آن کاربران دارد. | *بمانند، زیر حساب من* یا *آن‌ها هم حذف شوند* را انتخاب کن. |
 
+### چند نماینده با هم
+
+| پیام | معنی | چه کنی |
+|---|---|---|
+| `no resellers selected` / `… resellers selected; at most … at once` | انتخاب خالی است، یا بزرگ‌تر از آنچه یک درخواست می‌پذیرد. | دوباره انتخاب کن؛ انتخاب خیلی بزرگ را چند بخش کن. |
+| `the panel's owner is not changed from a selection` / `your own account cannot be part of a selection; change it from the security settings` | ردیف مالک هیچ‌وقت دسته‌جمعی تغییر نمی‌کند. | از تنظیمات ← امنیت تغییرش بده. |
+| `a panel administrator has no ceiling to change` | تمدید، تعیین سقف یا سرور فقط برای نماینده‌هاست. | مدیرهای پنل را از انتخاب بیرون بگذار. |
+| `give the traffic allowance, or 0 for no limit` / `give the customer limit, or 0 for no limit` / `choose at least one server` | مقداری که این کار لازم دارد داده نشده. | در پنجره پرش کن. |
+| `say whether to keep their customers under your own account or delete them too` | حذف دسته‌جمعی نماینده‌ها همان تصمیمِ حذف یک نماینده را لازم دارد. | *بمانند، زیر حساب من* یا *آن‌ها هم حذف شوند* را انتخاب کن. |
+
 ## اینترفیس‌ها (تانل‌ها)
 
 | پیام | معنی | چه کنی |

@@ -110,6 +110,21 @@ The same happens by itself when the date passes or the traffic runs out. If the 
 
 "Every change" includes the ones that would store value up for when they are renewed: new customers, extending, raising a quota, resetting traffic, bulk and group actions, imports, new devices and moving customers between servers.
 
+## Many at once
+
+Tick the box on each reseller, or the one in the header for everything the filters show. The toolbar then reads *n selected*, with **more** and **Delete**:
+
+| Action | What it does |
+|---|---|
+| Switch on / Switch off | Switching off asks first and says how many customers go off. It signs the resellers out, exactly as switching one off does. |
+| Extend term | Adds days to each running term. A term that has ended starts again from today; a term on hold gets the days added to the hold; a reseller with no end date keeps none. |
+| Start their allowance again | Each reseller's traffic from zero. Their customers' own usage is not touched. |
+| Set traffic allowance / Set customer limit | The same value for all of them. Empty is no limit. |
+| Add servers / Remove servers | Added to, or taken from, what each already has. Customers on a server taken away keep working. |
+| Delete | Asks, as for one reseller, whether to keep their customers under you or delete them too. |
+
+Every reseller in a selection goes through the same checks as when changed alone. One that cannot be changed does not stop the rest: the answer says how many changed, and names each that did not with the reason — the owner's own account is never part of a selection, and a panel administrator has no ceiling to extend or set. Only what the filters show can be selected, and narrowing the list drops whatever it hides.
+
 ## Removing one
 
 You are asked what becomes of their customers, because both answers are expensive to get wrong:

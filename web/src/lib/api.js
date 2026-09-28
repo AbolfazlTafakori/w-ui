@@ -290,6 +290,7 @@ export const api = {
   updateAdmin: (id, input) => request('PATCH', `/api/admins/${id}`, input),
   deleteAdmin: (id, clients) => request('DELETE', `/api/admins/${id}?clients=${clients}`),
   resetAdminUsage: (id) => request('POST', `/api/admins/${id}/reset-usage`, {}),
+  bulkAdmins: (input) => request('POST', '/api/admins/bulk', input),
 
   removeDevice: (id) => request('DELETE', `/api/devices/${id}`),
   profile: (id) => request('GET', `/api/devices/${id}/profile`),

@@ -737,6 +737,14 @@ func (s *Server) routes() []Route {
 				"?clients=delete to remove them too. Refused without one when they " +
 				"still hold any, because both answers are expensive to get wrong.",
 			handler: s.handleDeleteAdmin},
+		{Method: "POST", Path: "/api/admins/bulk", Group: "Operators", Auth: true, Operator: true,
+			Summary: "Change a selection of resellers at once.",
+			Body:    `{"action":"extend","ids":[2,3],"days":30}`,
+			Note: "action is enable, disable, resetUsage, extend (days), setQuota (quotaBytes), " +
+				"setClientLimit (clientLimit), addServers or removeServers (interfaceIds), " +
+				"or delete (mode: keep or delete). Every reseller goes through the same rules " +
+				"as when changed alone; the answer counts the changed and names each failure.",
+			handler: s.handleBulkAdmins},
 		{Method: "POST", Path: "/api/admins/{id}/reset-usage", Group: "Operators", Auth: true, Operator: true,
 			Summary: "Start a reseller's allowance again, for the next month they have paid for.",
 			handler: s.handleResetAdminUsage},
