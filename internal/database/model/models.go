@@ -272,6 +272,13 @@ type Client struct {
 	// against DeviceLimit. Filled by the list, not stored.
 	OnlineNow int `gorm:"-" json:"onlineNow"`
 
+	// OwnerPaused says why this customer is off although their own plan is
+	// not: the reseller who sold it has been switched off, their term has
+	// ended, or their traffic is used up. One of the Pause* values, or empty.
+	// Filled on the way out, not stored -- the pause is the reseller's, and
+	// writing it onto the customers is exactly what keeps it reversible.
+	OwnerPaused string `gorm:"-" json:"ownerPaused,omitempty"`
+
 	// RateBitsPerSec of 0 means unmetered. Applied via tc by the enforcer.
 	RateBitsPerSec uint64 `gorm:"not null;default:0" json:"rateBitsPerSec"`
 
@@ -510,10 +517,31 @@ func (a *Admin) Expired(now time.Time) bool {
 // exactly what must not happen -- a customer stopped by hand before the
 // reseller was suspended has to stay stopped after they are restored.
 func (a *Admin) Suspended(now time.Time) bool {
-	if a.Role == RoleOwner {
-		return false
+	return a.PauseReason(now) != ""
+}
+
+// Why an operator's customers are off, in the order they are checked: the
+// owner's decision first, then the date, then the traffic.
+const (
+	PauseSwitchedOff = "switchedOff"
+	PauseTermEnded   = "termEnded"
+	PauseTrafficUsed = "trafficUsed"
+)
+
+// PauseReason is why this operator's customers are off right now, or empty
+// when they are not. The owner is never paused.
+func (a *Admin) PauseReason(now time.Time) string {
+	switch {
+	case a.Role == RoleOwner:
+		return ""
+	case !a.Enabled:
+		return PauseSwitchedOff
+	case a.Expired(now):
+		return PauseTermEnded
+	case a.QuotaExceeded():
+		return PauseTrafficUsed
 	}
-	return !a.Enabled || a.Expired(now) || a.QuotaExceeded()
+	return ""
 }
 
 // AdminInterface is one tunnel a reseller is allowed to sell.

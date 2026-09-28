@@ -709,6 +709,23 @@ func bundleFormatName(format string) string {
 	}
 }
 
+// statusShown is the customer's status as their own page should state it.
+//
+// A customer of a paused reseller is off although their own plan is not, and
+// a page saying "active" would send them looking for a fault in their phone.
+// It says they are off -- and not why: the reseller's standing with the
+// owner is not the customer's business.
+func (s *Subscriptions) statusShown(ctx context.Context, c *model.Client) string {
+	if c.OwnerID != 0 && c.Status.Serviceable() {
+		var a model.Admin
+		if err := s.db.WithContext(ctx).First(&a, c.OwnerID).Error; err == nil &&
+			a.Suspended(time.Now().UTC()) {
+			return string(model.StatusDisabled)
+		}
+	}
+	return string(c.Status)
+}
+
 // PageFor builds what a customer sees when they open their link in a browser.
 // StatusFor is PageFor without the configurations: the counters and the
 // freshest handshake, which is all a page refreshing itself needs, and
@@ -720,7 +737,7 @@ func (s *Subscriptions) StatusFor(ctx context.Context, token string) (*SubPage, 
 	}
 	page := &SubPage{
 		Name:       c.Name,
-		Status:     string(c.Status),
+		Status:     s.statusShown(ctx, c),
 		Protocol:   string(c.Protocol),
 		UpdatedAt:  time.Now().UTC(),
 		QuotaBytes: c.QuotaBytes,
@@ -770,7 +787,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		Title:      cfg.Title,
 		Template:   cfg.Template,
 		Name:       c.Name,
-		Status:     string(c.Status),
+		Status:     s.statusShown(ctx, c),
 		Protocol:   string(c.Protocol),
 		UpdatedAt:  time.Now().UTC(),
 		QuotaBytes: c.QuotaBytes,

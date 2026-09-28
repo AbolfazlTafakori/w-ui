@@ -115,6 +115,11 @@ type Reconciler struct {
 	// Set by the panel's node syncer; nil when there are no nodes.
 	OnHold func(nodeID uint, hold service.NodeHold)
 
+	// suspended is the last set of operators read as suspended, kept for a
+	// tick on which it cannot be read. See lastSuspended.
+	suspendedMu sync.Mutex
+	suspended   map[uint]bool
+
 	mu    sync.RWMutex
 	stats Stats
 	// lastRouteErr is the routing failure already reported, for the same reason
@@ -637,6 +642,27 @@ func (r *Reconciler) clearRouteErr() {
 	}
 }
 
+// lastSuspended remembers the suspended operators between ticks and stands
+// in for them on a tick where they could not be read.
+//
+// Failing that read open -- treating every operator as in good standing --
+// would put the customers of a reseller who was switched off back on the
+// tunnels for as long as the database stayed unreachable: peers re-added,
+// drop rules lifted, and sessions opened that the next good tick would have
+// to cut again. The last answer read is the right one to keep until a new one
+// can be.
+func (r *Reconciler) lastSuspended(read map[uint]bool, err error) map[uint]bool {
+	r.suspendedMu.Lock()
+	defer r.suspendedMu.Unlock()
+	if err != nil {
+		r.log.Warn("could not read which operators are suspended; keeping the last known",
+			"error", err, "suspended", len(r.suspended))
+		return r.suspended
+	}
+	r.suspended = read
+	return read
+}
+
 // serviceableFor reports whether this customer's devices belong on the
 // tunnels right now: their own plan says so, and the operator who sold it
 // to them is still in good standing.
@@ -729,11 +755,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	// they are, so restoring the reseller restores the service they had
 	// rather than reviving plans that were stopped on purpose -- and the
 	// customer rows never have to be written back when it happens.
-	suspended, err := service.SuspendedOwners(ctx, r.db, now)
-	if err != nil {
-		r.log.Warn("could not read which operators are suspended", "error", err)
-		suspended = nil
-	}
+	suspended := r.lastSuspended(service.SuspendedOwners(ctx, r.db, now))
 
 	d := &desired{
 		rules:      make([]enforce.Rule, 0, len(clients)),

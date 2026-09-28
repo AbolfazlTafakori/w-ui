@@ -10,7 +10,8 @@
 // customer is: a summary across the top, then a row each with how much of
 // what they bought is left -- customers, traffic, days -- in the same colours
 // the customer list uses, so "orange" means the same thing on both pages.
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
 import { bytes, dateTime } from '../lib/format.js'
@@ -22,6 +23,8 @@ import PageSpin from '../components/PageSpin.vue'
 import ResellerForm from '../components/ResellerForm.vue'
 
 const isMobile = useIsMobile()
+const route = useRoute()
+const router = useRouter()
 
 const operators = ref([])
 const servers = ref([])
@@ -128,6 +131,71 @@ function serverProto(id) {
 }
 const CHIP_LIMIT = 2
 
+// --- Finding one. -----------------------------------------------------------
+//
+// The customer list's search, filters and sort, over a list that is small
+// enough to hold in the page: filtering here answers as the operator types,
+// with no request per keystroke. Kept in the address, so a reload or a link
+// lands on the same view.
+const STATUS_FILTERS = ['active', 'hold', 'soon', 'stopped']
+const SORTS = ['name', 'customers', 'traffic', 'timeLeft', 'newest']
+
+const qs = (k) => (typeof route.query[k] === 'string' ? route.query[k] : '')
+const search = ref(qs('q'))
+const statusFilter = ref(STATUS_FILTERS.includes(qs('status')) ? qs('status') : '')
+const serverFilter = ref(Number(qs('server')) || '')
+const sort = ref(SORTS.includes(qs('sort')) ? qs('sort') : 'name')
+
+watch([search, statusFilter, serverFilter, sort], () => {
+  const query = {}
+  if (search.value.trim()) query.q = search.value.trim()
+  if (statusFilter.value) query.status = statusFilter.value
+  if (serverFilter.value) query.server = String(serverFilter.value)
+  if (sort.value !== 'name') query.sort = sort.value
+  router.replace({ query })
+})
+
+const filtering = computed(() => !!(search.value.trim() || statusFilter.value || serverFilter.value))
+function clearFilters() {
+  search.value = ''
+  statusFilter.value = ''
+  serverFilter.value = ''
+}
+
+// Which of the four a reseller falls in. An administrator is active or
+// switched off and nothing else: they have no ceiling to run into.
+function bucket(a) {
+  const k = standing(a).key
+  if (k === 'off' || k === 'ended' || k === 'spent') return 'stopped'
+  return k
+}
+
+const shown = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  let list = rows.value.filter((a) => {
+    if (statusFilter.value && bucket(a) !== statusFilter.value) return false
+    if (serverFilter.value && !(a.interfaceIds || []).includes(serverFilter.value)) return false
+    if (!q) return true
+    return [a.username, a.note, a.groupName].some((v) => (v || '').toLowerCase().includes(q))
+  })
+  // Unlimited sorts last on "time left" and first on nothing else: it is the
+  // one that will never need renewing.
+  const left = (a) => (a.expiresAt ? new Date(a.expiresAt).getTime() : a.durationDays > 0 ? Date.now() + a.durationDays * DAY : Infinity)
+  const by = {
+    name: (x, y) => x.username.localeCompare(y.username),
+    customers: (x, y) => (y.clients || 0) - (x.clients || 0),
+    traffic: (x, y) => (y.usedBytes || 0) - (x.usedBytes || 0),
+    timeLeft: (x, y) => left(x) - left(y),
+    newest: (x, y) => new Date(y.createdAt || 0) - new Date(x.createdAt || 0),
+  }[sort.value]
+  return [...list].sort((x, y) => by(x, y) || x.username.localeCompare(y.username))
+})
+
+// A summary tile is also the way to its list.
+function showBucket(k) {
+  statusFilter.value = statusFilter.value === k ? '' : k
+}
+
 // --- Across the top. -------------------------------------------------------
 const summary = computed(() => {
   const list = resellers.value
@@ -215,16 +283,22 @@ async function saved() {
               <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="ShopOutlined" /></span><span>{{ nf(summary.total) }}</span></div>
             </div>
             <div class="acol">
-              <div class="stat-title">{{ t('status.active') }}</div>
-              <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-green"></i></span><span>{{ nf(summary.active) }}</span></div>
+              <button type="button" class="stat-button" :class="{ on: statusFilter === 'active' }" :aria-pressed="statusFilter === 'active'" @click="showBucket('active')">
+                <span class="stat-title">{{ t('status.active') }}</span>
+                <span class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-green"></i></span><span>{{ nf(summary.active) }}</span></span>
+              </button>
             </div>
             <div class="acol">
-              <div class="stat-title">{{ t('admins.endingSoon') }}</div>
-              <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-orange"></i></span><span>{{ nf(summary.soon) }}</span></div>
+              <button type="button" class="stat-button" :class="{ on: statusFilter === 'soon' }" :aria-pressed="statusFilter === 'soon'" @click="showBucket('soon')">
+                <span class="stat-title">{{ t('admins.endingSoon') }}</span>
+                <span class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-orange"></i></span><span>{{ nf(summary.soon) }}</span></span>
+              </button>
             </div>
             <div class="acol">
-              <div class="stat-title">{{ t('admins.stopped') }}</div>
-              <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-red"></i></span><span>{{ nf(summary.stopped) }}</span></div>
+              <button type="button" class="stat-button" :class="{ on: statusFilter === 'stopped' }" :aria-pressed="statusFilter === 'stopped'" @click="showBucket('stopped')">
+                <span class="stat-title">{{ t('admins.stopped') }}</span>
+                <span class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-red"></i></span><span>{{ nf(summary.stopped) }}</span></span>
+              </button>
             </div>
             <div class="acol">
               <div class="stat-title">{{ t('admins.theirCustomers') }}</div>
@@ -248,18 +322,60 @@ async function saved() {
         </div>
 
         <div class="acard-body">
+          <div v-if="rows.length" class="filter-bar">
+            <label class="ainput" :class="{ small: isMobile }" :style="isMobile ? 'width: 100%' : 'max-width: 320px; width: 100%'">
+              <span class="ainput-prefix"><AntIcon name="SearchOutlined" /></span>
+              <input v-model="search" type="search" :placeholder="t('admins.searchPlaceholder')" :aria-label="t('action.search')" />
+              <button v-if="search" type="button" class="ainput-clear" :aria-label="t('action.clear')" @click="search = ''"><AntIcon name="CloseCircleFilled" /></button>
+            </label>
+            <div class="aselect" :class="{ small: isMobile }">
+              <select v-model="statusFilter" :aria-label="t('admins.status')">
+                <option value="">{{ t('admins.filter.anyStatus') }}</option>
+                <option value="active">{{ t('status.active') }}</option>
+                <option value="hold">{{ t('status.onHold') }}</option>
+                <option value="soon">{{ t('admins.endingSoon') }}</option>
+                <option value="stopped">{{ t('admins.stopped') }}</option>
+              </select>
+            </div>
+            <div class="aselect" :class="{ small: isMobile }">
+              <select v-model.number="serverFilter" :aria-label="t('admins.servers')">
+                <option value="">{{ t('admins.filter.anyServer') }}</option>
+                <option v-for="sv in servers" :key="sv.id" :value="sv.id">{{ sv.name }}</option>
+              </select>
+            </div>
+            <div class="aselect sort-select" :class="{ small: isMobile }">
+              <select v-model="sort" :aria-label="t('client.sort.label')">
+                <option value="name">{{ t('admins.sort.name') }}</option>
+                <option value="customers">{{ t('admins.sort.customers') }}</option>
+                <option value="traffic">{{ t('admins.sort.traffic') }}</option>
+                <option value="timeLeft">{{ t('admins.sort.timeLeft') }}</option>
+                <option value="newest">{{ t('admins.sort.newest') }}</option>
+              </select>
+              <span class="aselect-suffix"><AntIcon name="SortAscendingOutlined" /></span>
+            </div>
+            <button v-if="filtering" type="button" class="abtn" @click="clearFilters">{{ t('client.menu.clearAllFilters') }}</button>
+            <span v-if="filtering" class="filter-count" aria-live="polite">
+              {{ t('client.menu.showingCount').replace('{shown}', nf(shown.length)).replace('{total}', nf(rows.length)) }}
+            </span>
+          </div>
+
           <div v-if="!rows.length" class="resellers-empty">
             <AntIcon name="ShopOutlined" :size="32" />
             <div>{{ t('admins.none') }}</div>
           </div>
+          <div v-else-if="!shown.length" class="resellers-empty">
+            <AntIcon name="SearchOutlined" :size="32" />
+            <div>{{ t('admins.noMatch') }}</div>
+            <button type="button" class="abtn" style="margin-top: 12px" @click="clearFilters">{{ t('client.menu.clearAllFilters') }}</button>
+          </div>
 
           <!-- A phone gets a card each: the same figures, stacked. -->
           <div v-else-if="isMobile" class="rcards">
-            <div v-for="a in rows" :key="a.id" class="rcard" :class="{ off: !a.enabled }">
+            <div v-for="a in shown" :key="a.id" class="rcard" :class="{ off: !a.enabled }">
               <div class="rcard-head">
                 <div class="rcard-name">
                   <span class="name">{{ a.username }}</span>
-                  <span class="atag" :class="standing(a).color" style="margin: 0">{{ standing(a).label }}</span>
+                  <span class="atag" dir="auto" :class="standing(a).color" style="margin: 0">{{ standing(a).label }}</span>
                 </div>
                 <Toggle :model-value="a.enabled" :label="a.username" small :loading="pending.has(a.id)" @update:model-value="(v) => setEnabled(a, v)" />
               </div>
@@ -267,7 +383,7 @@ async function saved() {
               <dl v-if="a.role === 'reseller'" class="rcard-stats">
                 <div><dt>{{ t('admins.customers') }}</dt><dd><span class="atag ltr" :class="customersTag(a).color" style="margin: 0">{{ customersTag(a).label }}</span></dd></div>
                 <div><dt>{{ t('admins.trafficLeft') }}</dt><dd><span class="atag ltr" :class="trafficLeftTag(a).color" style="margin: 0">{{ trafficLeftTag(a).label }}</span></dd></div>
-                <div><dt>{{ t('admins.timeLeft') }}</dt><dd><span class="atag" :class="termTag(a).color" :title="termTag(a).title" style="margin: 0">{{ termTag(a).label }}</span></dd></div>
+                <div><dt>{{ t('admins.timeLeft') }}</dt><dd><span class="atag" dir="auto" :class="termTag(a).color" :title="termTag(a).title" style="margin: 0">{{ termTag(a).label }}</span></dd></div>
               </dl>
               <div v-else class="rcard-note"><span class="atag geekblue" style="margin: 0">{{ t('admins.role.admin') }}</span></div>
               <div class="rcard-actions">
@@ -294,15 +410,15 @@ async function saved() {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="a in rows" :key="a.id" :class="{ off: !a.enabled }">
-                  <td>
+                <tr v-for="a in shown" :key="a.id" :class="{ off: !a.enabled }">
+                  <td class="keep">
                     <div class="aspace" style="gap: 4px; flex-wrap: nowrap">
                       <button class="abtn text sm" :title="t('action.edit')" :aria-label="t('action.edit')" @click="formFor = { admin: a }"><AntIcon name="EditOutlined" /></button>
-                      <button v-if="a.role === 'reseller'" class="abtn text sm" :title="t('admins.resetUsage')" :aria-label="t('admins.resetUsage')" :disabled="pending.has(a.id) || !a.quotaBytes" @click="resetUsage(a)"><AntIcon name="RetweetOutlined" /></button>
+                      <button v-if="a.role === 'reseller' && a.quotaBytes" class="abtn text sm" :title="t('admins.resetUsage')" :aria-label="t('admins.resetUsage')" :disabled="pending.has(a.id)" @click="resetUsage(a)"><AntIcon name="RetweetOutlined" /></button>
                       <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="removing = a"><AntIcon name="DeleteOutlined" /></button>
                     </div>
                   </td>
-                  <td>
+                  <td class="keep">
                     <Toggle :model-value="a.enabled" :label="a.username" small :loading="pending.has(a.id)" @update:model-value="(v) => setEnabled(a, v)" />
                   </td>
                   <td>
@@ -313,7 +429,7 @@ async function saved() {
                       <span v-if="a.groupName" class="sub" :title="t('admins.groupHint')"><AntIcon name="TagsOutlined" /> {{ a.groupName }}</span>
                     </div>
                   </td>
-                  <td><span class="atag" :class="standing(a).color" style="margin: 0">{{ standing(a).label }}</span></td>
+                  <td><span class="atag" dir="auto" :class="standing(a).color" style="margin: 0">{{ standing(a).label }}</span></td>
                   <template v-if="a.role === 'reseller'">
                     <td><span class="atag ltr" :class="customersTag(a).color" style="margin: 0">{{ customersTag(a).label }}</span></td>
                     <td>
@@ -327,7 +443,7 @@ async function saved() {
                       </div>
                     </td>
                     <td><span class="atag ltr" :class="trafficLeftTag(a).color" style="margin: 0">{{ trafficLeftTag(a).label }}</span></td>
-                    <td><span class="atag" :class="termTag(a).color" :title="termTag(a).title" style="margin: 0">{{ termTag(a).label }}</span></td>
+                    <td><span class="atag" dir="auto" :class="termTag(a).color" :title="termTag(a).title" style="margin: 0">{{ termTag(a).label }}</span></td>
                     <td>
                       <template v-if="(a.interfaceIds || []).length">
                         <span v-for="id in a.interfaceIds.slice(0, CHIP_LIMIT)" :key="id" class="atag" :class="serverProto(id) === 'openvpn' ? 'orange' : 'gold'" style="margin: 2px">{{ serverName(id) }}</span>
@@ -395,9 +511,27 @@ async function saved() {
 .card-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; padding: 6px 0; }
 
 .resellers-empty { padding: 32px 0; text-align: center; color: var(--muted); }
+
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.filter-bar .aselect { width: auto; }
+.filter-count { margin-inline-start: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.sort-select { position: relative; }
+.sort-select .aselect-suffix { position: absolute; inset-inline-end: 11px; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 12px; pointer-events: none; }
+.sort-select::after { display: none; }
+.sort-select select { padding-inline-end: 28px; }
+
+/* A tile that filters: a button that looks like the tile it is. */
+.stat-button { display: block; width: 100%; padding: 4px 6px; margin: -4px -6px; border: 1px solid transparent; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.stat-button:hover { background: var(--surface-2); }
+.stat-button.on { border-color: var(--accent); background: var(--accent-soft); }
+.stat-button .stat-title, .stat-button .stat-content { display: block; }
 .resellers-empty .anticon { display: block; margin: 0 auto 8px; opacity: 0.5; }
 
 tr.off .who .name { opacity: 0.55; }
+/* A switched-off row recedes, but its switch and its actions do not: they
+   are how it is switched back on, edited or removed, and a faded button
+   reads as one that cannot be pressed. */
+tr.off td.keep { opacity: 1; }
 .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .who .name { font-weight: 500; }
 .who .sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
@@ -423,6 +557,9 @@ tr.off .who .name { opacity: 0.55; }
 .rcard-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; }
 .rcard-stats dt { font-size: 11px; color: var(--faint); margin-bottom: 2px; }
 .rcard-stats dd { margin: 0; }
+/* A tag here has a third of a phone to live in; a long one wraps inside it
+   rather than pushing out past the card. */
+.rcard-stats dd .atag { max-width: 100%; white-space: normal; line-height: 1.4; }
 .rcard-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .rcard-actions .abtn span { margin-inline-start: 4px; }
 

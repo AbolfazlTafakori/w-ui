@@ -38,6 +38,40 @@ func ScopeOf(ctx context.Context) Scope { return scope.Of(ctx) }
 // OwnerOf is the id to stamp on something this request creates.
 func OwnerOf(ctx context.Context) uint { return scope.OwnerOf(ctx) }
 
+// fillOwnerPause marks each customer whose reseller is paused, and why.
+//
+// Read from the operators table, which is not narrowed to the caller: a
+// reseller reading their own customers is asking about their own row, and
+// the owner is asking about everyone's. One query for the page.
+func fillOwnerPause(ctx context.Context, db *gorm.DB, items []model.Client) error {
+	owners := map[uint]bool{}
+	for i := range items {
+		if items[i].OwnerID != 0 {
+			owners[items[i].OwnerID] = true
+		}
+	}
+	if len(owners) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(owners))
+	for id := range owners {
+		ids = append(ids, id)
+	}
+	var admins []model.Admin
+	if err := db.WithContext(ctx).Where("id IN ?", ids).Find(&admins).Error; err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	why := make(map[uint]string, len(admins))
+	for i := range admins {
+		why[admins[i].ID] = admins[i].PauseReason(now)
+	}
+	for i := range items {
+		items[i].OwnerPaused = why[items[i].OwnerID]
+	}
+	return nil
+}
+
 // SuspendedOwners lists the operators whose customers must be off right now.
 //
 // Read in one query and applied where service is decided, rather than being

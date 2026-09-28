@@ -414,6 +414,11 @@ function statusTag(c) {
   // them is off, because the panel switched them off.
   if (c.status === 'exhausted') return { color: 'red', label: t('status.exhausted') }
   if (c.status === 'expired') return { color: 'red', label: t('status.expired') }
+  // Their own plan is fine but the reseller who sold it is paused, so they
+  // cannot connect. Said here, or "Active" would be a lie told on every row.
+  if (c.ownerPaused) {
+    return { color: 'red', label: store.admin?.role === 'reseller' ? t('client.accountPaused') : t('client.resellerPaused') }
+  }
   if (c.status !== 'disabled' && clientOnline(c)) return { color: 'green', label: t('status.online'), dot: true }
   if (c.status === 'disabled') return { color: 'grey', label: t('status.disabled') }
   // A plan that has not started: on hold until the first connection.
@@ -883,7 +888,7 @@ async function submitForm(input) {
         <span class="account-title"><AntIcon name="ShopOutlined" /> {{ t('admins.you.title') }}</span>
         <span class="account-item">{{ t('admins.you.customers') }} <span class="atag ltr" :class="accountStrip.customersColor">{{ accountStrip.customers }}</span></span>
         <span class="account-item">{{ t('admins.you.trafficLeft') }} <span class="atag ltr" :class="accountStrip.trafficColor">{{ accountStrip.traffic }}</span></span>
-        <span class="account-item">{{ t('admins.you.timeLeft') }} <span class="atag" :class="accountStrip.timeColor" :title="accountStrip.timeTitle">{{ accountStrip.time }}</span></span>
+        <span class="account-item">{{ t('admins.you.timeLeft') }} <span class="atag" dir="auto" :class="accountStrip.timeColor" :title="accountStrip.timeTitle">{{ accountStrip.time }}</span></span>
       </div>
       <p v-if="accountStrip.reason" class="account-barred">{{ t('admins.you.barred', { reason: accountStrip.reason }) }}</p>
     </div>

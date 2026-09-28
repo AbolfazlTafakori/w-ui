@@ -925,6 +925,9 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	if err := s.fillOnlineNow(ctx, items); err != nil {
 		return nil, err
 	}
+	if err := fillOwnerPause(ctx, s.db, items); err != nil {
+		return nil, fmt.Errorf("service: read resellers' standing: %w", err)
+	}
 
 	return &Page{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage}, nil
 }
@@ -1006,6 +1009,9 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 	}
 	if err := fillGroups(ctx, s.db.WithContext(ctx), one); err != nil {
 		return nil, err
+	}
+	if err := fillOwnerPause(ctx, s.db, one); err != nil {
+		return nil, fmt.Errorf("service: read the reseller's standing: %w", err)
 	}
 	// The operator reading one customer sees each OpenVPN user's password,
 	// so it can be told to them or changed; a WireGuard file has no such

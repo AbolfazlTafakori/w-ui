@@ -33,6 +33,8 @@ A row each, in the same colours as the customer list — green while there is ro
 - **Time left** — days until their term ends, or *on hold* while it has not started.
 - **Servers** — the ones they may sell.
 
+Above the list, the Clients page's controls: search by username, note or group; filter by status (active, on hold, ending soon, stopped) and by server; sort by name, customers, traffic used, time left or newest. The summary tiles filter too — press *Ending soon* to see who to renew. The view is kept in the address, so a reload or a shared link opens on it.
+
 On a phone each reseller is a card with the same figures.
 
 ## Adding a reseller
@@ -59,7 +61,7 @@ When you take a server back, the customers already on it keep working, and the r
 
 ## Switching one off
 
-Switching a reseller off stops every customer they hold, at once, signs them out, and keeps them out: they cannot sign in again until you switch them back on.
+Switching a reseller off stops every customer they hold, at once, signs them out, and keeps them out: they cannot sign in again until you switch them back on. Their customers are dropped by the kernel and taken off the tunnels within a tick, connected OpenVPN sessions are ended, and on the Clients page each of them reads *Reseller paused*. Their own subscription page says they are off, without saying why.
 
 A reseller whose term has ended or whose allowance is used up is stopped the same way, but may still sign in — to see why, and to pay. They can read their customers and change nothing: no new customers, no extending, no topping up, nothing that would come into effect the moment they were renewed.
 

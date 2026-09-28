@@ -6,6 +6,26 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- The Resellers page has the Clients page's search, filters and sort: search
+  by username, note or group, filter by status and server, and sort by name,
+  customers, traffic used, time left or newest. The summary tiles filter too,
+  and the view is kept in the address.
+- A customer whose reseller is paused reads *Reseller paused* on the Clients
+  page (*Account paused* to the reseller), and their own subscription page
+  says they are off. They read "Active" while being unable to connect.
+
+### Fixed
+- A tick that could not read which resellers are paused treated every one as
+  in good standing, putting a switched-off reseller's customers back on the
+  tunnels until the next good read. It now keeps the last answer.
+- On a phone, a time-left tag in Persian ran its number and its words in the
+  wrong order, and a long one pushed out of its card.
+- On a switched-off reseller's row the switch and the actions faded with the
+  rest, and read as buttons that could not be pressed.
+- Sixteen Persian labels were still in English, among them "On hold" and the
+  client dialog's tabs.
+
 ## [2.0.0] — 2026-09-28
 
 The panel can be sold on. A second kind of operator signs in beside the

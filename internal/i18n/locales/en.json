@@ -1821,5 +1821,16 @@
   "admins.you.trafficLeft": "Traffic left",
   "admins.you.timeLeft": "Time left",
   "admins.you.barred": "Your account is paused: {reason}. Your customers are off until it is renewed; ask the panel owner.",
-  "admins.noServersGiven": "You have not been given a server to sell yet. Ask the panel owner."
+  "admins.noServersGiven": "You have not been given a server to sell yet. Ask the panel owner.",
+  "admins.searchPlaceholder": "Search username, note or group",
+  "admins.noMatch": "No reseller matches these filters.",
+  "admins.filter.anyStatus": "Any status",
+  "admins.filter.anyServer": "Any server",
+  "admins.sort.name": "Name",
+  "admins.sort.customers": "Most customers",
+  "admins.sort.traffic": "Most traffic used",
+  "admins.sort.timeLeft": "Ending first",
+  "admins.sort.newest": "Newest first",
+  "client.resellerPaused": "Reseller paused",
+  "client.accountPaused": "Account paused"
 }
