@@ -3679,6 +3679,28 @@ button.ov-version:hover {
   border-radius: 50%;
   background: var(--accent);
 }
+/* "Update v2.3.0": a small amber tag, raised only while a newer release
+   exists, that opens the update dialog. */
+.ov-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+  font: inherit;
+  font-size: var(--t-sm, 13px);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.ov-update:hover { background: color-mix(in srgb, var(--warn) 20%, transparent); border-color: var(--warn); }
+.ov-update:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+.ov-update .anticon { font-size: 14px; }
+
 /* Release notes, as the project wrote them. */
 .update-notes {
   max-height: 220px;

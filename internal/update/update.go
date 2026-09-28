@@ -26,7 +26,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -70,6 +72,51 @@ func Available(ctx context.Context, current string) (*Release, bool, error) {
 		return nil, false, err
 	}
 	return rel, newer(current, rel.Version), nil
+}
+
+// How long one answer from the release list stands. The overview asks on
+// every visit, and GitHub allows an unsigned caller sixty questions an hour;
+// a server where GitHub is blocked would otherwise wait out the timeout on
+// every visit too. A failure is kept for less time than an answer, so a
+// network that comes back is noticed soon.
+const (
+	answerFor  = 30 * time.Minute
+	failureFor = 5 * time.Minute
+)
+
+// fetchLatest is latest; a test puts a stand-in for the repository here.
+var fetchLatest = latest
+
+var checked struct {
+	sync.Mutex
+	rel *Release
+	err error
+	at  time.Time
+}
+
+// Checked is Available from the last answer when it is recent enough and
+// fresh is false, and from the repository otherwise -- an answer that then
+// stands for the next caller. For showing; installing asks Available.
+func Checked(ctx context.Context, current string, fresh bool) (*Release, bool, error) {
+	checked.Lock()
+	defer checked.Unlock()
+	keep := answerFor
+	if checked.err != nil {
+		keep = failureFor
+	}
+	if fresh || checked.at.IsZero() || time.Since(checked.at) >= keep {
+		checked.rel, checked.err = fetchLatest(ctx)
+		checked.at = time.Now()
+		// A check cut short because the page asking went away says nothing
+		// about the repository, and is not kept.
+		if checked.err != nil && ctx.Err() != nil {
+			checked.at = time.Time{}
+		}
+	}
+	if checked.err != nil {
+		return nil, false, checked.err
+	}
+	return checked.rel, newer(current, checked.rel.Version), nil
 }
 
 // latest asks the repository what it has published.
@@ -282,7 +329,48 @@ func newer(current, latest string) bool {
 	if current == "dev" || strings.Contains(current, "+") {
 		return false
 	}
-	return current != latest
+	c, cok := parseVersion(current)
+	l, lok := parseVersion(latest)
+	if !cok || !lok {
+		// Not a version this can order; a different one is the best signal.
+		return current != latest
+	}
+	for i := range c.n {
+		if c.n[i] != l.n[i] {
+			return l.n[i] > c.n[i]
+		}
+	}
+	// The same numbers: a release is newer than a pre-release of itself.
+	return c.pre && !l.pre
+}
+
+// version is X.Y.Z, and whether a pre-release tag (-rc1) followed it.
+type version struct {
+	n   [3]int
+	pre bool
+}
+
+// parseVersion reads X.Y.Z with an optional -suffix. It is not the whole of
+// semantic versioning, only as much as this project's tags use: a panel that
+// is ahead of the newest release must not be offered that release, and
+// 2.10.0 comes after 2.9.0.
+func parseVersion(v string) (version, bool) {
+	var out version
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		v, out.pre = v[:i], true
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out.n[i] = n
+	}
+	return out, true
 }
 
 // Verify checks a build against the key this panel was built with.

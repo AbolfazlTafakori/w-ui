@@ -7,6 +7,7 @@ import { store, t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Sparkline from '../components/Sparkline.vue'
 import Icon from '../components/Icon.vue'
+import AntIcon from '../components/AntIcon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
@@ -561,9 +562,9 @@ function historyLabel(l) {
 const update = ref(null)
 const updateBusy = ref(false)
 
-async function loadUpdate() {
+async function loadUpdate(fresh = false) {
   try {
-    update.value = await api.get('/api/system/update')
+    update.value = await api.get(fresh ? '/api/system/update?fresh=1' : '/api/system/update')
   } catch {
     // Quiet. The release list being unreachable is not something to interrupt
     // an operator looking at their own server for.
@@ -572,7 +573,7 @@ async function loadUpdate() {
 }
 
 function openUpdate() {
-  loadUpdate()
+  loadUpdate(true)
   updateOpen.value = true
 }
 
@@ -637,6 +638,13 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
           <!-- Only when there is something to install. A dot that is always
                there is a dot nobody looks at. -->
           <i v-if="update?.available" class="ov-version-dot"></i>
+        </button>
+        <!-- A newer release, said in words beside the version: the dot alone
+             was easy to miss for weeks. Only an operator who can install it
+             is ever told, since the check is theirs alone. -->
+        <button v-if="update?.available && update?.latest" type="button" class="ov-update" @click="openUpdate">
+          <AntIcon name="CloudUploadOutlined" />
+          <span>{{ t('update.cta') }} <bdi class="ltr">v{{ update.latest }}</bdi></span>
         </button>
 
         <button class="btn sm ghost" :title="t('overview.restartAllHint')"

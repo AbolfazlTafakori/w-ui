@@ -11,6 +11,8 @@ The first page after sign-in: host load, panel state, and what this server is ca
 | Button | What it does |
 |--------|--------------|
 | **Tunnels 3 / 3** | how many interfaces are up, of how many are enabled; red when one is down |
+| **2.3.0** | this panel's version; opens the update dialog |
+| **Update v2.3.1** | only while a newer release is published: opens the update dialog, which shows the release notes and installs it — downloaded by the panel itself, checked against the signing key built into it, then a restart. Customers stay connected. The release list is checked at most every half hour; opening the dialog checks again |
 | **Restart** | every tunnel again from its stored configuration (the classic "restart core"); the panel stays up |
 | **Stop** | the panel service — tunnels keep running, limits stop being enforced |
 | **History** | CPU, memory, traffic and connections over the last day, week or month |

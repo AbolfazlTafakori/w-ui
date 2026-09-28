@@ -150,6 +150,17 @@ func TestWhatCountsAsNewer(t *testing.T) {
 		{"1.0.0+abc1234", "1.0.1", false},
 		{"", "1.0.1", false},
 		{"1.0.0", "", false},
+		// Ordered by number, not compared as text.
+		{"2.9.0", "2.10.0", true},
+		{"2.10.0", "2.9.0", false},
+		{"1.9.9", "2.0.0", true},
+		// A panel ahead of the newest release is not offered a step back.
+		{"2.3.0", "2.2.2", false},
+		// A pre-release is behind the release it leads up to.
+		{"2.3.0-rc1", "2.3.0", true},
+		{"2.3.0", "2.3.0-rc1", false},
+		// Not a version this can order: different is newer.
+		{"nightly", "2.3.0", true},
 	}
 	for _, tc := range cases {
 		if got := newer(tc.current, tc.latest); got != tc.want {

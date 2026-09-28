@@ -1855,5 +1855,6 @@
   "client.resellerPausedHint": "Off because the reseller who sold this plan is paused.",
   "client.accountPausedHint": "Off because your account is paused.",
   "client.pausedComesBack": "Their own switch is on: they come back when the reseller does.",
-  "client.pausedStaysOff": "Their own switch is off: they stay off when the reseller is back."
+  "client.pausedStaysOff": "Their own switch is off: they stay off when the reseller is back.",
+  "update.cta": "Update"
 }

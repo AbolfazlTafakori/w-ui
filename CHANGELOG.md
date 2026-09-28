@@ -6,6 +6,26 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-09-28
+
+### Added
+- **"Update v…" on the overview.** While a newer release is published, an
+  amber tag beside the panel's version names it; it opens the update dialog,
+  with the release notes and the button that installs it -- fetched by the
+  panel, checked against the signing key built into it, then a restart. The
+  dot on the version alone was easy to miss.
+
+### Changed
+- The release list is asked at most every half hour, and after a failure at
+  most every five minutes, instead of on every visit to the overview: GitHub
+  allows sixty questions an hour, and a server that cannot reach it no longer
+  waits on it each time. Opening the update dialog always asks afresh.
+
+### Fixed
+- Versions are ordered by number: 2.10.0 comes after 2.9.0, a pre-release is
+  behind its release, and a panel ahead of the newest release is no longer
+  offered that release as an update.
+
 ## [2.2.2] — 2026-09-28
 
 ### Fixed
@@ -260,7 +280,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.2...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.2...v2.3.0
 [2.2.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.1.2...v2.2.0

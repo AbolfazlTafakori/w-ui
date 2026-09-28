@@ -22,7 +22,10 @@ import (
 const updateRestartDelay = 750 * time.Millisecond
 
 func (s *Server) handleUpdateAvailable(w http.ResponseWriter, r *http.Request) {
-	rel, isNewer, err := update.Available(r.Context(), s.version)
+	// The overview asks on every visit and is answered from the last check;
+	// opening the update dialog asks for a fresh one.
+	fresh := r.URL.Query().Get("fresh") == "1"
+	rel, isNewer, err := update.Checked(r.Context(), s.version, fresh)
 	if err != nil {
 		// Not a failure of the panel: the release list being unreachable is
 		// something to report, not something to fail a page over.
