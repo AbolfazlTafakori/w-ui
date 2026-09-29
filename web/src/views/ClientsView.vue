@@ -29,7 +29,9 @@ const loading = ref(true)
 const search = ref(route.query.search || '')
 const statusFilter = ref('')
 const groupFilter = ref('')
-const sort = ref('newest')
+// Oldest first: the list reads in the order customers were added, so a
+// customer's place in it does not move each time another is added.
+const sort = ref('oldest')
 
 // Their sort list, in their order and words.
 const SORT_OPTIONS = [

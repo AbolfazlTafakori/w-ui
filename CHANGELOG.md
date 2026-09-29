@@ -6,6 +6,13 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.6] — 2026-09-29
+
+### Changed
+- **The customer list opens oldest first**, in the order customers were
+  added, so a customer's place in it does not move each time another is
+  added. Newest first and the other orders are a choice away as before.
+
 ## [2.3.5] — 2026-09-29
 
 ### Fixed
@@ -409,7 +416,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.5...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.6...HEAD
+[2.3.6]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.5...v2.3.6
 [2.3.5]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.4...v2.3.5
 [2.3.4]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.3...v2.3.4
 [2.3.3]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.2...v2.3.3
