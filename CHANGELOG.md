@@ -6,6 +6,18 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.5] — 2026-09-29
+
+### Fixed
+- **The security warnings no longer repeat themselves.** The account checks
+  ran over every account and each added the same unnamed line: an owner with
+  resellers saw *Two-factor authentication is off* once per account, and a
+  reseller who had not signed in yet was reported as *The generated password
+  has never been changed* -- a password the installer never generated. They
+  are now about the owner's account, each said once. Panel administrators
+  without a second factor are named together in one line; resellers are not
+  warned about, their second factor being theirs to turn on.
+
 ## [2.3.4] — 2026-09-29
 
 ### Fixed
@@ -397,7 +409,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.4...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.5...HEAD
+[2.3.5]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.4...v2.3.5
 [2.3.4]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.3...v2.3.4
 [2.3.3]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.1...v2.3.2

@@ -173,52 +173,88 @@ func looksLikePrefix(w string) bool {
 }
 
 // checkAdmins looks at who can sign in.
+//
+// The owner's account is the one these are about: the installer made it, it
+// holds the whole server, and the fixes all point at the owner's own security
+// settings. They used to be checked for every account, each one adding the
+// same unnamed line -- "two-factor authentication is off" once per reseller,
+// and "the generated password has never been changed" for a reseller who had
+// not signed in yet, whose password the installer never generated. Resellers
+// are told nothing here: their second factor is theirs to turn on, and their
+// accounts cannot touch the server. Panel administrators, who can reach every
+// customer, are named in one line when any of them has no second factor.
 func (a *Audit) checkAdmins(ctx context.Context) []Warning {
 	var out []Warning
 
 	var admins []model.Admin
-	if err := a.db.WithContext(ctx).Find(&admins).Error; err != nil {
+	if err := a.db.WithContext(ctx).Order("id").Find(&admins).Error; err != nil {
 		return nil
 	}
 
+	var unguarded []string
 	for _, ad := range admins {
-		// The name that every scanner tries first. Guessing a password is much
-		// easier when half of the credential is already known.
-		if strings.EqualFold(ad.Username, "admin") {
-			out = append(out, Warning{
-				ID:       "admin-username",
-				Severity: "medium",
-				Title:    "The administrator is still called \"admin\"",
-				Detail: "Half of the credential is a name anybody would try first, " +
-					"which is what makes an automated attempt worth someone's time.",
-				Fix:   "Change the username under Settings, Security.",
-				Where: "/settings/security",
-			})
+		switch ad.Role {
+		case model.RoleOwner:
+			out = append(out, ownerWarnings(ad)...)
+		case model.RoleAdmin:
+			if ad.TOTPSecret == "" && ad.Enabled {
+				unguarded = append(unguarded, ad.Username)
+			}
 		}
-		if ad.TOTPSecret == "" {
-			out = append(out, Warning{
-				ID:       "no-totp",
-				Severity: "medium",
-				Title:    "Two-factor authentication is off",
-				Detail: "A password that leaks — reused, phished, or read from a " +
-					"backup — is the whole of the way in.",
-				Fix:   "Turn on two-factor authentication under Settings, Security.",
-				Where: "/settings/security",
-			})
-		}
-		// A password that has never been changed since the installer wrote it
-		// is a password that has been in a terminal's scrollback ever since.
-		if ad.LastLoginAt == nil {
-			out = append(out, Warning{
-				ID:       "never-signed-in",
-				Severity: "medium",
-				Title:    "The generated password has never been changed",
-				Detail: "The installer printed it once. It is still in whatever " +
-					"terminal history and log that session produced.",
-				Fix:   "Sign in and set a password of your own.",
-				Where: "/settings/security",
-			})
-		}
+	}
+	if len(unguarded) > 0 {
+		out = append(out, Warning{
+			ID:       "admins-no-totp",
+			Severity: "medium",
+			Title:    fmt.Sprintf("%d panel administrators have no second factor", len(unguarded)),
+			Detail: "They can reach every customer on this panel, so each of their " +
+				"passwords is a way in on its own: " + strings.Join(unguarded, ", ") + ".",
+			Fix:   "Ask them to turn on two-factor authentication under Settings, Security, when they sign in.",
+			Where: "/admins",
+		})
+	}
+	return out
+}
+
+// ownerWarnings are what an attacker would notice about the owner's account.
+func ownerWarnings(ad model.Admin) []Warning {
+	var out []Warning
+	// The name that every scanner tries first. Guessing a password is much
+	// easier when half of the credential is already known.
+	if strings.EqualFold(ad.Username, "admin") {
+		out = append(out, Warning{
+			ID:       "admin-username",
+			Severity: "medium",
+			Title:    "The administrator is still called \"admin\"",
+			Detail: "Half of the credential is a name anybody would try first, " +
+				"which is what makes an automated attempt worth someone's time.",
+			Fix:   "Change the username under Settings, Security.",
+			Where: "/settings/security",
+		})
+	}
+	if ad.TOTPSecret == "" {
+		out = append(out, Warning{
+			ID:       "no-totp",
+			Severity: "medium",
+			Title:    "Two-factor authentication is off",
+			Detail: "A password that leaks — reused, phished, or read from a " +
+				"backup — is the whole of the way in.",
+			Fix:   "Turn on two-factor authentication under Settings, Security.",
+			Where: "/settings/security",
+		})
+	}
+	// A password that has never been changed since the installer wrote it
+	// is a password that has been in a terminal's scrollback ever since.
+	if ad.LastLoginAt == nil {
+		out = append(out, Warning{
+			ID:       "never-signed-in",
+			Severity: "medium",
+			Title:    "The generated password has never been changed",
+			Detail: "The installer printed it once. It is still in whatever " +
+				"terminal history and log that session produced.",
+			Fix:   "Sign in and set a password of your own.",
+			Where: "/settings/security",
+		})
 	}
 	return out
 }

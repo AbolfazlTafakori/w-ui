@@ -1706,6 +1706,7 @@
   "secwarn.shaping-inactive": "محدودیت سرعت اعمال نمی‌شود",
   "secwarn.admin-username": "نام مدیر هنوز «admin» است",
   "secwarn.no-totp": "ورود دومرحله‌ای خاموش است",
+  "secwarn.admins-no-totp": "{n} مدیر پنل ورود دومرحله‌ای ندارند",
   "secwarn.never-signed-in": "رمز تولیدشدهٔ نصب هرگز عوض نشده",
   "secwarn.well-known-sub-path": "مسیر سابسکریپشن «{path}» شناخته‌شده است",
   "secwarn.short-sub-path": "مسیر سابسکریپشن آن‌قدر کوتاه است که حدس زده می‌شود",

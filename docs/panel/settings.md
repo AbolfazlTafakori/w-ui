@@ -22,7 +22,7 @@ Five tabs, in the classic order. Every change is saved with the button at the to
 
 ## Security
 
-Username and password, **two-factor authentication** (TOTP — scan with any authenticator, confirm a code, keep the recovery key), sign-in notifications to Telegram, and the security warnings the panel raises (plain HTTP, a default path, a weak session length).
+Username and password, **two-factor authentication** (TOTP — scan with any authenticator, confirm a code, keep the recovery key), sign-in notifications to Telegram, and the security warnings the panel raises (plain HTTP, a default path, a weak session length). The account warnings — two-factor authentication off, the username still `admin`, the installer's password never changed — are about the owner's account only, each said once; panel administrators without a second factor are named together in one line, and resellers are not warned about, their second factor being theirs to turn on. *The panel is reachable from any address* means it listens on every interface (`0.0.0.0`), which is what the installer sets up; it matters only if the panel sits behind a proxy or tunnel and should be bound to `127.0.0.1`.
 
 ## Telegram
 

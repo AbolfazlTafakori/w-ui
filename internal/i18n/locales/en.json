@@ -1706,6 +1706,7 @@
   "secwarn.shaping-inactive": "Speed limits are not being applied",
   "secwarn.admin-username": "The administrator is still called “admin”",
   "secwarn.no-totp": "Two-factor authentication is off",
+  "secwarn.admins-no-totp": "{n} panel administrators have no second factor",
   "secwarn.never-signed-in": "The generated password has never been changed",
   "secwarn.well-known-sub-path": "The subscription path “{path}” is well known",
   "secwarn.short-sub-path": "The subscription path is short enough to stumble onto",
