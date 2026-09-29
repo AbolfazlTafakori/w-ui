@@ -286,7 +286,7 @@ func TestABackupSkipsAStagedRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := New(Options{DataDir: data, Dir: filepath.Join(dir, "backups"), Log: quiet()})
+	s := New(Options{DataDir: data, Dir: filepath.Join(dir, "backups"), DBFile: "wui.db", Log: quiet()})
 	archive, err := s.Create(context.Background())
 	if err != nil {
 		t.Fatalf("Create: %v", err)

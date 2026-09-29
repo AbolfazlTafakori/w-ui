@@ -6,6 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { api, apiURL, getToken } from '../lib/api.js'
+import { waitForRestart } from '../lib/restart.js'
 import { useDelayed } from '../lib/live.js'
 import { makeQR } from '../lib/qr.js'
 import { relative } from '../lib/format.js'
@@ -203,18 +204,11 @@ async function restartPanel() {
     notify(e.message, 'error')
     return
   }
-  // Wait for it to come back, then reload onto whatever address it now has.
-  const started = Date.now()
-  const probe = async () => {
-    try {
-      await api.get('/api/meta', { background: true })
-      window.location.reload()
-    } catch {
-      if (Date.now() - started < 60000) setTimeout(probe, 1500)
-      else restarting.value = false
-    }
+  // Wait for it to go away and come back, then reload onto it.
+  if (!(await waitForRestart())) {
+    restarting.value = false
+    notify(t('overview.restoreNotBack'), 'error')
   }
-  setTimeout(probe, 2500)
 }
 
 const pendingRoute = ref(null)
@@ -615,10 +609,16 @@ async function restoreBackup(name) {
   try {
     const res = await api.post(`/api/backups/${encodeURIComponent(name)}/restore`)
     notify(t('settings.restoreStarted', { n: res?.safetyCopy || '' }), 'success')
-    setTimeout(() => window.location.reload(), 6000)
   } catch (e) {
     restoring.value = null
     notify(e.message, 'error')
+    return
+  }
+  // The panel ends itself to start again on the restored files; the page
+  // follows it rather than reloading after a guess.
+  if (!(await waitForRestart())) {
+    restoring.value = null
+    notify(t('overview.restoreNotBack'), 'error')
   }
 }
 async function uploadBackup(event) {

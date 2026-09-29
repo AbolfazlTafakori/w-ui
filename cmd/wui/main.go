@@ -933,21 +933,23 @@ func newBackupService(db *gorm.DB, cfg config.Config, dir string, log *slog.Logg
 	if cfg.DBDriver == config.DriverSQLite {
 		dbFile = filepath.Base(cfg.DBSource)
 	}
-	return backup.New(backup.Options{
-		DataDir: cfg.DataDir,
-		Dir:     dir,
-		Keep:    7,
-		DBFile:  dbFile,
-		Log:     log,
-		// SQLite can write a consistent copy of itself while it is in use.
-		// Copying the file byte by byte instead can catch it mid-write, and a
-		// torn database is worth nothing at the moment it is needed.
-		Snapshot: func(ctx context.Context, dest string) error {
-			if cfg.DBDriver != config.DriverSQLite {
-				return fmt.Errorf("snapshots are only available for sqlite")
-			}
+	// SQLite can write a consistent copy of itself while it is in use.
+	// Copying the file byte by byte instead can catch it mid-write, and a
+	// torn database is worth nothing at the moment it is needed. Another
+	// engine has no file here to copy; its portable dump is the database.
+	var snapshot func(ctx context.Context, dest string) error
+	if cfg.DBDriver == config.DriverSQLite {
+		snapshot = func(ctx context.Context, dest string) error {
 			return db.WithContext(ctx).Exec("VACUUM INTO ?", dest).Error
-		},
+		}
+	}
+	return backup.New(backup.Options{
+		DataDir:  cfg.DataDir,
+		Dir:      dir,
+		Keep:     7,
+		DBFile:   dbFile,
+		Log:      log,
+		Snapshot: snapshot,
 		// And, for every engine, the copy that restores into any other.
 		Export: func(ctx context.Context, w io.Writer) error {
 			return database.Export(ctx, db, cfg.DBDriver, version, w)

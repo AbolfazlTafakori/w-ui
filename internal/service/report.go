@@ -86,17 +86,21 @@ func (r *Reporter) Build(ctx context.Context, lang string, withBackup bool) (str
 	if !withBackup || r.backups == nil {
 		return b.String(), nil, nil
 	}
-	// The report still goes when the archive cannot be made; the failure is
-	// in the log, and a report without a file is better than no report.
+	// The report still goes when the archive cannot be made -- a report
+	// without a file is better than none -- and says so: an admin who counts
+	// on the file arriving must not find out it stopped the day one is
+	// needed.
 	arch, err := r.backups.Create(ctx)
 	if err != nil {
+		fmt.Fprintf(&b, "\n\n%s", l("⚠️ The backup could not be taken: ", "⚠️ بکاپ گرفته نشد: ")+mdSafe(err.Error()))
 		return b.String(), nil, nil
 	}
 	f, _, err := r.backups.Open(arch.Name)
 	if err != nil {
+		fmt.Fprintf(&b, "\n\n%s", l("⚠️ The backup could not be read: ", "⚠️ بکاپ خوانده نشد: ")+mdSafe(err.Error()))
 		return b.String(), nil, nil
 	}
-	return b.String(), &notify.Attachment{Name: arch.Name, Body: closeAfter{f}}, nil
+	return b.String(), &notify.Attachment{Name: arch.Name, Body: closeAfter{f}, Size: arch.Size}, nil
 }
 
 // closeAfter closes the file once the upload has read it to the end.
@@ -121,4 +125,10 @@ func humanBytes(n uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// mdSafe keeps an error from being read as Markdown, which the report is sent
+// in: an underscore in it would make Telegram refuse the whole report.
+func mdSafe(s string) string {
+	return strings.NewReplacer("_", " ", "*", " ", "`", "'", "[", "(", "]", ")").Replace(s)
 }

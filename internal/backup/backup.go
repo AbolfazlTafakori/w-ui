@@ -132,7 +132,7 @@ func (s *Service) createLocked(ctx context.Context) (Archive, error) {
 	}
 
 	now := time.Now().UTC()
-	name := filePrefix + now.Format(timeLayout) + fileSuffix
+	name := s.freeName(filePrefix + now.Format(timeLayout))
 	final := filepath.Join(s.dir, name)
 
 	// Written to a temporary name and renamed, so a backup interrupted halfway
@@ -150,10 +150,14 @@ func (s *Service) createLocked(ctx context.Context) (Archive, error) {
 	}
 
 	// A consistent copy of the database is taken first and archived in place of
-	// the live file, which a plain byte copy can catch mid-write.
+	// the live file, which a plain byte copy can catch mid-write -- and which,
+	// in write-ahead-log mode, lacks whatever has not been checkpointed yet. A
+	// snapshot that fails leaves the portable dump to carry the database; the
+	// live file is not archived in its place, because a restore would take it
+	// over the dump and quietly lose the latest changes.
 	snapshot, cleanup, err := s.snapshotDB(ctx)
 	if err != nil {
-		s.log.Warn("could not snapshot the database; archiving the live file instead",
+		s.log.Warn("could not take a consistent copy of the database; the backup carries its portable dump instead",
 			"error", err)
 	}
 	defer cleanup()
@@ -208,6 +212,11 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 
+	// Whether the archive carries the database in either shape. One without
+	// it is not a backup -- a restore refuses it -- and is failed here rather
+	// than kept looking like one.
+	carriesDB := false
+
 	root := filepath.Clean(s.dataDir)
 	backupsDir := filepath.Clean(s.dir)
 
@@ -249,6 +258,17 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		if strings.HasSuffix(clean, ".db") && d.Name() != s.dbFile {
 			return nil
 		}
+		// And only a consistent copy of it. With a snapshot to take, the live
+		// file is never archived: the snapshot replaces it, or, when that
+		// failed, the portable dump carries the data.
+		if s.dbFile != "" && d.Name() == s.dbFile && !d.IsDir() && dbSnapshot == "" && s.snapshot != nil {
+			return nil
+		}
+		// A release waiting for the root helper, and the helper's answer.
+		// Restored, the request would set the helper off on another machine.
+		if d.IsDir() && clean == filepath.Join(root, updateStageDir) {
+			return filepath.SkipDir
+		}
 		// A dump waiting to be loaded is not data yet.
 		if d.Name() == PendingImportFile {
 			return nil
@@ -282,16 +302,22 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 			}
 		}
 
-		if err := tw.WriteHeader(hdr); err != nil {
-			return fmt.Errorf("backup: write header for %s: %w", rel, err)
-		}
-
+		// Opened before the header is written: a file that cannot be read is
+		// skipped whole, rather than leaving a header with no body behind it,
+		// which makes the rest of the archive unreadable.
 		f, err := os.Open(source)
 		if err != nil {
 			s.log.Debug("skipping an unreadable file", "path", source, "error", err)
 			return nil
 		}
 		defer f.Close()
+
+		if err := tw.WriteHeader(hdr); err != nil {
+			return fmt.Errorf("backup: write header for %s: %w", rel, err)
+		}
+		if s.dbFile != "" && d.Name() == s.dbFile {
+			carriesDB = true
+		}
 
 		// Exactly the number of bytes the header promised, no more and no
 		// less. The size came from a stat taken a moment ago, and several of
@@ -331,7 +357,11 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 			if _, err := io.Copy(tw, &buf); err != nil {
 				return fmt.Errorf("backup: write %s: %w", ExportFile, err)
 			}
+			carriesDB = true
 		}
+	}
+	if !carriesDB {
+		return fmt.Errorf("backup: the database could not be copied, so no backup was written; see the log for why")
 	}
 	if err := tw.Close(); err != nil {
 		return fmt.Errorf("backup: finish archive: %w", err)
@@ -419,6 +449,24 @@ func (s *Service) prune() {
 			continue
 		}
 		s.log.Debug("removed an old backup", "file", a.Name)
+	}
+}
+
+// updateStageDir is where a downloaded update waits for the root helper,
+// inside the data directory.
+const updateStageDir = "update"
+
+// freeName is base with the archive suffix, or base-2, base-3... when an
+// archive by that name exists: two taken within the same second -- a manual
+// one beside a scheduled one, a restore's safety copy beside either -- used to
+// be written over one another.
+func (s *Service) freeName(base string) string {
+	name := base + fileSuffix
+	for n := 2; ; n++ {
+		if _, err := os.Lstat(filepath.Join(s.dir, name)); os.IsNotExist(err) {
+			return name
+		}
+		name = fmt.Sprintf("%s-%d%s", base, n, fileSuffix)
 	}
 }
 

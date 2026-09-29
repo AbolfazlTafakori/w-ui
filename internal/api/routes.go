@@ -218,8 +218,7 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/interfaces", Group: "Interfaces", Auth: true,
 			Summary: "Create a tunnel. Keys and certificates are generated here.",
 			Body: `{"name":"wg0","protocol":"wireguard","listenPort":51820,` +
-				`"subnet":"10.66.0.0/16","endpointHost":"vpn.example.com","natInterface":"eth0",` +
-				`"transport":"udp"}`,
+				`"subnet":"10.66.0.0/16","endpointHost":"vpn.example.com","natInterface":"eth0"}`,
 			handler: s.handleCreateInterface},
 		{Method: "PATCH", Path: "/api/interfaces/{id}", Group: "Interfaces", Auth: true,
 			Summary: "Change a tunnel. transport is OpenVPN only and moves every " +

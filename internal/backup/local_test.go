@@ -42,7 +42,7 @@ func TestThisServersAddressSurvivesARestoreFromAnother(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	kept, err := ReadLocalAddresses(here)
+	kept, err := ReadLocalAddresses(here, true)
 	if err != nil {
 		t.Fatalf("ReadLocalAddresses: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestThisServersAddressSurvivesARestoreFromAnother(t *testing.T) {
 // nowhere at all, so it keeps what it has and is counted so it can be said.
 func TestATunnelThisServerNeverHadKeepsItsAddress(t *testing.T) {
 	here := addrDB(t)
-	kept, err := ReadLocalAddresses(here)
+	kept, err := ReadLocalAddresses(here, true)
 	if err != nil {
 		t.Fatal(err)
 	}

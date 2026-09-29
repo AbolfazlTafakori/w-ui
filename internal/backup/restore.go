@@ -514,7 +514,7 @@ func (s *Service) Accept(r io.Reader) (Archive, error) {
 	// The name is what every other operation matches on, and a name from
 	// outside is a name this panel did not choose.
 	now := time.Now().UTC()
-	name := filePrefix + now.Format(timeLayout) + "-uploaded" + fileSuffix
+	name := s.freeName(filePrefix + now.Format(timeLayout) + "-uploaded")
 	final := filepath.Join(s.dir, name)
 
 	if err := os.Rename(tmpName, final); err != nil {

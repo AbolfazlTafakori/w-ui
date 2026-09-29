@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount } from 'v
 import { RouterLink } from 'vue-router'
 import { api, apiURL, getToken } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
+import { waitForRestart } from '../lib/restart.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Sparkline from '../components/Sparkline.vue'
@@ -405,32 +406,11 @@ async function restoreNow() {
   }
   // Restored. The panel ends itself to start again on the restored files.
   backup.value = { ...backup.value, line: t('overview.restarting') }
-  waitForRestart()
+  if (!(await waitForRestart()) && backup.value) {
+    backup.value = { ...backup.value, step: 'failed', error: t('overview.restoreNotBack') }
+  }
 }
 
-// Waits for the panel to go away and come back, then reloads onto it. Any
-// answer counts as back -- a sign-in refused included, since the restored
-// archive brings its own accounts.
-async function waitForRestart() {
-  const started = Date.now()
-  let wentAway = false
-  while (Date.now() - started < 3 * 60 * 1000) {
-    await new Promise((r) => setTimeout(r, 1000))
-    let answered = false
-    try {
-      const res = await fetch(apiURL('/api/meta'), { credentials: 'same-origin', cache: 'no-store' })
-      answered = res.status < 500
-    } catch {
-      answered = false
-    }
-    if (!answered) wentAway = true
-    else if (wentAway) {
-      window.location.reload()
-      return
-    }
-  }
-  if (backup.value) backup.value = { ...backup.value, step: 'failed', error: t('overview.restoreNotBack') }
-}
 
 // How much of this server is actually carrying traffic, which is the state an
 // operator wants at a glance and the thing the two controls below act on.

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -317,7 +318,11 @@ func TestTheDatabaseIsArchivedFromItsSnapshot(t *testing.T) {
 	}
 }
 
-func TestAFailedSnapshotStillProducesABackup(t *testing.T) {
+// A snapshot that fails leaves the portable dump to carry the database. The live
+// file is not archived in its place: in write-ahead-log mode it lacks whatever
+// has not been checkpointed, and a restore takes the file over the dump, so the
+// backup would quietly restore older data than it seemed to hold.
+func TestAFailedSnapshotFallsBackToTheDumpNotTheLiveFile(t *testing.T) {
 	data := t.TempDir()
 	if err := os.WriteFile(filepath.Join(data, "wui.db"), []byte("live file"), 0o600); err != nil {
 		t.Fatal(err)
@@ -330,14 +335,98 @@ func TestAFailedSnapshotStillProducesABackup(t *testing.T) {
 		Snapshot: func(context.Context, string) error {
 			return io.ErrUnexpectedEOF
 		},
+		Export: func(_ context.Context, w io.Writer) error {
+			_, err := io.WriteString(w, `{"format":1,"driver":"sqlite"}`)
+			return err
+		},
 	})
 
 	a, err := s.Create(context.Background())
 	if err != nil {
-		t.Fatalf("a failing snapshot stopped the backup entirely: %v", err)
+		t.Fatalf("a failing snapshot with a dump to fall back on stopped the backup: %v", err)
 	}
-	// Falling back to the live file is worth far more than no backup at all.
-	if got := entries(t, filepath.Join(s.Dir(), a.Name)); got["wui.db"] != "live file" {
-		t.Errorf("archived %q, want the live file as a fallback", got["wui.db"])
+	got := entries(t, filepath.Join(s.Dir(), a.Name))
+	if _, has := got["wui.db"]; has {
+		t.Error("the live database file was archived in place of the failed snapshot")
+	}
+	if got[ExportFile] == "" {
+		t.Error("the portable dump is missing, so the backup carries no database")
+	}
+}
+
+// And with neither a snapshot nor a dump there is no database to put in the
+// archive. That is not a backup -- a restore refuses it -- so it is not written,
+// and the failure is said rather than a file left looking like a good one.
+func TestABackupWithNoDatabaseIsNotWritten(t *testing.T) {
+	data := t.TempDir()
+	if err := os.WriteFile(filepath.Join(data, "wui.db"), []byte("live file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{
+		DataDir: data,
+		DBFile:  "wui.db",
+		Log:     quiet(),
+		Snapshot: func(context.Context, string) error {
+			return io.ErrUnexpectedEOF
+		},
+		Export: func(context.Context, io.Writer) error {
+			return io.ErrUnexpectedEOF
+		},
+	})
+	if _, err := s.Create(context.Background()); err == nil {
+		t.Fatal("a backup with no copy of the database was reported as taken")
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Errorf("%d archives were left behind", len(list))
+	}
+}
+
+// Two taken within the same second -- a manual one beside a scheduled one, a
+// restore's safety copy beside either -- are two archives, not one written
+// over the other.
+func TestTwoBackupsInOneSecondAreBothKept(t *testing.T) {
+	s, _ := newService(t, 0)
+	seen := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		a, err := s.Create(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seen[a.Name] {
+			t.Fatalf("%s was written twice", a.Name)
+		}
+		seen[a.Name] = true
+	}
+	list, _ := s.List()
+	if len(list) != 3 {
+		t.Errorf("%d archives on disk after three backups, want 3", len(list))
+	}
+}
+
+// A release staged for the update helper is not data. Restored on another
+// machine, its request would set that machine's helper off.
+func TestABackupSkipsAStagedUpdate(t *testing.T) {
+	s, data := newService(t, 0)
+	stage := filepath.Join(data, updateStageDir)
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"wui", "wui.sig", "request", "result"} {
+		if err := os.WriteFile(filepath.Join(stage, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, err := s.Create(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range entries(t, filepath.Join(s.Dir(), a.Name)) {
+		if strings.HasPrefix(name, updateStageDir+"/") {
+			t.Errorf("%s was archived", name)
+		}
 	}
 }

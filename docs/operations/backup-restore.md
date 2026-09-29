@@ -10,9 +10,11 @@ A backup is the one thing that cannot be regenerated: the interface private keys
 
 One `.tar.gz`, holding:
 
-- **`wui.db`** — a consistent SQLite snapshot (`VACUUM INTO`, not a raw copy that can be caught mid-write). Only in backups from a SQLite panel.
+- **`wui.db`** — a consistent SQLite snapshot (`VACUUM INTO`, not a raw copy that can be caught mid-write). Only in backups from a SQLite panel. If the snapshot cannot be taken, the live file is **not** archived in its place — it can lack changes still in the write-ahead log — and the dump below carries the database. A backup with neither is not written, and the failure is reported.
 - **`wui-export.json`** — every table as JSON, written through the schema. In every backup, whichever engine. This is the copy that crosses engines and versions: a column a newer panel added is left at its default, a column it dropped is ignored.
-- Everything else in `/var/lib/wui` — OpenVPN's PKI and server files, generated profiles — except the backups themselves and SQLite's write-ahead sidecars.
+- Everything else in `/var/lib/wui` — OpenVPN's PKI and server files, generated profiles — except the backups themselves, SQLite's write-ahead sidecars, a restore waiting to be applied and an update waiting for the update helper.
+
+Two backups taken in the same second — a manual one beside a scheduled one, or a restore's safety copy beside either — get distinct names (`…-2.tar.gz`) instead of one overwriting the other.
 
 ## Taking one
 
@@ -28,7 +30,9 @@ One `.tar.gz`, holding:
 
 A restore never unpacks over the live data. The archive is checked end to end, a copy of what is there now is taken first, the files are staged beside the data directory, and the **next start** applies them — the only moment nothing has the database open.
 
-- **From the panel:** Settings → Backup → **Restore** on a listed archive, or **Upload** one from another server. The panel restarts itself.
+- **From the panel:** Overview → **Backup & Restore** → *Choose a file*, or Settings → Backup → **Restore** on a listed archive. The panel restarts itself, and the page reloads once it is back — not after a guessed number of seconds.
+
+**How this panel is reached never changes.** Its port, URL path, domain, certificate files, trusted proxies and the subscription service's own listener are kept from this server, whatever the archive says. They used to come back with the archive: an archive from another server — or from this one before its port or path was changed — put the panel on a port the firewall never opened, under a path nobody had, or, with a certificate path that does not exist here, stopped it from starting at all. The customers, keys and **accounts** do come from the archive: after a restore you sign in with the archive's administrator.
 - **From the terminal:** `w-ui backup` → 2, give the path. Or `wui backup restore FILE`, then `systemctl restart wui`.
 
 By default this server's own addresses — what the tunnels tell customers to connect to — are kept over the archive's. The usual reason to restore on another machine is that the first one is gone, and its address with it. Cloning one machine onto another and wanting the archive's addresses is `--move-addresses` on the command line, or the checkbox in the panel.

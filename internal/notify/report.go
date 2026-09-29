@@ -3,11 +3,13 @@ package notify
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -15,7 +17,17 @@ import (
 type Attachment struct {
 	Name string
 	Body io.Reader
+	// Size is the file's length, when known; one past TelegramFileLimit is
+	// not sent, and the chat is told instead.
+	Size int64
 }
+
+// TelegramFileLimit is the largest file a bot may send. Past it Telegram
+// answers 413 and the file never arrives.
+const TelegramFileLimit = 50 << 20
+
+// ErrTooLargeForTelegram is a file past TelegramFileLimit.
+var ErrTooLargeForTelegram = errors.New("larger than the 50 MB Telegram accepts from a bot")
 
 // ReportFunc builds the periodic report: the text, and the database archive
 // when the settings ask for it. Called on the schedule, never concurrently.
@@ -65,6 +77,9 @@ func (n *Notifier) RunReports(ctx context.Context, build ReportFunc) {
 			if file != nil {
 				if err := n.sendDocument(ctx, cfg, file); err != nil {
 					n.log.Warn("could not send the backup with the report", "error", err)
+					// Said in the chat as well: an admin who counts on these
+					// files otherwise finds out the day one is needed.
+					_ = n.post(ctx, cfg, backupNotSent(cfg.Lang, file, err))
 				}
 			}
 		}
@@ -73,6 +88,9 @@ func (n *Notifier) RunReports(ctx context.Context, build ReportFunc) {
 
 // sendDocument uploads a file to the chat.
 func (n *Notifier) sendDocument(ctx context.Context, c Config, a *Attachment) error {
+	if a.Size > TelegramFileLimit {
+		return ErrTooLargeForTelegram
+	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
@@ -103,4 +121,26 @@ func (n *Notifier) sendDocument(ctx context.Context, c Config, a *Attachment) er
 		return fmt.Errorf("notify: telegram returned %s", resp.Status)
 	}
 	return nil
+}
+
+// backupNotSent is the chat's line for a backup that did not go with the report.
+func backupNotSent(lang string, a *Attachment, err error) string {
+	mb := float64(a.Size) / (1 << 20)
+	if errors.Is(err, ErrTooLargeForTelegram) {
+		if lang == "fa" {
+			return fmt.Sprintf("بکاپ %s (%.1f MB) از سقف ۵۰ مگابایتی تلگرام بزرگ‌تر است و فرستاده نشد. از پنل دانلودش کنید: نمای کلی ← بکاپ و بازگردانی.", plain(a.Name), mb)
+		}
+		return fmt.Sprintf("The backup %s (%.1f MB) is larger than the 50 MB Telegram accepts, so it was not sent. Download it from the panel: Overview -> Backup & Restore.", plain(a.Name), mb)
+	}
+	if lang == "fa" {
+		return fmt.Sprintf("بکاپ %s فرستاده نشد: %s", plain(a.Name), plain(err.Error()))
+	}
+	return fmt.Sprintf("The backup %s could not be sent: %s", plain(a.Name), plain(err.Error()))
+}
+
+// plain keeps text from being read as Markdown, which the chat is sent in: an
+// underscore in a file name or an error would otherwise make Telegram refuse
+// the whole message.
+func plain(s string) string {
+	return strings.NewReplacer("_", " ", "*", " ", "`", "'", "[", "(", "]", ")").Replace(s)
 }

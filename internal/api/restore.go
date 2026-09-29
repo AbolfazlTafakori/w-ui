@@ -93,13 +93,12 @@ func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 	// working. Turned off deliberately when cloning one machine onto another.
 	keepAddresses := r.URL.Query().Get("keepAddresses") != "false"
 
-	var keep *backup.LocalAddresses
-	if keepAddresses {
-		var err error
-		if keep, err = backup.ReadLocalAddresses(s.db.WithContext(r.Context())); err != nil {
-			fail(w, s.log, err)
-			return
-		}
+	// Read whether or not the addresses are kept: how this panel is reached
+	// is carried across every restore.
+	keep, err := backup.ReadLocalAddresses(s.db.WithContext(r.Context()), keepAddresses)
+	if err != nil {
+		fail(w, s.log, err)
+		return
 	}
 
 	report, err := s.backups.Restore(r.Context(), r.PathValue("name"), keep)

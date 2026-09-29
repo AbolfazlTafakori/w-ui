@@ -270,7 +270,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `the archive holds neither a database file for this engine nor a portable dump; only the other files are restored` (log) | An old archive restored into the other engine. | Restore it into a SQLite panel, take a new backup there, restore that. |
 | `restored, but this server's own addresses could not be put back` (log) | The archive's addresses stayed. | Check each interface's endpoint. |
 | `scheduled backup failed` / `could not snapshot the database; archiving the live file instead` (log) | | Disk space or permissions; the second is only a warning. |
-| `snapshots are only available for sqlite` | Seen in the log on PostgreSQL; the dump is what carries the data there. | Nothing. |
+| `backup: the database could not be copied, so no backup was written; see the log for why` | Neither SQLite's consistent snapshot nor the portable dump could be taken. The backup is not written rather than kept without its database, which a restore would refuse. The Telegram report says so too. | Read the log lines just before it; usually a full disk (`df -h /var/backups`) or a database the panel cannot read. |
 
 ## Starting the panel
 

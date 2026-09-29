@@ -674,14 +674,13 @@ func cmdBackup(args []string) error {
 		if err != nil {
 			return err
 		}
-		var keep *backup.LocalAddresses
-		if !*moveAddresses {
-			// This server's own addresses over the archive's, as the panel
-			// does by default: the usual reason to restore is that the old
-			// machine is gone, and its address with it.
-			if keep, err = backup.ReadLocalAddresses(db); err != nil {
-				return err
-			}
+		// This server's own addresses over the archive's unless asked to take
+		// the archive's, as the panel does: the usual reason to restore is
+		// that the old machine is gone, and its address with it. How the
+		// panel itself is reached is kept either way.
+		keep, err := backup.ReadLocalAddresses(db, !*moveAddresses)
+		if err != nil {
+			return err
 		}
 		report, err := svc.Restore(ctx, a.Name, keep)
 		if err != nil {

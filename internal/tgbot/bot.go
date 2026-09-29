@@ -273,6 +273,12 @@ func (b *Bot) onCallback(ctx context.Context, q *callbackQuery) {
 			b.send(ctx, chat, html.EscapeString(err.Error()), nil)
 			return
 		}
+		// Past Telegram's limit the upload is refused with a bare 413; the
+		// admin is told what to do instead.
+		if len(data) > telegramFileLimit {
+			b.send(ctx, chat, fmt.Sprintf(b.t("backupTooLarge"), html.EscapeString(name), float64(len(data))/(1<<20)), nil)
+			return
+		}
 		if err := b.sendDocument(ctx, chat, name, data, b.t("backupCaption")); err != nil {
 			b.send(ctx, chat, html.EscapeString(err.Error()), nil)
 		}
@@ -841,3 +847,7 @@ func untilText(t time.Time) string {
 	}
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
+
+// telegramFileLimit is the largest file a bot may send; past it Telegram
+// answers 413 and nothing arrives.
+const telegramFileLimit = 50 << 20

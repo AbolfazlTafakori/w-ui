@@ -47,6 +47,23 @@ type LocalAddresses struct {
 
 	// LocalNodeAddress is this panel's own entry in the node list.
 	LocalNodeAddress string `json:"localNodeAddress"`
+
+	// Access is how this panel itself is reached -- its port, URL path,
+	// certificate files -- as this server has it, a key absent when this
+	// server leaves it to the environment. Always put back, whatever
+	// KeepAddresses says. Never omitted when empty: an empty map is "none of
+	// these here", which is different from a stash that predates it.
+	Access map[string]string `json:"access"`
+
+	// KeepAddresses is whether the addresses customers are handed are put
+	// back too. Nil in a stash from before it existed, when a stash was only
+	// written to keep them.
+	KeepAddresses *bool `json:"keepAddresses,omitempty"`
+}
+
+// keepsAddresses is whether the customer-facing addresses are to be put back.
+func (a *LocalAddresses) keepsAddresses() bool {
+	return a.KeepAddresses == nil || *a.KeepAddresses
 }
 
 // LocalHost is one spare address, without the ids that will not survive.
@@ -69,12 +86,51 @@ var hostBoundSettings = []string{
 	"sub.reverseProxyUri",
 }
 
-// ReadLocalAddresses takes a note of where this machine says it can be reached.
-func ReadLocalAddresses(db *gorm.DB) (*LocalAddresses, error) {
+// panelAccessSettings are how this panel is reached, which a restore never
+// changes.
+//
+// They are kept in the database and laid over the environment at every start,
+// so an archive from another server -- or from this one before its port or URL
+// path was changed -- carried its own. After the restart the panel answered on
+// a port the firewall had never opened, under a path nobody had, or not at all:
+// a certificate path that does not exist on this machine stops it starting,
+// and the service restarts it into the same failure forever. Restoring a backup
+// must not lock the operator out of the panel they restored it from.
+var panelAccessSettings = []string{
+	"panel.listen",
+	"panel.port",
+	"panel.basePath",
+	"panel.domain",
+	"panel.certFile",
+	"panel.keyFile",
+	"panel.trustedProxies",
+	"sub.listen",
+	"sub.port",
+	"sub.certFile",
+	"sub.keyFile",
+}
+
+// ReadLocalAddresses takes a note of where this machine says it can be reached:
+// always how the panel itself is reached, and with keepAddresses the
+// addresses customers are handed as well.
+func ReadLocalAddresses(db *gorm.DB, keepAddresses bool) (*LocalAddresses, error) {
 	out := &LocalAddresses{
-		Interfaces: map[string]string{},
-		Hosts:      map[string][]LocalHost{},
-		Settings:   map[string]string{},
+		Interfaces:    map[string]string{},
+		Hosts:         map[string][]LocalHost{},
+		Settings:      map[string]string{},
+		Access:        map[string]string{},
+		KeepAddresses: &keepAddresses,
+	}
+
+	var access []model.Setting
+	if err := db.Where("key IN ?", panelAccessSettings).Find(&access).Error; err != nil {
+		return nil, fmt.Errorf("backup: read how this panel is reached: %w", err)
+	}
+	for _, s := range access {
+		out.Access[s.Key] = s.Value
+	}
+	if !keepAddresses {
+		return out, nil
 	}
 
 	var interfaces []model.Interface
@@ -145,7 +201,8 @@ func readStashedAddresses(staging string) *LocalAddresses {
 }
 
 // ApplyLocalAddresses puts this machine's addresses back over the restored
-// ones, matching tunnels by name.
+// ones: how the panel is reached always, and the addresses customers are handed
+// when they were to be kept, matching tunnels by name.
 //
 // A tunnel in the archive that this machine never had keeps the archive's
 // address: there is nothing local to put back, and blanking it would leave a
@@ -153,6 +210,28 @@ func readStashedAddresses(staging string) *LocalAddresses {
 // operator has to finish by hand, and the count is returned so it can be said.
 func ApplyLocalAddresses(db *gorm.DB, a *LocalAddresses) (kept, unknown int, err error) {
 	if a == nil {
+		return 0, 0, nil
+	}
+
+	// First, and whatever else fails: this is what decides whether the panel
+	// can be reached at all after the restart.
+	if a.Access != nil {
+		for _, key := range panelAccessSettings {
+			value, here := a.Access[key]
+			var err error
+			if here {
+				err = db.Save(&model.Setting{Key: key, Value: value}).Error
+			} else {
+				// This server leaves it to the environment; the archive's
+				// value would override that.
+				err = db.Where("key = ?", key).Delete(&model.Setting{}).Error
+			}
+			if err != nil {
+				return 0, 0, fmt.Errorf("backup: keep how this panel is reached (%s): %w", key, err)
+			}
+		}
+	}
+	if !a.keepsAddresses() {
 		return 0, 0, nil
 	}
 

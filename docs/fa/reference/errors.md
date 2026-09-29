@@ -270,7 +270,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `the archive holds neither a database file for this engine nor a portable dump; only the other files are restored` (log) | آرشیو قدیمی در موتور دیگر ریستور شد. | در یک پنل SQLite ریستورش کن، آن‌جا بک‌آپ تازه بگیر، همان را ریستور کن. |
 | `restored, but this server's own addresses could not be put back` (log) | آدرس‌های آرشیو ماندند. | endpoint هر اینترفیس را چک کن. |
 | `scheduled backup failed` / `could not snapshot the database; archiving the live file instead` (log) |  | فضای دیسک یا مجوز؛ دومی فقط هشدار است. |
-| `snapshots are only available for sqlite` | در لاگ PostgreSQL دیده می‌شود؛ آن‌جا دامپ دیتا را حمل می‌کند. | هیچ. |
+| `backup: the database could not be copied, so no backup was written; see the log for why` | نه اسنپ‌شات سازگار SQLite گرفته شد و نه دامپ قابل‌حمل. بکاپ نوشته نمی‌شود، به‌جای اینکه بدون دیتابیس نگه داشته شود که بازگردانی ردش می‌کند. گزارش تلگرام هم همین را می‌گوید. | خطوط لاگ درست قبل از آن را بخوان؛ معمولاً دیسک پر (`df -h /var/backups`) یا دیتابیسی که پنل نمی‌تواند بخواند. |
 
 ## استارت پنل
 

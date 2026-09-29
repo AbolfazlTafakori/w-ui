@@ -6,6 +6,51 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.4] — 2026-09-29
+
+### Fixed
+- **A restore could lock you out of the panel.** The panel's own port, URL
+  path, domain and certificate files are kept in the database and laid over
+  the service's settings at every start, and a restore brought the
+  archive's back. An archive from another server -- or from this one before
+  its port or path was changed -- put the panel on a port the firewall had
+  never opened, under a path nobody had, or, when the certificate path did
+  not exist on this machine, stopped it starting at all: the service then
+  restarted it into the same failure forever. How this panel is reached --
+  port, path, domain, certificates, trusted proxies and the subscription
+  service's own listener -- is now always this server's, whatever the
+  archive says; the customers, keys and accounts come from the archive.
+  Reproduced on a real server layout with 2.3.3 (the panel did not
+  come back) and checked with this one (it did).
+- **A failed database snapshot no longer makes a backup that restores old
+  data.** When SQLite's consistent copy could not be taken, the live file
+  was archived instead -- one that can lack the changes still in its
+  write-ahead log -- and a restore takes that file over the portable dump.
+  The dump now carries the database in that case, and a backup with no
+  copy of the database at all is not written: the failure is reported,
+  including in the Telegram report, instead of a file that a restore would
+  refuse.
+- **Two backups in the same second no longer overwrite each other.** A
+  restore's safety copy taken in the same second as the backup being
+  restored replaced it with the state being thrown away.
+- **Backups leave out an update waiting for the update helper**, which,
+  restored on another machine, would have set its helper off.
+- **Settings -> Backups restores and Restart panel follow the panel** through
+  its restart and reload once it is back, instead of after a guessed six
+  seconds -- which landed on a closed port, or on the old process just
+  before it ended.
+- **Backups too large for Telegram** (over 50 MB) are not sent into a bare
+  413 any more: the chat is told the size and to download it from the
+  panel, from both the report and the bot's backup button.
+- **The guide to moving a panel to another server** said to unpack the
+  archive with `tar -C /`, which puts the database where the panel never
+  looks and skips every check a restore makes; it now uses the restore, and
+  no longer asks for the same port and path on the new server.
+- The restore confirmation says what comes from the archive -- including
+  the accounts you sign in with afterwards -- and what stays this server's.
+- The API reference's example for creating a WireGuard interface carried a
+  transport, which WireGuard refuses.
+
 ## [2.3.3] — 2026-09-29
 
 ### Fixed
@@ -352,7 +397,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.3...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.4...HEAD
+[2.3.4]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.3...v2.3.4
 [2.3.3]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.0...v2.3.1
