@@ -327,7 +327,7 @@ func fetch(ctx context.Context, url string, limit int64, progress func(received,
 	if total > limit {
 		return nil, fmt.Errorf("%d bytes is more than a panel", total)
 	}
-	var body io.Reader = io.LimitReader(resp.Body, limit+1)
+	body := io.LimitReader(resp.Body, limit+1)
 	if progress != nil {
 		progress(0, total)
 		body = &counting{r: body, total: total, report: progress}
