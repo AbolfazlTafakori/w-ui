@@ -181,68 +181,78 @@ func latest(ctx context.Context) (*Release, error) {
 	return rel, nil
 }
 
-// Apply downloads the release, checks its signature, and puts it in place.
-//
-// It does not restart anything. The caller ends the process once it has
-// answered the request that asked for this, and the service manager brings the
-// panel back on the new binary — the same arrangement a restore uses, and for
-// the same reason: the running process is the one being replaced.
+// Apply downloads the release, checks its signature, and puts it in place,
+// replacing the running binary. It does not restart anything, and it is only
+// for a panel that can write its own binary; Start is the way in that also
+// covers one that cannot.
 func Apply(ctx context.Context, rel *Release) error {
-	return apply(ctx, rel, nil)
+	_, err := apply(ctx, rel, installDirect, nil)
+	return err
 }
 
 // errNoSignature is a release that carries a build and nothing vouching for it.
 var errNoSignature = fmt.Errorf("%w: that release has no signature beside its build", ErrBadSignature)
 
-// apply is Apply, telling report how far it has got when report is not nil.
-func apply(ctx context.Context, rel *Release, report func(stage Stage, received, total int64)) error {
+// apply downloads, checks and installs rel the way m says, telling report how
+// far it has got when report is not nil. It reports whether the process
+// still has to end itself to come back on the new build: the helper restarts
+// the panel on its own.
+func apply(ctx context.Context, rel *Release, m installMode, report func(stage Stage, received, total int64)) (restartSelf bool, err error) {
 	if report == nil {
 		report = func(Stage, int64, int64) {}
 	}
-	binary, err := download(ctx, rel, func(received, total int64) {
+	binary, sig, err := download(ctx, rel, func(received, total int64) {
 		report(StageDownloading, received, total)
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
 	report(StageInstalling, 0, 0)
-	return put(binary)
+	switch m {
+	case installDirect:
+		return true, put(binary)
+	case installHelper:
+		return false, handOver(ctx, binary, sig, rel.Version)
+	default:
+		return false, ErrCannotInstall
+	}
 }
 
 // put is install; a test puts the binary somewhere other than over itself.
 var put = install
 
-// download fetches the release's build and returns it only once the project's
-// signature over it checks out. Nothing touches the disk before that.
-func download(ctx context.Context, rel *Release, progress func(received, total int64)) ([]byte, error) {
+// download fetches the release's build and its signature, and returns them
+// only once the signature checks out against the key built into this panel.
+// Nothing touches the disk before that.
+func download(ctx context.Context, rel *Release, progress func(received, total int64)) (binary, sig []byte, err error) {
 	key, err := signingKey()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if rel.signatureURL == "" {
-		return nil, errNoSignature
+		return nil, nil, errNoSignature
 	}
 
 	// The signature first: it is small, and a release without one readable
 	// is refused before tens of megabytes are fetched for nothing.
-	sig, err := fetch(ctx, rel.signatureURL, 4<<10, nil)
+	sig, err = fetch(ctx, rel.signatureURL, 4<<10, nil)
 	if err != nil {
-		return nil, fmt.Errorf("downloading the signature: %w", err)
+		return nil, nil, fmt.Errorf("downloading the signature: %w", err)
 	}
 	signature, err := decodeSignature(sig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	binary, err := fetch(ctx, rel.binaryURL, maxBinary, progress)
+	binary, err = fetch(ctx, rel.binaryURL, maxBinary, progress)
 	if err != nil {
-		return nil, fmt.Errorf("downloading the panel: %w", err)
+		return nil, nil, fmt.Errorf("downloading the panel: %w", err)
 	}
 	// Before anything is written. A binary that fails this check has to leave
 	// no trace on disk at all.
 	if !ed25519.Verify(key, binary, signature) {
-		return nil, ErrBadSignature
+		return nil, nil, ErrBadSignature
 	}
-	return binary, nil
+	return binary, sig, nil
 }
 
 // maxBinary bounds a download. The panel is about 25 MB; anything near this

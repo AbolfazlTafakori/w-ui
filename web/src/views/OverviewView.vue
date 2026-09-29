@@ -715,6 +715,17 @@ watch(() => panel.value?.version, (v) => {
   setTimeout(() => window.location.reload(), 1200)
 })
 
+// What to run once, as root, on a server that has no update helper yet.
+const updateCommand = 'bash <(curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/update.sh)'
+async function copyUpdateCommand() {
+  try {
+    await navigator.clipboard.writeText(updateCommand)
+    notify(t('common.copied'), 'ok')
+  } catch {
+    notify(updateCommand, 'ok')
+  }
+}
+
 // The share of the release downloaded, for the bar; null when the server did
 // not say how big it is.
 const installShare = computed(() => {
@@ -1111,6 +1122,17 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         <!-- Said before the button rather than after pressing it. -->
         <p v-if="update && !update.signed" class="log-notice">{{ t('update.unsigned') }}</p>
 
+        <!-- A server where the panel may not replace its own binary and the
+             helper that does it is not installed yet: said with the one
+             command that puts it right, rather than a button that fails. -->
+        <template v-else-if="update?.cannotInstall && update?.available && !installing">
+          <p class="log-notice">{{ t('update.needsHelper') }}</p>
+          <div class="update-cmd">
+            <code class="ltr">{{ updateCommand }}</code>
+            <button type="button" class="btn sm" @click="copyUpdateCommand">{{ t('action.copy') }}</button>
+          </div>
+        </template>
+
         <p v-else-if="update && !update.available" class="muted">{{ t('update.upToDate') }}</p>
 
         <template v-else-if="update?.available && !installing">
@@ -1149,7 +1171,7 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
           <button type="button" class="btn ghost" @click="updateOpen = false">{{ t('action.cancel') }}</button>
           <button
             class="btn primary"
-            :disabled="updateBusy || !update?.available || !update?.signed"
+            :disabled="updateBusy || !update?.available || !update?.signed || !!update?.cannotInstall"
             @click="applyUpdate"
           >
             <span v-if="updateBusy" class="spin"></span>

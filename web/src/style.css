@@ -3744,6 +3744,26 @@ button.ov-version:hover {
   word-break: break-word;
 }
 
+/* The one command a server without the update helper needs. */
+.update-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.update-cmd code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+}
+
 /* Release notes, as the project wrote them. */
 .update-notes {
   max-height: 220px;

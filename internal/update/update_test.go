@@ -288,7 +288,7 @@ func TestApplyInstallsOnlyWhatWasSigned(t *testing.T) {
 // the test does not have to replace its own binary to check it.
 func applyTo(t *testing.T, dir string, rel *Release) error {
 	t.Helper()
-	binary, err := download(context.Background(), rel, nil)
+	binary, _, err := download(context.Background(), rel, nil)
 	if err != nil {
 		return err
 	}

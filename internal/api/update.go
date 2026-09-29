@@ -49,6 +49,9 @@ func (s *Server) handleUpdateAvailable(w http.ResponseWriter, r *http.Request) {
 		// anything, and finding that out by pressing update is worse than being
 		// told.
 		"signed": update.Signed(),
+		// Likewise a panel that cannot put a new binary in place: the reason,
+		// and what to run once on the server to put it right.
+		"cannotInstall": errText(update.CanInstall()),
 	})
 }
 
@@ -57,8 +60,8 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	// Asking the release list first would tell an operator their repository has
 	// no releases when the actual reason is that this build could not install
 	// one anyway.
-	if !update.Signed() {
-		writeError(w, http.StatusPreconditionFailed, update.ErrNoKey.Error())
+	if err := update.CanInstall(); err != nil {
+		writeError(w, http.StatusPreconditionFailed, err.Error())
 		return
 	}
 
@@ -77,7 +80,7 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	by, ip := adminName(r), clientIP(r)
-	err = update.Start(rel, s.version, func(err error) {
+	err = update.Start(rel, s.version, func(err error, restartSelf bool) {
 		if err != nil {
 			if errors.Is(err, update.ErrBadSignature) {
 				// Loud. A download that fails this is either a broken release
@@ -91,6 +94,10 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.log.Warn("the panel was updated and is restarting", "from", s.version, "to", rel.Version, "by", by, "ip", ip)
+		if !restartSelf {
+			// The root helper put it in place and restarts the service.
+			return
+		}
 		// The binary on disk is now a different one from the one running.
 		// Ending the process is the whole of the reload; the service manager
 		// brings it back on the new build, the same way a restore does. Not
@@ -104,7 +111,7 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, update.ErrBusy):
 		writeError(w, http.StatusConflict, err.Error())
 		return
-	case errors.Is(err, update.ErrNoKey):
+	case errors.Is(err, update.ErrNoKey), errors.Is(err, update.ErrCannotInstall):
 		writeError(w, http.StatusPreconditionFailed, err.Error())
 		return
 	case err != nil:
@@ -153,4 +160,12 @@ func (s *Server) handleUpgradeNode(w http.ResponseWriter, r *http.Request) {
 		"node", id, "result", res, "by", adminName(r), "ip", clientIP(r))
 
 	writeJSON(w, http.StatusOK, res)
+}
+
+// errText is an error's message, or "" for none.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

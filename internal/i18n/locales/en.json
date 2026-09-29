@@ -1869,5 +1869,6 @@
   "overview.restoreWarn": "Everything on this panel is replaced with the archive's contents, and the panel restarts. What is here now is saved first, so this can be undone from the list of backups.",
   "overview.restoreNow": "Restore",
   "overview.uploadCut": "The upload was cut off. Check the connection and try again.",
-  "overview.restoreNotBack": "The panel has not come back after three minutes. Check the service: systemctl status wui"
+  "overview.restoreNotBack": "The panel has not come back after three minutes. Check the service: systemctl status wui",
+  "update.needsHelper": "This server runs the panel without permission to replace its own binary, and the helper that does it for the panel is not installed yet. Run this once on the server as root — it installs this release and the helper, and from then on updates install from here:"
 }

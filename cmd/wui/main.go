@@ -47,6 +47,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/single"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
 	"github.com/abolfazl/w-ui/internal/tgbot"
+	"github.com/abolfazl/w-ui/internal/update"
 	"github.com/abolfazl/w-ui/internal/web"
 )
 
@@ -211,6 +212,9 @@ func run() error {
 
 	router := routing.NewApplier(log)
 	routing.HopWorkDir = filepath.Join(cfg.DataDir, "hops")
+	// Where a downloaded update waits for the root helper, on a server where
+	// the panel may not replace its own binary.
+	update.StageDir = filepath.Join(cfg.DataDir, update.StageDirName)
 	hops := routing.NewHopManager(log)
 
 	outbounds := service.NewOutbounds(db, log)

@@ -88,7 +88,7 @@ func TestAnInstallIsFollowedToTheRestart(t *testing.T) {
 		finished []error
 		done     = make(chan struct{})
 	)
-	err := Start(f.rel, "2.3.0", func(err error) {
+	err := Start(f.rel, "2.3.0", func(err error, _ bool) {
 		mu.Lock()
 		finished = append(finished, err)
 		mu.Unlock()
@@ -133,7 +133,7 @@ func TestAnUnsignedDownloadFailsAndInstallsNothing(t *testing.T) {
 	f := serveRelease(t, stranger)
 	close(f.gate)
 	got := make(chan error, 1)
-	if err := Start(f.rel, "2.3.0", func(err error) { got <- err }); err != nil {
+	if err := Start(f.rel, "2.3.0", func(err error, _ bool) { got <- err }); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := <-got; !errors.Is(err, ErrBadSignature) {
@@ -150,7 +150,7 @@ func TestAnUnsignedDownloadFailsAndInstallsNothing(t *testing.T) {
 	}
 	// A failed install does not block the next attempt.
 	again := make(chan error, 1)
-	if err := Start(f.rel, "2.3.0", func(err error) { again <- err }); err != nil {
+	if err := Start(f.rel, "2.3.0", func(err error, _ bool) { again <- err }); err != nil {
 		t.Fatalf("an install that failed kept the next from starting: %v", err)
 	}
 	<-again

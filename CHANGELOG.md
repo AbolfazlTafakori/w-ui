@@ -6,6 +6,30 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.2] — 2026-09-29
+
+### Fixed
+- **Updating from the panel works on a real server.** Pressing *Install*
+  answered *internal error* on every server set up by the installer: the
+  panel runs as an unprivileged user, in a sandbox where its own binary is
+  read-only, so it could not replace itself -- and the reason was hidden
+  behind a generic message. The panel now does the half it can: it
+  downloads the release and checks its signature into its own data
+  directory. A small root helper the installer sets up, `wui-update.path`,
+  sees the request and runs the installed binary as root with the new
+  `wui apply-update`, which checks everything again with that binary's own
+  key, refuses anything that is not a newer signed release, puts it in
+  place and restarts the panel. Root only ever runs a build this project
+  signed, and nothing in the panel's directory is trusted beyond its
+  bytes: every file operation stays inside it and follows no link out of
+  it. Rehearsed end to end as a real server runs it -- the panel as its own
+  user, the binary root's -- from the button to the page reloading on the
+  new version.
+- **A server installed before this release has no helper yet**, and the
+  update dialog now says so, with the one command to run as root (the
+  update script), instead of a button that fails. After that, updates
+  install from the panel.
+
 ## [2.3.1] — 2026-09-29
 
 ### Fixed
@@ -318,7 +342,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.1...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.2...HEAD
+[2.3.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.2...v2.3.0
 [2.2.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.1...v2.2.2

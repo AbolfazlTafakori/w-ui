@@ -104,6 +104,9 @@ if [[ -n "${MENU_URL:-}" ]] && curl -fsSL --retry 4 --retry-all-errors --retry-d
 else
   warn "could not refresh the w-ui command; the one installed stays"
 fi
+# The helper that lets the panel install its own updates from here on. A
+# server installed before it existed gets it now.
+write_update_helper
 if have_systemd; then
   systemctl daemon-reload
   systemctl restart wui.service

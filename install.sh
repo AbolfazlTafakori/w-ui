@@ -257,7 +257,8 @@ do_uninstall() {
     systemctl disable --now wui.service >/dev/null 2>&1 || true
     ok "service stopped and disabled"
   fi
-  rm -f "$UNIT"
+  have_systemd && systemctl disable --now wui-update.path >/dev/null 2>&1 || true
+  rm -f "$UNIT" /etc/systemd/system/wui-update.path /etc/systemd/system/wui-update.service
   have_systemd && systemctl daemon-reload || true
   rm -f "$BIN_PATH" "$MENU_PATH"
   ok "binary and unit removed"
@@ -2013,6 +2014,45 @@ UNITFILE
   fi
 }
 
+# Updating from the panel.
+#
+# The panel runs as $SERVICE_USER, in a sandbox where its own binary is
+# read-only, so it cannot replace itself -- which is right for a process
+# facing the internet. It downloads the release and checks the signature into
+# $DATA_DIR/update and leaves a request there; this path unit sees the request
+# and runs the installed binary, as root, to check it all again with its own
+# key, refuse anything that is not a newer signed release, put it in place and
+# restart the panel. Root only ever runs a build this project signed.
+write_update_helper() {
+  have_systemd || return 0
+  install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_DIR/update"
+  cat >/etc/systemd/system/wui-update.service <<HELPER
+[Unit]
+Description=W-UI — install an update the panel downloaded and checked
+
+[Service]
+Type=oneshot
+ExecStart=$BIN_PATH apply-update $DATA_DIR
+# A release is checked and moved in seconds. The bound is for a staged file
+# that is not one -- a pipe would otherwise hold this open for good.
+TimeoutStartSec=120
+HELPER
+  cat >/etc/systemd/system/wui-update.path <<HELPER
+[Unit]
+Description=W-UI — watch for an update the panel asks to install
+
+[Path]
+PathExists=$DATA_DIR/update/request
+Unit=wui-update.service
+
+[Install]
+WantedBy=multi-user.target
+HELPER
+  systemctl daemon-reload
+  systemctl enable --now wui-update.path >/dev/null 2>&1 || { warn "could not enable wui-update.path; updating from the panel will not work"; return 0; }
+  ok "wui-update.path (updates from the panel)"
+}
+
 open_firewall() {
   step "Opening the panel port"
 
@@ -2292,6 +2332,7 @@ create_user
 setup_database
 setup_tls
 write_unit
+write_update_helper
 apply_admin
 apply_sub_settings
 open_firewall

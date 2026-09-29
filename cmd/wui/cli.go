@@ -57,6 +57,8 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, signCommand(args[1:])
 	case "verify":
 		return true, verifyCommand(args[1:])
+	case "apply-update":
+		return true, applyUpdateCommand(args[1:])
 	case "version", "-v", "--version":
 		fmt.Println(version)
 		return true, nil
@@ -94,6 +96,9 @@ Usage:
   wui sign <binary>                sign a build, for a release
   wui verify <binary> <sig>        check a build against the key this panel
                                    was built with; exit 0 when it is signed
+  wui apply-update DATA_DIR        install the update the panel downloaded
+                                   into DATA_DIR/update and restart it; run
+                                   as root by wui-update.service
 
 Flags for "setting set":
   --listen ADDR      the address to bind (0.0.0.0 for every address)

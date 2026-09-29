@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/update"
 )
@@ -119,5 +121,32 @@ func verifyCommand(args []string) error {
 		os.Exit(2)
 	}
 	fmt.Println("signature ok")
+	return nil
+}
+
+// applyUpdateCommand is the root half of updating from the panel. The panel
+// runs unprivileged and cannot replace its own binary; it downloads and checks
+// the release into its data directory and leaves a request, and the
+// wui-update.path unit runs this, as root, from the binary root installed.
+// Everything is checked again here with this binary's own key, and nothing
+// that is not a newer signed release is installed.
+func applyUpdateCommand(args []string) error {
+	if len(args) != 1 {
+		return errors.New("apply-update takes the panel's data directory")
+	}
+	installed, err := update.ApplyStaged(args[0], version)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "apply-update: nothing was installed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("apply-update: installed %s over %s\n", installed, version)
+
+	// A moment for the panel to read the answer and tell the page, then the
+	// restart that brings it back on the new build.
+	time.Sleep(2500 * time.Millisecond)
+	out, err := exec.Command("systemctl", "restart", "wui.service").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("installed %s, but restarting the panel failed: %v: %s", installed, err, out)
+	}
 	return nil
 }

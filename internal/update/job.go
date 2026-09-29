@@ -70,14 +70,20 @@ func Status() Progress {
 }
 
 // Start begins installing rel and returns at once. finished runs when it has
-// ended: with nil once the new binary is in place -- the caller then ends the
-// process -- or with the reason nothing was installed.
+// ended: with nil once the new binary is in place, or with the reason nothing
+// was installed. restartSelf says whether the caller has to end the process
+// for the service manager to start it on the new build; when the root helper
+// installed it, the helper restarts the panel itself.
 //
 // What can be known without the network is refused here rather than later,
 // so the request that asked is the one told.
-func Start(rel *Release, from string, finished func(error)) error {
+func Start(rel *Release, from string, finished func(err error, restartSelf bool)) error {
 	if _, err := signingKey(); err != nil {
 		return err
+	}
+	m := mode()
+	if m == installNone {
+		return ErrCannotInstall
 	}
 	if rel.signatureURL == "" {
 		return errNoSignature
@@ -94,7 +100,7 @@ func Start(rel *Release, from string, finished func(error)) error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), installTimeout)
 		defer cancel()
-		err := apply(ctx, rel, track)
+		restartSelf, err := apply(ctx, rel, m, track)
 
 		job.Lock()
 		if err != nil {
@@ -104,7 +110,7 @@ func Start(rel *Release, from string, finished func(error)) error {
 		}
 		job.Unlock()
 		if finished != nil {
-			finished(err)
+			finished(err, restartSelf)
 		}
 	}()
 	return nil
