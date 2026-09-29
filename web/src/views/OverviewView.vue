@@ -301,106 +301,135 @@ function downloadLogs() {
   URL.revokeObjectURL(url)
 }
 
-// Backup, in one place, on the page an operator is already looking at.
+// Backup and restore, laid out as the classic panel's dialog: two lines, each
+// one button. "Back up" takes a fresh archive and hands it to the browser in
+// the same click -- it used to take one on the server and offer the newest
+// archive as a second step, which could be an older, automatic one. "Restore"
+// picks a file, says what it is and what will happen, and only then replaces
+// anything; it follows the panel through its restart and reloads once it is
+// back, rather than after a guess of seven seconds.
 //
-// A button that silently wrote a file somewhere was the whole of it before.
-// Taking one is the least of what somebody wants from this: the reasons to
-// open it are to get the archive off the server, to put one back, and to move
-// a panel to another machine.
+// backup.step is 'choose' (the two lines), 'confirm' (a file picked),
+// 'working' (backing up, uploading or restoring) or 'failed'.
 const backup = ref(null)
 const keepAddresses = ref(true)
+const restoreInput = ref(null)
 
 function openBackup() {
-  backup.value = { latest: null, working: '', done: '' }
-  loadLatest()
+  keepAddresses.value = true
+  backup.value = { step: 'choose', line: '', share: null, file: null, error: '', done: '' }
 }
 
-async function loadLatest() {
-  try {
-    const list = await api.get('/api/backups')
-    if (backup.value) backup.value.latest = list?.[0] || null
-  } catch {
-    // The list is a convenience; failing to read it must not close the dialog
-    // an operator opened to take a backup.
-  }
-}
-
-async function backupNow() {
-  if (!backup.value) return
-  backup.value.working = t('overview.backingUp')
-  try {
-    const a = await api.post('/api/backups')
-    await loadLatest()
-    backup.value.done = t('overview.backupTaken').replace('{name}', a.name)
-  } catch (e) {
-    notify(e.message, 'error')
-  } finally {
-    if (backup.value) backup.value.working = ''
-  }
+function closeBackup() {
+  if (backup.value?.step === 'working') return
+  backup.value = null
 }
 
 // Fetched rather than linked: the archive holds every key on the server, and a
 // plain link carries no session.
-async function exportBackup() {
-  const name = backup.value?.latest?.name
-  if (!name) return
-  backup.value.working = t('overview.preparingDownload')
+async function backupNow() {
+  if (!backup.value) return
+  backup.value = { ...backup.value, step: 'working', line: t('overview.backingUp'), share: null, done: '', error: '' }
   try {
-    const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(name)}`), {
+    const a = await api.post('/api/backups')
+    backup.value.line = t('overview.preparingDownload')
+    const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(a.name)}`), {
       headers: { Authorization: `Bearer ${getToken()}` },
       credentials: 'same-origin',
     })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) throw new Error((await res.text()) || res.statusText)
     const url = URL.createObjectURL(await res.blob())
-    const a = document.createElement('a')
-    a.href = url
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
+    const link = document.createElement('a')
+    link.href = url
+    link.download = a.name
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
     setTimeout(() => URL.revokeObjectURL(url), 0)
+    if (backup.value) backup.value = { ...backup.value, step: 'choose', done: t('overview.backupDownloaded').replace('{name}', a.name) }
   } catch (e) {
-    notify(e.message, 'error')
-  } finally {
-    if (backup.value) backup.value.working = ''
+    if (backup.value) backup.value = { ...backup.value, step: 'choose', error: e.message }
   }
 }
 
-// Upload and restore in one action, because that is one intention: this
-// archive, on this server, now. Two buttons would leave an operator with a file
-// uploaded and nothing apparently changed.
-async function importBackup(event) {
+function pickRestore() {
+  restoreInput.value?.click()
+}
+
+function restoreChosen(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file || !backup.value) return
+  backup.value = { ...backup.value, step: 'confirm', file, error: '', done: '' }
+}
 
-  if (!window.confirm(t('overview.importConfirm'))) return
+// Sent with XMLHttpRequest for its upload progress, which fetch does not
+// report: an archive of a hundred megabytes over a slow link is minutes of
+// a bar that moves, or minutes of wondering.
+function upload(file, onShare) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', apiURL('/api/backups/upload'))
+    xhr.setRequestHeader('Authorization', `Bearer ${getToken()}`)
+    xhr.withCredentials = true
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onShare(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      let body = null
+      try { body = JSON.parse(xhr.responseText) } catch { body = null }
+      if (xhr.status >= 200 && xhr.status < 300 && body?.name) resolve(body)
+      else reject(new Error(body?.error || t('overview.importFailed')))
+    }
+    xhr.onerror = () => reject(new Error(t('overview.uploadCut')))
+    const form = new FormData()
+    form.append('archive', file)
+    xhr.send(form)
+  })
+}
 
-  backup.value.working = t('overview.uploading')
+async function restoreNow() {
+  const file = backup.value?.file
+  if (!file) return
+  backup.value = { ...backup.value, step: 'working', line: t('overview.uploading'), share: 0, error: '' }
   try {
-    const body = new FormData()
-    body.append('archive', file)
-    const up = await fetch(apiURL('/api/backups/upload'), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}` },
-      credentials: 'same-origin',
-      body,
+    const stored = await upload(file, (share) => {
+      if (backup.value) backup.value.share = share
     })
-    const stored = await up.json().catch(() => null)
-    if (!up.ok) throw new Error(stored?.error || t('overview.importFailed'))
-
-    backup.value.working = t('overview.restoring')
+    backup.value = { ...backup.value, line: t('overview.restoring'), share: null }
     const params = keepAddresses.value ? '' : '?keepAddresses=false'
     await api.post(`/api/backups/${encodeURIComponent(stored.name)}/restore${params}`)
-
-    // The panel is on its way out. Saying so and then reloading is what turns
-    // "the page stopped working" into "it came back with the restored data".
-    backup.value.working = t('overview.restarting')
-    setTimeout(() => window.location.reload(), 7000)
   } catch (e) {
-    backup.value.working = ''
-    notify(e.message, 'error')
+    if (backup.value) backup.value = { ...backup.value, step: 'failed', error: e.message }
+    return
   }
+  // Restored. The panel ends itself to start again on the restored files.
+  backup.value = { ...backup.value, line: t('overview.restarting') }
+  waitForRestart()
+}
+
+// Waits for the panel to go away and come back, then reloads onto it. Any
+// answer counts as back -- a sign-in refused included, since the restored
+// archive brings its own accounts.
+async function waitForRestart() {
+  const started = Date.now()
+  let wentAway = false
+  while (Date.now() - started < 3 * 60 * 1000) {
+    await new Promise((r) => setTimeout(r, 1000))
+    let answered = false
+    try {
+      const res = await fetch(apiURL('/api/meta'), { credentials: 'same-origin', cache: 'no-store' })
+      answered = res.status < 500
+    } catch {
+      answered = false
+    }
+    if (!answered) wentAway = true
+    else if (wentAway) {
+      window.location.reload()
+      return
+    }
+  }
+  if (backup.value) backup.value = { ...backup.value, step: 'failed', error: t('overview.restoreNotBack') }
 }
 
 // How much of this server is actually carrying traffic, which is the state an
@@ -574,20 +603,40 @@ async function loadUpdate(fresh = false) {
 
 function openUpdate() {
   loadUpdate(true)
+  // An install started before this page was loaded -- in another tab, or
+  // before a reload -- is picked up where it is rather than offered again.
+  if (!installing.value) followInstall(true)
   updateOpen.value = true
 }
 
 const updateOpen = ref(false)
 
+// An install under way. The panel downloads the release in the background and
+// answers at once, because fetching it can outlast a request; the page then
+// asks every second how far it has got. Once the new binary is in place the
+// panel restarts, is briefly not there at all, and comes back reporting the
+// new version -- which is when the page reloads onto it.
+//
+// installing: { stage, from, to, received, total, error } while followed.
+const installing = ref(null)
+// v2.3.0 however the build was stamped; a development build says so as is.
+const versionLabel = computed(() => {
+  const v = String(panel.value?.version || '')
+  return /^v?[0-9]/.test(v) ? 'v' + v.replace(/^v/, '') : v
+})
+let followTimer = null
+let followStarted = 0
+// How long a panel may take to come back before the page stops waiting and
+// says so. A restart takes seconds; this is for one that did not happen.
+const COME_BACK_MS = 3 * 60 * 1000
+
 async function applyUpdate() {
   updateBusy.value = true
   try {
     const res = await api.post('/api/system/update')
-    if (res?.updated) {
-      notify(t('update.installed').replace('{v}', res.to), 'ok')
-      // The panel is replacing itself and will be gone for a moment. Reloading
-      // straight away would land on a closed port.
-      setTimeout(() => window.location.reload(), 6000)
+    if (res?.started) {
+      installing.value = { stage: 'downloading', from: res.from, to: res.to, received: 0, total: 0 }
+      followInstall()
     } else {
       notify(res?.notice || t('update.upToDate'), 'ok')
       updateOpen.value = false
@@ -599,7 +648,107 @@ async function applyUpdate() {
   }
 }
 
-onMounted(loadUpdate)
+// followInstall asks how the install is going until it ends. probe is a
+// single look on opening the dialog: it follows only if one is under way.
+async function followInstall(probe = false) {
+  clearTimeout(followTimer)
+  if (!probe && !followStarted) followStarted = Date.now()
+  let res = null
+  try {
+    res = await api.get('/api/system/update/progress')
+  } catch {
+    // Not answering is expected once the install is in place: the panel is
+    // restarting. Before that it is a network hiccup, and asking again is
+    // the answer to both.
+    res = null
+  }
+  if (probe) {
+    const p = res?.progress
+    if (!p || !['downloading', 'verifying', 'installing', 'restarting'].includes(p.stage)) return
+    installing.value = { ...p }
+    followStarted = Date.now()
+    updateOpen.value = true
+  } else if (res) {
+    const from = installing.value?.from
+    if (from && res.current && res.current !== from) {
+      // Back, on the new build.
+      installing.value = { ...installing.value, stage: 'back' }
+      notify(t('update.back').replace('{v}', res.current), 'ok')
+      setTimeout(() => window.location.reload(), 1200)
+      return
+    }
+    const p = res.progress || {}
+    if (p.stage === 'failed') {
+      installing.value = { ...installing.value, stage: 'failed', error: p.error }
+      followStarted = 0
+      return
+    }
+    // A panel that answers with no install under way and the old version has
+    // restarted without taking the new build -- or is another process.
+    if (!p.stage && installing.value?.stage === 'restarting') {
+      installing.value = { ...installing.value, stage: 'failed', error: t('update.cameBackOld') }
+      followStarted = 0
+      return
+    }
+    if (p.stage) installing.value = { ...installing.value, ...p }
+  } else if (installing.value && installing.value.stage !== 'downloading') {
+    installing.value = { ...installing.value, stage: 'restarting' }
+  }
+  if (Date.now() - followStarted > COME_BACK_MS && installing.value?.stage === 'restarting') {
+    installing.value = { ...installing.value, stage: 'failed', error: t('update.notBack') }
+    followStarted = 0
+    return
+  }
+  followTimer = setTimeout(() => followInstall(), 1000)
+}
+
+// Back on the new build, told by the version the overview reads every three
+// seconds anyway. Every panel reports that, where the progress address exists
+// only from this release on: a panel that came back on a build without it
+// would otherwise leave this page waiting.
+watch(() => panel.value?.version, (v) => {
+  const p = installing.value
+  if (!p || !p.from || !v || v === p.from || p.stage === 'back' || p.stage === 'failed') return
+  clearTimeout(followTimer)
+  installing.value = { ...p, stage: 'back' }
+  notify(t('update.back').replace('{v}', v), 'ok')
+  setTimeout(() => window.location.reload(), 1200)
+})
+
+// The share of the release downloaded, for the bar; null when the server did
+// not say how big it is.
+const installShare = computed(() => {
+  const p = installing.value
+  if (!p || !p.total) return null
+  return Math.min(100, Math.round((p.received / p.total) * 100))
+})
+
+const installLine = computed(() => {
+  const p = installing.value
+  if (!p) return ''
+  switch (p.stage) {
+    case 'downloading':
+      return p.total
+        ? t('update.downloading').replace('{r}', bytes(p.received)).replace('{t}', bytes(p.total))
+        : t('update.downloadingNoSize').replace('{r}', bytes(p.received))
+    case 'verifying': return t('update.verifying')
+    case 'installing': return t('update.installing')
+    case 'restarting': return t('update.restarting').replace('{v}', p.to || '')
+    case 'back': return t('update.back').replace('{v}', p.to || '')
+    default: return ''
+  }
+})
+
+function retryInstall() {
+  installing.value = null
+  loadUpdate(true)
+}
+
+onMounted(() => {
+  loadUpdate()
+  followInstall(true)
+})
+onBeforeUnmount(() => clearTimeout(followTimer))
 
 const ipv4 = computed(() => (sys.value?.ipv4 || [])[0] || '\u2014')
 const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
@@ -617,36 +766,31 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
   <ErrorState v-else-if="loadError && !sys" :error="loadError" @retry="load()" />
 
   <div v-else-if="sys" class="ov-page">
+    <!-- Laid out as the classic panel's overview bar: at the start, what this
+         server is doing and which version it runs, and beside it the newer
+         release when there is one; at the end, the things an operator reaches
+         for while looking at this page. The page's name is for screen readers:
+         the sidebar already says where you are. -->
     <div class="ov-actionbar">
-      <div>
-        <h1>{{ t('nav.overview') }}</h1>
-        <p>{{ t('overview.subtitle') }}</p>
-      </div>
-      <!-- The things an operator reaches for while looking at this page. They
-           were all a page away before, which is one page too many when
-           something is wrong. -->
-      <div class="spacer row ov-actions">
-        <!-- What this server is actually doing, and the two controls for it.
-             A state that cannot be acted on from where it is shown sends an
-             operator to an SSH session to do the obvious thing. -->
-        <span class="tag" :class="tunnelsUp ? 'active' : 'exhausted'" :title="t('overview.tunnelsHint')">
-          <i v-if="tunnelsUp" class="dot"></i>
-          {{ t('overview.tunnels') }}: {{ tunnelsUp }} / {{ ifaces.length }}
+      <h1 class="sr-only">{{ t('nav.overview') }}</h1>
+      <div class="ov-state">
+        <span class="ov-state-pill" :class="tunnelsUp ? 'up' : 'down'" :title="t('overview.tunnelsHint')">
+          <i class="ov-state-dot"></i>
+          <span>{{ t('overview.tunnels') }} · {{ tunnelsUp }} / {{ ifaces.length }}</span>
+          <button type="button" class="ov-version ltr" :title="t('update.check')" @click="openUpdate">{{ versionLabel }}</button>
         </span>
-        <button class="ov-version ltr" :title="t('update.check')" @click="openUpdate">
-          {{ panel.version }}
-          <!-- Only when there is something to install. A dot that is always
-               there is a dot nobody looks at. -->
-          <i v-if="update?.available" class="ov-version-dot"></i>
+        <!-- An install under way, or a newer release to install. Only an
+             operator who can install it is told: the check is theirs alone. -->
+        <button v-if="installing && installing.stage !== 'failed'" type="button" class="ov-update" @click="updateOpen = true">
+          <span class="spin sm"></span>
+          <span>{{ t('update.updating') }}</span>
         </button>
-        <!-- A newer release, said in words beside the version: the dot alone
-             was easy to miss for weeks. Only an operator who can install it
-             is ever told, since the check is theirs alone. -->
-        <button v-if="update?.available && update?.latest" type="button" class="ov-update" @click="openUpdate">
+        <button v-else-if="update?.available && update?.latest" type="button" class="ov-update" @click="openUpdate">
           <AntIcon name="CloudUploadOutlined" />
           <span>{{ t('update.cta') }} <bdi class="ltr">v{{ update.latest }}</bdi></span>
         </button>
-
+      </div>
+      <div class="spacer row ov-actions">
         <button class="btn sm ghost" :title="t('overview.restartAllHint')"
                 :disabled="planeBusy || !ifaces.length" @click="restartTunnels">
           <Icon name="refresh" :size="14" /><span class="lbl">{{ t('overview.restartAll') }}</span>
@@ -666,8 +810,8 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
         <button class="btn sm ghost" :title="t('overview.viewLogs')" @click="openLogs">
           <Icon name="info" :size="14" /><span class="lbl">{{ t('settings.tab.logs') }}</span>
         </button>
-        <button class="btn sm ghost" :title="t('overview.backupTitle')" @click="openBackup">
-          <Icon name="database" :size="14" /><span class="lbl">{{ t('settings.backup') }}</span>
+        <button class="btn sm ghost" :title="t('overview.backupRestore')" @click="openBackup">
+          <Icon name="database" :size="14" /><span class="lbl">{{ t('overview.backupRestore') }}</span>
         </button>
         <!-- The system report is reached from the page about this server. It
              was in the settings menu, which is for settings. -->
@@ -969,22 +1113,49 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 
         <p v-else-if="update && !update.available" class="muted">{{ t('update.upToDate') }}</p>
 
-        <template v-else-if="update?.available">
+        <template v-else-if="update?.available && !installing">
           <p class="hint">{{ t('update.whatHappens') }}</p>
           <pre v-if="update.notes" class="update-notes ltr">{{ update.notes }}</pre>
         </template>
+
+        <!-- The install, followed to the panel coming back on the new build.
+             Closing the dialog does not stop it; the page goes on following
+             and reloads when it is done. -->
+        <div v-if="installing" class="update-progress" role="status" aria-live="polite">
+          <template v-if="installing.stage === 'failed'">
+            <p class="log-notice">{{ t('update.failed') }}</p>
+            <p class="update-error ltr">{{ installing.error }}</p>
+          </template>
+          <template v-else>
+            <div class="update-bar" :class="{ busy: installShare === null || installing.stage !== 'downloading' }"
+                 role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 :aria-valuenow="installing.stage === 'downloading' ? installShare : null">
+              <i :style="{ width: (installing.stage === 'downloading' && installShare !== null ? installShare : 100) + '%' }"></i>
+            </div>
+            <p class="muted small">{{ installLine }}</p>
+          </template>
+        </div>
       </div>
 
       <div class="modal-foot">
-        <button type="button" class="btn ghost" @click="updateOpen = false">{{ t('action.cancel') }}</button>
-        <button
-          class="btn primary"
-          :disabled="updateBusy || !update?.available || !update?.signed"
-          @click="applyUpdate"
-        >
-          <span v-if="updateBusy" class="spin"></span>
-          <span v-else>{{ t('update.install') }}</span>
-        </button>
+        <template v-if="installing && installing.stage === 'failed'">
+          <button type="button" class="btn ghost" @click="updateOpen = false">{{ t('common.close') }}</button>
+          <button type="button" class="btn primary" @click="retryInstall">{{ t('update.tryAgain') }}</button>
+        </template>
+        <template v-else-if="installing">
+          <button type="button" class="btn ghost" @click="updateOpen = false">{{ t('update.hide') }}</button>
+        </template>
+        <template v-else>
+          <button type="button" class="btn ghost" @click="updateOpen = false">{{ t('action.cancel') }}</button>
+          <button
+            class="btn primary"
+            :disabled="updateBusy || !update?.available || !update?.signed"
+            @click="applyUpdate"
+          >
+            <span v-if="updateBusy" class="spin"></span>
+            <span v-else>{{ t('update.install') }}</span>
+          </button>
+        </template>
       </div>
     </div>
   </div>
@@ -1060,78 +1231,93 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
     @cancel="confirmStop = false"
   />
 
-  <!-- Backup, on the page an operator is already looking at. Taking one is the
-       least of it: the reasons to open this are to get the archive off the
-       server, to put one back, and to move a panel to another machine. -->
-  <div v-if="backup" class="modal-backdrop" @click.self="backup.working || (backup = null)">
+  <!-- Backup and restore, as the classic panel's dialog: one line to back up,
+       one to restore, each a single button. -->
+  <div v-if="backup" class="modal-backdrop" @click.self="closeBackup">
     <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="bk-title">
       <div class="card-head">
-        <h2 id="bk-title">{{ t('overview.backupTitle') }}</h2>
+        <h2 id="bk-title">{{ t('overview.backupRestore') }}</h2>
         <button class="btn sm icon ghost spacer" :aria-label="t('common.close')"
-                :disabled="!!backup.working" @click="backup = null">
+                :disabled="backup.step === 'working'" @click="closeBackup">
           <Icon name="close" :size="15" />
         </button>
       </div>
 
       <div class="card-body bk-body">
-        <p v-if="backup.working" class="bk-working">
-          <span class="spin sm"></span>{{ backup.working }}
-        </p>
-        <p v-else-if="backup.done" class="bk-done">{{ backup.done }}</p>
+        <template v-if="backup.step === 'choose'">
+          <p v-if="backup.done" class="bk-done" role="status">{{ backup.done }}</p>
+          <p v-if="backup.error" class="bk-error" role="alert">{{ backup.error }}</p>
 
-        <div class="bk-item">
-          <div class="bk-meta">
-            <div class="bk-title">{{ t('overview.takeBackup') }}</div>
-            <p class="bk-desc">{{ t('overview.takeBackupDesc') }}</p>
+          <div class="bk-item">
+            <div class="bk-meta">
+              <div class="bk-title">{{ t('overview.backupLine') }}</div>
+              <p class="bk-desc">{{ t('overview.backupLineDesc') }}</p>
+            </div>
+            <button type="button" class="btn primary" @click="backupNow">
+              <Icon name="download" :size="15" /><span>{{ t('overview.backupButton') }}</span>
+            </button>
           </div>
-          <button class="btn primary" :disabled="!!backup.working" @click="backupNow">
-            <Icon name="database" :size="15" />
-          </button>
-        </div>
 
-        <div class="bk-item">
-          <div class="bk-meta">
-            <div class="bk-title">{{ t('overview.exportBackup') }}</div>
-            <p class="bk-desc">
-              <template v-if="backup.latest">
-                <span class="ltr">{{ backup.latest.name }}</span>
-                — {{ bytes(backup.latest.size, store.locale) }}
-              </template>
-              <template v-else>{{ t('overview.noArchiveYet') }}</template>
+          <div class="bk-item">
+            <div class="bk-meta">
+              <div class="bk-title">{{ t('overview.restoreLine') }}</div>
+              <p class="bk-desc">{{ t('overview.restoreLineDesc') }}</p>
+            </div>
+            <button type="button" class="btn" @click="pickRestore">
+              <Icon name="upload" :size="15" /><span>{{ t('overview.restoreButton') }}</span>
+            </button>
+            <input ref="restoreInput" type="file" class="sr-only" tabindex="-1" aria-hidden="true"
+                   accept=".gz,.tar.gz,application/gzip" @change="restoreChosen" />
+          </div>
+
+          <RouterLink to="/settings/backups" class="bk-all" @click="backup = null">
+            {{ t('overview.allBackups') }}
+          </RouterLink>
+        </template>
+
+        <!-- A file picked: what it is, what happens, and the one choice that
+             matters when a panel moves to another machine. Nothing is sent
+             until Restore is pressed. -->
+        <template v-else-if="backup.step === 'confirm'">
+          <div class="bk-file">
+            <Icon name="database" :size="16" />
+            <span class="ltr bk-file-name">{{ backup.file.name }}</span>
+            <span class="muted">{{ bytes(backup.file.size, store.locale) }}</span>
+          </div>
+          <p class="bk-warn">{{ t('overview.restoreWarn') }}</p>
+          <label class="bk-keep">
+            <input v-model="keepAddresses" type="checkbox" />
+            <span>
+              <b>{{ t('overview.keepAddresses') }}</b>
+              <span class="bk-desc">{{ t('overview.keepAddressesDesc') }}</span>
+            </span>
+          </label>
+        </template>
+
+        <template v-else-if="backup.step === 'working'">
+          <div class="update-progress" role="status" aria-live="polite">
+            <div class="update-bar" :class="{ busy: backup.share === null }" role="progressbar"
+                 aria-valuemin="0" aria-valuemax="100" :aria-valuenow="backup.share">
+              <i :style="{ width: (backup.share === null ? 100 : backup.share) + '%' }"></i>
+            </div>
+            <p class="muted small">
+              {{ backup.line }}<template v-if="backup.share !== null"> {{ backup.share }}%</template>
             </p>
           </div>
-          <button class="btn" :disabled="!backup.latest || !!backup.working" @click="exportBackup">
-            <Icon name="download" :size="15" />
-          </button>
-        </div>
+        </template>
 
-        <div class="bk-item">
-          <div class="bk-meta">
-            <div class="bk-title">{{ t('overview.importBackup') }}</div>
-            <p class="bk-desc">{{ t('overview.importBackupDesc') }}</p>
-          </div>
-          <label class="btn upload-btn" :class="{ disabled: !!backup.working }">
-            <Icon name="upload" :size="15" />
-            <input type="file" accept=".gz,.tar.gz,application/gzip"
-                   :disabled="!!backup.working" @change="importBackup" />
-          </label>
-        </div>
+        <template v-else-if="backup.step === 'failed'">
+          <p class="bk-error" role="alert">{{ backup.error }}</p>
+        </template>
+      </div>
 
-        <!-- Out to the older archives, from the dialog somebody who wants one
-             is already in. -->
-        <RouterLink to="/settings/backups" class="bk-all" @click="backup = null">
-          {{ t('overview.allBackups') }}
-        </RouterLink>
-
-        <!-- The one that matters when a panel moves house: the addresses in an
-             archive name the server it was taken on. -->
-        <label class="bk-keep">
-          <input v-model="keepAddresses" type="checkbox" :disabled="!!backup.working" />
-          <span>
-            <b>{{ t('overview.keepAddresses') }}</b>
-            <span class="bk-desc">{{ t('overview.keepAddressesDesc') }}</span>
-          </span>
-        </label>
+      <div v-if="backup.step === 'confirm'" class="modal-foot">
+        <button type="button" class="btn ghost" @click="backup.step = 'choose'">{{ t('action.cancel') }}</button>
+        <button type="button" class="btn danger" @click="restoreNow">{{ t('overview.restoreNow') }}</button>
+      </div>
+      <div v-else-if="backup.step === 'failed'" class="modal-foot">
+        <button type="button" class="btn ghost" @click="closeBackup">{{ t('common.close') }}</button>
+        <button type="button" class="btn" @click="backup.step = 'choose'">{{ t('update.tryAgain') }}</button>
       </div>
     </div>
   </div>
@@ -1247,21 +1433,40 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
 
 .ov-actionbar {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: center;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.ov-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
-.ov-actionbar h1 {
-  font-size: var(--t-xl);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.ov-actionbar p {
-  margin: 5px 0 0;
-  color: var(--muted);
+/* "● Tunnels · 3 / 3  v2.3.0": the state and the version in one pill. */
+.ov-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
   font-size: var(--t-sm);
-  max-width: 68ch;
+  white-space: nowrap;
 }
+.ov-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+.ov-state-pill.down .ov-state-dot { background: var(--bad); }
+.ov-state-pill .ov-version { font-size: var(--t-sm); color: var(--muted); }
 
 .ov-health {
   display: flex;

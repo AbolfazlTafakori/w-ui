@@ -8,16 +8,17 @@ The first page after sign-in: host load, panel state, and what this server is ca
 
 ## The action bar
 
+The bar is laid out as the classic panel's: at the start, the state pill and the version, and beside them the update tag; at the end, the buttons.
+
 | Button | What it does |
 |--------|--------------|
-| **Tunnels 3 / 3** | how many interfaces are up, of how many are enabled; red when one is down |
-| **2.3.0** | this panel's version; opens the update dialog |
-| **Update v2.3.1** | only while a newer release is published: opens the update dialog, which shows the release notes and installs it — downloaded by the panel itself, checked against the signing key built into it, then a restart. Customers stay connected. The release list is checked at most every half hour; opening the dialog checks again |
+| **● Tunnels · 3 / 3  v2.3.1** | how many interfaces are up, of how many are enabled (the dot is red when one is down), and this panel's version; the version opens the update dialog |
+| **Update v2.3.2** | only while a newer release is published: opens the update dialog, with the release notes and **Install and restart**. The panel downloads the release itself — a bar shows how much has arrived — checks it against the signing key built into it, puts it in place and restarts; the page reloads by itself once the panel is back on the new version. Customers stay connected. Closing the dialog or reloading the page does not stop an install: the tag reads *Updating…* until it is done. The release list is checked at most every half hour; opening the dialog checks again |
 | **Restart** | every tunnel again from its stored configuration (the classic "restart core"); the panel stays up |
 | **Stop** | the panel service — tunnels keep running, limits stop being enforced |
 | **History** | CPU, memory, traffic and connections over the last day, week or month |
 | **Logs** | the panel's log, filterable by level and source, live |
-| **Backup** | take one now, download one, restore one |
+| **Backup & Restore** | two lines, as in the classic panel. **Download backup** takes a fresh archive of everything and saves it to your device in one click. **Choose a file** picks an archive to restore; the dialog shows its name and size, what will happen, and *keep this server's addresses*, and nothing changes until you press **Restore**. The upload shows its progress, the current state is saved first, and the page reloads by itself once the panel is back with the restored data. Older archives are under *All backups* |
 | **System** | what this binary is, what the kernel supports, whether enforcement is exact |
 | **Settings** | the settings pages |
 

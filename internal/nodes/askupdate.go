@@ -35,6 +35,10 @@ const updateAskTimeout = 5 * time.Minute
 
 // UpdateResult is what a node said when asked.
 type UpdateResult struct {
+	// Started is a node installing in the background, as panels from 2.3.1
+	// on do; it restarts on its own once the release is in place.
+	Started bool `json:"started,omitempty"`
+	// Updated is an older node that installed before answering.
 	Updated bool   `json:"updated"`
 	From    string `json:"from,omitempty"`
 	To      string `json:"to,omitempty"`

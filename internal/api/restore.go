@@ -28,12 +28,27 @@ const uploadLimit = 512 << 20 // 512 MiB
 // destroyed the panel.
 const restartDelay = 750 * time.Millisecond
 
+// transferTime is how long one archive may take to come or go. The server
+// otherwise gives a request thirty seconds to arrive and a minute to be
+// answered, and an archive of a few hundred megabytes over a slow link needs
+// far longer: cut off, the upload failed with a message about the file.
+const transferTime = 30 * time.Minute
+
+// allowLongTransfer lifts the server's deadlines for this one request.
+func allowLongTransfer(w http.ResponseWriter) {
+	rc := http.NewResponseController(w)
+	deadline := time.Now().Add(transferTime)
+	_ = rc.SetReadDeadline(deadline)
+	_ = rc.SetWriteDeadline(deadline)
+}
+
 func (s *Server) handleUploadBackup(w http.ResponseWriter, r *http.Request) {
 	if s.backups == nil {
 		http.NotFound(w, r)
 		return
 	}
 
+	allowLongTransfer(w)
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest,

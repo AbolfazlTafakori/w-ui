@@ -125,7 +125,9 @@ async function askNodeUpdate(node) {
     confirmLabel: t('update.install'),
     run: async () => {
       const res = await api.post(`/api/nodes/${node.id}/update`)
-      if (res?.updated) {
+      if (res?.started) {
+        notify(t('update.nodeStarted').replace('{v}', res.to || ''), 'ok')
+      } else if (res?.updated) {
         notify(t('update.nodeUpdated').replace('{v}', res.to || ''), 'ok')
       } else {
         notify(res?.notice || t('update.upToDate'), 'ok')

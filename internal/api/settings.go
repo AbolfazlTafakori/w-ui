@@ -483,6 +483,7 @@ func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
+	allowLongTransfer(w)
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Content-Length", strconv.FormatInt(a.Size, 10))
 	w.Header().Set("Content-Disposition", `attachment; filename="`+a.Name+`"`)

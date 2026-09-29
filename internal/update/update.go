@@ -188,37 +188,68 @@ func latest(ctx context.Context) (*Release, error) {
 // panel back on the new binary — the same arrangement a restore uses, and for
 // the same reason: the running process is the one being replaced.
 func Apply(ctx context.Context, rel *Release) error {
+	return apply(ctx, rel, nil)
+}
+
+// errNoSignature is a release that carries a build and nothing vouching for it.
+var errNoSignature = fmt.Errorf("%w: that release has no signature beside its build", ErrBadSignature)
+
+// apply is Apply, telling report how far it has got when report is not nil.
+func apply(ctx context.Context, rel *Release, report func(stage Stage, received, total int64)) error {
+	if report == nil {
+		report = func(Stage, int64, int64) {}
+	}
+	binary, err := download(ctx, rel, func(received, total int64) {
+		report(StageDownloading, received, total)
+	})
+	if err != nil {
+		return err
+	}
+	report(StageInstalling, 0, 0)
+	return put(binary)
+}
+
+// put is install; a test puts the binary somewhere other than over itself.
+var put = install
+
+// download fetches the release's build and returns it only once the project's
+// signature over it checks out. Nothing touches the disk before that.
+func download(ctx context.Context, rel *Release, progress func(received, total int64)) ([]byte, error) {
 	key, err := signingKey()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if rel.signatureURL == "" {
-		return fmt.Errorf("%w: that release has no signature beside its build", ErrBadSignature)
+		return nil, errNoSignature
 	}
 
-	binary, err := fetch(ctx, rel.binaryURL, 512<<20)
+	// The signature first: it is small, and a release without one readable
+	// is refused before tens of megabytes are fetched for nothing.
+	sig, err := fetch(ctx, rel.signatureURL, 4<<10, nil)
 	if err != nil {
-		return fmt.Errorf("downloading the panel: %w", err)
+		return nil, fmt.Errorf("downloading the signature: %w", err)
 	}
-	sig, err := fetch(ctx, rel.signatureURL, 4<<10)
-	if err != nil {
-		return fmt.Errorf("downloading the signature: %w", err)
-	}
-
 	signature, err := decodeSignature(sig)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	binary, err := fetch(ctx, rel.binaryURL, maxBinary, progress)
+	if err != nil {
+		return nil, fmt.Errorf("downloading the panel: %w", err)
 	}
 	// Before anything is written. A binary that fails this check has to leave
 	// no trace on disk at all.
 	if !ed25519.Verify(key, binary, signature) {
-		return ErrBadSignature
+		return nil, ErrBadSignature
 	}
-
-	return install(binary)
+	return binary, nil
 }
 
-// install writes the new binary beside the running one and moves it into place.
+// maxBinary bounds a download. The panel is about 25 MB; anything near this
+// is not a panel.
+const maxBinary = 512 << 20
+
+// install puts binary where the running panel's own binary is.
 func install(binary []byte) error {
 	self, err := os.Executable()
 	if err != nil {
@@ -228,11 +259,15 @@ func install(binary []byte) error {
 	if err != nil {
 		return fmt.Errorf("could not resolve this panel's own binary: %w", err)
 	}
+	return installAt(self, binary)
+}
 
+// installAt writes binary beside path and moves it into place.
+func installAt(path string, binary []byte) error {
 	// In the same directory, so the move into place is a rename on one
 	// filesystem: a copy could be interrupted halfway and leave a truncated
 	// binary where the working one was.
-	tmp, err := os.CreateTemp(filepath.Dir(self), ".wui-update-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".wui-update-*")
 	if err != nil {
 		return fmt.Errorf("could not write beside the panel: %w", err)
 	}
@@ -243,6 +278,12 @@ func install(binary []byte) error {
 		tmp.Close()
 		return fmt.Errorf("writing the new panel: %w", err)
 	}
+	// On disk before the rename, so a power cut cannot leave the name
+	// pointing at a file whose contents never arrived.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing the new panel: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("writing the new panel: %w", err)
 	}
@@ -250,16 +291,15 @@ func install(binary []byte) error {
 		return fmt.Errorf("making the new panel executable: %w", err)
 	}
 
-	if err := os.Rename(tmpName, self); err != nil {
+	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("putting the new panel in place: %w", err)
 	}
 	return nil
 }
 
-func fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-
+// fetch reads url whole, up to limit bytes, telling progress how much has
+// arrived when progress is not nil.
+func fetch(ctx context.Context, url string, limit int64, progress func(received, total int64)) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -273,7 +313,42 @@ func fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("answered %s", resp.Status)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, limit))
+	total := max(resp.ContentLength, 0)
+	if total > limit {
+		return nil, fmt.Errorf("%d bytes is more than a panel", total)
+	}
+	var body io.Reader = io.LimitReader(resp.Body, limit+1)
+	if progress != nil {
+		progress(0, total)
+		body = &counting{r: body, total: total, report: progress}
+	}
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("more than %d bytes is more than a panel", limit)
+	}
+	// A connection that closed early reads as a short body, not an error.
+	// The signature would refuse it anyway; saying what happened is kinder.
+	if total > 0 && int64(len(data)) != total {
+		return nil, fmt.Errorf("the download stopped at %d of %d bytes", len(data), total)
+	}
+	return data, nil
+}
+
+// counting reports how much of a body has been read.
+type counting struct {
+	r        io.Reader
+	n, total int64
+	report   func(received, total int64)
+}
+
+func (c *counting) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	c.report(c.n, c.total)
+	return n, err
 }
 
 func signingKey() (ed25519.PublicKey, error) {
@@ -311,12 +386,7 @@ func Signed() bool {
 	return err == nil
 }
 
-// newer compares two versions.
-//
-// Deliberately simple: a release is newer when its version differs from the one
-// running and is not empty. Ordering version strings correctly is a job with
-// more edge cases than value here — the repository publishes one "latest", and
-// that is the one being offered.
+// newer reports whether latest is a later release than current.
 func newer(current, latest string) bool {
 	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
 	latest = strings.TrimPrefix(strings.TrimSpace(latest), "v")

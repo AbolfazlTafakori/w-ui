@@ -6,6 +6,44 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.1] — 2026-09-29
+
+### Fixed
+- **Updating from the panel no longer reports a failure that did not
+  happen.** The release is tens of megabytes, and a server whose way to
+  GitHub is slow took longer to fetch it than the panel lets one request
+  run: the update installed, and the page said it had failed. The install
+  now runs in the background and the dialog follows it -- a bar while the
+  release downloads, then the signature check, the install and the restart
+  -- and the page reloads by itself once the panel is back on the new
+  version. Closing the dialog or reloading the page does not stop it; the
+  tag reads *Updating…* until it is done. A second install meanwhile is
+  refused, an interrupted download is named as one, and a panel that does
+  not come back within three minutes is said so, with the command to look.
+  Tested end to end on Linux: a download of a minute and a half, a reload in
+  the middle of it, the restart, and the page landing on the new version
+  still signed in.
+- **Backup archives are no longer cut off.** An upload was given thirty
+  seconds to arrive and a download a minute to leave; a large archive over
+  a slow link now has thirty minutes.
+
+### Changed
+- **The overview bar is laid out as the classic panel's**: at the start, a
+  pill with the tunnels' state and this panel's version, and the *Update
+  v…* tag right beside it; at the end, the buttons.
+- **Backup & Restore works as the classic panel's**: two lines, one button
+  each. *Download backup* takes a fresh archive and saves it to your device
+  in one click -- it used to take one on the server and offer the newest
+  archive as a second step, which could be an older automatic one.
+  *Choose a file* shows the archive's name and size, what will happen, and
+  the one option that matters when moving servers, before anything
+  changes; the upload shows its progress, and the page reloads once the
+  panel is back with the restored data instead of after a guessed seven
+  seconds. A file that is not a backup is refused with the reason, and
+  nothing changes.
+- Asking a node to update now returns as soon as the node has started, and
+  says so; older nodes still answer as before.
+
 ## [2.3.0] — 2026-09-28
 
 ### Added
@@ -280,7 +318,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.2...v2.3.0
 [2.2.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.0...v2.2.1

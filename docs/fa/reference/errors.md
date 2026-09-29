@@ -51,6 +51,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `that is not a range this panel keeps. Ask for 5m, 1h, 6h, 24h, 48h or 7d` | تاریخچه برای بازه‌ای درخواست شده که نگه داشته نمی‌شود. | یکی از همان‌ها. |
 | `action must be enable, disable or delete` | عمل گروهی با فعل ناشناخته. | یکی از سه تا. |
 | `no file was sent` / `that file could not be read, or it is larger than this panel accepts` | آپلود بدون فایل، یا بزرگ‌تر از سقف. | فایل را پیوست کن؛ بک‌آپ بزرگ‌تر از سقف، بک‌آپ W-UI نیست. |
+| `an update is already being installed` (409) | *نصب* زده شده در حالی که یک نصب در جریان است — در تب دیگر، یا قبل از بارگذاری دوباره. | صبر کن: پنجره همان نصب را نشان می‌دهد و وقتی تمام شد صفحه بارگذاری می‌شود. |
+| `the download stopped at … of … bytes` | اتصال به GitHub قبل از رسیدن کامل نسخه قطع شد. چیزی نصب نشد. | *دوباره* را بزن؛ روی سروری که مسیرش به GitHub ناپایدار است، ساعت خلوت‌تری امتحان کن. |
 
 ## مشتری‌ها (کلاینت‌ها)
 

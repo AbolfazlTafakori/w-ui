@@ -284,29 +284,13 @@ func TestApplyInstallsOnlyWhatWasSigned(t *testing.T) {
 	}
 }
 
-// applyTo runs the download-and-verify half of Apply and writes the result into
-// dir, so the test does not have to replace its own binary to check it.
+// applyTo runs Apply's own download and install against a file in dir, so
+// the test does not have to replace its own binary to check it.
 func applyTo(t *testing.T, dir string, rel *Release) error {
 	t.Helper()
-
-	key, err := signingKey()
+	binary, err := download(context.Background(), rel, nil)
 	if err != nil {
 		return err
 	}
-	binary, err := fetch(context.Background(), rel.binaryURL, 512<<20)
-	if err != nil {
-		return err
-	}
-	sig, err := fetch(context.Background(), rel.signatureURL, 4<<10)
-	if err != nil {
-		return err
-	}
-	signature, err := decodeSignature(sig)
-	if err != nil {
-		return err
-	}
-	if !ed25519.Verify(key, binary, signature) {
-		return ErrBadSignature
-	}
-	return os.WriteFile(filepath.Join(dir, "wui"), binary, 0o755)
+	return installAt(filepath.Join(dir, "wui"), binary)
 }

@@ -679,9 +679,17 @@ func (s *Server) routes() []Route {
 			handler: s.handleUpdateAvailable},
 		{Method: "POST", Path: "/api/system/update", Group: "Server", Auth: true,
 			Summary: "Fetch the newest release, check its signature, install it and restart.",
-			Note: "The panel downloads it itself and verifies it against a key built into " +
-				"this binary. Nothing unsigned is ever written to disk.",
+			Note: "Answers 202 at once and installs in the background; follow it at " +
+				"/api/system/update/progress. The panel downloads the release itself and " +
+				"verifies it against a key built into this binary. Nothing unsigned is ever " +
+				"written to disk.",
 			handler: s.handleSelfUpdate},
+		{Method: "GET", Path: "/api/system/update/progress", Group: "Server", Auth: true,
+			Summary: "How far an update has got, and the version running.",
+			Note: "stage is downloading, verifying, installing, restarting or failed; empty " +
+				"when nothing has been installed since the panel started. A different " +
+				"current is the panel back on the new build.",
+			handler: s.handleUpdateProgress},
 		{Method: "POST", Path: "/api/nodes/{id}/update", Group: "Nodes", Auth: true,
 			Summary: "Ask a node to update its own panel.",
 			Note: "No binary travels from here: the node fetches the release itself and " +

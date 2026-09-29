@@ -51,6 +51,8 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `that is not a range this panel keeps. Ask for 5m, 1h, 6h, 24h, 48h or 7d` | History was asked for a window the store does not have. | Use one of those. |
 | `action must be enable, disable or delete` | A bulk action with an unknown verb. | One of the three. |
 | `no file was sent` / `that file could not be read, or it is larger than this panel accepts` | An upload with no file part, or one past the cap. | Attach the file; a backup larger than the cap is not a W-UI backup. |
+| `an update is already being installed` (409) | *Install* was pressed while an install is under way — in another tab, or before a reload. | Wait: the dialog shows the one in progress, and the page reloads when it is done. |
+| `the download stopped at … of … bytes` | The connection to GitHub closed before the release arrived whole. Nothing was installed. | Press *Try again*; on a server whose route to GitHub is unreliable, try at a quieter hour. |
 
 ## Customers (clients)
 

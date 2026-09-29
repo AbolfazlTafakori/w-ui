@@ -3459,24 +3459,39 @@ tbody tr.decided .step {
 .bk-keep .bk-desc {
   display: block;
 }
-.bk-working,
-.bk-done {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.bk-done,
+.bk-error,
+.bk-warn {
   margin: 0 0 8px;
   padding: 10px 12px;
   border-radius: var(--r-sm);
+  background: var(--surface-2);
   font-size: var(--t-xs);
-}
-.bk-working {
-  color: var(--ink-2);
-  background: var(--surface-2);
-}
-.bk-done {
-  color: var(--ok, var(--ink-2));
-  background: var(--surface-2);
+  line-height: 1.5;
   overflow-wrap: anywhere;
+}
+.bk-done { color: var(--ok, var(--ink-2)); }
+.bk-error { color: var(--bad); }
+.bk-warn { color: var(--warn); }
+/* The archive picked for a restore: its name and size, before anything is
+   sent. */
+.bk-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+}
+.bk-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
 }
 .upload-btn.disabled {
   opacity: 0.5;
@@ -3670,15 +3685,6 @@ button.ov-version {
 button.ov-version:hover {
   color: var(--ink-2);
 }
-.ov-version-dot {
-  position: absolute;
-  top: -1px;
-  inset-inline-end: -4px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
 /* "Update v2.3.0": a small amber tag, raised only while a newer release
    exists, that opens the update dialog. */
 .ov-update {
@@ -3700,6 +3706,43 @@ button.ov-version:hover {
 .ov-update:hover { background: color-mix(in srgb, var(--warn) 20%, transparent); border-color: var(--warn); }
 .ov-update:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
 .ov-update .anticon { font-size: 14px; }
+
+/* An install under way: a bar that fills while the release downloads, and
+   runs as a stripe while it is checked, put in place and restarted. */
+.update-progress { margin-top: 12px; }
+.update-bar {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+.update-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.update-bar.busy > i {
+  width: 40% !important;
+  animation: update-slide 1.2s ease-in-out infinite;
+}
+@keyframes update-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .update-bar.busy > i { width: 100% !important; animation: none; opacity: 0.6; }
+}
+.update-progress .muted { margin-top: 8px; }
+.update-error {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  color: var(--bad);
+  word-break: break-word;
+}
 
 /* Release notes, as the project wrote them. */
 .update-notes {
