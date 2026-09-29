@@ -1,0 +1,1 @@
+import{Q as t}from"./browser-BeMEBtOm.js";const a=4,s="L",c=340;async function f(o){const r=t.create(o,{errorCorrectionLevel:s}).modules.size+a*2,e=Math.max(3,Math.round(c/r));return{dataUrl:await t.toDataURL(o,{margin:a,errorCorrectionLevel:s,scale:e,color:{dark:"#000000",light:"#ffffff"}}),size:r*e}}export{f as m};

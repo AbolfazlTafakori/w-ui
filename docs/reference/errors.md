@@ -140,6 +140,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | Names are unique per server. | Another name. |
 | `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | The name becomes the kernel device (`wg0`); a domain typed here would fail at bring-up. | Something like `wg0` or `ir443`; the domain goes in **Endpoint**. |
 | `… overlaps …, the subnet of tunnel "…"; every tunnel on a server needs its own range` | Two tunnels on one range give the kernel two routes to the same addresses. | A different range, like `10.67.0.0/16`. |
+| `… overlaps … on …, a network already on this server — another program's, such as Docker or another VPN, or the server's own; pick a range nothing here uses` | The range is already on one of the machine's own network devices — Docker's bridge, another VPN's interface, the server's own network. A tunnel on it would take that traffic into the tunnel. | A range nothing on the server uses; `ip -brief address` lists what is there. |
 | `"…" is too small for the … devices on this tunnel` | The new subnet cannot hold the devices already issued. | A larger range. |
 | `unknown protocol "…"` | | `wireguard` or `openvpn`. |
 | `no driver available for "…" on this server` | The kernel or the binary for that protocol is missing here (`wg`/`awg`/`openvpn`). | Install it: re-run the installer. |

@@ -6,6 +6,56 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.4.1] — 2026-09-29
+
+### Fixed
+- **Another program wiping the firewall no longer switches enforcement off
+  in silence.** The panel skipped rewriting its rules when nothing had
+  changed, assuming they were still there. A firewall reload that begins
+  with `flush ruleset` -- Debian's default `/etc/nftables.conf` does, so a
+  plain `systemctl restart nftables` was enough -- or another VPN resetting
+  the routing rules took them away: every limit, every switched-off
+  customer and every route out of the tunnels stopped working while the
+  panel went on as if nothing had happened. It now checks its own tables
+  and routing rules before skipping, and puts them back within two
+  seconds, saying so in the log. Checked on every distribution in CI by
+  flushing the whole ruleset under a running panel.
+- **A tunnel is refused a range already on the server.** A subnet that
+  overlaps Docker's bridge, another VPN's interface or the server's own
+  network was accepted and took that traffic into the tunnel; the refusal
+  now names the device.
+- **Cleaning up routing rules touches only the panel's own.** A rule was
+  removed -- and its table flushed -- when its mark was in the panel's
+  range, whatever table it pointed at; now both have to be the panel's.
+- **PostgreSQL on a server that already uses it.** On RHEL-family systems
+  the installer rewrote the loopback lines of `pg_hba.conf` for every
+  database to scram-sha-256, which locks out any other project whose role
+  keeps an md5 password. It now adds two lines for its own database and
+  role, first, and changes nothing else.
+- **acme.sh's default authority is no longer changed.** The installer and
+  the menu set Let's Encrypt as the default for every certificate acme.sh
+  keeps on the server, moving other projects' renewals; Let's Encrypt is
+  now named on the panel's own requests only.
+- **Deletes that an empty value could widen are guarded.** Clean-ups after
+  a failed certificate request, and the uninstall, would have removed the
+  whole acme.sh directory -- other projects' certificates with it -- or a
+  whole system directory had a name come back empty; they now stop
+  instead. The three shell scripts have no ShellCheck warnings left.
+- **The panel opens faster.** Every page was one 824 kB script loaded
+  before anything showed; pages are now fetched when first opened, and the
+  first load is 202 kB. A tab left open across an update, asking for a
+  page the new build does not have, gets a 404 -- it used to get the app
+  shell with a 200 -- and loads the page afresh, once. The build warning
+  about the bundle's size is gone.
+- The code has no warnings from `go vet` or staticcheck on Linux or on
+  Windows, where a development copy runs; the parsers staticcheck saw as
+  unused there have tests.
+
+### Added
+- The docs have a section on sharing a server with other projects: what the
+  panel touches, what it leaves alone, and how it recovers from what others
+  do.
+
 ## [2.4.0] — 2026-09-29
 
 ### Added
@@ -434,7 +484,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.1...HEAD
+[2.4.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.6...v2.4.0
 [2.3.6]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.5...v2.3.6
 [2.3.5]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.4...v2.3.5

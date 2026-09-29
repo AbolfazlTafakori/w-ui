@@ -47,10 +47,11 @@ func (a *Applier) Counters(context.Context) (map[uint32]uint64, error) {
 
 func (a *Applier) Teardown(context.Context, []Hop) error { return nil }
 
-func (a *Applier) Health(context.Context) error {
-	return fmt.Errorf("%w: packet marking and policy routing are Linux-only, "+
-		"and this panel is running on %s", ErrUnavailable, runtime.GOOS)
-}
+func (a *Applier) Health(context.Context) error { return errPlatform }
+
+// errPlatform is the one answer off Linux, made once.
+var errPlatform = fmt.Errorf("%w: packet marking and policy routing are Linux-only, "+
+	"and this panel is running on %s", ErrUnavailable, runtime.GOOS)
 
 // Ruleset returns the last program built. Test and development aid.
 func (a *Applier) Ruleset() string {

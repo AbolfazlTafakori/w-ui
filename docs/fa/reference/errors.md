@@ -140,6 +140,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | نام‌ها در هر سرور یکتا هستند. | نام دیگری. |
 | `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | نام، نام دستگاه کرنل می‌شود (`wg0`)؛ دامنه این‌جا موقع بالا آمدن شکست می‌خورد. | چیزی مثل `wg0` یا `ir443`؛ دامنه در **Endpoint** می‌رود. |
 | `… overlaps …, the subnet of tunnel "…"; every tunnel on a server needs its own range` | دو تانل روی یک رنج به کرنل دو مسیر برای یک آدرس می‌دهد. | رنج متفاوت، مثل `10.67.0.0/16`. |
+| `… overlaps … on …, a network already on this server — another program's, such as Docker or another VPN, or the server's own; pick a range nothing here uses` | این رنج از قبل روی یکی از دستگاه‌های شبکهٔ خودِ ماشین است — bridge داکر، اینترفیس یک VPN دیگر، شبکهٔ خودِ سرور. تانل روی آن ترافیک آن‌ها را به داخل تانل می‌برد. | رنجی که هیچ چیز روی سرور از آن استفاده نمی‌کند؛ `ip -brief address` نشان می‌دهد چه چیزهایی هست. |
 | `"…" is too small for the … devices on this tunnel` | زیرشبکهٔ جدید دستگاه‌های موجود را جا نمی‌دهد. | رنج بزرگ‌تر. |
 | `unknown protocol "…"` |  | `wireguard` یا `openvpn`. |
 | `no driver available for "…" on this server` | کرنل یا باینری آن پروتکل این‌جا نیست (`wg`/`awg`/`openvpn`). | نصبش کن: نصاب را دوباره اجرا کن. |

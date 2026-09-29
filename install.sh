@@ -211,6 +211,7 @@ detect_os() {
   OS_ID="${ID:-unknown}"
   OS_LIKE="${ID_LIKE:-}"
   OS_NAME="${PRETTY_NAME:-$OS_ID}"
+  # shellcheck disable=SC2034 # for the scripts that source this one
   OS_VERSION="${VERSION_ID:-}"
   # The archive codename, which is what a third-party repository publishes
   # under. A release too new for a PPA is the usual reason apt breaks after
@@ -243,7 +244,8 @@ detect_os() {
 # a mistake and a disaster.
 last_copy_of_data() {
   [[ -d "$DATA_DIR" ]] || return 0
-  local out="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
+  local out
+  out="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
   # The panel's own archive when it can make one -- the database from either
   # engine, restorable into either -- and a plain copy when it cannot.
   local made=""
@@ -1652,9 +1654,10 @@ install_acme() {
   ( HOME="${ACME_HOME%/.acme.sh}" sh /tmp/get-acme.sh "home=$ACME_HOME" ${ACME_EMAIL:+--accountemail "$ACME_EMAIL"} >/dev/null 2>&1 )
   rm -f /tmp/get-acme.sh
   [[ -x "$ACME_HOME/acme.sh" ]] || { warn "acme.sh is not installed"; return 1; }
-  # Let's Encrypt by name. acme.sh defaults to a different authority, and an
-  # operator who was told "Let's Encrypt" should get Let's Encrypt.
-  acme --set-default-ca --server letsencrypt >/dev/null 2>&1
+  # Let's Encrypt is named on each request below, never set as acme.sh's
+  # default: another project on this server may keep certificates in the same
+  # acme.sh with a different authority, and changing the default would move
+  # their renewals.
   return 0
 }
 
@@ -1777,12 +1780,12 @@ issue_certificate() {
 
   info "asking Let's Encrypt for a certificate (this takes a moment)"
   local out
-  out=$(acme --issue -d "$ACME_DOMAIN" $listen --standalone --httpport "$ACME_HTTP_PORT" --keylength ec-256 --force 2>&1) || true
+  out=$(acme --issue -d "$ACME_DOMAIN" $listen --standalone --server letsencrypt --httpport "$ACME_HTTP_PORT" --keylength ec-256 --force 2>&1) || true
   if ! acme --list 2>/dev/null | awk '{print $1}' | grep -Fxq "$ACME_DOMAIN"; then
     warn "the certificate was not issued"
     # The operator needs the authority's own words, not a summary of them.
     printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
-    rm -rf "$ACME_HOME/$ACME_DOMAIN" "$ACME_HOME/${ACME_DOMAIN}_ecc"
+    rm -rf "$ACME_HOME/${ACME_DOMAIN:?}" "$ACME_HOME/${ACME_DOMAIN:?}_ecc"
     return 1
   fi
   install_cert_files "$ACME_DOMAIN" -d "$ACME_DOMAIN" --ecc
@@ -1806,8 +1809,8 @@ issue_ip_certificate() {
   if ! acme --list 2>/dev/null | awk '{print $1}' | grep -Fxq "$ACME_IP"; then
     warn "the certificate was not issued"
     printf '%s\n' "$out" | tail -12 | sed 's/^/      /'
-    rm -rf "$ACME_HOME/$ACME_IP" "$ACME_HOME/${ACME_IP}_ecc"
-    [[ -n "$ACME_IPV6" ]] && rm -rf "$ACME_HOME/$ACME_IPV6" "$ACME_HOME/${ACME_IPV6}_ecc"
+    rm -rf "$ACME_HOME/${ACME_IP:?}" "$ACME_HOME/${ACME_IP:?}_ecc"
+    [[ -n "$ACME_IPV6" ]] && rm -rf "$ACME_HOME/${ACME_IPV6:?}" "$ACME_HOME/${ACME_IPV6:?}_ecc"
     return 1
   fi
   install_cert_files ip -d "$ACME_IP" --ecc
@@ -1817,6 +1820,39 @@ issue_ip_certificate() {
 # Created before the panel first starts, so the account is the one the operator
 # chose. The panel generates a random administrator only when it finds none,
 # which after this it never does.
+# The panel's own way into PostgreSQL, and nothing else.
+#
+# A RHEL-family cluster authenticates loopback connections by ident, which
+# refuses the panel's password login. This used to be fixed by rewriting the
+# loopback lines for every database to scram-sha-256 -- and on a server where
+# another project already uses PostgreSQL, that change is theirs too: a role
+# whose password is stored as md5 can no longer sign in, and the other project
+# stops working the moment this installer runs. Instead two lines for this
+# panel's database and role alone go first in pg_hba.conf, where the first
+# matching line wins, and every other line is left as it was.
+allow_panel_login() {
+  local hba
+  hba="$(runuser -u postgres -- psql -qAt -c 'SHOW hba_file' 2>/dev/null || true)"
+  if [[ -z "$hba" || ! -f "$hba" ]]; then
+    warn "could not find pg_hba.conf; if the panel cannot sign in to its database, allow the role wui over 127.0.0.1 with scram-sha-256"
+    return 0
+  fi
+  grep -Eq '^host[[:space:]]+wui[[:space:]]+wui[[:space:]]+127[.]0[.]0[.]1/32' "$hba" && return 0
+  local tmp
+  tmp="$(mktemp)"
+  {
+    printf '# W-UI: its own database and role, over the loopback. Nothing else here was changed.\n'
+    printf 'host    wui    wui    127.0.0.1/32    scram-sha-256\n'
+    printf 'host    wui    wui    ::1/128         scram-sha-256\n'
+    cat "$hba"
+  } > "$tmp"
+  # Written through, not moved: the file keeps its owner and permissions.
+  cat "$tmp" > "$hba"
+  rm -f "$tmp"
+  runuser -u postgres -- psql -qAt -c 'SELECT pg_reload_conf()' >/dev/null 2>&1 || true
+  ok "PostgreSQL allows the panel's role into its database; other databases untouched"
+}
+
 # The database the panel opens. SQLite is one file under the data directory
 # and needs nothing. PostgreSQL is installed from the distribution, given a
 # role and a database of its own with a generated password, and the
@@ -1854,11 +1890,10 @@ setup_database() {
           runuser -u postgres -- initdb -D /var/lib/pgsql/data --auth-local=peer --auth-host=scram-sha-256 -E UTF8 >/dev/null 2>&1             || die "could not initialise PostgreSQL"
         fi
       fi
-      sed -i -E 's/^(host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1\/32|::1\/128)[[:space:]]+)(ident|md5)$/\1scram-sha-256/' /var/lib/pgsql/data/pg_hba.conf 2>/dev/null || true
-      have_systemd && systemctl reload postgresql >/dev/null 2>&1 || true
       ;;
   esac
   ensure_postgres_running
+  allow_panel_login
 
   DB_PASS="$(gen_string 32)"
   # One role and one database, owned by it. Created idempotently: a role
@@ -1901,8 +1936,8 @@ ensure_postgres_running() {
       runuser -u postgres -- pg_ctl -D /var/lib/pgsql/data -l /var/lib/pgsql/startup.log -w start >/dev/null 2>&1 || true
     fi
   fi
-  local i
-  for i in $(seq 1 30); do
+  local _
+  for _ in $(seq 1 30); do
     runuser -u postgres -- pg_isready -q 2>/dev/null && return 0
     sleep 1
   done

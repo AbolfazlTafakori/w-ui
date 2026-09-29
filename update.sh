@@ -55,6 +55,7 @@ resolve_release() {
   RELEASE_TAG="$(printf '%s' "$json" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"tag_name": *"//; s/"$//')"
   ASSET_URL="$(grep -E "linux[-_]${ARCH}$" <<<"$urls" | head -1)"
   SIG_URL="$(grep -E "linux[-_]${ARCH}\.sig$" <<<"$urls" | head -1)"
+  # shellcheck disable=SC2034 # read by verify_download, from install.sh
   SUMS_URL="$(grep -E '/SHA256SUMS$' <<<"$urls" | head -1)"
   MENU_URL="$(grep -E '/w-ui\.sh$' <<<"$urls" | head -1)"
   [[ -n "$ASSET_URL" ]]
@@ -125,7 +126,9 @@ read_existing
 env_of() {
   (
     set -a
+    # shellcheck disable=SC2034 # exported by set -a, for the panel binary
     WUI_DATA_DIR="$DATA_DIR"
+    # shellcheck disable=SC2163 # each word is NAME=value, exported as such
     for kv in $(grep -oE 'WUI_[A-Z_]+=[^ ]+' "$UNIT" 2>/dev/null); do export "$kv"; done
     [[ -r "$CONF_DIR/db.env" ]] && . "$CONF_DIR/db.env"
     [[ -r "$CONF_DIR/wui.env" ]] && . "$CONF_DIR/wui.env"

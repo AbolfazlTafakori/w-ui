@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/nftstate"
 	"log/slog"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +58,11 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 	a.mu.Lock()
 	sameScript := script == a.applied
 	a.mu.Unlock()
+	if sameScript && !a.hasTable(ctx, "inet", TableName) {
+		a.log.Warn("the panel's routing table was removed by something else on this server; putting it back",
+			"table", "inet "+TableName)
+		sameScript = false
+	}
 
 	if !sameScript {
 		if _, err := a.runNFT(ctx, script, "-f", "-"); err != nil {
@@ -86,6 +93,11 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 	a.mu.Unlock()
 	if prune {
 		a.pruneRules(ctx, p.Hops)
+	}
+	if samePlan && !a.rulesPresent(ctx, plan) {
+		a.log.Warn("the panel's routing rules were removed by something else on this server; putting them back",
+			"hops", len(p.Hops))
+		samePlan = false
 	}
 	if samePlan {
 		return nil
@@ -130,28 +142,16 @@ func (a *Applier) pruneRules(ctx context.Context, hops []Hop) {
 	for _, h := range hops {
 		want[h.Mark] = true
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		// "20011:	from all fwmark 0xa7000b lookup 47011"
-		f := strings.Fields(line)
-		mark, table := "", ""
-		for i := 0; i+1 < len(f); i++ {
-			switch f[i] {
-			case "fwmark":
-				mark = f[i+1]
-			case "lookup":
-				table = f[i+1]
-			}
-		}
-		if mark == "" || table == "" {
+	for m, table := range nftstate.RuleMarks(out) {
+		// Both halves have to be ours. A mark in our range pointing at a
+		// table outside it -- or at a table another program named in
+		// rt_tables -- is someone else's rule, and flushing its table would
+		// take that program's routes with it.
+		tableID, err := strconv.Atoi(table)
+		if err != nil || !OwnsTable(tableID) || !OwnsMark(m) || want[m] {
 			continue
 		}
-		var m uint64
-		if _, err := fmt.Sscanf(strings.SplitN(mark, "/", 2)[0], "0x%x", &m); err != nil {
-			continue
-		}
-		if !OwnsMark(uint32(m)) || want[uint32(m)] {
-			continue
-		}
+		mark := fmt.Sprintf("0x%x", m)
 		_, _ = a.runIP(ctx, "rule", "del", "fwmark", mark, "table", table)
 		_, _ = a.runIP(ctx, "route", "flush", "table", table)
 		a.log.Info("stale routing rule removed", "mark", mark, "table", table)
@@ -172,7 +172,12 @@ func (a *Applier) applyNAT(ctx context.Context, p Policy) error {
 	same := script == a.appliedNAT
 	a.mu.Unlock()
 	if same {
-		return nil
+		if a.hasTable(ctx, "ip", NATTableName) {
+			return nil
+		}
+		// Without it customers connect and reach nothing.
+		a.log.Warn("the panel's tunnel address translation was removed by something else on this server; putting it back",
+			"table", "ip "+NATTableName)
 	}
 
 	if _, err := a.runNFT(ctx, script, "-f", "-"); err != nil {
@@ -186,6 +191,40 @@ func (a *Applier) applyNAT(ctx context.Context, p Policy) error {
 	a.log.Info("tunnel egress translated",
 		"subnets", len(p.CustomerNets), "tunnels", len(p.TunnelDevices))
 	return nil
+}
+
+// hasTable reports whether one of the panel's tables is still in the kernel,
+// saying yes when it cannot tell: a failed look is no reason to rewrite the
+// rules every tick.
+func (a *Applier) hasTable(ctx context.Context, family, name string) bool {
+	out, err := a.runNFT(ctx, "", "list", "tables")
+	if err != nil {
+		return true
+	}
+	return nftstate.HasTable(out, family, name)
+}
+
+// rulesPresent reports whether every rule the plan adds -- one per hop, from
+// its mark to its table -- is still there.
+func (a *Applier) rulesPresent(ctx context.Context, plan Plan) bool {
+	out, err := a.runIP(ctx, "rule", "show")
+	if err != nil {
+		return true
+	}
+	have := nftstate.RuleMarks(out)
+	for _, s := range plan.Add {
+		if len(s.Args) < 6 || s.Args[0] != "rule" || s.Args[2] != "fwmark" {
+			continue
+		}
+		var m uint64
+		if _, err := fmt.Sscanf(s.Args[3], "0x%x", &m); err != nil {
+			continue
+		}
+		if have[uint32(m)] != s.Args[5] {
+			return false
+		}
+	}
+	return true
 }
 
 // Counters reads what each outbound has carried.

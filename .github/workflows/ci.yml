@@ -151,6 +151,16 @@ jobs:
           curl -fs -o /dev/null -w "panel answered %{http_code}\n" "http://127.0.0.1:$port$path"
           curl -s -o /dev/null -w "root is %{http_code}\n" "http://127.0.0.1:$port/" | grep -q 404
           grep -E "enforcement|quota|listening" /tmp/panel.log | head
+          # Another project on the server replacing the whole ruleset -- as a
+          # restart of nftables.service does, its config beginning with flush
+          # ruleset -- does not leave the panel without enforcement: it puts
+          # its table back within seconds, and says what happened.
+          for i in $(seq 1 20); do nft list tables | grep -qx "table inet wui" && break; sleep 1; done
+          nft list tables | grep -qx "table inet wui"
+          nft flush ruleset
+          for i in $(seq 1 20); do nft list tables | grep -qx "table inet wui" && break; sleep 1; done
+          nft list tables | grep -qx "table inet wui"
+          grep -q "removed by something else on this server" /tmp/panel.log
           # The staged restore was applied at that start, and the admin survived it.
           grep -q "restored from a backup" /tmp/panel.log
           WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui setting show | grep -q "^admin: ci$"

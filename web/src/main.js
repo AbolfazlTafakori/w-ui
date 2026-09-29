@@ -23,22 +23,28 @@ import './ant.css'
 import './sidebar.css'
 
 import LoginView from './views/LoginView.vue'
-import OverviewView from './views/OverviewView.vue'
-import ClientsView from './views/ClientsView.vue'
-import ClientDetailView from './views/ClientDetailView.vue'
-import InterfacesView from './views/InterfacesView.vue'
-import GroupsView from './views/GroupsView.vue'
-import SettingsView from './views/SettingsView.vue'
-import AdminsView from './views/AdminsView.vue'
-import SharingView from './views/SharingView.vue'
-import ApiView from './views/ApiView.vue'
-import NodesView from './views/NodesView.vue'
-import HostsView from './views/HostsView.vue'
-import OutboundsView from './views/OutboundsView.vue'
-import RoutingView from './views/RoutingView.vue'
-import ConfigsView from './views/ConfigsView.vue'
-import EngineView from './views/EngineView.vue'
-import NotFoundView from './views/NotFoundView.vue'
+
+// Every other page is fetched when it is first opened. As one bundle the panel
+// was over 800 kB of script before the first page could show -- the routing
+// editor, the engine, the API reference and the rest, for a reseller who only
+// ever opens two pages. The sign-in page stays in the bundle: it is the one
+// every visit may start on.
+const OverviewView = () => import('./views/OverviewView.vue')
+const ClientsView = () => import('./views/ClientsView.vue')
+const ClientDetailView = () => import('./views/ClientDetailView.vue')
+const InterfacesView = () => import('./views/InterfacesView.vue')
+const GroupsView = () => import('./views/GroupsView.vue')
+const SettingsView = () => import('./views/SettingsView.vue')
+const AdminsView = () => import('./views/AdminsView.vue')
+const SharingView = () => import('./views/SharingView.vue')
+const ApiView = () => import('./views/ApiView.vue')
+const NodesView = () => import('./views/NodesView.vue')
+const HostsView = () => import('./views/HostsView.vue')
+const OutboundsView = () => import('./views/OutboundsView.vue')
+const RoutingView = () => import('./views/RoutingView.vue')
+const ConfigsView = () => import('./views/ConfigsView.vue')
+const EngineView = () => import('./views/EngineView.vue')
+const NotFoundView = () => import('./views/NotFoundView.vue')
 
 // The router's own base, read from the <base> tag the server writes rather
 // than compiled in. The panel may be mounted under a random path prefix, and
@@ -126,11 +132,32 @@ function allowed(to) {
 // Not inside requestAnimationFrame: that does not fire while a tab is in the
 // background, so a navigation started and then backgrounded would leave the bar
 // running for as long as the tab stayed hidden.
-router.afterEach(() => setNavigating(false))
+router.afterEach(() => {
+  setNavigating(false)
+  // A page that arrived is proof the build is whole; the next failure may
+  // reload again.
+  try { sessionStorage.removeItem('wui.reloadedFor') } catch { /* private window */ }
+})
 
 // A navigation that is cancelled or fails never reaches afterEach, and the bar
 // would run forever on a guard that redirects.
-router.onError(() => setNavigating(false))
+//
+// And a page that cannot be fetched is, nearly always, a page from before an
+// update: the tab still runs the old build, whose page files the updated panel
+// no longer has. Loading the address afresh lands on the new build at the page
+// that was asked for, instead of a click that does nothing. Once per address,
+// so a page that is really missing does not reload for ever.
+router.onError((err, to) => {
+  setNavigating(false)
+  const chunk = /dynamically imported module|Importing a module script failed|error loading dynamically|MIME type/i
+  if (!chunk.test(String(err?.message || err))) return
+  const target = router.resolve(to?.fullPath || '/').href
+  let tried = ''
+  try { tried = sessionStorage.getItem('wui.reloadedFor') || '' } catch { tried = '' }
+  if (tried === target) return
+  try { sessionStorage.setItem('wui.reloadedFor', target) } catch { /* private window */ }
+  window.location.assign(target)
+})
 
 window.addEventListener('wui:unauthorized', () => {
   signOut()

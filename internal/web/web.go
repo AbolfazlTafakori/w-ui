@@ -50,6 +50,14 @@ func Handler(base string) (http.Handler, error) {
 
 		f, err := client.Open(name)
 		if err != nil {
+			// A missing build file is missing. Answered with the app shell,
+			// a page file a tab from before an update asks for arrived as
+			// HTML with a 200, and the browser tried to run it as a script;
+			// a 404 is what lets the page see it and load the new build.
+			if strings.HasPrefix(name, "assets/") {
+				http.NotFound(w, r)
+				return
+			}
 			// Not a real file: this is a client-side route, so hand back the
 			// app shell and let the router work out what to render.
 			serveIndex(w, index, indexErr)

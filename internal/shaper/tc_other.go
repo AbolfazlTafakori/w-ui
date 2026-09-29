@@ -28,7 +28,8 @@ func (s *TC) Apply(context.Context, []string, []Client) error { return unsupport
 func (s *TC) Health(context.Context) error                    { return unsupported() }
 func (s *TC) Close() error                                    { return nil }
 
-func unsupported() error {
-	return fmt.Errorf("%w: tc is Linux-only and this panel is running on %s",
-		ErrUnavailable, runtime.GOOS)
-}
+func unsupported() error { return errPlatform }
+
+// errPlatform is the one answer off Linux, made once.
+var errPlatform = fmt.Errorf("%w: tc is Linux-only and this panel is running on %s",
+	ErrUnavailable, runtime.GOOS)

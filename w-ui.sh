@@ -159,8 +159,6 @@ else
     exit 1
 fi
 
-os_version=""
-os_version=$(grep "^VERSION_ID" /etc/os-release | cut -d '=' -f2 | tr -d '"' | tr -d '.')
 
 # Declare Variables
 BIN_PATH=/usr/local/bin/wui
@@ -224,14 +222,19 @@ before_show_menu() {
 panel_cli() {
     (
         set -a
+        # shellcheck disable=SC2034 # exported by set -a, for the panel binary
         WUI_DATA_DIR="$DATA_DIR"
+        # shellcheck disable=SC2034
         WUI_DB_SOURCE="$DATA_DIR/wui.db"
-        for kv in $(grep -oE 'WUI_[A-Z_]+=[^ ]+' /etc/systemd/system/${SERVICE}.service 2> /dev/null); do
+        for kv in $(grep -oE 'WUI_[A-Z_]+=[^ ]+' "/etc/systemd/system/${SERVICE}.service" 2> /dev/null); do
+            # shellcheck disable=SC2163 # each word is NAME=value, exported as such
             export "$kv"
         done
         # The database, whichever engine: the installer keeps the driver and
         # the connection string here, root-only, and the unit reads the same.
+        # shellcheck source=/dev/null
         [[ -f "$CONF_DIR/db.env" ]] && . "$CONF_DIR/db.env"
+        # shellcheck source=/dev/null
         [[ -f "$ENV_FILE" ]] && . "$ENV_FILE"
         set +a
         # A backup or a restore writes files the panel later has to own --
@@ -347,9 +350,7 @@ update_menu() {
     confirm "This function will update the menu to the latest changes." "y"
     if [[ $? != 0 ]]; then
         LOGE "Cancelled"
-        if [[ $# == 0 ]]; then
-            before_show_menu
-        fi
+        before_show_menu
         return 0
     fi
 
@@ -402,7 +403,8 @@ uninstall() {
     # before they are deleted, so an uninstall typed on the wrong server is
     # a mistake and not a disaster.
     if [[ -d "$DATA_DIR" ]]; then
-        local keep="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
+        local keep
+        keep="/root/wui-last-copy-$(date +%Y%m%d-%H%M%S).tar.gz"
         # The panel's own archive when it can make one -- it holds the
         # database from either engine, restorable into either -- and a
         # plain copy of the directory when it cannot.
@@ -416,8 +418,8 @@ uninstall() {
             tar czf "$keep" --exclude='*/backups' -C / "${DATA_DIR#/}" "${CONF_DIR#/}" 2> /dev/null && chmod 0600 "$keep" && LOGI "A copy of the database and keys is at ${keep}"
         fi
     fi
-    rm "$CONF_DIR"/ -rf
-    rm "$DATA_DIR"/ -rf
+    rm -rf "${CONF_DIR:?}"/
+    rm -rf "${DATA_DIR:?}"/
     rm -f "$BIN_PATH"
     [[ -d /var/backups/wui ]] && LOGI "Scheduled backups were kept at /var/backups/wui"
 
@@ -434,9 +436,7 @@ uninstall() {
 reset_user() {
     confirm "Are you sure to reset the username and password of the panel?" "n"
     if [[ $? != 0 ]]; then
-        if [[ $# == 0 ]]; then
-            show_menu
-        fi
+        show_menu
         return 0
     fi
 
@@ -488,9 +488,7 @@ reset_webbasepath() {
 reset_config() {
     confirm "Are you sure you want to reset all panel settings, Account data will not be lost, Username and password will not change" "n"
     if [[ $? != 0 ]]; then
-        if [[ $# == 0 ]]; then
-            show_menu
-        fi
+        show_menu
         return 0
     fi
     panel_cli setting reset
@@ -511,9 +509,12 @@ detect_server_ip() {
     )
     local ip_address
     for ip_address in "${URL_lists[@]}"; do
-        local response=$(curl -s -w "\n%{http_code}" --max-time 3 "${ip_address}" 2> /dev/null)
-        local http_code=$(echo "$response" | tail -n1)
-        local ip_result=$(echo "$response" | head -n-1 | tr -d '[:space:]"')
+        local response
+        response=$(curl -s -w "\n%{http_code}" --max-time 3 "${ip_address}" 2> /dev/null)
+        local http_code
+        http_code=$(echo "$response" | tail -n1)
+        local ip_result
+        ip_result=$(echo "$response" | head -n-1 | tr -d '[:space:]"')
         if [[ "${http_code}" == "200" && "${ip_result}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "${ip_result}"
             return 0
@@ -536,7 +537,8 @@ ask_server_ip() {
 }
 
 check_config() {
-    local info=$(panel_cli setting show)
+    local info
+    info=$(panel_cli setting show)
     if [[ $? != 0 ]]; then
         LOGE "get current settings error, please check logs"
         show_menu
@@ -552,9 +554,12 @@ check_config() {
         echo -e "${green}Database: SQLite (${db_source:-$DATA_DIR/wui.db})${plain}"
     fi
 
-    local existing_webBasePath=$(echo "$info" | grep -Eo 'basePath: .+' | awk '{print $2}')
-    local existing_port=$(echo "$info" | grep -Eo 'port: .+' | awk '{print $2}')
-    local existing_cert=$(echo "$info" | grep 'cert:' | awk -F': ' '{print $2}' | tr -d '[:space:]')
+    local existing_webBasePath
+    existing_webBasePath=$(echo "$info" | grep -Eo 'basePath: .+' | awk '{print $2}')
+    local existing_port
+    existing_port=$(echo "$info" | grep -Eo 'port: .+' | awk '{print $2}')
+    local existing_cert
+    existing_cert=$(echo "$info" | grep 'cert:' | awk -F': ' '{print $2}' | tr -d '[:space:]')
     local server_ip
     server_ip=$(detect_server_ip)
 
@@ -564,7 +569,8 @@ check_config() {
     fi
 
     if [[ -n "$existing_cert" ]]; then
-        local domain=$(basename "$(dirname "$existing_cert")")
+        local domain
+        domain=$(basename "$(dirname "$existing_cert")")
         # The cert folder name is only the certificate's first domain. A
         # multidomain (SAN) certificate may be served under any name it covers,
         # so read the real names from the certificate itself.
@@ -1402,7 +1408,8 @@ ssl_cert_issue_main() {
             ssl_cert_issue_main
             ;;
         2)
-            local domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
+            local domains
+            domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
             if [ -z "$domains" ]; then
                 echo "No certificates found to revoke."
             else
@@ -1422,15 +1429,16 @@ ssl_cert_issue_main() {
                         acme --revoke -d "${id}" 2> /dev/null
                         acme --remove -d "${id}" 2> /dev/null
                         # --remove leaves the cert files on disk, so delete the state dirs (RSA + ECC).
-                        rm -rf "$ACME_HOME/${id}" "$ACME_HOME/${id}_ecc"
+                        rm -rf "$ACME_HOME/${id:?}" "$ACME_HOME/${id:?}_ecc"
                     done
                     # Delete the local certificate files for this domain.
-                    rm -rf "$CERT_ROOT/${domain}"
+                    rm -rf "${CERT_ROOT:?}/${domain:?}"
                     LOGI "Certificate revoked and removed for domain: ${domain}"
 
                     # If the panel currently serves this domain's cert, clear the stored paths
                     # so it stops loading the now-deleted files, then restart.
-                    local existing_cert=$(setting_value cert)
+                    local existing_cert
+                    existing_cert=$(setting_value cert)
                     if [[ "${existing_cert}" == "$CERT_ROOT/${domain}/"* ]]; then
                         panel_cli setting set --no-tls > /dev/null 2>&1
                         LOGI "Cleared panel certificate paths referencing ${domain}; restarting panel."
@@ -1443,7 +1451,8 @@ ssl_cert_issue_main() {
             ssl_cert_issue_main
             ;;
         3)
-            local domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
+            local domains
+            domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
             if [ -z "$domains" ]; then
                 echo "No certificates found to renew."
             else
@@ -1466,7 +1475,8 @@ ssl_cert_issue_main() {
             ssl_cert_issue_main
             ;;
         4)
-            local domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
+            local domains
+            domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
             if [ -z "$domains" ]; then
                 echo "No certificates found under $CERT_ROOT."
             else
@@ -1488,11 +1498,13 @@ ssl_cert_issue_main() {
             fi
             # The panel's configured certificate may live outside $CERT_ROOT
             # (e.g. certbot under /etc/letsencrypt) — show it too.
-            local panel_cert=$(setting_value cert)
+            local panel_cert
+            panel_cert=$(setting_value cert)
             if [[ -n "${panel_cert}" && "${panel_cert}" != "$CERT_ROOT"/* ]]; then
                 echo -e "Panel certificate (custom path): ${panel_cert}"
                 if [[ -f "${panel_cert}" ]] && command -v openssl > /dev/null 2>&1; then
-                    local panel_sans=$(openssl x509 -in "${panel_cert}" -noout -ext subjectAltName 2> /dev/null \
+                    local panel_sans
+                    panel_sans=$(openssl x509 -in "${panel_cert}" -noout -ext subjectAltName 2> /dev/null \
                         | grep -Eo '(DNS|IP Address):[^,[:space:]]+' | cut -d: -f2- | tr '\n' ' ')
                     [[ -n "${panel_sans}" ]] && echo -e "\tCovers: ${panel_sans}"
                 fi
@@ -1526,7 +1538,8 @@ ssl_cert_issue_main() {
                 ssl_cert_issue_main
                 return
             fi
-            local domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
+            local domains
+            domains=$(find "$CERT_ROOT"/ -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2> /dev/null)
             if [ -z "$domains" ]; then
                 echo "No certificates found."
             else
@@ -1587,8 +1600,10 @@ ssl_cert_issue_for_ip() {
     LOGI "Starting automatic SSL certificate generation for server IP..."
     LOGI "Using Let's Encrypt shortlived profile (~6 days validity, auto-renews)"
 
-    local existing_webBasePath=$(setting_value basePath)
-    local existing_port=$(setting_value port)
+    local existing_webBasePath
+    existing_webBasePath=$(setting_value basePath)
+    local existing_port
+    existing_port=$(setting_value port)
 
     # Get server IP
     local server_ip
@@ -1676,8 +1691,9 @@ ssl_cert_issue_for_ip() {
     # files itself, so nothing has to restart.
     local reloadCmd="chown ${SERVICE_USER}:${SERVICE_USER} ${certPath}/privkey.pem ${certPath}/fullchain.pem; chmod 600 ${certPath}/privkey.pem"
 
-    # issue the certificate for IP with shortlived profile
-    acme --set-default-ca --server letsencrypt --force
+    # issue the certificate for IP with shortlived profile. The authority is
+    # named here rather than made acme.sh's default: another project on this
+    # server may renew its own certificates with a different one.
     acme --issue \
         ${domain_args} \
         --standalone \
@@ -1691,8 +1707,8 @@ ssl_cert_issue_for_ip() {
         LOGE "Failed to issue certificate for IP: ${server_ip}"
         LOGE "Make sure port ${WebPort} is open and the server is accessible from the internet"
         # Cleanup acme.sh data for both IPv4 and IPv6 if specified
-        rm -rf "$ACME_HOME/${server_ip}" "$ACME_HOME/${server_ip}_ecc" 2> /dev/null
-        [[ -n "$ipv6_addr" ]] && rm -rf "$ACME_HOME/${ipv6_addr}" "$ACME_HOME/${ipv6_addr}_ecc" 2> /dev/null
+        rm -rf "$ACME_HOME/${server_ip:?}" "$ACME_HOME/${server_ip:?}_ecc" 2> /dev/null
+        [[ -n "$ipv6_addr" ]] && rm -rf "$ACME_HOME/${ipv6_addr:?}" "$ACME_HOME/${ipv6_addr:?}_ecc" 2> /dev/null
         rm -rf ${certPath} 2> /dev/null
         return 1
     else
@@ -1711,8 +1727,8 @@ ssl_cert_issue_for_ip() {
     if [[ ! -f "${certPath}/fullchain.pem" || ! -f "${certPath}/privkey.pem" ]]; then
         LOGE "Certificate files not found after installation"
         # Cleanup acme.sh data for both IPv4 and IPv6 if specified
-        rm -rf "$ACME_HOME/${server_ip}" "$ACME_HOME/${server_ip}_ecc" 2> /dev/null
-        [[ -n "$ipv6_addr" ]] && rm -rf "$ACME_HOME/${ipv6_addr}" "$ACME_HOME/${ipv6_addr}_ecc" 2> /dev/null
+        rm -rf "$ACME_HOME/${server_ip:?}" "$ACME_HOME/${server_ip:?}_ecc" 2> /dev/null
+        [[ -n "$ipv6_addr" ]] && rm -rf "$ACME_HOME/${ipv6_addr:?}" "$ACME_HOME/${ipv6_addr:?}_ecc" 2> /dev/null
         rm -rf ${certPath} 2> /dev/null
         return 1
     fi
@@ -1751,8 +1767,10 @@ ssl_cert_issue_for_ip() {
 }
 
 ssl_cert_issue() {
-    local existing_webBasePath=$(setting_value basePath)
-    local existing_port=$(setting_value port)
+    local existing_webBasePath
+    existing_webBasePath=$(setting_value basePath)
+    local existing_port
+    existing_port=$(setting_value port)
     # check for acme.sh first
     if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
         echo "acme.sh could not be found. we will install it"
@@ -1791,7 +1809,6 @@ ssl_cert_issue() {
         break
     done
     LOGD "Your domain is: ${domain}, checking it..."
-    SSL_ISSUED_DOMAIN="${domain}"
 
     # detect existing certificate and reuse it only if its files are actually
     # present and non-empty. acme.sh stores ECC certs under ${domain}_ecc and RSA
@@ -1808,12 +1825,13 @@ ssl_cert_issue() {
         fi
         if [[ -n "${acmeCertDir}" ]]; then
             cert_exists=1
-            local certInfo=$(acme --list 2> /dev/null | grep -F "${domain}")
+            local certInfo
+            certInfo=$(acme --list 2> /dev/null | grep -F "${domain}")
             LOGI "Existing certificate found for ${domain}, will reuse it."
             [[ -n "${certInfo}" ]] && LOGI "${certInfo}"
         else
             LOGW "Found incomplete acme.sh state for ${domain} (no valid certificate files); cleaning it up and re-issuing."
-            rm -rf "$ACME_HOME/${domain}" "$ACME_HOME/${domain}_ecc"
+            rm -rf "$ACME_HOME/${domain:?}" "$ACME_HOME/${domain:?}_ecc"
         fi
     fi
     if [[ ${cert_exists} -eq 0 ]]; then
@@ -1842,11 +1860,13 @@ ssl_cert_issue() {
 
     if [[ ${cert_exists} -eq 0 ]]; then
         # issue the certificate
-        acme --set-default-ca --server letsencrypt --force
-        acme --issue -d ${domain} $(acme_listen_flag) --standalone --httpport ${WebPort} --force
+        # Let's Encrypt for this certificate, not as acme.sh's default for
+        # every other project's on this server.
+        # shellcheck disable=SC2046 # the flag is one word or nothing at all
+        acme --issue -d "${domain}" $(acme_listen_flag) --standalone --server letsencrypt --httpport "${WebPort}" --force
         if [ $? -ne 0 ]; then
             LOGE "Issuing certificate failed, please check logs."
-            rm -rf "$ACME_HOME/${domain}" "$ACME_HOME/${domain}_ecc"
+            rm -rf "$ACME_HOME/${domain:?}" "$ACME_HOME/${domain:?}_ecc"
             exit 1
         else
             LOGE "Issuing certificate succeeded, installing certificates..."
@@ -1901,7 +1921,7 @@ ssl_cert_issue() {
     else
         LOGE "Installing certificate failed, exiting."
         if [[ ${cert_exists} -eq 0 ]]; then
-            rm -rf "$ACME_HOME/${domain}" "$ACME_HOME/${domain}_ecc"
+            rm -rf "$ACME_HOME/${domain:?}" "$ACME_HOME/${domain:?}_ecc"
         fi
         exit 1
     fi
@@ -1941,8 +1961,10 @@ ssl_cert_issue() {
 }
 
 ssl_cert_issue_CF() {
-    local existing_webBasePath=$(setting_value basePath)
-    local existing_port=$(setting_value port)
+    local existing_webBasePath
+    existing_webBasePath=$(setting_value basePath)
+    local existing_port
+    existing_port=$(setting_value port)
     LOGI "****** Instructions for Use ******"
     LOGI "Follow the steps below to complete the process:"
     LOGI "1. A Cloudflare API Token (recommended, scoped to Zone:DNS:Edit) or the Global API Key + registered email."
@@ -1996,15 +2018,10 @@ ssl_cert_issue_CF() {
             export CF_Token="${CF_ApiToken}"
         fi
 
-        # Set the default CA to Let's Encrypt
-        acme --set-default-ca --server letsencrypt --force
-        if [ $? -ne 0 ]; then
-            LOGE "Default CA, Let'sEncrypt fail, script exiting..."
-            exit 1
-        fi
-
-        # Issue the certificate using Cloudflare DNS
-        acme --issue --dns dns_cf -d ${CF_Domain} -d *.${CF_Domain} --log --force
+        # Issue the certificate using Cloudflare DNS, from Let's Encrypt -- named
+        # for this certificate rather than made acme.sh's default, which other
+        # projects on this server may rely on being something else.
+        acme --issue --dns dns_cf --server letsencrypt -d "${CF_Domain}" -d "*.${CF_Domain}" --log --force
         if [ $? -ne 0 ]; then
             LOGE "Certificate issuance failed, script exiting..."
             exit 1
@@ -2526,11 +2543,16 @@ SSH_port_forwarding() {
         server_ip=$(ask_server_ip)
     fi
 
-    local existing_webBasePath=$(setting_value basePath)
-    local existing_port=$(setting_value port)
-    local existing_listenIP=$(setting_value listenIP)
-    local existing_cert=$(setting_value cert)
-    local existing_key=$(setting_value key)
+    local existing_webBasePath
+    existing_webBasePath=$(setting_value basePath)
+    local existing_port
+    existing_port=$(setting_value port)
+    local existing_listenIP
+    existing_listenIP=$(setting_value listenIP)
+    local existing_cert
+    existing_cert=$(setting_value cert)
+    local existing_key
+    existing_key=$(setting_value key)
 
     local config_listenIP=""
     local listen_choice=""
@@ -2674,6 +2696,7 @@ pg_install_server_action() {
         # shellcheck disable=SC1090
         WUI_LIB_ONLY=1 source "$lib"
         detect_os
+        # shellcheck disable=SC2034 # read by setup_database, sourced from install.sh
         DB_DRIVER=postgres
         # setup_database writes db.env, which would switch the panel; keep
         # that file aside and put it back, so installing is not migrating.

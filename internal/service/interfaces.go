@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/netip"
 	"strings"
 	"time"
@@ -706,6 +707,12 @@ func (s *Interfaces) isLocal(ctx context.Context, nodeID uint) (bool, error) {
 // checkSubnetFree refuses a range that overlaps another tunnel's on the same
 // server: two interfaces on one range give the kernel two routes to the same
 // addresses, and the replies leave by whichever it picks.
+//
+// On this panel's own server it also refuses a range already on one of the
+// machine's network devices that is not one of these tunnels -- Docker's
+// bridge, another VPN's interface, the server's own network. The panel is a
+// guest there: a tunnel on such a range takes that program's traffic, or the
+// server's own, into the tunnel.
 func (s *Interfaces) checkSubnetFree(ctx context.Context, nodeID, selfID uint, subnet string) error {
 	want, err := netip.ParsePrefix(subnet)
 	if err != nil {
@@ -724,7 +731,78 @@ func (s *Interfaces) checkSubnetFree(ctx context.Context, nodeID, selfID uint, s
 			return invalidField("subnet", "%s overlaps %s, the subnet of tunnel %q; every tunnel on a server needs its own range", subnet, o.Subnet, o.Name)
 		}
 	}
+
+	local, err := s.isLocal(ctx, nodeID)
+	if err != nil || !local {
+		// Another machine's devices are not visible from here; that
+		// machine's own panel checks them.
+		return nil
+	}
+	ours := map[string]bool{}
+	for _, o := range others {
+		ours[o.Name] = true
+	}
+	if selfID != 0 {
+		var self model.Interface
+		if s.db.WithContext(ctx).Select("name").First(&self, selfID).Error == nil {
+			ours[self.Name] = true
+		}
+	}
+	nets, err := hostNetworks()
+	if err != nil {
+		// Not being able to look is no reason to refuse.
+		return nil
+	}
+	for _, h := range nets {
+		if ours[h.Device] {
+			continue
+		}
+		if h.Prefix.Overlaps(want) {
+			return invalidField("subnet", "%s overlaps %s on %s, a network already on this server — another "+
+				"program's, such as Docker or another VPN, or the server's own; pick a range nothing here uses",
+				subnet, h.Prefix.Masked(), h.Device)
+		}
+	}
 	return nil
+}
+
+// hostNet is one address range on one of this machine's network devices.
+type hostNet struct {
+	Device string
+	Prefix netip.Prefix
+}
+
+// hostNetworks lists the ranges on this machine's network devices, loopback
+// and link-local addresses aside; a test answers for it.
+var hostNetworks = func() ([]hostNet, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var out []hostNet
+	for _, ifc := range ifaces {
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipn, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip, ok := netip.AddrFromSlice(ipn.IP)
+			if !ok {
+				continue
+			}
+			ip = ip.Unmap()
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			bits, _ := ipn.Mask.Size()
+			out = append(out, hostNet{Device: ifc.Name, Prefix: netip.PrefixFrom(ip, bits)})
+		}
+	}
+	return out, nil
 }
 
 // checkIfaceName is the kernel's rule for a network device name, said before

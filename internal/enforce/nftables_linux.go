@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/nftstate"
 	"log/slog"
 	"os/exec"
 	"strings"
@@ -105,7 +106,15 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 	unchanged := script == n.applied
 	n.mu.Unlock()
 	if unchanged {
-		return nil
+		if n.tablePresent(ctx) {
+			return nil
+		}
+		// Written before and gone now: something else on this server
+		// replaced the whole ruleset. Put back at once -- every limit and
+		// every switched-off customer depends on it.
+		n.log.Warn("the panel's firewall table was removed by something else on this server; putting it back",
+			"table", "inet "+TableName,
+			"likely", "a firewall reload that flushes the whole ruleset, such as nftables.service with flush ruleset in /etc/nftables.conf")
 	}
 
 	if _, err := n.run(ctx, script, "-f", "-"); err != nil {
@@ -121,6 +130,17 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 
 	n.log.Info("enforcement ruleset applied", "clients", len(rules))
 	return nil
+}
+
+// tablePresent reports whether the panel's table is still in the kernel. When
+// it cannot tell, it says yes: a failed look is no reason to rewrite the
+// firewall every two seconds.
+func (n *NFTables) tablePresent(ctx context.Context) bool {
+	out, err := n.run(ctx, "", "list", "tables")
+	if err != nil {
+		return true
+	}
+	return nftstate.HasTable(out, "inet", TableName)
 }
 
 // missingTable reports whether an error is nft saying the table is not there.

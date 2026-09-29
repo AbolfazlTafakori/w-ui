@@ -46,10 +46,11 @@ func (n *NFTables) DrainCounters(context.Context) ([]Usage, error) { return nil,
 func (n *NFTables) ResetQuota(context.Context, []string) error     { return nil }
 func (n *NFTables) Close() error                                   { return nil }
 
-func (n *NFTables) Health(context.Context) error {
-	return fmt.Errorf("%w: nftables is Linux-only and this panel is running on %s",
-		ErrUnavailable, runtime.GOOS)
-}
+func (n *NFTables) Health(context.Context) error { return errPlatform }
+
+// errPlatform is the one answer off Linux, made once.
+var errPlatform = fmt.Errorf("%w: nftables is Linux-only and this panel is running on %s",
+	ErrUnavailable, runtime.GOOS)
 
 // Ruleset returns the last program built. Test and development aid.
 func (n *NFTables) Ruleset() string {

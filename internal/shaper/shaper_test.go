@@ -196,3 +196,25 @@ func TestPlainClassListingIsRead(t *testing.T) {
 		t.Fatal("an empty listing is a device with no classes")
 	}
 }
+
+// A rate as tc prints it, in JSON as a number of bits or as text with a unit.
+func TestParseRate(t *testing.T) {
+	for _, c := range []struct {
+		in   any
+		want uint64
+		ok   bool
+	}{
+		{float64(1_000_000), 1_000_000, true},
+		{"10Gbit", 10_000_000_000, true},
+		{"2.5mbit", 2_500_000, true},
+		{" 800 Kbit ", 800_000, true},
+		{"64bit", 64, true},
+		{"fast", 0, false},
+		{nil, 0, false},
+	} {
+		got, ok := parseRate(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("parseRate(%v) = %d, %v; want %d, %v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
