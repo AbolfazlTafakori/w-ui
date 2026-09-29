@@ -42,7 +42,8 @@ field() { grep "^$1=" <<<"$2" | cut -d= -f2-; }
 
 # Run configure with a canned set of answers, then print the decisions.
 run_wizard() {
-  printf '%s\n' "$1" >"$WORK/answers"
+  # "1": the manual install, whose questions every case below walks through.
+  printf '1\n%s\n' "$1" >"$WORK/answers"
   (
     set +e
     # shellcheck disable=SC1091
@@ -256,7 +257,7 @@ out=$(
   set +e
   # shellcheck disable=SC1091
   WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
-  printf 'n\nn\nn\n1\n4\nn\ny\ny\nn\n' >"$WORK/answers"
+  printf '1\nn\nn\nn\n1\n4\nn\ny\ny\nn\n' >"$WORK/answers"
   open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
   public_ip() { printf '203.0.113.5'; }
   have() { return 1; }
@@ -313,6 +314,87 @@ out=$(
 )
 truth "a pinned port that is busy fails clearly, naming the service" \
       "$([[ "$out" == *"already served by caddy"* ]] && echo 1)" "got: $out"
+
+# ── the automatic install ───────────────────────────────────────────────────
+# Answers go straight in, without the manual "1" run_wizard puts first. What
+# is left unread in the answers afterwards is a question too many.
+run_auto() {
+  # A line straight after the answers (each case ends its own with a newline):
+  # a question the automatic install should not have asked reads it, and it
+  # is then missing from what is left.
+  printf '%sSENTINEL\n' "$1" >"$WORK/answers"
+  (
+    set +e
+    # shellcheck disable=SC1091
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+    public_ip() { printf '203.0.113.5'; }
+    domain_points_here() { [[ "$1" == *.example.com ]]; }
+    eval "${2:-:}"
+    open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
+    have() { case "$1" in ss|netstat|shuf) return 1 ;; *) command -v "$1" >/dev/null 2>&1 ;; esac; }
+    port_taken() { return 1; }
+    die() { printf 'DIED: %s\n' "$*"; exit 9; }
+    configure >/dev/null 2>&1
+    printf 'INSTALL=%s\nDB=%s\nSUB=%s\nPORT=%s\nUSER=%s\nPASS=%s\nBASE=%s\nMODE=%s\nDOMAIN=%s\nIP=%s\nOVPN=%s\nAWG=%s\nLEFT=%s\n' \
+      "$INSTALL_MODE" "$DB_DRIVER" "$SUB_PORT" "$PANEL_PORT" "$ADMIN_USER" "$ADMIN_PASS" "$BASE_PATH" \
+      "$TLS_MODE" "$ACME_DOMAIN" "$ACME_IP" "$WANT_OPENVPN" "$WANT_AMNEZIA" "$(grep -v '^$' <&3 | tr '\n' ',')"
+  )
+}
+
+echo
+echo "── automatic: enter through everything, and nothing is left to choose ─"
+# mode (2 by default)? database? domain? certificate for the address?
+out=$(run_auto $'\n\n\n\n')
+check "enter at the first question is the automatic install" "auto" "$(field INSTALL "$out")"
+check "SQLite by default"                        "sqlite"      "$(field DB "$out")"
+check "a certificate for the address by default" "ip"          "$(field MODE "$out")"
+check "for the address it found"                 "203.0.113.5" "$(field IP "$out")"
+port=$(field PORT "$out"); base=$(field BASE "$out"); user=$(field USER "$out")
+truth "a random port, not the README's"          "$([[ "$port" =~ ^[0-9]+$ && "$port" != 2096 ]] && echo 1)" "got $port"
+truth "a random URL path"                        "$([[ ${#base} -ge 16 ]] && echo 1)" "got $base"
+truth "a generated administrator, not admin"     "$([[ ${#user} -ge 8 && "$user" != admin ]] && echo 1)" "got $user"
+check "the password is generated at install time" "" "$(field PASS "$out")"
+sub=$(field SUB "$out")
+truth "a subscription port beside the panel's"   "$([[ "$sub" =~ ^[0-9]+$ && "$sub" != "$port" ]] && echo 1)" "got $sub"
+check "OpenVPN installed"   "1" "$(field OVPN "$out")"
+check "AmneziaWG installed" "1" "$(field AWG "$out")"
+check "no question beyond the three was asked" "SENTINEL," "$(field LEFT "$out")"
+
+echo
+echo "── automatic: PostgreSQL and a domain that points here ────────────────"
+out=$(run_auto $'2\n2\npanel.example.com\n')
+check "PostgreSQL"                 "postgres"          "$(field DB "$out")"
+check "a certificate for it"       "acme"              "$(field MODE "$out")"
+check "the domain"                 "panel.example.com" "$(field DOMAIN "$out")"
+check "and nothing more was asked" "SENTINEL,"         "$(field LEFT "$out")"
+
+echo
+echo "── automatic: a domain that does not point here is said at once ───────"
+out=$(run_auto $'2\n1\npanel.example.org\nn\n\nn\n')
+check "not taken without asking; blank, then no certificate" "none" "$(field MODE "$out")"
+check "no domain kept"                                        ""     "$(field DOMAIN "$out")"
+out=$(run_auto $'2\n1\npanel.example.org\ny\n')
+check "taken when the operator says go ahead" "acme"              "$(field MODE "$out")"
+check "the domain"                            "panel.example.org" "$(field DOMAIN "$out")"
+out=$(run_auto $'2\n1\nnot-a-domain\n\ny\n')
+check "a malformed domain is asked again; blank moves on" "ip" "$(field MODE "$out")"
+
+echo
+echo "── automatic: no address found means plain HTTP, not a failed install ─"
+out=$(run_auto $'2\n1\n\ny\n' 'public_ip() { :; }')
+check "no certificate without an address" "none" "$(field MODE "$out")"
+
+echo
+echo "── --auto asks the three questions and not the first ──────────────────"
+out=$(run_auto $'\n\n\n' 'INSTALL_MODE=auto')
+check "the mode from the flag"               "auto" "$(field INSTALL "$out")"
+check "the certificate question still asked" "ip"   "$(field MODE "$out")"
+check "nothing else asked"                   "SENTINEL," "$(field LEFT "$out")"
+
+echo
+echo "── junk at the first question is asked again ──────────────────────────"
+out=$(run_auto $'3\nmanual\n2\n\n\n\n')
+check "only 1 or 2 is accepted" "auto" "$(field INSTALL "$out")"
 
 printf '\n  %d passed, %d failed\n\n' "$pass" "$fail"
 [[ "$fail" == 0 ]]

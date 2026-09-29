@@ -6,6 +6,24 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-09-29
+
+### Added
+- **An automatic install.** The installer's first question is now how to
+  install: *1) Manual* -- every question, exactly as before and in the same
+  order -- or *2) Automatic*, the default. The automatic install asks three
+  things: the database, a domain (checked at once against this server's
+  address, and blank if there is none), and, without a domain, whether to
+  get a free certificate for the server's IP address. Everything else is
+  chosen the way pressing enter through the manual questions would choose
+  it -- a random free port, a random URL path, a generated administrator
+  and password, a free subscription port, OpenVPN and AmneziaWG -- and the
+  closing summary prints the address, the username, the password, the
+  ports and the path. Nothing after the three questions asks anything: a
+  certificate that cannot be issued is skipped, with port 80 left alone
+  when another project on the server holds it, and can be had later from
+  the menu. `--auto` and `--manual` choose without the question.
+
 ## [2.3.6] — 2026-09-29
 
 ### Changed
@@ -416,7 +434,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.6...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.6...v2.4.0
 [2.3.6]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.5...v2.3.6
 [2.3.5]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.4...v2.3.5
 [2.3.4]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.3...v2.3.4

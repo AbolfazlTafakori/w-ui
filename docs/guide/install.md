@@ -23,7 +23,30 @@ It installs `nftables`, `wireguard-tools`, AmneziaWG, OpenVPN, `easy-rsa` and `q
 
 ## The questions
 
-It asks first, then works unattended:
+The first one is how to install:
+
+```
+1) Manual     — you choose the port, the URL path, the administrator, the database,
+                the certificate and what is installed
+2) Automatic  — three questions (database, domain, certificate); everything else is
+                chosen and set up for you, and shown at the end   ← default
+```
+
+### Automatic
+
+Three questions, then it installs everything on its own:
+
+1. **The database** — SQLite or PostgreSQL, the same choice as below.
+2. **A domain**, if you have one whose DNS points at this server — it gets a Let's Encrypt certificate. The installer checks the record right away and says so if it does not point here yet; leave it blank if you have no domain.
+3. **Without a domain: a certificate for this server's IP address?** — yes by default (Let's Encrypt, six days, renews itself).
+
+Everything else is chosen the way pressing enter through the manual questions would choose it — a random free port, a random URL path, a generated administrator and password, a free subscription port, OpenVPN and AmneziaWG — and printed at the end: the panel's address, the username, the password, the ports and the path. Nothing after the three questions asks anything. A certificate that cannot be issued is skipped rather than asked about — port 80 already served by another project on the server is left alone — and the panel comes up on plain HTTP until you get one from the menu (`w-ui` → 20).
+
+`--auto` picks this without the first question; `--manual` picks the other.
+
+### Manual
+
+Every choice, in this order, then it works unattended:
 
 1. **The panel port** — a random free one unless you name it. It refuses a port something else already listens on.
 2. **The URL path** — a random 18-character prefix. Everything outside it answers 404, the sign-in page included.
@@ -73,6 +96,7 @@ Every answer is also a flag, and `--yes` skips the questions:
 | `--no-amnezia` / `--no-openvpn` | Skip those packages |
 | `--local PATH` | Install a binary you already built |
 | `--from-source` | Build the latest commit (installs Go if needed) |
+| `--auto` / `--manual` | The automatic install (three questions) or the manual one (every question), without being asked which |
 | `-y`, `--yes` | Ask nothing |
 
 Environment variables work too: `WUI_DOMAIN`, `WUI_SERVER_IP`, `WUI_SSL_MODE=ip|domain|none`, `WUI_ADMIN_USER`, `WUI_ADMIN_PASSWORD`, `WUI_SUB_PORT`, `WUI_DB_DRIVER=sqlite|postgres`, `WUI_ENABLE_FAIL2BAN=false`.

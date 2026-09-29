@@ -9,9 +9,16 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/install.sh | sudo bash
 #
-# It asks before it acts: the port, who signs in, and whether to fetch a
-# certificate. Answer nothing and it uses the defaults below. Every answer can
-# also be given as a flag, which is what --yes needs to run unattended.
+# It asks first how to install:
+#
+#   1) Manual     every choice is asked -- the port, the URL path, who signs
+#                 in, the database, the certificate, what is installed
+#   2) Automatic  three questions -- the database, a domain, a certificate for
+#                 the address -- and everything else is chosen and set up, and
+#                 shown at the end: the address, the username and the password
+#
+# Answer nothing and it uses the defaults below. Every answer can also be given
+# as a flag, which is what --yes needs to run unattended.
 #
 # Flags:
 #   --local <path>     install a binary you already built instead of downloading
@@ -31,6 +38,8 @@
 #   --tls-key <path>   its private key
 #   --no-tls           serve plain HTTP (only sane behind a proxy or tunnel)
 #   --local-only       bind to 127.0.0.1, for use behind a proxy or a tunnel
+#   --auto             the automatic install: three questions, the rest chosen
+#   --manual           the manual install: every question, as before
 #   -y, --yes          ask nothing; use flags, environment and defaults
 #   --uninstall        remove the service, binary and unit; keeps the database
 #   --purge            remove everything including the database
@@ -131,6 +140,9 @@ PORT_KNOWN=0
 BASE_KNOWN=0
 ASSUME_YES=0
 INTERACTIVE=0
+# manual or auto; asked first when empty. From the environment so a script
+# can pick it the way it picks anything else.
+INSTALL_MODE="${WUI_INSTALL_MODE:-}"
 
 # ── output ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -180,6 +192,8 @@ while [[ "$LIB_ONLY" != 1 && $# -gt 0 ]]; do
     --local-only)  LISTEN_ADDR=127.0.0.1; shift ;;
     --no-tls)      TLS_MODE=none; shift ;;
     -y|--yes)      ASSUME_YES=1; shift ;;
+    --auto)        INSTALL_MODE=auto; shift ;;
+    --manual)      INSTALL_MODE=manual; shift ;;
     --uninstall)   ACTION=uninstall; shift ;;
     --purge)       ACTION=purge; shift ;;
     -h|--help)     awk '/^# Flags:/,/^set -/' "$0" | sed 's/^# \{0,1\}//; /^set -/d'; exit 0 ;;
@@ -1116,6 +1130,159 @@ ask_tls() {
   fi
 }
 
+# ── where the data lives ─────────────────────────────────────────────────────
+#
+# SQLite is one file, needs nothing installed, and carries a few thousand
+# customers without noticing. PostgreSQL is for the install that outgrows that.
+# Both are backed up in the same archive, and a backup from either restores
+# into the other. Asked the same way by both kinds of install.
+ask_database() {
+  if [[ "$DB_KNOWN" == 1 ]]; then
+    info "keeping the database this install already uses: $DB_DRIVER"
+    return 0
+  fi
+  tty_out '\n'
+  info "Database"
+  info "  1) SQLite      — one file, nothing to install; fine up to a few thousand customers (default)"
+  info "  2) PostgreSQL  — for a large number of customers; installed and configured here"
+  local dbc
+  while true; do
+    ask dbc "Choose" "1"
+    case "$dbc" in
+      1) DB_DRIVER=sqlite; break ;;
+      2) DB_DRIVER=postgres; break ;;
+      *) warn "answer 1 or 2" ;;
+    esac
+  done
+  info "database: $DB_DRIVER"
+}
+
+# ── manual or automatic ──────────────────────────────────────────────────────
+#
+# The first question of a fresh install. Manual is every question the
+# installer has always asked, in the same order. Automatic is for someone who
+# does not want to decide what a port or a URL path should be: it asks only
+# what cannot be guessed -- the database, a domain, a certificate -- and
+# chooses the rest the way pressing enter through the manual questions would.
+choose_install_mode() {
+  case "$INSTALL_MODE" in
+    manual|auto) info "install mode: $INSTALL_MODE"; return 0 ;;
+    "") ;;
+    *) die "the install mode is manual or auto, not $INSTALL_MODE" ;;
+  esac
+  tty_out '\n'
+  info "How do you want to install?"
+  info "  1) Manual     — you choose the port, the URL path, the administrator, the database,"
+  info "                  the certificate and what is installed"
+  info "  2) Automatic  — three questions (database, domain, certificate); everything else is"
+  info "                  chosen and set up for you, and shown at the end (default)"
+  local m
+  while true; do
+    ask m "Choose" "2"
+    case "$m" in
+      1) INSTALL_MODE=manual; break ;;
+      2) INSTALL_MODE=auto; break ;;
+      *) warn "answer 1 or 2" ;;
+    esac
+  done
+}
+
+# ── the automatic install ────────────────────────────────────────────────────
+#
+# Three questions, and the rest decided as the manual install's defaults would
+# decide it: a random free port, a random URL path, a generated administrator
+# and password, a free subscription port, OpenVPN and AmneziaWG. Nothing after
+# this asks anything: a certificate that cannot be issued -- port 80 served by
+# another project, a domain that does not point here yet -- is skipped rather
+# than asked about, and the closing summary says so beside everything needed to
+# sign in.
+configure_auto() {
+  step "Automatic install"
+  info "three questions; the port, the URL path, the administrator and the rest are chosen for you"
+  info "and everything needed to sign in is shown at the end"
+
+  ask_database
+
+  # ── a domain, if there is one ────────────────────────────────────────────
+  if [[ -z "$TLS_MODE" ]]; then
+    tty_out '\n'
+    info "Domain"
+    info "  a domain whose DNS record points at this server gets a certificate for it"
+    info "  (Let's Encrypt, 90 days, renews itself). Leave it blank if you have none."
+    local d here
+    here="$(public_ip)"
+    while true; do
+      ask d "Domain (blank if you have none)" "${ACME_DOMAIN:-}"
+      if [[ -z "$d" ]]; then
+        ACME_DOMAIN=""
+        break
+      fi
+      if [[ ! "$d" =~ ^[A-Za-z0-9._-]+\.[A-Za-z]{2,}$ ]]; then
+        warn "that does not look like a domain name"
+        continue
+      fi
+      if domain_points_here "$d"; then
+        ACME_DOMAIN="$d"; TLS_MODE=acme
+        break
+      fi
+      # Said now, while it can still be put right, rather than as a failed
+      # certificate at the end of the install.
+      warn "$d does not point at this server${here:+ ($here)} yet"
+      warn "  the certificate authority has to reach it here; add an A record, or leave it blank"
+      if ask_yn "Use it anyway? (the certificate is tried, and skipped if it fails)" n; then
+        ACME_DOMAIN="$d"; TLS_MODE=acme
+        break
+      fi
+    done
+  fi
+
+  # ── otherwise, a certificate for the address itself ──────────────────────
+  if [[ -z "$TLS_MODE" ]]; then
+    tty_out '\n'
+    if ask_yn "Get a free SSL certificate for this server's IP address? (recommended; 6 days, renews itself)" y; then
+      ACME_IP="${ACME_IP:-$(public_ip)}"
+      if [[ "$ACME_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        TLS_MODE=ip
+      else
+        warn "could not find this server's public address; the panel will serve plain HTTP"
+        warn "  get a certificate later from the menu: w-ui → 20"
+        ACME_IP=""; TLS_MODE=none
+      fi
+    else
+      TLS_MODE=none
+      warn "no certificate — the panel serves plain HTTP until you get one: w-ui → 20"
+    fi
+  fi
+
+  # Everything else, as the manual defaults would have it.
+  configure_defaults
+
+  tty_out '\n'
+  read_back
+}
+
+# What is about to be installed, read back before it is. Both kinds of install
+# show it; only the manual one asks to go ahead.
+read_back() {
+  info "Panel port     $PANEL_PORT"
+  info "Sub port       $SUB_PORT"
+  info "Database       $DB_DRIVER"
+  info "Administrator  $ADMIN_USER"
+  local shown_path="/"
+  [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
+  case "$TLS_MODE" in
+    acme)  info "Address        https://$ACME_DOMAIN:$PANEL_PORT$shown_path  (certificate from Let's Encrypt)" ;;
+    ip)    info "Address        https://$ACME_IP:$PANEL_PORT$shown_path  (6-day certificate from Let's Encrypt, renews itself)" ;;
+    files) info "Address        https://${TLS_DOMAIN:-<your host>}:$PANEL_PORT$shown_path  (your own certificate)" ;;
+    none)  info "Address        http://$([[ "$LISTEN_ADDR" == 127.0.0.1 ]] && echo 127.0.0.1 || echo '<this server>'):$PANEL_PORT$shown_path  (no certificate)" ;;
+  esac
+  local extras="WireGuard"
+  [[ "$WANT_AMNEZIA" == 1 ]] && extras="AmneziaWG, $extras"
+  [[ "$WANT_OPENVPN" == 1 ]] && extras="OpenVPN, $extras"
+  info "Installing     $extras"
+  tty_out '\n'
+}
+
 configure() {
   open_tty
   read_existing
@@ -1137,6 +1304,12 @@ configure() {
     step "Configuration"
     info "no terminal to ask on — using flags, environment and defaults"
     configure_defaults
+    return 0
+  fi
+
+  choose_install_mode
+  if [[ "$INSTALL_MODE" == auto ]]; then
+    configure_auto
     return 0
   fi
 
@@ -1237,30 +1410,7 @@ configure() {
     info "the password is generated and shown once, at the end"
   fi
 
-  # ── where the data lives ──────────────────────────────────────────────────
-  #
-  # SQLite is one file, needs nothing installed, and carries a few thousand
-  # customers without noticing. PostgreSQL is for the install that outgrows
-  # that. Both are backed up in the same archive, and a backup from either
-  # restores into the other.
-  if [[ "$DB_KNOWN" == 1 ]]; then
-    info "keeping the database this install already uses: $DB_DRIVER"
-  else
-    tty_out '\n'
-    info "Database"
-    info "  1) SQLite      — one file, nothing to install; fine up to a few thousand customers (default)"
-    info "  2) PostgreSQL  — for a large number of customers; installed and configured here"
-    local dbc
-    while true; do
-      ask dbc "Choose" "1"
-      case "$dbc" in
-        1) DB_DRIVER=sqlite; break ;;
-        2) DB_DRIVER=postgres; break ;;
-        *) warn "answer 1 or 2" ;;
-      esac
-    done
-    info "database: $DB_DRIVER"
-  fi
+  ask_database
 
   ask_tls
 
@@ -1271,23 +1421,7 @@ configure() {
 
   # ── read it back ──────────────────────────────────────────────────────────
   tty_out '\n'
-  info "Panel port     $PANEL_PORT"
-  info "Sub port       $SUB_PORT"
-  info "Database       $DB_DRIVER"
-  info "Administrator  $ADMIN_USER"
-  local shown_path="/"
-  [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
-  case "$TLS_MODE" in
-    acme)  info "Address        https://$ACME_DOMAIN:$PANEL_PORT$shown_path  (certificate from Let's Encrypt)" ;;
-    ip)    info "Address        https://$ACME_IP:$PANEL_PORT$shown_path  (6-day certificate from Let's Encrypt, renews itself)" ;;
-    files) info "Address        https://${TLS_DOMAIN:-<your host>}:$PANEL_PORT$shown_path  (your own certificate)" ;;
-    none)  info "Address        http://$([[ "$LISTEN_ADDR" == 127.0.0.1 ]] && echo 127.0.0.1 || echo '<this server>'):$PANEL_PORT$shown_path  (no certificate)" ;;
-  esac
-  local extras="WireGuard"
-  [[ "$WANT_AMNEZIA" == 1 ]] && extras="AmneziaWG, $extras"
-  [[ "$WANT_OPENVPN" == 1 ]] && extras="OpenVPN, $extras"
-  info "Installing     $extras"
-  tty_out '\n'
+  read_back
 
   ask_yn "Start the install with these?" y || die "cancelled — nothing was changed"
 }
@@ -1572,6 +1706,12 @@ acme_http_port() {
   if ! port_taken 80; then return 0; fi
   local who; who="$(port_owner 80)"
   warn "port 80 is already served by $who"
+  if [[ "$INSTALL_MODE" == auto ]]; then
+    # Another project's port is left alone. The certificate can be had later,
+    # once port 80 is free or forwarded, from the menu.
+    warn "it belongs to something else on this server and is left alone — skipping the certificate"
+    return 1
+  fi
   if [[ "$INTERACTIVE" != 1 ]]; then
     warn "no terminal to ask for another port — skipping the certificate"
     return 1
@@ -1620,7 +1760,9 @@ issue_certificate() {
   if ! domain_points_here "$ACME_DOMAIN"; then
     warn "$ACME_DOMAIN does not resolve to this server's address"
     warn "  the certificate authority has to reach it here to issue anything"
-    if [[ "$INTERACTIVE" == 1 ]]; then
+    # The automatic install asked about this with the domain, and was told
+    # to go ahead.
+    if [[ "$INTERACTIVE" == 1 && "$INSTALL_MODE" != auto ]]; then
       ask_yn "Try anyway?" n || return 1
     else
       warn "trying anyway"
