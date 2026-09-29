@@ -6,6 +6,16 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.3] — 2026-09-29
+
+### Fixed
+- The continuous-integration checks pass again: a declaration in the update
+  download was written the way staticcheck asks, which had stopped the run
+  before the race-detector tests, the PostgreSQL tests, the vulnerability
+  check and the clean installs. All of them pass, the new update helper
+  included on every distribution the installer supports. Nothing changes in
+  what the panel does.
+
 ## [2.3.2] — 2026-09-29
 
 ### Fixed
@@ -342,7 +352,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.2...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.3...HEAD
+[2.3.3]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.2.2...v2.3.0
