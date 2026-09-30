@@ -971,6 +971,10 @@ var SubscriptionsChanged func()
 // the list falls back to the addresses on record.
 var ConnectionsNow func(clientIDs []uint) map[uint]int
 
+// SpeedNow, when set, answers what each of these customers is moving right
+// now. Set by the panel from its reconciler; nil leaves the list without it.
+var SpeedNow func(clientIDs []uint) map[uint]model.Speed
+
 // LiveClients, when set, lists the customers connected right now, by the
 // same reckoning; the overview counter and the online filter use it so
 // they agree with the list. Nil falls back to recent handshakes.
@@ -988,6 +992,14 @@ func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error
 	ids := make([]uint, len(items))
 	for i := range items {
 		ids[i] = items[i].ID
+	}
+	if SpeedNow != nil {
+		speeds := SpeedNow(ids)
+		for i := range items {
+			if sp, ok := speeds[items[i].ID]; ok {
+				items[i].Speed = &sp
+			}
+		}
 	}
 	if ConnectionsNow != nil {
 		live := ConnectionsNow(ids)

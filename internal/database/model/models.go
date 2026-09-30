@@ -275,6 +275,10 @@ type Client struct {
 	// against DeviceLimit. Filled by the list, not stored.
 	OnlineNow int `gorm:"-" json:"onlineNow"`
 
+	// Speed is what the customer is moving right now, in bytes a second each
+	// way; absent while they move nothing. Worked out, never stored.
+	Speed *Speed `gorm:"-" json:"speed,omitempty"`
+
 	// OwnerPaused says why this customer is off although their own plan is
 	// not: the reseller who sold it has been switched off, their term has
 	// ended, or their traffic is used up. One of the Pause* values, or empty.
@@ -665,4 +669,10 @@ func (c Client) Waiting() bool {
 // Duration is how long a waiting plan runs once it starts.
 func (c Client) Duration() time.Duration {
 	return time.Duration(c.DurationDays)*24*time.Hour + time.Duration(c.DurationHours)*time.Hour
+}
+
+// Speed is bytes a second, up from the customer and down to them.
+type Speed struct {
+	Up   uint64 `json:"up"`
+	Down uint64 `json:"down"`
 }

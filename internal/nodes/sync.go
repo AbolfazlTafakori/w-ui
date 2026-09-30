@@ -503,3 +503,7 @@ func (s *Syncer) report(node model.Node, err error) {
 	}
 	s.log.Info("node is in step with this panel", "node", node.Name)
 }
+
+// SyncInterval is how often a node is asked what its customers used, which
+// is the time the traffic in one report covers.
+const SyncInterval = syncInterval

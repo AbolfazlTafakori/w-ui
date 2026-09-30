@@ -490,6 +490,8 @@ func run() error {
 	rec.OnHold = syncer.PushHold
 	service.ConnectionsNow = rec.ConnectionsNow
 	service.LiveClients = rec.LiveClients
+	service.SpeedNow = rec.Speeds
+	reconciler.NodeReportEvery = nodes.SyncInterval
 	syncer.Start(ctx)
 
 	// Re-read on every check rather than captured here, so changing either on

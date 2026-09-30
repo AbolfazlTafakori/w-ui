@@ -431,21 +431,15 @@ function toggleOne(id, checked) {
 const clientOnline = (c) => (c.onlineNow || 0) > 0
 const usedPercent = (c) => percent(c.usedBytes, c.quotaBytes)
 
-// Current throughput, derived from consecutive readings of the stored total.
-// The panel has no per-second counter; two totals and the gap between them is
-// the same arithmetic the overview already does for the host.
-const lastSeen = new Map()
-function speedOf(c) {
-  const now = Date.now()
-  const prev = lastSeen.get(c.id)
-  lastSeen.set(c.id, { bytes: c.usedBytes, at: now })
-
-  if (!prev || now === prev.at) return '—'
-  const delta = c.usedBytes - prev.bytes
-  // A reset makes the total go backwards; reporting a negative speed would be
-  // worse than reporting none.
-  if (delta <= 0) return '—'
-  return `${bytes((delta * 1000) / (now - prev.at), store.locale)}/s`
+// What the customer is moving right now, each way, as the server measures it
+// from the kernel's own counters every tick -- up is what they send, down
+// what they receive. Absent while they move nothing. It used to be worked out
+// here from two readings of the stored total, inside the render: every
+// re-render took a new reading, so the column read "—" nearly always.
+const speedActive = (c) => !!c.speed && (c.speed.up > 0 || c.speed.down > 0)
+function speedText(c) {
+  const rate = (v) => `${bytes(v || 0, store.locale)}/s`
+  return `↑ ${rate(c.speed.up)} / ↓ ${rate(c.speed.down)}`
 }
 
 // Their traffic bar: green while there is room, orange within the warning
@@ -1180,7 +1174,7 @@ async function submitForm(input) {
               <template v-else>{{ bytes(c.quotaBytes, store.locale) }}</template>
             </span>
           </div>
-          <div v-if="speedOf(c) !== '—'" class="client-card-speed"><span class="atag blue ltr" style="margin: 0">{{ speedOf(c) }}</span></div>
+          <div v-if="speedActive(c)" class="client-card-speed"><span class="atag blue ltr speed-num" style="margin: 0">{{ speedText(c) }}</span></div>
         </div>
         <Teleport to="body">
           <div v-if="cardMenu" v-fit="cardMenu.rect" class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
@@ -1280,7 +1274,7 @@ async function submitForm(input) {
                     </span>
                   </div>
                 </td>
-                <td class="center"><span class="atag speed-tag ltr" :class="speedOf(c) ? 'blue' : ''">{{ speedOf(c) || '—' }}</span></td>
+                <td class="center"><span class="atag speed-tag ltr" :class="{ blue: speedActive(c) }">{{ speedActive(c) ? speedText(c) : '—' }}</span></td>
                 <td><span class="atag ltr" :class="remainingTag(c).color" style="margin: 0">{{ remainingTag(c).label }}</span></td>
                 <td><span class="atag ltr" :class="expiryTag(c).color" :title="expiryTitle(c)" style="margin: 0">{{ expiryTag(c).label }}</span></td>
               </tr>
@@ -1507,7 +1501,10 @@ async function submitForm(input) {
 .toggle-wrap { display: inline-flex; }
 .online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }
 @keyframes online-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+.speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; font-variant-numeric: tabular-nums; }
+/* Figures of one width, so a speed that changes every few seconds does not
+   shift the rest of the line. */
+.speed-num { font-variant-numeric: tabular-nums; }
 
 /* Their ClientTrafficCell: a pill with the figures either side of a bar. */
 .client-traffic-cell { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); }

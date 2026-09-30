@@ -6,6 +6,20 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-09-30
+
+### Fixed
+- **The Speed column shows each customer's speed.** It read "—" for
+  customers moving traffic: the speed was worked out in the page from two
+  readings of the stored total, inside the render, so every re-render took a
+  fresh reading and saw no change -- and the stored total moves in steps a
+  flush apart in any case. The server now measures it from the kernel's own
+  counters every tick, averaged over the last few seconds, and the column
+  shows it each way, as the classic panel does: `↑ 150 KB/s / ↓ 2.40 MB/s`
+  in blue, `—` in grey while the customer moves nothing. On a phone it
+  shows on the card only while they are. A customer on another node shows
+  their node's last report, every 20 seconds.
+
 ## [2.5.0] — 2026-09-30
 
 ### Added
@@ -517,7 +531,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.1...v2.5.0
 [2.4.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.6...v2.4.0

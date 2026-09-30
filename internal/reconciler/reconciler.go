@@ -108,6 +108,8 @@ type Reconciler struct {
 
 	// conc holds customers to the connections their plan allows.
 	conc *concurrency
+	// speed is each customer's speed right now, for the customer list.
+	speed *speedTracker
 	// meter turns each tunnel's cumulative counters into what each file
 	// carried since the last tick.
 	meter *deviceMeter
@@ -141,6 +143,7 @@ func New(o Options) *Reconciler {
 	}
 	return &Reconciler{
 		conc:     newConcurrency(),
+		speed:    newSpeedTracker(),
 		meter:    newDeviceMeter(),
 		db:       o.DB,
 		enforcer: o.Enforcer,
@@ -208,6 +211,8 @@ func (r *Reconciler) AddNodeUsage(clientID uint, total, up, down uint64) {
 	if clientID == 0 || total == 0 {
 		return
 	}
+	// A node reports what moved since its last report, one sync apart.
+	r.speed.fromNode(clientID, up, down, NodeReportEvery, time.Now().UTC())
 	r.writer.submit(trafficUpdate{
 		Key:   keyFromClientID(clientID),
 		Bytes: total,
@@ -308,6 +313,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 			billed[id] = usageDelta{Bytes: d.Bytes, Up: d.Up, Down: d.Down}
 		}
 	}
+	r.speed.local(billed, now)
 	for _, d := range drained {
 		if d.Bytes == 0 {
 			continue // idle clients are not worth a write
@@ -996,6 +1002,16 @@ func (r *Reconciler) Holds() map[uint]time.Time { return r.conc.holds(time.Now()
 func (r *Reconciler) ConnectionsNow(clientIDs []uint) map[uint]int {
 	return r.conc.connectionsNow(clientIDs, time.Now().UTC())
 }
+
+// Speeds is what each of these customers is moving right now; one moving
+// nothing is absent.
+func (r *Reconciler) Speeds(clientIDs []uint) map[uint]model.Speed {
+	return r.speed.speeds(clientIDs, time.Now().UTC())
+}
+
+// NodeReportEvery is how far apart a node's usage reports are, which is the
+// time the traffic in one covers. The panel sets it to the node syncer's.
+var NodeReportEvery = 20 * time.Second
 
 // LiveClients is every customer connected right now, for the counters.
 func (r *Reconciler) LiveClients() []uint { return r.conc.liveClients(time.Now().UTC()) }

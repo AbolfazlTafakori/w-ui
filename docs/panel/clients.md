@@ -25,7 +25,7 @@ Clients, online, depleted, depleting, disabled, active — six figures with a co
 | Group | click to filter |
 | Attached inbounds | which interfaces the plan is on |
 | Traffic | used, a bar, the limit — red past 100 %, orange near it |
-| Speed | live rate |
+| Speed | what the customer is moving right now, each way — `↑ 150 KB/s / ↓ 2.40 MB/s` — from the kernel's own counters, averaged over the last few seconds; `—` while they move nothing. On a phone it shows on the card only while they are. A customer on another node shows their node's last report, every 20 seconds |
 | Remaining | data left |
 | Duration | time left, or ∞ |
 
