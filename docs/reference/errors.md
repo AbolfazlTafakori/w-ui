@@ -119,6 +119,15 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `change your own account from the security settings, not from here` / `you cannot delete the account you are signed in with` | The owner's own row is not edited from this page. | Settings → Security. |
 | `… has … customers: say whether to keep them under your own account or delete them with the operator` | Removing a reseller who has customers needs a decision about them. | Choose *Keep them, under me* or *Delete them too*. |
 
+### Time and traffic for many at once
+
+| Message | Meaning | What to do |
+|---|---|---|
+| `select the customers first` | Nothing was selected; nothing is changed without a selection. | Tick customers, or tick the header and *Select all*. |
+| `enter an amount of time` / `enter an amount of traffic` | Every field was empty or 0. | Enter months, days or hours — or TB, GB or MB. |
+| `… is a number of zero or more; choose add or take back for the direction` | A negative or non-numeric value. | Enter the amount as it is, and choose *Take back* to subtract. |
+| `… customers selected; at most … at once` / `more than … customers match; narrow the filter` | A selection larger than one request takes. | Filter to fewer — by group, status or search. |
+
 ### Many resellers at once
 
 | Message | Meaning | What to do |

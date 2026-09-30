@@ -214,6 +214,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 	} else {
 		client.StartOnFirstUse = false
 		client.DurationDays = 0
+		client.DurationHours = 0
 	}
 
 	// Addresses are reserved before the transaction opens and released if it
@@ -837,6 +838,40 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 		f.PerPage = 25
 	}
 
+	q := s.filtered(ctx, f)
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("service: count clients: %w", err)
+	}
+
+	var items []model.Client
+	err := q.Preload("Accounts").
+		Order(f.orderBy()).
+		Offset((f.Page - 1) * f.PerPage).
+		Limit(f.PerPage).
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("service: list clients: %w", err)
+	}
+	if err := fillGroups(ctx, s.db.WithContext(ctx), items); err != nil {
+		return nil, err
+	}
+	if err := s.fillOnlineNow(ctx, items); err != nil {
+		return nil, err
+	}
+	if err := fillOwnerPause(ctx, s.db, items); err != nil {
+		return nil, fmt.Errorf("service: read resellers' standing: %w", err)
+	}
+
+	return &Page{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage}, nil
+}
+
+// filtered is the customer list narrowed by everything the page can filter
+// on, before it is counted, ordered or paged. The list and the "every
+// customer that matches" selection read it alike, so a selection across
+// pages is exactly the customers the list would show.
+func (s *Clients) filtered(ctx context.Context, f ListFilter) *gorm.DB {
 	q := s.db.WithContext(ctx).Model(&model.Client{})
 	if f.Search != "" {
 		like := "%" + strings.ToLower(f.Search) + "%"
@@ -904,32 +939,25 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	case "no":
 		q = q.Where("note = ''")
 	}
+	return q
+}
 
-	var total int64
-	if err := q.Count(&total).Error; err != nil {
-		return nil, fmt.Errorf("service: count clients: %w", err)
-	}
+// maxMatchingIDs bounds one "select every match": a selection of every
+// customer on a very large panel is still one request to act on.
+const maxMatchingIDs = 50000
 
-	var items []model.Client
-	err := q.Preload("Accounts").
-		Order(f.orderBy()).
-		Offset((f.Page - 1) * f.PerPage).
-		Limit(f.PerPage).
-		Find(&items).Error
-	if err != nil {
-		return nil, fmt.Errorf("service: list clients: %w", err)
+// MatchingIDs is every customer the filter matches, across every page, in
+// the list's order -- for selecting all of them at once. A reseller gets
+// only their own, as the list does.
+func (s *Clients) MatchingIDs(ctx context.Context, f ListFilter) ([]uint, error) {
+	var ids []uint
+	if err := s.filtered(ctx, f).Order(f.orderBy()).Limit(maxMatchingIDs+1).Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("service: list matching customers: %w", err)
 	}
-	if err := fillGroups(ctx, s.db.WithContext(ctx), items); err != nil {
-		return nil, err
+	if len(ids) > maxMatchingIDs {
+		return nil, invalidField("filter", "more than %d customers match; narrow the filter", maxMatchingIDs)
 	}
-	if err := s.fillOnlineNow(ctx, items); err != nil {
-		return nil, err
-	}
-	if err := fillOwnerPause(ctx, s.db, items); err != nil {
-		return nil, fmt.Errorf("service: read resellers' standing: %w", err)
-	}
-
-	return &Page{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage}, nil
+	return ids, nil
 }
 
 // SubscriptionsChanged, when set, tells every open subscription page that
@@ -1137,6 +1165,7 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		} else {
 			fields["start_on_first_use"] = false
 			fields["duration_days"] = 0
+			fields["duration_hours"] = 0
 		}
 	}
 	var seats *int

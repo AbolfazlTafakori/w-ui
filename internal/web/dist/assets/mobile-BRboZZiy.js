@@ -1,1 +1,0 @@
-import{G as a,f as c}from"./index-Bw6lrszw.js";const i=768;function r(o=i){const e=window.matchMedia(`(max-width: ${o}px)`),n=a(e.matches),t=s=>{n.value=s.matches};return e.addEventListener("change",t),c(()=>e.removeEventListener("change",t)),n}export{r as u};

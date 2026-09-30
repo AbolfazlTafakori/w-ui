@@ -38,6 +38,10 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		"POST /api/clients/adjust",
 		"POST /api/clients/batch",
 		"POST /api/clients/bulk",
+		// Adding time or traffic, and selecting every customer a filter
+		// matches: over their own customers alone, through the same scope.
+		"POST /api/clients/extend",
+		"GET /api/clients/ids",
 		"GET /api/clients/export",
 		"POST /api/clients/import",
 		"POST /api/clients/purge",

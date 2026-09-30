@@ -37,7 +37,7 @@ func (r *Reconciler) activate(ctx context.Context, now time.Time) (int64, error)
 	var pending []model.Client
 	err := db.Where(`start_on_first_use = ?
 		         AND activated_at IS NULL
-		         AND duration_days > 0
+		         AND (duration_days > 0 OR duration_hours > 0)
 		         AND id IN (SELECT client_id FROM accounts WHERE last_handshake IS NOT NULL)`,
 		true).Find(&pending).Error
 	if err != nil {
@@ -50,7 +50,7 @@ func (r *Reconciler) activate(ctx context.Context, now time.Time) (int64, error)
 	var started int64
 	var names []string
 	for _, c := range pending {
-		expires := now.AddDate(0, 0, c.DurationDays)
+		expires := now.AddDate(0, 0, c.DurationDays).Add(time.Duration(c.DurationHours) * time.Hour)
 		res := db.Model(&model.Client{}).
 			// Guarded on activated_at still being null, so two ticks racing
 			// cannot move an expiry date that has already been set.

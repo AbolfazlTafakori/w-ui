@@ -1130,7 +1130,7 @@ func (s *Subscriptions) TokenExists(ctx context.Context, token string) (bool, er
 // still. Rendering a few files every three seconds is cheap.
 func (s *Subscriptions) revision(ctx context.Context, c *model.Client) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "c:%s:%s:%d:%d:%v:%d|", c.Name, c.Status, c.QuotaBytes, c.DeviceLimit, c.ExpiresAt, c.DurationDays)
+	fmt.Fprintf(h, "c:%s:%s:%d:%d:%v:%d:%d|", c.Name, c.Status, c.QuotaBytes, c.DeviceLimit, c.ExpiresAt, c.DurationDays, c.DurationHours)
 	if cfg, err := s.Settings(ctx); err == nil {
 		fmt.Fprintf(h, "s:%s:%s:%s:%s:%d|", cfg.Title, cfg.Template, cfg.Announce, cfg.SupportURL, cfg.UpdateHours)
 	}

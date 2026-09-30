@@ -4,8 +4,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, relative, dateTime, percent, unitToBytes, unitToHours } from '../lib/format.js'
+import { bytes, relative, dateTime, percent, unitToBytes } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
+import ExtendDialog from '../components/ExtendDialog.vue'
 import BulkClientForm from '../components/BulkClientForm.vue'
 import ClientQrModal from '../components/ClientQrModal.vue'
 import ClientInfoModal from '../components/ClientInfoModal.vue'
@@ -210,9 +211,12 @@ async function load(quiet = false) {
     }
 
     // Drop selections for rows no longer on screen, so a bulk action can never
-    // reach a client the operator can no longer see.
-    const visible = new Set(p.items.map((c) => c.id))
-    selected.value = new Set([...selected.value].filter((id) => visible.has(id)))
+    // reach a client the operator can no longer see -- unless every customer
+    // the filter matches was selected on purpose, across the pages.
+    if (!allMatching.value) {
+      const visible = new Set(p.items.map((c) => c.id))
+      selected.value = new Set([...selected.value].filter((id) => visible.has(id)))
+    }
   } catch (err) {
     if (!quiet) notify(err.message, 'error')
   } finally {
@@ -368,12 +372,54 @@ function clearFilters() {
 }
 
 const allSelected = computed(
-  () => !!page.value?.items.length && selected.value.size === page.value.items.length,
+  () => !!page.value?.items.length && page.value.items.every((c) => selected.value.has(c.id)),
 )
 function toggleAll(checked) {
+  allMatching.value = false
   selected.value = checked ? new Set(page.value.items.map((c) => c.id)) : new Set()
 }
+
+// Every customer the filter matches, across every page -- or every customer,
+// with no filter on. Offered once the whole page is ticked, as a mail client
+// offers it: selecting a page is not selecting a list of two thousand.
+const allMatching = ref(false)
+const matchingBusy = ref(false)
+const filtering = computed(() => !!(search.value || statusFilter.value || groupFilter.value || filterCount.value))
+const offerAllMatching = computed(
+  () => !allMatching.value && allSelected.value && (page.value?.total || 0) > page.value.items.length,
+)
+async function selectAllMatching() {
+  matchingBusy.value = true
+  try {
+    const res = await api.matchingClientIds({
+      search: search.value,
+      status: ['active', 'disabled', 'expired', 'exhausted'].includes(statusFilter.value) ? statusFilter.value : '',
+      buckets: statusFilter.value === 'depleted' ? 'exhausted,expired' : undefined,
+      group: groupFilter.value,
+      sort: sort.value,
+      ...filterParams(),
+    })
+    selected.value = new Set(res.ids || [])
+    allMatching.value = true
+  } catch (err) {
+    notify(err.message, 'error')
+  } finally {
+    matchingBusy.value = false
+  }
+}
+function clearSelection() {
+  allMatching.value = false
+  selected.value = new Set()
+}
+// A different filter is a different list: a selection of every match of the
+// old one would reach customers no longer shown.
+watch(
+  () => JSON.stringify([search.value, statusFilter.value, groupFilter.value, filters.value]),
+  () => { if (allMatching.value) clearSelection() },
+)
 function toggleOne(id, checked) {
+  // Unticking one of every match is a hand-picked selection again.
+  if (!checked) allMatching.value = false
   const next = new Set(selected.value)
   checked ? next.add(id) : next.delete(id)
   selected.value = next
@@ -699,6 +745,8 @@ const moreItems = computed(() =>
         { divider: true },
         { key: 'enable', label: t('action.enable'), icon: 'CheckCircleOutlined' },
         { key: 'disable', label: t('action.disable'), icon: 'StopOutlined', danger: true },
+        { key: 'time', label: t('client.menu.time'), icon: 'FieldTimeOutlined' },
+        { key: 'traffic', label: t('client.menu.traffic'), icon: 'DatabaseOutlined' },
         { key: 'adjust', label: t('client.adjust'), icon: 'ClockCircleOutlined' },
         { key: 'reset', label: t('outbound.resetTraffic'), icon: 'RetweetOutlined' },
         { key: 'rotate', label: t('client.rotateKeys'), icon: 'KeyOutlined', danger: true },
@@ -709,6 +757,10 @@ const moreItems = computed(() =>
         { key: 'export', label: t('client.export'), icon: 'DownloadOutlined' },
         { key: 'import', label: t('client.menu.import'), icon: 'UploadOutlined' },
         { key: 'resetAll', label: t('client.resetAll'), icon: 'RetweetOutlined' },
+        // Here too, and off: with nothing selected nothing is changed, and
+        // the item says what to do instead.
+        { key: 'time', label: t('client.menu.time'), icon: 'FieldTimeOutlined', disabled: true, title: t('xt.selectFirst') },
+        { key: 'traffic', label: t('client.menu.traffic'), icon: 'DatabaseOutlined', disabled: true, title: t('xt.selectFirst') },
         { divider: true },
         { key: 'purgeDepleted', label: t('client.menu.delDepleted'), icon: 'RestOutlined', danger: true },
         { key: 'purgeUnattached', label: t('client.menu.delOrphans'), icon: 'DisconnectOutlined', danger: true },
@@ -747,8 +799,21 @@ const subLinksText = computed(() =>
     .join('\n'),
 )
 
+// Time or traffic for the selection: its own dialog, which works out what
+// will happen before anything does.
+const extendFor = ref(null)
+function extendDone() {
+  extendFor.value = null
+  clearSelection()
+  load()
+}
+
 function pickMore(key) {
   moreOpen.value = null
+  if (key === 'time' || key === 'traffic') {
+    if (selected.value.size) extendFor.value = { kind: key }
+    return
+  }
   if (key === 'attach' || key === 'detach' || key === 'group' || key === 'adjust') return openDialog(key)
   if (key === 'ungroup') return ungroup()
   if (key === 'enable' || key === 'disable') return bulk(key)
@@ -881,7 +946,6 @@ async function submitDialog() {
       selected.value = new Set()
     } else if (d.kind === 'adjust') {
       const payload = { ids: ids() }
-      if (form.value.addDays !== '') payload.addDays = unitToHours(form.value.addDays, form.value.addUnit) / 24
       if (form.value.quotaGB !== '') payload.quotaBytes = unitToBytes(form.value.quotaGB, form.value.quotaUnit)
       if (form.value.resetCycle) payload.resetCycle = form.value.resetCycle
       const res = await api.adjustClients(payload)
@@ -1009,7 +1073,7 @@ async function submitForm(input) {
           {{ t('client.menu.selectedCount').replace('{count}', nf(selected.size)) }}
           <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
         </span>
-        <button class="abtn more-btn" :aria-expanded="!!moreOpen" @click="openMore">
+        <button class="abtn more-btn" :aria-label="isMobile ? t('outbound.more') : null" :aria-haspopup="'menu'" :aria-expanded="!!moreOpen" @click="openMore">
           <AntIcon name="MoreOutlined" /><span v-if="!isMobile">{{ t('outbound.more') }}</span>
         </button>
         <button v-if="selected.size" class="abtn danger" style="margin-inline-start: auto" @click="bulk('delete')">
@@ -1043,6 +1107,22 @@ async function submitForm(input) {
         <span v-if="page && (filterCount || search || statusFilter || groupFilter)" class="filter-count">
           {{ t('client.menu.showingCount').replace('{shown}', nf(page.total)).replace('{total}', nf(stats?.clients ?? page.total)) }}
         </span>
+      </div>
+
+      <!-- Every customer the filter matches, across the pages: offered once
+           the page is ticked, said once it is chosen. -->
+      <div v-if="offerAllMatching || allMatching" class="sel-bar" role="status">
+        <template v-if="allMatching">
+          <span>{{ t(filtering ? 'client.sel.allFilteredSelected' : 'client.sel.allSelected', { n: selected.size }) }}</span>
+          <button type="button" class="linkbtn" @click="clearSelection">{{ t('client.sel.clear') }}</button>
+        </template>
+        <template v-else>
+          <span>{{ t('client.sel.page', { n: page.items.length }) }}</span>
+          <button type="button" class="linkbtn" :disabled="matchingBusy" @click="selectAllMatching">
+            <span v-if="matchingBusy" class="spin sm"></span>
+            {{ t(filtering ? 'client.sel.selectAllFiltered' : 'client.sel.selectAll', { n: page.total }) }}
+          </button>
+        </template>
       </div>
       <div v-if="filterChips.length" class="filter-chips">
         <span v-for="(chip, i) in filterChips" :key="i" class="atag closable" :class="chip.color">
@@ -1265,7 +1345,7 @@ async function submitForm(input) {
     <div v-if="moreOpen" v-fit="moreOpen.rect" class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
       <template v-for="(m, i) in moreItems" :key="m.key || `d${i}`">
         <hr v-if="m.divider" class="amenu-divider" />
-        <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickMore(m.key)">
+        <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" :disabled="m.disabled" :aria-disabled="m.disabled ? 'true' : null" :title="m.title || null" @click="pickMore(m.key)">
           <AntIcon :name="m.icon" /><span>{{ m.label }}</span>
         </button>
       </template>
@@ -1320,23 +1400,14 @@ async function submitForm(input) {
           </div>
         </template>
 
+        <!-- Setting a limit and the renewal. Adding time is Time's, which
+             keeps unlimited customers unlimited and plans not started
+             waiting. -->
         <template v-else-if="dialog.kind === 'adjust'">
-          <div class="field">
-            <label for="cd-days">{{ t('group.extend') }}</label>
-            <div class="unit-field">
-              <input id="cd-days" v-model="form.addDays" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.leaveBlank')" autofocus />
-              <select v-model="form.addUnit" class="unit-select" :aria-label="t('client.expiresUnit')">
-                <option value="hours">{{ t('unit.hours') }}</option>
-                <option value="days">{{ t('unit.days') }}</option>
-                <option value="months">{{ t('unit.months') }}</option>
-              </select>
-            </div>
-            <span class="hint">{{ t('group.extendHint') }}</span>
-          </div>
           <div class="field">
             <label for="cd-quota">{{ t('client.quota') }}</label>
             <div class="unit-field">
-              <input id="cd-quota" v-model="form.quotaGB" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.leaveBlank')" />
+              <input id="cd-quota" v-model="form.quotaGB" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.leaveBlank')" autofocus />
               <select v-model="form.quotaUnit" class="unit-select" :aria-label="t('client.quotaUnit')">
                 <option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option>
               </select>
@@ -1365,6 +1436,14 @@ async function submitForm(input) {
       </div>
     </div>
   </div>
+
+  <ExtendDialog
+    v-if="extendFor"
+    :kind="extendFor.kind"
+    :ids="ids()"
+    @close="extendFor = null"
+    @done="extendDone"
+  />
 
   <ClientForm
     v-if="formFor"
@@ -1449,6 +1528,26 @@ async function submitForm(input) {
 .clients-empty { padding: 32px 0; text-align: center; color: var(--muted); }
 .clients-empty .anticon { display: block; margin: 0 auto 8px; }
 
+/* Every match, across the pages: offered and said in one quiet line. */
+.sel-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 10px;
+  margin: 8px 0 0;
+  padding: 7px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--t-sm);
+}
+.sel-bar .linkbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
 .apagination-total { align-items: center; height: 32px; color: var(--ink); font-size: 14px; }
 .apagination.small .apagination-total { height: 24px; }
 .apage.jump { border-color: transparent; background: transparent; letter-spacing: 2px; color: var(--faint); }

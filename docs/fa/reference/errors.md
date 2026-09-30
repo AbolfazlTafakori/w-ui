@@ -119,6 +119,15 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `change your own account from the security settings, not from here` / `you cannot delete the account you are signed in with` | ردیف خود مالک از این صفحه ویرایش نمی‌شود. | تنظیمات ← امنیت. |
 | `… has … customers: say whether to keep them under your own account or delete them with the operator` | حذف نماینده‌ای که کاربر دارد نیاز به تصمیم درباره‌ی آن کاربران دارد. | *بمانند، زیر حساب من* یا *آن‌ها هم حذف شوند* را انتخاب کن. |
 
+### زمان و حجم برای چند کاربر با هم
+
+| پیام | معنی | چه کنی |
+|---|---|---|
+| `select the customers first` | چیزی انتخاب نشده؛ بدون انتخاب هیچ چیزی تغییر نمی‌کند. | کاربران را تیک بزن، یا تیک بالای جدول و بعد *انتخاب همه*. |
+| `enter an amount of time` / `enter an amount of traffic` | همهٔ فیلدها خالی یا صفر بودند. | ماه، روز یا ساعت — یا TB، GB یا MB — را وارد کن. |
+| `… is a number of zero or more; choose add or take back for the direction` | مقدار منفی یا غیرعددی. | مقدار را همان‌طور وارد کن و برای کم کردن *کم کردن* را انتخاب کن. |
+| `… customers selected; at most … at once` / `more than … customers match; narrow the filter` | انتخاب بزرگ‌تر از چیزی است که یک درخواست می‌پذیرد. | با گروه، وضعیت یا جست‌وجو محدودترش کن. |
+
 ### چند نماینده با هم
 
 | پیام | معنی | چه کنی |

@@ -273,6 +273,18 @@ export const api = {
   resetTraffic: (id) => request('POST', `/api/clients/${id}/reset`, {}),
   bulkClients: (action, ids) => request('POST', '/api/clients/bulk', { action, ids }),
   adjustClients: (input) => request('POST', '/api/clients/adjust', input),
+  // Time or traffic for the selected customers, added or taken back; with
+  // dryRun, what would happen.
+  extendClients: (input) => request('POST', '/api/clients/extend', input),
+  // Every customer the list's filter matches, across every page.
+  matchingClientIds: (params = {}) => {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== '' && v != null) q.set(k, v)
+    }
+    const qs = q.toString()
+    return request('GET', `/api/clients/ids${qs ? `?${qs}` : ''}`)
+  },
   resetAllTraffic: () => request('POST', '/api/clients/reset-all', {}),
   purgeClients: (status) => request('POST', '/api/clients/purge', { status }),
   createBatch: (input) => request('POST', '/api/clients/batch', input),

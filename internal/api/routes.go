@@ -143,6 +143,20 @@ func (s *Server) routes() []Route {
 			Body:    `{"ids":[1,2],"addDays":30,"quotaBytes":53687091200}`,
 			Note:    "addDays on an expired customer counts from now, not from their old date.",
 			handler: s.handleAdjust},
+		{Method: "POST", Path: "/api/clients/extend", Group: "Customers", Auth: true,
+			Summary: "Add time or traffic to the selected customers, or take it back.",
+			Body: `{"ids":[1,2],"kind":"time","months":0,"days":3,"hours":12}` +
+				` or {"ids":[1,2],"kind":"traffic","gb":10,"subtract":false}`,
+			Note: "A month is 30 days; traffic counts in 1024s. Customers without a " +
+				"limit are passed over. Time moves each customer's own end date; " +
+				"a plan that starts on first connection and has not started is " +
+				"passed over unless includeWaiting is set. Traffic taken back stops " +
+				"at what the customer has used. dryRun says what would happen.",
+			handler: s.handleExtend},
+		{Method: "GET", Path: "/api/clients/ids", Group: "Customers", Auth: true,
+			Summary: "Every customer the list's filter matches, across every page.",
+			Note:    "Takes the same query as GET /api/clients; what \"select all\" selects.",
+			handler: s.handleMatchingIDs},
 		{Method: "POST", Path: "/api/clients/reset-all", Group: "Customers", Auth: true,
 			Summary: "Set every customer's usage back to zero.", handler: s.handleResetAll},
 		{Method: "POST", Path: "/api/clients/purge", Group: "Customers", Auth: true,

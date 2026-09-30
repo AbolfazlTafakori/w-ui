@@ -6,6 +6,39 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-09-30
+
+### Added
+- **Time and traffic for many customers at once.** *more -> Time* and
+  *more -> Traffic* add to, or take back from, every customer selected:
+  months, days and hours (a month is 30 days) or TB, GB and MB (in 1024s,
+  as the panel shows sizes). Before anything is applied the dialog shows
+  what will happen, worked out by the panel for exactly this selection:
+  how many change, come back on, stop, and are left alone and why. The
+  rules: customers with no end date or no traffic limit are left as they
+  are; time moves each customer's own end date -- one that ended five days
+  ago and is given two is still ended, one that ended a day ago runs one
+  more day; traffic moves the allowance and keeps the usage, and brings a
+  customer who had run out back on; customers switched off get it and stay
+  off; plans that start on first connection and have not started are left
+  alone unless asked for, and then grow to the hour and still start on
+  first connection; taking traffic back stops at what the customer has
+  used. Taking back from five or more asks for the count to be typed.
+  Nothing happens with nothing selected. `POST /api/clients/extend`, with
+  `dryRun` for the preview.
+- **Select every customer, across the pages.** Ticking the header offers
+  *Select all N customers* -- every customer, or every one the filter
+  matches (a group, a status, a search) -- and every bulk action then
+  reaches all of them. Changing the filter clears it.
+  `GET /api/clients/ids`.
+
+### Changed
+- *Adjust* sets a traffic limit and the renewal; adding time moved to
+  *Time*, which leaves customers with no end date unlimited and plans not
+  started waiting -- the old field gave both a date.
+- The toolbar's *more* button has a name on phones, where its text is
+  hidden, for screen readers.
+
 ## [2.4.1] — 2026-09-29
 
 ### Fixed
@@ -484,7 +517,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.1...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.1...v2.5.0
 [2.4.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.6...v2.4.0
 [2.3.6]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.3.5...v2.3.6

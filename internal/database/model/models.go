@@ -255,10 +255,13 @@ type Client struct {
 	// was sold. A reseller who hands out ten configs on Monday should not have
 	// them all expiring on the same Wednesday whether or not anyone used them.
 	//
-	// StartOnFirstUse with DurationDays set and ExpiresAt nil means the clock
-	// has not started. ActivatedAt records when it did.
+	// StartOnFirstUse with a duration and ExpiresAt nil means the clock has
+	// not started. ActivatedAt records when it did. The duration is
+	// DurationDays and DurationHours together: hours past the whole days, so
+	// time added by the hour to a plan still waiting is kept to the hour.
 	StartOnFirstUse bool       `gorm:"not null;default:false" json:"startOnFirstUse"`
 	DurationDays    int        `gorm:"not null;default:0" json:"durationDays"`
+	DurationHours   int        `gorm:"not null;default:0" json:"durationHours"`
 	ActivatedAt     *time.Time `json:"activatedAt"`
 
 	// DeviceLimit is how many connections the customer may have at once: the
@@ -650,4 +653,16 @@ func AllModels() []any {
 		&Host{},
 		&Setting{},
 	}
+}
+
+// Waiting reports whether the customer's plan starts on first connection and
+// has not started: a duration, and no date yet.
+func (c Client) Waiting() bool {
+	return c.StartOnFirstUse && c.ExpiresAt == nil && c.ActivatedAt == nil &&
+		(c.DurationDays > 0 || c.DurationHours > 0)
+}
+
+// Duration is how long a waiting plan runs once it starts.
+func (c Client) Duration() time.Duration {
+	return time.Duration(c.DurationDays)*24*time.Hour + time.Duration(c.DurationHours)*time.Hour
 }

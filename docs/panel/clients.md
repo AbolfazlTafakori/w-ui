@@ -31,6 +31,24 @@ Clients, online, depleted, depleting, disabled, active — six figures with a co
 
 Pagination with a size changer past ten rows. On a phone: cards with the status dot, the traffic bar, and one menu.
 
+## Time and traffic for many at once
+
+**more → Time** and **more → Traffic** add to, or take back from, every customer selected. Nothing is changed with nothing selected — tick customers, or tick the header and then **Select all N customers** in the line that appears: without a filter that is every customer on every page, with one it is every customer the filter matches (a group, a status, a search). Changing the filter clears such a selection.
+
+Each dialog has **Add / Take back** and three fields — **months, days, hours** for time (a month is 30 days, a day 24 hours) and **TB, GB, MB** for traffic (in 1024s, as the panel shows sizes). Before anything is applied the dialog shows what will happen, worked out by the panel for exactly this selection: how many change, how many come back on, how many stop, and how many are left alone and why. Taking back from five or more asks you to type how many.
+
+| Customer | Time | Traffic |
+|---|---|---|
+| no end date / no traffic limit | left as they are | left as they are |
+| running | their own end date moves | their allowance moves; what they used stays |
+| ended by date | their own end date moves: ended 5 days ago and given 2, still ended; ended a day ago and given 2, one more day | allowance moves, still ended by date |
+| out of traffic | date moves, still out of traffic | back on when the new allowance is above what they used |
+| switched off | gets it, stays off | gets it, stays off |
+| starts on first connection, not connected yet | left alone, unless *Also customers who have not connected yet* is ticked: then their plan gets longer, to the hour, and still starts on first connection | allowance moves |
+| taken back | can end a plan | stops at what the customer has used — never below it, and never to no limit |
+
+A reseller's selection reaches only their own customers.
+
 ## QR code
 
 One QR per device, per host — a customer on two hosts gets two codes per device. Downloadable as PNG.

@@ -290,11 +290,33 @@ func (s *Server) handleCreateInterface(w http.ResponseWriter, r *http.Request) {
 // --- clients ----------------------------------------------------------
 
 func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
+	res, err := s.clients.List(r.Context(), listFilter(r))
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// handleMatchingIDs is every customer the list's filter matches, across every
+// page: what "select all" selects.
+func (s *Server) handleMatchingIDs(w http.ResponseWriter, r *http.Request) {
+	ids, err := s.clients.MatchingIDs(r.Context(), listFilter(r))
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ids": ids, "total": len(ids)})
+}
+
+// listFilter reads the customer list's query string. The list and the
+// matching selection read it through here alike, so selecting "every
+// customer that matches" selects exactly what the list shows.
+func listFilter(r *http.Request) service.ListFilter {
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
 	perPage, _ := strconv.Atoi(q.Get("perPage"))
-
-	res, err := s.clients.List(r.Context(), service.ListFilter{
+	return service.ListFilter{
 		Search:   q.Get("search"),
 		Status:   model.ClientStatus(q.Get("status")),
 		Protocol: model.Protocol(q.Get("protocol")),
@@ -315,12 +337,7 @@ func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
 		UsedTo:       gigabytesParam(q.Get("usedToGB")),
 		Renews:       q.Get("renews"),
 		HasNote:      q.Get("hasNote"),
-	})
-	if err != nil {
-		fail(w, s.log, err)
-		return
 	}
-	writeJSON(w, http.StatusOK, res)
 }
 
 // Parsing the filter drawer's query string.
@@ -719,6 +736,30 @@ func (s *Server) handleAdjust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"affected": n})
+}
+
+// handleExtend adds time or traffic to the selected customers, or takes it
+// back. A dry run says what would happen and changes nothing, which is what
+// the page shows before it is confirmed.
+func (s *Server) handleExtend(w http.ResponseWriter, r *http.Request) {
+	var in service.ExtendInput
+	if !decode(w, r, &in) {
+		return
+	}
+	res, err := s.clients.Extend(r.Context(), in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if !in.DryRun && res.Changed > 0 {
+		s.log.Warn("time or traffic changed for customers in bulk",
+			"kind", in.Kind, "subtract", in.Subtract, "amount", res.Amount,
+			"changed", res.Changed, "by", adminName(r), "ip", clientIP(r))
+		// At once rather than at the next tick: a customer revived is back
+		// on now, and one whose time was taken back is off now.
+		s.reconcileNow()
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleResetAll(w http.ResponseWriter, r *http.Request) {

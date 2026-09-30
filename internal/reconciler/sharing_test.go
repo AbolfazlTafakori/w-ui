@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -361,5 +362,43 @@ func TestRelayPortsCountOnlyWhenTheyOverlap(t *testing.T) {
 	}
 	if sameHost([]span{{"1.2.3.4", m(0), m(1)}, {"5.6.7.8", m(0), m(1)}}) {
 		t.Fatal("different hosts are not a relay")
+	}
+}
+
+// Time added by the hour to a plan still waiting is kept when it starts: a
+// plan of a day and twelve hours ends a day and twelve hours after the first
+// connection -- and one of twelve hours alone starts at all.
+func TestAWaitingPlanStartsWithItsHours(t *testing.T) {
+	for i, c := range []struct {
+		days, hours int
+		want        time.Duration
+	}{
+		{1, 12, 36 * time.Hour},
+		{0, 12, 12 * time.Hour},
+	} {
+		db := newTestDB(t)
+		now := time.Now().UTC()
+		cl := model.Client{
+			Name: fmt.Sprintf("Sara%d", i), Status: model.StatusActive, DeviceLimit: 1,
+			StartOnFirstUse: true, DurationDays: c.days, DurationHours: c.hours,
+		}
+		if err := db.Create(&cl).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.Account{
+			ClientID: cl.ID, InterfaceID: 1, NodeID: 1, DeviceName: "Phone",
+			IP: fmt.Sprintf("10.66.0.%d", 200+i), Enabled: true, LastHandshake: &now,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		r := &Reconciler{db: db, log: quietLog()}
+		if n, err := r.activate(context.Background(), now); err != nil || n != 1 {
+			t.Fatalf("%dd %dh: started %d, %v", c.days, c.hours, n, err)
+		}
+		var got model.Client
+		db.First(&got, cl.ID)
+		if got.ExpiresAt == nil || got.ExpiresAt.Sub(now).Round(time.Second) != c.want {
+			t.Errorf("%dd %dh: ends %v after starting, want %v", c.days, c.hours, got.ExpiresAt.Sub(now), c.want)
+		}
 	}
 }
