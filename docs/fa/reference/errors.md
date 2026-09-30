@@ -245,6 +245,9 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `expiry must be between 0 and … days` / `device limit must be between 1 and …` | پیش‌فرض‌های مشتری جدید. |  |
 | `backup interval must be between 0 and … hours` / `keep between 0 and 365 backups` |  |  |
 | `notifications need a chat id` / `unknown bot language "…"` / `notification thresholds cannot be negative` / `a threshold is a percentage, 0 to 100` / `notification time: …` | تنظیمات تلگرام. |  |
+| `backup time: …` / `… is more often than a backup may be taken, once every … minutes` / `… does not come round within a year` / `choose when the automatic backup is sent` | تنظیمات → تلگرام → بکاپ: زمانی که ربات نمی‌تواند رعایتش کند، یا روشن بدون زمان. | یکی از زمان‌های پیشنهادی، یا یک خط crontab نه بیشتر از هر ۱۰ دقیقه. |
+| `could not take the automatic backup` / `could not send the automatic backup` (لاگ، و در چت هم گفته می‌شود) | آرشیو ساخته نشد، یا تلگرام نپذیرفت — بالای ۵۰ مگابایت اصلاً فرستاده نمی‌شود. | `error=`؛ دیتابیس بزرگ را از پنل دانلود کنید. بعدی سر وقت بعدی می‌رود. |
+| `could not read when the last automatic backup went` / `could not record when the automatic backup went` (لاگ) | دیتابیس خوانده یا نوشته نشد. | دیتابیس — فضای دیسک، دسترسی‌ها. |
 | `the Telegram API server must begin with http:// or https://` / `the external traffic URI must begin with http:// or https://` / `the test URL must begin with http:// or https://` |  |  |
 | `a mail server is required to send email` / `a from address is required to send email` / `at least one recipient is required to send email` / `mail port … is out of range` / `unknown mail encryption "…"` |  |  |
 | `could not deliver a notification` / `telegram bot could not send` / `telegram bot could not poll` (log) | تلگرام در دسترس نبود، یا توکن غلط است. | `error=`: 401 یعنی توکن بد؛ timeout یعنی شبکه. |

@@ -23,7 +23,7 @@ Two backups taken in the same second — a manual one beside a scheduled one, or
 | The panel | Settings → Backup → **Back up now**, or download any listed archive |
 | On a schedule | Settings → Backup: interval and how many to keep; written to `/var/backups/wui` |
 | The terminal | `w-ui backup` → 1, or `wui backup create` (with the panel's environment; the menu supplies it) |
-| Telegram | the bot's backup command sends the archive to the admin chat |
+| Telegram | automatically, at the time set in Settings → Telegram → Backup ([Telegram bot](/panel/telegram#automatic-backup)); or at once, with the bot's backup button |
 | Uninstall | a last copy is written to `/root/wui-last-copy-<date>.tar.gz` before anything is removed |
 
 ## Restoring

@@ -14,9 +14,9 @@ import (
 	"github.com/abolfazl/w-ui/internal/notify"
 )
 
-// Reporter writes the periodic status message the Telegram bot sends: what
-// the panel is carrying, who is about to run out, and -- when asked -- the
-// database to go with it.
+// Reporter writes what the Telegram bot sends by itself: the periodic status
+// message -- what the panel is carrying, who is about to run out -- and the
+// automatic backup.
 type Reporter struct {
 	db       *gorm.DB
 	clients  *Clients
@@ -30,10 +30,10 @@ func NewReporter(db *gorm.DB, clients *Clients, settings *Settings, backups *bac
 }
 
 // Build is the notify.ReportFunc.
-func (r *Reporter) Build(ctx context.Context, lang string, withBackup bool) (string, *notify.Attachment, error) {
+func (r *Reporter) Build(ctx context.Context, lang string) (string, error) {
 	ov, err := r.clients.Overview(ctx)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	cfg, _ := r.settings.Get(ctx)
 	fa := lang == "fa"
@@ -62,7 +62,7 @@ func (r *Reporter) Build(ctx context.Context, lang string, withBackup bool) (str
 	if len(expiring) > 0 {
 		fmt.Fprintf(&b, "\n*%s (%d %s)*\n", l("Expiring soon", "در حال انقضا"), cfg.ExpireDiff, l("days", "روز"))
 		for _, c := range expiring {
-			fmt.Fprintf(&b, "• %s\n", c.Name)
+			fmt.Fprintf(&b, "• %s\n", mdSafe(c.Name))
 		}
 	}
 	var lowTraffic []model.Client
@@ -78,40 +78,37 @@ func (r *Reporter) Build(ctx context.Context, lang string, withBackup bool) (str
 			if c.QuotaBytes > c.UsedBytes {
 				left = c.QuotaBytes - c.UsedBytes
 			}
-			fmt.Fprintf(&b, "• %s — %s\n", c.Name, humanBytes(left))
+			fmt.Fprintf(&b, "• %s — %s\n", mdSafe(c.Name), humanBytes(left))
 		}
 	}
 	fmt.Fprintf(&b, "\n_%s_", time.Now().Format("2006-01-02 15:04 MST"))
 
-	if !withBackup || r.backups == nil {
-		return b.String(), nil, nil
+	return b.String(), nil
+}
+
+// Backup is the notify.BackupFunc: a new archive, open for the upload, with a
+// caption saying which panel it is from and when.
+func (r *Reporter) Backup(ctx context.Context, lang string) (*notify.Attachment, error) {
+	if r.backups == nil {
+		return nil, fmt.Errorf("backups are not available")
 	}
-	// The report still goes when the archive cannot be made -- a report
-	// without a file is better than none -- and says so: an admin who counts
-	// on the file arriving must not find out it stopped the day one is
-	// needed.
 	arch, err := r.backups.Create(ctx)
 	if err != nil {
-		fmt.Fprintf(&b, "\n\n%s", l("⚠️ The backup could not be taken: ", "⚠️ بکاپ گرفته نشد: ")+mdSafe(err.Error()))
-		return b.String(), nil, nil
+		return nil, err
 	}
 	f, _, err := r.backups.Open(arch.Name)
 	if err != nil {
-		fmt.Fprintf(&b, "\n\n%s", l("⚠️ The backup could not be read: ", "⚠️ بکاپ خوانده نشد: ")+mdSafe(err.Error()))
-		return b.String(), nil, nil
+		return nil, err
 	}
-	return b.String(), &notify.Attachment{Name: arch.Name, Body: closeAfter{f}, Size: arch.Size}, nil
-}
-
-// closeAfter closes the file once the upload has read it to the end.
-type closeAfter struct{ f *os.File }
-
-func (c closeAfter) Read(p []byte) (int, error) {
-	n, err := c.f.Read(p)
-	if err != nil {
-		c.f.Close()
+	host, _ := os.Hostname()
+	when := arch.Taken.Local().Format("2006-01-02 15:04 MST")
+	caption := fmt.Sprintf("W-UI %s backup · %s\n%s · %s\nRestore: Overview → Backup & Restore → Upload",
+		r.version, host, when, humanBytes(uint64(arch.Size)))
+	if lang == "fa" {
+		caption = fmt.Sprintf("بکاپ W-UI %s · %s\n%s · %s\nبازگردانی: نمای کلی ← بکاپ و بازگردانی ← آپلود",
+			r.version, host, when, humanBytes(uint64(arch.Size)))
 	}
-	return n, err
+	return &notify.Attachment{Name: arch.Name, Body: f, Size: arch.Size, Caption: caption}, nil
 }
 
 func humanBytes(n uint64) string {
@@ -127,8 +124,8 @@ func humanBytes(n uint64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-// mdSafe keeps an error from being read as Markdown, which the report is sent
-// in: an underscore in it would make Telegram refuse the whole report.
+// mdSafe keeps a name from being read as Markdown, which the report is sent
+// in: an underscore in one would make Telegram refuse the whole report.
 func mdSafe(s string) string {
 	return strings.NewReplacer("_", " ", "*", " ", "`", "'", "[", "(", "]", ")").Replace(s)
 }

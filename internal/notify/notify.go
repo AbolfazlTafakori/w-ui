@@ -80,8 +80,10 @@ type Config struct {
 	APIServer string `json:"apiServer"`
 	// RunTime is when the periodic report goes; see ParseSchedule.
 	RunTime string `json:"runTime"`
-	// Backup attaches the database to the report.
+	// Backup has the bot send the database to the chat by itself, at
+	// BackupTime (see ParseSchedule and CheckBackupSchedule).
 	Backup     bool       `json:"backup"`
+	BackupTime string     `json:"backupTime"`
 	Thresholds Thresholds `json:"thresholds"`
 }
 
@@ -304,17 +306,5 @@ func (n *Notifier) post(ctx context.Context, c Config, text string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		var reply struct {
-			Description string `json:"description"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&reply)
-		// Telegram's own description says what is wrong far better than the
-		// status code — a wrong chat id and a revoked token both give 400.
-		if reply.Description != "" {
-			return fmt.Errorf("notify: telegram refused it: %s", reply.Description)
-		}
-		return fmt.Errorf("notify: telegram returned %s", resp.Status)
-	}
-	return nil
+	return telegramRefused(resp)
 }

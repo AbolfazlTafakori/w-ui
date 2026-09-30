@@ -367,6 +367,53 @@ const everyUnit = computed({
   },
 })
 
+// ── automatic backup time: every few hours, a time each day or week, crontab ──
+// Kept as the same schedule string the report uses; these read and write it.
+function readBackupTime(v) {
+  v = (v || '').trim()
+  let m = v.match(/^@every (\d+)h$/)
+  if (m) return { mode: 'hours', hours: Number(m[1]), time: '03:00', day: 5 }
+  if (v === '@daily' || v === '@midnight') return { mode: 'daily', hours: 24, time: '00:00', day: 5 }
+  if (v === '@weekly') return { mode: 'weekly', hours: 24, time: '00:00', day: 0 }
+  m = v.match(/^(?:0 )?(\d{1,2}) (\d{1,2}) \* \* (\*|[0-6])$/)
+  if (m && Number(m[1]) < 60 && Number(m[2]) < 24) {
+    const time = `${m[2].padStart(2, '0')}:${m[1].padStart(2, '0')}`
+    if (m[3] === '*') return { mode: 'daily', hours: 24, time, day: 5 }
+    return { mode: 'weekly', hours: 24, time, day: Number(m[3]) }
+  }
+  return { mode: 'custom', hours: 24, time: '03:00', day: 5 }
+}
+function writeBackupTime(p) {
+  const [h, min] = (p.time || '00:00').split(':').map(Number)
+  if (p.mode === 'hours') return `@every ${Math.min(720, Math.max(1, Math.round(Number(p.hours) || 1)))}h`
+  if (p.mode === 'daily') return `0 ${min} ${h} * * *`
+  if (p.mode === 'weekly') return `0 ${min} ${h} * * ${p.day}`
+  return form.value.notifyBackupTime
+}
+function setBackupTime(change) {
+  const p = { ...readBackupTime(form.value.notifyBackupTime), ...change }
+  // Custom starts from the line already there, to be edited.
+  if (change.mode === 'custom') {
+    backupCustom.value = true
+    return
+  }
+  backupCustom.value = false
+  form.value.notifyBackupTime = writeBackupTime(p)
+}
+// Custom stays chosen while its line is typed, even when that line happens to
+// read as one of the others.
+const backupCustom = ref(false)
+const backupTime = computed(() => {
+  const p = readBackupTime(form.value?.notifyBackupTime)
+  if (backupCustom.value) p.mode = 'custom'
+  return p
+})
+const weekdays = computed(() => {
+  const f = new Intl.DateTimeFormat(store.locale === 'fa' ? 'fa-IR' : 'en-GB', { weekday: 'long', timeZone: 'UTC' })
+  // 4 January 1970 was a Sunday, day 0 to crontab.
+  return [0, 1, 2, 3, 4, 5, 6].map((d) => ({ d, name: f.format(new Date(Date.UTC(1970, 0, 4 + d))) }))
+})
+
 // ── tests ────────────────────────────────────────────────────────────────────
 // Saved first, because the server tests what it has stored.
 const testLoading = ref(false)
@@ -940,6 +987,7 @@ const uptime = computed(() => {
             <div class="atabs-nav"><div class="atabs-list">
               <button class="atab" :class="{ active: inner.telegram === '1' }" @click="inner.telegram = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.panelSettings') }}</span></button>
               <button class="atab" :class="{ active: inner.telegram === '2' }" @click="inner.telegram = '2'"><AntIcon name="BellOutlined" /><span>{{ t('set.notifications') }}</span></button>
+              <button class="atab" :class="{ active: inner.telegram === '3' }" @click="inner.telegram = '3'"><AntIcon name="CloudUploadOutlined" /><span>{{ t('set.tgBackupTab') }}</span></button>
             </div></div>
 
             <template v-if="inner.telegram === '1'">
@@ -979,6 +1027,37 @@ const uptime = computed(() => {
               </div>
             </template>
 
+            <template v-else-if="inner.telegram === '3'">
+              <div v-if="!form.notifyEnabled" class="aalert warning" style="margin-bottom: 16px">
+                <AntIcon name="WarningOutlined" />
+                <div class="aalert-body"><span class="aalert-title">{{ t('set.tgBackupBotOff') }}</span></div>
+              </div>
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgAutoBackup') }}</div><div class="setting-list-description">{{ t('set.tgAutoBackupDesc') }}</div></div></div>
+                <div class="acol"><Toggle v-model="form.notifyBackup" :label="t('set.tgAutoBackup')" /></div>
+              </div></div>
+              <div v-if="form.notifyBackup" class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgBackupTime') }}</div><div class="setting-list-description">{{ t('set.tgBackupTimeDesc', { zone: saved?.timeLocation || t('set.tgBackupServerZone') }) }}</div></div></div>
+                <div class="acol"><div class="aspace-v">
+                  <div class="aselect"><select :value="backupTime.mode" :aria-label="t('set.tgBackupTime')" @change="setBackupTime({ mode: $event.target.value })">
+                    <option value="daily">{{ t('set.tgBackupMode.daily') }}</option>
+                    <option value="weekly">{{ t('set.tgBackupMode.weekly') }}</option>
+                    <option value="hours">{{ t('set.tgBackupMode.hours') }}</option>
+                    <option value="custom">{{ t('set.notifyTime.custom') }}</option>
+                  </select></div>
+                  <div v-if="backupTime.mode === 'hours'" class="acompact">
+                    <label class="ainput number"><input :value="backupTime.hours" type="number" min="1" max="720" class="ltr" :aria-label="t('set.notifyTime.interval')" @change="setBackupTime({ hours: $event.target.value })" /></label>
+                    <span class="abtn addon">{{ t('settings.hours') }}</span>
+                  </div>
+                  <div v-if="backupTime.mode === 'weekly'" class="aselect"><select :value="backupTime.day" :aria-label="t('set.tgBackupDay')" @change="setBackupTime({ day: Number($event.target.value) })">
+                    <option v-for="w in weekdays" :key="w.d" :value="w.d">{{ w.name }}</option>
+                  </select></div>
+                  <label v-if="backupTime.mode === 'daily' || backupTime.mode === 'weekly'" class="ainput"><input :value="backupTime.time" type="time" class="ltr" :aria-label="t('set.tgBackupAt')" @change="$event.target.value && setBackupTime({ time: $event.target.value })" /></label>
+                  <label v-if="backupTime.mode === 'custom'" class="ainput block"><input v-model="form.notifyBackupTime" class="ltr" placeholder="0 0 3 * * *" /></label>
+                </div></div>
+              </div></div>
+            </template>
+
             <template v-else>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramNotifyTime') }}</div><div class="setting-list-description">{{ t('set.telegramNotifyTimeDesc') }}</div></div></div>
@@ -1001,10 +1080,6 @@ const uptime = computed(() => {
                   </div>
                   <label v-if="notifyMode === 'custom'" class="ainput block"><input v-model="form.notifyRunTime" class="ltr" placeholder="0 30 8 * * *" /></label>
                 </div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgNotifyBackup') }}</div><div class="setting-list-description">{{ t('set.tgNotifyBackupDesc') }}</div></div></div>
-                <div class="acol"><Toggle v-model="form.notifyBackup" :label="t('set.tgNotifyBackup')" /></div>
               </div></div>
               <div class="setting-list-item"><div class="arow">
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgEventBusNotify') }}</div><div class="setting-list-description">{{ t('set.tgEventBusNotifyDesc') }}</div></div></div>

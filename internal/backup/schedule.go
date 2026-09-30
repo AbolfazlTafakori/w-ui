@@ -50,17 +50,21 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) tick(ctx context.Context) {
+	// How many to keep is taken up whether or not this schedule is on: the
+	// archives the Telegram bot sends are made here too, and with the
+	// schedule off they would otherwise be pruned by the number the panel
+	// started with rather than the one on the settings page.
+	if s.Keep != nil {
+		s.svc.mu.Lock()
+		s.svc.keep = s.Keep()
+		s.svc.mu.Unlock()
+	}
 	every := time.Duration(0)
 	if s.Every != nil {
 		every = s.Every()
 	}
 	if every <= 0 {
 		return
-	}
-	if s.Keep != nil {
-		s.svc.mu.Lock()
-		s.svc.keep = s.Keep()
-		s.svc.mu.Unlock()
 	}
 
 	// The schedule is derived from the newest archive on disk rather than from

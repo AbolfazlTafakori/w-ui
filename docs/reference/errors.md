@@ -245,6 +245,9 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `expiry must be between 0 and … days` / `device limit must be between 1 and …` | Defaults for new customers. | |
 | `backup interval must be between 0 and … hours` / `keep between 0 and 365 backups` | | |
 | `notifications need a chat id` / `unknown bot language "…"` / `notification thresholds cannot be negative` / `a threshold is a percentage, 0 to 100` / `notification time: …` | Telegram settings. | |
+| `backup time: …` / `… is more often than a backup may be taken, once every … minutes` / `… does not come round within a year` / `choose when the automatic backup is sent` | Settings → Telegram → Backup: a time the bot cannot keep, or none with it switched on. | Choose one of the offered times, or a crontab line no more often than every 10 minutes. |
+| `could not take the automatic backup` / `could not send the automatic backup` (log, and said in the chat) | The archive could not be made, or Telegram refused it — past 50 MB it is not sent at all. | `error=`; a large database is downloaded from the panel instead. The next goes at the next time. |
+| `could not read when the last automatic backup went` / `could not record when the automatic backup went` (log) | The database could not be read or written. | The database — disk space, permissions. |
 | `the Telegram API server must begin with http:// or https://` / `the external traffic URI must begin with http:// or https://` / `the test URL must begin with http:// or https://` | | |
 | `a mail server is required to send email` / `a from address is required to send email` / `at least one recipient is required to send email` / `mail port … is out of range` / `unknown mail encryption "…"` | | |
 | `could not deliver a notification` / `telegram bot could not send` / `telegram bot could not poll` (log) | Telegram was unreachable, or the token is wrong. | `error=`: a 401 is a bad token; a timeout is the network. |

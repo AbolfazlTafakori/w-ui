@@ -61,9 +61,14 @@ const (
 	keyNotifyAPIServer = "notify.apiServer"
 	keyNotifyRunTime   = "notify.runTime"
 	keyNotifyBackup    = "notify.backup"
-	keyNotifyCPU       = "notify.cpuThreshold"
-	keyNotifyMemory    = "notify.memoryThreshold"
-	keyNotifyOutDown   = "notify.outboundDownThreshold"
+	keyNotifyBackupAt  = "notify.backupTime"
+	// Where the automatic backup's schedule counts from; kept by the
+	// notifier, not the settings page.
+	keyBackupLastAt       = "notify.backupLastAt"
+	keyBackupLastSchedule = "notify.backupLastSchedule"
+	keyNotifyCPU          = "notify.cpuThreshold"
+	keyNotifyMemory       = "notify.memoryThreshold"
+	keyNotifyOutDown      = "notify.outboundDownThreshold"
 
 	keyBackupEvery = "backup.everyHours"
 	keyBackupKeep  = "backup.keep"
@@ -142,8 +147,11 @@ type PanelSettings struct {
 	// NotifyRunTime is when the periodic report goes: a crontab line, or one
 	// of @hourly, @daily, @weekly, @monthly, @every 30m.
 	NotifyRunTime string `json:"notifyRunTime"`
-	// NotifyBackup attaches the database to the report.
-	NotifyBackup bool `json:"notifyBackup"`
+	// NotifyBackup has the bot send the database to the chat by itself, at
+	// NotifyBackupTime: the same forms as NotifyRunTime, no more often than
+	// every notify.MinBackupGap.
+	NotifyBackup     bool   `json:"notifyBackup"`
+	NotifyBackupTime string `json:"notifyBackupTime"`
 	// Thresholds, in percent, for the system and outbound events.
 	NotifyCPUThreshold          int `json:"notifyCPUThreshold"`
 	NotifyMemoryThreshold       int `json:"notifyMemoryThreshold"`
@@ -303,6 +311,17 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 		out.NotifyRunTime = v
 	}
 	out.NotifyBackup = stored[keyNotifyBackup] == "true"
+	// Before it had a time of its own the backup went with the report, so a
+	// panel that never set one keeps sending it when it always has -- unless
+	// that was more often than a backup may now go, which would leave the
+	// settings page refusing every save until it was found.
+	out.NotifyBackupTime = "@daily"
+	if notify.CheckBackupSchedule(out.NotifyRunTime) == nil {
+		out.NotifyBackupTime = out.NotifyRunTime
+	}
+	if v := strings.TrimSpace(stored[keyNotifyBackupAt]); v != "" {
+		out.NotifyBackupTime = v
+	}
 	out.NotifyCPUThreshold = intOr(stored[keyNotifyCPU], out.NotifyCPUThreshold)
 	out.NotifyMemoryThreshold = intOr(stored[keyNotifyMemory], out.NotifyMemoryThreshold)
 	out.NotifyOutboundDownThreshold = intOr(stored[keyNotifyOutDown], out.NotifyOutboundDownThreshold)
@@ -367,6 +386,7 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 		keyNotifyAPIServer: strings.TrimSpace(in.NotifyAPIServer),
 		keyNotifyRunTime:   strings.TrimSpace(in.NotifyRunTime),
 		keyNotifyBackup:    strconv.FormatBool(in.NotifyBackup),
+		keyNotifyBackupAt:  strings.TrimSpace(in.NotifyBackupTime),
 		keyNotifyCPU:       strconv.Itoa(in.NotifyCPUThreshold),
 		keyNotifyMemory:    strconv.Itoa(in.NotifyMemoryThreshold),
 		keyNotifyOutDown:   strconv.Itoa(in.NotifyOutboundDownThreshold),
@@ -529,6 +549,13 @@ func (s *Settings) validate(in *PanelSettings) error {
 			return fmt.Errorf("%w: notification time: %v", ErrInvalid, err)
 		}
 	}
+	if v := strings.TrimSpace(in.NotifyBackupTime); v != "" {
+		if err := notify.CheckBackupSchedule(v); err != nil {
+			return fmt.Errorf("%w: backup time: %v", ErrInvalid, err)
+		}
+	} else if in.NotifyBackup {
+		return fmt.Errorf("%w: choose when the automatic backup is sent", ErrInvalid)
+	}
 	for _, p := range []int{in.NotifyCPUThreshold, in.NotifyMemoryThreshold, in.NotifyOutboundDownThreshold} {
 		if p < 0 || p > 100 {
 			return fmt.Errorf("%w: a threshold is a percentage, 0 to 100", ErrInvalid)
@@ -560,14 +587,15 @@ func (s *Settings) Notify(ctx context.Context) notify.Config {
 		}
 	}
 	return notify.Config{
-		Enabled:   got.NotifyEnabled,
-		BotToken:  got.NotifyBotToken,
-		ChatID:    got.NotifyChatID,
-		Kinds:     kinds,
-		Lang:      got.NotifyLang,
-		APIServer: got.NotifyAPIServer,
-		RunTime:   got.NotifyRunTime,
-		Backup:    got.NotifyBackup,
+		Enabled:    got.NotifyEnabled,
+		BotToken:   got.NotifyBotToken,
+		ChatID:     got.NotifyChatID,
+		Kinds:      kinds,
+		Lang:       got.NotifyLang,
+		APIServer:  got.NotifyAPIServer,
+		RunTime:    got.NotifyRunTime,
+		Backup:     got.NotifyBackup,
+		BackupTime: got.NotifyBackupTime,
 		Thresholds: notify.Thresholds{
 			CPU:          got.NotifyCPUThreshold,
 			Memory:       got.NotifyMemoryThreshold,
@@ -576,6 +604,41 @@ func (s *Settings) Notify(ctx context.Context) notify.Config {
 			TrafficGB:    got.TrafficDiff,
 		},
 	}
+}
+
+// LastBackup is when the automatic backup last went to the chat, and on which
+// schedule; the zero time and "" before it ever has. It is the
+// notify.BackupStamp.
+func (s *Settings) LastBackup(ctx context.Context) (time.Time, string, error) {
+	db := s.db.WithContext(ctx)
+	at, _, err := database.GetSetting(db, keyBackupLastAt)
+	if err != nil {
+		return time.Time{}, "", err
+	}
+	schedule, _, err := database.GetSetting(db, keyBackupLastSchedule)
+	if err != nil {
+		return time.Time{}, "", err
+	}
+	t, err := time.Parse(time.RFC3339Nano, at)
+	if err != nil {
+		// Never written, or not by this: nothing to count from.
+		return time.Time{}, "", nil
+	}
+	return t, schedule, nil
+}
+
+// SetLastBackup records where the automatic backup's schedule counts from.
+func (s *Settings) SetLastBackup(ctx context.Context, at time.Time, schedule string) error {
+	stamp := ""
+	if !at.IsZero() {
+		stamp = at.UTC().Format(time.RFC3339Nano)
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := database.PutSetting(tx, keyBackupLastAt, stamp); err != nil {
+			return err
+		}
+		return database.PutSetting(tx, keyBackupLastSchedule, schedule)
+	})
 }
 
 // Mail is the email half of the notification settings.

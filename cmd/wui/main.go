@@ -449,7 +449,10 @@ func run() error {
 	})
 	// The periodic report, on the schedule the Telegram page sets.
 	clientsSvc := service.NewClients(db, pools, log)
-	notifier.RunReports(ctx, service.NewReporter(db, clientsSvc, settings, backups, version).Build)
+	reporter := service.NewReporter(db, clientsSvc, settings, backups, version)
+	notifier.RunReports(ctx, reporter.Build)
+	// The automatic backup to the chat, on its own schedule.
+	notifier.RunBackups(ctx, reporter.Backup, settings)
 	// Traffic handed to an outside system, when one is configured.
 	service.NewInformer(db, settings, log).Run(ctx, cfg.CollectInterval)
 

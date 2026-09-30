@@ -16,7 +16,7 @@ Five tabs, in the classic order. Every change is saved with the button at the to
 | Page size | rows per page in the tables |
 | Time zone, language | for dates and the interface |
 | Defaults for new customers | quota, days, device limit, reset cycle |
-| Backups | schedule, how many to keep, whether to send each to Telegram |
+| Backups | schedule, how many to keep (sending them to Telegram is under Telegram → Backup) |
 | Trusted proxies | CIDRs allowed to set `X-Forwarded-*` |
 | Collection interval, online window | how often usage is read, how long since a handshake counts as online |
 
@@ -26,7 +26,7 @@ Username and password, **two-factor authentication** (TOTP — scan with any aut
 
 ## Telegram
 
-Enable the bot, the token from @BotFather, the admin chat id(s), the bot's language, and which events notify: customers depleting, expiring, sharing detected, backups, sign-ins, a daily report. The interactive bot is covered on its own page: [Telegram bot](/panel/telegram).
+Enable the bot, the token from @BotFather, the admin chat id(s), the bot's language, and which events notify: customers depleting, expiring, sharing detected, backups, sign-ins, a daily report; and, on its own tab, the [automatic backup](/panel/telegram#automatic-backup) to the chat. The interactive bot is covered on its own page: [Telegram bot](/panel/telegram).
 
 ## Email
 

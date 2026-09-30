@@ -6,6 +6,39 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-09-30
+
+### Added
+- **Automatic backup to Telegram, on a time of its own.** Settings →
+  Telegram → Backup: switch it on and choose every day at a time, every week
+  on a day at a time, every few hours, or a crontab line. At that time the
+  bot sends the database backup to the admin chat as a file, captioned with
+  the panel's version, the server's name, when it was taken and its size.
+  Times are in the panel's time zone.
+
+### Fixed
+- **The automatic backup no longer depends on the report.** It went only
+  with the periodic report, so it came when the report did, and a report
+  that could not be built took the backup with it.
+- **"Every N hours" survives restarts.** The schedule counted from when the
+  panel started, so a panel restarted (or updated) more often than the
+  interval never sent a backup. Where it counts from is now kept in the
+  database. A backup that fell due while the panel was down is sent once,
+  as soon as it is back; switching it on or changing the time does not send
+  one at once.
+- **A failed backup is said once, not every minute**, and an archive too
+  large for Telegram (past 50 MB) is no longer left open on the server.
+- **How many backups to keep applies with scheduled backups off.** The
+  archives the bot sends are kept on the server too, and were pruned by the
+  number the panel started with instead of the one on the settings page.
+- **A customer named with an underscore no longer stops the report.** The
+  report is sent as Markdown, and Telegram refused the whole message.
+- A backup time more often than every 10 minutes, or one that never comes
+  round (the 30th of February), is refused on save.
+
+Panels that had *Database Backup* switched on keep getting it at the time
+their report went.
+
 ## [2.5.2] — 2026-09-30
 
 ### Fixed
@@ -551,7 +584,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.2...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.2...v2.6.0
 [2.5.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.1...v2.5.0

@@ -252,6 +252,27 @@ func TestSchedulingOffTakesNothing(t *testing.T) {
 	}
 }
 
+// How many to keep is taken from the settings page with the schedule off too:
+// the Telegram bot's automatic backups are made here, and were pruned by the
+// number the panel started with instead.
+func TestKeepIsTakenUpWithTheScheduleOff(t *testing.T) {
+	s, _ := newService(t, 7)
+	sched := NewScheduler(s)
+	sched.Every = func() time.Duration { return 0 }
+	sched.Keep = func() int { return 2 }
+	sched.tick(context.Background())
+
+	for range 4 {
+		if _, err := s.Create(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(1100 * time.Millisecond) // archives are named to the second
+	}
+	if list, _ := s.List(); len(list) != 2 {
+		t.Errorf("%d archives kept, want the 2 the settings ask for", len(list))
+	}
+}
+
 func TestAFileGrowingDuringTheBackupDoesNotBreakIt(t *testing.T) {
 	s, data := newService(t, 0)
 
