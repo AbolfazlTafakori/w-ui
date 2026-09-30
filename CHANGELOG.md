@@ -6,6 +6,26 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.5.2] — 2026-09-30
+
+### Fixed
+- **Speed shows for every customer moving traffic, whatever the collection
+  interval.** A customer's speed was averaged over a fixed six seconds, but
+  how often traffic is read is a setting (the Engine page): read every ten
+  seconds or more, the window was empty most of the time, and only customers
+  asked about just after a collection had a speed -- some connected
+  customers showed one, some did not. The window is now never less than
+  three collections. A node's customers are held to the node's own report
+  interval in the same way.
+- **A speed no longer stays on screen after the customer stops.** The list
+  refreshes its rows by copying the fields that arrive, and a customer with
+  no speed was sent without one, so the last figure stayed; the speed is
+  now always sent, null while there is none.
+
+A customer who is connected but moving nothing -- a phone with its screen
+off, holding the tunnel open -- counts as online and shows `—` for speed, as
+the classic panel does.
+
 ## [2.5.1] — 2026-09-30
 
 ### Fixed
@@ -531,7 +551,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.2...HEAD
+[2.5.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.1...v2.5.0
 [2.4.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.4.0...v2.4.1

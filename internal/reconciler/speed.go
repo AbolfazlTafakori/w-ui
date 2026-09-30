@@ -20,13 +20,17 @@ import (
 // twenty seconds or so: their speed is that report spread over the time it
 // covers, and it stands until the next.
 
-// speedWindow is how much of the recent past a local speed is averaged over.
-const speedWindow = 6 * time.Second
+// minSpeedWindow is the least of the recent past a local speed is averaged
+// over. The window is also never less than three collections: how often
+// traffic is read is a setting, and a window shorter than the gap between two
+// readings is empty most of the time -- only a customer asked about just after
+// a collection would have a speed at all.
+const minSpeedWindow = 6 * time.Second
 
-// remoteSpeedStands is how long a node's report is taken as the speed; a
-// little more than the time between reports, so a node that answers late
-// does not flicker its customers to nothing.
-const remoteSpeedStands = 30 * time.Second
+// remoteSpeedStands is how long a node's report is taken as the speed: half
+// as long again as the time between reports, so a node that answers late does
+// not flicker its customers to nothing.
+func remoteSpeedStands() time.Duration { return NodeReportEvery * 3 / 2 }
 
 type speedSample struct {
 	at    time.Time
@@ -40,14 +44,16 @@ type remoteSpeed struct {
 }
 
 type speedTracker struct {
+	window  time.Duration
 	mu      sync.Mutex
-	samples []speedSample // newest last, within speedWindow
+	samples []speedSample // newest last, within window
 	last    time.Time     // when the previous local tick was read
 	remote  map[uint]remoteSpeed
 }
 
-func newSpeedTracker() *speedTracker {
-	return &speedTracker{remote: map[uint]remoteSpeed{}}
+// newSpeedTracker measures over a window fitted to how often traffic is read.
+func newSpeedTracker(every time.Duration) *speedTracker {
+	return &speedTracker{window: max(minSpeedWindow, 3*every), remote: map[uint]remoteSpeed{}}
 }
 
 // local records one tick of what this server's customers moved.
@@ -84,13 +90,13 @@ func (s *speedTracker) fromNode(clientID uint, up, down uint64, span time.Durati
 func (s *speedTracker) prune(now time.Time) {
 	keep := s.samples[:0]
 	for _, x := range s.samples {
-		if now.Sub(x.at) < speedWindow {
+		if now.Sub(x.at) < s.window {
 			keep = append(keep, x)
 		}
 	}
 	s.samples = keep
 	for id, r := range s.remote {
-		if now.Sub(r.at) >= remoteSpeedStands {
+		if now.Sub(r.at) >= remoteSpeedStands() {
 			delete(s.remote, id)
 		}
 	}

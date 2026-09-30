@@ -276,8 +276,10 @@ type Client struct {
 	OnlineNow int `gorm:"-" json:"onlineNow"`
 
 	// Speed is what the customer is moving right now, in bytes a second each
-	// way; absent while they move nothing. Worked out, never stored.
-	Speed *Speed `gorm:"-" json:"speed,omitempty"`
+	// way; null while they move nothing. Worked out, never stored. Always
+	// sent, null included: the page refreshes its rows by copying the fields
+	// that arrive, and a speed left out kept the last one on screen.
+	Speed *Speed `gorm:"-" json:"speed"`
 
 	// OwnerPaused says why this customer is off although their own plan is
 	// not: the reseller who sold it has been switched off, their term has

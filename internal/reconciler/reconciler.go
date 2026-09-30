@@ -143,7 +143,7 @@ func New(o Options) *Reconciler {
 	}
 	return &Reconciler{
 		conc:     newConcurrency(),
-		speed:    newSpeedTracker(),
+		speed:    newSpeedTracker(interval),
 		meter:    newDeviceMeter(),
 		db:       o.DB,
 		enforcer: o.Enforcer,

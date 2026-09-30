@@ -11,7 +11,7 @@ import (
 // the last few ticks -- averaged, so one busy second does not read as a
 // busy customer -- and they drop out once they have stopped.
 func TestSpeedIsTheRecentTicksEachWay(t *testing.T) {
-	s := newSpeedTracker()
+	s := newSpeedTracker(2 * time.Second)
 	t0 := time.Now()
 
 	// The first tick after a start measures nothing: it covers however long
@@ -48,14 +48,14 @@ func TestSpeedIsTheRecentTicksEachWay(t *testing.T) {
 // A customer on another node is known from that node's reports: the traffic
 // in one, over the time it covers, standing until it is stale.
 func TestANodesCustomerHasTheSpeedOfItsReport(t *testing.T) {
-	s := newSpeedTracker()
+	s := newSpeedTracker(2 * time.Second)
 	now := time.Now()
 	s.fromNode(7, 20_000_000, 200_000_000, 20*time.Second, now)
 	got := s.speeds([]uint{7}, now.Add(5*time.Second))
 	if got[7].Down != 10_000_000 || got[7].Up != 1_000_000 {
 		t.Errorf("node customer speed = %+v, want 10 MB/s down and 1 MB/s up", got[7])
 	}
-	if got := s.speeds([]uint{7}, now.Add(remoteSpeedStands)); len(got) != 0 {
+	if got := s.speeds([]uint{7}, now.Add(remoteSpeedStands())); len(got) != 0 {
 		t.Errorf("a stale node report still stands: %v", got)
 	}
 }
@@ -87,5 +87,31 @@ func TestCollectionFeedsTheSpeed(t *testing.T) {
 	}
 	if _, ok := r.Speeds([]uint{4})[4]; ok {
 		t.Error("a customer the kernel did not count has a speed")
+	}
+}
+
+// The collection interval is a setting (the Engine page), and a speed must be
+// there between two collections however far apart they are: with traffic read
+// every ten seconds, a fixed few-second window was empty most of the time, and
+// only customers asked about just after a collection had a speed at all.
+func TestSpeedHoldsBetweenCollectionsAtAnyInterval(t *testing.T) {
+	for _, every := range []time.Duration{2 * time.Second, 10 * time.Second, 30 * time.Second} {
+		s := newSpeedTracker(every)
+		t0 := time.Now()
+		s.local(map[uint]usageDelta{}, t0)
+		s.local(map[uint]usageDelta{1: {Up: 10_000, Down: 100_000}}, t0.Add(every))
+		// Asked at any moment before the next collection is due.
+		for _, after := range []time.Duration{0, every / 2, every - time.Millisecond} {
+			if _, ok := s.speeds([]uint{1}, t0.Add(every+after))[1]; !ok {
+				t.Errorf("every %s: no speed %s after a collection", every, after)
+			}
+		}
+		// And gone once they have been idle for a few collections.
+		for i := 2; i <= 5; i++ {
+			s.local(map[uint]usageDelta{}, t0.Add(time.Duration(i)*every))
+		}
+		if got := s.speeds([]uint{1}, t0.Add(5*every)); len(got) != 0 {
+			t.Errorf("every %s: still a speed after four idle collections: %v", every, got)
+		}
 	}
 }
