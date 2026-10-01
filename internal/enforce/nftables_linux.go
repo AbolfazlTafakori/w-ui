@@ -104,14 +104,18 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 
 	n.mu.Lock()
 	unchanged := script == n.applied
+	written := n.applied != ""
 	n.mu.Unlock()
-	if unchanged {
-		if n.tablePresent(ctx) {
-			return nil
-		}
+	present := !written || n.tablePresent(ctx)
+	if unchanged && present {
+		return nil
+	}
+	if !present {
 		// Written before and gone now: something else on this server
 		// replaced the whole ruleset. Put back at once -- every limit and
-		// every switched-off customer depends on it.
+		// every switched-off customer depends on it. Said even when the
+		// rules changed too and are written anyway: the removal is still
+		// news, and a change landing on the same tick must not hide it.
 		n.log.Warn("the panel's firewall table was removed by something else on this server; putting it back",
 			"table", "inet "+TableName,
 			"likely", "a firewall reload that flushes the whole ruleset, such as nftables.service with flush ruleset in /etc/nftables.conf")

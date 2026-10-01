@@ -34,7 +34,10 @@ All notable changes to W-UI are recorded here. The format follows
   mode, its owner), issues no token, and on an install older than the file
   writes none. A fresh install is unchanged: one token, and the file.
   `w-ui update` and the panel's own **Update** never did either.
-
+- **A firewall table removed by something else is always reported.** When
+  another program on the server flushed the whole ruleset just as the
+  panel's own rules were changing, the panel put its table back but did not
+  log that it had been removed. It now says so every time.
 
 ### Changed
 - **A release is published only from a commit CI passed.** The release
