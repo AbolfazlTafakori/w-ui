@@ -26,6 +26,14 @@ All notable changes to W-UI are recorded here. The format follows
   node, the subscription page template, restarting the panel, and the
   owner's own account and two-factor.
 
+### Changed
+- **A release is published only from a commit CI passed.** The release
+  workflow now waits for CI on `main` to finish for the tagged commit -- up
+  to 30 minutes -- and builds nothing if it finished red, never ran, or is
+  still going by then. It also refuses to publish a release without the
+  signing key, where it used to publish one unsigned with a warning: an
+  unsigned release is one no panel installs from its update button.
+
 ### Updating
 - **Update every node by hand, once.** A node on v2.0.0 to v2.6.0 refuses the
   panel's request to update itself too, so the panel's **Update** button

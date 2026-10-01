@@ -12,7 +12,31 @@ permissions:
   contents: write
 
 jobs:
+  # Nothing is built or published from a commit CI has not passed. Panels
+  # install the newest release from their update button, so a tag pushed
+  # before CI is green would ship whatever CI had not looked at yet. This
+  # waits for CI on main to finish for the tagged commit -- up to 30 minutes
+  # -- and stops the release if it is red, missing, or still going by then;
+  # re-run the workflow once it is green.
+  ci-passed:
+    name: CI passed on this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go run ./tools/release ci-passed -repo "${{ github.repository }}" -sha "${{ github.sha }}"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
   release:
+    needs: [ci-passed]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,9 +77,11 @@ jobs:
         env:
           WUI_SIGNING_KEY: ${{ secrets.WUI_SIGNING_KEY }}
         run: |
+          # An unsigned release is one no panel will install from its update
+          # button, and installs from the script unchecked: it is not made.
           if [ -z "$WUI_SIGNING_KEY" ]; then
-            echo "::warning::WUI_SIGNING_KEY is not set; the release is unsigned and panels will not self-update from it"
-            exit 0
+            echo "::error::WUI_SIGNING_KEY is not set; nothing is released unsigned"
+            exit 1
           fi
           for f in dist/wui-linux-*; do dist/wui-host sign "$f"; done
 
