@@ -37,7 +37,7 @@ type NFTables struct {
 	// appliedKeys is who that ruleset covered, so a drained tick can tell
 	// whether the kernel still holds it or something has cleared it since.
 	appliedKeys map[string]struct{}
-	ready       bool
+	ready       bool // a ruleset has been written at least once; never cleared
 	lastErr     error
 	caps        Caps
 	probed      bool
@@ -104,7 +104,9 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 
 	n.mu.Lock()
 	unchanged := script == n.applied
-	written := n.applied != ""
+	// Not n.applied: any failed nft call clears that, the counter drain
+	// that finds the table gone included, and runs before this each tick.
+	written := n.ready
 	n.mu.Unlock()
 	present := !written || n.tablePresent(ctx)
 	if unchanged && present {
