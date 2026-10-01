@@ -17,7 +17,8 @@
     "role": "reseller",
     "updatedAt": "\u003cstring\u003e",
     "usedBytes": 0,
-    "username": "contract-reseller"
+    "username": "contract-reseller",
+    "users": 0
   },
   "status": 201
 }

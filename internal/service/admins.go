@@ -661,10 +661,11 @@ func (s *Admins) fill(ctx context.Context, admins []*model.Admin) error {
 	type row struct {
 		OwnerID uint
 		N       int64
+		Users   int64
 	}
 	var counts []row
 	err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Select("owner_id, COUNT(*) AS n").
+		Select("owner_id, COUNT(*) AS n, COALESCE(SUM(device_limit), 0) AS users").
 		Where("owner_id IN ?", ids).
 		Group("owner_id").Scan(&counts).Error
 	if err != nil {
@@ -673,6 +674,7 @@ func (s *Admins) fill(ctx context.Context, admins []*model.Admin) error {
 	for _, c := range counts {
 		if a := byID[c.OwnerID]; a != nil {
 			a.Clients = c.N
+			a.Users = c.Users
 		}
 	}
 	return nil

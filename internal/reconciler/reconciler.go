@@ -110,6 +110,10 @@ type Reconciler struct {
 	conc *concurrency
 	// speed is each customer's speed right now, for the customer list.
 	speed *speedTracker
+	// fileSpeed is the same for each file -- one customer's credentials on
+	// one tunnel -- so a tunnel's speed is what its own files move: a
+	// customer on two tunnels is not counted on both.
+	fileSpeed *speedTracker
 	// meter turns each tunnel's cumulative counters into what each file
 	// carried since the last tick.
 	meter *deviceMeter
@@ -142,21 +146,22 @@ func New(o Options) *Reconciler {
 		interval = 2 * time.Second
 	}
 	return &Reconciler{
-		conc:     newConcurrency(),
-		speed:    newSpeedTracker(interval),
-		meter:    newDeviceMeter(),
-		db:       o.DB,
-		enforcer: o.Enforcer,
-		shaper:   o.Shaper,
-		router:   o.Router,
-		hops:     o.Hops,
-		policyOf: o.Policy,
-		hopsOf:   o.HopsOf,
-		notifier: o.Notifier,
-		pool:     o.Pool,
-		interval: interval,
-		log:      o.Log,
-		writer:   newTrafficWriter(o.DB, o.Log),
+		conc:      newConcurrency(),
+		speed:     newSpeedTracker(interval),
+		fileSpeed: newSpeedTracker(interval),
+		meter:     newDeviceMeter(),
+		db:        o.DB,
+		enforcer:  o.Enforcer,
+		shaper:    o.Shaper,
+		router:    o.Router,
+		hops:      o.Hops,
+		policyOf:  o.Policy,
+		hopsOf:    o.HopsOf,
+		notifier:  o.Notifier,
+		pool:      o.Pool,
+		interval:  interval,
+		log:       o.Log,
+		writer:    newTrafficWriter(o.DB, o.Log),
 		// Zero would silently match nothing and leave a panel programming an
 		// empty kernel, so it falls back to the first node, which is this one on
 		// every install that has never added a second.
@@ -204,6 +209,7 @@ func (r *Reconciler) AddDeviceUsage(accountID uint, up, down uint64) {
 	if accountID == 0 || up+down == 0 {
 		return
 	}
+	r.fileSpeed.fromNode(accountID, up, down, NodeReportEvery, time.Now().UTC())
 	r.writer.submit(trafficUpdate{AccountID: accountID, DevUp: up, DevDown: down, At: time.Now().UTC()})
 }
 
@@ -364,7 +370,9 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	if allRead {
 		r.meter.keep(metered)
 	}
-	for acc, d := range apportion(billed, grown, r.conc.clients()) {
+	files := apportion(billed, grown, r.conc.clients())
+	r.fileSpeed.local(files, now)
+	for acc, d := range files {
 		r.writer.submit(trafficUpdate{AccountID: acc, DevUp: d.Up, DevDown: d.Down, At: now})
 	}
 
@@ -1007,6 +1015,12 @@ func (r *Reconciler) ConnectionsNow(clientIDs []uint) map[uint]int {
 // nothing is absent.
 func (r *Reconciler) Speeds(clientIDs []uint) map[uint]model.Speed {
 	return r.speed.speeds(clientIDs, time.Now().UTC())
+}
+
+// FileSpeeds is what each file -- a customer's credentials on one tunnel --
+// is moving right now, keyed by account id; one moving nothing is absent.
+func (r *Reconciler) FileSpeeds() map[uint]model.Speed {
+	return r.fileSpeed.moving(time.Now().UTC())
 }
 
 // NodeReportEvery is how far apart a node's usage reports are, which is the

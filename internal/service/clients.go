@@ -157,7 +157,7 @@ type CreateInput struct {
 // account only exists on an interface, and an interface serves exactly one
 // protocol, so accepting both would allow them to disagree.
 func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, error) {
-	if err := s.checkCeiling(ctx, 1); err != nil {
+	if err := checkBarred(ctx); err != nil {
 		return nil, err
 	}
 	ifaces, err := s.loadInterfaces(ctx, in.chosenInterfaces())
@@ -166,6 +166,9 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 	}
 	names, err := s.validateCreate(&in)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkCeiling(ctx, in.DeviceLimit, -1); err != nil {
 		return nil, err
 	}
 	// The first tunnel decides the protocol recorded on the customer, which is
@@ -352,13 +355,25 @@ func checkBarred(ctx context.Context) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, sc.Barred)
 }
 
-// checkCeiling refuses a create that would take a reseller past what the
-// owner sold them.
+// checkCeiling refuses a customer that would take a reseller past the users
+// the owner sold them.
+//
+// The limit counts users, not customers: a customer is as many users as
+// their plan is for -- DeviceLimit, one file and one connection each. A
+// reseller sold 100 may make a hundred single-user customers or twenty-five
+// for four users each, and either way has sold 100. Counting customers
+// instead let a reseller sold 100 hand out 5,000 connections, 50 to a
+// customer.
+//
+// users is what the customer's plan is to be for, was what it was for
+// before: -1 for a new customer. A plan made smaller, or left as it is,
+// is never refused; a plan for any number of users at once is, under a
+// limit, since it would hold users the count could not see.
 //
 // Read here rather than in the handler so that every way of making a
 // customer goes through it: the form, the batch, the importer and the
 // Telegram bot alike.
-func (s *Clients) checkCeiling(ctx context.Context, adding int) error {
+func (s *Clients) checkCeiling(ctx context.Context, users, was int) error {
 	sc := ScopeOf(ctx)
 	if !sc.Restricted {
 		return nil
@@ -366,18 +381,40 @@ func (s *Clients) checkCeiling(ctx context.Context, adding int) error {
 	if err := checkBarred(ctx); err != nil {
 		return err
 	}
-	if sc.ClientLimit <= 0 {
+	if sc.ClientLimit <= 0 || users == was {
 		return nil
 	}
-	var held int64
-	if err := s.db.WithContext(ctx).Model(&model.Client{}).Count(&held).Error; err != nil {
-		return fmt.Errorf("service: count your customers: %w", err)
+	if users <= 0 {
+		return invalidField("deviceLimit",
+			"you may sell %d users in all, so each customer is for a number of users: give 1 or more", sc.ClientLimit)
 	}
-	if held+int64(adding) > int64(sc.ClientLimit) {
-		return invalidField("name",
-			"you may have %d customers and you have %d", sc.ClientLimit, held)
+	if was > 0 && users < was {
+		return nil
+	}
+	held, err := s.usersHeld(ctx)
+	if err != nil {
+		return err
+	}
+	if held-int64(max(was, 0))+int64(users) > int64(sc.ClientLimit) {
+		return invalidField("deviceLimit",
+			"you may have %d users and you have %d; this customer would make it %d",
+			sc.ClientLimit, held, held-int64(max(was, 0))+int64(users))
 	}
 	return nil
+}
+
+// usersHeld is how many users the operator in ctx has sold: the users each
+// of their customers' plans is for, added up.
+func (s *Clients) usersHeld(ctx context.Context) (int64, error) {
+	var held *int64
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).
+		Select("SUM(device_limit)").Scan(&held).Error; err != nil {
+		return 0, fmt.Errorf("service: count your users: %w", err)
+	}
+	if held == nil {
+		return 0, nil
+	}
+	return *held, nil
 }
 
 // buildAccount generates the credentials for one device.
@@ -1187,6 +1224,9 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		// them together.
 		if *in.DeviceLimit < 0 || *in.DeviceLimit > 50 {
 			return nil, fmt.Errorf("%w: device limit must be between 0 and 50", ErrInvalid)
+		}
+		if err := s.checkCeiling(ctx, *in.DeviceLimit, client.DeviceLimit); err != nil {
+			return nil, err
 		}
 		fields["device_limit"] = *in.DeviceLimit
 		seats = in.DeviceLimit

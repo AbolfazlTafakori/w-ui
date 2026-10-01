@@ -494,6 +494,7 @@ func run() error {
 	service.ConnectionsNow = rec.ConnectionsNow
 	service.LiveClients = rec.LiveClients
 	service.SpeedNow = rec.Speeds
+	service.FileSpeedNow = rec.FileSpeeds
 	reconciler.NodeReportEvery = nodes.SyncInterval
 	syncer.Start(ctx)
 

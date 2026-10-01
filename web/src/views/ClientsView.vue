@@ -168,8 +168,8 @@ const accountStrip = computed(() => {
   else if (days !== null && days <= 0) reason = t('admins.termEnded')
   else if (a.quotaBytes && a.usedBytes >= a.quotaBytes) reason = t('admins.allowanceSpent')
   return {
-    customers: a.clientLimit ? `${nf(a.clients)} / ${nf(a.clientLimit)}` : `${nf(a.clients)} / ∞`,
-    customersColor: a.clientLimit && a.clients >= a.clientLimit ? 'orange' : 'green',
+    customers: a.clientLimit ? `${nf(a.users)} / ${nf(a.clientLimit)}` : `${nf(a.users)} / ∞`,
+    customersColor: a.clientLimit && a.users >= a.clientLimit ? 'orange' : 'green',
     traffic: left === null ? '∞' : bytes(left, store.locale),
     trafficColor: left === null ? 'purple' : spentPct >= 100 ? 'red' : spentPct >= DEPLETING_AT ? 'orange' : 'green',
     time: days === null ? '∞' : days <= 0 ? t('admins.termEnded') : t('admins.daysLeft', { n: nf(days) }),

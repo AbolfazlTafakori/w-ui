@@ -28,7 +28,7 @@ Across the top: how many resellers you have, how many are active, ending soon or
 
 A row each, in the same colours as the customer list — green while there is room, orange when it is running low, red when it has run out, purple for unlimited:
 
-- **Customers** — how many they hold against their limit.
+- **Users** — how many users they have sold against their limit.
 - **Traffic** and **Traffic left** — what their customers have used, and what is left of the allowance.
 - **Time left** — days until their term ends, or *on hold* while it has not started.
 - **Servers** — the ones they may sell.
@@ -42,7 +42,7 @@ On a phone each reseller is a card with the same figures.
 The dialog is laid out as the customer dialog is.
 
 - **Username and password** are drawn for you; the button beside each draws another. The copy button puts the panel's address, the username and the password on the clipboard together, ready to send.
-- **Customers.** How many they may hold at once. Empty is no limit.
+- **Users.** How many users they may sell in all. A customer counts for the users their plan is for: a limit of 100 is a hundred one-user customers, or twenty-five customers for four users each, or any mix that adds up to 100. Raising a customer's users counts against it too, and lowering them frees what they held. With a limit, a reseller cannot sell a customer any number of users at once. Empty is no limit.
 - **Traffic.** What their customers may carry *between them* — measured in what was actually used, not what was promised, so ten unlimited plans nobody connects to cost nothing. Empty is no limit.
 - **Until.** The last day their account works, picked from a calendar in the calendar the panel is set to (Gregorian, or Jalali — Settings → General → Calendar Type). *+1 month*, *+3 months* and *+1 year* count from the date already set, so extending is one click.
 - **On hold.** The term is a number of days that starts the first time they sign in, not today: sold on Friday and first signed in on Monday, they still get every day.
@@ -55,7 +55,7 @@ Changing the group later moves all their existing customers to the new name.
 
 ## What the reseller sees
 
-Their Clients page opens with **Your account**: customers against their limit, traffic left, time left. If their term has ended or their allowance is used up it says so, and why.
+Their Clients page opens with **Your account**: users against their limit, traffic left, time left. If their term has ended or their allowance is used up it says so, and why.
 
 When you take a server back, the customers already on it keep working, and the reseller can still rename, extend or take them off it. They cannot put anyone new there.
 
@@ -119,7 +119,7 @@ Tick the box on each reseller, or the one in the header for everything the filte
 | Switch on / Switch off | Switching off asks first and says how many customers go off. It signs the resellers out, exactly as switching one off does. |
 | Extend term | Adds days to each running term. A term that has ended starts again from today; a term on hold gets the days added to the hold; a reseller with no end date keeps none. |
 | Start their allowance again | Each reseller's traffic from zero. Their customers' own usage is not touched. |
-| Set traffic allowance / Set customer limit | The same value for all of them. Empty is no limit. |
+| Set traffic allowance / Set user limit | The same value for all of them. Empty is no limit. |
 | Add servers / Remove servers | Added to, or taken from, what each already has. Customers on a server taken away keep working. |
 | Delete | Asks, as for one reseller, whether to keep their customers under you or delete them too. |
 

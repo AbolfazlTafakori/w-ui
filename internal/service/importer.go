@@ -226,6 +226,13 @@ func (s *Clients) replaceFromImport(ctx context.Context, id uint, row ClientReco
 		"updated_at":        time.Now().UTC(),
 	}
 	if row.DeviceLimit >= 1 {
+		var was model.Client
+		if err := s.db.WithContext(ctx).Select("device_limit").First(&was, id).Error; err != nil {
+			return fmt.Errorf("read: %w", err)
+		}
+		if err := s.checkCeiling(ctx, row.DeviceLimit, was.DeviceLimit); err != nil {
+			return err
+		}
 		updates["device_limit"] = row.DeviceLimit
 	}
 	// Usage is deliberately not restored. The number on the old server counted

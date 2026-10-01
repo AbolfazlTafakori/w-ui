@@ -362,7 +362,15 @@ type Load struct {
 	Disabled int64 `json:"disabled"`
 	Depleted int64 `json:"depleted"`
 	Online   int64 `json:"online"`
+	// Speed is what its files are moving right now, up and down; nil when
+	// nothing is.
+	Speed *model.Speed `json:"speed"`
 }
+
+// FileSpeedNow, when set, answers what each file is moving right now, by
+// account id. Set by the panel from its reconciler; nil leaves the
+// interfaces without a speed.
+var FileSpeedNow func() map[uint]model.Speed
 
 // Loads returns per-interface totals, keyed by interface id.
 //
@@ -452,7 +460,51 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 		l.Online = o.N
 		out[o.InterfaceID] = l
 	}
+	if err := s.fillSpeeds(ctx, out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// fillSpeeds adds up, per tunnel, what its files are moving right now. Only
+// the files moving something are looked up, so a quiet panel asks nothing.
+func (s *Interfaces) fillSpeeds(ctx context.Context, out map[uint]Load) error {
+	if FileSpeedNow == nil {
+		return nil
+	}
+	speeds := FileSpeedNow()
+	if len(speeds) == 0 {
+		return nil
+	}
+	ids := make([]uint, 0, len(speeds))
+	for id := range speeds {
+		ids = append(ids, id)
+	}
+	const batch = 500
+	for start := 0; start < len(ids); start += batch {
+		var rows []struct {
+			ID          uint
+			InterfaceID uint
+		}
+		err := s.db.WithContext(ctx).Model(&model.Account{}).
+			Select("id, interface_id").
+			Where("id IN ?", ids[start:min(start+batch, len(ids))]).
+			Scan(&rows).Error
+		if err != nil {
+			return fmt.Errorf("service: find the moving files' tunnels: %w", err)
+		}
+		for _, r := range rows {
+			sp := speeds[r.ID]
+			l := out[r.InterfaceID]
+			if l.Speed == nil {
+				l.Speed = &model.Speed{}
+			}
+			l.Speed.Up += sp.Up
+			l.Speed.Down += sp.Down
+			out[r.InterfaceID] = l
+		}
+	}
+	return nil
 }
 
 // UpdateInterfaceInput carries the fields an operator may change after

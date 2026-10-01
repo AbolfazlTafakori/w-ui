@@ -500,14 +500,14 @@ func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 	for _, i := range splitList(in.Interfaces) {
 		id, err := strconv.ParseUint(i, 10, 64)
 		if err != nil {
-			return invalidField("interfaces", "an inbound is named by id here, and %q is not one", i)
+			return invalidField("interfaces", "an interface is named by id here, and %q is not one", i)
 		}
 		var n int64
 		if err := s.db.WithContext(ctx).Model(&model.Interface{}).Where("id = ?", id).Count(&n).Error; err != nil {
 			return fmt.Errorf("service: check interface: %w", err)
 		}
 		if n == 0 {
-			return invalidField("interfaces", "there is no inbound with id %s", i)
+			return invalidField("interfaces", "there is no interface with id %s", i)
 		}
 	}
 

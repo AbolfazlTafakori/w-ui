@@ -120,9 +120,11 @@ function termTag(a) {
   return { color: d <= WARN_DAYS ? 'orange' : 'green', label: t('admins.daysLeft', { n: nf(d) }), title }
 }
 function customersTag(a) {
-  if (!a.clientLimit) return { color: '', label: `${nf(a.clients)} / ∞` }
-  const full = a.clients >= a.clientLimit
-  return { color: full ? 'orange' : '', label: `${nf(a.clients)} / ${nf(a.clientLimit)}` }
+  // The limit counts users -- a customer for four users is four -- so
+  // that is what it is shown against.
+  if (!a.clientLimit) return { color: '', label: `${nf(a.users)} / ∞` }
+  const full = a.users >= a.clientLimit
+  return { color: full ? 'orange' : '', label: `${nf(a.users)} / ${nf(a.clientLimit)}` }
 }
 
 function serverName(id) {
@@ -185,7 +187,7 @@ const shown = computed(() => {
   const left = (a) => (a.expiresAt ? new Date(a.expiresAt).getTime() : a.durationDays > 0 ? Date.now() + a.durationDays * DAY : Infinity)
   const by = {
     name: (x, y) => x.username.localeCompare(y.username),
-    customers: (x, y) => (y.clients || 0) - (x.clients || 0),
+    customers: (x, y) => (y.users || 0) - (x.users || 0),
     traffic: (x, y) => (y.usedBytes || 0) - (x.usedBytes || 0),
     timeLeft: (x, y) => left(x) - left(y),
     newest: (x, y) => new Date(y.createdAt || 0) - new Date(x.createdAt || 0),

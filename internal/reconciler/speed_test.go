@@ -115,3 +115,17 @@ func TestSpeedHoldsBetweenCollectionsAtAnyInterval(t *testing.T) {
 		}
 	}
 }
+
+// moving answers for everything with a speed, from this server's ticks and
+// from nodes' reports alike, without being told whom to ask about.
+func TestMovingIsEverythingWithASpeed(t *testing.T) {
+	s := newSpeedTracker(2 * time.Second)
+	t0 := time.Now()
+	s.local(map[uint]usageDelta{}, t0)
+	s.local(map[uint]usageDelta{1: {Up: 2_000, Down: 4_000}, 2: {}}, t0.Add(2*time.Second))
+	s.fromNode(9, 20_000, 40_000, 20*time.Second, t0.Add(2*time.Second))
+	got := s.moving(t0.Add(2 * time.Second))
+	if len(got) != 2 || got[1].Up != 1_000 || got[1].Down != 2_000 || got[9].Up != 1_000 || got[9].Down != 2_000 {
+		t.Errorf("moving = %+v, want 1 and 9 at 1000 up and 2000 down a second", got)
+	}
+}

@@ -94,6 +94,9 @@ type interfaceView struct {
 	Disabled  int64  `json:"disabled"`
 	Depleted  int64  `json:"depleted"`
 	Online    int64  `json:"online"`
+	// Speed is what the customers on it are moving right now; nil when
+	// nothing is.
+	Speed *model.Speed `json:"speed"`
 
 	// Which server this tunnel runs on, and whether that server is answering.
 	//
@@ -177,6 +180,7 @@ func (s *Server) interfaceViews(r *http.Request) ([]interfaceView, error) {
 			v.Clients, v.Devices, v.UsedBytes = l.Clients, l.Devices, l.UsedBytes
 			v.UpBytes, v.DownBytes = l.UpBytes, l.DownBytes
 			v.Active, v.Disabled, v.Depleted, v.Online = l.Active, l.Disabled, l.Depleted, l.Online
+			v.Speed = l.Speed
 		}
 		// A tunnel on another node is that node's to run, and this panel has no
 		// driver for it: reported as running when the node itself is answering,

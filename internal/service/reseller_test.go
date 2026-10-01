@@ -167,20 +167,95 @@ func TestResellerCannotSellAServerTheyWereNotGiven(t *testing.T) {
 	}
 }
 
-func TestResellerCeilingOnCustomerCount(t *testing.T) {
+// A reseller's limit counts users: a hundred single-user customers and
+// twenty-five four-user customers are both a hundred, and so is any mix.
+func TestResellerCeilingCountsUsers(t *testing.T) {
+	for name, plans := range map[string][]int{
+		"100 customers of one user":  repeat(1, 100),
+		"25 customers of four users": repeat(4, 25),
+		"a mix":                      append(append(repeat(4, 10), repeat(2, 20)...), repeat(1, 20)...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, clients, admins := resellerDB(t)
+			reza := newReseller(t, admins, "reza", 100)
+			ctx := asReseller(reza, 1)
+
+			for i, users := range plans {
+				if _, err := clients.Create(ctx, CreateInput{Name: fmt.Sprintf("c%d", i), InterfaceIDs: []uint{1}, DeviceLimit: users}); err != nil {
+					t.Fatalf("customer %d, for %d users: %v", i, users, err)
+				}
+			}
+			// The hundred are sold: not one more user, whatever the plan.
+			_, err := clients.Create(ctx, CreateInput{Name: "one too many", InterfaceIDs: []uint{1}, DeviceLimit: 1})
+			if err == nil || !strings.Contains(err.Error(), "you may have 100 users and you have 100") {
+				t.Fatalf("past the limit gave %v, want a refusal naming it", err)
+			}
+			// What the owner's page shows against the limit.
+			list, err := admins.List(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, a := range list {
+				if a.ID == reza.ID && (a.Users != 100 || a.Clients != int64(len(plans))) {
+					t.Errorf("the operators page shows %d of 100 users and %d customers, want 100 and %d", a.Users, a.Clients, len(plans))
+				}
+			}
+		})
+	}
+}
+
+// Raising a customer's users is selling more users, and is held to the same
+// limit; lowering it frees them. A plan for any number of users at once
+// would hold users the count cannot see, so a reseller with a limit cannot
+// sell one.
+func TestResellerCeilingOnChangedPlans(t *testing.T) {
 	_, clients, admins := resellerDB(t)
-	reza := newReseller(t, admins, "reza", 2)
+	reza := newReseller(t, admins, "reza", 10)
 	ctx := asReseller(reza, 1)
 
-	for i := range 2 {
-		if _, err := clients.Create(ctx, CreateInput{Name: string(rune('a' + i)), InterfaceIDs: []uint{1}}); err != nil {
-			t.Fatalf("customer %d: %v", i, err)
-		}
+	four, err := clients.Create(ctx, CreateInput{Name: "four", InterfaceIDs: []uint{1}, DeviceLimit: 4})
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, err := clients.Create(ctx, CreateInput{Name: "one too many", InterfaceIDs: []uint{1}})
-	if err == nil || !strings.Contains(err.Error(), "you may have 2 customers") {
-		t.Fatalf("past the ceiling gave %v, want a refusal naming it", err)
+	if _, err := clients.Create(ctx, CreateInput{Name: "five", InterfaceIDs: []uint{1}, DeviceLimit: 5}); err != nil {
+		t.Fatal(err)
 	}
+	// 9 of 10: four can become five, not six.
+	six, five, two, zero := 6, 5, 2, 0
+	if _, err := clients.Update(ctx, four.ID, UpdateInput{DeviceLimit: &six}); err == nil {
+		t.Fatal("a customer went from 4 users to 6 with 1 left to sell")
+	}
+	if _, err := clients.Update(ctx, four.ID, UpdateInput{DeviceLimit: &five}); err != nil {
+		t.Fatalf("4 users to 5, with 1 left: %v", err)
+	}
+	// Lowering always goes through, and frees what it frees.
+	if _, err := clients.Update(ctx, four.ID, UpdateInput{DeviceLimit: &two}); err != nil {
+		t.Fatalf("5 users to 2: %v", err)
+	}
+	if _, err := clients.Create(ctx, CreateInput{Name: "three", InterfaceIDs: []uint{1}, DeviceLimit: 3}); err != nil {
+		t.Fatalf("3 users with 3 freed: %v", err)
+	}
+	// Any number at once, new or changed.
+	if _, err := clients.Create(ctx, CreateInput{Name: "unlimited", InterfaceIDs: []uint{1}, DeviceLimit: 0}); err == nil {
+		t.Error("a reseller with a limit sold a customer any number of users")
+	}
+	if _, err := clients.Update(ctx, four.ID, UpdateInput{DeviceLimit: &zero}); err == nil {
+		t.Error("a reseller with a limit made a customer any number of users")
+	}
+
+	// Without a limit nothing is counted.
+	free := newReseller(t, admins, "free", 0)
+	if _, err := clients.Create(asReseller(free, 1), CreateInput{Name: "anything", InterfaceIDs: []uint{1}, DeviceLimit: 0}); err != nil {
+		t.Errorf("a reseller without a limit: %v", err)
+	}
+}
+
+func repeat(n, times int) []int {
+	out := make([]int, times)
+	for i := range out {
+		out[i] = n
+	}
+	return out
 }
 
 func TestSuspensionIsComputedAndLeavesCustomersAlone(t *testing.T) {

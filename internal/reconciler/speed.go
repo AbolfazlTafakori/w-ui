@@ -102,11 +102,39 @@ func (s *speedTracker) prune(now time.Time) {
 	}
 }
 
+// moving answers for everything moving anything right now.
+func (s *speedTracker) moving(now time.Time) map[uint]model.Speed {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.prune(now)
+	seen := map[uint]bool{}
+	var ids []uint
+	add := func(id uint) {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	for _, x := range s.samples {
+		for id := range x.bytes {
+			add(id)
+		}
+	}
+	for id := range s.remote {
+		add(id)
+	}
+	return s.speedsLocked(ids)
+}
+
 // speeds answers for these customers; one not moving anything is absent.
 func (s *speedTracker) speeds(ids []uint, now time.Time) map[uint]model.Speed {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.prune(now)
+	return s.speedsLocked(ids)
+}
+
+func (s *speedTracker) speedsLocked(ids []uint) map[uint]model.Speed {
 
 	var span time.Duration
 	for _, x := range s.samples {

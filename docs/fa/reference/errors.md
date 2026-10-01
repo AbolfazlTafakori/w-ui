@@ -65,7 +65,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `at most … characters` / `no line breaks or control characters` | نام مشتری یا دستگاه، یا یادداشت، از ستونش بلندتر است (نام ۱۲۸، دستگاه ۶۴، یادداشت ۵۱۲) یا شکستِ خط دارد. | کوتاه‌ترش کن و در یک خط بنویس. |
 | `choose at least one server for this customer` | هیچ اینترفیسی تیک نخورده. | تانل‌(های) مجاز مشتری را تیک بزن. |
 | `Not found: …` | آی‌دی اینترفیسی که وجود ندارد — معمولاً صفحهٔ کهنه بعد از حذف. | رفرش کن؛ تانل موجود را انتخاب کن. |
-| `one of those inbounds does not exist` / `choose at least one inbound` | همان، در ساخت گروهی. |  |
+| `one of those interfaces does not exist` / `choose at least one interface` | همان، در ساخت گروهی. |  |
 | `device limit must be between 0 and 50` | اتصال هم‌زمان. | عددی در همان بازه. |
 | `… devices requested; at most … per customer` | سقف فایل دستگاه ۶۴ است. |  |
 | `expiry is in the past` | تاریخ انقضا گذشته است. | تاریخ آینده بده، یا خالی بگذار تا منقضی نشود. |
@@ -98,7 +98,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `your account has been switched off` | هنگام ورود: مالک این حساب را غیرفعال کرده. همه‌ی کاربرانش هم قطع‌اند. | از مالک بخواه دوباره فعالش کند. |
 | `your account has been switched off` / `your account's term has ended` / `your data allowance is used up` | روی هر تغییری — کاربر جدید، ویرایش، صفر کردن، دستگاه جدید. حساب متوقف است، پس کاربرانش قطع‌اند و تا تمدید چیزی درباره‌شان تغییر نمی‌کند. دیدنشان کار می‌کند. | از مالک بخواه فعالش کند، تاریخ را تمدید کند، یا حجم را از نو شروع کند. |
 | `that server is not one of yours` | سروری که انتخاب شده جزو سرورهایی نیست که مالک به این نماینده داده، یا پس گرفته شده. کاربرانی که از قبل رویش هستند کار می‌کنند و هنوز می‌شود ویرایششان کرد یا از آن برداشت. | سروری از فهرستِ نمایش‌داده‌شده انتخاب کن. |
-| `you may have … customers and you have …` | به سقف تعداد کاربر رسیده‌ای. | یک کاربر را حذف کن، یا از مالک سقف بیشتر بخواه. |
+| `you may have … users and you have …; this customer would make it …` | به سقف تعداد کاربر رسیده‌ای. سقف کاربرها را می‌شمارد نه مشتری‌ها را: مشتریِ چهارکاربره چهار حساب می‌شود. | تعداد کاربر یک مشتری را کم کن، یک مشتری را حذف کن، یا از مالک سقف بیشتر بخواه. |
+| `you may sell … users in all, so each customer is for a number of users: give 1 or more` | فروشنده‌ای که سقف کاربر دارد برای یک مشتری «بدون محدودیت دستگاه» گذاشته؛ این را سقف نمی‌تواند بشمارد. | برای مشتری یک تعداد کاربر مشخص بگذار. |
 | `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | ظرف یک ساعت پنج شناسه‌ی سابسکریپشن تکراری انتخاب شده. | شناسه را خالی بگذار تا خودکار ساخته شود. |
 | `this part of the panel is the owner's` | صفحه یا درخواستی که فقط مالک می‌تواند استفاده کند. روی نودِ v2.0.0 تا v2.6.0، هر درخواست پنل مدیرش هم، که در نتیجه نود را در دسترس‌نبودن نشان می‌دهد. | روی چنین نودی: یک‌بار `w-ui update` روی سرور نود. |
 
@@ -208,7 +209,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `the rule matches nothing as written; fill in at least one criterion` | همهٔ فیلدهای تطبیق خالی‌اند. | دست‌کم یکی از مبدأ، مقصد، دامنه، پورت، مشتری، گروه، اینترفیس. |
 | `"…" is not a network the router matches; use tcp, udp or icmp` / `icmp has no ports; drop the ports or pick tcp or udp` |  |  |
 | `there is no outbound or balancer called "…"` |  |  |
-| `a client is named by id here, and "…" is not one` / `an inbound is named by id here, and "…" is not one` / `there is no inbound with id …` | قانون‌ها مشتری و تانل را با شماره صدا می‌زنند. | آی‌دی از فهرست. |
+| `a client is named by id here, and "…" is not one` / `an interface is named by id here, and "…" is not one` / `there is no interface with id …` | قانون‌ها مشتری و تانل را با شماره صدا می‌زنند. | آی‌دی از فهرست. |
 | `"…" is a balancer; the default has to be an outbound. Point a rule at the balancer instead` |  |  |
 | `"…" has no dot in it, so it is not a domain name` / `"…" is too long to be a domain name` |  |  |
 | `unknown domain strategy "…"` / `unknown query strategy "…"` |  | یکی که فرم پیشنهاد می‌دهد. |

@@ -6,6 +6,31 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.2] — 2026-10-02
+
+### Fixed
+- **A reseller's limit counts users, not customers.** A reseller sold 100
+  could make a hundred customers for fifty users each -- 5,000 users. The
+  limit now adds up the users each customer's plan is for: a hundred
+  one-user customers and twenty-five four-user customers are both 100, and
+  so is any mix. Raising a customer's users counts against the limit, and
+  lowering them frees what they held. A reseller with a limit can no longer
+  give a customer any number of users at once (device limit 0), which the
+  count could not see. The operators page and the reseller's own account
+  box show users against the limit. Customers a reseller already made are
+  kept; any made unlimited before this release count as none until they are
+  changed.
+- **Interfaces show their speed.** The Speed column on the interfaces page
+  always showed "—", and sorting by it did nothing. It now shows what the
+  customers on each interface are moving, up and down, the same way the
+  customer list does -- for a node's interfaces too, from that node's
+  reports -- and sorts by it.
+- **Interfaces are called interfaces.** The interfaces page, its menus, the
+  hosts and routing forms, the customer details, the error messages, the
+  Telegram bot and the report said "inbound" (in Persian "ورودی" or
+  "اینباند") for what the panel calls an interface everywhere else. The
+  bot's `/inbound` command keeps its name.
+
 ## [2.6.1] — 2026-10-01
 
 ### Fixed
@@ -648,7 +673,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.1...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.2...HEAD
+[2.6.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.2...v2.6.0
 [2.5.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.1...v2.5.2

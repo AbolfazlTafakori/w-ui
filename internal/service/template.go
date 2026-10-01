@@ -179,11 +179,11 @@ func (t *Template) Apply(ctx context.Context, doc TemplateDoc, section string) (
 			if cur, ok := byName[strings.ToLower(head.Name)]; ok {
 				var in UpdateInterfaceInput
 				if err := json.Unmarshal(raw, &in); err != nil {
-					skip("inbound "+head.Name, err)
+					skip("interface "+head.Name, err)
 					continue
 				}
 				if _, err := t.interfaces.Update(ctx, cur.ID, in); err != nil {
-					skip("inbound "+head.Name, err)
+					skip("interface "+head.Name, err)
 					continue
 				}
 				res.Updated++
@@ -191,11 +191,11 @@ func (t *Template) Apply(ctx context.Context, doc TemplateDoc, section string) (
 			}
 			var in CreateInterfaceInput
 			if err := json.Unmarshal(raw, &in); err != nil {
-				skip("inbound "+head.Name, err)
+				skip("interface "+head.Name, err)
 				continue
 			}
 			if _, err := t.interfaces.Create(ctx, in); err != nil {
-				skip("inbound "+head.Name, err)
+				skip("interface "+head.Name, err)
 				continue
 			}
 			res.Created++

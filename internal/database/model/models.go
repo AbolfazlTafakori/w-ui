@@ -490,9 +490,12 @@ type Admin struct {
 	// cannot sell one. The owner and an administrator ignore it.
 	InterfaceIDs []uint `gorm:"-" json:"interfaceIds"`
 
-	// Clients is how many customers this operator holds, filled by the list
-	// for the page that shows it against ClientLimit.
+	// Clients is how many customers this operator holds, and Users how many
+	// users they have sold -- each customer counted for the users their plan
+	// is for -- which is what ClientLimit is measured against. Both filled by
+	// the list.
 	Clients int64 `gorm:"-" json:"clients"`
+	Users   int64 `gorm:"-" json:"users"`
 
 	// SessionEpoch is what makes a session endable.
 	//

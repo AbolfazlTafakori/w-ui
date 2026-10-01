@@ -188,14 +188,14 @@ func (s *Hosts) validateGroup(ctx context.Context, in *HostGroup) error {
 		return invalidField("description", "the description is longer than 64 characters")
 	}
 	if len(in.InterfaceIDs) == 0 {
-		return invalidField("interfaceIds", "choose at least one inbound")
+		return invalidField("interfaceIds", "choose at least one interface")
 	}
 	var n int64
 	if err := s.db.WithContext(ctx).Model(&model.Interface{}).Where("id IN ?", in.InterfaceIDs).Count(&n).Error; err != nil {
 		return fmt.Errorf("service: check interfaces: %w", err)
 	}
 	if int(n) != len(dedupe(in.InterfaceIDs)) {
-		return invalidField("interfaceIds", "one of those inbounds does not exist")
+		return invalidField("interfaceIds", "one of those interfaces does not exist")
 	}
 	if in.Port < 0 || in.Port > 65535 {
 		return invalidField("port", "port %d is out of range", in.Port)

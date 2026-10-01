@@ -64,9 +64,20 @@ const sorters = {
   protocol: (a, b) => cmpText(a.protocol, b.protocol),
   clients: (a, b) => (a.clients || 0) - (b.clients || 0),
   traffic: (a, b) => (a.usedBytes || 0) - (b.usedBytes || 0),
-  speed: () => 0,
+  speed: (a, b) => speedOf(a) - speedOf(b),
   expiry: () => 0,
 }
+// What a tunnel's files are moving right now, each way; the server leaves
+// it out while they move nothing.
+function speedOf(i) {
+  return i.speed ? (i.speed.up || 0) + (i.speed.down || 0) : 0
+}
+const speedActive = (i) => speedOf(i) > 0
+function speedText(i) {
+  const rate = (v) => `${bytes(v || 0, store.locale)}/s`
+  return `↑ ${rate(i.speed.up)} / ↓ ${rate(i.speed.down)}`
+}
+
 function sortCls(key) {
   return sort.value.key === key ? `sorted ${sort.value.dir}` : ''
 }
@@ -867,6 +878,10 @@ async function submitForm(input) {
                 <span class="stat-label">{{ t('client.traffic') }}</span>
                 <span class="atag purple ltr">{{ bytes(i.usedBytes, store.locale) }} / <span class="infinity">∞</span></span>
               </div>
+              <div v-if="speedActive(i)" class="stat-row">
+                <span class="stat-label">{{ t('client.speed') }}</span>
+                <span class="atag blue ltr">{{ speedText(i) }}</span>
+              </div>
             </div>
           </div>
           <ul v-if="pageCount > 1" class="apagination">
@@ -963,7 +978,7 @@ async function submitForm(input) {
                   {{ bytes(i.usedBytes, store.locale) }} / <span class="infinity">∞</span>
                 </span>
               </td>
-              <td class="center"><span class="atag speed-tag">—</span></td>
+              <td class="center"><span class="atag speed-tag ltr" :class="{ blue: speedActive(i) }">{{ speedActive(i) ? speedText(i) : '—' }}</span></td>
               <td class="center"><span class="atag purple"><span class="infinity">∞</span></span></td>
             </tr>
           </tbody>

@@ -49,7 +49,7 @@ func (r *Reporter) Build(ctx context.Context, lang string) (string, error) {
 	fmt.Fprintf(&b, "%s: %d\n", l("Clients", "کاربران"), ov.Clients)
 	fmt.Fprintf(&b, "%s: %d · %s: %d · %s: %d\n",
 		l("Active", "فعال"), ov.Active, l("Online", "آنلاین"), ov.Online, l("Ended", "منقضی"), ov.Exhausted+ov.Expired)
-	fmt.Fprintf(&b, "%s: %d\n", l("Inbounds", "ورودی‌ها"), ov.Interfaces)
+	fmt.Fprintf(&b, "%s: %d\n", l("Interfaces", "اینترفیس‌ها"), ov.Interfaces)
 	fmt.Fprintf(&b, "%s: %s\n", l("Total traffic", "ترافیک کل"), humanBytes(ov.TotalUsed))
 
 	// Who is close to the line, by the thresholds on the settings page.

@@ -65,7 +65,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `at most … characters` / `no line breaks or control characters` | A customer or device name, or a note, is longer than its column (name 128, device 64, note 512) or carries a line break. | Shorten it; keep it on one line. |
 | `choose at least one server for this customer` | No interface was ticked. | Tick the tunnel(s) the customer may use. |
 | `Not found: …` | An interface id that does not exist — usually a stale page after a deletion. | Reload; pick an existing tunnel. |
-| `one of those inbounds does not exist` / `choose at least one inbound` | The same, on bulk creation. | |
+| `one of those interfaces does not exist` / `choose at least one interface` | The same, on bulk creation. | |
 | `device limit must be between 0 and 50` | Connections at once; 0 is unlimited. | A number in that range. |
 | `… devices requested; at most … per customer` | Device files are capped at 64. | |
 | `expiry is in the past` | The expiry date has already passed. | Pick a future date, or leave it empty for no expiry. |
@@ -98,7 +98,8 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `your account has been switched off` | At sign-in: the owner switched this account off. Every customer on it is off too. | Ask the owner to switch it back on. |
 | `your account has been switched off` / `your account's term has ended` / `your data allowance is used up` | On any change — a new customer, an edit, a reset, a new device. The account is paused, so its customers are off and nothing about them can change until it is renewed. Reading them still works. | Ask the owner to switch it back on, extend the date, or start the allowance again. |
 | `that server is not one of yours` | The server chosen is not one the owner gave this reseller, or was taken back. Customers already on it keep working and can still be edited or moved off it. | Pick a server from the list offered. |
-| `you may have … customers and you have …` | The customer limit is reached. | Delete a customer, or ask the owner for a higher limit. |
+| `you may have … users and you have …; this customer would make it …` | The user limit is reached. It counts users, not customers: a customer for four users counts four. | Lower a customer's users, delete a customer, or ask the owner for a higher limit. |
+| `you may sell … users in all, so each customer is for a number of users: give 1 or more` | A reseller with a user limit gave a customer any number of users at once, which the limit could not count. | Give the customer a number of users. |
 | `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | Five subscription ids already in use were chosen within an hour. | Leave the id empty; one is drawn for the customer. |
 | `this part of the panel is the owner's` | A page or request that only the owner may use. On a node of v2.0.0 to v2.6.0, also every request from its managing panel, which then shows the node as unreachable. | On such a node: `w-ui update` on the node server, once. |
 
@@ -208,7 +209,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `the rule matches nothing as written; fill in at least one criterion` | Every match field is empty. | At least one of source, destination, domain, port, client, group, interface. |
 | `"…" is not a network the router matches; use tcp, udp or icmp` / `icmp has no ports; drop the ports or pick tcp or udp` | | |
 | `there is no outbound or balancer called "…"` | | |
-| `a client is named by id here, and "…" is not one` / `an inbound is named by id here, and "…" is not one` / `there is no inbound with id …` | Rules refer to customers and tunnels by number. | The id from the list. |
+| `a client is named by id here, and "…" is not one` / `an interface is named by id here, and "…" is not one` / `there is no interface with id …` | Rules refer to customers and tunnels by number. | The id from the list. |
 | `"…" is a balancer; the default has to be an outbound. Point a rule at the balancer instead` | | |
 | `"…" has no dot in it, so it is not a domain name` / `"…" is too long to be a domain name` | | |
 | `unknown domain strategy "…"` / `unknown query strategy "…"` | | One the form offers. |

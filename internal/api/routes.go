@@ -181,7 +181,7 @@ func (s *Server) routes() []Route {
 			Summary: "The configuration for one device. Add ?download=1 for the file itself.",
 			handler: s.handleProfile},
 		{Method: "GET", Path: "/api/devices/{id}/profiles", Group: "Devices", Auth: true,
-			Summary: "Every configuration a device is handed: one per host on its inbound, named after the host.",
+			Summary: "Every configuration a device is handed: one per host on its interface, named after the host.",
 			handler: s.handleProfiles},
 		{Method: "DELETE", Path: "/api/devices/{id}", Group: "Devices", Auth: true,
 			Summary: "Remove a device and free its address.", handler: s.handleRemoveDevice},
@@ -509,15 +509,15 @@ func (s *Server) routes() []Route {
 			Summary: "Try to reach a host the way a customer would.",
 			handler: s.handleCheckHost},
 		{Method: "GET", Path: "/api/hosts/groups", Group: "Hosts", Auth: true,
-			Summary: "The hosts page: each entry is one name over several addresses and inbounds.",
+			Summary: "The hosts page: each entry is one name over several addresses and interfaces.",
 			handler: s.handleListHostGroups},
 		{Method: "POST", Path: "/api/hosts/groups", Group: "Hosts", Auth: true,
-			Summary: "Add a host: a name, its addresses, and the inbounds it applies to.",
+			Summary: "Add a host: a name, its addresses, and the interfaces it applies to.",
 			Body:    `{"remark":"cdn-front","description":"","interfaceIds":[1,2],"hosts":["cdn.example.com","cdn2.example.com:443"],"port":0,"tags":["EU"],"enabled":true,"excludeFormats":[],"shuffle":false}`,
-			Note: "One row is stored per address per inbound. A WireGuard customer on those inbounds " +
-				"is then handed one config per host, named after it; the inbound's own address is no " +
+			Note: "One row is stored per address per interface. A WireGuard customer on those interfaces " +
+				"is then handed one config per host, named after it; the interface's own address is no " +
 				"longer handed out on its own. Leave the addresses empty for a host that inherits the " +
-				"inbound's address and only renames it.",
+				"interface's address and only renames it.",
 			handler: s.handleCreateHostGroup},
 		{Method: "PUT", Path: "/api/hosts/groups/{gid}", Group: "Hosts", Auth: true,
 			Summary: "Replace a host with what the form now says.",
