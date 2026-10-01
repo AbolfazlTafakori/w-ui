@@ -29,7 +29,10 @@ import (
 // host have separate namespaces, separate rulesets and no conflict, and this
 // lets them run. Two in the same namespace are the case that breaks, and it
 // refuses them.
-const socketName = "@wui-panel"
+//
+// A variable only so this package's tests can claim a name of their own: a
+// panel the other packages' tests start holds the real one while these run.
+var socketName = "@wui-panel"
 
 // answerTimeout bounds asking the holder who it is. It is a local socket, so
 // this is only ever about a holder that has wedged.

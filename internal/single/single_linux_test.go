@@ -4,9 +4,23 @@ package single
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
+
+// These tests claim a name of their own. The real one belongs to whatever
+// panel is running in this network namespace -- on CI, the panels the
+// upgrade tests start, in another package, at the same time.
+func TestMain(m *testing.M) {
+	if socketName != "@wui-panel" {
+		fmt.Fprintln(os.Stderr, "the panel's claim is not @wui-panel; two releases would not see each other")
+		os.Exit(1)
+	}
+	socketName = fmt.Sprintf("@wui-panel-test-%d", os.Getpid())
+	os.Exit(m.Run())
+}
 
 // The claim is what stands between a server and two panels quietly undoing each
 // other's firewall rules. If it ever stops refusing, nothing else does.

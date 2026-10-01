@@ -189,7 +189,8 @@ func subscriptionAnswer(f *upgradecheck.Fetched) []byte {
 }
 
 var (
-	nonce = regexp.MustCompile(`nonce="[^"]*"|'nonce-[^']*'`)
+	nonce   = regexp.MustCompile(`nonce="[^"]*"|'nonce-[^']*'`)
+	pngData = regexp.MustCompile(`data:image/png;base64,[A-Za-z0-9+/=]+`)
 	// The time left on a plan, counted from now: "1552d", "12 days left".
 	timeLeft = regexp.MustCompile(`([>\s])\d+(d|h|m| days left| hours left| minutes left)([<\s])`)
 )
@@ -210,6 +211,9 @@ func fetchPage(t *testing.T, link string) []byte {
 		t.Fatalf("the customer's page: %s", resp.Status)
 	}
 	raw = nonce.ReplaceAll(raw, []byte("nonce=<masked>"))
+	// The QR codes are PNGs, and how a PNG is compressed differs between Go
+	// releases; what they encode -- the links -- is in the page as text.
+	raw = pngData.ReplaceAll(raw, []byte("data:image/png;base64,<png>"))
 	return timeLeft.ReplaceAll(raw, []byte("${1}<left>${3}"))
 }
 

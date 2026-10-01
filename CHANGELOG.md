@@ -6,24 +6,6 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-- **An update no longer issues an API token or empties
-  install-result.env.** Running the installer over an existing install issued
-  a new token named `installer` every time -- one with full access again from
-  v2.6.1 -- and rewrote `/etc/wui/install-result.env` with an empty password
-  and that new token, so automation reading the file lost the password. An
-  update now leaves the file exactly as the install wrote it (its values, its
-  mode, its owner), issues no token, and on an install older than the file
-  writes none. A fresh install is unchanged: one token, and the file.
-  `w-ui update` and the panel's own **Update** never did either.
-
-### Cleaning up
-- Each earlier update by the installer left one extra `installer` token on
-  the panel. They are left in place -- they are yours -- but nothing uses
-  them: keep the one your automation reads from `install-result.env`, and
-  revoke the rest in **Settings → Security → API Token**, where each shows its
-  prefix and when it was last used.
-
 ## [2.6.1] — 2026-10-01
 
 ### Fixed
@@ -43,6 +25,16 @@ All notable changes to W-UI are recorded here. The format follows
   mail password), backups, tokens, operators, adding, changing or removing a
   node, the subscription page template, restarting the panel, and the
   owner's own account and two-factor.
+- **An update no longer issues an API token or empties
+  install-result.env.** Running the installer over an existing install issued
+  a new token named `installer` every time -- one with full access again from
+  v2.6.1 -- and rewrote `/etc/wui/install-result.env` with an empty password
+  and that new token, so automation reading the file lost the password. An
+  update now leaves the file exactly as the install wrote it (its values, its
+  mode, its owner), issues no token, and on an install older than the file
+  writes none. A fresh install is unchanged: one token, and the file.
+  `w-ui update` and the panel's own **Update** never did either.
+
 
 ### Changed
 - **A release is published only from a commit CI passed.** The release
@@ -51,6 +43,12 @@ All notable changes to W-UI are recorded here. The format follows
   still going by then. It also refuses to publish a release without the
   signing key, where it used to publish one unsigned with a warning: an
   unsigned release is one no panel installs from its update button.
+- **Every update is now tested from every earlier release.** Before a
+  release, the panel is started on databases and backups that v1.0.0 to
+  v2.6.0 really wrote, and must give back every customer, key, link and
+  setting unchanged; an installed earlier release is updated by the
+  installer, by the panel's own button and by `w-ui update`, with a customer
+  connected throughout.
 
 ### Updating
 - **Update every node by hand, once.** A node on v2.0.0 to v2.6.0 refuses the
@@ -63,6 +61,11 @@ All notable changes to W-UI are recorded here. The format follows
 
   From v2.6.1 on, nodes update from the panel again. The managing panel
   itself updates as usual; the order does not matter.
+- **Extra `installer` tokens.** Each earlier update by the installer left one
+  extra `installer` token on the panel. They are left in place -- they are
+  yours -- but nothing uses them: keep the one your automation reads from
+  `install-result.env`, and revoke the rest in **Settings → Security → API
+  Token**, where each shows its prefix and when it was last used.
 
 ## [2.6.0] — 2026-09-30
 
