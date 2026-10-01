@@ -164,6 +164,13 @@ jobs:
           # The staged restore was applied at that start, and the admin survived it.
           grep -q "restored from a backup" /tmp/panel.log
           WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui setting show | grep -q "^admin: ci$"
+      # The checks above stop at the first that fails without saying which;
+      # what the panel logged and the tables it left say why.
+      - name: What the panel said
+        if: failure()
+        run: |
+          cat /tmp/panel.log || true
+          nft list tables || true
       - name: Uninstall leaves the packages and a copy of the data
         run: |
           bash install.sh --purge 2>&1 | tee /tmp/uninstall.log
