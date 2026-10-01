@@ -88,6 +88,15 @@ const enSidebar = [
       { text: 'Contributing', link: '/help/contributing' },
     ],
   },
+  {
+    text: 'Development',
+    collapsed: true,
+    items: [
+      { text: 'Release checklist', link: '/development/release-checklist' },
+      { text: 'Deprecation policy', link: '/development/deprecation-policy' },
+      { text: 'Protecting main and releases', link: '/development/branch-protection' },
+    ],
+  },
 ]
 
 const faSidebar = [
@@ -168,6 +177,15 @@ const faSidebar = [
       { text: 'عیب‌یابی', link: '/fa/help/troubleshooting' },
       { text: 'از پنل دیگری آمده‌اید', link: '/fa/help/migration' },
       { text: 'مشارکت', link: '/fa/help/contributing' },
+    ],
+  },
+  {
+    text: 'توسعه',
+    collapsed: true,
+    items: [
+      { text: 'چک‌لیست ریلیز', link: '/fa/development/release-checklist' },
+      { text: 'سیاست کنار گذاشتن', link: '/fa/development/deprecation-policy' },
+      { text: 'محافظت از main و ریلیزها', link: '/fa/development/branch-protection' },
     ],
   },
 ]
