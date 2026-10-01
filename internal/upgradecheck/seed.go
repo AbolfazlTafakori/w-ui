@@ -107,6 +107,13 @@ func Seed(ctx context.Context, c *Client, dir, version string, admin Admin, opts
 		}
 	}
 
+	// Every setting, with a value that is not its default.
+	pages, err := SeedSettings(ctx, c, ifaceID["fx-wg"])
+	if err != nil {
+		return nil, err
+	}
+	m.Pages = pages
+
 	if err := Describe(ctx, c, m); err != nil {
 		return nil, err
 	}

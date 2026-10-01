@@ -46,7 +46,7 @@
         "transport": ""
       },
       "protocol": "wireguard",
-      "publicKey": "j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=",
+      "publicKey": "exUhX2QVzwl1zUsZgycK7pDyRfSZD2oar2fLdW1Dc3g=",
       "running": "\u003cbool\u003e",
       "subnet": "10.71.0.0/24",
       "upBytes": 0,
@@ -57,17 +57,17 @@
       "active": 2,
       "allocated": 4,
       "awg": {
-        "h1": 201063,
-        "h2": 4274137,
-        "h3": 30035745,
-        "h4": 415606746,
-        "jc": 4,
-        "jmax": 155,
-        "jmin": 82,
-        "s1": 34,
-        "s2": 81,
-        "s3": 45,
-        "s4": 25
+        "h1": 189856,
+        "h2": 2123972,
+        "h3": 33053764,
+        "h4": 484435913,
+        "jc": 5,
+        "jmax": 158,
+        "jmin": 64,
+        "s1": 75,
+        "s2": 17,
+        "s3": 26,
+        "s4": 26
       },
       "capacity": 253,
       "clients": 2,
@@ -99,7 +99,7 @@
         "transport": ""
       },
       "protocol": "wireguard",
-      "publicKey": "HAE+LVOlKxTrHZEFnscUiD0BxijilPIQBZ2jGnYqamw=",
+      "publicKey": "g48V61A8kdoGMAOENHdScVLNXYCp32oU0jbCQKV79wI=",
       "running": "\u003cbool\u003e",
       "subnet": "10.72.0.0/24",
       "upBytes": 0,
@@ -147,7 +147,7 @@
       "online": 0,
       "openvpn": {
         "auth": "SHA256",
-        "caCert": "-----BEGIN CERTIFICATE-----\nMIIC+TCCAeGgAwIBAgIQbpSMAEAgPTeu6dczhlnhgzANBgkqhkiG9w0BAQsFADAV\nMRMwEQYDVQQDEwpmeC1vdnBuIENBMB4XDTI2MTAwMTA1MTAxOVoXDTM2MDkyODA2\nMTAxOVowFTETMBEGA1UEAxMKZngtb3ZwbiBDQTCCASIwDQYJKoZIhvcNAQEBBQAD\nggEPADCCAQoCggEBALpWorGWcZtNlZpYXdSK8v7C5ZocONBtxCvviAGMIKavWHBN\nfiCF9LIAE9aqpx6LRMSdkFBEPCQL0df9syOefrjEDXs8XhIrhUDC+qmZgpjMGBxn\n543h8J4WqPFgNamZ0WNMPUEcq2eBgtNnZDFcBLrLbsun5I0dIHrZYXUdvioks6lU\nOjLDcwNSeqfEpGrowuj/hejqFfVxJJzt4TDmq3wGMNNMge/7s/EdYGHnO1MS2SIg\nzParBuJg8K30R6EZY6xF/RaBnQrX26lTJUYjpmzY89s6acHm2TFp2jNV5QV7qjdu\nGXumLM8Y2uGZmNGZwp95GQH9rzCTvDYPVF5WuSECAwEAAaNFMEMwDgYDVR0PAQH/\nBAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFGoWmghj7xWghHeq\npZSVbexFJP3lMA0GCSqGSIb3DQEBCwUAA4IBAQBV5OyozqmScad2MmXpbWaMf23e\nNTFX7aTtpF9WDaFkZQj1FEt5Ioc3IsqoVceia/+U27417AQH9gp4hQgIS/EaEgO3\nHfQE+pKxkeH0w+4wVBuLt8dYQjfFWIXYDEH5jv1H8dqwE7ghvsnTMQq0Gbz5npDw\nnTCDdY1ZTDaTItZBc9Aq8GDoRmZwJVw90ORzP3HtjcmPjRq0XzH8ZVJuxu1q43sx\nGOFkF4R3w2R8pDgQmIyiuBrtLu04sGFc7nheyC2pV/gD7Nnr8M0uMG/XUSAeMN7V\nZOJr8UVtncKboikIoyAKHq/ujaqPjbSDY0C0gudjqjNuMliPG9mIUkUyk6vl\n-----END CERTIFICATE-----",
+        "caCert": "-----BEGIN CERTIFICATE-----\nMIIC+jCCAeKgAwIBAgIRAIzFTWHXfxKjgvlt92h7OVUwDQYJKoZIhvcNAQELBQAw\nFTETMBEGA1UEAxMKZngtb3ZwbiBDQTAeFw0yNjEwMDEwOTU0NDBaFw0zNjA5Mjgx\nMDU0NDBaMBUxEzARBgNVBAMTCmZ4LW92cG4gQ0EwggEiMA0GCSqGSIb3DQEBAQUA\nA4IBDwAwggEKAoIBAQDKgZniZGtO9V22nJAt93Swho0+BhuoztEZZrMfH0OZNlya\nQuzeanvhamNjjuncSw0vLumN3XS8GTj9/euINY+PqKwm6maeBAi86tkCfA6q0wEd\n4m+nRyWrFNKRqYq5PSeYC3fZg4EE5s9MnKexhgnLub9k1ClfyFoaNsy549Fs1wo9\nUyvMr5Z4NQUit4KI594sQOFSMh5MSq7difej6nbsgHscj5bcxE8CcYtS24pBEkda\nZK3SjZHh1sCxz/hCrMFYzcnb5S9WxFsfz5rCwRHfmK2yAwew70o0SpUcjzldB0fg\nr/llqYg1vPFTYiINeDSKrHxYOD0ygdQhwm7uK2uRAgMBAAGjRTBDMA4GA1UdDwEB\n/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBTCQg1mNGzosy/K\nwK4eMsBFhuacbjANBgkqhkiG9w0BAQsFAAOCAQEAN0l58RZw8hmqZKwm2DUxnBdy\n1LHrnwjUqlwpeZK4pyEvauvhA8hxR8VU5myF/6ipPjWYP8kHr7xHmSV1UbOiwOj+\nhwXSos0WzRWwqV0TG5OmnkuGdAkT++Apxp89kgf/CDomOdLt5/ZC+gWFelInaEpI\nkEulKlVonbL0EEuV5YaaLyBI8Xj0PTYsEybkZ6LQCY57xy9KUcZqXPfQtUk55JdB\noNyR94O7hZqPHojeHSBRTZWwHsE+Sds9NVKqJ/pc21RIBuyrP1K6V+5ZmY6vo6nR\no3mQLhH5JsMKPoFu4mvPN6WRv2ZymaBHm9UtctqogmjnC8KGkY5nIDjhGscWgg==\n-----END CERTIFICATE-----",
         "cipherSuite": "AES-256-GCM",
         "duplicateCN": false,
         "transport": "udp"

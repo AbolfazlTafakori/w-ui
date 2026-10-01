@@ -29,9 +29,12 @@ type Manifest struct {
 	Clients    []Customer        `json:"clients"`
 	Settings   map[string]string `json:"settings"`
 	Sub        map[string]any    `json:"subscriptionSettings"`
-	Backup     string            `json:"backup,omitempty"`
-	Skipped    map[string]string `json:"skipped,omitempty"`
-	Extra      map[string]any    `json:"extra,omitempty"`
+	// Pages is what each settings page said it held once every setting on
+	// it was saved with a value that is not its default (SeedSettings).
+	Pages   map[string]any    `json:"pages,omitempty"`
+	Backup  string            `json:"backup,omitempty"`
+	Skipped map[string]string `json:"skipped,omitempty"`
+	Extra   map[string]any    `json:"extra,omitempty"`
 }
 
 // Admin is the fixture's administrator. A test credential, written into the

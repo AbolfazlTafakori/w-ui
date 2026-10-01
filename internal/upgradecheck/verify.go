@@ -43,6 +43,22 @@ func Verify(ctx context.Context, c *Client, m *Manifest, dir string, opts Option
 		}
 	}
 
+	// Every setting the earlier panel held, as this one reads it.
+	if len(m.Pages) > 0 {
+		now, err := ReadPages(ctx, c)
+		if err != nil {
+			add("reading the settings pages: %v", err)
+		} else {
+			was := m.Pages
+			if opts.NewAddress {
+				was = withoutAccess(m.Pages)
+			}
+			for _, d := range pagesDiff(was, now) {
+				add("setting %s", d)
+			}
+		}
+	}
+
 	clients := map[uint]Customer{}
 	for _, cu := range now.Clients {
 		clients[cu.ID] = cu

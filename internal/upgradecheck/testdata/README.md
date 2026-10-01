@@ -22,12 +22,25 @@ an OpenVPN login, one switched off, and one on two tunnels. Dates are fixed
 runs on a port of its own from v1.1.0, the release that brought one; v1.0.0
 serves links on the panel's port, as it did.
 
+Every setting the release could store is stored, with a value that is not its
+default: the settings page, the basic routing switches, the engine, the node
+authority and the subscription service (`internal/upgradecheck/settings.go`
+lists the values). The manifest records what each page then said it held
+(`pages`), and the upgrade test reads every page back and compares. A few
+fields keep their default on purpose -- the URL path, the domain, the panel's
+own certificate and its outbound -- because a different value would change
+how the test reaches the panel; they are still stored. The newest fixture
+must hold every key the current build stores
+(`TestTheNewestFixtureHoldsEverySetting`).
+
 Keys, tokens and passwords are the ones each release generated. They are test
 data, made for these files and used nowhere else:
 
 - administrator `fixture` / `fixture-password-1`
 - OpenVPN login `fxovpn` / `fixture-ovpn-pass`
 - the JWT secret in each database's settings
+- the Telegram bot token `123456:fixture-bot-token` and mail password
+  `fixture-mail-pass` on the settings page (notifications and mail are off)
 
 ## Making them again
 

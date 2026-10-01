@@ -263,3 +263,80 @@ func postgresDB(t *testing.T, dsn string) *gorm.DB {
 	})
 	return db
 }
+
+// newSinceNewestFixture are setting keys this build writes that the newest
+// fixture does not hold yet, each with the release that added it. A key added
+// before a release is listed here; once that release ships, its fixture is
+// added (scripts/upgrade/make-fixtures.sh) and the entry is removed.
+var newSinceNewestFixture = map[string]string{}
+
+// runtimeKeys are kept by the panel for itself, not set by an operator.
+var runtimeKeys = map[string]bool{
+	"notify.backupLastAt": true, "notify.backupLastSchedule": true,
+}
+
+// The newest fixture holds every setting this build can store, so the
+// upgrade test above checks each one survives. A key added without a fixture
+// or an entry in newSinceNewestFixture fails here, rather than going into a
+// release no upgrade test has seen.
+func TestTheNewestFixtureHoldsEverySetting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts a panel")
+	}
+	dirs := fixtureDirs(t)
+	newest := filepath.Join(fixtures, dirs[len(dirs)-1])
+	m, err := upgradecheck.Load(newest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// What this build stores when every settings page is saved: a new
+	// install, given the same settings the fixtures are.
+	data := t.TempDir()
+	listen := "127.0.0.1:47391"
+	env := panelEnv(data, listen)
+	if out, err := runCLI(t, env, "admin", "reset", "--username", "keys", "--password", "every-setting-1"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	p := startPanel(t, env, listen)
+	ctx := context.Background()
+	c, err := upgradecheck.Login(ctx, p.base, "keys", "every-setting-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := upgradecheck.SetUpSubscription(ctx, c, 47392, nil); err != nil {
+		t.Fatal(err)
+	}
+	var iface struct {
+		Interface struct {
+			ID uint `json:"id"`
+		} `json:"interface"`
+	}
+	if err := c.Do(ctx, "POST", "api/interfaces", map[string]any{"name": "keys-wg", "protocol": "wireguard",
+		"listenPort": 51991, "subnet": "10.91.0.0/24", "endpointHost": "vpn.example.test"}, &iface); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := upgradecheck.SeedSettings(ctx, c, iface.Interface.ID); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := upgradecheck.StoredSettings(sqliteFile(t, filepath.Join(data, "wui.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.stop()
+
+	for k := range stored {
+		if runtimeKeys[k] || newSinceNewestFixture[k] != "" {
+			continue
+		}
+		if _, ok := m.Settings[k]; !ok {
+			t.Errorf("this build stores %s, which the newest fixture (%s) does not hold: "+
+				"add the release that brings it as a fixture, or list it in newSinceNewestFixture", k, m.Version)
+		}
+	}
+	for k, release := range newSinceNewestFixture {
+		if _, ok := m.Settings[k]; ok {
+			t.Errorf("%s is listed as new in %s, but the newest fixture holds it: remove the entry", k, release)
+		}
+	}
+}

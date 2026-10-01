@@ -7,27 +7,27 @@ Profile-Title: base64:Vy1VSQ==
 Cache-Control: no-store
 
 [Interface]
-PrivateKey = IAjJIxsQ258CfEyiiNDLmq4gGEdsELYUizG6jYycj2s=
+PrivateKey = IGYXc7aj0JFOl1OR6ehyDAXgbPkYSTugpFsMdpkKMnQ=
 Address = 10.72.0.2/32
 DNS = 10.72.0.1
 MTU = 1420
 
 # AmneziaWG obfuscation — must match the server exactly
-Jc = 4
-Jmin = 82
-Jmax = 155
-S1 = 34
-S2 = 81
-S3 = 45
-S4 = 25
-H1 = 201063
-H2 = 4274137
-H3 = 30035745
-H4 = 415606746
+Jc = 5
+Jmin = 64
+Jmax = 158
+S1 = 75
+S2 = 17
+S3 = 26
+S4 = 26
+H1 = 189856
+H2 = 2123972
+H3 = 33053764
+H4 = 484435913
 
 [Peer]
-PublicKey = HAE+LVOlKxTrHZEFnscUiD0BxijilPIQBZ2jGnYqamw=
-PresharedKey = Ld3tGlrcPukId/pna2q71mxK0idxZxvR/5e7W6B2n4A=
+PublicKey = g48V61A8kdoGMAOENHdScVLNXYCp32oU0jbCQKV79wI=
+PresharedKey = Tfzcua4H8I9amsR/lalB1uyftEu6zrhfR8S3DhL9y7A=
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = vpn.example.test:51902
 PersistentKeepalive = 25

@@ -1,6 +1,6 @@
 {
   "version": "v2.6.0",
-  "made": "2026-10-01T06:10:19.0674192Z",
+  "made": "2026-10-01T10:54:39.7436387Z",
   "admin": {
     "username": "fixture",
     "password": "fixture-password-1"
@@ -13,7 +13,7 @@
       "mode": "standard",
       "listenPort": 51901,
       "subnet": "10.71.0.0/24",
-      "publicKey": "j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc="
+      "publicKey": "exUhX2QVzwl1zUsZgycK7pDyRfSZD2oar2fLdW1Dc3g="
     },
     {
       "id": 2,
@@ -22,7 +22,7 @@
       "mode": "amnezia",
       "listenPort": 51902,
       "subnet": "10.72.0.0/24",
-      "publicKey": "HAE+LVOlKxTrHZEFnscUiD0BxijilPIQBZ2jGnYqamw="
+      "publicKey": "g48V61A8kdoGMAOENHdScVLNXYCp32oU0jbCQKV79wI="
     },
     {
       "id": 3,
@@ -51,14 +51,14 @@
       "durationDays": 0,
       "deviceLimit": 2,
       "resetCycle": "monthly",
-      "subId": "N_hLRuox0NUz7Ya7A1hU-MvpvqFPlVG7",
+      "subId": "n95QyHlTPbUc-b0pNtMfFlhWAmOX7ghe",
       "accounts": [
         {
           "id": 1,
           "interfaceId": 1,
           "deviceName": "user-1",
           "ip": "10.71.0.2",
-          "publicKey": "6zKaplcHy6dTwABh01QcTjTbzxqhcH/+BYEyvS/u1jE=",
+          "publicKey": "Huxdf+E78dYKVqNM58PdpPeif0eGs4uOupDaRHgh7Hc=",
           "username": ""
         },
         {
@@ -66,12 +66,12 @@
           "interfaceId": 1,
           "deviceName": "user-2",
           "ip": "10.71.0.3",
-          "publicKey": "7fz/4MOJlkAnTXOs7GO2rvNYXAFMg3u825adACWQ1ic=",
+          "publicKey": "/grenKOQlLbtvTxiCqyIU9ib6oh8yquFvG+2F5HjPS4=",
           "username": ""
         }
       ],
-      "subToken": "N_hLRuox0NUz7Ya7A1hU-MvpvqFPlVG7",
-      "subLink": "http://127.0.0.1:47171/subscribe/N_hLRuox0NUz7Ya7A1hU-MvpvqFPlVG7",
+      "subToken": "n95QyHlTPbUc-b0pNtMfFlhWAmOX7ghe",
+      "subLink": "http://127.0.0.1:47171/subscribe/n95QyHlTPbUc-b0pNtMfFlhWAmOX7ghe",
       "subFile": "sub/wg-limited.conf",
       "subStatus": 200
     },
@@ -89,19 +89,19 @@
       "durationDays": 0,
       "deviceLimit": 1,
       "resetCycle": "none",
-      "subId": "rXEbm53uWi_hgXxor9QUZhW7PAWlp2MW",
+      "subId": "9pfT0N1a-rNcUhUHwV0AspMbo63hAZ4P",
       "accounts": [
         {
           "id": 3,
           "interfaceId": 1,
           "deviceName": "device-1",
           "ip": "10.71.0.4",
-          "publicKey": "zXic3OmrWE4wzFfnkloq1gOsjYGWTmMxBADpExIA+XI=",
+          "publicKey": "RCLkp+kl7kWTZr6MMdxmT+jsvgCS4k2Qa2Mdf0TUczQ=",
           "username": ""
         }
       ],
-      "subToken": "rXEbm53uWi_hgXxor9QUZhW7PAWlp2MW",
-      "subLink": "http://127.0.0.1:47171/subscribe/rXEbm53uWi_hgXxor9QUZhW7PAWlp2MW",
+      "subToken": "9pfT0N1a-rNcUhUHwV0AspMbo63hAZ4P",
+      "subLink": "http://127.0.0.1:47171/subscribe/9pfT0N1a-rNcUhUHwV0AspMbo63hAZ4P",
       "subFile": "sub/wg-unlimited.conf",
       "subStatus": 200
     },
@@ -119,19 +119,19 @@
       "durationDays": 30,
       "deviceLimit": 1,
       "resetCycle": "none",
-      "subId": "9k0hGDfnQn61eGXtbFCaw9Cd5f0_bDcO",
+      "subId": "06OZM3ZHLn8cXGEqJga3tQAzuihUZtUx",
       "accounts": [
         {
           "id": 4,
           "interfaceId": 2,
           "deviceName": "device-1",
           "ip": "10.72.0.2",
-          "publicKey": "nJ3JIQ8KJtceeTQ9lzVG1WkCr6S/zRDXacFNfw0jFQQ=",
+          "publicKey": "h62bDEXnIQQSrb52Z7Zv8lL81QUoEyv1hZyuhCo5nTI=",
           "username": ""
         }
       ],
-      "subToken": "9k0hGDfnQn61eGXtbFCaw9Cd5f0_bDcO",
-      "subLink": "http://127.0.0.1:47171/subscribe/9k0hGDfnQn61eGXtbFCaw9Cd5f0_bDcO",
+      "subToken": "06OZM3ZHLn8cXGEqJga3tQAzuihUZtUx",
+      "subLink": "http://127.0.0.1:47171/subscribe/06OZM3ZHLn8cXGEqJga3tQAzuihUZtUx",
       "subFile": "sub/awg-first-use.conf",
       "subStatus": 200
     },
@@ -149,7 +149,7 @@
       "durationDays": 0,
       "deviceLimit": 1,
       "resetCycle": "none",
-      "subId": "VT1e6sY7SgHlT4OVGdNDRy4pkVRHhKJ0",
+      "subId": "m0KKYrK2_3iaCPbOXl4l9Ik1_zsCvscD",
       "accounts": [
         {
           "id": 5,
@@ -160,8 +160,8 @@
           "username": "fxovpn"
         }
       ],
-      "subToken": "VT1e6sY7SgHlT4OVGdNDRy4pkVRHhKJ0",
-      "subLink": "http://127.0.0.1:47171/subscribe/VT1e6sY7SgHlT4OVGdNDRy4pkVRHhKJ0",
+      "subToken": "m0KKYrK2_3iaCPbOXl4l9Ik1_zsCvscD",
+      "subLink": "http://127.0.0.1:47171/subscribe/m0KKYrK2_3iaCPbOXl4l9Ik1_zsCvscD",
       "subFile": "sub/ovpn-user.conf",
       "subStatus": 200
     },
@@ -182,19 +182,19 @@
       "durationDays": 0,
       "deviceLimit": 1,
       "resetCycle": "none",
-      "subId": "vQLXTo8cRoQx3Vb0ABuup8HHe6I1LX07",
+      "subId": "LhrmLoWGeggQa5N-IZsy0039-ObCWJt8",
       "accounts": [
         {
           "id": 6,
           "interfaceId": 1,
           "deviceName": "device-1",
           "ip": "10.71.0.5",
-          "publicKey": "ov5QMfjHBxPPsmD0OC77DRW2c3PEcIc82DQi1hDvJAs=",
+          "publicKey": "+/SQcgO9JjrtkS6e210qjy/za4TNMfQiCiBe0UMTpSk=",
           "username": ""
         }
       ],
-      "subToken": "vQLXTo8cRoQx3Vb0ABuup8HHe6I1LX07",
-      "subLink": "http://127.0.0.1:47171/subscribe/vQLXTo8cRoQx3Vb0ABuup8HHe6I1LX07",
+      "subToken": "LhrmLoWGeggQa5N-IZsy0039-ObCWJt8",
+      "subLink": "http://127.0.0.1:47171/subscribe/LhrmLoWGeggQa5N-IZsy0039-ObCWJt8",
       "subFile": "sub/wg-off.conf",
       "subStatus": 200
     },
@@ -212,14 +212,14 @@
       "durationDays": 0,
       "deviceLimit": 3,
       "resetCycle": "none",
-      "subId": "huD9LNdAm1xOufYPeVn5z9h4s2NaqqsR",
+      "subId": "jsqVRCDctT_qfOUQdmWdSHc83iDCpoMC",
       "accounts": [
         {
           "id": 7,
           "interfaceId": 1,
           "deviceName": "user-1",
           "ip": "10.71.0.6",
-          "publicKey": "J8KBxRhDSIE7F82vciBQvKqx77fzW3g38Y/4O0F/8Hs=",
+          "publicKey": "rZmnOqCTVimX5cXQ4xCxOx+UhfsPAzdvzr3MyTDQFgY=",
           "username": ""
         },
         {
@@ -227,7 +227,7 @@
           "interfaceId": 1,
           "deviceName": "user-2",
           "ip": "10.71.0.7",
-          "publicKey": "V0gv2mL/9SFEdR3NWEPhxpWQWjpGn6jje9AW+GfG9nQ=",
+          "publicKey": "yk91D8qxWTGDlyW6ksINgGocPKCf/ZgAlgv/b6XnVhU=",
           "username": ""
         },
         {
@@ -235,7 +235,7 @@
           "interfaceId": 1,
           "deviceName": "user-3",
           "ip": "10.71.0.8",
-          "publicKey": "yiuvSHfHFHi4hOwjRCB7NuulAfdxvFdMxh/ab/n0Pmo=",
+          "publicKey": "YRXZXbEVIogh/8Ans3wYIOzwy04ZFnHisJK24fpy63Q=",
           "username": ""
         },
         {
@@ -243,7 +243,7 @@
           "interfaceId": 2,
           "deviceName": "user-1",
           "ip": "10.72.0.3",
-          "publicKey": "R5UdQB1LvUO8+xH1+BSBnK+kP9eSafOu73Y+vWKD2js=",
+          "publicKey": "hQb3nTupAX2a1kWlRr5cv/VTPytmdZLvcHrZjJ01nV8=",
           "username": ""
         },
         {
@@ -251,7 +251,7 @@
           "interfaceId": 2,
           "deviceName": "user-2",
           "ip": "10.72.0.4",
-          "publicKey": "aS1SEltXVFiA9Kk+j6BhHPt3Odxedm+4FoqcKGW+d2M=",
+          "publicKey": "HPwxo0XffcZZpzEIUe/9F3e42ZaKtqFxo60vngRQCXw=",
           "username": ""
         },
         {
@@ -259,18 +259,80 @@
           "interfaceId": 2,
           "deviceName": "user-3",
           "ip": "10.72.0.5",
-          "publicKey": "SA+ERWawic6R6J3BMG7Om9Fk3+pBAImh/mfyKz2TH34=",
+          "publicKey": "DzBE+oB1S1AaHx/MLQLgbOrj4BzcDKzXtLrSV3p7vEo=",
           "username": ""
         }
       ],
-      "subToken": "huD9LNdAm1xOufYPeVn5z9h4s2NaqqsR",
-      "subLink": "http://127.0.0.1:47171/subscribe/huD9LNdAm1xOufYPeVn5z9h4s2NaqqsR",
+      "subToken": "jsqVRCDctT_qfOUQdmWdSHc83iDCpoMC",
+      "subLink": "http://127.0.0.1:47171/subscribe/jsqVRCDctT_qfOUQdmWdSHc83iDCpoMC",
       "subFile": "sub/two-tunnels.conf",
       "subStatus": 200
     }
   ],
   "settings": {
-    "auth.jwt_secret": "r6aGAtqduJCwiW/l36jGF8MhKgsRl8vmxOEM/2yOi+c=",
+    "auth.jwt_secret": "PgVGZwiQpULjc8hJSna+IEUHtoh7Dg6Rtbjaxc7CrWI=",
+    "backup.everyHours": "12",
+    "backup.keep": "5",
+    "client.defaultDeviceLimit": "3",
+    "client.defaultExpiryDays": "45",
+    "client.defaultInterfaceId": "1",
+    "client.defaultQuotaBytes": "21474836480",
+    "client.defaultRateBitsPerSec": "50000000",
+    "client.defaultResetCycle": "monthly",
+    "engine.settings": "{\"domainStrategy\":\"AsIs\",\"outboundTestUrl\":\"https://probe.example.test/generate_204\",\"collectInterval\":3,\"outboundCounters\":true,\"onlineWindow\":300,\"logLevel\":\"warn\",\"logFormat\":\"\",\"accessLog\":true,\"maskAddress\":true,\"probeInterval\":600,\"probeConcurrency\":true,\"dns\":{\"enabled\":true,\"queryStrategy\":\"UseIPv4\",\"disableCache\":false,\"serveExpiredTTL\":0,\"hosts\":[],\"servers\":[{\"address\":\"1.1.1.1\",\"port\":0,\"domains\":null,\"skipFallback\":false},{\"address\":\"8.8.8.8\",\"port\":0,\"domains\":null,\"skipFallback\":false}]}}",
+    "mail.enabled": "false",
+    "mail.encryption": "tls",
+    "mail.from": "panel@example.test",
+    "mail.fromName": "W-UI fixture",
+    "mail.host": "smtp.example.test",
+    "mail.kinds": "login",
+    "mail.password": "fixture-mail-pass",
+    "mail.port": "2525",
+    "mail.to": "ops@example.test",
+    "mail.username": "fixture",
+    "nodes.mtls_ca_cert": "-----BEGIN CERTIFICATE-----\nMIIBfTCCASKgAwIBAgIQYxac2fTjey+rkwFrrQYPjjAKBggqhkjOPQQDAjAeMRww\nGgYDVQQDExNXLVVJIG5vZGUgYXV0aG9yaXR5MB4XDTI2MTAwMTA5NTQ0MFoXDTM2\nMDkyODEwNTQ0MFowHjEcMBoGA1UEAxMTVy1VSSBub2RlIGF1dGhvcml0eTBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABLIMdUsOES+zdYx8Rya11uFJsuLHsaeAe0KM\nnky/GLE/aXpynWRYeIKKbZaErdwOT1s/TS3LU1Hvj9UdTU4CXzyjQjBAMA4GA1Ud\nDwEB/wQEAwIChDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQew/FH1HxTGU6x\n81EZgXFWxgtH2DAKBggqhkjOPQQDAgNJADBGAiEAhG2V7TEko0Ibgc48FYdP/qrs\nfPbeDp82PhveY8NoA0MCIQD16bqYMpTKfhLP+AXFU1L4QcHHpt07SyK3V+JRvkZv\n3A==\n-----END CERTIFICATE-----\n",
+    "nodes.mtls_ca_key": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIFMR/NQ02VDGUzCss+5iTddzUz2BGnXJbJUIzoA6gRzOoAoGCCqGSM49\nAwEHoUQDQgAEsgx1Sw4RL7N1jHxHJrXW4Umy4sexp4B7QoyeTL8YsT9penKdZFh4\ngoptloSt3A5PWz9NLctTUe+P1R1NTgJfPA==\n-----END EC PRIVATE KEY-----\n",
+    "nodes.mtls_client_cert": "-----BEGIN CERTIFICATE-----\nMIIBgzCCASmgAwIBAgIRAMA4zn+83HQV3Az4ELcKrUowCgYIKoZIzj0EAwIwHjEc\nMBoGA1UEAxMTVy1VSSBub2RlIGF1dGhvcml0eTAeFw0yNjEwMDEwOTU0NDBaFw0z\nNjA5MjgxMDU0NDBaMB4xHDAaBgNVBAMTE1ctVUkgbWFuYWdpbmcgcGFuZWwwWTAT\nBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQtm7bSZdNLQWhUIw3KmZlJGUzZdPZpQWnl\nNo9ypLvF0B3E00K/+Yzqwa+fJOdFnLg0n7zU+1zLNZZsqupV+BIfo0gwRjAOBgNV\nHQ8BAf8EBAMCB4AwEwYDVR0lBAwwCgYIKwYBBQUHAwIwHwYDVR0jBBgwFoAUHsPx\nR9R8UxlOsfNRGYFxVsYLR9gwCgYIKoZIzj0EAwIDSAAwRQIhANdVn1a4g97w+nKa\nbo/clEuzOU87KqSQ4RfsUMzgCLuHAiAC3ULH9UcbEPk7H0hjQ2VTsYBIdxOqG7eD\nWgcIQAT2fQ==\n-----END CERTIFICATE-----\n",
+    "nodes.mtls_client_key": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIOmqRVlVIkP5/PJWQ8gievYX34WKzHAqvkV35fhUvv8soAoGCCqGSM49\nAwEHoUQDQgAELZu20mXTS0FoVCMNypmZSRlM2XT2aUFp5TaPcqS7xdAdxNNCv/mM\n6sGvnyTnRZy4NJ+81PtcyzWWbKrqVfgSHw==\n-----END EC PRIVATE KEY-----\n",
+    "nodes.mtls_trust_ca": "-----BEGIN CERTIFICATE-----\nMIIBfTCCASKgAwIBAgIQYxac2fTjey+rkwFrrQYPjjAKBggqhkjOPQQDAjAeMRww\nGgYDVQQDExNXLVVJIG5vZGUgYXV0aG9yaXR5MB4XDTI2MTAwMTA5NTQ0MFoXDTM2\nMDkyODEwNTQ0MFowHjEcMBoGA1UEAxMTVy1VSSBub2RlIGF1dGhvcml0eTBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABLIMdUsOES+zdYx8Rya11uFJsuLHsaeAe0KM\nnky/GLE/aXpynWRYeIKKbZaErdwOT1s/TS3LU1Hvj9UdTU4CXzyjQjBAMA4GA1Ud\nDwEB/wQEAwIChDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQew/FH1HxTGU6x\n81EZgXFWxgtH2DAKBggqhkjOPQQDAgNJADBGAiEAhG2V7TEko0Ibgc48FYdP/qrs\nfPbeDp82PhveY8NoA0MCIQD16bqYMpTKfhLP+AXFU1L4QcHHpt07SyK3V+JRvkZv\n3A==\n-----END CERTIFICATE-----",
+    "notify.apiServer": "https://tg.example.test",
+    "notify.backup": "true",
+    "notify.backupTime": "0 0 4 * * *",
+    "notify.botToken": "123456:fixture-bot-token",
+    "notify.chatId": "424242",
+    "notify.cpuThreshold": "70",
+    "notify.enabled": "false",
+    "notify.kinds": "login,expired,backup",
+    "notify.lang": "fa",
+    "notify.memoryThreshold": "75",
+    "notify.outboundDownThreshold": "40",
+    "notify.runTime": "@weekly",
+    "panel.basePath": "",
+    "panel.certFile": "",
+    "panel.datepicker": "jalalian",
+    "panel.defaultLocale": "fa",
+    "panel.domain": "",
+    "panel.expireDiffDays": "5",
+    "panel.informEnable": "false",
+    "panel.informURI": "https://inform.example.test/traffic",
+    "panel.keyFile": "",
+    "panel.listen": "127.0.0.1",
+    "panel.outbound": "",
+    "panel.pageSize": "50",
+    "panel.port": "47170",
+    "panel.sessionMinutes": "1440",
+    "panel.timeLocation": "UTC",
+    "panel.trafficDiffGB": "3",
+    "panel.trustedProxies": "10.0.0.0/8",
+    "routing.blockBitTorrent": "true",
+    "routing.blockDomains": "blocked.example.test",
+    "routing.blockIps": "192.0.2.0/24",
+    "routing.blockPorts": "25",
+    "routing.defaultOutbound": "direct",
+    "routing.directDomains": "direct.example.test",
+    "routing.directIps": "198.51.100.0/24",
+    "routing.failClosed": "true",
+    "routing.ipv4Domains": "v4.example.test",
     "sub.announce": "",
     "sub.certFile": "",
     "sub.enabled": "true",
@@ -303,6 +365,121 @@
     "template": "classic",
     "title": "W-UI",
     "updateHours": 1
+  },
+  "pages": {
+    "engine": {
+      "accessLog": true,
+      "collectInterval": 3,
+      "dns": {
+        "disableCache": false,
+        "enabled": true,
+        "hosts": [],
+        "queryStrategy": "UseIPv4",
+        "serveExpiredTTL": 0,
+        "servers": [
+          {
+            "address": "1.1.1.1",
+            "domains": null,
+            "port": 0,
+            "skipFallback": false
+          },
+          {
+            "address": "8.8.8.8",
+            "domains": null,
+            "port": 0,
+            "skipFallback": false
+          }
+        ]
+      },
+      "domainStrategy": "AsIs",
+      "logFormat": "",
+      "logLevel": "warn",
+      "maskAddress": true,
+      "onlineWindow": 300,
+      "outboundCounters": true,
+      "outboundTestUrl": "https://probe.example.test/generate_204",
+      "probeConcurrency": true,
+      "probeInterval": 600
+    },
+    "nodeAuthority": "-----BEGIN CERTIFICATE-----\nMIIBfTCCASKgAwIBAgIQYxac2fTjey+rkwFrrQYPjjAKBggqhkjOPQQDAjAeMRww\nGgYDVQQDExNXLVVJIG5vZGUgYXV0aG9yaXR5MB4XDTI2MTAwMTA5NTQ0MFoXDTM2\nMDkyODEwNTQ0MFowHjEcMBoGA1UEAxMTVy1VSSBub2RlIGF1dGhvcml0eTBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABLIMdUsOES+zdYx8Rya11uFJsuLHsaeAe0KM\nnky/GLE/aXpynWRYeIKKbZaErdwOT1s/TS3LU1Hvj9UdTU4CXzyjQjBAMA4GA1Ud\nDwEB/wQEAwIChDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQew/FH1HxTGU6x\n81EZgXFWxgtH2DAKBggqhkjOPQQDAgNJADBGAiEAhG2V7TEko0Ibgc48FYdP/qrs\nfPbeDp82PhveY8NoA0MCIQD16bqYMpTKfhLP+AXFU1L4QcHHpt07SyK3V+JRvkZv\n3A==\n-----END CERTIFICATE-----\n",
+    "routing": {
+      "blockBitTorrent": true,
+      "blockDomains": [
+        "blocked.example.test"
+      ],
+      "blockIps": [
+        "192.0.2.0/24"
+      ],
+      "blockPorts": [
+        "25"
+      ],
+      "defaultOutbound": "direct",
+      "directDomains": [
+        "direct.example.test"
+      ],
+      "directIps": [
+        "198.51.100.0/24"
+      ],
+      "failClosed": true,
+      "ipv4Domains": [
+        "v4.example.test"
+      ]
+    },
+    "settings": {
+      "backupEveryHours": 12,
+      "backupKeep": 5,
+      "datepicker": "jalalian",
+      "defaultDeviceLimit": 3,
+      "defaultExpiryDays": 45,
+      "defaultInterfaceId": 1,
+      "defaultLocale": "fa",
+      "defaultQuotaBytes": 21474836480,
+      "defaultRateBitsPerSec": 50000000,
+      "defaultResetCycle": "monthly",
+      "expireDiff": 5,
+      "externalTrafficInformEnable": false,
+      "externalTrafficInformURI": "https://inform.example.test/traffic",
+      "mailEnabled": false,
+      "mailEncryption": "tls",
+      "mailFrom": "panel@example.test",
+      "mailFromName": "W-UI fixture",
+      "mailHost": "smtp.example.test",
+      "mailKinds": [
+        "login"
+      ],
+      "mailPassword": "********",
+      "mailPort": 2525,
+      "mailTo": "ops@example.test",
+      "mailUsername": "fixture",
+      "notifyAPIServer": "https://tg.example.test",
+      "notifyBackup": true,
+      "notifyBackupTime": "0 0 4 * * *",
+      "notifyBotToken": "********",
+      "notifyCPUThreshold": 70,
+      "notifyChatId": "424242",
+      "notifyEnabled": false,
+      "notifyKinds": [
+        "login",
+        "expired",
+        "backup"
+      ],
+      "notifyLang": "fa",
+      "notifyMemoryThreshold": 75,
+      "notifyOutboundDownThreshold": 40,
+      "notifyRunTime": "@weekly",
+      "pageSize": 50,
+      "panelOutbound": "",
+      "sessionMaxAge": 1440,
+      "timeLocation": "UTC",
+      "trafficDiff": 3,
+      "trustedProxyCIDRs": "10.0.0.0/8",
+      "webBasePath": "/",
+      "webCertFile": "",
+      "webDomain": "",
+      "webKeyFile": "",
+      "webListen": "127.0.0.1",
+      "webPort": 47170
+    }
   },
   "backup": "backup.tar.gz",
   "extra": {
