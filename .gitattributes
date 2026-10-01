@@ -1,8 +1,43 @@
+# Line endings: LF in the repository and in every checkout, on every OS.
+#
+# Every text file is stored and checked out with LF, whatever the machine's
+# core.autocrlf says. The committed frontend bundle is built from these files,
+# so a checkout that turned them into CRLF built a bundle that differed from
+# a clean clone's -- and one carriage return without its line feed made git
+# treat the bundle's index.html as binary, beyond normalising at all.
 * text=auto eol=lf
-*.sh text eol=lf
+
+# Text, named, so git never guesses otherwise -- the bundle included.
 *.go text eol=lf
+*.sh text eol=lf
+*.vue text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.txt text eol=lf
+*.conf text eol=lf
+*.crt text eol=lf
+*.svg text eol=lf
+internal/web/dist/**/*.html text eol=lf
+internal/web/dist/**/*.js text eol=lf
+internal/web/dist/**/*.css text eol=lf
+
+# Binary: never converted, never diffed as text.
 *.png binary
+*.ico binary
+*.jpg binary
+*.woff binary
 *.woff2 binary
+*.ttf binary
+*.gz binary
+*.zip binary
+*.db binary
+*.exe binary
+
 # Upgrade fixtures and contract golden files are compared byte for byte:
 # never converted, on any checkout.
 internal/upgradecheck/testdata/** -text
