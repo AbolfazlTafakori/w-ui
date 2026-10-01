@@ -137,6 +137,10 @@ Update nodes when you update the panel: a node older than its panel still syncs 
 
 **Nodes** → the node's row → **Update** (shown when a newer release exists). The panel *asks* the node to update itself — you confirm **Install and restart**; the node fetches the release from GitHub and checks the signature with the key built into its own binary. Nothing travels from this panel, so a compromised panel cannot push code onto nodes. Or, on server B: `w-ui update`.
 
+::: warning Nodes on v2.0.0 to v2.6.0
+A node on any of these releases refuses its managing panel's token: it shows as unreachable, customers added here never reach it, its traffic is not counted, and **Update** cannot reach it either. Run `w-ui update` once on the node server itself. From v2.6.1 the node is managed, and updated, from here again.
+:::
+
 ## Removing a node
 
 **Nodes** → remove. Nothing on server B changes: it keeps running its tunnels and its customers keep working until you delete them on the node's own panel. Its token stays valid until you revoke it there (Settings → Authentication → API tokens).

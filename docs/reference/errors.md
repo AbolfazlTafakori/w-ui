@@ -100,7 +100,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `that server is not one of yours` | The server chosen is not one the owner gave this reseller, or was taken back. Customers already on it keep working and can still be edited or moved off it. | Pick a server from the list offered. |
 | `you may have … customers and you have …` | The customer limit is reached. | Delete a customer, or ask the owner for a higher limit. |
 | `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | Five subscription ids already in use were chosen within an hour. | Leave the id empty; one is drawn for the customer. |
-| `this part of the panel is the owner's` | A page or request that only the owner may use. | — |
+| `this part of the panel is the owner's` | A page or request that only the owner may use. On a node of v2.0.0 to v2.6.0, also every request from its managing panel, which then shows the node as unreachable. | On such a node: `w-ui update` on the node server, once. |
 
 ### The Resellers page
 

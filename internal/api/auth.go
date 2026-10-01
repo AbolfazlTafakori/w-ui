@@ -34,7 +34,12 @@ func (s *Server) sessionTTL(ctx context.Context) time.Duration {
 
 type ctxKey int
 
-const ctxAdmin ctxKey = iota
+const (
+	ctxAdmin ctxKey = iota
+	// ctxMachine marks a request made with a machine token: another panel
+	// managing this one as its node, or automation the owner issued it for.
+	ctxMachine
+)
 
 type loginRequest struct {
 	Username string `json:"username"`
@@ -283,7 +288,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if machine {
-			next(w, r)
+			next(w, r.WithContext(context.WithValue(r.Context(), ctxMachine, true)))
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxAdmin, admin)
@@ -337,8 +342,21 @@ func signInRefusal(admin *model.Admin, now time.Time) string {
 // business there, and neither has an administrator brought in to help with
 // customers -- the point of that role is a second pair of hands over the
 // customers without the server underneath.
+//
+// A machine token is let through, as it was before v2.0.0. Only the owner
+// issues one, and the panel managing this one as a node reaches everything
+// it does through it -- the probe, the sync, the usage, the update. Refused
+// here, as it was from v2.0.0 to v2.6.0, no panel could manage a node at
+// all. What a leaked token could use to keep the door open stays refused to
+// it by requireOperator and requireAdminManager: the panel's settings,
+// backups, tokens, the node registry, the operators and the owner's own
+// account.
 func (s *Server) requireManager(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if fromMachine(r.Context()) {
+			next(w, r)
+			return
+		}
 		admin := adminFrom(r.Context())
 		if admin == nil || !admin.Role.ManagesPanel() {
 			writeError(w, http.StatusForbidden, "this part of the panel is the owner's")
@@ -371,6 +389,13 @@ func (s *Server) requireOperator(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// fromMachine reports whether requireAuth let this request in on a machine
+// token.
+func fromMachine(ctx context.Context) bool {
+	m, _ := ctx.Value(ctxMachine).(bool)
+	return m
 }
 
 // adminFrom returns the signed-in admin attached by requireAuth.

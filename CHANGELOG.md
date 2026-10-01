@@ -6,6 +6,38 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-10-01
+
+### Fixed
+- **A panel can manage its nodes again.** Since v2.0.0 a node refused the
+  token its managing panel holds for it -- "this part of the panel is the
+  owner's" -- on everything the panel does through it: checking the node is
+  up, sending it tunnels and customers, collecting its usage, and asking it
+  to update. A node on v2.0.0 to v2.6.0 showed as unreachable, customers
+  added on the panel never reached it, and its traffic was not counted.
+  This applies to every API token, not only the one a managing panel holds
+  for its node: as before v2.0.0, a token can again manage interfaces and
+  tunnels, routing and outbounds, the engine, hosts, the subscription service
+  and nodes, ask a node or this panel to update, and send the Telegram and
+  mail test messages. Still refused to any token, as in v2.6.0: changing the
+  panel's settings (`PUT /api/settings`; `GET` answers a token only the
+  display preferences, as it does a reseller, and never the bot token or the
+  mail password), backups, tokens, operators, adding, changing or removing a
+  node, the subscription page template, restarting the panel, and the
+  owner's own account and two-factor.
+
+### Updating
+- **Update every node by hand, once.** A node on v2.0.0 to v2.6.0 refuses the
+  panel's request to update itself too, so the panel's **Update** button
+  cannot reach it. On each node server run:
+
+  ```bash
+  w-ui update
+  ```
+
+  From v2.6.1 on, nodes update from the panel again. The managing panel
+  itself updates as usual; the order does not matter.
+
 ## [2.6.0] — 2026-09-30
 
 ### Added
@@ -584,7 +616,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.2...v2.6.0
 [2.5.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.0...v2.5.1
