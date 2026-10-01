@@ -844,8 +844,13 @@ func (r Route) forOwner() bool {
 }
 
 // register wires the table into a mux.
-func (s *Server) register(mux *http.ServeMux) {
-	for _, r := range s.routes() {
+func (s *Server) register(mux *http.ServeMux) { s.registerRoutes(mux, s.routes()) }
+
+// registerRoutes puts routes behind the gates their table entries ask for.
+// Apart from register so a test can put the real gates in front of handlers
+// of its own and read off who each route lets in.
+func (s *Server) registerRoutes(mux *http.ServeMux, routes []Route) {
+	for _, r := range routes {
 		h := r.handler
 		if r.Group == "Operators" {
 			h = s.requireAdminManager(h)
