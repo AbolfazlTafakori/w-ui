@@ -33,12 +33,17 @@ work="$(mktemp -d)"
 pids=()
 NS=""
 NODE_IP=127.0.0.1
-cleanup() {
+# stop ends every panel started so far, so the next pair starts on its own.
+stop() {
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; wait "$p" 2>/dev/null || true; done
+  pids=()
   if [[ -n "$NS" ]]; then
     sudo ip netns pids "$NS" 2>/dev/null | xargs -r sudo kill 2>/dev/null || true
-    sudo ip netns del "$NS" 2>/dev/null || true
   fi
+}
+cleanup() {
+  stop
+  [[ -z "$NS" ]] || sudo ip netns del "$NS" 2>/dev/null || true
   git -C "$ROOT" worktree remove --force "$work/src" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
@@ -90,6 +95,7 @@ pair() {
     echo "--- node:"; grep -v "only available on Linux\|Linux-only\|port 53\|plain HTTP" "$work/node-$base.log" | tail -25
     return 1
   fi
+  stop
 }
 
 if [[ "$DIRECTIONS" != old-panel ]]; then

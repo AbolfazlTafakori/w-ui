@@ -167,7 +167,8 @@ awk -v a="$last_reply" -v b="$t1" 'BEGIN { exit !(a > b) }' \
 say "after the update"
 got="$(/usr/local/bin/wui version 2>/dev/null || true)"
 [[ "$got" == *"$NEW_VERSION"* ]] || fail "the installed binary says $got, not $NEW_VERSION"
-"$W/upgrade" verify -url "$URL" -fixture "$W/fixture" || fail "customers, links or tunnels changed"
+# wg-unlimited pinged all through the update, so its usage has grown.
+"$W/upgrade" verify -url "$URL" -fixture "$W/fixture" -in-use wg-unlimited || fail "customers, links or tunnels changed"
 "$W/upgrade" snapshot -out "$W/after.json"
 "$W/upgrade" compare -before "$W/before.json" -after "$W/after.json" || fail "the update changed what it must leave alone"
 ip netns exec wuicust wg show wgc latest-handshakes

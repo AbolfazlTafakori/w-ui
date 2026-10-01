@@ -101,6 +101,7 @@ func verifyCommand(args []string) error {
 	user := fs.String("user", "", "administrator, when not the manifest's")
 	pass := fs.String("pass", "", "password, when not the manifest's")
 	moved := fs.Bool("new-address", false, "the data was restored into another panel, whose own address the links now name")
+	inUse := fs.String("in-use", "", "comma-separated customers whose tunnel carried traffic since the fixture was taken; what they used may grow")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -120,7 +121,7 @@ func verifyCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	if problems := upgradecheck.Verify(ctx, c, m, *dir, upgradecheck.Options{NewAddress: *moved}); len(problems) > 0 {
+	if problems := upgradecheck.Verify(ctx, c, m, *dir, upgradecheck.Options{NewAddress: *moved, InUse: names(*inUse)}); len(problems) > 0 {
 		return fmt.Errorf("%d problems after the upgrade:\n  %s", len(problems), strings.Join(problems, "\n  "))
 	}
 	fmt.Printf("verified: %d interfaces and %d customers as %s left them, and their links answer\n",
@@ -138,4 +139,15 @@ func closeDB(db *gorm.DB) {
 	if s, err := db.DB(); err == nil {
 		s.Close()
 	}
+}
+
+// names is the set of a comma-separated list.
+func names(list string) map[string]bool {
+	set := map[string]bool{}
+	for _, n := range strings.Split(list, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			set[n] = true
+		}
+	}
+	return set
 }

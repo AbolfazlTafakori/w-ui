@@ -69,7 +69,7 @@ func Verify(ctx context.Context, c *Client, m *Manifest, dir string, opts Option
 			add("customer %d (%s) is gone", was.ID, was.Name)
 			continue
 		}
-		for _, d := range customerDiff(was, is) {
+		for _, d := range customerDiff(was, is, opts.InUse[was.Name]) {
 			add("customer %s: %s", was.Name, d)
 		}
 		problems = append(problems, verifySubscription(ctx, c, was, dir, opts)...)
@@ -84,10 +84,13 @@ type Options struct {
 	// subscription port -- it is that server's -- so links name it, not the
 	// old one, and only the token is carried over.
 	NewAddress bool
+	// InUse are customers, by name, whose tunnel carried traffic since the
+	// fixture was taken: what they used may have grown, never shrunk.
+	InUse map[string]bool
 }
 
 // customerDiff lists what changed about one customer.
-func customerDiff(was, is Customer) []string {
+func customerDiff(was, is Customer, inUse bool) []string {
 	var d []string
 	field := func(name string, a, b any) {
 		if fmt.Sprint(a) != fmt.Sprint(b) {
@@ -100,7 +103,9 @@ func customerDiff(was, is Customer) []string {
 	field("status", was.Status, is.Status)
 	field("groups", sorted(was.Groups), sorted(is.Groups))
 	field("quota", was.QuotaBytes, is.QuotaBytes)
-	field("used", was.UsedBytes, is.UsedBytes)
+	if !inUse || is.UsedBytes < was.UsedBytes {
+		field("used", was.UsedBytes, is.UsedBytes)
+	}
 	field("starts on first use", was.StartOnFirstUse, is.StartOnFirstUse)
 	field("duration (days)", was.DurationDays, is.DurationDays)
 	field("device limit", was.DeviceLimit, is.DeviceLimit)
