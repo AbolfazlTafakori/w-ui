@@ -1,0 +1,23 @@
+{
+  "body": {
+    "clientLimit": 5,
+    "clients": 0,
+    "createdAt": "\u003cstring\u003e",
+    "durationDays": 0,
+    "enabled": true,
+    "expiresAt": null,
+    "groupName": "reseller:contract-reseller",
+    "id": 2,
+    "interfaceIds": [],
+    "lastLoginAt": null,
+    "lastLoginIp": "",
+    "locale": "en",
+    "note": "",
+    "quotaBytes": 0,
+    "role": "reseller",
+    "updatedAt": "\u003cstring\u003e",
+    "usedBytes": 0,
+    "username": "contract-reseller"
+  },
+  "status": 201
+}

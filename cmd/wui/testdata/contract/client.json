@@ -1,0 +1,70 @@
+{
+  "body": {
+    "accounts": [
+      {
+        "clientId": 1,
+        "createdAt": "\u003cstring\u003e",
+        "deviceName": "user-1",
+        "downBytes": 0,
+        "enabled": true,
+        "id": 1,
+        "interfaceId": 1,
+        "ip": "10.71.0.2",
+        "lastEndpoint": "\u003cstring\u003e",
+        "lastHandshake": null,
+        "lastSeenAt": null,
+        "nodeId": 1,
+        "publicKey": "6zKaplcHy6dTwABh01QcTjTbzxqhcH/+BYEyvS/u1jE=",
+        "upBytes": 0,
+        "updatedAt": "\u003cstring\u003e"
+      },
+      {
+        "clientId": 1,
+        "createdAt": "\u003cstring\u003e",
+        "deviceName": "user-2",
+        "downBytes": 0,
+        "enabled": true,
+        "id": 2,
+        "interfaceId": 1,
+        "ip": "10.71.0.3",
+        "lastEndpoint": "\u003cstring\u003e",
+        "lastHandshake": null,
+        "lastSeenAt": null,
+        "nodeId": 1,
+        "publicKey": "7fz/4MOJlkAnTXOs7GO2rvNYXAFMg3u825adACWQ1ic=",
+        "upBytes": 0,
+        "updatedAt": "\u003cstring\u003e"
+      }
+    ],
+    "activatedAt": null,
+    "createdAt": "\u003cstring\u003e",
+    "deviceLimit": 2,
+    "downBytes": 0,
+    "durationDays": 0,
+    "durationHours": 0,
+    "expiresAt": "2031-01-01T00:00:00Z",
+    "group": "vip",
+    "groups": [
+      "vip"
+    ],
+    "id": 1,
+    "lastResetAt": null,
+    "name": "wg-limited",
+    "note": "fixture — یادداشت",
+    "onlineNow": "\u003cfloat64\u003e",
+    "ownerId": 0,
+    "protocol": "wireguard",
+    "quotaBytes": 10737418240,
+    "rateBitsPerSec": 0,
+    "resetCycle": "monthly",
+    "speed": null,
+    "startOnFirstUse": false,
+    "status": "active",
+    "subId": "N_hLRuox0NUz7Ya7A1hU-MvpvqFPlVG7",
+    "telegramId": 0,
+    "upBytes": 0,
+    "updatedAt": "\u003cstring\u003e",
+    "usedBytes": 0
+  },
+  "status": 200
+}

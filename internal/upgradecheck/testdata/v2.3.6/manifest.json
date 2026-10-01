@@ -1,0 +1,311 @@
+{
+  "version": "v2.3.6",
+  "made": "2026-10-01T06:09:58.7668231Z",
+  "admin": {
+    "username": "fixture",
+    "password": "fixture-password-1"
+  },
+  "interfaces": [
+    {
+      "id": 1,
+      "name": "fx-wg",
+      "protocol": "wireguard",
+      "mode": "standard",
+      "listenPort": 51901,
+      "subnet": "10.71.0.0/24",
+      "publicKey": "GTnFc7LlbLKupfT9olfr2dZa5CA/xL+BPQlxuph5nkE="
+    },
+    {
+      "id": 2,
+      "name": "fx-awg",
+      "protocol": "wireguard",
+      "mode": "amnezia",
+      "listenPort": 51902,
+      "subnet": "10.72.0.0/24",
+      "publicKey": "l9NFK3Y743Ignhx95EXvM4JsVox4Q4yZUYZicwJQrXE="
+    },
+    {
+      "id": 3,
+      "name": "fx-ovpn",
+      "protocol": "openvpn",
+      "mode": "standard",
+      "listenPort": 11940,
+      "subnet": "10.73.0.0/24",
+      "publicKey": ""
+    }
+  ],
+  "clients": [
+    {
+      "id": 1,
+      "name": "wg-limited",
+      "note": "fixture — یادداشت",
+      "protocol": "wireguard",
+      "status": "active",
+      "groups": [
+        "vip"
+      ],
+      "quotaBytes": 10737418240,
+      "usedBytes": 0,
+      "expiresAt": "2031-01-01T00:00:00Z",
+      "startOnFirstUse": false,
+      "durationDays": 0,
+      "deviceLimit": 2,
+      "resetCycle": "monthly",
+      "subId": "9_mD1F3jep9ZH5zHiPPoISjs74iEJ8hF",
+      "accounts": [
+        {
+          "id": 1,
+          "interfaceId": 1,
+          "deviceName": "user-1",
+          "ip": "10.71.0.2",
+          "publicKey": "4ZWzkGPafgE7aVjlyjzJ0tbzzYykMbnY89Ewql6XszI=",
+          "username": ""
+        },
+        {
+          "id": 2,
+          "interfaceId": 1,
+          "deviceName": "user-2",
+          "ip": "10.71.0.3",
+          "publicKey": "8izgrX4buU1BZpK1pXGlfVysf7XU7VljiXiNJGqJ3yc=",
+          "username": ""
+        }
+      ],
+      "subToken": "9_mD1F3jep9ZH5zHiPPoISjs74iEJ8hF",
+      "subLink": "http://127.0.0.1:47141/subscribe/9_mD1F3jep9ZH5zHiPPoISjs74iEJ8hF",
+      "subFile": "sub/wg-limited.conf",
+      "subStatus": 200
+    },
+    {
+      "id": 2,
+      "name": "wg-unlimited",
+      "note": "",
+      "protocol": "wireguard",
+      "status": "active",
+      "groups": [],
+      "quotaBytes": 0,
+      "usedBytes": 0,
+      "expiresAt": null,
+      "startOnFirstUse": false,
+      "durationDays": 0,
+      "deviceLimit": 1,
+      "resetCycle": "none",
+      "subId": "QVMFAlXrQMNwha53i7Dd_zEj2cAUpelZ",
+      "accounts": [
+        {
+          "id": 3,
+          "interfaceId": 1,
+          "deviceName": "device-1",
+          "ip": "10.71.0.4",
+          "publicKey": "mExAb92gjHKzIH4wwkuiLU/lYcuxLv4JfhjGNSRBHgg=",
+          "username": ""
+        }
+      ],
+      "subToken": "QVMFAlXrQMNwha53i7Dd_zEj2cAUpelZ",
+      "subLink": "http://127.0.0.1:47141/subscribe/QVMFAlXrQMNwha53i7Dd_zEj2cAUpelZ",
+      "subFile": "sub/wg-unlimited.conf",
+      "subStatus": 200
+    },
+    {
+      "id": 3,
+      "name": "awg-first-use",
+      "note": "",
+      "protocol": "wireguard",
+      "status": "active",
+      "groups": [],
+      "quotaBytes": 5368709120,
+      "usedBytes": 0,
+      "expiresAt": null,
+      "startOnFirstUse": true,
+      "durationDays": 30,
+      "deviceLimit": 1,
+      "resetCycle": "none",
+      "subId": "ZoSkMKQc6CgvlmKo1Zraoc9RqbYYa-GH",
+      "accounts": [
+        {
+          "id": 4,
+          "interfaceId": 2,
+          "deviceName": "device-1",
+          "ip": "10.72.0.2",
+          "publicKey": "M4udxOrT515OyHR9Qeqz/q5LXixJuD/F3hLK3JwMKwQ=",
+          "username": ""
+        }
+      ],
+      "subToken": "ZoSkMKQc6CgvlmKo1Zraoc9RqbYYa-GH",
+      "subLink": "http://127.0.0.1:47141/subscribe/ZoSkMKQc6CgvlmKo1Zraoc9RqbYYa-GH",
+      "subFile": "sub/awg-first-use.conf",
+      "subStatus": 200
+    },
+    {
+      "id": 4,
+      "name": "ovpn-user",
+      "note": "",
+      "protocol": "openvpn",
+      "status": "active",
+      "groups": [],
+      "quotaBytes": 21474836480,
+      "usedBytes": 0,
+      "expiresAt": "2031-01-01T00:00:00Z",
+      "startOnFirstUse": false,
+      "durationDays": 0,
+      "deviceLimit": 1,
+      "resetCycle": "none",
+      "subId": "UozprCAEIo2f-EI0voohwWS8iam1xEGO",
+      "accounts": [
+        {
+          "id": 5,
+          "interfaceId": 3,
+          "deviceName": "device-1",
+          "ip": "10.73.0.2",
+          "publicKey": "",
+          "username": "fxovpn"
+        }
+      ],
+      "subToken": "UozprCAEIo2f-EI0voohwWS8iam1xEGO",
+      "subLink": "http://127.0.0.1:47141/subscribe/UozprCAEIo2f-EI0voohwWS8iam1xEGO",
+      "subFile": "sub/ovpn-user.conf",
+      "subStatus": 200
+    },
+    {
+      "id": 5,
+      "name": "wg-off",
+      "note": "",
+      "protocol": "wireguard",
+      "status": "disabled",
+      "groups": [
+        "trial",
+        "vip"
+      ],
+      "quotaBytes": 0,
+      "usedBytes": 0,
+      "expiresAt": null,
+      "startOnFirstUse": false,
+      "durationDays": 0,
+      "deviceLimit": 1,
+      "resetCycle": "none",
+      "subId": "DNz1HNxunn4fNmbMfX3rxafMHvFJzoXw",
+      "accounts": [
+        {
+          "id": 6,
+          "interfaceId": 1,
+          "deviceName": "device-1",
+          "ip": "10.71.0.5",
+          "publicKey": "lYZyjYU/JNrBiz1exYXLfmLNorT6Ja1NfYpPXeZk8mM=",
+          "username": ""
+        }
+      ],
+      "subToken": "DNz1HNxunn4fNmbMfX3rxafMHvFJzoXw",
+      "subLink": "http://127.0.0.1:47141/subscribe/DNz1HNxunn4fNmbMfX3rxafMHvFJzoXw",
+      "subFile": "sub/wg-off.conf",
+      "subStatus": 200
+    },
+    {
+      "id": 6,
+      "name": "two-tunnels",
+      "note": "",
+      "protocol": "wireguard",
+      "status": "active",
+      "groups": [],
+      "quotaBytes": 0,
+      "usedBytes": 0,
+      "expiresAt": null,
+      "startOnFirstUse": false,
+      "durationDays": 0,
+      "deviceLimit": 3,
+      "resetCycle": "none",
+      "subId": "4Kuej2scMYX5y4mz2ecmL38RwbNVRbZS",
+      "accounts": [
+        {
+          "id": 7,
+          "interfaceId": 1,
+          "deviceName": "user-1",
+          "ip": "10.71.0.6",
+          "publicKey": "aWDm2H4i+Ik8KdtDiGzvTj23apuEFEOv07CuPTS/dB0=",
+          "username": ""
+        },
+        {
+          "id": 8,
+          "interfaceId": 1,
+          "deviceName": "user-2",
+          "ip": "10.71.0.7",
+          "publicKey": "jYKDace8jy/KJ+5XXCU+jLz1ZV9pSAl+JCFl22F30EQ=",
+          "username": ""
+        },
+        {
+          "id": 9,
+          "interfaceId": 1,
+          "deviceName": "user-3",
+          "ip": "10.71.0.8",
+          "publicKey": "F7UMyLowHqdvRqiKhVmmpcO8v3BtdK0ND0qm94+WKCo=",
+          "username": ""
+        },
+        {
+          "id": 10,
+          "interfaceId": 2,
+          "deviceName": "user-1",
+          "ip": "10.72.0.3",
+          "publicKey": "+rorNxuaraUtVO5cN3z5LC+1ZYBUclJRbDLaFx7oSyM=",
+          "username": ""
+        },
+        {
+          "id": 11,
+          "interfaceId": 2,
+          "deviceName": "user-2",
+          "ip": "10.72.0.4",
+          "publicKey": "DOmF+yqJIOYYz3mxpDlg4TV8013ubD7eFIShjbAE1A0=",
+          "username": ""
+        },
+        {
+          "id": 12,
+          "interfaceId": 2,
+          "deviceName": "user-3",
+          "ip": "10.72.0.5",
+          "publicKey": "UVPl2sQBnKCylmenwXMFV9nU4pugofh5188oNQ22VDg=",
+          "username": ""
+        }
+      ],
+      "subToken": "4Kuej2scMYX5y4mz2ecmL38RwbNVRbZS",
+      "subLink": "http://127.0.0.1:47141/subscribe/4Kuej2scMYX5y4mz2ecmL38RwbNVRbZS",
+      "subFile": "sub/two-tunnels.conf",
+      "subStatus": 200
+    }
+  ],
+  "settings": {
+    "auth.jwt_secret": "OTzQC5qq1lHBC3V4bAJGUsS3oQ/pT76b+uVs0g3MNz0=",
+    "sub.announce": "",
+    "sub.certFile": "",
+    "sub.enabled": "true",
+    "sub.encode": "false",
+    "sub.host": "",
+    "sub.keyFile": "",
+    "sub.listen": "",
+    "sub.path": "/subscribe/",
+    "sub.port": "47141",
+    "sub.profileUrl": "",
+    "sub.reverseProxyUri": "",
+    "sub.supportUrl": "",
+    "sub.template": "classic",
+    "sub.title": "W-UI",
+    "sub.updateHours": "1"
+  },
+  "subscriptionSettings": {
+    "announce": "",
+    "certFile": "",
+    "enabled": true,
+    "encode": false,
+    "host": "",
+    "keyFile": "",
+    "listen": "",
+    "path": "/subscribe/",
+    "port": 47141,
+    "profileUrl": "",
+    "reverseProxyUri": "",
+    "supportUrl": "",
+    "template": "classic",
+    "title": "W-UI",
+    "updateHours": 1
+  },
+  "backup": "backup.tar.gz",
+  "extra": {
+    "listen": "127.0.0.1:47140"
+  }
+}

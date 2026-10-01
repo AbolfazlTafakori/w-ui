@@ -1,0 +1,14 @@
+{
+  "body": {
+    "amount": -1073741824,
+    "changed": 3,
+    "ended": 0,
+    "floored": 0,
+    "revived": 0,
+    "skipped": {
+      "unlimited": 1
+    },
+    "stillEnded": 0
+  },
+  "status": 200
+}

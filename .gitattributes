@@ -3,3 +3,7 @@
 *.go text eol=lf
 *.png binary
 *.woff2 binary
+# Upgrade fixtures and contract golden files are compared byte for byte:
+# never converted, on any checkout.
+internal/upgradecheck/testdata/** -text
+cmd/wui/testdata/** -text

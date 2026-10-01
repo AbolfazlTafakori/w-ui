@@ -1,0 +1,20 @@
+status: 200
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="wg-off.conf"; filename*=UTF-8''wg-off.conf
+Subscription-Userinfo: upload=0; download=0; total=0; expire=0
+Profile-Update-Interval: 1
+Profile-Title: base64:Vy1VSQ==
+Cache-Control: no-store
+
+[Interface]
+PrivateKey = QITOVq6qwCuFHTIxZr8ng3w6aUK/s/H80wvXlfxrRFI=
+Address = 10.71.0.5/32
+DNS = 10.71.0.1
+MTU = 1420
+
+[Peer]
+PublicKey = j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=
+PresharedKey = NkfXfR8Zm/7JQpIH2YqH5Ypv7pfj7gRFuknWbk4aBbw=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51901
+PersistentKeepalive = 25

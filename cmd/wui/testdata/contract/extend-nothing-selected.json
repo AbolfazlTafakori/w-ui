@@ -1,0 +1,7 @@
+{
+  "body": {
+    "error": "Select the customers first",
+    "field": "ids"
+  },
+  "status": 400
+}

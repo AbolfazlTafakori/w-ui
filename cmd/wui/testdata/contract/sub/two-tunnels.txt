@@ -1,0 +1,124 @@
+status: 200
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="two-tunnels.conf"; filename*=UTF-8''two-tunnels.conf
+Subscription-Userinfo: upload=0; download=0; total=0; expire=0
+Profile-Update-Interval: 1
+Profile-Title: base64:Vy1VSQ==
+Cache-Control: no-store
+
+[Interface]
+PrivateKey = ePSUr1l9sULBdARw0zqAHQurDRur/Gw+YaW96kNelWk=
+Address = 10.71.0.6/32
+DNS = 10.71.0.1
+MTU = 1420
+
+[Peer]
+PublicKey = j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=
+PresharedKey = YLNfyvFre9DqB2eEJOXtR+/Xfxt39Wme3z1JfUqKIgE=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51901
+PersistentKeepalive = 25
+
+[Interface]
+PrivateKey = KOAin5wtKmhu/ph6P1/qpW6PpqxoAFnmvnMpCPn0z2w=
+Address = 10.71.0.7/32
+DNS = 10.71.0.1
+MTU = 1420
+
+[Peer]
+PublicKey = j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=
+PresharedKey = NLDLgu+0CpssPcurc1d6lRzfDZ3ZwNbWOzxGXWpnr5M=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51901
+PersistentKeepalive = 25
+
+[Interface]
+PrivateKey = kACaa7S3ytjUdvfy18faYXCSAlN80BzMob9lnWCfPX8=
+Address = 10.71.0.8/32
+DNS = 10.71.0.1
+MTU = 1420
+
+[Peer]
+PublicKey = j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=
+PresharedKey = /W4ntoOqRyJlV9iG61vwLSvS4/LVsbWxCz0VjFRzGVw=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51901
+PersistentKeepalive = 25
+
+[Interface]
+PrivateKey = UH0Zud+6BDH3wvJBW6HF6AN7NAqYOXz9dY0A1cu1F10=
+Address = 10.72.0.3/32
+DNS = 10.72.0.1
+MTU = 1420
+
+# AmneziaWG obfuscation — must match the server exactly
+Jc = 4
+Jmin = 82
+Jmax = 155
+S1 = 34
+S2 = 81
+S3 = 45
+S4 = 25
+H1 = 201063
+H2 = 4274137
+H3 = 30035745
+H4 = 415606746
+
+[Peer]
+PublicKey = HAE+LVOlKxTrHZEFnscUiD0BxijilPIQBZ2jGnYqamw=
+PresharedKey = zIa2SWjkHgDfz8WcnOkR4iiensvaZVgXaR+kOUFSzfk=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51902
+PersistentKeepalive = 25
+
+[Interface]
+PrivateKey = EHhnZctw37VXEiggu0e50Fbz0KUHLt8tqzbRo7o9BH4=
+Address = 10.72.0.4/32
+DNS = 10.72.0.1
+MTU = 1420
+
+# AmneziaWG obfuscation — must match the server exactly
+Jc = 4
+Jmin = 82
+Jmax = 155
+S1 = 34
+S2 = 81
+S3 = 45
+S4 = 25
+H1 = 201063
+H2 = 4274137
+H3 = 30035745
+H4 = 415606746
+
+[Peer]
+PublicKey = HAE+LVOlKxTrHZEFnscUiD0BxijilPIQBZ2jGnYqamw=
+PresharedKey = A86O2iCrYXn+HwmwYQPiyAEyfd0373PBFtxRvcrRyaw=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51902
+PersistentKeepalive = 25
+
+[Interface]
+PrivateKey = sBSBXbedKBJyQZGYjH2DG4KT4Vywb/Rn3YZFNFN8k1A=
+Address = 10.72.0.5/32
+DNS = 10.72.0.1
+MTU = 1420
+
+# AmneziaWG obfuscation — must match the server exactly
+Jc = 4
+Jmin = 82
+Jmax = 155
+S1 = 34
+S2 = 81
+S3 = 45
+S4 = 25
+H1 = 201063
+H2 = 4274137
+H3 = 30035745
+H4 = 415606746
+
+[Peer]
+PublicKey = HAE+LVOlKxTrHZEFnscUiD0BxijilPIQBZ2jGnYqamw=
+PresharedKey = 9oPYEpxXvUZ/rAonqfAZjuCvmeW80VMd4z5/BYvSMac=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51902
+PersistentKeepalive = 25

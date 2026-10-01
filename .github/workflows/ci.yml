@@ -53,7 +53,7 @@ jobs:
           cache: true
       - name: gofmt
         run: |
-          out="$(gofmt -l cmd internal)"
+          out="$(gofmt -l cmd internal tools)"
           if [ -n "$out" ]; then echo "not gofmt'd:"; echo "$out"; exit 1; fi
       - run: go vet ./...
       - name: staticcheck
@@ -85,7 +85,7 @@ jobs:
         run: |
           sudo apt-get install -y -qq shellcheck >/dev/null
           # Style findings are advisory; anything that is an actual error fails.
-          shellcheck -S error install.sh w-ui.sh update.sh
+          shellcheck -S error install.sh w-ui.sh update.sh scripts/upgrade/*.sh
 
   install-matrix:
     name: Clean install on ${{ matrix.image }} (${{ matrix.db }})
@@ -171,6 +171,102 @@ jobs:
           ls /root/wui-last-copy-*.tar.gz
           test ! -e /usr/local/bin/wui
           command -v wg
+
+  # The same upgrade test the SQLite fixtures get in `go test`, on PostgreSQL.
+  # Its fixtures are not committed: each earlier release is built from its
+  # tag and seeded onto this job's server, and the dumps it leaves are what
+  # this build is then started on.
+  upgrade-postgres:
+    name: Upgrade from every earlier release (PostgreSQL)
+    runs-on: ubuntu-latest
+    needs: [go]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wui
+          POSTGRES_PASSWORD: wui
+          POSTGRES_DB: wui
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U wui"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the earlier releases are built from their tags
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fixtures from every earlier release
+        run: |
+          psql "postgres://wui:wui@localhost:5432/wui" -q -c 'CREATE DATABASE wui_fixtures'
+          WUI_FIXTURE_PG_DSN="postgres://wui:wui@localhost:5432/wui_fixtures?sslmode=disable" \
+            OUT=/tmp/pg-fixtures bash scripts/upgrade/make-fixtures.sh
+      - run: go test ./cmd/wui -run TestUpgradeOnPostgres -count=1 -v
+        env:
+          WUI_TEST_PG_DSN: postgres://wui:wui@localhost:5432/wui?sslmode=disable
+          WUI_UPGRADE_PG_FIXTURES: /tmp/pg-fixtures
+
+  # An install of the previous release, updated to this build the three ways a
+  # server is updated, with a customer pinging over a real WireGuard tunnel all
+  # through it. The summary says how long that customer was cut off.
+  upgrade:
+    name: Update from ${{ matrix.old }} by ${{ matrix.method }}
+    runs-on: ubuntu-24.04
+    needs: [go]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { method: installer, old: v2.5.2 }
+          - { method: panel, old: v2.5.2 }
+          - { method: menu, old: v2.5.2 }
+          # From before resellers, the update helper and most of today's
+          # schema: the oldest install still worth carrying forward.
+          - { method: installer, old: v1.1.0 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Update and check
+        run: |
+          echo "| method | from → to | update took | customer cut off |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          sudo -E env "PATH=$PATH" OLD=${{ matrix.old }} bash scripts/upgrade/ci-upgrade.sh ${{ matrix.method }}
+
+  # A managing panel and its nodes are updated one at a time, so for a while
+  # they are on different releases. Both directions, both on this runner.
+  node-compat:
+    name: Panel and node across releases (${{ matrix.old }}, ${{ matrix.directions }})
+    runs-on: ubuntu-latest
+    needs: [go]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # A node from before resellers, which accepts the panel's token.
+          - { old: v1.1.0, directions: both }
+          # An older panel managing a node of this build. Not the other way:
+          # a node of v2.0.0 to v2.6.0 refuses every managing panel's token,
+          # and is put right only by updating the node itself.
+          - { old: v2.5.2, directions: old-panel }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: DIRECTIONS=${{ matrix.directions }} bash scripts/upgrade/node-compat.sh ${{ matrix.old }}
 
   # The rolling build of the latest commit: what "Update to Dev Channel" in
   # the w-ui menu installs. One pre-release named dev-latest, replaced on

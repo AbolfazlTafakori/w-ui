@@ -1,0 +1,33 @@
+status: 200
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="wg-limited.conf"; filename*=UTF-8''wg-limited.conf
+Subscription-Userinfo: upload=0; download=0; total=10737418240; expire=1924992000
+Profile-Update-Interval: 1
+Profile-Title: base64:Vy1VSQ==
+Cache-Control: no-store
+
+[Interface]
+PrivateKey = YKamCk7BpImHokPCm9TUc/QBgN8q2OfKnRh/QBSSkkY=
+Address = 10.71.0.2/32
+DNS = 10.71.0.1
+MTU = 1420
+
+[Peer]
+PublicKey = j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=
+PresharedKey = V9EFvihGPMltRC51sBfkAeO1WY3yvhYjZ+nu3yzKtFc=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51901
+PersistentKeepalive = 25
+
+[Interface]
+PrivateKey = QP/PhIXzkFjRpU82vCsb9JivqhO7kXvdYs7fBP460mY=
+Address = 10.71.0.3/32
+DNS = 10.71.0.1
+MTU = 1420
+
+[Peer]
+PublicKey = j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=
+PresharedKey = UHT6L7NP5pXxx39YD0aE+q+eu4n0vOMuty6eY111elk=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51901
+PersistentKeepalive = 25

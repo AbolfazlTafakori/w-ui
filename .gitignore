@@ -17,3 +17,7 @@ node_modules/
 # runtime logs
 *.log
 .claude/launch.json
+
+# The upgrade fixtures are databases earlier releases wrote, committed on
+# purpose: each one a single self-contained file (no -wal or -shm).
+!/internal/upgradecheck/testdata/v*/wui.db

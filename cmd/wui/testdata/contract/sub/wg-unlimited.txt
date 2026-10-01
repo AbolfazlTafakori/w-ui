@@ -1,0 +1,20 @@
+status: 200
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="wg-unlimited.conf"; filename*=UTF-8''wg-unlimited.conf
+Subscription-Userinfo: upload=0; download=0; total=0; expire=0
+Profile-Update-Interval: 1
+Profile-Title: base64:Vy1VSQ==
+Cache-Control: no-store
+
+[Interface]
+PrivateKey = WMbx1lAqWar/LK0zZpE3eNjUIWUZfd4CLSQD2kct3E0=
+Address = 10.71.0.4/32
+DNS = 10.71.0.1
+MTU = 1420
+
+[Peer]
+PublicKey = j9RlmegU1mkgeAhDycx15EWQp0Ndh5iTpPBkqYErXTc=
+PresharedKey = J44/a3nm574zWx0039aG2G5L6oC+CVy8MMfRNWZ3H20=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = vpn.example.test:51901
+PersistentKeepalive = 25
