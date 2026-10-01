@@ -118,6 +118,9 @@ ADMIN_USER="${WUI_ADMIN_USER:-}"
 ADMIN_PASS="${WUI_ADMIN_PASSWORD:-}"
 ADMIN_GENERATED=0
 API_TOKEN=""
+# Set by configure when a panel is already installed here: this run is an
+# update, and leaves what the first install handed out as it was.
+IS_UPDATE=0
 TLS_MODE=""
 TLS_CERT="${WUI_TLS_CERT:-}"
 TLS_KEY="${WUI_TLS_KEY:-}"
@@ -1285,6 +1288,13 @@ read_back() {
   tty_out '\n'
 }
 
+# existing_install reports whether a panel is already installed here, which
+# makes this run an update. The unit is what every release's install wrote,
+# so an install from v1.0.0 on is found by it, whatever its database.
+existing_install() {
+  [[ -f "$UNIT" ]]
+}
+
 configure() {
   open_tty
   read_existing
@@ -1293,7 +1303,8 @@ configure() {
   # A panel is already here: this is an update, and an update asks nothing.
   # The port, the path, the certificate, the database, the administrator and
   # the packages are whatever they are; only the binary and the scripts move.
-  if [[ -f "$UNIT" ]]; then
+  if existing_install; then
+    IS_UPDATE=1
     step "Update"
     info "keeping the port, path, certificate, database and administrator this install has"
     configure_upgrade
@@ -2409,7 +2420,12 @@ summary() {
 
 # Mint the token the classic panel prints as apiToken: automation gets one from the
 # first minute without anybody signing in to make it. Never fatal.
+#
+# Once, at the install. An update mints none: each would be one more token
+# with the run of the panel, left behind on every update -- and the one the
+# install wrote down is still the one in install-result.env.
 issue_api_token() {
+  [[ "$IS_UPDATE" == 1 ]] && return 0
   have_systemd && systemctl is-active --quiet wui || return 0
   # shellcheck disable=SC2046
   API_TOKEN=$(env $(panel_env) "$BIN_PATH" token issue --name installer --quiet 2>/dev/null || true)
@@ -2418,8 +2434,21 @@ issue_api_token() {
 # The same facts as the summary, machine-readable, for cloud-init or a
 # login banner to pick up: the classic panel's install-result.env. Mode 600, root only,
 # because it holds the password.
+#
+# Written by the install alone. An update leaves the file as the install wrote
+# it -- its values, its mode, its owner: the password is not known to an
+# update, and automation reading the file must not find it emptied. An install
+# from before the file existed has none, and an update does not make one up.
 write_install_result() {
   local scheme="$1" hostport="$2" f="$CONF_DIR/install-result.env"
+  if [[ "$IS_UPDATE" == 1 ]]; then
+    if [[ -f "$f" ]]; then
+      printf '  %sInstall result kept as it was: %s%s\n\n' "$D" "$f" "$N"
+    else
+      printf '  %sNo %s: this install is older than the file, and an update does not write one.%s\n\n' "$D" "$f" "$N"
+    fi
+    return 0
+  fi
   install -d -m 700 "$CONF_DIR" 2>/dev/null || true
   local prev; prev=$(umask); umask 077
   {

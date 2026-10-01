@@ -26,6 +26,10 @@ Authorization: Bearer wui_…
 A token is a machine's. What only an administrator may do answers `403 this needs a signed-in administrator, not an API token`: the administrator's own account and two-factor, issuing or revoking tokens, backups, registering nodes and their trust, the panel's settings and template, a restart. Everything about customers, devices, tunnels, hosts, outbounds and routing is open to a token — that is what it is for.
 :::
 
+::: tip Extra "installer" tokens
+Before this was fixed, every update by the installer left one more full-access token named `installer` on the panel. Each is a working credential nobody uses. Keep the one your automation reads from `install-result.env`, and revoke the rest in **Settings → Security → API Token** (the list shows each one's prefix and when it was last used).
+:::
+
 ## The documentation is in the panel
 
 **API** in the sidebar lists every endpoint, grouped, with an example body and a `curl` command carrying the address you reached the panel on. The page is built from the same table the routes are registered from, so it can only describe endpoints that exist, and a new one is documented by being added.

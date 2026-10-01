@@ -148,5 +148,85 @@ else
   yes_ "the terminal closed" "$out" "an exhausted terminal ends the install with a reason"
 fi
 
+
+echo
+echo "── an update keeps what the install handed out ────────────────────────"
+# update_run SETUP CALLS: a run of the installer's own functions over a
+# temporary /etc/wui and unit, with the panel binary replaced by one that
+# writes down what it is asked to do. SETUP is "update" (a unit is there, as
+# every release's install leaves one) or "fresh"; RESULT is "keep" (an
+# install-result.env from the first install is there) or "none".
+update_run() { # update_run fresh|update keep|none
+  (
+    set +e
+    # shellcheck disable=SC1091
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+    # The installer's own set -eu came with it; what is checked here is what
+    # each function leaves behind, missing files included.
+    set +eu
+    dir="$WORK/upd-$1-$2"; rm -rf "$dir"; mkdir -p "$dir/etc"
+    UNIT="$dir/wui.service"; CONF_DIR="$dir/etc"; DATA_DIR="$dir/data"
+    BIN_PATH="$dir/wui"
+    printf '#!/usr/bin/env bash\necho "$*" >> "%s/calls"\necho wui_minted_token\n' "$dir" > "$BIN_PATH"
+    chmod +x "$BIN_PATH"
+    have_systemd() { return 0; }
+    systemctl() { return 0; }
+    # shellcheck disable=SC2034 # read by the installer's functions
+    open_tty() { INTERACTIVE=0; }
+    if [[ "$1" == update ]]; then
+      # As v2.5.2 and v1.1.0 left it: the unit, and the file the install wrote.
+      printf '[Service]\nEnvironment=WUI_LISTEN=0.0.0.0:2053\nEnvironment=WUI_DATA_DIR=%s\n' "$DATA_DIR" > "$UNIT"
+    fi
+    if [[ "$2" == keep ]]; then
+      printf "WUI_USERNAME=admin\nWUI_PASSWORD='first-install-pass'\nWUI_API_TOKEN=wui_from_the_install\nWUI_SUB_PORT=2096\n" > "$CONF_DIR/install-result.env"
+      chmod 600 "$CONF_DIR/install-result.env"
+    fi
+    before=$(cat "$CONF_DIR/install-result.env" 2>/dev/null)
+    if [[ "$1" == update ]]; then configure >/dev/null 2>&1; fi
+    issue_api_token
+    # shellcheck disable=SC2034 # read by write_install_result
+    { ADMIN_USER="admin"; PANEL_PORT=2053; SUB_PORT=2096; DB_DRIVER=sqlite; }
+    note=$(write_install_result http 203.0.113.7:2053 2>&1)
+    echo "is_update=$IS_UPDATE"
+    echo "minted=$(cat "$dir/calls" 2>/dev/null | grep -c 'token issue')"
+    echo "api_token=$API_TOKEN"
+    echo "note=$note"
+    if [[ -f "$CONF_DIR/install-result.env" ]]; then
+      [[ "$(cat "$CONF_DIR/install-result.env")" == "$before" ]] && echo "file=unchanged" || echo "file=rewritten"
+      echo "mode=$(stat -c %a "$CONF_DIR/install-result.env" 2>/dev/null)"
+      cat "$CONF_DIR/install-result.env"
+    else
+      echo "file=absent"
+    fi
+  )
+}
+
+u=$(update_run update keep)
+yes_ "is_update=1"   "$u" "a unit already here makes the run an update"
+yes_ "minted=0"      "$u" "an update mints no API token"
+yes_ "api_token="$'\n' "$u" "and holds none to print"
+yes_ "file=unchanged" "$u" "an update leaves install-result.env as the install wrote it"
+yes_ "first-install-pass" "$u" "the password in it is kept"
+yes_ "wui_from_the_install" "$u" "the token in it is the install's"
+yes_ "kept as it was" "$u" "and says it kept it"
+if [[ "$(uname -s)" == Linux ]]; then
+  yes_ "mode=600" "$u" "with its mode"
+fi
+
+u=$(update_run update none)
+yes_ "file=absent" "$u" "an install older than the file does not get one made up"
+yes_ "older than the file" "$u" "and is told why there is none"
+yes_ "minted=0" "$u" "nor a token"
+
+u=$(update_run fresh none)
+yes_ "is_update=0" "$u" "no unit: a fresh install"
+yes_ "minted=1" "$u" "a fresh install mints one token"
+yes_ "api_token=wui_minted_token" "$u" "and holds it"
+yes_ "WUI_API_TOKEN=wui_minted_token" "$u" "and writes it to install-result.env"
+yes_ "WUI_USERNAME=admin" "$u" "with the administrator"
+if [[ "$(uname -s)" == Linux ]]; then
+  yes_ "mode=600" "$u" "mode 600"
+fi
+
 printf '\n  %d passed, %d failed\n\n' "$pass" "$fail"
 [[ "$fail" == 0 ]]

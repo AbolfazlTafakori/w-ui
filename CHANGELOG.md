@@ -6,6 +6,24 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **An update no longer issues an API token or empties
+  install-result.env.** Running the installer over an existing install issued
+  a new token named `installer` every time -- one with full access again from
+  v2.6.1 -- and rewrote `/etc/wui/install-result.env` with an empty password
+  and that new token, so automation reading the file lost the password. An
+  update now leaves the file exactly as the install wrote it (its values, its
+  mode, its owner), issues no token, and on an install older than the file
+  writes none. A fresh install is unchanged: one token, and the file.
+  `w-ui update` and the panel's own **Update** never did either.
+
+### Cleaning up
+- Each earlier update by the installer left one extra `installer` token on
+  the panel. They are left in place -- they are yours -- but nothing uses
+  them: keep the one your automation reads from `install-result.env`, and
+  revoke the rest in **Settings → Security → API Token**, where each shows its
+  prefix and when it was last used.
+
 ## [2.6.1] — 2026-10-01
 
 ### Fixed

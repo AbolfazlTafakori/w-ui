@@ -49,6 +49,8 @@ WUI_DB_TYPE=sqlite
 
 Delete it once you have the values somewhere safer; nothing reads it after the install.
 
+An update — running the installer again, `w-ui update`, or the panel's own **Update** — leaves the file as it is, and mints no new API token. Only the install writes it, and only the install issues the `installer` token in it.
+
 ## What else the installer did
 
 - **fail2ban** was installed and given a jail that watches the panel's sign-in log (`w-ui` → 22 to manage it; `WUI_ENABLE_FAIL2BAN=false` to skip).
