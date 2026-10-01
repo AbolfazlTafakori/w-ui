@@ -89,8 +89,19 @@ ip netns exec wuicust wg setconf wgc <(wg-quick strip "$conf")
 ip -n wuicust addr add "$addr" dev wgc
 ip -n wuicust link set wgc up
 ip -n wuicust route add 10.71.0.0/24 dev wgc
-ip netns exec wuicust ping -c 3 -W 2 10.71.0.1 >/dev/null 2>&1 \
-  || { ip netns exec wuicust wg show; wg show; fail "the customer's tunnel never carried a ping on $OLD"; }
+# WireGuard sends its first handshake with the first packet and tries again
+# only five seconds later, so a first try lost while the veth comes up would
+# fail a short ping. The tunnel gets half a minute to answer.
+tunnel_up=""
+for _ in $(seq 15); do
+  if ip netns exec wuicust ping -c 1 -W 2 10.71.0.1 >/dev/null 2>&1; then tunnel_up=1; break; fi
+done
+if [[ -z "$tunnel_up" ]]; then
+  ip netns exec wuicust wg show; wg show
+  ip -br addr; ip rule; ip route show table all | grep -v "^local\|^broadcast" | head -40
+  nft list ruleset | head -150
+  fail "the customer's tunnel never carried a ping on $OLD"
+fi
 echo "the customer's tunnel answers on $OLD"
 
 "$W/upgrade" snapshot -out "$W/before.json"

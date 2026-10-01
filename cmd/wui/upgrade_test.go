@@ -209,10 +209,17 @@ func TestUpgradeOnPostgres(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			db := postgresDB(t, own)
-			if err := db.Exec(string(dump)).Error; err != nil {
+			// The dump is loaded on a connection of its own, closed after: it
+			// empties search_path for the rest of its session, and a pooled
+			// connection keeping that would find no table by its plain name.
+			load := postgresDB(t, own)
+			if err := load.Exec(string(dump)).Error; err != nil {
 				t.Fatalf("loading the %s dump: %v", m.Version, err)
 			}
+			if s, err := load.DB(); err == nil {
+				s.Close()
+			}
+			db := postgresDB(t, own)
 			env := panelEnv(t.TempDir(), listenOf(t, m), "WUI_DB_DRIVER=postgres", "WUI_DB_SOURCE="+own)
 			for _, start := range []string{"first start", "second start"} {
 				p := startPanel(t, env, listenOf(t, m))
