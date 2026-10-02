@@ -307,5 +307,5 @@ export const api = {
   removeDevice: (id) => request('DELETE', `/api/devices/${id}`),
   profile: (id) => request('GET', `/api/devices/${id}/profile`),
   downloadProfile: (id) => saveFile(`/api/devices/${id}/profile?download=1`, `device-${id}.conf`),
-  downloadClients: () => saveFile('/api/clients/export', 'clients.csv'),
+  downloadClients: () => saveFile('/api/clients/export', 'clients.json'),
 }

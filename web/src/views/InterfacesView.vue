@@ -647,21 +647,22 @@ async function runConfirmed() {
   }
 }
 
-// Deleting a tunnel is the most expensive click in the panel: it takes every
-// customer on it and every key they hold, and there is no undo. The dialog says
-// the count, and the name has to be typed.
+// Deleting a tunnel destroys its keys, and there is no undo. The server
+// refuses while any device is still on it -- customers are taken off first,
+// with the row menu's Take All Clients Off -- so a tunnel that still has
+// customers is told so at once, rather than after a confirmation that could
+// only fail.
 const removeOne = (iface) => {
+  if ((iface.clients ?? 0) > 0) {
+    notify(tn('interface.stillHasClients', iface.clients).replace('{name}', iface.name), 'error')
+    return
+  }
   ask.value = {
     title: t('interface.confirmDeleteTitle'),
     body: t('interface.confirmDeleteBody'),
     subject: iface.name,
-    consequences: [
-      tn('interface.consequenceClients', iface.clients ?? 0),
-      tn('interface.consequenceDevices', iface.devices ?? 0),
-      t('interface.consequenceKeys'),
-    ],
+    consequences: [t('interface.consequenceKeys')],
     confirmLabel: t('action.delete'),
-    requireText: (iface.clients ?? 0) > 0 ? iface.name : '',
     run: () => guard(() => api.deleteInterface(iface.id), 'interface.deleted'),
   }
 }
@@ -670,18 +671,18 @@ const bulkDelete = () => {
   const ids = [...selected.value]
   if (!ids.length) return
   const chosen = interfaces.value.filter((i) => selected.value.has(i.id))
-  const clients = chosen.reduce((a, i) => a + (i.clients ?? 0), 0)
+  const busyOnes = chosen.filter((i) => (i.clients ?? 0) > 0)
+  if (busyOnes.length) {
+    notify(busyOnes.map((i) => tn('interface.stillHasClients', i.clients).replace('{name}', i.name)).join('\n'), 'error')
+    return
+  }
 
   ask.value = {
     title: t('interface.confirmDeleteManyTitle'),
     body: t('interface.confirmDeleteBody'),
     subject: tn('interface.nTunnels', ids.length),
-    consequences: [
-      tn('interface.consequenceClients', clients),
-      t('interface.consequenceKeys'),
-    ],
+    consequences: [t('interface.consequenceKeys')],
     confirmLabel: t('action.delete'),
-    requireText: clients > 0 ? String(clients) : '',
     run: () =>
       guard(async () => {
         for (const id of ids) await api.deleteInterface(id)

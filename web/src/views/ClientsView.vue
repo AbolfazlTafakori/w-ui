@@ -487,7 +487,10 @@ function statusTag(c) {
   return { color: 'grey', label: t('status.offline') }
 }
 
-const DEPLETING_AT = 85
+// The server's own line for running low (depletingPercent in the clients
+// service), so a row turns orange exactly when the summary above and the
+// Running low filter start counting it.
+const DEPLETING_AT = 80
 
 function remainingTag(c) {
   if (!c.quotaBytes) return { color: 'purple', label: '∞' }
@@ -772,7 +775,13 @@ async function runImport() {
     notify(t('outbound.importInvalidJson'), 'error')
     return
   }
-  const body = Array.isArray(parsed) ? { clients: parsed, onConflict: 'skip', interfaceId: interfaces.value[0]?.id } : parsed
+  // The export's own file ({ exportedAt, count, clients }) or a bare list of
+  // customers, alike. Neither names an interface -- one on the old server
+  // means nothing here -- so they go on the first one, and a name already
+  // taken is skipped rather than overwritten.
+  const body = Array.isArray(parsed) ? { clients: parsed } : { ...parsed }
+  if (!body.interfaceId) body.interfaceId = interfaces.value[0]?.id
+  if (!body.onConflict) body.onConflict = 'skip'
   try {
     const rep = await api.post('/api/clients/import', body)
     notify(`${t('client.menu.import')}: ${nf(rep.created || 0)}`, 'success')
@@ -1156,7 +1165,7 @@ async function submitForm(input) {
             <input type="checkbox" class="acheck" :checked="selected.has(c.id)" :aria-label="c.name" @change="toggleOne(c.id, $event.target.checked)" />
             <i v-if="statusTag(c).dot" class="online-dot" style="margin-inline-end: 0"></i>
             <i v-else class="abadge-dot" :class="statusTag(c).color"></i>
-            <span class="tag-name">{{ c.name }}</span>
+            <router-link class="tag-name" :to="`/clients/${c.id}`" :title="t('client.openPage')">{{ c.name }}</router-link>
             <span v-if="c.status === 'exhausted' || c.status === 'expired'" class="atag red status-tag">{{ t('stat.depleted') }}</span>
             <span v-else-if="remainingTag(c).color === 'orange' || expiryTag(c).color === 'orange'" class="atag orange status-tag">{{ t('stat.depleting') }}</span>
             <div class="card-actions">
@@ -1236,7 +1245,10 @@ async function submitForm(input) {
                 </td>
                 <td>
                   <div class="email-cell">
-                    <span class="email">{{ c.name }}</span>
+                    <!-- The name opens the customer's own page: their files one
+                         by one, each with its configuration and QR, and files
+                         added or removed beyond the one per user. -->
+                    <router-link class="email" :to="`/clients/${c.id}`" :title="t('client.openPage')">{{ c.name }}</router-link>
                     <!-- Connections in use right now against what the plan allows at once,
                          the way the classic panel shows its IP count: a file on two devices
                          used one at a time is one connection; both at once is two. -->
@@ -1494,7 +1506,9 @@ async function submitForm(input) {
 .atable th.center, .atable td.center { text-align: center; }
 .atable-wrap.stale { opacity: 0.6; }
 .email-cell { display: flex; flex-direction: column; }
-.email-cell .email { font-weight: 500; }
+.email-cell .email { font-weight: 500; color: inherit; text-decoration: none; }
+.email-cell .email:hover, a.tag-name:hover { text-decoration: underline; }
+a.tag-name { color: inherit; text-decoration: none; }
 .email-cell .sub.over { color: var(--danger, #e5484d); font-weight: 600; }
 .email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .cell-empty { color: var(--faint); }

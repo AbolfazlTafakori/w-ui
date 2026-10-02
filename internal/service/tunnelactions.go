@@ -17,8 +17,11 @@ import (
 
 // ResetTunnelUsage sets the usage of every customer on a tunnel back to zero.
 //
-// The customers themselves are untouched: their allowance, their date and their
-// standing stay exactly as they were. This is for a tunnel that was carrying
+// The customers themselves are otherwise untouched: their allowance and their
+// date stay exactly as they were. One who had been cut off for running out of
+// traffic is back at once, as resetting a single customer does: with nothing
+// used they are no longer out of it, and leaving them stopped at zero would be
+// a reset that reset nothing they could notice. This is for a tunnel that was carrying
 // traffic nobody should have been charged for — a test, a misconfiguration, a
 // month that is being written off.
 func (s *Interfaces) ResetTunnelUsage(ctx context.Context, id uint) (int64, error) {
@@ -48,6 +51,11 @@ func (s *Interfaces) ResetTunnelUsage(ctx context.Context, id uint) (int64, erro
 		})
 	if res.Error != nil {
 		return 0, fmt.Errorf("service: reset usage on %s: %w", iface.Name, res.Error)
+	}
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).
+		Where("id IN ? AND status = ?", ids, model.StatusExhausted).
+		Update("status", model.StatusActive).Error; err != nil {
+		return 0, fmt.Errorf("service: bring back the customers on %s who had run out: %w", iface.Name, err)
 	}
 
 	s.log.Warn("usage reset for everyone on a tunnel",

@@ -137,6 +137,8 @@ type Reconciler struct {
 	lastShapeErr string
 	// lastPrune is when stale connection addresses were last swept.
 	lastPrune time.Time
+	// lastRenew is when plans that renew by the period were last looked at.
+	lastRenew time.Time
 }
 
 // New builds a reconciler.
@@ -416,6 +418,9 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	if _, err := r.activate(ctx, now); err != nil {
 		r.log.Warn("could not start pending plans", "error", err)
 	}
+	// Renewed before the sweep below, so a customer whose period has just
+	// begun is not cut off for the traffic of the one that ended.
+	r.maybeRenew(ctx, now)
 
 	// Who is about to be cut off is read before the sweep. Afterwards the rows
 	// no longer match the condition, so there would be no way to say whose

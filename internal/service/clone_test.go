@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -245,5 +246,39 @@ func TestResettingAnEmptyTunnelIsNotAnError(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("reset %d customers on an empty tunnel", n)
+	}
+}
+
+// A customer cut off for running out of traffic is back once the tunnel's
+// usage is reset, as with resetting them alone: left stopped at zero used,
+// the reset would have changed nothing they could notice. One whose date has
+// passed, or who was switched off, stays as they are.
+func TestResettingATunnelBringsBackWhoRanOut(t *testing.T) {
+	db := testDB(t)
+	svc, src := seedAmnezia(t, db)
+
+	past := time.Now().Add(-time.Hour).UTC()
+	out := model.Client{Name: "out", Protocol: model.ProtocolWireGuard, Status: model.StatusExhausted, QuotaBytes: 1 << 30, UsedBytes: 1 << 30}
+	ended := model.Client{Name: "ended", Protocol: model.ProtocolWireGuard, Status: model.StatusExpired, ExpiresAt: &past}
+	off := model.Client{Name: "off", Protocol: model.ProtocolWireGuard, Status: model.StatusDisabled}
+	for i, c := range []*model.Client{&out, &ended, &off} {
+		if err := db.Create(c).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.Account{ClientID: c.ID, InterfaceID: src.ID, DeviceName: "phone", IP: fmt.Sprintf("10.66.0.%d", i+2)}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.ResetTunnelUsage(context.Background(), src.ID); err != nil {
+		t.Fatal(err)
+	}
+	for c, want := range map[*model.Client]model.ClientStatus{&out: model.StatusActive, &ended: model.StatusExpired, &off: model.StatusDisabled} {
+		var got model.Client
+		if err := db.First(&got, c.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != want {
+			t.Errorf("%s is %s after the reset, want %s", c.Name, got.Status, want)
+		}
 	}
 }
