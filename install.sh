@@ -167,6 +167,12 @@ ok()   { printf '    %s%s✓%s %s%s%s\n' "$B" "$G" "$N" "$G" "$*" "$N"; }
 warn() { printf '    %s%s!%s %s%s%s\n' "$B" "$Y" "$N" "$Y" "$*" "$N"; }
 die()  { printf '\n%s%serror:%s %s%s%s\n\n' "$B" "$R" "$N" "$R" "$*" "$N" >&2; exit 1; }
 
+# How a question is laid out: its heading magenta, each choice's number
+# green, a note yellow. The same words info would print, only coloured.
+qhead() { printf '    %s%s%s%s\n' "$B" "$M" "$*" "$N"; }
+opt()   { printf '      %s%s%s)%s %s\n' "$B" "$G" "$1" "$N" "$2"; }
+note()  { printf '    %s%s%s\n' "$Y" "$*" "$N"; }
+
 # kv LABEL VALUE [COLOUR] is one line of the summary: the label in cyan, the
 # value in green unless another colour is given.
 kv() { printf '  %s%-10s%s %s%s%s\n' "$C" "$1" "$N" "${3:-$G}" "$2" "$N"; }
@@ -871,9 +877,9 @@ ask() {
   local __var="$1" __q="$2" __def="$3" __ans=""
   if [[ "$INTERACTIVE" == 1 ]]; then
     if [[ -n "$__def" ]]; then
-      tty_out '  %s▸%s %s %s[%s]%s: ' "$C" "$N" "$__q" "$D" "$__def" "$N"
+      tty_out '  %s%s▸%s %s%s%s%s %s[%s]%s: ' "$B" "$C" "$N" "$B" "$Y" "$__q" "$N" "$G" "$__def" "$N"
     else
-      tty_out '  %s▸%s %s: ' "$C" "$N" "$__q"
+      tty_out '  %s%s▸%s %s%s%s%s: ' "$B" "$C" "$N" "$B" "$Y" "$__q" "$N"
     fi
     IFS= read -r __ans <&3 || no_more_input
   fi
@@ -889,19 +895,19 @@ ask_secret() {
   local __var="$1" __q="$2" a="" b=""
   if [[ "$INTERACTIVE" != 1 ]]; then printf -v "$__var" '%s' ""; return 0; fi
   while true; do
-    tty_out '  %s▸%s %s: ' "$C" "$N" "$__q"
+    tty_out '  %s%s▸%s %s%s%s%s: ' "$B" "$C" "$N" "$B" "$Y" "$__q" "$N"
     IFS= read -rs a <&3 || no_more_input
     tty_out '\n'
     if [[ -z "$a" ]]; then printf -v "$__var" '%s' ""; return 0; fi
     if (( ${#a} < 8 )); then
-      tty_out '    %s!%s at least 8 characters\n' "$Y" "$N"
+      tty_out '    %s%s!%s %sat least 8 characters%s\n' "$B" "$R" "$N" "$R" "$N"
       continue
     fi
-    tty_out '    confirm it: '
+    tty_out '    %sconfirm it%s: ' "$Y" "$N"
     IFS= read -rs b <&3 || no_more_input
     tty_out '\n'
     if [[ "$a" == "$b" ]]; then printf -v "$__var" '%s' "$a"; return 0; fi
-    tty_out '    %s!%s they do not match — try again\n' "$Y" "$N"
+    tty_out '    %s%s!%s %sthey do not match — try again%s\n' "$B" "$R" "$N" "$R" "$N"
   done
 }
 
@@ -911,13 +917,13 @@ ask_yn() {
   if [[ "$INTERACTIVE" != 1 ]]; then [[ "$def" == y ]]; return; fi
   [[ "$def" == y ]] && hint="Y/n"
   while true; do
-    tty_out '  %s▸%s %s %s[%s]%s: ' "$C" "$N" "$q" "$D" "$hint" "$N"
+    tty_out '  %s%s▸%s %s%s%s%s %s[%s]%s: ' "$B" "$C" "$N" "$B" "$Y" "$q" "$N" "$G" "$hint" "$N"
     IFS= read -r ans <&3 || no_more_input
     ans="${ans:-$def}"
     case "${ans,,}" in
       y|yes) return 0 ;;
       n|no)  return 1 ;;
-      *) printf '    %s!%s answer y or n\n' "$Y" "$N" >&3 ;;
+      *) printf '    %s%s!%s %sanswer y or n%s\n' "$B" "$R" "$N" "$R" "$N" >&3 ;;
     esac
   done
 }
@@ -1058,17 +1064,17 @@ ask_tls() {
   # chosen, the panel answers on the one port above -- by name and by
   # address alike -- so a link written down today works tomorrow.
   tty_out '\n'
-  info "SSL Certificate Setup (RECOMMENDED)"
+  qhead "SSL Certificate Setup (RECOMMENDED)"
   info "SSL is strongly recommended. Skip only if a reverse proxy"
   info "or SSH tunnel handles TLS for you."
   info "Let's Encrypt supports both domains and IP addresses."
   tty_out '\n'
-  info "  1) Let's Encrypt for Domain (90-day validity, auto-renews)"
-  info "  2) Let's Encrypt for IP Address (6-day validity, auto-renews)"
-  info "  3) Custom SSL Certificate (path to existing files)"
-  info "  4) Skip SSL (advanced — behind reverse proxy / SSH tunnel only)"
-  info "Note: options 1 & 2 need port 80 reachable from the internet."
-  info "Note: option 4 serves the panel over plain HTTP."
+  opt 1 "Let's Encrypt for Domain (90-day validity, auto-renews)"
+  opt 2 "Let's Encrypt for IP Address (6-day validity, auto-renews)"
+  opt 3 "Custom SSL Certificate (path to existing files)"
+  opt 4 "Skip SSL (advanced — behind reverse proxy / SSH tunnel only)"
+  note "Note: options 1 & 2 need port 80 reachable from the internet."
+  note "Note: option 4 serves the panel over plain HTTP."
   tty_out '\n'
 
   local choice
@@ -1165,9 +1171,9 @@ ask_database() {
     return 0
   fi
   tty_out '\n'
-  info "Database"
-  info "  1) SQLite      — one file, nothing to install; fine up to a few thousand customers (default)"
-  info "  2) PostgreSQL  — for a large number of customers; installed and configured here"
+  qhead "Database"
+  opt 1 "SQLite      — one file, nothing to install; fine up to a few thousand customers (default)"
+  opt 2 "PostgreSQL  — for a large number of customers; installed and configured here"
   local dbc
   while true; do
     ask dbc "Choose" "1"
@@ -1194,10 +1200,10 @@ choose_install_mode() {
     *) die "the install mode is manual or auto, not $INSTALL_MODE" ;;
   esac
   tty_out '\n'
-  info "How do you want to install?"
-  info "  1) Manual     — you choose the port, the URL path, the administrator, the database,"
+  qhead "How do you want to install?"
+  opt 1 "Manual     — you choose the port, the URL path, the administrator, the database,"
   info "                  the certificate and what is installed"
-  info "  2) Automatic  — three questions (database, domain, certificate); everything else is"
+  opt 2 "Automatic  — three questions (database, domain, certificate); everything else is"
   info "                  chosen and set up for you, and shown at the end (default)"
   local m
   while true; do
@@ -1229,7 +1235,7 @@ configure_auto() {
   # ── a domain, if there is one ────────────────────────────────────────────
   if [[ -z "$TLS_MODE" ]]; then
     tty_out '\n'
-    info "Domain"
+    qhead "Domain"
     info "  a domain whose DNS record points at this server gets a certificate for it"
     info "  (Let's Encrypt, 90 days, renews itself). Leave it blank if you have none."
     local d here

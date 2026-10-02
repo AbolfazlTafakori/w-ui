@@ -10,7 +10,10 @@ All notable changes to W-UI are recorded here. The format follows
 
 ### Changed
 - **The installer speaks in colour.** Each step is a cyan heading, what
-  went well is green, a warning yellow and a failure red, and the summary at
+  went well is green, a warning yellow and a failure red. Its questions are
+  coloured too: the question in yellow with its default answer in green,
+  each set of choices under a magenta heading with the numbers in green,
+  notes in yellow, and an answer it cannot take in red. The summary at
   the end colours its labels, its values and the state of each part --
   missing or off in red, not installed in yellow -- with the password and
   the address standing out. The words are the same as before, and a log, a
