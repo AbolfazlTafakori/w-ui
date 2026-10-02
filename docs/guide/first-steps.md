@@ -8,45 +8,48 @@ A fresh panel is empty on purpose: no interfaces, no customers, one administrato
 
 ## 1. Create an interface
 
-**Interfaces → Add Inbound.** An interface is one tunnel: a subnet, a port, and the public hostname customers dial.
+**Interfaces → Add Interface.** An interface is one tunnel: a protocol on a port, handing out addresses from a range, at the public address customers dial.
 
 | Field | Note |
 |-------|------|
-| Protocol | `wireguard` or `openvpn` |
-| Mode | `standard`, or `amnezia` — obfuscated WireGuard for networks that block the plain one |
-| Subnet | `10.66.0.0/16` gives ~65 000 addresses; `.1` becomes the gateway |
-| Listen port | UDP for WireGuard; OpenVPN can be TCP 443, which passes where little else does |
-| Endpoint host | the hostname or IP that goes into customer configs |
-| NAT interface | your public NIC, usually `eth0` — masquerading needs it |
+| Protocol | WireGuard or OpenVPN |
+| Interface | its name, which is also the network device's name (`wg0`) |
+| Endpoint | the hostname or IP that goes into customers' configurations |
+| Port | UDP for WireGuard; OpenVPN can use TCP — on 443 it passes where little else does |
+| Subnet | `10.66.0.0/16` gives about 65,000 addresses; the first becomes the gateway |
 | MTU | `1420` suits most networks |
+| DNS | handed to customers, unless the panel's own resolver is on (it is by default) |
+| Egress interface | your public network card, usually `eth0` |
+| Mode | Standard, or AmneziaWG — obfuscated WireGuard for networks that block the plain one |
 
-The keypair is generated for you. The private key never appears in any config you can copy out of the panel. For OpenVPN, a certificate authority, server certificate and `tls-crypt` key are generated in-process and stored with the interface — a database backup is a complete backup.
+The keys are generated for you, and the private key never appears in anything you can copy out of the panel. For OpenVPN, a certificate authority, server certificate and `tls-crypt` key are generated and stored with the interface, so a database backup is a complete backup. Every field is explained on [Interfaces](/panel/interfaces).
 
 ## 2. Create a customer
 
-**Clients → Add Clients.** One client is one customer; each gets one device (account) per allowed device, each with its own key and address.
+**Clients → Add Clients.** One client is one customer and their plan.
 
 | Field | Note |
 |-------|------|
-| Name | what you will search for |
-| Protocol | chosen per client |
-| Interface(s) | which tunnels the customer can use |
-| Total traffic | `0` = unlimited; enforced in the kernel |
-| Expiry | `0` = never; or **start on first use** with a number of days |
-| Device limit | how many separate configs to issue |
-| Reset cycle | `none`, `daily`, `weekly`, `monthly` |
-| Speed limit | per-customer HTB class on every device their traffic leaves by |
-| Telegram id | lets the customer ask the bot about their own plan |
+| Name | what you will search for; their files are named after it |
+| Data allowance | empty or `0` is unlimited; enforced in the kernel |
+| Users | how many people the plan is for: one file each, each on one device at a time |
+| Valid for | how long from now; or **On hold** with a number of days, counted from the first connection |
+| Speed limit | download, in Mbit/s; `0` is uncapped |
+| Renews | never, daily, weekly or monthly: the traffic comes back each period |
+| Telegram ID | lets the customer ask the bot about their own plan |
+| Servers this customer can use | the interfaces they are on — one or several |
 
-**Bulk:** the same form makes many at once — a prefix and a count.
+**Presets** fill a typical plan in one click. **more → Add Bulk** makes up to 200 at once, with a name prefix and a count. Every field is explained on [Clients](/panel/clients).
 
-## 3. Hand out the config
+## 3. Hand out the configuration
 
-Open the customer's row:
+On the customer's row:
 
-- **QR code** — one per device, per host; phones scan it with the WireGuard or AmneziaWG app.
-- **Client information** — every link, every download, the subscription link.
-- **Subscription link** — one URL a customer keeps; the page behind it lists every device and every host, with QR codes, in their language and your chosen template. Apps that speak subscriptions re-fetch it.
+- **QR code** — one per user, per interface (and per host); phones scan it with the WireGuard or AmneziaWG app.
+- **Client Information** — every file and link, to copy or download.
+- **Subscription link** — one address the customer keeps. The page behind it lists every file with its QR code, in their language and your chosen template; apps that speak subscriptions fetch it again by themselves, so a change you make later reaches them without a new file.
+
+Which app on which device: [Client apps](/guide/client-apps).
 
 ## What the statuses mean
 
@@ -54,17 +57,17 @@ Open the customer's row:
 |--------|---------|
 | `active` | working |
 | `disabled` | switched off by you |
-| `exhausted` | hit the data quota |
-| `expired` | past the expiry date |
+| `exhausted` | used the data allowance |
+| `expired` | past the end date |
 
-Anything other than `active` has its peers removed from the kernel, so the customer stops passing traffic. Raising the quota or extending the expiry brings them straight back — no restart, no reissued config.
+Anything other than `active` has its files taken out of the kernel, so the customer stops passing traffic. More traffic, more time, a reset or a renewal brings them straight back — no restart, no new file.
 
 ## How OpenVPN customers differ
 
-WireGuard identifies a customer by key. OpenVPN customers get a username and password, and there are **no per-client certificates**: creating one appends a credential, not a certificate to issue and revoke. Three properties follow:
+WireGuard identifies a customer's file by its key. OpenVPN customers get a username and password, and there are **no per-customer certificates**: creating one adds a login, not a certificate to issue and revoke. Three things follow:
 
-- **one credential serves one person** — `duplicate-cn` is off; a second login disconnects the first;
-- **addresses are pinned** through `client-config-dir`, so the nftables quota keeps counting the right person across reconnects;
-- **cutting someone off is immediate** — the credential is removed *and* the live session is killed over the management socket.
+- **one login serves one person** — a second sign-in with it ends the first;
+- **addresses are pinned**, so the kernel's counting keeps following the right person across reconnects;
+- **cutting someone off is immediate** — the login is removed *and* the live session is ended.
 
-Adding or removing a customer never restarts the server, and restarting or upgrading the panel does not disconnect anyone.
+Adding or removing a customer never restarts the server, and restarting or updating the panel disconnects nobody.

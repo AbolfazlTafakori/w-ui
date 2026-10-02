@@ -6,6 +6,70 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.4] — 2026-10-02
+
+### Fixed
+- **Plans that renew now renew.** A customer's **Renews** — daily, weekly or
+  monthly — was stored and never acted on: a plan sold as 50 GB a month ran
+  out after the first month and stayed out. At the start of each period the
+  customer's traffic now goes back to zero, and one cut off for running out
+  is back at once. The allowance, the end date and the switch are not
+  touched. Periods are counted from the last renewal or reset, or from when
+  the plan started, and keep the plan's own day of the month.
+- **Resetting traffic on an interface brings back who ran out.** Its usage
+  went to zero, but customers cut off for running out of traffic stayed cut
+  off. Resetting all interfaces at once did the same.
+- **Extending a group leaves plans without an end date alone.** It gave a
+  customer with no end date — an unlimited plan, or one waiting for its first
+  connection — a fixed date, ending the first and starting the second's
+  clock early.
+- **A Listen IP or domain saved without a port keeps the panel's port.** It
+  moved the panel to port 2096, the subscription service's, after the next
+  restart.
+- **Settings show every label.** The external traffic report and the
+  subscription service's certificate files showed internal names
+  (`set.externalTrafficInformEnable`) instead of their labels. A test now
+  fails on any label a page uses that a language lacks.
+- **The overview's tiles open the list they count.** *Depleting*, *Out of
+  data*, *Expired*, *Active* and *Online* opened the whole customer list;
+  they now open it filtered. A group's name on the Groups page opens its
+  members, rather than a search for the group's name.
+- **A client export imports as it is.** Pasting the exported file into
+  **Import clients** was refused for naming no interface; it now goes on the
+  first one, as a bare list did.
+- **Deleting an interface that still has customers says so at once**, instead
+  of asking for its name to be typed and then refusing.
+- **One line for running low.** The table turned a customer orange from 85 %
+  used while the summary and the filter counted them from 80 %; all now use
+  80 %.
+
+### Changed
+- **The panel says what each action does.** The interfaces page and its
+  menus, the hosts and routing forms, the engine's advanced section, the
+  Telegram bot and the error messages say *interface*, never *inbound*. On
+  the Clients page: **Add or remove time** / **Add or remove traffic** for
+  the selected users, **Add servers to the users**, **Remove servers from the
+  users**, **Set traffic limit and reset cycle** and **New keys and link**; on
+  an interface's menu, **Take All Clients Off** and **Detach Clients From…**.
+  The search box says it searches the name and the note, which is what it
+  does.
+- **The customer's own page is one click away**: their name in the list opens
+  it, with every file, its configuration and its QR code, and files added or
+  removed beyond the one per user.
+- **Interfaces' speed and the reseller limit** shown in 2.6.2 are named as
+  the rest of the panel names them: the default and the bot's button say
+  **Users**, and resellers sort by **Most users**.
+- **Hosts can be checked from their page**: **Check now** tries each address
+  the way a customer's device would; *Reachable* used to say nothing until
+  someone called the API.
+- **Save tells the truth.** Outbounds and routing said every change needed a
+  restart; changes there apply within seconds. Settings now name the few that
+  wait for a restart — where the panel and the subscription service listen,
+  their certificates, the trusted proxies and the time zone.
+- **The documentation is rewritten** page by page against the panel: every
+  page, column, menu, field, limit and default, in English and in Persian,
+  with the Persian pages using the panel's Persian labels.
+
 ## [2.6.3] — 2026-10-02
 
 ### Changed
@@ -686,7 +750,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.3...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.4...HEAD
+[2.6.4]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.3...v2.6.4
 [2.6.3]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.0...v2.6.1

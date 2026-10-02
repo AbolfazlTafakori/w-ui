@@ -32,7 +32,7 @@ features:
     linkText: اینترفیس‌ها
   - icon: 🧭
     title: همان چیدمانی که بلدی
-    details: Inbounds، Clients، Hosts، Outbounds، Routing، Balancers، DNS، تب‌های تنظیمات، منوی w-ui با شماره‌های ۰ تا ۲۸ — همه در همان جا، با همان کار.
+    details: اینترفیس‌ها، کلاینت‌ها، Hosts، Outbounds، Routing، Balancers، DNS، تب‌های تنظیمات، منوی w-ui با شماره‌های ۰ تا ۲۸ — همه در همان جا، با همان کار.
     link: /fa/panel/overview
     linkText: پنل
   - icon: 🔐

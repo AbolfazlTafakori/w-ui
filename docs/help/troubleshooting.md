@@ -13,7 +13,7 @@ Start with the log:
 journalctl -u wui -n 200 --no-pager
 ```
 
-and the panel's own view of itself: `w-ui settings`, and **System** on the Overview page.
+and the panel's own view of itself: `w-ui settings`, **System** on the Overview page, and *Settings → Engine* for whether limits are applied.
 
 ## The panel does not open
 
@@ -26,19 +26,20 @@ and the panel's own view of itself: `w-ui settings`, and **System** on the Overv
 - **Is the interface up?** Interfaces page, the Enabled switch; `wg show` / `awg show` on the server.
 - **Is the port open?** The provider's firewall, then `w-ui` → 23.
 - **Is the customer active?** Anything but `active` has its peers removed. Raise the quota or extend the expiry.
-- **Right endpoint?** The interface's *Endpoint host* is what goes into configs; a host overrides it.
+- **Right endpoint?** The interface's **Endpoint** is what goes into configurations; a [host](/panel/hosts) overrides it.
 - **AmneziaWG client, plain WireGuard interface** (or the reverse). The mode is per interface; the app must match.
+- **Held off?** A file used on more devices than the plan's **Users** is held off for two minutes; the log says `connection limit reached; device held off`.
 
 ## The customer connects but has no internet
 
 - **Forwarding** — `sysctl net.ipv4.ip_forward` must be `1`; the installer sets it.
-- **NAT interface** — the interface's *NAT interface* must be the public NIC (`ip route get 1.1.1.1` shows it).
+- **Egress interface** — the interface's **Egress interface** must be the public network card (`ip route get 1.1.1.1` shows it).
 - **Default outbound down** — with fail-closed on, customers are dropped while the hop at the top of Outbounds is unreachable. Check it, or move `direct` to the top.
 - **DNS** — customers resolve through the tunnel gateway; Engine → DNS shows the upstreams.
 
 ## Limits are not enforced
 
-Overview → **Enforcement** says *Reduced* when the kernel has no `nft_quota`. On a custom or container kernel, load or build the module; on a stock one, `modprobe nft_quota`.
+A yellow notice at the top of every page, and *Settings → Engine* → **Data limits**, say when quota enforcement is not running here. With no `nft_quota` in the kernel, limits are applied by the panel a tick late instead of by the kernel at the byte; on a custom or container kernel, load or build the module; on a stock one, `modprobe nft_quota`. *Engine → Generated* shows the program the kernel is asked to run.
 
 ## Something else took port 80 and renewal fails
 
@@ -46,7 +47,7 @@ Overview → **Enforcement** says *Reduced* when the kernel has no `nft_quota`. 
 
 ## I uninstalled by mistake
 
-`/root/wui-last-copy-<date>.tar.gz` holds the database and keys. Reinstall, stop the panel, extract the archive over `/`, fix ownership (`chown -R wui:wui /var/lib/wui`), start.
+`/root/wui-last-copy-<date>.tar.gz` holds the database and keys. Reinstall, then restore it like any backup: Overview → **Backup & Restore** → *Choose a file*, or `w-ui` → 25 → 9 → 2. (Only if the panel could not make its own archive at uninstall time is it a plain copy of `/var/lib/wui` and `/etc/wui`: stop the panel, extract it over `/`, `chown -R wui:wui /var/lib/wui`, start.)
 
 ## Getting help
 

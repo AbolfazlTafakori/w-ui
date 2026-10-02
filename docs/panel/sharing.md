@@ -8,7 +8,7 @@ This page lists files that are being used from **three or more public addresses 
 
 Why three: two is normal. A phone moving between Wi-Fi and mobile data changes address on its own, and a mobile carrier can put unrelated customers behind one address. Three different places inside ten minutes is rarely innocent.
 
-This is separate from the live [device limit](/panel/clients#users-and-devices), which holds a file to one device at a time and acts on its own within seconds. This page catches what slips past it over a longer window, for you to follow up on.
+This is separate from the live [limit on users](/panel/clients#users-and-devices), which holds a file to one device at a time and acts on its own within seconds. This page catches what slips past it over a longer window, for you to follow up on.
 
 ## The summary card
 

@@ -51,6 +51,7 @@ The settings page's values win over the environment at start, so this is where a
 --username NAME    the administrator's name (default: keep the current one)
 --password PASS    the new password (default: generate one and print it)
 --password-stdin   read the password from standard input
+--reset-two-factor forget the two-factor secret, so the account signs in with the password alone
 --quiet            print nothing on success
 ```
 

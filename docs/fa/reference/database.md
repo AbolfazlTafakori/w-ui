@@ -14,7 +14,7 @@ description: "دیتابیس کجاست، چه چیزی داخلش است، چط
 | `settings` | هر تنظیم پنل به شکل `key` / `value` (`panel.*`، `sub.*`، `routing.*`، `engine.*`، `notify.*`) |
 | `nodes` | این پنل و آن‌هایی که می‌پاید |
 | `interfaces` | تانل‌ها: کلیدها، زیرشبکه، پورت، حالت، پارامترهای AmneziaWG، CA و سرتیفیکیت سرور OpenVPN |
-| `clients` | مشتری‌ها: سهمیه، انقضا، سقف دستگاه، وضعیت، توکن سابسکریپشن، شناسهٔ تلگرام |
+| `clients` | مشتری‌ها: سهمیه، انقضا، تعداد کاربر (`device_limit`)، تمدید، وضعیت، توکن سابسکریپشن، شناسهٔ تلگرام |
 | `accounts` | یک ردیف به ازای هر دستگاه مشتری: کلید یا credential، آدرس، آخرین handshake |
 | `account_endpoints` | هر دستگاه آخرین بار از کجا دیده شده (تشخیص اشتراک‌گذاری) |
 | `traffic_samples` | تاریخچهٔ مصرف |
@@ -36,7 +36,7 @@ sqlite3 -header /var/lib/wui/wui.db 'select id,name,status,quota_bytes,used_byte
 
 بک‌آپ‌های زمان‌بندی‌شده در `/var/backups/wui/` به شکل `wui-backup-<date>.tar.gz` می‌روند: دیتابیس که خودِ SQLite کپی کرده (`VACUUM INTO`)، دایرکتوری OpenVPN، و کلیدها. تنظیمات → General زمان‌بندی و تعداد نگه‌داری را تعیین می‌کند؛ تلگرام می‌تواند هر کدام را بگیرد.
 
-برگرداندن: نمای کلی → Backup → Restore، یا `w-ui` → 25، یا دستی:
+برگرداندن: نمای کلی ← **بکاپ و بازگردانی** ← *انتخاب فایل*، یا `w-ui` ← 25 ← 9 ← 2، یا دستی:
 
 ```bash
 systemctl stop wui

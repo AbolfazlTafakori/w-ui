@@ -51,8 +51,8 @@ Certificates live under `/etc/wui/certs/<name>/fullchain.pem` and `privkey.pem`,
 
 ## The subscription service on its own port
 
-Settings → Subscription can put the subscription service on a listener of its own, with its own certificate. The link handed to customers then carries that port and scheme, so `https://your.host:2096/sub/TOKEN` works as customers expect.
+Settings → Subscription can put the subscription service on a listener of its own, with its own certificate. The link handed to customers then carries that port and scheme, so `https://your.host:2096/subscribe/TOKEN` works as customers expect.
 
 ## Behind your own proxy
 
-Choose **Skip** at install (or `--no-tls --local-only`), then terminate TLS in nginx or Caddy and proxy to `http://127.0.0.1:PORT/`. Add the proxy's address to Settings → Security → Trusted proxies so client addresses are read from `X-Forwarded-For`.
+Choose **Skip** at install (or `--no-tls --local-only`), then terminate TLS in nginx or Caddy and proxy to `http://127.0.0.1:PORT/`. Add the proxy's address to Settings → General → **Trusted proxy CIDRs** so client addresses are read from `X-Forwarded-For`.

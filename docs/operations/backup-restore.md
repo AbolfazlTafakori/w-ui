@@ -20,17 +20,17 @@ Two backups taken in the same second — a manual one beside a scheduled one, or
 
 | Where | How |
 |---|---|
-| The panel | Settings → Backup → **Back up now**, or download any listed archive |
-| On a schedule | Settings → Backup: interval and how many to keep; written to `/var/backups/wui` |
+| The panel | Overview → **Backup & Restore** → **Download backup**; or Settings → Backups → **Back up now**, or download any listed archive |
+| On a schedule | Settings → Backups: **Take a backup every** and **Keep**; written to `/var/backups/wui` |
 | The terminal | `w-ui backup` → 1, or `wui backup create` (with the panel's environment; the menu supplies it) |
-| Telegram | automatically, at the time set in Settings → Telegram → Backup ([Telegram bot](/panel/telegram#automatic-backup)); or at once, with the bot's backup button |
+| Telegram | automatically, at the time set in Settings → Telegram Bot → Backup ([Telegram bot](/panel/telegram#automatic-backup)); or at once, with the bot's backup button |
 | Uninstall | a last copy is written to `/root/wui-last-copy-<date>.tar.gz` before anything is removed |
 
 ## Restoring
 
 A restore never unpacks over the live data. The archive is checked end to end, a copy of what is there now is taken first, the files are staged beside the data directory, and the **next start** applies them — the only moment nothing has the database open.
 
-- **From the panel:** Overview → **Backup & Restore** → *Choose a file*, or Settings → Backup → **Restore** on a listed archive. The panel restarts itself, and the page reloads once it is back — not after a guessed number of seconds.
+- **From the panel:** Overview → **Backup & Restore** → *Choose a file*, or Settings → Backups → **Restore** on a listed archive. The panel restarts itself, and the page reloads once it is back — not after a guessed number of seconds.
 
 **How this panel is reached never changes.** Its port, URL path, domain, certificate files, trusted proxies and the subscription service's own listener are kept from this server, whatever the archive says. They used to come back with the archive: an archive from another server — or from this one before its port or path was changed — put the panel on a port the firewall never opened, under a path nobody had, or, with a certificate path that does not exist here, stopped it from starting at all. The customers, keys and **accounts** do come from the archive: after a restore you sign in with the archive's administrator.
 - **From the terminal:** `w-ui backup` → 2, give the path. Or `wui backup restore FILE`, then `systemctl restart wui`.

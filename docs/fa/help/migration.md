@@ -11,7 +11,7 @@ description: "از پنل دیگری آمده‌اید : هر مفهوم این�
 | Inbound | Inbound (کانفیگ Xray) | **اینترفیس** — یک تانل WireGuard / AmneziaWG / OpenVPN |
 | Client (email) | User | **Client** — یک مشتری، با یک **account** به ازای هر دستگاه |
 | `id` / رمز کلاینت | proxyهای کاربر | کلید دستگاه (وایرگارد) یا نام کاربری + رمز (OpenVPN) |
-| Total GB، Expiry، IP limit | Data limit، Expire، — | Total traffic، Expiry، **Device limit** |
+| Total GB، Expiry، IP limit | Data limit، Expire، — | حجم، مدت اعتبار، **کاربران** |
 | Subscription URL | Subscription URL | لینک سابسکریپشن — همان ایده، با صفحهٔ مشتری |
 | Hosts | Host settings | هاست‌ها و گروه‌های هاست |
 | Outbounds / Routing / Balancers | Core settings | خروجی‌ها / مسیریابی / بالانسرها — همان تب‌ها |

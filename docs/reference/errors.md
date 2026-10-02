@@ -30,7 +30,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `your session has ended; sign in again` | No token was sent, or the token's cookie is missing — a token copied out of one browser into another does not work on its own. | Sign in again in this browser. |
 | `this needs a signed-in administrator, not an API token` (403) | An API token — a machine's — tried something only an administrator may do: the administrator's own account or two-factor, issuing tokens, backups, registering nodes, the panel's settings, a restart. | Do it signed in to the panel. A token is for automation and for another panel using this one as a node. |
 | `too many requests` (429, subscription link) | This address asked for many subscription links that do not exist — a scan. Real links are still served; only the guessing is slowed. | Wait the time in `Retry-After`. |
-| `session expired, sign in again` | The token is past its life (Settings → Security → session duration) or is not one this panel issued. | Sign in again. |
+| `session expired, sign in again` | The token is past its life (Settings → General → Session Duration) or is not one this panel issued. | Sign in again. |
 | `you were signed out everywhere; sign in again` | The password was changed or **Sign out everywhere** was used since this token was issued. | Sign in again. |
 | `that access token is not valid` | A `wui_…` API token that was revoked or never existed. | Issue one on the API page, or `wui token issue --name NAME`. |
 | `not signed in` | `/api/auth/me` was called without a session. | Sign in. |
@@ -66,7 +66,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `choose at least one server for this customer` | No interface was ticked. | Tick the tunnel(s) the customer may use. |
 | `Not found: …` | An interface id that does not exist — usually a stale page after a deletion. | Reload; pick an existing tunnel. |
 | `one of those interfaces does not exist` / `choose at least one interface` | The same, on bulk creation. | |
-| `device limit must be between 0 and 50` | Connections at once; 0 is unlimited. | A number in that range. |
+| `device limit must be between 0 and 50` | **Users**: connections at once; 0 is unlimited. | A number in that range. |
 | `… devices requested; at most … per customer` | Device files are capped at 64. | |
 | `expiry is in the past` | The expiry date has already passed. | Pick a future date, or leave it empty for no expiry. |
 | `unknown reset cycle "…"` | | `none`, `daily`, `weekly` or `monthly`. |
@@ -246,7 +246,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `expiry must be between 0 and … days` / `device limit must be between 1 and …` | Defaults for new customers. | |
 | `backup interval must be between 0 and … hours` / `keep between 0 and 365 backups` | | |
 | `notifications need a chat id` / `unknown bot language "…"` / `notification thresholds cannot be negative` / `a threshold is a percentage, 0 to 100` / `notification time: …` | Telegram settings. | |
-| `backup time: …` / `… is more often than a backup may be taken, once every … minutes` / `… does not come round within a year` / `choose when the automatic backup is sent` | Settings → Telegram → Backup: a time the bot cannot keep, or none with it switched on. | Choose one of the offered times, or a crontab line no more often than every 10 minutes. |
+| `backup time: …` / `… is more often than a backup may be taken, once every … minutes` / `… does not come round within a year` / `choose when the automatic backup is sent` | Settings → Telegram Bot → Backup: a time the bot cannot keep, or none with it switched on. | Choose one of the offered times, or a crontab line no more often than every 10 minutes. |
 | `could not take the automatic backup` / `could not send the automatic backup` (log, and said in the chat) | The archive could not be made, or Telegram refused it — past 50 MB it is not sent at all. | `error=`; a large database is downloaded from the panel instead. The next goes at the next time. |
 | `could not read when the last automatic backup went` / `could not record when the automatic backup went` (log) | The database could not be read or written. | The database — disk space, permissions. |
 | `the Telegram API server must begin with http:// or https://` / `the external traffic URI must begin with http:// or https://` / `the test URL must begin with http:// or https://` | | |

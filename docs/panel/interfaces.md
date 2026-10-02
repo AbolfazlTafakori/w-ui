@@ -115,6 +115,6 @@ Everything except the protocol and the server can be changed after creation.
 
 ## Good to know
 
-- **Several interfaces, one customer.** A customer on WireGuard and OpenVPN gets a configuration for each, and spends one allowance and one device limit across both.
+- **Several interfaces, one customer.** A customer on WireGuard and OpenVPN gets a configuration for each, and spends one allowance and one number of users across both.
 - **A second interface as a fallback.** An AmneziaWG clone, or OpenVPN over TCP 443, keeps customers connected where plain WireGuard is filtered.
 - **Interfaces on nodes** are run by the node's own panel; this panel sends it the interface and the customers. See [Nodes](/panel/nodes).

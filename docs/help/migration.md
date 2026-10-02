@@ -11,7 +11,7 @@ The pages are in the same places. The words map like this:
 | Inbound | Inbound (Xray config) | **Interface** — one WireGuard / AmneziaWG / OpenVPN tunnel |
 | Client (email) | User | **Client** — a customer, with one **account** per device |
 | Client's `id` / password | User's proxies | the device's key (WireGuard) or username + password (OpenVPN) |
-| Total GB, Expiry, IP limit | Data limit, Expire, — | Total traffic, Expiry, **Device limit** |
+| Total GB, Expiry, IP limit | Data limit, Expire, — | Data allowance, Valid for, **Users** |
 | Subscription URL | Subscription URL | Subscription link — same idea, with a customer page |
 | Hosts | Host settings | Hosts and host groups |
 | Outbounds / Routing / Balancers | Core settings | Outbounds / Routing / Balancers — same tabs |

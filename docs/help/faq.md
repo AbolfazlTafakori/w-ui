@@ -18,7 +18,7 @@ An Xray panel manages Xray — VLESS, VMess, Trojan, REALITY. W-UI manages **Wir
 
 ## And from Marzban?
 
-Marzban is also an Xray panel with a Python backend and a multi-admin model. W-UI is a single Go binary with no runtime dependencies, one administrator, and WireGuard / OpenVPN as its protocols.
+Marzban is also an Xray panel with a Python backend and a multi-admin model. W-UI is a single Go binary with no runtime dependencies and WireGuard / OpenVPN as its protocols; it has an owner, panel administrators and [resellers](/panel/operators) who sell within limits you set, and it can run one plan across several servers with [nodes](/panel/nodes).
 
 ## Which client apps work?
 

@@ -18,7 +18,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 
 ```bash
 wui setting set --listen 127.0.0.1 --port 2053
-# تنظیمات → Security → Trusted proxies: 127.0.0.1/32
+# تنظیمات ← عمومی ← CIDRهای پراکسی مورد اعتماد: 127.0.0.1/32
 ```
 
 ## nginx

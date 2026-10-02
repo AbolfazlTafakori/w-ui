@@ -16,7 +16,7 @@ curl -X POST 'https://panel:2053/PATH/api/auth/login' \
   -d '{"username":"admin","password":"…"}'
 ```
 
-or use an **API token** — the one the installer printed, or one from Nodes → tokens or `wui token issue --name NAME` — and send it as:
+or use an **API token** — the one the installer printed, or one from Settings → Authentication → API Token or `wui token issue --name NAME` — and send it as:
 
 ```
 Authorization: Bearer wui_…

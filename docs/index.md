@@ -32,7 +32,7 @@ features:
     linkText: Interfaces
   - icon: 🧭
     title: The layout you already know
-    details: Inbounds, clients, hosts, outbounds, routing, balancers, DNS, the settings tabs, the w-ui menu numbered 0 to 28 — in the same places, doing the same things.
+    details: Interfaces, clients, hosts, outbounds, routing, balancers, DNS, the settings tabs, the w-ui menu numbered 0 to 28 — in the same places, doing the same things.
     link: /panel/overview
     linkText: The panel
   - icon: 🔐

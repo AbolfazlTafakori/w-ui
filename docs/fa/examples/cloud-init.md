@@ -22,7 +22,7 @@ echo "$WUI_ACCESS_URL"   # https://203.0.113.9:2053/aBcDeFgHiJkLmNoPqR/
 echo "$WUI_API_TOKEN"    # برای اولین درخواست API
 ```
 
-متغیرها: `WUI_DOMAIN`، `WUI_SERVER_IP`، `WUI_SSL_MODE=ip|domain|none`، `WUI_ADMIN_USER`، `WUI_ADMIN_PASSWORD`، `WUI_ENABLE_FAIL2BAN=false`. پرچم‌ها: [نصب → بدون سؤال](/fa/guide/install#نصب-بدون-سؤال).
+متغیرها: `WUI_DOMAIN`، `WUI_SERVER_IP`، `WUI_SSL_MODE=ip|domain|none`، `WUI_ADMIN_USER`، `WUI_ADMIN_PASSWORD`، `WUI_ENABLE_FAIL2BAN=false`. پرچم‌ها: [نصب → بدون سؤال](/fa/guide/install#نصب-بدون-سؤال).
 
 اولین درخواست API، برای اثبات اینکه بالاست:
 

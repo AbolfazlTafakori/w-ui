@@ -18,7 +18,7 @@ Then tell the panel which address may set forwarded headers, so sign-in throttli
 
 ```bash
 wui setting set --listen 127.0.0.1 --port 2053
-# Settings → Security → Trusted proxies: 127.0.0.1/32
+# Settings → General → Trusted proxy CIDRs: 127.0.0.1/32
 ```
 
 ## nginx

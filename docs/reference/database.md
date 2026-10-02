@@ -14,7 +14,7 @@ One SQLite file: `/var/lib/wui/wui.db` (with its `-wal` and `-shm` companions wh
 | `settings` | every panel setting as `key` / `value` (`panel.*`, `sub.*`, `routing.*`, `engine.*`, `notify.*`) |
 | `nodes` | this panel and the ones it watches |
 | `interfaces` | tunnels: keys, subnet, port, mode, AmneziaWG parameters, OpenVPN CA and server certificate |
-| `clients` | customers: quota, expiry, device limit, status, subscription token, Telegram id |
+| `clients` | customers: quota, expiry, users (`device_limit`), renewal, status, subscription token, Telegram id |
 | `accounts` | one row per customer device: key or credential, address, last handshake |
 | `account_endpoints` | where each device was last seen from (sharing detection) |
 | `traffic_samples` | usage history |
@@ -36,7 +36,7 @@ Read freely. Write only with the panel stopped, and only if you know why — the
 
 Scheduled backups go to `/var/backups/wui/` as `wui-backup-<date>.tar.gz`: the database copied by SQLite itself (`VACUUM INTO`), the OpenVPN directory, and the keys. Settings → General sets the schedule and how many to keep; Telegram can receive each one.
 
-Restore: Overview → Backup → Restore, or `w-ui` → 25, or by hand:
+Restore: Overview → **Backup & Restore** → *Choose a file*, or `w-ui` → 25 → 9 → 2, or by hand:
 
 ```bash
 systemctl stop wui

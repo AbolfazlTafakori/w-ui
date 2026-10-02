@@ -27,11 +27,11 @@ The installer ends with everything you need on one screen. Copy it somewhere saf
 
 | Line | What it is | Where to change it later |
 |------|-----------|--------------------------|
-| Username / Password | the administrator account | `w-ui` → 7, or Settings → Security |
+| Username / Password | the administrator account | `w-ui` → 7, or Settings → Authentication |
 | Port | the one port the panel answers on, by address and by domain | `w-ui` → 10 |
 | WebBasePath | the secret path; nothing outside it answers | `w-ui` → 8 |
 | Access URL | paste this into a browser | — |
-| API Token | a bearer token minted for automation, shown once | Nodes → tokens, or `wui token issue` |
+| API Token | a bearer token minted for automation, shown once | Settings → Authentication → API Token, or `wui token issue` |
 
 ## `/etc/wui/install-result.env`
 

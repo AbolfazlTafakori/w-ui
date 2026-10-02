@@ -41,27 +41,27 @@ A non-default port and a long random **path** are what keep the panel off scanne
 
 - **`w-ui` → 8 — Reset the URL path** (randomises it)
 - **`w-ui` → 10 — Change the port**
-- or Settings → General
+- or *Settings → General → General*: **Listen Port** and **URI Path**
 
 Both apply at the next restart; note the new address first.
 
 ## Change the administrator
 
 - **`w-ui` → 7 — Reset username and password** (generated unless typed)
-- or Settings → Security
+- or *Settings → Authentication → Admin credentials*
 
 Changing the password signs every session out.
 
 ## Two-factor authentication
 
-Settings → Security → **Two-factor authentication**. Scan the code with any TOTP app (Google Authenticator, Aegis, 1Password…), confirm one code, and keep the recovery key somewhere safe. From then on the sign-in page asks for a six-digit code — **only after the password was right**, so the form never reveals which accounts have it.
+*Settings → Authentication → Two-factor authentication* → **Enable 2FA**. Scan the code with any TOTP app (Google Authenticator, Aegis, 1Password…) and confirm one code. Turning it off asks for a code or your password, so a lost phone does not lock you out while you still know the password; if both are lost, `w-ui` → 7 resets the account from the server, two-factor included. From then on the sign-in page asks for a six-digit code — **only after the password was right**, so the form never reveals which accounts have it.
 
 ## What protects the sign-in form
 
 - **Throttling** — five free attempts per address and per account, then a wait that starts at 30 seconds and doubles, capped at 15 minutes. A quiet record is forgotten.
 - **One error message** — "incorrect username or password" for a bad password and a bad code alike.
 - **fail2ban** — installed by the installer, watching the panel's own log; repeat offenders are banned on the panel port. `w-ui` → 22.
-- **Sessions** — twelve hours by default (Settings → General → Session length), invalidated when the password changes.
+- **Sessions** — twelve hours by default (*Settings → General → Session Duration*), invalidated when the password changes.
 - **The path** — nothing outside it answers, the sign-in page included.
 
 ## Next

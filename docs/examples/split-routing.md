@@ -6,15 +6,15 @@ description: "Local destinations straight out of this server, everything else th
 
 With a hop at the top of Outbounds ([all traffic through a clean server](/examples/hop-all-traffic)), local sites take the detour too — slower, and sometimes they refuse foreign addresses.
 
-**Routing → Rules → + Rule:**
+**Routing → Routing Rules → Add rule:**
 
 | Field | Value |
 |-------|-------|
-| Destination | `geoip:ir` (your country) |
-| Outbound | `direct` |
+| IP | `geoip:ir` (your country) |
+| Outbound tag | `direct` |
 
-Save. Routing → **Route tester**: enter a local address and a foreign one; the first should say `direct`, the second the hop.
+Save. Then **Routing → Route Tester**: enter a local address and a foreign one; the first should say `direct`, the second the hop.
 
-For domains rather than addresses — a local bank whose addresses move — put the names themselves in the destination; the panel resolves them through its DNS proxy and keeps the sets fresh.
+For domains rather than addresses — a local bank whose addresses move — put the names in the rule's **Domain**; the panel resolves them and keeps them fresh.
 
-Order matters: rules are tried top to bottom, and the first match wins.
+Order matters: rules are tried top to bottom, and the first match wins. Drag the rule above any rule that would catch the same traffic first.
