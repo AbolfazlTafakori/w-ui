@@ -26,7 +26,7 @@ const enSidebar = [
     text: 'The panel',
     items: [
       { text: 'Overview', link: '/panel/overview' },
-      { text: 'Interfaces (inbounds)', link: '/panel/interfaces' },
+      { text: 'Interfaces', link: '/panel/interfaces' },
       { text: 'Clients', link: '/panel/clients' },
       { text: 'Groups', link: '/panel/groups' },
       { text: 'Hosts', link: '/panel/hosts' },
@@ -118,9 +118,9 @@ const faSidebar = [
     items: [
       { text: 'نمای کلی', link: '/fa/panel/overview' },
       { text: 'اینترفیس‌ها', link: '/fa/panel/interfaces' },
-      { text: 'مشتری‌ها', link: '/fa/panel/clients' },
+      { text: 'کلاینت‌ها', link: '/fa/panel/clients' },
       { text: 'گروه‌ها', link: '/fa/panel/groups' },
-      { text: 'هاست‌ها', link: '/fa/panel/hosts' },
+      { text: 'میزبان‌ها (هاست‌ها)', link: '/fa/panel/hosts' },
       { text: 'خروجی‌ها', link: '/fa/panel/outbounds' },
       { text: 'مسیریابی', link: '/fa/panel/routing' },
       { text: 'اشتراک‌گذاری', link: '/fa/panel/sharing' },

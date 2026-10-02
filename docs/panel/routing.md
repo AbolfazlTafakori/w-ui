@@ -86,7 +86,7 @@ A balancer is one tag over several outbounds; point a rule at it to spread traff
 | **Outbounds** | The members — at least one. |
 | **Note**, **Enabled** | As for rules. |
 
-From the API a balancer can also have a **fallback** outbound, used when every member is down, and can be pinned to one member with `POST /api/balancers/{id}/override`. A balancer that rules point at cannot be removed until they are changed.
+A balancer can also have a **Fallback** outbound, used while every member is down, and can be pinned to one member with **Override** — both on [Engine → Balancers](/panel/engine#balancers). A balancer that rules point at cannot be removed until they are changed.
 
 ## Route Tester
 

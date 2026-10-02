@@ -33,7 +33,7 @@ A row each, in the same colours as the customer list — green while there is ro
 - **Time left** — days until their term ends, or *on hold* while it has not started.
 - **Servers** — the ones they may sell.
 
-Above the list, the Clients page's controls: search by username, note or group; filter by status (active, on hold, ending soon, stopped) and by server; sort by name, customers, traffic used, time left or newest. The summary tiles filter too — press *Ending soon* to see who to renew. The view is kept in the address, so a reload or a shared link opens on it.
+Above the list, the Clients page's controls: search by username, note or group; filter by status (active, on hold, ending soon, stopped) and by server; sort by name, most users, most traffic used, ending first or newest. The summary tiles filter too — press *Ending soon* to see who to renew. The view is kept in the address, so a reload or a shared link opens on it.
 
 On a phone each reseller is a card with the same figures.
 

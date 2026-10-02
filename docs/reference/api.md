@@ -27,7 +27,7 @@ A token is a machine's. What only an administrator may do answers `403 this need
 :::
 
 ::: tip Extra "installer" tokens
-Before this was fixed, every update by the installer left one more full-access token named `installer` on the panel. Each is a working credential nobody uses. Keep the one your automation reads from `install-result.env`, and revoke the rest in **Settings → Security → API Token** (the list shows each one's prefix and when it was last used).
+Before this was fixed, every update by the installer left one more full-access token named `installer` on the panel. Each is a working credential nobody uses. Keep the one your automation reads from `install-result.env`, and revoke the rest in **Settings → Authentication → API Token** (the list shows each one's prefix and when it was last used).
 :::
 
 ## The documentation is in the panel
