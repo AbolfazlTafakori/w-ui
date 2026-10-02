@@ -6,6 +6,16 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.3] — 2026-10-02
+
+### Changed
+- **The installer speaks in colour.** Each step is a cyan heading, what
+  went well is green, a warning yellow and a failure red, and the summary at
+  the end colours its labels, its values and the state of each part --
+  missing or off in red, not installed in yellow -- with the password and
+  the address standing out. The words are the same as before, and a log, a
+  pipe or `NO_COLOR` gets them without any colour.
+
 ## [2.6.2] — 2026-10-02
 
 ### Fixed
@@ -673,7 +683,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.2...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.3...HEAD
+[2.6.3]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.5.2...v2.6.0

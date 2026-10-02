@@ -148,19 +148,37 @@ INTERACTIVE=0
 INSTALL_MODE="${WUI_INSTALL_MODE:-}"
 
 # ── output ───────────────────────────────────────────────────────────────────
-if [[ -t 1 ]]; then
-  R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; C=$'\e[36m'; B=$'\e[1m'; D=$'\e[2m'; N=$'\e[0m'
+# Colour only on a terminal, and never under NO_COLOR: a log, a pipe or a
+# test reads exactly the same words with none of it.
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; C=$'\e[36m'; M=$'\e[35m'; B=$'\e[1m'; D=$'\e[2m'; U=$'\e[4m'; N=$'\e[0m'
   # The panel's own colour, for its name.
   P=$'\e[38;5;203m'
 else
-  R=""; G=""; Y=""; C=""; B=""; D=""; N=""; P=""
+  R=""; G=""; Y=""; C=""; M=""; B=""; D=""; U=""; N=""; P=""
 fi
 
-step() { printf '\n%s==>%s %s%s%s\n' "$B" "$N" "$B" "$*" "$N"; }
+# What each kind of line looks like: a step is a cyan heading, done is
+# green, a warning yellow and a failure red -- so the one line that needs
+# reading stands out of a long install.
+step() { printf '\n%s%s==>%s %s%s%s%s\n' "$B" "$C" "$N" "$B" "$C" "$*" "$N"; }
 info() { printf '    %s\n' "$*"; }
-ok()   { printf '    %s✓%s %s\n' "$G" "$N" "$*"; }
-warn() { printf '    %s!%s %s\n' "$Y" "$N" "$*"; }
-die()  { printf '\n%serror:%s %s\n\n' "$R" "$N" "$*" >&2; exit 1; }
+ok()   { printf '    %s%s✓%s %s%s%s\n' "$B" "$G" "$N" "$G" "$*" "$N"; }
+warn() { printf '    %s%s!%s %s%s%s\n' "$B" "$Y" "$N" "$Y" "$*" "$N"; }
+die()  { printf '\n%s%serror:%s %s%s%s\n\n' "$B" "$R" "$N" "$R" "$*" "$N" >&2; exit 1; }
+
+# kv LABEL VALUE [COLOUR] is one line of the summary: the label in cyan, the
+# value in green unless another colour is given.
+kv() { printf '  %s%-10s%s %s%s%s\n' "$C" "$1" "$N" "${3:-$G}" "$2" "$N"; }
+# state VALUE colours what the summary says about a part: missing or off is
+# red, not installed yellow, anything else -- a version, on -- green.
+state() {
+  case "$1" in
+    missing|off) printf '%s%s%s' "$R" "$1" "$N" ;;
+    "not installed") printf '%s%s%s' "$Y" "$1" "$N" ;;
+    *) printf '%s%s%s' "$G" "$1" "$N" ;;
+  esac
+}
 
 # ── arguments ────────────────────────────────────────────────────────────────
 # WUI_LIB_ONLY lets the test suites source this file for its functions without
@@ -2329,23 +2347,23 @@ summary() {
   # answers on 443 for the domain and reaches the panel over the loopback.
   # Printing the panel's port here would hand the operator a URL that is
   # firewalled off from the internet.
-  printf '\n%s────────────────────────────────────────────────────────────%s\n' "$D" "$N"
-  printf '  %sW-UI is installed%s\n\n' "$B" "$N"
+  printf '\n%s────────────────────────────────────────────────────────────%s\n' "$M" "$N"
+  printf '  %s%sW-UI is installed%s\n\n' "$B" "$G" "$N"
   local shown_path="/"
   [[ -n "$BASE_PATH" ]] && shown_path="/$BASE_PATH/"
-  printf '  Panel      %s://%s%s%s\n' "$scheme" "$host" "$port" "$shown_path"
-  printf '  Subs       %s://%s:%s/subscribe/<token>\n' "$scheme" "$host" "$SUB_PORT"
+  kv Panel "$scheme://$host$port$shown_path" "$B$G$U"
+  kv Subs "$scheme://$host:$SUB_PORT/subscribe/<token>"
 
   if [[ -n "$ADMIN_PASS" ]]; then
-    printf '  Username   %s\n' "$ADMIN_USER"
-    printf '  Password   %s%s%s\n' "$B" "$ADMIN_PASS" "$N"
+    kv Username "$ADMIN_USER" "$B$G"
+    kv Password "$ADMIN_PASS" "$B$Y"
     if [[ "$ADMIN_GENERATED" == 1 ]]; then
-      printf '\n  %sThis password was generated and is shown once. Write it down.%s\n' "$Y" "$N"
+      printf '\n  %s%sThis password was generated and is shown once. Write it down.%s\n' "$B" "$Y" "$N"
     fi
   elif [[ -n "${FIRST_RUN_PW:-}" ]]; then
-    printf '  Username   admin\n'
-    printf '  Password   %s%s%s\n' "$B" "$FIRST_RUN_PW" "$N"
-    printf '\n  %sThis password is shown once. Change it after signing in.%s\n' "$Y" "$N"
+    kv Username admin "$B$G"
+    kv Password "$FIRST_RUN_PW" "$B$Y"
+    printf '\n  %s%sThis password is shown once. Change it after signing in.%s\n' "$B" "$Y" "$N"
   elif ! have_systemd; then
     # Nothing started the panel, so no account exists yet. Claiming an existing
     # one here would send the operator looking for something that is not there.
@@ -2355,63 +2373,73 @@ summary() {
     printf '  Sign in with your existing admin account.\n'
   else
     printf '  %sThe first-run password could not be read from the log.%s\n' "$Y" "$N"
-    printf '  Find it with: journalctl -u wui | grep -A6 "First run"\n'
+    printf '  Find it with: %sjournalctl -u wui | grep -A6 "First run"%s\n' "$C" "$N"
   fi
 
-  printf '\n  %sInstalled%s\n' "$B" "$N"
-  printf '    WireGuard    %s\n' "$(have wg && wg --version 2>/dev/null | awk '{print $2}' || echo 'missing')"
-  printf '    AmneziaWG    %s\n' "$([[ "${AMNEZIA_OK:-0}" == 1 ]] && awg --version 2>/dev/null | awk '{print $2}' || echo 'not installed')"
-  printf '    OpenVPN      %s\n' "$([[ "${OPENVPN_OK:-0}" == 1 ]] && openvpn --version 2>/dev/null | head -1 | awk '{print $2}' || echo 'not installed')"
-  printf '    nftables     %s\n' "$(nft --version 2>/dev/null | awk '{print $2}')"
-  printf '    forwarding   %s\n' "$([[ "$(sysctl -n net.ipv4.ip_forward)" == 1 ]] && echo on || echo off)"
-  printf '    listening    %s\n' "$([[ "$LISTEN_ADDR" == 127.0.0.1 ]] && echo '127.0.0.1 only — not reachable from outside this server' || echo "$LISTEN_ADDR:$PANEL_PORT")"
-  printf '    URL path     %s\n' "$([[ -n "$BASE_PATH" ]] && echo "$shown_path — nothing else on this address answers" || echo 'none (the panel is at the root)')"
+  # part LABEL VALUE: one line of what was installed, its state coloured.
+  part() { printf '    %s%-12s%s %s\n' "$C" "$1" "$N" "$2"; }
+  printf '\n  %s%sInstalled%s\n' "$B" "$Y" "$N"
+  part WireGuard "$(state "$(have wg && wg --version 2>/dev/null | awk '{print $2}' || echo 'missing')")"
+  part AmneziaWG "$(state "$([[ "${AMNEZIA_OK:-0}" == 1 ]] && awg --version 2>/dev/null | awk '{print $2}' || echo 'not installed')")"
+  part OpenVPN "$(state "$([[ "${OPENVPN_OK:-0}" == 1 ]] && openvpn --version 2>/dev/null | head -1 | awk '{print $2}' || echo 'not installed')")"
+  part nftables "$(state "$(nft --version 2>/dev/null | awk '{print $2}')")"
+  part forwarding "$(state "$([[ "$(sysctl -n net.ipv4.ip_forward)" == 1 ]] && echo on || echo off)")"
+  if [[ "$LISTEN_ADDR" == 127.0.0.1 ]]; then
+    part listening "$Y"'127.0.0.1 only — not reachable from outside this server'"$N"
+  else
+    part listening "$G$LISTEN_ADDR:$PANEL_PORT$N"
+  fi
+  part "URL path" "$([[ -n "$BASE_PATH" ]] && echo "$G$shown_path$N — nothing else on this address answers" || echo "$Y"'none (the panel is at the root)'"$N")"
   case "$TLS_MODE" in
-    acme)  printf "    certificate  Let%ss Encrypt, renews itself\n" "'" ;;
-    ip)    printf "    certificate  Let%ss Encrypt for %s, 6 days, renews itself every 6 hours\n" "'" "$ACME_IP" ;;
-    files) printf '    certificate  yours, at %s\n' "$TLS_CERT" ;;
-    *)     printf '    certificate  %snone — this panel serves plain HTTP%s\n' "$Y" "$N" ;;
+    acme)  part certificate "${G}Let's Encrypt, renews itself$N" ;;
+    ip)    part certificate "${G}Let's Encrypt for $ACME_IP, 6 days, renews itself every 6 hours$N" ;;
+    files) part certificate "${G}yours, at $TLS_CERT$N" ;;
+    *)     part certificate "${Y}none — this panel serves plain HTTP$N" ;;
   esac
 
-  printf '\n  %sCommands%s\n' "$B" "$N"
+  # cmd COMMAND WHAT: a command in cyan, padded, and what it does.
+  cmd() { printf '    %s%-27s%s %s\n' "$C" "$1" "$N" "$2"; }
+  printf '\n  %s%sCommands%s\n' "$B" "$Y" "$N"
   if have_systemd; then
-    printf '    w-ui                        the management menu\n'
-    printf '    systemctl status wui        service state\n'
-    printf '    journalctl -u wui -f        live log\n'
-    printf '    systemctl restart wui       restart\n'
+    cmd w-ui 'the management menu'
+    cmd 'systemctl status wui' 'service state'
+    cmd 'journalctl -u wui -f' 'live log'
+    cmd 'systemctl restart wui' restart
   else
     # Only what works here. Four systemctl lines on a host with no systemd are
     # four commands that fail.
-    printf '    %s   start it in the foreground\n' "$BIN_PATH"
-    printf '    w-ui settings               what it is configured with\n'
-    printf '    w-ui admin                  reset the administrator\n'
+    printf '    %s%s%s   start it in the foreground\n' "$C" "$BIN_PATH" "$N"
+    cmd 'w-ui settings' 'what it is configured with'
+    cmd 'w-ui admin' 'reset the administrator'
   fi
-  printf '    bash %s --uninstall   remove (keeps the database)\n' "$0"
+  printf '    %sbash %s --uninstall%s   remove (keeps the database)\n' "$C" "$0" "$N"
 
-  printf '\n  %sNext%s open the panel, add an interface, then add clients.\n' "$B" "$N"
-  printf '%s────────────────────────────────────────────────────────────%s\n\n' "$D" "$N"
+  printf '\n  %s%sNext%s open the panel, add an interface, then add clients.\n' "$B" "$M" "$N"
+  printf '%s────────────────────────────────────────────────────────────%s\n\n' "$M" "$N"
 
   # Everything the classic panel prints under "Panel Installation Complete", in one
   # place, for the operator who scrolls back for the one line they need.
   printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
-  printf '  %s     Panel Installation Complete!         %s\n' "$G" "$N"
+  printf '  %s%s     Panel Installation Complete!         %s\n' "$B" "$G" "$N"
   printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
-  printf '  %sUsername:    %s%s\n' "$G" "$ADMIN_USER" "$N"
-  [[ -n "$ADMIN_PASS" ]] && printf '  %sPassword:    %s%s\n' "$G" "$ADMIN_PASS" "$N"
-  printf '  %sPort:        %s%s\n' "$G" "$PANEL_PORT" "$N"
-  printf '  %sSub Port:    %s%s\n' "$G" "$SUB_PORT" "$N"
-  printf '  %sWebBasePath: %s%s\n' "$G" "${BASE_PATH:-/}" "$N"
+  # box LABEL VALUE [COLOUR]: a line of it, the label yellow, the value bold.
+  box() { printf '  %s%-13s%s%s%s%s%s\n' "$Y" "$1" "$N" "$B" "${3:-$G}" "$2" "$N"; }
+  box Username: "$ADMIN_USER"
+  [[ -n "$ADMIN_PASS" ]] && box Password: "$ADMIN_PASS" "$R"
+  box Port: "$PANEL_PORT"
+  box 'Sub Port:' "$SUB_PORT"
+  box WebBasePath: "${BASE_PATH:-/}"
   if [[ "$DB_DRIVER" == postgres ]]; then
-    printf '  %sDatabase:    PostgreSQL (wui on 127.0.0.1, credentials in %s/db.env)%s\n' "$G" "$CONF_DIR" "$N"
+    box Database: "PostgreSQL (wui on 127.0.0.1, credentials in $CONF_DIR/db.env)"
   else
-    printf '  %sDatabase:    SQLite (%s/wui.db)%s\n' "$G" "$DATA_DIR" "$N"
+    box Database: "SQLite ($DATA_DIR/wui.db)"
   fi
-  printf '  %sAccess URL:  %s://%s%s%s%s\n' "$G" "$scheme" "$host" "$port" "$shown_path" "$N"
-  [[ -n "$API_TOKEN" ]] && printf '  %sAPI Token:   %s%s\n' "$G" "$API_TOKEN" "$N"
+  box 'Access URL:' "$scheme://$host$port$shown_path" "$C$U"
+  [[ -n "$API_TOKEN" ]] && box 'API Token:' "$API_TOKEN" "$M"
   printf '  %s═══════════════════════════════════════════%s\n' "$G" "$N"
-  printf '  %s⚠ IMPORTANT: Save these credentials securely!%s\n' "$Y" "$N"
+  printf '  %s%s⚠ IMPORTANT: Save these credentials securely!%s\n' "$B" "$R" "$N"
   if [[ "$scheme" == https ]]; then
-    printf '  %s⚠ SSL Certificate: Enabled and configured%s\n' "$Y" "$N"
+    printf '  %s⚠ SSL Certificate: Enabled and configured%s\n' "$G" "$N"
   else
     printf '  %s⚠ SSL Certificate: Skipped — panel is HTTP-only. Use a reverse proxy or SSH tunnel.%s\n' "$Y" "$N"
   fi
@@ -2520,7 +2548,7 @@ if [[ "$LIB_ONLY" == 1 ]]; then return 0 2>/dev/null || exit 0; fi
 detect_os
 [[ "$ACTION" == install ]] || do_uninstall
 
-printf '\n  %s%sW-UI%s  %s·%s  WireGuard · AmneziaWG · OpenVPN   %sinstaller%s\n' "$P" "$B" "$N" "$D" "$N" "$D" "$N"
+printf '\n  %s%sW-UI%s  %s·%s  %sWireGuard%s · %sAmneziaWG%s · %sOpenVPN%s   %s%sinstaller%s\n' "$P" "$B" "$N" "$D" "$N" "$G" "$N" "$M" "$N" "$Y" "$N" "$B" "$C" "$N"
 printf '  %s%s · kernel %s · %s%s\n' "$D" "$OS_NAME" "$KERNEL" "$ARCH" "$N"
 
 # Asked first, so the rest runs unattended.
