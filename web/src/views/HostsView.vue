@@ -125,6 +125,35 @@ async function runConfirmed() {
   }
 }
 
+// Check now: each address behind the entry is tried the way a customer's
+// device would reach it, and the column shows the result. Nothing checks a
+// host on its own, so until this is pressed the column only says that
+// nothing has failed yet.
+const checking = ref(null)
+async function check(g) {
+  checking.value = g.groupId
+  try {
+    const fails = []
+    let slowest = 0
+    let note = ''
+    for (const id of g.rowIds || []) {
+      const r = await api.post(`/api/hosts/${id}/check`, {})
+      if (!r.ok) fails.push(r.error || t('hosts.unreachable'))
+      else {
+        slowest = Math.max(slowest, r.latencyMs || 0)
+        if (r.error) note = r.error
+      }
+    }
+    if (fails.length) notify(`${g.remark}: ${[...new Set(fails)].join('; ')}`, 'error')
+    else notify(`${g.remark}: ${t('hosts.reachable')} · ${slowest} ms${note ? ` — ${note}` : ''}`, 'success')
+    await load(true)
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    checking.value = null
+  }
+}
+
 // Their move up / move down: the whole order is sent, first first.
 async function move(g, dir) {
   const ids = groups.value.map((x) => x.groupId)
@@ -232,6 +261,7 @@ function ifaceLabel(id) {
                   <div class="aspace" style="gap: 2px; flex-wrap: nowrap">
                     <button class="abtn text sm" :title="t('hosts.moveUp')" :aria-label="t('hosts.moveUp')" :disabled="idx === 0" @click="move(g, 'up')"><AntIcon name="ArrowUpOutlined" /></button>
                     <button class="abtn text sm" :title="t('hosts.moveDown')" :aria-label="t('hosts.moveDown')" :disabled="idx >= groups.length - 1" @click="move(g, 'down')"><AntIcon name="ArrowDownOutlined" /></button>
+                    <button class="abtn text sm" :title="t('hosts.checkNow')" :aria-label="t('hosts.checkNow')" :disabled="checking === g.groupId" @click="check(g)"><AntIcon :name="checking === g.groupId ? 'LoadingOutlined' : 'ThunderboltOutlined'" /></button>
                     <button class="abtn text sm" :title="t('action.edit')" :aria-label="t('action.edit')" @click="formFor = { group: g }"><AntIcon name="EditOutlined" /></button>
                     <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="remove(g)"><AntIcon name="DeleteOutlined" /></button>
                   </div>

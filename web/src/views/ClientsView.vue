@@ -118,7 +118,19 @@ const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 // drawer so the list can be narrowed while it is shut, and so the button can
 // say how many categories are doing the narrowing.
 const filterOpen = ref(false)
-const filters = ref(emptyFilters())
+// A link from elsewhere may name what to open the list on: a status, from
+// the overview's tiles (/clients?status=depleting), or a group, from the
+// groups page (/clients?group=trial). Each becomes that one filter, which
+// shows as a chip and is cleared like any other.
+const STATUS_LINKS = ['active', 'depleting', 'exhausted', 'expired', 'disabled', 'online']
+function filtersFromLink() {
+  const f = emptyFilters()
+  const s = String(route.query.status || '')
+  if (STATUS_LINKS.includes(s)) f.buckets = [s]
+  if (route.query.group) f.groups = [String(route.query.group)]
+  return f
+}
+const filters = ref(filtersFromLink())
 const filterCount = computed(() => activeFilterCount(filters.value))
 
 // Sent only when set, so an untouched filter leaves the query string as short

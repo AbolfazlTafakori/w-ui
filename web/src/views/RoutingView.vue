@@ -465,7 +465,7 @@ async function testRoute() {
       <div class="save-right">
         <div class="alert warning" role="status">
           <Icon name="alert" :size="14" />
-          <span>{{ t('outbound.saveHint') }}</span>
+          <span>{{ t('routing.saveHint') }}</span>
         </div>
       </div>
     </div>

@@ -62,9 +62,9 @@ const customerTiles = computed(() => {
   const c = clients.value
   if (!c) return []
   return [
-    { key: 'online', label: t('overview.onlineNow'), value: c.online, tone: 'ok', to: '/clients' },
+    { key: 'online', label: t('overview.onlineNow'), value: c.online, tone: 'ok', to: '/clients?status=online' },
     { key: 'depleting', label: t('stat.depleting'), value: c.depleting, tone: 'warn',
-      urgent: true, to: '/clients?status=active' },
+      urgent: true, to: '/clients?status=depleting' },
     { key: 'exhausted', label: t('status.exhausted'), value: c.exhausted, tone: 'bad',
       urgent: true, to: '/clients?status=exhausted' },
     { key: 'expired', label: t('status.expired'), value: c.expired, tone: 'bad',

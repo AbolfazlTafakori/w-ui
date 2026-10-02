@@ -588,8 +588,11 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 		// silently on a Postgres deployment.
 		//
 		// Extension is measured from each client's own expiry, so a customer
-		// with three weeks left keeps them. Anyone already expired, or with no
-		// expiry at all, is measured from now instead.
+		// with three weeks left keeps them. Anyone already expired is measured
+		// from now instead. A customer with no expiry is left alone, as the
+		// customer list's own time action leaves them: their plan never ends,
+		// or waits for its first connection, and a date here would end the
+		// first and start the second's clock early.
 		delta := time.Duration(op.Days) * 24 * time.Hour
 
 		var members []model.Client
@@ -600,6 +603,9 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 		var n int64
 		err := db.Transaction(func(tx *gorm.DB) error {
 			for _, m := range members {
+				if m.ExpiresAt == nil {
+					continue
+				}
 				base := now
 				if m.ExpiresAt != nil && m.ExpiresAt.After(now) {
 					base = *m.ExpiresAt

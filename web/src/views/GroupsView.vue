@@ -340,7 +340,7 @@ async function applyMembers() {
 }
 
 function viewMembers(g) {
-  router.push({ path: '/clients', query: { search: g.name } })
+  router.push({ path: '/clients', query: { group: g.name } })
 }
 </script>
 

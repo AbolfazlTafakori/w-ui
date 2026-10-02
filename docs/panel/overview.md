@@ -1,54 +1,121 @@
 ---
-description: "The first page after sign-in: host load, panel state, and what this server is carrying. It refreshes every three seconds from one request, so every number is from the same moment."
+description: "The first page after sign-in: how the customers are doing, how loaded the server is, and the buttons that act on the whole server — restart, stop, update, history, logs, backup."
 ---
 
 # Overview
 
-The first page after sign-in: host load, panel state, and what this server is carrying. It refreshes every three seconds from one request, so every number is from the same moment.
+The first page after sign-in. It answers two questions in order: does anything need doing for the customers today, and how is the server doing. It refreshes every 3 seconds from one request, so every number on it is from the same moment.
 
 ## The action bar
 
-The bar is laid out as the classic panel's: at the start, the state pill and the version, and beside them the update tag; at the end, the buttons.
+At the start, what this server is running; at the end, the buttons.
 
-| Button | What it does |
-|--------|--------------|
-| **● Tunnels · 3 / 3  v2.3.1** | how many interfaces are up, of how many are enabled (the dot is red when one is down), and this panel's version; the version opens the update dialog |
-| **Update v2.3.2** | only while a newer release is published: opens the update dialog, with the release notes and **Install and restart**. The panel downloads the release itself — a bar shows how much has arrived — checks it against the signing key built into it, puts it in place and restarts; the page reloads by itself once the panel is back on the new version. Customers stay connected. Closing the dialog or reloading the page does not stop an install: the tag reads *Updating…* until it is done. The panel runs unprivileged and cannot replace its own binary; the installer sets up a small root helper (`wui-update.path`) that checks the downloaded release again with the installed panel's own key, refuses anything that is not a newer signed release, puts it in place and restarts the panel. A server installed before 2.3.2 has no helper yet: the dialog says so and gives the command to run once as root (`update.sh`), after which updates install from the panel. The release list is checked at most every half hour; opening the dialog checks again |
-| **Restart** | every tunnel again from its stored configuration (the classic "restart core"); the panel stays up |
-| **Stop** | the panel service — tunnels keep running, limits stop being enforced |
-| **History** | CPU, memory, traffic and connections over the last day, week or month |
-| **Logs** | the panel's log, filterable by level and source, live |
-| **Backup & Restore** | two lines, as in the classic panel. **Download backup** takes a fresh archive of everything and saves it to your device in one click. **Choose a file** picks an archive to restore; the dialog shows its name and size, what will happen, and *keep this server's addresses*, and nothing changes until you press **Restore**. The upload shows its progress, the current state is saved first, and the page reloads by itself once the panel is back with the restored data. Older archives are under *All backups* |
-| **System** | what this binary is, what the kernel supports, whether enforcement is exact |
-| **Settings** | the settings pages |
+| Item | What it does |
+|------|--------------|
+| **● Tunnels · 3 / 3** | How many interfaces on this server are carrying traffic, out of how many exist. The dot is green when all are up, red when one is not. |
+| **v2.6.3** (the version) | This panel's version. Click it to open the [update window](#updating). |
+| **Update v…** | Only while a newer release is published: opens the update window. While an update installs it reads **Updating…**. |
+| **Restart** | Reopens every tunnel on this server from its stored settings. No record changes; customers reconnect within seconds. |
+| **Stop** | Switches every tunnel off, after a confirmation. Every customer on this server is disconnected and cannot reconnect until the tunnels are switched back on — they stay off across a restart of the panel or the server. Nothing is deleted and no allowance changes. Once stopped, the button becomes **Start**, which switches them back on. |
+| **History** | The [history](#history) window. |
+| **Logs** | The [log](#the-log) window. |
+| **Backup & Restore** | The [backup window](#backup-and-restore). |
+| **System** | The system report under *Settings → System*: what this program is, what the kernel supports, whether limits are enforced exactly. |
+| **Settings** | The [settings](/panel/settings). |
+
+On a narrow screen the buttons show only their icons.
+
+## Customer tiles
+
+Six tiles, each a link to the Clients page already filtered to it:
+
+| Tile | Counts | Opens |
+|------|--------|-------|
+| **Online now** | customers with traffic moving | Clients filtered to Online |
+| **Depleting** | active customers at 80 % or more of their allowance | Clients filtered to Depleting |
+| **Out of data** | customers who used their allowance | Clients filtered to Out of data |
+| **Expired** | customers past their date | Clients filtered to Expired |
+| **Active** | customers whose plan is running | Clients filtered to Active |
+| **Clients** | every customer | the whole list |
+
+A tile with nothing to report is dimmed; the three that need action (Depleting, Out of data, Expired) stand out while they are above zero.
+
+## Vitals
+
+Four tiles, each a level read against its own recent history, with a small chart and the minimum and maximum over that chart:
+
+| Tile | Shows |
+|------|-------|
+| **CPU** | processor use, and how many cores |
+| **RAM** | memory use, used / total |
+| **Swap** | swap use, used / total — or *None configured* |
+| **Storage** | disk use of the panel's data disk, used / total |
+
+Then:
+
+- **Throughput** — traffic across every network interface of this host, upload and download as a live chart, with how much was sent and received and the peak.
+- **Connections** — open connections, by protocol.
+- **Uptime** — of the panel and of the host; the panel's own memory and **Tasks** (how many it is running).
+- **Server addresses** — the server's public IPv4 and IPv6. Hidden by default behind the eye, so a screenshot does not give them away.
+
+## Interfaces
+
+A short table of the interfaces on this server: name, protocol, endpoint and port, mode (Standard or AmneziaWG), subnet and **Address pool** — addresses handed out of how many there are, with a bar. Above it, the totals and the active customers out of all. With no interface yet, a link to create one.
+
+## Updating
+
+The update window shows the version running and the newest one published.
+
+- **Install and restart** downloads the release, checks its signature against the key built into this panel, puts it in place and restarts. A bar shows the download; the page reloads by itself once the panel is back on the new version. Customers stay connected: the tunnels live in the kernel and outlive the panel. Closing the window or reloading the page does not stop an install.
+- A build without a signing key refuses to update at all, and says so: a panel that installed an unverified program would be worse than one that does not update.
+- The panel does not run as root and cannot replace its own program. The installer sets up a small root helper (`wui-update.path`) that checks the release again with the installed panel's key, refuses anything that is not a newer signed release, puts it in place and restarts the panel. A server installed before 2.3.2 has no helper: the window says so and gives the one command to run as root, after which updates install from here.
+- The release list is checked at most every half hour; opening the window checks again.
+
+[Nodes](/panel/nodes) are updated from the Nodes page, or on each node with `w-ui update`.
+
+## History
+
+What this server has been doing: **Processor**, **Memory**, **Network**, **Connections**, **Storage used** and **Load average**, over 5 minutes, 1 hour, 6 hours, 24 hours, 48 hours or 7 days. Each chart shows its peak. The last hour is exact; longer ranges are averaged.
 
 ## The log
 
-**Logs** opens the panel's log: the lines this process wrote (the last few thousand, in memory) or the same panel's journal on disk, which survives a restart. Filter by level, search for a word, follow live.
+**Logs** opens the panel's log without leaving the page.
+
+| Control | What it does |
+|---------|--------------|
+| Search | Matches the message or any field, as you type. |
+| Level | Everything, Info and above, Warnings and errors, Errors only. |
+| Lines | How many lines to show. |
+| Source | **Panel buffer** — the lines this process wrote, the last few thousand, kept in memory and empty after a restart; or **System journal** — the same panel's lines on disk, which survive a restart. |
+| Follow | Keeps showing new lines as they arrive. |
+| ↻ · Copy · Download | Reload, copy what is shown, save it as a file. |
 
 What is in it, one line each:
 
 | Line | Fields | When |
 |------|--------|------|
-| `action` / `action refused` / `action failed` | `action` (method and path), `by` (the administrator, or `token`), `ip`, `status`, `took`, and for a refusal `reason` | every change made through the API — create, edit, delete, settings, restart |
-| `client created` / `client updated` / `client deleted` | `name`, `id`; for an edit `changed` names the columns (`quota_bytes, expires_at`) | the change itself, beside the action that asked for it |
-| `device connected` / `device disconnected` | `device` as `customer / device`, `from` (the public address), `after` (how long it was on) | a credential's traffic starting, and stopping for 75 seconds |
-| `connection limit reached; device held off` / `device held off by the panel` | `client`, `device`, `on` (here or the node), `limit`, `until` | a plan over its connections at once |
-| `clients cut off for reaching their allowance` / `clients expired` | `count`, `clients` (names) | the reconciler's sweep, every two seconds |
+| `action` / `action refused` / `action failed` | `action` (method and path), `by` (the administrator, or `token`), `ip`, `status`, `took`, and for a refusal `reason` | every change made through the panel or the API |
+| `client created` / `client updated` / `client deleted` | `name`, `id`; for an edit `changed` names what changed | the change itself, beside the action that asked for it |
+| `device connected` / `device disconnected` | `device` as `customer / device`, `from` (the public address), `after` (how long it was on) | a file's traffic starting, and stopping for 75 seconds |
+| `connection limit reached; device held off` / `device held off by the panel` | `client`, `device`, `on` (here or the node), `limit`, `until` | a plan over its users |
+| `clients cut off for reaching their allowance` / `clients expired` | `count`, `clients` (names) | the panel's check, every 2 seconds |
+| `plans renewed: traffic back to zero` | `count`, `clients` | a plan's renewal period coming round |
 | `admin signed in` / `failed sign-in` / `failed second factor` | `username`, `ip`, `lockout` | the sign-in page |
-| `interface created` / `updated` / `deleted` / `restarted`, `driver state changed` | `name`, `port`, `added`, `removed` | tunnels and their peers |
-| `node …` | `node`, `error` | the node round, only when a node's state changes |
+| `interface created` / `deleted` / `restarted`, `driver state changed` | `name`, `port` | interfaces and their drivers |
+| `node …` | `node`, `error` | only when a node's state changes |
 
-Reads are not logged: a list opened is not an event. The traffic between a panel and its nodes is not either.
+Reading is not logged: opening a list is not an event. Nor is the traffic between a panel and its nodes.
 
-## The strip
+## Backup and restore
 
-Online now, depleting, out of data, expired, active, and the number of customers — each one a link to the Clients page filtered to it.
+| Line | What it does |
+|------|--------------|
+| **Download backup** | Takes a fresh archive of everything on this server — the database, every interface's keys, every customer — and saves it to your device. |
+| **Choose a file** | Picks an archive to restore, from this server or another. Nothing changes yet: the window shows its name and size and what will happen. |
+| **All backups →** | The archives kept on the server (see *Settings → Backup*). |
 
-## Vitals
+Restoring replaces everything on this panel with the archive's contents and restarts it. Its customers, keys and administrators come from the archive — afterwards you sign in with the archive's administrator. How this panel is reached (its port, URL path and certificate) stays this server's. What is here now is saved first, so a restore can be undone from the list of backups.
 
-CPU, RAM, swap and storage with a sparkline; throughput across every interface with the last hour's peak; open connections by protocol. Under them, uptime of the panel and of the host, the panel's own memory and tasks, and the server's public addresses — hidden by default behind the eye, for screenshots.
+**Keep this server's addresses**: the archive names the server it was taken on. Leave this on when moving to a new server, so customers' configurations point here. Turn it off to make one server an exact copy of another.
 
-## Enforcement
-
-The line that matters commercially. **Exact (kernel quota)** means data limits are enforced by nftables quota objects and the overshoot is one packet. **Reduced** means this kernel has no `nft_quota`, limits are applied on the next poll, and a fast customer overshoots — see [How enforcement works](/reference/how-it-works).
+The upload shows its progress, and the page reloads by itself when the panel is back with the restored data. See [Backup and restore](/operations/backup-restore).
