@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -679,7 +680,11 @@ func (s *Settings) SessionTTL(ctx context.Context) time.Duration {
 // Overrides is what the saved settings lay over the process configuration at
 // start. Every field is empty when the operator has not chosen one.
 type Overrides struct {
-	Listen         string
+	// ListenHost and ListenPort are what the settings page saved for where
+	// the panel listens; either may be empty or zero, which keeps what the
+	// panel was started with -- see MergeListen.
+	ListenHost     string
+	ListenPort     int
 	BasePath       string
 	TLSCert        string
 	TLSKey         string
@@ -693,15 +698,7 @@ func (s *Settings) Overrides(ctx context.Context) Overrides {
 	if err != nil {
 		return Overrides{}
 	}
-	var o Overrides
-	if got.WebListen != "" || got.WebPort > 0 {
-		host := got.WebListen
-		port := got.WebPort
-		if port == 0 {
-			port = 2096
-		}
-		o.Listen = netJoin(host, port)
-	}
+	o := Overrides{ListenHost: strings.TrimSpace(got.WebListen), ListenPort: got.WebPort}
 	o.BasePath = got.WebBasePath
 	if got.WebCertFile != "" && got.WebKeyFile != "" {
 		o.TLSCert, o.TLSKey = got.WebCertFile, got.WebKeyFile
@@ -711,11 +708,27 @@ func (s *Settings) Overrides(ctx context.Context) Overrides {
 	return o
 }
 
-func netJoin(host string, port int) string {
-	if strings.Contains(host, ":") {
-		return "[" + host + "]:" + strconv.Itoa(port)
+// MergeListen applies a saved host and port over the address the panel was
+// started with: a host saved without a port keeps the current port, and a
+// port saved without a host keeps the current host. A saved host alone used
+// to move the panel to port 2096 -- the subscription service's -- where it
+// either collided with it or answered somewhere nobody was looking.
+func MergeListen(current, host string, port int) string {
+	curHost, curPort, err := net.SplitHostPort(current)
+	if err != nil {
+		curHost, curPort = current, ""
 	}
-	return host + ":" + strconv.Itoa(port)
+	if host == "" {
+		host = curHost
+	}
+	p := curPort
+	if port > 0 {
+		p = strconv.Itoa(port)
+	}
+	if p == "" {
+		return current
+	}
+	return net.JoinHostPort(host, p)
 }
 
 func intOr(raw string, fallback int) int {

@@ -18,14 +18,14 @@ There is no separate agent. The node is a full W-UI panel; this panel talks to i
      │   customers, plans,     ├─────────►│   runs the tunnels you  │
      │   tunnels on A and B    │  every   │   created for it        │
      │   usage from both       │◄─────────┤   reports usage         │
-     └─────────────────────────┘  30 s    └─────────────────────────┘
+     └─────────────────────────┘  20 s    └─────────────────────────┘
               ▲                                      ▲
               │  one subscription link               │
               └─────────── customer ─────────────────┘
                     gets a config for A and one for B
 ```
 
-Every 30 seconds the panel sends the node what it should be running — tunnels, accounts, limits — and reads back what each account used. Nothing is a command: if the node was unreachable for an hour, the next round is simply the whole picture again, and its counters kept counting meanwhile, so no usage is lost.
+Every 20 seconds the panel sends the node what it should be running — tunnels, accounts, limits — and reads back what each account used. Nothing is a command: if the node was unreachable for an hour, the next round is simply the whole picture again, and its counters kept counting meanwhile, so no usage is lost.
 
 ## Before you start
 
@@ -76,14 +76,30 @@ On server A's panel: **Nodes** → **Add node**.
 | **Certificate check** | Leave on **Verify normally** when the node has a real certificate (Let's Encrypt for its IP or domain — the installer's default). See [the three modes](#certificate-check) below for the others. |
 | **Usage multiplier** | `1`, unless this server should cost customers more or less — see [below](#usage-multiplier). |
 | **Transfer allowance** | Only if the host caps the node's monthly traffic — see [below](#transfer-allowance). |
+| **Allow an address inside this server's network** | Off by default. Every request to a node carries a token with full access to a panel, so an address typed by mistake that points inside this server's own network is refused. Turn it on only when the node really is on a private network you control. |
 
 Save. Within a few seconds the row shows **Online**, the node's version, uptime, CPU, RAM and latency. **Check now** probes it on demand.
 
 If it shows **Offline**, the status says which kind: *refused* (port closed or wrong port), *no answer* (firewall or wrong IP), *wrong credentials* (bad token), or *answered but is not a panel* (wrong address — something else is on that port). [Troubleshooting](#when-a-node-goes-quiet) has the checks.
 
+## The Nodes page
+
+The strip at the top: **Nodes**, how many are **Online** and **Offline**, and the **Average latency** to them. **This panel's authority** (for [mutual TLS](#proving-who-the-panel-is-mutual-tls-optional)) and **Issue token** (for when *this* panel is to be managed as a node) are beside **Add node**.
+
+| Column | What it shows |
+|--------|---------------|
+| **Actions** | ⚡ **Check now** probes the node at once; **Update** asks it to update itself (shown when a newer release exists); ✎ edits; 🗑 removes. |
+| **Enabled** | A switch. A switched-off node is not synced and no new tunnel can be put on it. |
+| **Name** | The node's name; this server's own row says **Running**. |
+| **Address** | Where it is reached, and how its certificate is checked. |
+| **Status** | **Online** or **Offline** with the reason, and **allowance spent** when its transfer allowance is used up. |
+| **CPU** · **RAM** · **Version** · **Uptime** | As the node reports them. |
+| **Transfer** | What it has carried this period, against its allowance when one is set. |
+| **Latency** · **Last seen** | The last check's round trip, and when it last answered. |
+
 ## Step 4 — create a tunnel on the node
 
-**Interfaces** → **Add inbound** → in the **Server** field pick the node instead of *this server*. Everything else is the same as a local tunnel: protocol, port, subnet, endpoint (the node's public IP or a name pointing at it).
+**Interfaces** → **Add Interface** → in the **Server** field pick the node instead of *this server*. Everything else is the same as a local tunnel: protocol, port, subnet, endpoint (the node's public IP or a name pointing at it).
 
 The panel sends it to the node on the next round; the node brings it up. The row shows the server it lives on. A tunnel cannot be moved to another server later — every customer on it would lose their config — so pick the server first.
 
@@ -91,15 +107,15 @@ You can give the node several tunnels (WireGuard, AmneziaWG, OpenVPN), and hosts
 
 ## Step 5 — put customers on it
 
-**Clients** → **Add client** → under **Servers this customer can use**, tick every tunnel the customer may use — on this server, on the node, or both. The allowance, the expiry and the device limit are the customer's, shared across all of them.
+**Clients** → **Add Clients** → under **Servers this customer can use**, tick every tunnel the customer may use — on this server, on the node, or both. The allowance, the end date and the number of users are the customer's, shared across all of them.
 
-Each device the customer adds gets its own account on every tunnel it is allowed to reach, and the subscription link hands the app a config for each. Usage from every server adds up into the one allowance; when it runs out, the customer is cut off everywhere.
+Each file the customer holds gets its own account on every tunnel it is allowed to reach, and the subscription link hands the app a config for each. Usage from every server adds up into the one allowance; when it runs out, the customer is cut off everywhere.
 
 Bulk actions (attach existing customers to a tunnel, move a group) work across servers the same way.
 
 ### Connections at once, across servers
 
-The plan's **connections at once** is the customer's, not a server's. Every three seconds the panel asks each node which credentials are live on it (a few bytes per session, not the whole state), adds that to what its own kernel sees, and counts the customer's connections across everything — a WireGuard file on this server and an OpenVPN login on the node are two. When more are connected than the plan allows, the newest is held off for two minutes: on this server directly; on a node, the panel tells the node at once (`/api/node/hold`) and again with every push, and the node ends the session and keeps the peer off until then. The panel's log says `connection limit reached; device held off … on="node 2"`, the node's says `device held off by the panel`.
+The plan's **Users** — connections at once — are the customer's, not a server's. Every three seconds the panel asks each node which credentials are live on it (a few bytes per session, not the whole state), adds that to what its own kernel sees, and counts the customer's connections across everything — a WireGuard file on this server and an OpenVPN login on the node are two. When more are connected than the plan allows, the newest is held off for two minutes: on this server directly; on a node, the panel tells the node at once (`/api/node/hold`) and again with every push, and the node ends the session and keeps the peer off until then. The panel's log says `connection limit reached; device held off … on="node 2"`, the node's says `device held off by the panel`.
 
 If a node cannot be reached, its last report is believed for 30 seconds and then not counted — a customer's device on an unreachable node cannot be held through it either. On the node's side, once it has not heard from its panel for 45 seconds it holds customers to the limit on its own, with only what it can see, so a network blip between the servers is not a way past the limit. Both need this release or newer.
 

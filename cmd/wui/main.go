@@ -162,8 +162,8 @@ func run() error {
 	// environment alone.
 	settings := service.NewSettings(db, cfg.DefaultLocale)
 	if ov := settings.Overrides(context.Background()); ov != (service.Overrides{}) {
-		if ov.Listen != "" {
-			cfg.Listen = ov.Listen
+		if ov.ListenHost != "" || ov.ListenPort > 0 {
+			cfg.Listen = service.MergeListen(cfg.Listen, ov.ListenHost, ov.ListenPort)
 		}
 		if ov.BasePath != "" {
 			cfg.BasePath = ov.BasePath
