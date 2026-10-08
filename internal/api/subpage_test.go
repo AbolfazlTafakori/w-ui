@@ -291,11 +291,11 @@ func TestEveryTunnelIsAMenuOfItsUsers(t *testing.T) {
 // row named after the customer.
 func TestUsageTableIsUsersDownAndTunnelsAcross(t *testing.T) {
 	u := usageTable([]subPageDevice{
-		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", User: 1, UsedBytes: 1 << 30}},
-		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", User: 2, UsedBytes: 2 << 30}},
-		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", User: 1, UsedBytes: 512 << 20}},
-		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", User: 2, UsedBytes: 0}},
-	}, "Ali", 0)
+		{SubPageDevice: service.SubPageDevice{ID: 1, Protocol: "wireguard", Tunnel: "wg0", User: 1, UsedBytes: 1 << 30}},
+		{SubPageDevice: service.SubPageDevice{ID: 2, Protocol: "wireguard", Tunnel: "wg0", User: 2, UsedBytes: 2 << 30}},
+		{SubPageDevice: service.SubPageDevice{ID: 3, Protocol: "openvpn", Tunnel: "ovpn", User: 1, UsedBytes: 512 << 20}},
+		{SubPageDevice: service.SubPageDevice{ID: 4, Protocol: "openvpn", Tunnel: "ovpn", User: 2, UsedBytes: 0}},
+	}, "Ali")
 	if len(u.Tunnels) != 2 || u.Tunnels[0].Name != "wg0" || u.Tunnels[1].Name != "ovpn" || u.Tunnels[1].Protocol != "openvpn" {
 		t.Fatalf("tunnels across: %v", u.Tunnels)
 	}
@@ -309,40 +309,31 @@ func TestUsageTableIsUsersDownAndTunnelsAcross(t *testing.T) {
 		t.Fatalf("totals: %v %s", u.Totals, u.Grand)
 	}
 	one := usageTable([]subPageDevice{
-		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", Name: "device-1", UsedBytes: 5}},
-		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", Name: "device-1", UsedBytes: 7}},
-	}, "Ali", 0)
+		{SubPageDevice: service.SubPageDevice{ID: 5, Protocol: "wireguard", Tunnel: "wg0", Name: "device-1", UsedBytes: 5}},
+		{SubPageDevice: service.SubPageDevice{ID: 6, Protocol: "openvpn", Tunnel: "ovpn", Name: "device-1", UsedBytes: 7}},
+	}, "Ali")
 	if len(one.Rows) != 1 || one.Rows[0].Name != "Ali" || one.Rows[0].Total != humanBytes(12) {
 		t.Fatalf("a plan for one is one row named after the customer: %+v", one.Rows)
 	}
 	named := usageTable([]subPageDevice{
-		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", Name: "phone", UsedBytes: 5}},
-		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", Name: "tablet", UsedBytes: 7}},
-	}, "Ali", 0)
+		{SubPageDevice: service.SubPageDevice{ID: 7, Protocol: "wireguard", Tunnel: "wg0", Name: "phone", UsedBytes: 5}},
+		{SubPageDevice: service.SubPageDevice{ID: 8, Protocol: "wireguard", Tunnel: "wg0", Name: "tablet", UsedBytes: 7}},
+	}, "Ali")
 	if len(named.Rows) != 2 || named.Rows[1].Name != "tablet" {
 		t.Fatalf("named files are rows of their own: %+v", named.Rows)
 	}
 }
 
-// What the files add up to can fall short of the customer's usage: traffic
-// from before files kept counters. The remainder is a row of its own, so the
-// table's total is the usage shown above it and not a smaller number.
-func TestUsageTableAccountsForEarlierUsage(t *testing.T) {
+// A file is on the page once for every spare address it can be handed out
+// with, but it carried its bytes once: the table counts it once.
+func TestUsageTableCountsAFileOncePerHost(t *testing.T) {
+	file := service.SubPageDevice{ID: 9, Protocol: "wireguard", Tunnel: "wg0", Name: "device-1", UsedBytes: 700}
 	u := usageTable([]subPageDevice{
-		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", User: 1, UsedBytes: 1 << 20}},
-		{SubPageDevice: service.SubPageDevice{Protocol: "openvpn", Tunnel: "ovpn", User: 1, UsedBytes: 400 << 20}},
-	}, "Ali", 1<<30)
-	last := u.Rows[len(u.Rows)-1]
-	if !last.Earlier || last.Total != humanBytes(1<<30-401<<20) || len(last.Cells) != 2 {
-		t.Fatalf("the remainder is a row of its own: %+v", last)
-	}
-	if u.Grand != humanBytes(1<<30) {
-		t.Fatalf("the table sums to the usage: %s", u.Grand)
-	}
-	even := usageTable([]subPageDevice{
-		{SubPageDevice: service.SubPageDevice{Protocol: "wireguard", Tunnel: "wg0", User: 1, UsedBytes: 5}},
-	}, "Ali", 5)
-	if len(even.Rows) != 1 || even.Rows[0].Earlier {
-		t.Fatalf("no remainder, no extra row: %+v", even.Rows)
+		{SubPageDevice: file},
+		{SubPageDevice: file}, // the same file, written for a second host
+		{SubPageDevice: file}, // and a third
+	}, "Ali")
+	if len(u.Rows) != 1 || u.Rows[0].Name != "Ali" || u.Rows[0].Total != humanBytes(700) || u.Grand != humanBytes(700) {
+		t.Fatalf("a file shown for three hosts was counted %s, rows %+v", u.Grand, u.Rows)
 	}
 }

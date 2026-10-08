@@ -472,23 +472,12 @@ func run() error {
 	// and bringing back what they counted. A node's traffic lands in the same
 	// per-customer total the local kernel feeds, which is what makes one
 	// allowance span every server the customer reaches.
-	syncer := nodes.NewSyncer(db, func(usage []service.NodeUsage) {
-		for _, u := range usage {
-			rec.AddNodeUsage(u.OriginID, u.Bytes, u.Up, u.Down)
-		}
-	}, log)
+	syncer := nodes.NewSyncer(db, rec.AddNodeReport, log)
 	// The connections limit spans every server: what is live on each node
 	// comes back here every few seconds, the reconciler counts it with what
 	// this kernel sees, and a device it holds off on a node is told to that
 	// node at once and again with every push.
 	syncer.Sessions = rec.SetRemoteSessions
-	// What each file carried on a node's tunnel goes on that file, so the
-	// interfaces page charges a tunnel on a node as it does one here.
-	syncer.Devices = func(devices []service.NodeDeviceUsage) {
-		for _, d := range devices {
-			rec.AddDeviceUsage(d.OriginID, d.Up, d.Down)
-		}
-	}
 	syncer.Holds = rec.Holds
 	rec.OnHold = syncer.PushHold
 	service.ConnectionsNow = rec.ConnectionsNow

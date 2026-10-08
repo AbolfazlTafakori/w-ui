@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
@@ -57,5 +59,44 @@ func TestResetsClearTheFilesToo(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A customer whose period began before files were counted is told from when
+// their per-user table counts; one whose period began after is not, because
+// their table adds up to their usage.
+func TestThePageSaysFromWhenFilesAreCounted(t *testing.T) {
+	db := testDB(t)
+	c := seed(t, db, 1)
+	since := time.Date(2026, 10, 8, 18, 0, 0, 0, time.UTC)
+	if err := database.PutSetting(db, database.KeyFileUsageSince, since.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	subs := newSubs(db, nil)
+	ctx := context.Background()
+
+	set := func(created time.Time, reset *time.Time, used uint64) *model.Client {
+		if err := db.Model(&model.Client{}).Where("id = ?", c.ID).UpdateColumns(map[string]any{
+			"created_at": created, "last_reset_at": reset, "used_bytes": used,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		var got model.Client
+		db.First(&got, c.ID)
+		return &got
+	}
+
+	if got := subs.filesSince(ctx, set(since.Add(-48*time.Hour), nil, 1<<30)); got == nil || !got.Equal(since) {
+		t.Errorf("a period from before the start: got %v, want %v", got, since)
+	}
+	after := since.Add(time.Hour)
+	if got := subs.filesSince(ctx, set(since.Add(-48*time.Hour), &after, 1<<30)); got != nil {
+		t.Errorf("a period reset after the start covers it all, got %v", got)
+	}
+	if got := subs.filesSince(ctx, set(since.Add(time.Minute), nil, 1<<30)); got != nil {
+		t.Errorf("a customer created after the start, got %v", got)
+	}
+	if got := subs.filesSince(ctx, set(since.Add(-48*time.Hour), nil, 0)); got != nil {
+		t.Errorf("nothing used, nothing to explain, got %v", got)
 	}
 }

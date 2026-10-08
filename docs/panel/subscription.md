@@ -9,7 +9,7 @@ The page a customer sees when they open their subscription link in a browser. It
 ## What is on it
 
 - how much of the plan is used, how much is left, when it ends, when they were last online;
-- **Usage by user and tunnel** — a fold-out table: one row per user, one column per tunnel, what each spent on each, and a total at the end of every row and under every column. A plan shared by several people, and paid for together, is settled from it;
+- **Usage by user and tunnel** — a fold-out table: one row per user, one column per tunnel, what each spent on each, and a total at the end of every row and under every column. Every figure is counted by the kernel on that device's own tunnel address, so the rows add up to the usage above to the byte. A plan shared by several people, and paid for together, is settled from it. For a plan whose current period began before 2.6.6, the table counts from the update and says so (**Split by user since …**): what came before was an estimate and was not kept;
 - one block per device **per host** — the config text, a copy button, a download, and a QR code that opens centred over the page;
 - the subscription link itself as a QR, for apps that speak subscriptions;
 - a language switch (English / Persian) and a theme switch;

@@ -29,13 +29,19 @@ type nftOutput struct {
 	} `json:"nftables"`
 }
 
-// drainedUsage folds the two directional counters back into one row per client.
+// drainedUsage folds the per-file, per-direction counters into one row per
+// client, carrying what each file carried.
 //
-// The kernel keeps upload and download apart because only it can tell them
-// apart; everything above here wants both the split and the total, and the
-// total is the sum. A client with only one direction's counter present -- a
-// half-applied ruleset, or a rebuild caught mid-flight -- still contributes
+// The kernel keeps upload and download, and one device from another, apart
+// because only it can tell them apart. A client's total is the sum of its
+// files' counters, so what the files carried and what the client used are the
+// same bytes counted once. A client with only some of its counters present --
+// a half-applied ruleset, or a rebuild caught mid-flight -- still contributes
 // what it has rather than being skipped.
+//
+// A counter with no file in its name is a whole client's, as a panel before
+// per-file counting wrote them: in the kernel for the first tick after an
+// update, its bytes are the client's and no file's.
 func drainedUsage(raw []byte) ([]Usage, error) {
 	var doc nftOutput
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -43,38 +49,49 @@ func drainedUsage(raw []byte) ([]Usage, error) {
 	}
 
 	byKey := map[string]*Usage{}
+	fileAt := map[string]map[uint]int{} // key -> account -> index in Files
 	order := make([]string, 0, len(doc.Nftables))
 
 	for _, e := range doc.Nftables {
 		if e.Counter == nil || e.Counter.Table != TableName {
 			continue
 		}
-		var key string
-		var down bool
-		switch {
-		case strings.HasPrefix(e.Counter.Name, "nd_"):
-			key, down = strings.TrimPrefix(e.Counter.Name, "nd_"), true
-		case strings.HasPrefix(e.Counter.Name, "nu_"):
-			key = strings.TrimPrefix(e.Counter.Name, "nu_")
-		default:
-			continue
-		}
-		if !validKey(key) {
+		key, account, down, ok := parseCounter(e.Counter.Name)
+		if !ok {
 			continue // not one of ours
 		}
+		n := e.Counter.Bytes
 
-		u, ok := byKey[key]
-		if !ok {
+		u, seen := byKey[key]
+		if !seen {
 			u = &Usage{Key: key}
 			byKey[key] = u
 			order = append(order, key)
 		}
 		if down {
-			u.Down += e.Counter.Bytes
+			u.Down += n
 		} else {
-			u.Up += e.Counter.Bytes
+			u.Up += n
 		}
-		u.Bytes += e.Counter.Bytes
+		u.Bytes += n
+
+		if account == 0 {
+			continue
+		}
+		if fileAt[key] == nil {
+			fileAt[key] = map[uint]int{}
+		}
+		i, have := fileAt[key][account]
+		if !have {
+			i = len(u.Files)
+			fileAt[key][account] = i
+			u.Files = append(u.Files, FileUsage{Account: account})
+		}
+		if down {
+			u.Files[i].Down += n
+		} else {
+			u.Files[i].Up += n
+		}
 	}
 
 	out := make([]Usage, 0, len(order))

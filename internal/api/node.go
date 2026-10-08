@@ -70,18 +70,13 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 			s.log.Warn("could not remove withdrawn tunnels", "error", err)
 		}
 	}
-	usage, err := s.nodeSync.Drain(r.Context())
+	usage, devices, err := s.nodeSync.Drain(r.Context())
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
 	if usage == nil {
 		usage = []service.NodeUsage{}
-	}
-	devices, err := s.nodeSync.DrainDevices(r.Context())
-	if err != nil {
-		fail(w, s.log, err)
-		return
 	}
 	if devices == nil {
 		devices = []service.NodeDeviceUsage{}

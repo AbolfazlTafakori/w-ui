@@ -356,8 +356,8 @@ func TestMultiDeviceClientCarriesEveryAddress(t *testing.T) {
 	rule, _ := enf.ruleFor(enforce.Key(id))
 	// One rule, three addresses: the allowance belongs to the customer, not to
 	// each of their devices.
-	if len(rule.Addrs) != 3 {
-		t.Errorf("rule carries %d addresses, want 3", len(rule.Addrs))
+	if len(rule.Files) != 3 {
+		t.Errorf("rule carries %d files, want 3", len(rule.Files))
 	}
 	if len(drv.Accounts()) != 3 {
 		t.Errorf("driver holds %d peers, want 3", len(drv.Accounts()))

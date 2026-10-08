@@ -9,6 +9,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // newReconciler builds one with no kernel and no tunnels: these tests are about
@@ -44,7 +45,7 @@ func TestNodeUsageIsSpentFromTheSameAllowance(t *testing.T) {
 	}
 
 	r := newReconciler(t, db)
-	r.AddNodeUsage(c.ID, 2<<30, 512<<20, 1536<<20)
+	r.AddNodeReport([]service.NodeUsage{{OriginID: c.ID, Bytes: 2 << 30, Up: 512 << 20, Down: 1536 << 20}}, nil)
 	flush(t, r)
 
 	var got model.Client
@@ -75,7 +76,7 @@ func TestSpendingOnANodeCanExhaustACustomer(t *testing.T) {
 	}
 
 	r := newReconciler(t, db)
-	r.AddNodeUsage(c.ID, 1<<30, 0, 1<<30)
+	r.AddNodeReport([]service.NodeUsage{{OriginID: c.ID, Bytes: 1 << 30, Up: 0, Down: 1 << 30}}, nil)
 	flush(t, r)
 	r.Tick(context.Background())
 
@@ -103,7 +104,7 @@ func TestNothingIsWrittenForANodeThatCarriedNothing(t *testing.T) {
 	}
 
 	r := newReconciler(t, db)
-	r.AddNodeUsage(c.ID, 0, 0, 0)
+	r.AddNodeReport([]service.NodeUsage{{OriginID: c.ID, Bytes: 0, Up: 0, Down: 0}}, nil)
 	flush(t, r)
 
 	var samples int64

@@ -40,11 +40,19 @@ func missingKeys(applied map[string]struct{}, seen []Usage) []string {
 	return gone
 }
 
-// ruleKeys is the set of keys a ruleset covers.
+// ruleKeys is the set of keys a ruleset leaves counters for: every rule with
+// at least one file the kernel can tell apart. A rule with none has no
+// counter to drain, and expecting one would rewrite the firewall every tick.
 func ruleKeys(rules []Rule) map[string]struct{} {
-	out := make(map[string]struct{}, len(rules))
-	for _, r := range rules {
-		out[r.Key] = struct{}{}
+	sorted, err := sortedRules(rules)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]struct{}, len(sorted))
+	for key, files := range ownedFiles(sorted) {
+		if len(files) > 0 {
+			out[key] = struct{}{}
+		}
 	}
 	return out
 }

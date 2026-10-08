@@ -9,7 +9,7 @@ import (
 // back must be noticed. Skipping the apply because the text has not changed is
 // only safe while the kernel still holds what that text described.
 func TestMissingKeysNoticesAClearedTable(t *testing.T) {
-	applied := ruleKeys([]Rule{{Key: "c1"}, {Key: "c2"}, {Key: "c3"}})
+	applied := ruleKeys([]Rule{{Key: "c1", Files: files("10.66.0.1")}, {Key: "c2", Files: files("10.66.0.2")}, {Key: "c3", Files: files("10.66.0.3")}})
 
 	got := missingKeys(applied, nil)
 	want := []string{"c1", "c2", "c3"}
@@ -23,7 +23,7 @@ func TestMissingKeysNoticesAClearedTable(t *testing.T) {
 // as gone would make the panel rewrite the ruleset every tick on a quiet
 // server, which is the cost the cache exists to avoid.
 func TestMissingKeysLeavesIdleCustomersAlone(t *testing.T) {
-	applied := ruleKeys([]Rule{{Key: "c1"}, {Key: "c2"}})
+	applied := ruleKeys([]Rule{{Key: "c1", Files: files("10.66.0.4")}, {Key: "c2", Files: files("10.66.0.5")}})
 	seen := []Usage{{Key: "c1"}, {Key: "c2"}}
 
 	if got := missingKeys(applied, seen); got != nil {
@@ -35,7 +35,7 @@ func TestMissingKeysLeavesIdleCustomersAlone(t *testing.T) {
 // while ours was in it. The customers still there are not the problem; the one
 // that is gone is.
 func TestMissingKeysFindsThePartialCase(t *testing.T) {
-	applied := ruleKeys([]Rule{{Key: "c1"}, {Key: "c7"}})
+	applied := ruleKeys([]Rule{{Key: "c1", Files: files("10.66.0.8")}, {Key: "c7", Files: files("10.66.0.9")}})
 	seen := []Usage{{Key: "c1", Bytes: 4096}}
 
 	got := missingKeys(applied, seen)
@@ -58,10 +58,20 @@ func TestMissingKeysSaysNothingWhenNothingWasApplied(t *testing.T) {
 // Somebody else's counters in the same table are not ours to account for, and
 // their absence is not our ruleset being cleared.
 func TestMissingKeysIgnoresKeysWeNeverApplied(t *testing.T) {
-	applied := ruleKeys([]Rule{{Key: "c1"}})
+	applied := ruleKeys([]Rule{{Key: "c1", Files: files("10.66.0.11")}})
 	seen := []Usage{{Key: "c1"}, {Key: "c42"}}
 
 	if got := missingKeys(applied, seen); got != nil {
+		t.Errorf("missingKeys() = %v, want nothing", got)
+	}
+}
+
+// A rule with no device the kernel can tell apart has no counter at all, so
+// it is not expected among the drained ones: expecting it would rewrite the
+// firewall on every tick of a server that holds such a customer.
+func TestMissingKeysExpectsNoCounterOfARuleWithoutFiles(t *testing.T) {
+	applied := ruleKeys([]Rule{{Key: "c1", Files: files("10.66.0.1")}, {Key: "c2"}})
+	if got := missingKeys(applied, []Usage{{Key: "c1"}}); got != nil {
 		t.Errorf("missingKeys() = %v, want nothing", got)
 	}
 }

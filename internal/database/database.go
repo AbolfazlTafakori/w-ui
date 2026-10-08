@@ -137,22 +137,41 @@ func Migrate(db *gorm.DB) error {
 		  AND NOT EXISTS (SELECT 1 FROM client_groups g WHERE g.client_id = clients.id)`).Error; err != nil {
 		return fmt.Errorf("database: carry groups over: %w", err)
 	}
-	// The per-tunnel counters once summed the tunnels' own counts, which
-	// include their encryption overhead and ran a few percent above the
-	// customer's total. Where they still add up to more than the total,
-	// they are scaled down to it, keeping each file's share.
-	if err := db.Exec(`
-		UPDATE accounts SET
-		  up_bytes   = CAST(up_bytes   * (SELECT CAST(c.used_bytes AS REAL) FROM clients c WHERE c.id = accounts.client_id)
-		                / (SELECT SUM(a2.up_bytes + a2.down_bytes) FROM accounts a2 WHERE a2.client_id = accounts.client_id) AS BIGINT),
-		  down_bytes = CAST(down_bytes * (SELECT CAST(c.used_bytes AS REAL) FROM clients c WHERE c.id = accounts.client_id)
-		                / (SELECT SUM(a2.up_bytes + a2.down_bytes) FROM accounts a2 WHERE a2.client_id = accounts.client_id) AS BIGINT)
-		WHERE (SELECT SUM(a2.up_bytes + a2.down_bytes) FROM accounts a2 WHERE a2.client_id = accounts.client_id)
-		      > (SELECT c.used_bytes FROM clients c WHERE c.id = accounts.client_id)
-		  AND (SELECT c.used_bytes FROM clients c WHERE c.id = accounts.client_id) > 0`).Error; err != nil {
-		return fmt.Errorf("database: rescale tunnel counters: %w", err)
+	if err := startExactFileUsage(db); err != nil {
+		return err
 	}
 	return nil
+}
+
+// KeyFileUsageSince is when this panel began counting each file's usage
+// itself, in RFC 3339. A customer's per-user table covers the usage from then
+// on; a period that began before it says so instead of showing a split it
+// does not have.
+const KeyFileUsageSince = "usage.files_since"
+
+// startExactFileUsage sets every file's usage back to zero, once, and records
+// when.
+//
+// Before this panel counted each file in the kernel, a file's usage was its
+// customer's total shared out by estimate, and the estimate lost whatever was
+// billed on a tick when the tunnel's own counter had not moved -- most of an
+// OpenVPN customer's traffic. Those figures cannot be put right after the
+// fact, so they are not kept: a table that starts from a stated time is true,
+// and one carrying them forward would mix what was measured with what was not.
+//
+// A file a node holds for the panel that owns it is left alone: what it shows
+// is not history but usage not yet reported, and setting it to zero would
+// lose bytes the owning panel is about to be told about.
+func startExactFileUsage(db *gorm.DB) error {
+	if _, done, err := GetSetting(db, KeyFileUsageSince); err != nil || done {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`UPDATE accounts SET up_bytes = 0, down_bytes = 0 WHERE origin_id = 0`).Error; err != nil {
+			return fmt.Errorf("database: start counting each file: %w", err)
+		}
+		return PutSetting(tx, KeyFileUsageSince, time.Now().UTC().Format(time.RFC3339))
+	})
 }
 
 // gormLogger keeps the ORM quiet unless it is asked not to be.

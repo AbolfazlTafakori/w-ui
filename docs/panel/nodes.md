@@ -141,7 +141,7 @@ From then on the node refuses a request without this panel's client certificate 
 
 ## Usage multiplier
 
-What a gigabyte through this node costs the customer. `1` counts it as it is. `2` charges double — for a server whose bandwidth costs you more, or that you want to discourage. `0.5` counts half. It multiplies what the node reports before it is taken off the customer's allowance, so a 10 GB plan lasts 5 GB of traffic on a `2` node.
+What a gigabyte through this node costs the customer. `1` counts it as it is. `2` charges double — for a server whose bandwidth costs you more, or that you want to discourage. `0.5` counts half. It multiplies what the node reports before it is taken off the customer's allowance, so a 10 GB plan lasts 5 GB of traffic on a `2` node. Each device's row in the customer's usage table is multiplied the same way, so the rows still add up to the usage to the byte.
 
 ## Transfer allowance
 

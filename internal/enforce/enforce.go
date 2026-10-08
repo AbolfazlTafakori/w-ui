@@ -12,14 +12,19 @@
 // programs the rules and reads back what happened. The overshoot becomes one
 // packet.
 //
-// The nftables implementation lands in phase 2. Two stateful objects per
-// client carry the two jobs, which must not be conflated:
+// Two kinds of stateful object carry the two jobs, which must not be
+// conflated:
 //
-//	quota   cumulative, seeded from the database at boot, never reset except on
-//	        renewal. This is what stops traffic.
-//	counter drained atomically on every collection tick and folded into the
-//	        traffic history. Read-and-zero in one operation removes the need for
-//	        delta arithmetic and reset detection.
+//	quota   one per client, cumulative, seeded from the database at boot,
+//	        never reset except on renewal. This is what stops traffic.
+//	counter one per file and direction, drained atomically on every
+//	        collection tick. Read-and-zero in one operation removes the need
+//	        for delta arithmetic and reset detection.
+//
+// A client's usage is the sum of its files' counters, never a figure of its
+// own: every packet the client is charged for passes exactly one file's
+// counter, so what each device carried adds up to what the client used by
+// construction rather than by estimate.
 //
 // Rules are reached through a verdict map keyed on the tunnel address, so
 // lookup cost is a hash probe and does not grow with the number of customers.
@@ -40,17 +45,24 @@ var (
 	ErrDegraded = errors.New("enforce: reduced enforcement")
 )
 
+// File is one of a client's devices on this server: the account it belongs
+// to and the tunnel address its traffic is recognised by.
+type File struct {
+	Account uint
+	Addr    netip.Addr
+}
+
 // Rule is the desired kernel-side policy for one client.
 type Rule struct {
 	// Key is a stable identifier derived from the client, used to name
 	// the kernel objects. It must survive restarts.
 	Key string
 
-	// Addrs are the tunnel addresses covered by this rule — one per device.
-	// Traffic in both directions across all of them counts against one quota,
-	// which is what makes the limit apply to the client rather than to
-	// each device separately.
-	Addrs []netip.Addr
+	// Files are the client's devices, one tunnel address each. Traffic in
+	// both directions across all of them counts against one quota, which is
+	// what makes the limit apply to the client rather than to each device
+	// separately; each is also counted on its own.
+	Files []File
 
 	// QuotaBytes is the hard limit. Zero means unlimited.
 	QuotaBytes uint64
@@ -83,6 +95,21 @@ type Usage struct {
 	// the total is recorded.
 	Up   uint64
 	Down uint64
+
+	// Files is what each of the client's files carried, from the same
+	// packets as the total, so the files sum to Bytes exactly. Empty when
+	// nothing was measured per file -- the counters of a ruleset written by
+	// an older panel, still in the kernel for the first tick after an
+	// update -- in which case no file is charged rather than one guessed at.
+	Files []FileUsage
+}
+
+// FileUsage is what one file carried, as the customer sees it: Up is what
+// they sent, Down what they received.
+type FileUsage struct {
+	Account uint
+	Up      uint64
+	Down    uint64
 }
 
 // Enforcer programs and reads the kernel-side policy.

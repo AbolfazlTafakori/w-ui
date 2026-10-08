@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-func addrs(ss ...string) []netip.Addr {
-	out := make([]netip.Addr, 0, len(ss))
-	for _, s := range ss {
-		out = append(out, netip.MustParseAddr(s))
+// files gives each address its own account, numbered from 1 in order.
+func files(ss ...string) []File {
+	out := make([]File, 0, len(ss))
+	for i, s := range ss {
+		out = append(out, File{Account: uint(i + 1), Addr: netip.MustParseAddr(s)})
 	}
 	return out
 }
@@ -42,7 +43,7 @@ func TestRulesetFlushesTableBeforeRebuilding(t *testing.T) {
 func TestLimitedClientDropsThenCounts(t *testing.T) {
 	got := build(t, Rule{
 		Key:        "c7",
-		Addrs:      addrs("10.66.0.5"),
+		Files:      files("10.66.0.5"),
 		QuotaBytes: 1000,
 		UsedBytes:  400,
 	})
@@ -65,7 +66,7 @@ func TestLimitedClientDropsThenCounts(t *testing.T) {
 }
 
 func TestUnlimitedClientHasNoQuotaObject(t *testing.T) {
-	got := build(t, Rule{Key: "c1", Addrs: addrs("10.66.0.2"), QuotaBytes: 0})
+	got := build(t, Rule{Key: "c1", Files: files("10.66.0.2"), QuotaBytes: 0})
 
 	if strings.Contains(got, "quota q_c1") {
 		t.Error("an unlimited client should not get a quota object")
@@ -81,7 +82,7 @@ func TestUnlimitedClientHasNoQuotaObject(t *testing.T) {
 func TestBlockedClientDropsUnconditionally(t *testing.T) {
 	got := build(t, Rule{
 		Key:        "c9",
-		Addrs:      addrs("10.66.0.9"),
+		Files:      files("10.66.0.9"),
 		QuotaBytes: 5000,
 		Blocked:    true,
 	})
@@ -98,7 +99,7 @@ func TestSeededUsageNeverExceedsTheQuota(t *testing.T) {
 	// taking every other customer's enforcement down with it.
 	got := build(t, Rule{
 		Key:        "c3",
-		Addrs:      addrs("10.66.0.3"),
+		Files:      files("10.66.0.3"),
 		QuotaBytes: 100,
 		UsedBytes:  999,
 	})
@@ -108,7 +109,7 @@ func TestSeededUsageNeverExceedsTheQuota(t *testing.T) {
 }
 
 func TestEachDirectionCountsSeparatelyButSharesTheAllowance(t *testing.T) {
-	got := build(t, Rule{Key: "c4", Addrs: addrs("10.66.0.4"), QuotaBytes: 10})
+	got := build(t, Rule{Key: "c4", Files: files("10.66.0.4"), QuotaBytes: 10})
 
 	if dl := mapBody(t, got, "dl"); !strings.Contains(dl, "10.66.0.4 : jump cd_c4") {
 		t.Errorf("download map does not reach the download chain:\n%s", dl)
@@ -141,7 +142,7 @@ func TestEachDirectionCountsSeparatelyButSharesTheAllowance(t *testing.T) {
 func TestMultiDeviceClientMapsEveryAddressToOneChain(t *testing.T) {
 	got := build(t, Rule{
 		Key:        "c5",
-		Addrs:      addrs("10.66.0.10", "10.66.0.11", "10.66.0.12"),
+		Files:      files("10.66.0.10", "10.66.0.11", "10.66.0.12"),
 		QuotaBytes: 999,
 	})
 
@@ -161,7 +162,7 @@ func TestIPv6AddressesAreSkipped(t *testing.T) {
 	// an element list nft refuses, failing the whole apply.
 	got := build(t, Rule{
 		Key:        "c6",
-		Addrs:      addrs("10.66.0.6", "fd00::1"),
+		Files:      files("10.66.0.6", "fd00::1"),
 		QuotaBytes: 10,
 	})
 	if strings.Contains(got, "fd00::1") {
@@ -189,7 +190,7 @@ func TestEmptyRulesetIsStillValid(t *testing.T) {
 }
 
 func TestForwardChainUsesVerdictMaps(t *testing.T) {
-	got := build(t, Rule{Key: "c1", Addrs: addrs("10.66.0.2"), QuotaBytes: 1})
+	got := build(t, Rule{Key: "c1", Files: files("10.66.0.2"), QuotaBytes: 1})
 
 	for _, want := range []string{
 		"type filter hook forward priority filter; policy accept;",
@@ -202,16 +203,16 @@ func TestForwardChainUsesVerdictMaps(t *testing.T) {
 	}
 	// A rule per client would be a linear scan on every packet; the map is a
 	// hash probe whose cost does not grow with the customer count.
-	if strings.Contains(got, "ip daddr 10.66.0.2") {
+	if strings.Contains(chainBody(t, got, "forward"), "10.66.0.2") {
 		t.Error("per-client match in the hot chain instead of a map lookup")
 	}
 }
 
 func TestOutputIsDeterministic(t *testing.T) {
 	rules := []Rule{
-		{Key: "c3", Addrs: addrs("10.66.0.3"), QuotaBytes: 30},
-		{Key: "c1", Addrs: addrs("10.66.0.1"), QuotaBytes: 10},
-		{Key: "c2", Addrs: addrs("10.66.0.2"), QuotaBytes: 20},
+		{Key: "c3", Files: files("10.66.0.3"), QuotaBytes: 30},
+		{Key: "c1", Files: files("10.66.0.1"), QuotaBytes: 10},
+		{Key: "c2", Files: files("10.66.0.2"), QuotaBytes: 20},
 	}
 	first := build(t, rules...)
 
@@ -241,7 +242,7 @@ func TestKeyMatchesWhatTheBuilderAccepts(t *testing.T) {
 	if k != "c42" {
 		t.Errorf("Key(42) = %q, want c42", k)
 	}
-	if _, err := BuildRuleset([]Rule{{Key: k, Addrs: addrs("10.0.0.2"), QuotaBytes: 1}}); err != nil {
+	if _, err := BuildRuleset([]Rule{{Key: k, Files: files("10.0.0.2"), QuotaBytes: 1}}); err != nil {
 		t.Errorf("a key from Key() was rejected by the builder: %v", err)
 	}
 }
@@ -282,7 +283,7 @@ func mapBody(t *testing.T, ruleset, name string) string {
 // the panel reports a limit that a customer is quietly walking around.
 func TestTrafficToTheServerItselfIsAccountedFor(t *testing.T) {
 	out, err := BuildRuleset([]Rule{
-		{Key: Key(1), Addrs: addrs("10.66.0.2"), QuotaBytes: 1 << 30},
+		{Key: Key(1), Files: files("10.66.0.2"), QuotaBytes: 1 << 30},
 	})
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -298,7 +299,7 @@ func TestTrafficToTheServerItselfIsAccountedFor(t *testing.T) {
 
 func TestEachHookMatchesOnlyTheCustomerSide(t *testing.T) {
 	out, err := BuildRuleset([]Rule{
-		{Key: Key(1), Addrs: addrs("10.66.0.2"), QuotaBytes: 1 << 30},
+		{Key: Key(1), Files: files("10.66.0.2"), QuotaBytes: 1 << 30},
 	})
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -325,7 +326,7 @@ func TestEachHookMatchesOnlyTheCustomerSide(t *testing.T) {
 
 func TestABlockedCustomerIsCutOffFromTheServerToo(t *testing.T) {
 	out, err := BuildRuleset([]Rule{
-		{Key: Key(1), Addrs: addrs("10.66.0.2"), Blocked: true},
+		{Key: Key(1), Files: files("10.66.0.2"), Blocked: true},
 	})
 	if err != nil {
 		t.Fatalf("build: %v", err)
@@ -346,6 +347,116 @@ func TestABlockedCustomerIsCutOffFromTheServerToo(t *testing.T) {
 	for _, chain := range []string{downChain(Key(1)), upChain(Key(1))} {
 		if !strings.Contains(chainBody(t, out, chain), "drop") {
 			t.Errorf("a blocked client's %s chain does not drop", chain)
+		}
+	}
+}
+
+// Every file of a client is counted on its own, in both directions, and in
+// the chain each direction's map jumps to -- matched on the customer's side
+// of the packet, which is the side that map was keyed on.
+func TestEveryFileHasItsOwnCounters(t *testing.T) {
+	got := build(t, Rule{
+		Key:        "c7",
+		Files:      []File{{Account: 12, Addr: netip.MustParseAddr("10.66.0.12")}, {Account: 13, Addr: netip.MustParseAddr("10.88.0.13")}},
+		QuotaBytes: 1 << 30,
+	})
+	for _, want := range []string{
+		"counter nd_c7_a12 { }", "counter nu_c7_a12 { }",
+		"counter nd_c7_a13 { }", "counter nu_c7_a13 { }",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q:\n%s", want, got)
+		}
+	}
+	down := chainBody(t, got, "cd_c7")
+	up := chainBody(t, got, "cu_c7")
+	for _, want := range []string{
+		`ip daddr 10.66.0.12 counter name "nd_c7_a12"`,
+		`ip daddr 10.88.0.13 counter name "nd_c7_a13"`,
+	} {
+		if !strings.Contains(down, want) {
+			t.Errorf("download chain missing %q:\n%s", want, down)
+		}
+	}
+	for _, want := range []string{
+		`ip saddr 10.66.0.12 counter name "nu_c7_a12"`,
+		`ip saddr 10.88.0.13 counter name "nu_c7_a13"`,
+	} {
+		if !strings.Contains(up, want) {
+			t.Errorf("upload chain missing %q:\n%s", want, up)
+		}
+	}
+	// No counter of the client's own: its usage is its files' sum, so a
+	// second count of the same packets could only ever disagree with it.
+	if strings.Contains(got, "counter nd_c7 ") || strings.Contains(got, "counter nu_c7 ") {
+		t.Errorf("a whole-client counter beside the files':\n%s", got)
+	}
+}
+
+// The quota drops before any file counter is reached, so bytes refused for
+// being over the allowance are billed to no file and no client.
+func TestFileCountersComeAfterTheQuota(t *testing.T) {
+	got := build(t, Rule{Key: "c2", Files: files("10.66.0.2", "10.66.0.3"), QuotaBytes: 10})
+	for _, chain := range []string{"cd_c2", "cu_c2"} {
+		body := chainBody(t, got, chain)
+		quota := strings.Index(body, "quota name")
+		first := strings.Index(body, "counter name")
+		if quota < 0 || first < 0 || quota > first {
+			t.Errorf("%s: the quota must come before every counter:\n%s", chain, body)
+		}
+	}
+}
+
+// A blocked client drops before anything counts, but keeps its counters
+// declared, so the check that the kernel still holds our rules sees them.
+func TestBlockedClientKeepsItsCountersButCountsNothing(t *testing.T) {
+	got := build(t, Rule{Key: "c9", Files: files("10.66.0.9"), Blocked: true})
+	if !strings.Contains(got, "counter nd_c9_a1 { }") {
+		t.Errorf("a blocked client's counters were left out:\n%s", got)
+	}
+	if strings.Contains(chainBody(t, got, "cd_c9"), "counter") {
+		t.Error("a blocked client's chain counts traffic it drops")
+	}
+}
+
+// An address can only be in the maps once. The file that loses it reaches no
+// chain and gets no counter, so nothing is declared that could never move.
+func TestAnAddressClaimedTwiceGoesToTheFirstRule(t *testing.T) {
+	got := build(t,
+		Rule{Key: "c1", Files: []File{{Account: 1, Addr: netip.MustParseAddr("10.66.0.5")}}},
+		Rule{Key: "c2", Files: []File{{Account: 2, Addr: netip.MustParseAddr("10.66.0.5")}, {Account: 3, Addr: netip.MustParseAddr("10.66.0.6")}}},
+	)
+	if strings.Contains(got, "nd_c2_a2") {
+		t.Errorf("the losing file got a counter that can never move:\n%s", got)
+	}
+	if !strings.Contains(got, "nd_c2_a3") || !strings.Contains(got, "10.66.0.5 : jump cd_c1") {
+		t.Errorf("the address belongs to the first rule:\n%s", got)
+	}
+}
+
+func TestParseCounterRoundTrips(t *testing.T) {
+	cases := []struct {
+		name    string
+		key     string
+		account uint
+		down    bool
+		ok      bool
+	}{
+		{downCounter("c7", 12), "c7", 12, true, true},
+		{upCounter("c7", 12), "c7", 12, false, true},
+		{"nd_c7", "c7", 0, true, true}, // a client counter an older panel wrote
+		{"nu_c7", "c7", 0, false, true},
+		{"nd_c7_a", "", 0, false, false},
+		{"nd_c7_a0", "", 0, false, false},
+		{"nd_c7_ax", "", 0, false, false},
+		{"nd_x7_a1", "", 0, false, false},
+		{"q_c7", "", 0, false, false},
+	}
+	for _, c := range cases {
+		key, account, down, ok := parseCounter(c.name)
+		if key != c.key || account != c.account || down != c.down || ok != c.ok {
+			t.Errorf("parseCounter(%q) = %q %d %v %v, want %q %d %v %v",
+				c.name, key, account, down, ok, c.key, c.account, c.down, c.ok)
 		}
 	}
 }

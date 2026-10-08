@@ -56,12 +56,11 @@ const (
 type Syncer struct {
 	db  *gorm.DB
 	log *slog.Logger
-	// usage is where drained node counters are handed back to the caller, which
-	// folds them into the same per-customer total the local kernel feeds.
-	usage func([]service.NodeUsage)
-	// Devices, when set, is called with what each file carried on a node's
-	// tunnels, by the file's id on this panel.
-	Devices func([]service.NodeDeviceUsage)
+	// onReport is where what a node counted is handed back to the caller,
+	// charged at the node's price: what each customer spent, folded into the
+	// same per-customer total the local kernel feeds, and what each of their
+	// files carried, by the file's id on this panel.
+	onReport func([]service.NodeUsage, []service.NodeDeviceUsage)
 
 	// Sessions is where what a node reports live on it is handed back, for
 	// the connections limit. Holds answers which devices the panel has
@@ -75,13 +74,13 @@ type Syncer struct {
 	lastErr map[uint]string
 }
 
-// NewSyncer builds the loop. onUsage is called with whatever a node reports.
-func NewSyncer(db *gorm.DB, onUsage func([]service.NodeUsage), log *slog.Logger) *Syncer {
+// NewSyncer builds the loop. onReport is called with whatever a node reports.
+func NewSyncer(db *gorm.DB, onReport func([]service.NodeUsage, []service.NodeDeviceUsage), log *slog.Logger) *Syncer {
 	return &Syncer{
-		db:      db,
-		log:     log,
-		usage:   onUsage,
-		lastErr: map[uint]string{},
+		db:       db,
+		log:      log,
+		onReport: onReport,
+		lastErr:  map[uint]string{},
 	}
 }
 
@@ -236,15 +235,40 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 		s.log.Warn("could not record what a node carried", "node", node.Name, "error", err)
 	}
 
-	if len(reply.Usage) > 0 && s.usage != nil {
-		s.usage(scale(reply.Usage, node.UsageCoefficient))
-	}
-	// What each file carried is the tunnel's own count, not a price: it
-	// goes on unscaled, so the interfaces page adds up to what the wire saw.
-	if len(reply.Devices) > 0 && s.Devices != nil {
-		s.Devices(reply.Devices)
+	if (len(reply.Usage) > 0 || len(reply.Devices) > 0) && s.onReport != nil {
+		clientOf, err := s.customersOf(ctx, reply.Devices)
+		if err != nil {
+			// Charged anyway, each file on its own: a customer's usage is
+			// never held back for want of their files' owners.
+			s.log.Warn("could not read whose files a node reported", "node", node.Name, "error", err)
+		}
+		s.onReport(chargeReport(reply.Usage, reply.Devices, node.UsageCoefficient, clientOf))
 	}
 	s.report(node, nil)
+}
+
+// customersOf reads which customer each reported file belongs to.
+func (s *Syncer) customersOf(ctx context.Context, devices []service.NodeDeviceUsage) (map[uint]uint, error) {
+	out := make(map[uint]uint, len(devices))
+	if len(devices) == 0 {
+		return out, nil
+	}
+	ids := make([]uint, 0, len(devices))
+	for _, d := range devices {
+		ids = append(ids, d.OriginID)
+	}
+	var rows []struct {
+		ID       uint
+		ClientID uint
+	}
+	if err := s.db.WithContext(ctx).Model(&model.Account{}).Select("id, client_id").
+		Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return out, err
+	}
+	for _, r := range rows {
+		out[r.ID] = r.ClientID
+	}
+	return out, nil
 }
 
 // desired builds one payload per tunnel assigned to this node.
@@ -443,43 +467,6 @@ func (s *Syncer) post(ctx context.Context, node model.Node, path string, body, i
 		}
 	}
 	return nil
-}
-
-// scale applies a node's coefficient to what it reported.
-//
-// A gigabyte through an expensive server can be charged as two, without a
-// second plan or a second panel. Applied here rather than stored per node so a
-// customer's total stays one number that means what it says.
-//
-// A coefficient of zero is a node that was created before this existed, not an
-// operator asking for free traffic; it is read as one. Anything a node reports
-// is at least a byte once scaled, or a node with a very small coefficient would
-// serve traffic that never appears on any total.
-func scale(usage []service.NodeUsage, coefficient float64) []service.NodeUsage {
-	if coefficient <= 0 || coefficient == 1 {
-		return usage
-	}
-	out := make([]service.NodeUsage, 0, len(usage))
-	for _, u := range usage {
-		out = append(out, service.NodeUsage{
-			OriginID: u.OriginID,
-			Bytes:    atLeastOne(u.Bytes, coefficient),
-			Up:       atLeastOne(u.Up, coefficient),
-			Down:     atLeastOne(u.Down, coefficient),
-		})
-	}
-	return out
-}
-
-func atLeastOne(v uint64, coefficient float64) uint64 {
-	if v == 0 {
-		return 0
-	}
-	scaled := uint64(float64(v) * coefficient)
-	if scaled == 0 {
-		return 1
-	}
-	return scaled
 }
 
 // report logs a node's state only when it changes.

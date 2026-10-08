@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
@@ -641,6 +642,11 @@ type SubPage struct {
 	// client app rather than download a file.
 	SubURL  string
 	Devices []SubPageDevice
+	// FilesSince is when the files' usage starts counting, when that is
+	// after the customer's current period began: their per-user table then
+	// covers less than their usage, and says from when. Nil when the table
+	// covers the whole period and adds up to the usage.
+	FilesSince *time.Time
 }
 
 // SubPageDevice is one row on that page.
@@ -665,8 +671,9 @@ type SubPageDevice struct {
 	// Username is the OpenVPN login this file carries, shown beside the
 	// user's line so a seller can read it off the page.
 	Username string
-	// UsedBytes is what this one file carried on its tunnel, for the
-	// usage table: who spent what, and where.
+	// UsedBytes is what the kernel counted this one file carrying in the
+	// customer's current period, for the usage table: who spent what, and
+	// where. Every file's count adds up to the customer's usage.
 	UsedBytes uint64
 	// The host this entry was written for, when it was written for one.
 	HostID          uint
@@ -724,6 +731,36 @@ func (s *Subscriptions) statusShown(ctx context.Context, c *model.Client) string
 		}
 	}
 	return string(c.Status)
+}
+
+// filesSince is when the customer's files began to be counted, when that is
+// after their current period began.
+//
+// Each file is counted by the kernel from the moment this panel started doing
+// so, recorded once in database.KeyFileUsageSince; what came before was an
+// estimate and was not kept. A period that began earlier has usage from before
+// that moment that no file holds, and the page says so rather than presenting
+// a table that does not add up as if it did.
+func (s *Subscriptions) filesSince(ctx context.Context, c *model.Client) *time.Time {
+	if c.UsedBytes == 0 {
+		return nil
+	}
+	v, ok, err := database.GetSetting(s.db.WithContext(ctx), database.KeyFileUsageSince)
+	if err != nil || !ok {
+		return nil
+	}
+	since, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return nil
+	}
+	began := c.CreatedAt
+	if c.LastResetAt != nil {
+		began = *c.LastResetAt
+	}
+	if !began.Before(since) {
+		return nil
+	}
+	return &since
 }
 
 // PageFor builds what a customer sees when they open their link in a browser.
@@ -796,6 +833,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		DownBytes:  c.DownBytes,
 		ExpiresAt:  c.ExpiresAt,
 		SubURL:     subURL,
+		FilesSince: s.filesSince(ctx, c),
 	}
 	several := len(deviceNames(c.Accounts)) > 1
 	nth := map[uint]int{}

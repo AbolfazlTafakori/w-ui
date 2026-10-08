@@ -79,3 +79,60 @@ func TestDrainedUsageOnEmptyOutput(t *testing.T) {
 		t.Error("malformed output should be an error, not silently zero usage")
 	}
 }
+
+// A client's usage is its files' counters added up, and each file comes back
+// with what it carried itself. The files and the total are the same bytes, so
+// they agree to the byte -- the property the per-user table rests on.
+func TestDrainedUsageCarriesEachFile(t *testing.T) {
+	raw := []byte(`{"nftables":[
+	  {"counter":{"family":"inet","name":"nd_c7_a12","table":"wui","bytes":900}},
+	  {"counter":{"family":"inet","name":"nu_c7_a12","table":"wui","bytes":100}},
+	  {"counter":{"family":"inet","name":"nd_c7_a13","table":"wui","bytes":40}},
+	  {"counter":{"family":"inet","name":"nu_c7_a13","table":"wui","bytes":0}},
+	  {"counter":{"family":"inet","name":"nd_c8_a20","table":"wui","bytes":5}}
+	]}`)
+	got, err := drainedUsage(raw)
+	if err != nil {
+		t.Fatalf("drainedUsage: %v", err)
+	}
+	byKey := map[string]Usage{}
+	for _, u := range got {
+		byKey[u.Key] = u
+	}
+	c7 := byKey["c7"]
+	if c7.Bytes != 1040 || c7.Down != 940 || c7.Up != 100 {
+		t.Fatalf("c7 total = %+v, want 1040 (down 940, up 100)", c7)
+	}
+	files := map[uint]FileUsage{}
+	var sum uint64
+	for _, f := range c7.Files {
+		files[f.Account] = f
+		sum += f.Up + f.Down
+	}
+	if files[12] != (FileUsage{Account: 12, Up: 100, Down: 900}) || files[13] != (FileUsage{Account: 13, Down: 40}) {
+		t.Fatalf("c7 files = %+v", c7.Files)
+	}
+	if sum != c7.Bytes {
+		t.Fatalf("the files add up to %d, the client to %d", sum, c7.Bytes)
+	}
+	if c8 := byKey["c8"]; len(c8.Files) != 1 || c8.Files[0].Account != 20 || c8.Bytes != 5 {
+		t.Fatalf("c8 = %+v", c8)
+	}
+}
+
+// The ruleset an older panel left in the kernel counts whole clients. Read on
+// the first tick after an update, its bytes are the client's and no file's:
+// nothing is guessed about which device carried them.
+func TestDrainedUsageFromAnOlderRuleset(t *testing.T) {
+	raw := []byte(`{"nftables":[
+	  {"counter":{"family":"inet","name":"nd_c1","table":"wui","bytes":900}},
+	  {"counter":{"family":"inet","name":"nu_c1","table":"wui","bytes":100}}
+	]}`)
+	got, err := drainedUsage(raw)
+	if err != nil {
+		t.Fatalf("drainedUsage: %v", err)
+	}
+	if len(got) != 1 || got[0].Bytes != 1000 || len(got[0].Files) != 0 {
+		t.Fatalf("got %+v, want the client's 1000 bytes and no files", got)
+	}
+}

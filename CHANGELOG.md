@@ -6,6 +6,34 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **The per-user table counts each device itself, to the byte.** A device's
+  usage was the customer's total shared out by estimate, read off the
+  tunnel's own counters; OpenVPN updates those every ten seconds and the
+  panel reads every two, so most of an OpenVPN customer's traffic was never
+  shared to anyone -- on a live panel, 98 GB across 18 customers. The kernel
+  now counts every device on its own tunnel address, and a customer's usage
+  is the sum of their devices, so the rows of the table and the usage above
+  it are the same bytes counted once. 2.6.5's **Earlier, not split by user**
+  row is gone: the old estimates cannot be corrected and are not kept. A plan
+  whose current period began before this release says from when its table
+  counts (**Split by user since …**) until its next reset.
+- **A device on a node is charged at the node's usage multiplier**, like the
+  customer's total, and in a way that keeps the two equal to the byte.
+  Before, the total was multiplied and the device rows were not, so on a
+  node with a multiplier other than `1` the table could never add up.
+- **A device on several hosts is counted once in the table.** A tunnel with
+  spare hosts showed each user once per host, and the table added every one
+  of them: with two spare hosts, three times what they had used.
+- **No usage is lost when the database is busy or briefly fails.** Usage
+  waited in a queue of 512 updates; while the database was writing the last
+  batch the queue could fill and the rest was dropped, and a batch the
+  database refused was gone. Usage now accumulates without a limit and a
+  refused batch is written by the next one.
+- **A node reports a customer and their devices from the same moment.** The
+  two were read in separate steps, so a write landing between them put a
+  customer's bytes in one report and their devices' in the next.
+
 ## [2.6.5] — 2026-10-08
 
 ### Fixed

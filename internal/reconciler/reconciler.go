@@ -114,9 +114,6 @@ type Reconciler struct {
 	// one tunnel -- so a tunnel's speed is what its own files move: a
 	// customer on two tunnels is not counted on both.
 	fileSpeed *speedTracker
-	// meter turns each tunnel's cumulative counters into what each file
-	// carried since the last tick.
-	meter *deviceMeter
 	// OnHold carries a hold decided here to the node serving the device.
 	// Set by the panel's node syncer; nil when there are no nodes.
 	OnHold func(nodeID uint, hold service.NodeHold)
@@ -151,7 +148,6 @@ func New(o Options) *Reconciler {
 		conc:      newConcurrency(),
 		speed:     newSpeedTracker(interval),
 		fileSpeed: newSpeedTracker(interval),
-		meter:     newDeviceMeter(),
 		db:        o.DB,
 		enforcer:  o.Enforcer,
 		shaper:    o.Shaper,
@@ -194,40 +190,41 @@ func (r *Reconciler) Start(ctx context.Context) {
 	}()
 }
 
-// AddNodeUsage folds traffic a remote node counted into the customer's total.
+// AddNodeReport folds what a remote node counted into the customers' totals
+// and their files' rows.
 //
-// The same total the local kernel feeds, through the same batching writer, so a
+// The same totals the local kernel feeds, through the same batching writer, so a
 // customer's allowance is one number spent across every server they reach. That
 // is the whole point of the shared plan: a node counting its own share and
 // enforcing against it would cut somebody off at a third of what they bought.
 //
-// Deliberately takes plain numbers rather than the node package's type. This
-// package is the only thing that talks to the data plane and imports nothing
-// that imports it back; a shared struct here would be the first strand of a
-// cycle.
-// AddDeviceUsage folds what a node saw one file carry into that file's
-// own counters, for the tunnel's total on the interfaces page.
-func (r *Reconciler) AddDeviceUsage(accountID uint, up, down uint64) {
-	if accountID == 0 || up+down == 0 {
-		return
+// One report is handed to the writer in one call, so a customer's usage and
+// what their files carried on that node are written in the same flush and the
+// per-user table never shows one without the other.
+//
+// Takes the service package's plain rows rather than the node package's
+// types. This package is the only thing that talks to the data plane and
+// imports nothing that imports it back; the node package's types here would
+// be the first strand of a cycle.
+func (r *Reconciler) AddNodeReport(usage []service.NodeUsage, devices []service.NodeDeviceUsage) {
+	now := time.Now().UTC()
+	batch := make([]trafficUpdate, 0, len(usage)+len(devices))
+	for _, u := range usage {
+		if u.OriginID == 0 || u.Bytes == 0 {
+			continue
+		}
+		// A node reports what moved since its last report, one sync apart.
+		r.speed.fromNode(u.OriginID, u.Up, u.Down, NodeReportEvery, now)
+		batch = append(batch, trafficUpdate{Key: keyFromClientID(u.OriginID), Bytes: u.Bytes, Up: u.Up, Down: u.Down, At: now})
 	}
-	r.fileSpeed.fromNode(accountID, up, down, NodeReportEvery, time.Now().UTC())
-	r.writer.submit(trafficUpdate{AccountID: accountID, DevUp: up, DevDown: down, At: time.Now().UTC()})
-}
-
-func (r *Reconciler) AddNodeUsage(clientID uint, total, up, down uint64) {
-	if clientID == 0 || total == 0 {
-		return
+	for _, d := range devices {
+		if d.OriginID == 0 || d.Up+d.Down == 0 {
+			continue
+		}
+		r.fileSpeed.fromNode(d.OriginID, d.Up, d.Down, NodeReportEvery, now)
+		batch = append(batch, trafficUpdate{AccountID: d.OriginID, DevUp: d.Up, DevDown: d.Down, At: now})
 	}
-	// A node reports what moved since its last report, one sync apart.
-	r.speed.fromNode(clientID, up, down, NodeReportEvery, time.Now().UTC())
-	r.writer.submit(trafficUpdate{
-		Key:   keyFromClientID(clientID),
-		Bytes: total,
-		Up:    up,
-		Down:  down,
-		At:    time.Now().UTC(),
-	})
+	r.writer.submit(batch...)
 }
 
 // Stats returns what the last tick did.
@@ -305,6 +302,11 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 // and no reset detection: whatever comes back is exactly what flowed since the
 // last tick. That is what makes the accounting correct across an interface
 // restart, which is where counter-polling designs lose bytes.
+//
+// What each file carried comes from the same drain: the kernel counts every
+// file on its own, and a customer's usage is the sum of those counts. A file's
+// row in the per-user table is therefore measured, never worked out from the
+// customer's total, and the rows add up to the total to the byte.
 func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	drained, err := r.enforcer.DrainCounters(ctx)
 	if err != nil {
@@ -313,44 +315,43 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 
 	var total uint64
 	now := time.Now().UTC()
-	// What each customer used this tick, by the kernel's count, for sharing
-	// out among their files below.
-	billed := map[uint]usageDelta{}
+	billed := map[uint]usageDelta{} // client -> what it used this tick, for its speed
+	files := map[uint]usageDelta{}  // account -> what it carried this tick, for its speed
 	for _, d := range drained {
-		if id, ok := clientIDFromKey(d.Key); ok && d.Bytes > 0 {
-			billed[id] = usageDelta{Bytes: d.Bytes, Up: d.Up, Down: d.Down}
-		}
-	}
-	r.speed.local(billed, now)
-	for _, d := range drained {
-		if d.Bytes == 0 {
+		id, ok := clientIDFromKey(d.Key)
+		if !ok || d.Bytes == 0 {
 			continue // idle clients are not worth a write
 		}
 		total += d.Bytes
-		r.writer.submit(trafficUpdate{
-			Key: d.Key, Bytes: d.Bytes, Up: d.Up, Down: d.Down, At: now,
-		})
+		billed[id] = usageDelta{Bytes: d.Bytes, Up: d.Up, Down: d.Down}
+
+		// The customer's usage and what each of their files carried are
+		// handed over in one call, so they are written in one flush.
+		batch := make([]trafficUpdate, 0, 1+len(d.Files))
+		batch = append(batch, trafficUpdate{Key: d.Key, Bytes: d.Bytes, Up: d.Up, Down: d.Down, At: now})
+		for _, f := range d.Files {
+			if f.Account == 0 || f.Up+f.Down == 0 {
+				continue
+			}
+			files[f.Account] = usageDelta{Bytes: f.Up + f.Down, Up: f.Up, Down: f.Down}
+			batch = append(batch, trafficUpdate{AccountID: f.Account, DevUp: f.Up, DevDown: f.Down, At: now})
+		}
+		r.writer.submit(batch...)
 	}
+	r.speed.local(billed, now)
+	r.fileSpeed.local(files, now)
 
 	// Handshakes and endpoints come from the drivers, not from nftables, and
 	// are what the online indicator and the sharing detector read.
 	seen := map[uint]string{}
-	grown := map[uint]usageDelta{} // account -> what its tunnel counted this tick
-	metered := map[uint]bool{}
-	allRead := true
 	for ifaceID, b := range r.pool.All() {
 		stats, err := b.Stats(ctx)
 		if err != nil {
 			r.log.Warn("driver stats unavailable", "interface", ifaceID, "error", err)
-			allRead = false
 			continue
 		}
 		r.conc.observe(stats, now)
 		for _, s := range stats {
-			metered[s.AccountID] = true
-			if up, down, ok := r.meter.step(s.AccountID, s.RX, s.TX); ok {
-				grown[s.AccountID] = usageDelta{Up: up, Down: down}
-			}
 			if s.LastHandshake.IsZero() {
 				continue
 			}
@@ -369,19 +370,9 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 		}
 	}
 
-	if allRead {
-		r.meter.keep(metered)
-	}
-	files := r.meter.apportion(billed, grown, r.conc.localClients())
-	r.fileSpeed.local(files, now)
-	for acc, d := range files {
-		r.writer.submit(trafficUpdate{AccountID: acc, DevUp: d.Up, DevDown: d.Down, At: now})
-	}
-
-	// Written straight through rather than queued behind the traffic writer:
-	// this is an upsert of at most one row per connected account, and it must
-	// not be dropped when that buffer is full, because a missed address is a
-	// missed sharing case rather than a few bytes of usage.
+	// Written straight through rather than held for the traffic writer's
+	// next flush: this is an upsert of at most one row per connected account,
+	// and the sharing report reads it as it happens.
 	if err := recordEndpoints(ctx, r.db, seen, r.conc.clients(), now); err != nil {
 		r.log.Warn("could not record connection addresses", "error", err)
 	}
@@ -797,10 +788,10 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 			continue
 		}
 
-		addrs := make([]netip.Addr, 0, len(accs))
+		files := make([]enforce.File, 0, len(accs))
 		for _, a := range accs {
 			if ip, err := netip.ParseAddr(a.IP); err == nil {
-				addrs = append(addrs, ip)
+				files = append(files, enforce.File{Account: a.ID, Addr: ip})
 			}
 		}
 
@@ -811,7 +802,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		// the cut-off and the driver removing their peer.
 		d.rules = append(d.rules, enforce.Rule{
 			Key:            enforce.Key(c.ID),
-			Addrs:          addrs,
+			Files:          files,
 			QuotaBytes:     c.QuotaBytes,
 			UsedBytes:      c.UsedBytes,
 			RateBitsPerSec: c.RateBitsPerSec,

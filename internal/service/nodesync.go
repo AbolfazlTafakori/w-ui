@@ -113,8 +113,9 @@ type NodeUsage struct {
 	Down     uint64 `json:"down"`
 }
 
-// NodeDeviceUsage is what one file carried on its tunnel here, by the
-// file's id on the panel, for that tunnel's own total.
+// NodeDeviceUsage is what one file carried here, by the file's id on the
+// panel: its row in the customer's per-user table, and its share of its
+// tunnel's total.
 type NodeDeviceUsage struct {
 	OriginID uint   `json:"originId"`
 	Up       uint64 `json:"up"`
@@ -336,14 +337,22 @@ func (s *NodeSync) upsertAccounts(
 	return nil
 }
 
-// Drain reports what each customer spent here and resets the counters.
+// Drain reports what each customer spent here, and what each of their files
+// carried, and resets both.
 //
 // Read and zero in one transaction, the same shape the kernel counters use, so
 // bytes that arrive between the two cannot be counted twice or lost. The panel
 // asking is about to add these to one total that spans every node, and a number
 // returned twice would bill a customer for traffic they never sent.
-func (s *NodeSync) Drain(ctx context.Context) ([]NodeUsage, error) {
-	var out []NodeUsage
+//
+// Customers and files are drained in the same transaction because they are
+// the same bytes: what a customer spent here is what their files here carried.
+// Drained apart, a write landing between the two put a customer's bytes in one
+// report and their files' in the next -- and a reset on the panel in between
+// left the file charged for a period the customer was not.
+func (s *NodeSync) Drain(ctx context.Context) ([]NodeUsage, []NodeDeviceUsage, error) {
+	var usage []NodeUsage
+	var devices []NodeDeviceUsage
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var clients []model.Client
@@ -351,57 +360,48 @@ func (s *NodeSync) Drain(ctx context.Context) ([]NodeUsage, error) {
 			Find(&clients).Error; err != nil {
 			return fmt.Errorf("read managed usage: %w", err)
 		}
-		if len(clients) == 0 {
-			return nil
+		if len(clients) > 0 {
+			ids := make([]uint, 0, len(clients))
+			for _, c := range clients {
+				usage = append(usage, NodeUsage{
+					OriginID: c.OriginID,
+					Bytes:    c.UsedBytes,
+					Up:       c.UpBytes,
+					Down:     c.DownBytes,
+				})
+				ids = append(ids, c.ID)
+			}
+			if err := tx.Model(&model.Client{}).Where("id IN ?", ids).
+				UpdateColumns(map[string]any{
+					"used_bytes": 0, "up_bytes": 0, "down_bytes": 0,
+					"updated_at": time.Now().UTC(),
+				}).Error; err != nil {
+				return fmt.Errorf("reset managed usage: %w", err)
+			}
 		}
 
-		ids := make([]uint, 0, len(clients))
-		for _, c := range clients {
-			out = append(out, NodeUsage{
-				OriginID: c.OriginID,
-				Bytes:    c.UsedBytes,
-				Up:       c.UpBytes,
-				Down:     c.DownBytes,
-			})
-			ids = append(ids, c.ID)
-		}
-
-		return tx.Model(&model.Client{}).Where("id IN ?", ids).
-			UpdateColumns(map[string]any{
-				"used_bytes": 0, "up_bytes": 0, "down_bytes": 0,
-				"updated_at": time.Now().UTC(),
-			}).Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// DrainDevices reports what each file carried on its tunnel here and
-// resets the counters, the same read-and-zero as Drain.
-func (s *NodeSync) DrainDevices(ctx context.Context) ([]NodeDeviceUsage, error) {
-	var out []NodeDeviceUsage
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var accounts []model.Account
 		if err := tx.Where("origin_id > 0 AND (up_bytes > 0 OR down_bytes > 0)").Find(&accounts).Error; err != nil {
-			return fmt.Errorf("read managed device usage: %w", err)
+			return fmt.Errorf("read managed file usage: %w", err)
 		}
 		if len(accounts) == 0 {
 			return nil
 		}
 		ids := make([]uint, 0, len(accounts))
 		for _, a := range accounts {
-			out = append(out, NodeDeviceUsage{OriginID: a.OriginID, Up: a.UpBytes, Down: a.DownBytes})
+			devices = append(devices, NodeDeviceUsage{OriginID: a.OriginID, Up: a.UpBytes, Down: a.DownBytes})
 			ids = append(ids, a.ID)
 		}
-		return tx.Model(&model.Account{}).Where("id IN ?", ids).
-			UpdateColumns(map[string]any{"up_bytes": 0, "down_bytes": 0}).Error
+		if err := tx.Model(&model.Account{}).Where("id IN ?", ids).
+			UpdateColumns(map[string]any{"up_bytes": 0, "down_bytes": 0}).Error; err != nil {
+			return fmt.Errorf("reset managed file usage: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	return usage, devices, nil
 }
 
 // Hold applies what the panel decided: each named device, by its id on the

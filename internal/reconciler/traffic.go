@@ -14,19 +14,12 @@ import (
 	"github.com/abolfazl/w-ui/internal/enforce"
 )
 
-// queueSize is how many updates may wait to be written.
-//
-// SQLite serialises writers, so ten thousand clients each producing a write
-// every two seconds would spend their time fighting for the same lock. The
-// updates are funnelled through one goroutine and flushed in batches instead —
-// the shape the classic panel arrived at for the same reason.
-const queueSize = 512
-
 // flushInterval is how often the buffer is drained to the database.
 //
-// It is deliberately slower than the collection tick: usage is accumulated in
-// memory between flushes, so a busy server writes a handful of rows a second
-// rather than thousands.
+// SQLite serialises writers, so ten thousand clients each producing a write
+// every two seconds would spend their time fighting for the same lock. Usage
+// is accumulated in memory between flushes instead, so a busy server writes a
+// handful of batches a minute rather than thousands of rows a second.
 const flushInterval = 5 * time.Second
 
 // trafficUpdate is one thing learned during a tick.
@@ -47,8 +40,8 @@ type trafficUpdate struct {
 	Handshake time.Time
 	Endpoint  string
 
-	// Set for a device update: what one file carried on its own tunnel
-	// since the last reading, by direction, for the tunnel's own total.
+	// Set for a file update: what one file carried, by direction, for its
+	// row in the customer's per-user table and its tunnel's total.
 	DevUp   uint64
 	DevDown uint64
 
@@ -58,43 +51,53 @@ type trafficUpdate struct {
 type trafficWriter struct {
 	db  *gorm.DB
 	log *slog.Logger
-	ch  chan trafficUpdate
 
 	mu       sync.Mutex
 	usage    map[uint]usageDelta // client id -> bytes since last flush
-	devices  map[uint]usageDelta // account id -> bytes on its tunnel since last flush
+	devices  map[uint]usageDelta // account id -> bytes since last flush
 	liveness map[uint]trafficUpdate
-	dropped  uint64
+	// failing is whether the last flush failed, so the failure is said
+	// once and its recovery once, not on every attempt in between.
+	failing bool
 }
 
-// usageDelta is what one client accumulated between two flushes.
+// usageDelta is what one client or file accumulated between two flushes.
 type usageDelta struct {
 	Bytes uint64
 	Up    uint64
 	Down  uint64
 }
 
+func (d usageDelta) add(o usageDelta) usageDelta {
+	return usageDelta{Bytes: d.Bytes + o.Bytes, Up: d.Up + o.Up, Down: d.Down + o.Down}
+}
+
 func newTrafficWriter(db *gorm.DB, log *slog.Logger) *trafficWriter {
 	return &trafficWriter{
 		db:       db,
 		log:      log,
-		ch:       make(chan trafficUpdate, queueSize),
 		usage:    map[uint]usageDelta{},
 		devices:  map[uint]usageDelta{},
 		liveness: map[uint]trafficUpdate{},
 	}
 }
 
-// submit queues an update. It never blocks: a full queue drops the update and
-// counts it, because stalling the reconciler would stop collection for every
-// client to protect the bookkeeping of one.
-func (w *trafficWriter) submit(u trafficUpdate) {
-	select {
-	case w.ch <- u:
-	default:
-		w.mu.Lock()
-		w.dropped++
-		w.mu.Unlock()
+// submit folds updates into what the next flush writes.
+//
+// Nothing is ever dropped. Usage is what customers are billed and what the
+// per-user table is made of, and an update thrown away under load -- as a
+// bounded queue does while the database is busy with the last flush -- is
+// traffic that happened and was never charged. Folding is a few map writes
+// under a lock, so it does not hold up the collection tick either.
+//
+// Everything passed in one call is folded under one lock: a customer's usage
+// and what each of their files carried, handed over together, land in the
+// same flush, so no flush writes one without the other.
+func (w *trafficWriter) submit(updates ...trafficUpdate) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, u := range updates {
+		w.absorbLocked(u)
 	}
 }
 
@@ -108,8 +111,6 @@ func (w *trafficWriter) start(ctx context.Context) {
 			case <-ctx.Done():
 				w.flush(context.WithoutCancel(ctx))
 				return
-			case u := <-w.ch:
-				w.absorb(u)
 			case <-t.C:
 				w.flush(ctx)
 			}
@@ -117,61 +118,59 @@ func (w *trafficWriter) start(ctx context.Context) {
 	}()
 }
 
-// absorb folds an update into the in-memory totals.
-func (w *trafficWriter) absorb(u trafficUpdate) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
+// absorbLocked folds one update into the in-memory totals. w.mu is held.
+func (w *trafficWriter) absorbLocked(u trafficUpdate) {
 	if u.Key != "" && u.Bytes > 0 {
 		if id, ok := clientIDFromKey(u.Key); ok {
-			d := w.usage[id]
-			d.Bytes += u.Bytes
-			d.Up += u.Up
-			d.Down += u.Down
-			w.usage[id] = d
+			w.usage[id] = w.usage[id].add(usageDelta{Bytes: u.Bytes, Up: u.Up, Down: u.Down})
 		}
 	}
-	if u.AccountID != 0 && (u.DevUp > 0 || u.DevDown > 0) {
-		d := w.devices[u.AccountID]
-		d.Up += u.DevUp
-		d.Down += u.DevDown
-		w.devices[u.AccountID] = d
-	} else if u.AccountID != 0 {
-		w.liveness[u.AccountID] = u
+	if u.AccountID == 0 {
+		return
+	}
+	if u.DevUp > 0 || u.DevDown > 0 {
+		w.devices[u.AccountID] = w.devices[u.AccountID].add(usageDelta{Up: u.DevUp, Down: u.DevDown})
+		return
+	}
+	w.liveness[u.AccountID] = u
+}
+
+// restore puts back what a failed flush took, so the next one writes it.
+//
+// Usage is added to whatever has arrived since; a liveness reading is put
+// back only where no newer one has come in.
+func (w *trafficWriter) restore(usage, devices map[uint]usageDelta, liveness map[uint]trafficUpdate) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for id, d := range usage {
+		w.usage[id] = w.usage[id].add(d)
+	}
+	for id, d := range devices {
+		w.devices[id] = w.devices[id].add(d)
+	}
+	for id, u := range liveness {
+		if _, newer := w.liveness[id]; !newer {
+			w.liveness[id] = u
+		}
 	}
 }
 
-// flush writes what has accumulated.
+// flush writes what has accumulated, in one transaction.
 //
-// Anything still sitting in the channel is absorbed first: on shutdown the last
-// flush must not leave queued bytes unbilled, and it makes flush correct to
-// call directly without the loop running.
+// What it takes is swapped out under the lock, so submissions carry on into
+// fresh maps while the database works, and a failed transaction hands it all
+// back to be written next time. Safe to call directly without the loop
+// running, which is how shutdown writes its last bytes.
 func (w *trafficWriter) flush(ctx context.Context) {
-	for {
-		select {
-		case u := <-w.ch:
-			w.absorb(u)
-			continue
-		default:
-		}
-		break
-	}
-
 	w.mu.Lock()
 	usage := w.usage
 	devices := w.devices
 	liveness := w.liveness
-	dropped := w.dropped
 	w.usage = map[uint]usageDelta{}
 	w.devices = map[uint]usageDelta{}
 	w.liveness = map[uint]trafficUpdate{}
-	w.dropped = 0
 	w.mu.Unlock()
 
-	if dropped > 0 {
-		w.log.Warn("traffic updates dropped; the write queue is saturated",
-			"count", dropped)
-	}
 	if len(usage) == 0 && len(liveness) == 0 && len(devices) == 0 {
 		return
 	}
@@ -308,8 +307,27 @@ func (w *trafficWriter) flush(ctx context.Context) {
 		return nil
 	})
 	if err != nil {
-		w.log.Error("flush traffic", "error", err,
-			"usageRows", len(usage), "livenessRows", len(liveness))
+		// The transaction wrote nothing, so everything it carried goes back
+		// to be written by the next flush rather than being lost: a locked
+		// or briefly unreachable database delays the bill, it does not
+		// erase it.
+		w.restore(usage, devices, liveness)
+		w.mu.Lock()
+		first := !w.failing
+		w.failing = true
+		w.mu.Unlock()
+		if first {
+			w.log.Error("could not write usage; keeping it to write on the next try", "error", err,
+				"clients", len(usage), "files", len(devices))
+		}
+		return
+	}
+	w.mu.Lock()
+	recovered := w.failing
+	w.failing = false
+	w.mu.Unlock()
+	if recovered {
+		w.log.Info("usage is being written again; nothing held back was lost")
 	}
 }
 

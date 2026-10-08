@@ -52,7 +52,11 @@ type subPageView struct {
 	// Usage is who spent what on which tunnel: a row per user, a column
 	// per tunnel, a total at the end of each. For people sharing a plan
 	// and its cost.
-	Usage      *subUsage
+	Usage *subUsage
+	// UsageSince is when the usage table starts, when that is later than the
+	// start of the customer's current period: shown with the table, so a
+	// table that covers less than the usage above it says how much less.
+	UsageSince string
 	HasWG      bool // any device on a WireGuard tunnel: its apps are offered
 	HasOVPN    bool // any on OpenVPN
 	HasQuota   bool
@@ -313,7 +317,10 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 		}
 	}
 	v.Groups = groupDevices(v.Devices, page.Name)
-	v.Usage = usageTable(v.Devices, page.Name, page.UsedBytes)
+	v.Usage = usageTable(v.Devices, page.Name)
+	if page.FilesSince != nil {
+		v.UsageSince = page.FilesSince.Local().Format("2006-01-02 15:04")
+	}
 	dict, _ := json.Marshal(subPageStrings)
 	v.Strings = template.JS(dict)
 	return v
@@ -329,7 +336,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "Remaining", "lastOnline": "Last Online", "expiry": "Expiry", "noExpiry": "No expiry",
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
-		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "usageEarlier": "Earlier, not split by user", "total": "Total", "allUsers": "All users", "tunnel": "Tunnel",
+		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "usageSince": "Split by user since", "total": "Total", "allUsers": "All users", "tunnel": "Tunnel",
 		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
 	},
@@ -340,7 +347,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "باقی‌مانده", "lastOnline": "آخرین فعالیت", "expiry": "انقضا", "noExpiry": "بدون انقضا",
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
-		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "usageEarlier": "مصرف قبلی، بدون تفکیک کاربر", "total": "جمع", "allUsers": "همهٔ کاربران", "tunnel": "تانل",
+		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "usageSince": "تفکیک کاربرها از", "total": "جمع", "allUsers": "همهٔ کاربران", "tunnel": "تانل",
 		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
 	},
@@ -645,7 +652,7 @@ a.row-title:hover { text-decoration: underline; }
 .usage-grid tfoot th, .usage-grid tfoot td { border-top: 1px solid var(--line); padding-top: 10px; padding-bottom: 10px; font-weight: 600; color: var(--ink); }
 .usage-grid tfoot th { text-align: start; }
 .usage-grid td.usage-zero { color: var(--muted); font-weight: 400; }
-.usage-grid tr.usage-earlier th, .usage-grid tr.usage-earlier td { color: var(--muted); font-weight: 400; }
+.usage-note { margin: 4px 16px 6px; color: var(--muted); font-size: 12px; line-height: 18px; }
 .usage-dot { display: inline-block; width: 7px; height: 7px; margin-inline-end: 7px; border-radius: 50%; vertical-align: 1px; }
 .usage-dot.cyan { background: var(--tag-cyan-ink); }
 .usage-dot.orange { background: var(--tag-orange-ink); }
@@ -1026,7 +1033,8 @@ a.row-title:hover { text-decoration: underline; }
           <span class="tag tag-config purple" data-i="usageTable">Usage by user and tunnel</span>
           <span class="cfg-count" dir="ltr">{{ .Usage.Grand }}</span>
         </div>
-        <div class="cfg-body usage-body">
+        <div class="cfg-body usage-body">{{ if .UsageSince }}
+          <p class="usage-note"><span data-i="usageSince">Split by user since</span> <span dir="ltr">{{ .UsageSince }}</span></p>{{ end }}
           <div class="usage-scroll">
             <table class="usage-grid">
               <thead><tr>
@@ -1036,7 +1044,7 @@ a.row-title:hover { text-decoration: underline; }
               </tr></thead>
               <tbody>
                 {{ range .Usage.Rows }}
-                <tr{{ if .Earlier }} class="usage-earlier"{{ end }}><th>{{ if .Earlier }}<span data-i="usageEarlier">Earlier, not split by user</span>{{ else if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}</th>{{ range .Cells }}<td{{ if eq . "0 B" }} class="usage-zero"{{ end }}>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Total }}</td></tr>
+                <tr><th>{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Name }}{{ end }}</th>{{ range .Cells }}<td{{ if eq . "0 B" }} class="usage-zero"{{ end }}>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Total }}</td></tr>
                 {{ end }}
               </tbody>
               {{ if gt (len .Usage.Rows) 1 }}<tfoot><tr class="usage-all"><th data-i="allUsers">All users</th>{{ range .Usage.Totals }}<td>{{ . }}</td>{{ end }}<td class="usage-sum">{{ .Usage.Grand }}</td></tr></tfoot>{{ end }}
@@ -1358,9 +1366,6 @@ type subUsageRow struct {
 	User  int    // the user's number, 0 for a named row
 	Cells []string
 	Total string
-	// Earlier is the usage no file was charged with: traffic from before
-	// files kept counters, or that an older panel left out of them.
-	Earlier bool
 }
 
 // usageTable arranges what each file carried by user and tunnel. A user
@@ -1368,7 +1373,20 @@ type subUsageRow struct {
 // OpenVPN are one row -- so what a plan for several cost each of them is
 // read off one line. A plan for one is one row, named after the customer.
 // A file with a name of its own is a row of its own.
-func usageTable(devices []subPageDevice, customer string, used uint64) *subUsage {
+func usageTable(entries []subPageDevice, customer string) *subUsage {
+	// A file is on the page once for every address it can be handed out
+	// with -- the spare hosts an operator keeps -- but it carried its bytes
+	// once. Counted per entry, a tunnel with two spare hosts showed every
+	// user three times what they used.
+	var devices []subPageDevice
+	counted := map[uint]bool{}
+	for _, d := range entries {
+		if counted[d.ID] {
+			continue
+		}
+		counted[d.ID] = true
+		devices = append(devices, d)
+	}
 	if len(devices) == 0 {
 		return nil
 	}
@@ -1433,18 +1451,6 @@ func usageTable(devices []subPageDevice, customer string, used uint64) *subUsage
 		row.Total = humanBytes(total)
 		grand += total
 		u.Rows = append(u.Rows, row)
-	}
-	// What the files add up to falls short of the customer's usage by
-	// whatever was spent before they kept counters. That remainder is a row
-	// of its own rather than missing, so the table sums to the usage above
-	// it instead of quietly disagreeing with it.
-	if used > grand && len(u.Rows) > 0 {
-		row := subUsageRow{Earlier: true, Total: humanBytes(used - grand)}
-		for range tunnels {
-			row.Cells = append(row.Cells, "")
-		}
-		u.Rows = append(u.Rows, row)
-		grand = used
 	}
 	for _, n := range sums {
 		u.Totals = append(u.Totals, humanBytes(n))

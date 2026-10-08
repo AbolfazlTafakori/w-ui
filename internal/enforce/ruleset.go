@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/shaper"
@@ -22,30 +23,75 @@ func Key(clientID uint) string { return fmt.Sprintf("c%d", clientID) }
 
 func quotaName(key string) string { return "q_" + key }
 
-// Counters and chains come in pairs, one per direction.
+// Counters come in pairs, one per direction, and one pair per file.
 //
-// The two verdict maps already tell the directions apart -- @dl is matched on
-// the destination address and @ul on the source -- but both used to jump to one
-// chain and add to one counter, so the split was discarded at the last moment.
-// Every customer's upload and download therefore read zero: on the groups page,
-// in the traffic history, and in the Subscription-Userinfo header their client
-// app reads to show them what they have used.
-func downCounter(key string) string { return "nd_" + key }
-func upCounter(key string) string   { return "nu_" + key }
-func downChain(key string) string   { return "cd_" + key }
-func upChain(key string) string     { return "cu_" + key }
+// A counter's name carries both the client and the file -- nd_c7_a12 is what
+// account 12 of client 7 received -- so a drained counter says whose it is
+// on its own. Nothing has to be remembered between applying a ruleset and
+// reading it back, which is what keeps a panel restart from losing the bytes
+// counted while it was down.
+const (
+	downPrefix = "nd_"
+	upPrefix   = "nu_"
+)
+
+func downCounter(key string, account uint) string { return fileCounter(downPrefix, key, account) }
+func upCounter(key string, account uint) string   { return fileCounter(upPrefix, key, account) }
+
+func fileCounter(prefix, key string, account uint) string {
+	return prefix + key + "_a" + strconv.FormatUint(uint64(account), 10)
+}
+
+func downChain(key string) string { return "cd_" + key }
+func upChain(key string) string   { return "cu_" + key }
 
 // validKey reports whether a key is one this package generated.
 func validKey(k string) bool {
 	if len(k) < 2 || len(k) > 24 || k[0] != 'c' {
 		return false
 	}
-	for _, r := range k[1:] {
+	return digits(k[1:])
+}
+
+func digits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
 		if r < '0' || r > '9' {
 			return false
 		}
 	}
 	return true
+}
+
+// parseCounter takes a counter's name apart: which client, which file and
+// which direction. A name with no file part is a whole client's counter, as
+// a panel before per-file counting wrote them; account is zero for it.
+func parseCounter(name string) (key string, account uint, down, ok bool) {
+	switch {
+	case strings.HasPrefix(name, downPrefix):
+		name, down = name[len(downPrefix):], true
+	case strings.HasPrefix(name, upPrefix):
+		name = name[len(upPrefix):]
+	default:
+		return "", 0, false, false
+	}
+	key, file, hasFile := strings.Cut(name, "_a")
+	if !validKey(key) {
+		return "", 0, false, false
+	}
+	if !hasFile {
+		return key, 0, down, true
+	}
+	if !digits(file) {
+		return "", 0, false, false
+	}
+	n, err := strconv.ParseUint(file, 10, 64)
+	if err != nil || n == 0 {
+		return "", 0, false, false
+	}
+	return key, uint(n), down, true
 }
 
 // Caps describes what the running kernel can actually do.
@@ -79,9 +125,11 @@ func BuildRuleset(rules []Rule) (string, error) {
 // transaction, so there is never a moment where some customers are metered and
 // others are not.
 func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
-	sorted := make([]Rule, len(rules))
-	copy(sorted, rules)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Key < sorted[j].Key })
+	sorted, err := sortedRules(rules)
+	if err != nil {
+		return "", err
+	}
+	owned := ownedFiles(sorted)
 
 	var b strings.Builder
 
@@ -93,19 +141,17 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 	fmt.Fprintf(&b, "table inet %s {\n", TableName)
 
 	for _, r := range sorted {
-		if !validKey(r.Key) {
-			return "", fmt.Errorf("%w: rule key %q is not one we generate", ErrInvalidRule, r.Key)
-		}
-
 		// The reporting counters are separate from the quota on purpose. The
 		// quota is cumulative and only cleared on renewal; the counters are
 		// drained on every collection tick and folded into the history.
 		//
-		// Two of them, because "how much have I uploaded" is a different
+		// Two per file, because "how much have I uploaded" is a different
 		// question from "how much have I left", and the kernel is the only
 		// thing in a position to tell the two directions apart.
-		fmt.Fprintf(&b, "\tcounter %s { }\n", downCounter(r.Key))
-		fmt.Fprintf(&b, "\tcounter %s { }\n", upCounter(r.Key))
+		for _, f := range owned[r.Key] {
+			fmt.Fprintf(&b, "\tcounter %s { }\n", downCounter(r.Key, f.Account))
+			fmt.Fprintf(&b, "\tcounter %s { }\n", upCounter(r.Key, f.Account))
+		}
 
 		if caps.Quota && !r.Unlimited() {
 			// Seeding `used` is what lets a reboot resume where the customer
@@ -117,14 +163,15 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 
 	b.WriteString("\n")
 	for _, r := range sorted {
-		// One chain per direction, identical but for the counter the bytes
-		// land in. The quota is shared between them: an allowance is spent in
-		// both directions and is one number.
-		writeClientChain(&b, r, caps, downChain(r.Key), downCounter(r.Key))
-		writeClientChain(&b, r, caps, upChain(r.Key), upCounter(r.Key))
+		// One chain per direction, identical but for the side of the packet
+		// its files are matched on and the counters the bytes land in. The
+		// quota is shared between them: an allowance is spent in both
+		// directions and is one number.
+		writeClientChain(&b, r, owned[r.Key], caps, downChain(r.Key), "daddr", downCounter)
+		writeClientChain(&b, r, owned[r.Key], caps, upChain(r.Key), "saddr", upCounter)
 	}
 
-	dl, ul := mapElements(sorted)
+	dl, ul := mapElements(sorted, owned)
 
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "\tmap dl {\n\t\ttype ipv4_addr : verdict\n")
@@ -170,17 +217,57 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 	return b.String(), nil
 }
 
-// mapElements renders the address-to-chain entries for both directions.
+// sortedRules copies the rules in key order and refuses any key this package
+// did not generate.
+func sortedRules(rules []Rule) ([]Rule, error) {
+	sorted := make([]Rule, len(rules))
+	copy(sorted, rules)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Key < sorted[j].Key })
+	for _, r := range sorted {
+		if !validKey(r.Key) {
+			return nil, fmt.Errorf("%w: rule key %q is not one we generate", ErrInvalidRule, r.Key)
+		}
+	}
+	return sorted, nil
+}
+
+// ownedFiles decides which files the kernel will tell apart: for each rule,
+// its files whose address reaches its chains.
 //
-// Download and upload share one chain per client, so a customer's traffic is
-// counted against a single quota whichever way it flows — which is what makes
-// the allowance apply to the client rather than to each direction separately.
+// The maps are keyed on ipv4_addr, so a v6 address is left out -- it would
+// not fit and would corrupt the element list. An address can be in the maps
+// once only, so of two files with the same address the first, in key order,
+// keeps it. A file left out reaches no chain, and so no counter of its own
+// could ever move: it gets none, and the client's usage is exactly the sum of
+// the counters it does have.
+func ownedFiles(sorted []Rule) map[string][]File {
+	out := make(map[string][]File, len(sorted))
+	seen := map[netip.Addr]bool{}
+	for _, r := range sorted {
+		for _, f := range r.Files {
+			a := f.Addr.Unmap()
+			if !a.Is4() || seen[a] || f.Account == 0 {
+				continue
+			}
+			seen[a] = true
+			out[r.Key] = append(out[r.Key], File{Account: f.Account, Addr: a})
+		}
+	}
+	return out
+}
+
 // writeClientChain emits one customer's chain for one direction.
 //
 // Both directions get the same treatment, so they are written by the same code:
 // a rate limit that applied only to downloads, or a block that stopped only
 // uploads, would be a very quiet way to give service away.
-func writeClientChain(b *strings.Builder, r Rule, caps Caps, chain, counter string) {
+//
+// side is the half of the packet that is the customer's: the destination of
+// what they receive, the source of what they send. It is what the map that
+// jumped here was keyed on, so every packet in the chain matches exactly one
+// of the file rules below and lands in exactly one counter.
+func writeClientChain(b *strings.Builder, r Rule, files []File, caps Caps, chain, side string,
+	counter func(key string, account uint) string) {
 	fmt.Fprintf(b, "\tchain %s {\n", chain)
 
 	// Stamp the packet with its traffic class before anything else. HTB
@@ -198,40 +285,38 @@ func writeClientChain(b *strings.Builder, r Rule, caps Caps, chain, counter stri
 	case r.Blocked:
 		// An admin switched this client off: nothing else needs evaluating.
 		b.WriteString("\t\tdrop\n")
-	case r.Unlimited(), !caps.Quota:
-		// Without kernel quota support the client is still counted, and the
-		// reconciler cuts them off once the stored total crosses the limit —
-		// a tick late instead of a packet late.
-		fmt.Fprintf(b, "\t\tcounter name \"%s\"\n", counter)
 	default:
 		// Order matters. `drop` ends rule evaluation, so once the quota is
-		// over the counter below is never reached and dropped bytes are not
-		// billed as usage.
-		fmt.Fprintf(b, "\t\tquota name \"%s\" drop\n", quotaName(r.Key))
-		fmt.Fprintf(b, "\t\tcounter name \"%s\"\n", counter)
+		// over the counters below are never reached and dropped bytes are not
+		// billed as usage. Without kernel quota support the client is still
+		// counted, and the reconciler cuts them off once the stored total
+		// crosses the limit — a tick late instead of a packet late.
+		if caps.Quota && !r.Unlimited() {
+			fmt.Fprintf(b, "\t\tquota name \"%s\" drop\n", quotaName(r.Key))
+		}
+		for _, f := range files {
+			fmt.Fprintf(b, "\t\tip %s %s counter name \"%s\"\n", side, f.Addr, counter(r.Key, f.Account))
+		}
 	}
 	b.WriteString("\t}\n")
 }
 
-func mapElements(rules []Rule) (dl, ul string) {
+// mapElements renders the address-to-chain entries for both directions.
+//
+// Every address of a client jumps to that client's one chain per direction,
+// so a customer's traffic is counted against a single quota whichever device
+// and whichever way it flows — which is what makes the allowance apply to the
+// client rather than to each device separately.
+func mapElements(sorted []Rule, owned map[string][]File) (dl, ul string) {
 	var dlParts, ulParts []string
-	seen := map[netip.Addr]bool{}
-
-	for _, r := range rules {
-		for _, a := range r.Addrs {
-			a = a.Unmap()
-			// The map is keyed on ipv4_addr; a v6 address would not fit and
-			// silently corrupt the element list.
-			if !a.Is4() || seen[a] {
-				continue
-			}
-			seen[a] = true
+	for _, r := range sorted {
+		for _, f := range owned[r.Key] {
 			// The one place the two maps stop being copies of each other:
 			// which way a packet was going is decided here and nowhere else.
 			dlParts = append(dlParts,
-				fmt.Sprintf("%s : jump %s", a.String(), downChain(r.Key)))
+				fmt.Sprintf("%s : jump %s", f.Addr, downChain(r.Key)))
 			ulParts = append(ulParts,
-				fmt.Sprintf("%s : jump %s", a.String(), upChain(r.Key)))
+				fmt.Sprintf("%s : jump %s", f.Addr, upChain(r.Key)))
 		}
 	}
 	return strings.Join(dlParts, ", "), strings.Join(ulParts, ", ")
