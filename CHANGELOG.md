@@ -6,6 +6,8 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.5] — 2026-10-08
+
 ### Fixed
 - **The per-user table on the subscription page adds up to the usage above
   it.** OpenVPN rewrites its session counters every ten seconds and the
@@ -767,7 +769,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.4...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.5...HEAD
+[2.6.5]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.4...v2.6.5
 [2.6.4]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.3...v2.6.4
 [2.6.3]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.1...v2.6.2
