@@ -52,6 +52,9 @@ func (s *Interfaces) ResetTunnelUsage(ctx context.Context, id uint) (int64, erro
 	if res.Error != nil {
 		return 0, fmt.Errorf("service: reset usage on %s: %w", iface.Name, res.Error)
 	}
+	if err := ZeroFileUsage(s.db.WithContext(ctx), "id IN ?", ids); err != nil {
+		return 0, err
+	}
 	if err := s.db.WithContext(ctx).Model(&model.Client{}).
 		Where("id IN ? AND status = ?", ids, model.StatusExhausted).
 		Update("status", model.StatusActive).Error; err != nil {

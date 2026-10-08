@@ -576,7 +576,13 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 			"status": gorm.Expr("CASE WHEN status = ? THEN ? ELSE status END",
 				model.StatusExhausted, model.StatusActive),
 		})
-		return res.RowsAffected, wrapBulk(res.Error)
+		if res.Error != nil {
+			return 0, wrapBulk(res.Error)
+		}
+		if err := ZeroFileUsage(db, "id IN (SELECT client_id FROM client_groups WHERE name = ?)", group); err != nil {
+			return res.RowsAffected, wrapBulk(err)
+		}
+		return res.RowsAffected, nil
 
 	case GroupExtend:
 		if op.Days == 0 {

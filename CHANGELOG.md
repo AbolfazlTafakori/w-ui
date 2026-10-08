@@ -6,6 +6,23 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **The per-user table on the subscription page adds up to the usage above
+  it.** OpenVPN rewrites its session counters every ten seconds and the
+  panel reads traffic every two, so on most ticks a customer's traffic had
+  no file to land on and was left out of the table: an OpenVPN user showed
+  about a fifth of what they had really used. Such traffic now goes to the
+  customer's files by the shares they last moved in, or to the one file a
+  customer has, and the table follows the usage from now on. Traffic used
+  before this release and never split by user is shown as one row of its
+  own, **Earlier, not split by user**, so the table's total is the usage.
+- **Resetting a customer's traffic resets their per-user table too.**
+  Resetting one customer, several, a group, an interface or everyone, and a
+  plan's own renewal, set the usage to zero but left each file's share from
+  the period before, so the table showed more than the customer had used.
+  Resetting one customer or several also left **Downloaded** and
+  **Uploaded** at the old period's figures beside a usage of zero.
+
 ## [2.6.4] — 2026-10-02
 
 ### Fixed

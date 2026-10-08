@@ -372,7 +372,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	if allRead {
 		r.meter.keep(metered)
 	}
-	files := apportion(billed, grown, r.conc.clients())
+	files := r.meter.apportion(billed, grown, r.conc.localClients())
 	r.fileSpeed.local(files, now)
 	for acc, d := range files {
 		r.writer.submit(trafficUpdate{AccountID: acc, DevUp: d.Up, DevDown: d.Down, At: now})

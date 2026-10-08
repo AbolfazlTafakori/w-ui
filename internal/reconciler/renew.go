@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // Renewing plans that are sold by the period.
@@ -133,6 +134,9 @@ func (r *Reconciler) renew(ctx context.Context, now time.Time) (int, error) {
 			return len(renewed), fmt.Errorf("renew %s: %w", p.Name, res.Error)
 		}
 		if res.RowsAffected > 0 {
+			if err := service.ZeroFileUsage(db, "id = ?", p.ID); err != nil {
+				return len(renewed), fmt.Errorf("renew %s: %w", p.Name, err)
+			}
 			renewed = append(renewed, p.Name)
 		}
 	}

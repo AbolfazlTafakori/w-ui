@@ -1433,7 +1433,9 @@ func (s *Clients) ResetTraffic(ctx context.Context, id uint) (*model.Client, err
 		return nil, err
 	}
 	now := time.Now().UTC()
-	fields := map[string]any{"used_bytes": 0, "last_reset_at": now}
+	// The direction split goes with the total: left behind, the page showed
+	// last period's downloaded and uploaded beside a usage of zero.
+	fields := map[string]any{"used_bytes": 0, "up_bytes": 0, "down_bytes": 0, "last_reset_at": now}
 
 	client, err := s.Get(ctx, id)
 	if err != nil {
@@ -1443,9 +1445,14 @@ func (s *Clients) ResetTraffic(ctx context.Context, id uint) (*model.Client, err
 		fields["status"] = model.StatusActive
 	}
 
-	if err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("id = ?", id).Updates(fields).Error; err != nil {
-		return nil, fmt.Errorf("service: reset traffic: %w", err)
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Client{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+			return fmt.Errorf("service: reset traffic: %w", err)
+		}
+		return ZeroFileUsage(tx, "id = ?", id)
+	})
+	if err != nil {
+		return nil, err
 	}
 	return s.Get(ctx, id)
 }
@@ -1541,15 +1548,25 @@ func (s *Clients) Bulk(ctx context.Context, action BulkAction, ids []uint) (int6
 	case BulkReset:
 		// Resetting usage also revives anyone who had been cut off for running
 		// out, which is what "renew" means to the person doing it.
-		res := db.Model(&model.Client{}).Where("id IN ?", ids).
-			Updates(map[string]any{
-				"used_bytes":    0,
-				"last_reset_at": now,
-				"status": gorm.Expr(
-					"CASE WHEN status = ? THEN ? ELSE status END",
-					model.StatusExhausted, model.StatusActive),
-			})
-		return res.RowsAffected, wrapBulk(res.Error)
+		var n int64
+		err := db.Transaction(func(tx *gorm.DB) error {
+			res := tx.Model(&model.Client{}).Where("id IN ?", ids).
+				Updates(map[string]any{
+					"used_bytes":    0,
+					"up_bytes":      0,
+					"down_bytes":    0,
+					"last_reset_at": now,
+					"status": gorm.Expr(
+						"CASE WHEN status = ? THEN ? ELSE status END",
+						model.StatusExhausted, model.StatusActive),
+				})
+			if res.Error != nil {
+				return res.Error
+			}
+			n = res.RowsAffected
+			return ZeroFileUsage(tx, "id IN ?", ids)
+		})
+		return n, wrapBulk(err)
 
 	case BulkDelete:
 		// Deletion goes one at a time because each client's addresses have to
@@ -1652,21 +1669,29 @@ func (s *Clients) ResetAllTraffic(ctx context.Context) (int64, error) {
 	if err := checkBarred(ctx); err != nil {
 		return 0, err
 	}
-	res := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("1 = 1").
-		Updates(map[string]any{
-			"used_bytes":    0,
-			"up_bytes":      0,
-			"down_bytes":    0,
-			"last_reset_at": time.Now().UTC(),
-			"status": gorm.Expr("CASE WHEN status = ? THEN ? ELSE status END",
-				model.StatusExhausted, model.StatusActive),
-		})
-	if res.Error != nil {
-		return 0, fmt.Errorf("service: reset all traffic: %w", res.Error)
+	var n int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Client{}).
+			Where("1 = 1").
+			Updates(map[string]any{
+				"used_bytes":    0,
+				"up_bytes":      0,
+				"down_bytes":    0,
+				"last_reset_at": time.Now().UTC(),
+				"status": gorm.Expr("CASE WHEN status = ? THEN ? ELSE status END",
+					model.StatusExhausted, model.StatusActive),
+			})
+		if res.Error != nil {
+			return fmt.Errorf("service: reset all traffic: %w", res.Error)
+		}
+		n = res.RowsAffected
+		return ZeroFileUsage(tx, "")
+	})
+	if err != nil {
+		return 0, err
 	}
-	s.log.Warn("traffic reset for every client", "clients", res.RowsAffected)
-	return res.RowsAffected, nil
+	s.log.Warn("traffic reset for every client", "clients", n)
+	return n, nil
 }
 
 // DeleteByStatus removes every client in a given state, which is how an
