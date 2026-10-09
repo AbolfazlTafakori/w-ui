@@ -157,6 +157,10 @@ type Interface struct {
 
 	OpenVPN JSONField[OpenVPNParams] `gorm:"type:text" json:"openvpn"`
 
+	// L2TP is left out of the API for every other protocol, so their
+	// interfaces answer exactly as they did before it existed.
+	L2TP JSONField[L2TPParams] `gorm:"type:text;column:l2tp" json:"l2tp,omitzero"`
+
 	// Configured is set on the way out of the API, not stored. It lets a page
 	// say that certificates exist without being handed them.
 	Configured bool `gorm:"-" json:"configured"`

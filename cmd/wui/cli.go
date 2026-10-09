@@ -59,6 +59,8 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, verifyCommand(args[1:])
 	case "apply-update":
 		return true, applyUpdateCommand(args[1:])
+	case "l2tp-agent":
+		return true, l2tpAgentCommand(args[1:])
 	case "version", "-v", "--version":
 		fmt.Println(version)
 		return true, nil
@@ -99,6 +101,9 @@ Usage:
   wui apply-update DATA_DIR        install the update the panel downloaded
                                    into DATA_DIR/update and restart it; run
                                    as root by wui-update.service
+  wui l2tp-agent DATA_DIR          serve the L2TP/IPsec tunnel the panel
+                                   describes in DATA_DIR/l2tp; run as root by
+                                   wui-l2tp.service while one exists
 
 Flags for "setting set":
   --listen ADDR      the address to bind (0.0.0.0 for every address)

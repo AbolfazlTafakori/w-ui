@@ -98,6 +98,17 @@ type AWGParams struct {
 	I5 string `json:"i5,omitempty"`
 }
 
+// L2TPParams holds interface-scoped L2TP/IPsec settings.
+//
+// PSK is the IPsec pre-shared key every device on the tunnel types in beside
+// its own username and password. It is the tunnel's, not a customer's: the
+// clients built into Windows, macOS and iOS have no other way to start the
+// IPsec half, so it is handed to everyone and shown on the panel, and taking
+// a customer away is removing their credentials, not changing it.
+type L2TPParams struct {
+	PSK string `json:"psk"`
+}
+
 // OpenVPNParams holds interface-scoped OpenVPN settings.
 //
 // The panel runs OpenVPN in credential-only mode: verify-client-cert none plus

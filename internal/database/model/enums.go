@@ -8,15 +8,25 @@ type Protocol string
 const (
 	ProtocolWireGuard Protocol = "wireguard"
 	ProtocolOpenVPN   Protocol = "openvpn"
+	// ProtocolL2TP is L2TP over IPsec: the VPN Windows, macOS and iOS
+	// connect to with nothing installed, a shared key for the tunnel and a
+	// username and password per device.
+	ProtocolL2TP Protocol = "l2tp"
 )
 
 // Valid reports whether p is a protocol the panel knows how to serve.
 func (p Protocol) Valid() bool {
 	switch p {
-	case ProtocolWireGuard, ProtocolOpenVPN:
+	case ProtocolWireGuard, ProtocolOpenVPN, ProtocolL2TP:
 		return true
 	}
 	return false
+}
+
+// UsesCredentials reports whether a device on this protocol signs in with a
+// username and password, held on its account, rather than carrying a key.
+func (p Protocol) UsesCredentials() bool {
+	return p == ProtocolOpenVPN || p == ProtocolL2TP
 }
 
 func (p Protocol) String() string { return string(p) }
