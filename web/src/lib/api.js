@@ -224,12 +224,76 @@ export async function saveFile(path, fallbackName) {
   // The server names the file; falling back to a given name beats saving
   // something called "download".
   const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')
-  const url = URL.createObjectURL(await res.blob())
+  handOver(await res.blob(), named ? named[1] : fallbackName)
+}
+
+// saveText hands the browser a file made here, for the exports that are
+// written by the page rather than fetched.
+export function saveText(text, name, type = 'text/plain;charset=utf-8') {
+  handOver(new Blob([text], { type }), name)
+}
+
+// handOver saves a blob under a name. The link is put in the page while it is
+// clicked, and the blob kept for a moment after: a link that is not in the
+// document saves nothing in some browsers, and revoking the address in the same
+// breath as the click can cancel the save before it has read a byte.
+function handOver(blob, name) {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = named ? named[1] : fallbackName
+  a.download = name
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+// The most customers the server serves on one page. A page asked to be larger
+// is not served at that size: it comes back with the default 25, and a list
+// read that way silently stops at the 25th customer.
+const CLIENT_PAGE_MAX = 200
+
+// allClients is every customer a query matches, read page by page. For the
+// actions that take all of them -- a tunnel's customers, everyone's links, a
+// picker -- where a list that stops short does the job for some and says
+// nothing about the rest.
+async function allClients(params = {}, opts = { background: true }) {
+  const out = []
+  for (let page = 1; ; page++) {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== '' && v != null) q.set(k, v)
+    }
+    q.set('page', page)
+    q.set('perPage', CLIENT_PAGE_MAX)
+    const res = await request('GET', `/api/clients?${q}`, undefined, opts)
+    const items = res?.items || []
+    out.push(...items)
+    if (items.length < CLIENT_PAGE_MAX || out.length >= (res?.total ?? 0)) return out
+  }
+}
+
+// subscriptionLinks is each customer's subscription address, in the order of
+// the ids given: '' for one that could not be read, so the order still lines
+// up. A few at a time, which is several times quicker than one by one on a
+// long list and still gentle on the server.
+async function subscriptionLinks(ids, at = 4) {
+  const links = new Array(ids.length).fill('')
+  let next = 0
+  async function worker() {
+    while (next < ids.length) {
+      const i = next++
+      try {
+        const r = await request('GET', `/api/clients/${ids[i]}/subscription`, undefined, { background: true })
+        links[i] = r?.link || ''
+      } catch {
+        /* left empty: the caller says which */
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(at, ids.length) }, worker))
+  return links
 }
 
 export const api = {
@@ -308,4 +372,6 @@ export const api = {
   profile: (id) => request('GET', `/api/devices/${id}/profile`),
   downloadProfile: (id) => saveFile(`/api/devices/${id}/profile?download=1`, `device-${id}.conf`),
   downloadClients: () => saveFile('/api/clients/export', 'clients.json'),
+  allClients,
+  subscriptionLinks,
 }

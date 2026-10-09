@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { api, apiURL, getToken } from '../lib/api.js'
+import { api, apiURL, getToken, saveText } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
@@ -190,23 +190,24 @@ function pickRow(i, key) {
   }
 }
 
-// The customers on one tunnel, for the actions that take all of them.
+// The customers on one tunnel, for the actions that take all of them: every
+// one of them, however many pages the list runs to.
 async function clientsOn(i) {
-  const cs = await api.get(`/api/clients?perPage=500&interfaceIds=${i.id}`, { background: true })
-  return cs.items || cs || []
+  return api.allClients({ interfaceIds: i.id })
+}
+
+// The subscription links of these customers, one per line, each once.
+async function linksOf(list) {
+  const links = await api.subscriptionLinks(list.map((c) => c.id))
+  return [...new Set(links.filter(Boolean))]
 }
 
 // Export All URLs: every customer's subscription link, one per line, the
 // way the classic panel hands over every client's share link at once.
 async function exportUrls(i) {
   try {
-    const list = await clientsOn(i)
-    const links = []
-    for (const c of list) {
-      const r = await api.get(`/api/clients/${c.id}/subscription`, { background: true })
-      if (r?.link) links.push(r.link)
-    }
-    textModal.value = { title: `${t('iface.menu.exportUrls')} — ${i.name}`, text: links.join('\n') }
+    const links = await linksOf(await clientsOn(i))
+    textModal.value = { title: `${t('iface.menu.exportUrls')} — ${i.name}`, text: links.join('\n'), file: `${i.name}-links.txt` }
   } catch (err) {
     notify(err.message, 'error')
   }
@@ -262,34 +263,39 @@ async function submitGroup() {
 }
 
 // Export: the tunnel as the JSON the API creates one from -- what
-// "Import an Inbound" reads back.
-const textModal = ref(null) // { title, text }
+// "Import an Interface" reads back, field for field. The stored AmneziaWG and
+// OpenVPN blocks are not part of it: the create call takes neither, refuses a
+// field it does not know, and makes both afresh; the transport, the one part
+// of them it does take, travels on its own.
+const textModal = ref(null) // { title, text, file }
 function exportable(i) {
   return {
-    name: i.name, protocol: i.protocol, listenPort: i.listenPort, subnet: i.subnet,
-    endpointHost: i.endpointHost, mtu: i.mtu, dns: i.dns, natInterface: i.natInterface,
-    mode: i.mode, awg: i.awg || undefined, openvpn: i.openvpn || undefined,
+    name: i.name, protocol: i.protocol, enabled: i.enabled, listenPort: i.listenPort, subnet: i.subnet,
+    endpointHost: i.endpointHost, mtu: i.mtu, dns: i.dns, natInterface: i.natInterface, mode: i.mode,
+    transport: i.protocol === 'openvpn' && i.openvpn?.transport ? i.openvpn.transport : undefined,
   }
 }
 function exportOne(i) {
-  textModal.value = { title: `${t('iface.menu.exportInbound')} — ${i.name}`, text: JSON.stringify(exportable(i), null, 2) }
+  textModal.value = { title: `${t('iface.menu.exportInbound')} — ${i.name}`, text: JSON.stringify(exportable(i), null, 2), file: `${i.name}.json` }
 }
 async function exportAllUrls() {
-  const links = []
   try {
-    for (const i of interfaces.value) {
-      for (const c of await clientsOn(i)) {
-        const r = await api.get(`/api/clients/${c.id}/subscription`, { background: true })
-        if (r?.link && !links.includes(r.link)) links.push(r.link)
-      }
-    }
-    textModal.value = { title: t('iface.menu.exportUrls'), text: links.join('\n') }
+    // Everyone on any tunnel: one list rather than one per tunnel, so a
+    // customer on several is fetched once.
+    const all = await api.allClients()
+    const links = await linksOf(all.filter((c) => (c.accounts || []).length))
+    textModal.value = { title: t('iface.menu.exportUrls'), text: links.join('\n'), file: 'subscription-links.txt' }
   } catch (err) {
     notify(err.message, 'error')
   }
 }
 function exportAll() {
-  textModal.value = { title: t('iface.menu.exportAll'), text: JSON.stringify(interfaces.value.map(exportable), null, 2) }
+  textModal.value = { title: t('iface.menu.exportAll'), text: JSON.stringify(interfaces.value.map(exportable), null, 2), file: 'interfaces.json' }
+}
+function downloadText() {
+  const m = textModal.value
+  const json = m.file.endsWith('.json')
+  saveText(m.text + '\n', m.file, json ? 'application/json' : 'text/plain;charset=utf-8')
 }
 async function copyText() {
   try {
@@ -301,6 +307,31 @@ async function copyText() {
 }
 const importOpen = ref(false)
 const importText = ref('')
+const importFile = ref(null)
+
+// What the create call takes, out of an export: this panel's, or one written
+// before the export took that shape, which carried the stored AmneziaWG and
+// OpenVPN blocks whole. The server refuses a field it does not know rather
+// than guess at it, so those never imported; the transport inside the OpenVPN
+// block is the one part of them worth keeping.
+const IMPORT_FIELDS = ['name', 'protocol', 'enabled', 'listenPort', 'subnet', 'endpointHost', 'mtu', 'dns', 'natInterface', 'mode', 'transport', 'nodeId']
+function importable(raw) {
+  const out = {}
+  for (const k of IMPORT_FIELDS) {
+    if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') out[k] = raw[k]
+  }
+  if (!out.transport && raw.openvpn?.transport) out.transport = raw.openvpn.transport
+  if (out.protocol !== 'openvpn') delete out.transport
+  return out
+}
+function pickImportFile() {
+  importFile.value?.click()
+}
+async function onImportFile(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (file) importText.value = await file.text()
+}
 async function runImport() {
   let parsed
   try {
@@ -309,21 +340,33 @@ async function runImport() {
     notify(t('outbound.importInvalidJson'), 'error')
     return
   }
-  const list = Array.isArray(parsed) ? parsed : [parsed]
+  const list = (Array.isArray(parsed) ? parsed : [parsed]).filter((it) => it && typeof it === 'object' && !Array.isArray(it))
+  if (!list.length) {
+    notify(t('outbound.importInvalidJson'), 'error')
+    return
+  }
   busy.value = true
-  let n = 0
+  // Each on its own: one tunnel refused -- a name or a port already taken
+  // here -- says why and leaves the rest to be made.
+  let made = 0
+  const failed = []
   try {
     for (const it of list) {
-      await api.post('/api/interfaces', it)
-      n++
+      try {
+        await api.post('/api/interfaces', importable(it))
+        made++
+      } catch (err) {
+        failed.push(`${it.name || '?'}: ${err.message}`)
+      }
     }
-    notify(`${t('iface.menu.import')}: ${nf(n)}`, 'success')
-    importOpen.value = false
-    importText.value = ''
-    await load()
-  } catch (err) {
-    notify(err.message, 'error')
-    if (n) await load()
+    if (made) notify(`${t('iface.menu.import')}: ${nf(made)}`, 'success')
+    if (failed.length) {
+      notify(failed.join('\n'), 'error')
+    } else {
+      importOpen.value = false
+      importText.value = ''
+    }
+    if (made) await load()
   } finally {
     busy.value = false
   }
@@ -352,8 +395,8 @@ function resetAllUsage() {
 const attach = ref(null) // { iface, list, chosen: Set }
 async function openAttach(i) {
   try {
-    const cs = await api.get('/api/clients?perPage=500', { background: true })
-    const items = (cs.items || cs || []).filter((c) => !(c.accounts || []).some((a) => a.interfaceId === i.id))
+    const all = await api.allClients()
+    const items = all.filter((c) => !(c.accounts || []).some((a) => a.interfaceId === i.id))
     attach.value = { iface: i, list: items, chosen: new Set(), q: '' }
   } catch (err) {
     notify(err.message, 'error')
@@ -1066,6 +1109,7 @@ async function submitForm(input) {
       <div class="card-body"><div class="field"><textarea class="ltr mono" rows="14" readonly spellcheck="false" :value="textModal.text"></textarea></div></div>
       <div class="modal-foot">
         <button type="button" class="btn" @click="textModal = null">{{ t('common.close') }}</button>
+        <button v-if="textModal.file" type="button" class="btn" @click="downloadText"><Icon name="download" :size="14" /><span>{{ t('action.download') }}</span></button>
         <button class="btn primary" @click="copyText"><Icon name="copy" :size="14" /><span>{{ t('action.copy') }}</span></button>
       </div>
     </div>
@@ -1077,8 +1121,13 @@ async function submitForm(input) {
         <h2 id="im-title">{{ t('iface.menu.import') }}</h2>
         <button class="act" :aria-label="t('common.close')" @click="importOpen = false"><Icon name="close" :size="16" /></button>
       </div>
-      <div class="card-body"><div class="field"><textarea v-model="importText" class="ltr mono" rows="14" spellcheck="false" placeholder="{ ... }"></textarea></div></div>
+      <div class="card-body">
+        <div class="field"><textarea v-model="importText" class="ltr mono" rows="14" spellcheck="false" placeholder="{ ... }"></textarea></div>
+        <p class="muted small">{{ t('iface.importHint') }}</p>
+        <input ref="importFile" type="file" accept=".json,application/json,.txt" hidden @change="onImportFile" />
+      </div>
       <div class="modal-foot">
+        <button type="button" class="btn" @click="pickImportFile"><Icon name="upload" :size="14" /><span>{{ t('action.chooseFile') }}</span></button>
         <button type="button" class="btn" @click="importOpen = false">{{ t('common.close') }}</button>
         <button class="btn primary" :disabled="busy || !importText.trim()" @click="runImport">
           <span v-if="busy" class="spin"></span>

@@ -35,9 +35,9 @@ A yellow banner above the card says when quota enforcement or another part of th
 
 | Item | What it does |
 |------|--------------|
-| **Import an Interface** | Paste the JSON that **Export Interface** or **Export All Interfaces** produced, and the interface (or each one in a list) is created again: the same name, protocol, port, range, endpoint, MTU, DNS, egress interface and mode. New keys are made, so configurations from the old one do not carry over. Import stops at the first one the panel refuses, and says why; the ones before it stay created. |
-| **Export All URLs** | The subscription link of every customer on every interface, one per line, in a window you can copy from. A customer on two interfaces is listed once. |
-| **Export All Interfaces** | Every interface's settings as JSON, for **Import an Interface** on this panel or another. Keys and customers are not included. |
+| **Import an Interface** | Paste the JSON that **Export Interface** or **Export All Interfaces** produced, or **Choose a file** it was saved to, and the interface (or each one in a list) is created again: the same name, protocol, port, range, endpoint, MTU, DNS, egress interface, mode and, for OpenVPN, transport. An export from 2.6.6 or earlier imports too. New keys are made, so configurations from the old one do not carry over. One the panel refuses -- a name or port already taken here -- is named with the reason, and the rest are still created. |
+| **Export All URLs** | The subscription link of every customer on every interface, one per line, in a window you can copy from or **Download** as a file. A customer on two interfaces is listed once. Every customer is included, however many there are. |
+| **Export All Interfaces** | Every interface's settings as JSON, to copy or **Download**, for **Import an Interface** on this panel or another. Keys and customers are not included. |
 | **Reset Traffic for All Interfaces** | Sets the used traffic of every customer on every interface back to zero, after a confirmation. Allowances, end dates and states are not touched. A customer who was stopped for running out of traffic is connected again at once. |
 
 ## The table
@@ -67,7 +67,7 @@ The table becomes a list of cards. Each card shows the ID, the name, the switch 
 
 | Item | When | What it does |
 |------|------|--------------|
-| **Export All URLs** | always | The subscription link of every customer on this interface, one per line. |
+| **Export All URLs** | always | The subscription link of every customer on this interface, one per line, to copy or download. |
 | **Export Interface** | always | This interface's settings as JSON, for **Import an Interface**. |
 | **Download the .ovpn for this tunnel** | OpenVPN only | The one `.ovpn` profile every customer on this tunnel uses. It holds no personal key: each customer signs in with their own username and password, so the same file can be given to everyone, and removing a customer is enough to lock them out. |
 | **Reset Traffic** | always | Sets the used traffic of every customer with a device on this interface back to zero. A customer also on other interfaces has one total, so this clears all of it for them. Anyone cut off for running out of traffic is connected again at once. Allowances and dates are unchanged. |

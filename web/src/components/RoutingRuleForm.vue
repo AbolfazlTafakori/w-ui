@@ -77,7 +77,7 @@ onMounted(async () => {
   try {
     const [g, c, i] = await Promise.all([
       api.get('/api/groups', { background: true }).catch(() => []),
-      api.get('/api/clients?perPage=500', { background: true }).catch(() => ({ items: [] })),
+      api.allClients().catch(() => []),
       api.get('/api/interfaces', { background: true }).catch(() => []),
     ])
     groups.value = Array.isArray(g) ? g : g.items || []

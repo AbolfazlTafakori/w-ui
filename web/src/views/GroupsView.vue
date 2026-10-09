@@ -294,8 +294,7 @@ async function openMembers(g, mode) {
   members.value = { group: g, mode, chosen: new Set() }
   memberSearch.value = ''
   try {
-    const res = await api.get('/api/clients?perPage=500')
-    allClients.value = res.items || []
+    allClients.value = await api.allClients({}, {})
   } catch (e) {
     notify(e.message, 'error')
     members.value = null

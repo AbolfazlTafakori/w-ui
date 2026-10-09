@@ -121,7 +121,7 @@ A customer is online while one of their files has had traffic moving within the 
 |------|--------------|
 | **Add Bulk** | Creates many customers at once — see [Add Bulk](#add-bulk). |
 | **Export clients** | Downloads every customer as a JSON file (`wui-clients-DATE.json`): names, notes, groups, allowances, usage, end dates, users, speed limits, renewal, state. No keys: it records who was sold what. |
-| **Import clients** | Paste an export — the whole file, or just its list of customers — to create them again on the first interface. A name that already exists is skipped. Every imported customer gets new keys, so the files from the old server do not work here; hand out the new links. Usage is not carried over. |
+| **Import clients** | **Choose a file** an export saved, or paste it — the whole file, or just its list of customers — to create them again. Pick the interface they go on, and what to do with a name that already exists: skip it (the default; the customer here stays as they are), import beside it with a number added, or replace that customer's plan, keeping their files. The result says how many were created, replaced, skipped and failed, and why for the ones that failed. Every customer it makes gets new keys, so the files from the old server do not work here; hand out the new links. Usage is not carried over. |
 | **Reset all client traffic** | Sets every customer's used traffic back to zero, after a confirmation. |
 | **Add or remove time** / **Add or remove traffic** | Greyed out: they work on a selection. Tick customers first. |
 | **Delete depleted** | Deletes every customer who is out of data or past their date, after a confirmation naming how many. |
@@ -141,7 +141,7 @@ A customer is online while one of their files has had traffic moving within the 
 | **Set traffic limit and reset cycle** | Sets one allowance (with its unit) and/or one renewal cycle on every selected customer. A field left blank is not changed. |
 | **Reset Traffic** | Sets the used traffic of every selected customer back to zero, after a confirmation. Anyone out of data is back on. |
 | **New keys and link** | New keys and a new link for every selected customer, one after another; five or more ask you to type how many. A customer that fails is named and the rest are still done. |
-| **Sub links** | Every selected customer's subscription link, one per line, to copy. |
+| **Sub links** | Every selected customer's subscription link, one per line, to copy. A customer whose link cannot be read is listed by name with a dash. |
 
 ## Adding or removing time and traffic
 
