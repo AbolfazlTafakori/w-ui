@@ -6,6 +6,35 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.7] — 2026-10-09
+
+### Fixed
+- **Import an Interface takes what Export gives.** The export carried the
+  stored AmneziaWG and OpenVPN blocks whole, and the server refuses a field it
+  does not know, so no exported interface had ever imported. The export is
+  now the create call's own shape -- the OpenVPN transport travelling on its
+  own -- and the import reads that, and exports from earlier versions too.
+  One interface refused, a name or port already taken, is named with the
+  reason and the rest are still made; it used to stop at the first. A file
+  can be chosen instead of pasted, and every export can be downloaded.
+- **Actions that take every customer take every customer.** The server
+  serves at most 200 customers to a page and answers a larger page with 25;
+  the pages asked for 500. Export All URLs, an interface's own Export All
+  URLs, Attach Existing Clients, Attach Clients To, Detach Clients From and
+  Add Clients To Group stopped at the 25th customer of a tunnel, and the
+  customer pickers on the routing and groups pages listed 25. They read the
+  whole list now, page by page.
+- **Sub links shows the links.** It read a field the customer list does not
+  carry, so every line was a name and a dash; each selected customer's link
+  is fetched now.
+- **Import clients asks where they go.** The customers went on the first
+  interface whatever it was, a name already here was always skipped, and
+  the result was one number -- "0" for a list imported back into the panel
+  it came from. The interface and what to do with a taken name (skip,
+  import beside it, replace the plan) are chosen in the dialog, the file can
+  be chosen rather than pasted, and the result says how many were created,
+  replaced, skipped and failed.
+
 ## [2.6.6] — 2026-10-08
 
 ### Fixed
@@ -799,7 +828,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.6...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.7...HEAD
+[2.6.7]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.6...v2.6.7
 [2.6.6]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.5...v2.6.6
 [2.6.5]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.4...v2.6.5
 [2.6.4]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.3...v2.6.4
