@@ -90,6 +90,13 @@ func (s *linuxSystem) missing() []string {
 	return out
 }
 
+// packagedUnits are the services the IPsec and L2TP packages can bring with
+// them, under the names the distributions give them.
+var packagedUnits = []string{
+	"xl2tpd.service", "strongswan.service", "strongswan-starter.service",
+	"strongswan-swanctl.service", "ipsec.service",
+}
+
 // EnsurePackages installs strongSwan, xl2tpd and pppd when any is missing.
 //
 // The installer and the update script install them too; this is for a panel
@@ -97,12 +104,21 @@ func (s *linuxSystem) missing() []string {
 // installs is not left running for nothing: the packaged xl2tpd service would
 // take L2TP's port from the agent's own, and strongSwan is started by the
 // agent while a tunnel exists and stopped when it goes.
+//
+// Nothing already on the machine is touched. A package that would have to be
+// removed -- libreswan, say, for another VPN -- stops the install instead, and
+// a service that was enabled or running before is left as it was: it is the
+// operator's, not ours to switch off.
 func (s *linuxSystem) EnsurePackages(ctx context.Context) error {
 	gone := s.missing()
 	if len(gone) == 0 {
 		return nil
 	}
 	s.log.Info("installing the L2TP/IPsec stack", "missing", strings.Join(gone, ", "))
+	theirs := map[string]bool{}
+	for _, unit := range packagedUnits {
+		theirs[unit] = s.inUse(ctx, unit)
+	}
 	family, id := osFamily()
 	switch family {
 	case "debian":
@@ -112,7 +128,7 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context) error {
 		_ = upd.Run()
 		cctx, cancel := context.WithTimeout(ctx, installTimeout)
 		defer cancel()
-		cmd := exec.CommandContext(cctx, "apt-get", "install", "-y", "-qq",
+		cmd := exec.CommandContext(cctx, "apt-get", "install", "-y", "-qq", "--no-remove",
 			"strongswan-swanctl", "charon-systemd", "xl2tpd", "ppp")
 		cmd.Env = env
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -132,8 +148,10 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context) error {
 	}
 	// Installed here, so off until the agent wants them: the packaged xl2tpd
 	// is never the one used, and strongSwan is the agent's to start.
-	for _, unit := range []string{"xl2tpd.service", strongswanUnit()} {
-		_, _ = s.run(ctx, cmdTimeout, "", "systemctl", "disable", "--now", unit)
+	for _, unit := range packagedUnits {
+		if !theirs[unit] {
+			_, _ = s.run(ctx, cmdTimeout, "", "systemctl", "disable", "--now", unit)
+		}
 	}
 	if left := s.missing(); len(left) > 0 {
 		return fmt.Errorf("still missing after installing: %s", strings.Join(left, ", "))
@@ -243,6 +261,14 @@ func strongswanUnit() string {
 		}
 	}
 	return "strongswan.service"
+}
+
+// inUse reports whether a service is enabled or running.
+func (s *linuxSystem) inUse(ctx context.Context, unit string) bool {
+	if _, err := s.run(ctx, cmdTimeout, "", "systemctl", "is-enabled", "--quiet", unit); err == nil {
+		return true
+	}
+	return s.active(ctx, unit)
 }
 
 func (s *linuxSystem) active(ctx context.Context, unit string) bool {

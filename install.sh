@@ -25,6 +25,8 @@
 #   --from-source      build from the repository in the current directory
 #   --no-amnezia       skip AmneziaWG (it builds a kernel module and needs headers)
 #   --no-openvpn       skip OpenVPN if you only sell WireGuard
+#   --no-l2tp          skip L2TP/IPsec (strongSwan, xl2tpd); it stays off
+#                      until an L2TP tunnel is made either way
 #   --port <n>         panel port (default: random)
 #   --sub-port <n>     subscription service port (default: random)
 #   --db <engine>      sqlite (default) or postgres, for a large customer count
@@ -108,6 +110,7 @@ DB_SOURCE=""
 DB_PASS=""
 WANT_AMNEZIA=1
 WANT_OPENVPN=1
+WANT_L2TP=1
 LOCAL_BIN=""
 FROM_SOURCE=0
 ACTION=install
@@ -204,6 +207,7 @@ while [[ "$LIB_ONLY" != 1 && $# -gt 0 ]]; do
     --from-source) FROM_SOURCE=1; shift ;;
     --no-amnezia)  WANT_AMNEZIA=0; shift ;;
     --no-openvpn)  WANT_OPENVPN=0; shift ;;
+    --no-l2tp)     WANT_L2TP=0; shift ;;
     --port)        PANEL_PORT="${2:?--port needs a number}"; PORT_KNOWN=1; shift 2 ;;
     --sub-port)    SUB_PORT="${2:?--sub-port needs a number}"; SUB_KNOWN=1; shift 2 ;;
     --db)          DB_DRIVER="${2:?--db needs sqlite or postgres}"; DB_KNOWN=1; shift 2 ;;
@@ -300,6 +304,9 @@ do_uninstall() {
     systemctl disable --now wui.service >/dev/null 2>&1 || true
     ok "service stopped and disabled"
   fi
+  # With the panel stopped, and before the binary goes: the agent is part of
+  # it, and is what takes an L2TP tunnel down.
+  remove_l2tp_agent
   have_systemd && systemctl disable --now wui-update.path >/dev/null 2>&1 || true
   rm -f "$UNIT" /etc/systemd/system/wui-update.path /etc/systemd/system/wui-update.service
   have_systemd && systemctl daemon-reload || true
@@ -321,7 +328,7 @@ do_uninstall() {
 
   # The VPN packages are deliberately left alone: they may predate this panel,
   # and removing WireGuard would take down tunnels the operator still needs.
-  info "wireguard / openvpn / nftables were left installed"
+  info "wireguard / openvpn / strongswan / xl2tpd / nftables were left installed"
   printf '\n%sW-UI removed.%s\n\n' "$G" "$N"
   exit 0
 }
@@ -679,6 +686,171 @@ install_openvpn() {
     OPENVPN_OK=0
     warn "openvpn not on PATH after install"
   fi
+}
+
+# ── L2TP/IPsec ───────────────────────────────────────────────────────────────
+# strongSwan, xl2tpd and pppd, installed and left off.
+#
+# Nothing of it runs until an L2TP tunnel is made in the panel: the agent
+# starts it then and stops it when the tunnel goes. What is already on the
+# machine is not touched. A package that would have to be removed for these
+# -- libreswan, for another VPN -- stops this step instead, and a service
+# that was enabled or running before is the operator's and stays as it was.
+L2TP_UNITS=(xl2tpd.service strongswan.service strongswan-starter.service strongswan-swanctl.service ipsec.service)
+
+l2tp_packages() {
+  case "$FAMILY" in
+    debian)
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove \
+        strongswan-swanctl charon-systemd xl2tpd ppp >/dev/null 2>&1 ;;
+    rhel)
+      # From EPEL on the RHEL family; Fedora carries them itself.
+      [[ "$OS_ID" == fedora ]] || dnf install -y -q epel-release >/dev/null 2>&1 || true
+      # Without --allowerasing: nothing already here is removed for these.
+      dnf install -y -q strongswan xl2tpd ppp >/dev/null 2>&1 ;;
+  esac
+}
+
+install_l2tp() {
+  step "Installing L2TP/IPsec (off until a tunnel uses it)"
+  local u theirs=" " installed=1
+  if have_systemd; then
+    for u in "${L2TP_UNITS[@]}"; do
+      if systemctl is-enabled --quiet "$u" 2>/dev/null || systemctl is-active --quiet "$u" 2>/dev/null; then
+        theirs="$theirs$u "
+      fi
+    done
+  fi
+  if ! l2tp_packages; then
+    # A stale package list is the usual reason: one refresh, one more try.
+    if [[ "$FAMILY" == debian ]]; then
+      pkg_refresh
+      l2tp_packages || installed=0
+    else
+      installed=0
+    fi
+  fi
+  if have_systemd; then
+    for u in "${L2TP_UNITS[@]}"; do
+      [[ "$theirs" == *" $u "* ]] && continue
+      systemctl disable --now "$u" >/dev/null 2>&1 || true
+    done
+  fi
+  if [[ "$installed" == 1 ]] && have xl2tpd && have pppd && have swanctl; then
+    ok "strongSwan, xl2tpd and pppd: installed, off until an L2TP tunnel is made"
+  else
+    warn "L2TP/IPsec could not be installed now; the panel installs it when the first L2TP tunnel is made"
+  fi
+  [[ "$theirs" == " " ]] || info "already in use here, left as it was:$theirs"
+  l2tp_ports_note
+}
+
+# udp_owner prints what holds a UDP port, or nothing when it is free.
+udp_owner() {
+  have ss || return 0
+  local line who
+  line=$(ss -lunpH "sport = :$1" 2>/dev/null | head -1)
+  [[ -n "$line" ]] || return 0
+  who=$(sed -n 's/.*users:(("\([^"]*\)".*/\1/p' <<<"$line")
+  printf '%s' "${who:-another service}"
+}
+
+# Who already holds L2TP's ports, said now rather than found when the first
+# tunnel will not start. strongSwan is not in the way -- the tunnel is added
+# to the one already running -- and on an update the agent's own are not.
+l2tp_ports_note() {
+  if have_systemd && systemctl is-active --quiet wui-l2tp.service; then return 0; fi
+  local p who
+  for p in 500 4500 1701; do
+    who=$(udp_owner "$p")
+    [[ -z "$who" || "$who" == charon* ]] && continue
+    warn "UDP $p is held by $who; an L2TP tunnel will not start here until it is free"
+  done
+}
+
+# The L2TP agent, the root half of an L2TP tunnel.
+#
+# The panel cannot run pppd -- it is unprivileged and sandboxed -- so it
+# describes the tunnel in $DATA_DIR/l2tp/state.json, and this path unit runs
+# the agent, as root, for as long as that description exists. With no L2TP
+# tunnel there is none, and nothing runs. A panel updated from its own button
+# writes the same units through the update helper; a test holds the two to
+# the same text.
+write_l2tp_agent() {
+  have_systemd || return 0
+  cat >/etc/systemd/system/wui-l2tp.service <<HELPER
+[Unit]
+Description=W-UI — L2TP/IPsec agent: runs the L2TP tunnel the panel describes
+After=network-online.target
+Wants=network-online.target
+# Started by wui-l2tp.path while the panel describes a tunnel. An agent that
+# fails is tried again for as long as it fails, not given up on after five.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=$BIN_PATH l2tp-agent $DATA_DIR
+# Only the agent is stopped, never xl2tpd and the sessions it carries: a
+# restart, an update's included, must not disconnect anyone. The next run
+# adopts them.
+KillMode=process
+Restart=on-failure
+RestartSec=5
+HELPER
+  cat >/etc/systemd/system/wui-l2tp.path <<HELPER
+[Unit]
+Description=W-UI — start the L2TP agent while the panel describes an L2TP tunnel
+
+[Path]
+PathExists=$DATA_DIR/l2tp/state.json
+Unit=wui-l2tp.service
+
+[Install]
+WantedBy=multi-user.target
+HELPER
+  systemctl daemon-reload
+  systemctl enable --now wui-l2tp.path >/dev/null 2>&1 || { warn "could not enable wui-l2tp.path; L2TP tunnels will not start"; return 0; }
+  # An agent already running is on the binary just replaced: restarted onto
+  # the new one, its sessions staying up.
+  systemctl try-restart wui-l2tp.service >/dev/null 2>&1 || true
+  ok "wui-l2tp.path (L2TP/IPsec; idle until a tunnel uses it)"
+}
+
+# Takes an L2TP tunnel down and removes its agent: for an uninstall, and for
+# a move back to a release from before L2TP, which has no agent to carry it.
+#
+# The agent does the taking down itself, while the binary it is part of is
+# still here: with the tunnel's description gone it ends every session, stops
+# xl2tpd, unloads IPsec, takes its firewall table away and exits. The panel is
+# stopped before this, or it would describe the tunnel again.
+remove_l2tp_agent() {
+  [[ -f /etc/systemd/system/wui-l2tp.service || -f "$DATA_DIR/l2tp/state.json" ]] || return 0
+  if have_systemd; then
+    systemctl disable --now wui-l2tp.path >/dev/null 2>&1 || true
+    if [[ -f "$DATA_DIR/l2tp/state.json" ]]; then
+      rm -f "$DATA_DIR/l2tp/state.json"
+      systemctl start wui-l2tp.service >/dev/null 2>&1 || true
+      for _ in $(seq 1 30); do
+        systemctl is-active --quiet wui-l2tp.service || break
+        sleep 1
+      done
+    fi
+    systemctl stop wui-l2tp.service >/dev/null 2>&1 || true
+  else
+    rm -f "$DATA_DIR/l2tp/state.json"
+  fi
+  rm -f /etc/systemd/system/wui-l2tp.path /etc/systemd/system/wui-l2tp.service
+  if have_systemd; then systemctl daemon-reload || true; fi
+  ok "L2TP/IPsec taken down; its agent removed"
+}
+
+# release_before_l2tp reports whether a release is from before L2TP, which
+# came in 3.0. dev-latest, or anything not a version, is taken as the newest.
+release_before_l2tp() {
+  local t="${1#v}" major
+  major="${t%%.*}"
+  [[ "$major" =~ ^[0-9]+$ ]] || return 1
+  (( major < 3 ))
 }
 
 enable_forwarding() {
@@ -1308,6 +1480,7 @@ read_back() {
   local extras="WireGuard"
   [[ "$WANT_AMNEZIA" == 1 ]] && extras="AmneziaWG, $extras"
   [[ "$WANT_OPENVPN" == 1 ]] && extras="OpenVPN, $extras"
+  [[ "$WANT_L2TP" == 1 ]] && extras="$extras, L2TP/IPsec (off until used)"
   info "Installing     $extras"
   tty_out '\n'
 }
@@ -2564,6 +2737,7 @@ install_base
 install_wireguard
 if [[ "$WANT_AMNEZIA" == 1 ]]; then install_amnezia; else info "AmneziaWG skipped (--no-amnezia)"; fi
 if [[ "$WANT_OPENVPN" == 1 ]]; then install_openvpn; else info "OpenVPN skipped (--no-openvpn)"; fi
+if [[ "$WANT_L2TP" == 1 ]]; then install_l2tp; else info "L2TP/IPsec skipped (--no-l2tp)"; fi
 enable_forwarding
 check_nftables
 install_binary
@@ -2573,6 +2747,7 @@ setup_database
 setup_tls
 write_unit
 write_update_helper
+write_l2tp_agent
 apply_admin
 apply_sub_settings
 open_firewall

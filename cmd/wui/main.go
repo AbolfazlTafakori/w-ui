@@ -250,6 +250,7 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go ensureL2TPUnits(ctx, log, cfg.DataDir)
 
 	// Which node this panel is. Everything it programs is filtered by it, and
 	// everything belonging to another node is pushed there instead.

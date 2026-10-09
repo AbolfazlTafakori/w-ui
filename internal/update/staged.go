@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -46,6 +47,20 @@ const (
 	requestFile     = "request"
 	resultFile      = "result"
 )
+
+// setupRequest asks the helper to put the system's own units in place rather
+// than to install a release: the services a newer build needs, which a server
+// updated from the panel's button never had written for it. Root writes only
+// what the installed binary renders from its own path and the data directory
+// the helper was started with; of what the panel left, only the word is used.
+const setupRequest = "setup"
+
+// Setup is what a setup request does, set by the command the helper runs.
+// It is given the data directory and the installed binary's path.
+var Setup func(dataDir, binary string) error
+
+// helperMu keeps one request at a time in the stage directory.
+var helperMu sync.Mutex
 
 // helperTimeout is how long the panel waits for the helper's answer. It reads
 // a file already on disk, checks it, and moves it; a minute is generous.
@@ -127,6 +142,8 @@ type helperResult struct {
 
 // handOver leaves a checked release for the helper and waits for its answer.
 func handOver(ctx context.Context, binary, sig []byte, version string) error {
+	helperMu.Lock()
+	defer helperMu.Unlock()
 	if err := os.MkdirAll(StageDir, 0o700); err != nil {
 		return fmt.Errorf("could not prepare the update directory: %w", err)
 	}
@@ -142,7 +159,41 @@ func handOver(ctx context.Context, binary, sig []byte, version string) error {
 	if err := writeAtomic(filepath.Join(StageDir, requestFile), []byte(version+"\n")); err != nil {
 		return fmt.Errorf("could not ask the helper: %w", err)
 	}
+	return awaitResult(ctx)
+}
 
+// RequestSetup has root put the system's units in place: through the helper
+// when the panel runs sandboxed, by Setup itself when the panel can write its
+// own binary and so is root already.
+func RequestSetup(ctx context.Context, dataDir string) error {
+	switch mode() {
+	case installDirect:
+		if Setup == nil {
+			return errors.New("this build has nothing to set up")
+		}
+		self, err := installedPath()
+		if err != nil {
+			return err
+		}
+		return Setup(dataDir, self)
+	case installHelper:
+	default:
+		return ErrCannotInstall
+	}
+	helperMu.Lock()
+	defer helperMu.Unlock()
+	if err := os.MkdirAll(StageDir, 0o700); err != nil {
+		return fmt.Errorf("could not prepare the update directory: %w", err)
+	}
+	os.Remove(filepath.Join(StageDir, resultFile))
+	if err := writeAtomic(filepath.Join(StageDir, requestFile), []byte(setupRequest+"\n")); err != nil {
+		return fmt.Errorf("could not ask the helper: %w", err)
+	}
+	return awaitResult(ctx)
+}
+
+// awaitResult waits for the helper's answer to the request just left.
+func awaitResult(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, helperTimeout)
 	defer cancel()
 	tick := time.NewTicker(500 * time.Millisecond)
@@ -201,7 +252,7 @@ func writeAtomic(path string, data []byte) error {
 // panel's data directory and current the version of the binary running it. It
 // installs what the panel left in dataDir/update if it is signed and newer,
 // and records the outcome where the panel reads it. The returned version is
-// what was installed.
+// what was installed -- none for a setup request, which installs nothing.
 //
 // The panel's user owns that directory and can change anything in it at any
 // moment, so it is trusted for nothing but bytes. Every file operation goes
@@ -219,11 +270,23 @@ func ApplyStaged(dataDir, current string) (installed string, err error) {
 	defer func() { recordResult(root, installed, err) }()
 
 	stage := func(name string) string { return filepath.Join(StageDirName, name) }
-	// Taken first, so the path unit is not started again for the same
-	// request whatever happens next.
+	// Read for what it asks, then taken, so the path unit is not started
+	// again for the same request whatever happens next.
+	req, _ := readAtMost(root, stage(requestFile), 64)
 	root.Remove(stage(requestFile))
 	defer root.Remove(stage(stagedBinary))
 	defer root.Remove(stage(stagedSignature))
+
+	if strings.TrimSpace(string(req)) == setupRequest {
+		if Setup == nil {
+			return "", errors.New("this build has nothing to set up")
+		}
+		self, err := installedPath()
+		if err != nil {
+			return "", err
+		}
+		return "", Setup(dataDir, self)
+	}
 
 	binary, err := readAtMost(root, stage(stagedBinary), maxBinary)
 	if err != nil {

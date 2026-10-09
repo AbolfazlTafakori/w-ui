@@ -97,6 +97,14 @@ fi
 
 # ── install ──────────────────────────────────────────────────────────────────
 step "Installing"
+# A release from before 3.0 has no L2TP agent. A tunnel this one carries is
+# taken down by it first, while it is still here to do it; the panel is
+# stopped for that, or it would describe the tunnel again, and the restart
+# below brings it back.
+if release_before_l2tp "$RELEASE_TAG" && [[ -f /etc/systemd/system/wui-l2tp.service || -f "$DATA_DIR/l2tp/state.json" ]]; then
+  if have_systemd; then systemctl stop wui.service || true; fi
+  remove_l2tp_agent
+fi
 install -m 0755 "$tmp/wui" "$BIN_PATH.new" && mv -f "$BIN_PATH.new" "$BIN_PATH"
 ok "$BIN_PATH"
 if [[ -n "${MENU_URL:-}" ]] && curl -fsSL --retry 4 --retry-all-errors --retry-delay 3 "$MENU_URL" -o "$tmp/w-ui.sh"; then
@@ -108,6 +116,12 @@ fi
 # The helper that lets the panel install its own updates from here on. A
 # server installed before it existed gets it now.
 write_update_helper
+# L2TP/IPsec, installed and left off, and the agent that runs it once a
+# tunnel is made -- for a release that has one.
+if ! release_before_l2tp "$RELEASE_TAG"; then
+  install_l2tp
+  write_l2tp_agent
+fi
 if have_systemd; then
   systemctl daemon-reload
   systemctl restart wui.service

@@ -451,3 +451,27 @@ func TestABackupSkipsAStagedUpdate(t *testing.T) {
 		}
 	}
 }
+
+// What the panel and the L2TP agent say to each other is not data either:
+// restored elsewhere it would start that machine's agent on a stale tunnel.
+func TestABackupSkipsTheL2TPAgentsFiles(t *testing.T) {
+	s, data := newService(t, 0)
+	dir := filepath.Join(data, l2tpStateDir)
+	if err := os.MkdirAll(filepath.Join(dir, "kick"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"state.json", "report.json", filepath.Join("kick", "7")} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, err := s.Create(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range entries(t, filepath.Join(s.Dir(), a.Name)) {
+		if strings.HasPrefix(name, l2tpStateDir+"/") {
+			t.Errorf("%s was archived", name)
+		}
+	}
+}

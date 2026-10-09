@@ -7,11 +7,21 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/l2tpagent"
+	"github.com/abolfazl/w-ui/internal/update"
 )
+
+// What a setup request to the update helper does, in this build: the L2TP
+// agent's units. Set for the helper's run and for a panel that is root
+// already and does it itself.
+func init() {
+	update.Setup = func(dataDir, binary string) error { return l2tpagent.InstallUnits(binary, dataDir) }
+}
 
 // l2tpAgentInterval is how often the agent looks at what the panel asked for
 // and reports back: faster than the panel's collection tick, so a device the
@@ -45,4 +55,40 @@ func l2tpAgentCommand(args []string) error {
 	agent := l2tpagent.New(l2tpagent.NewSystem(log), files, log)
 	log.Info("l2tp agent started", "version", version, "data", args[0])
 	return agent.Run(ctx, l2tpAgentInterval)
+}
+
+// ensureL2TPUnits puts the L2TP agent's systemd units in place when they are
+// missing or are not what this build writes.
+//
+// The installer and the update script write them. A server updated from the
+// panel's own button ran neither -- the release that installed this build
+// knew nothing of L2TP -- so the panel asks the update helper, the root
+// channel it already has, to have this binary write them. Once, at start, and
+// only where systemd runs.
+func ensureL2TPUnits(ctx context.Context, log *slog.Logger, dataDir string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		return
+	}
+	self, err := os.Executable()
+	if err == nil {
+		self, err = filepath.EvalSymlinks(self)
+	}
+	if err != nil {
+		return
+	}
+	if dir, err := filepath.Abs(dataDir); err == nil {
+		dataDir = dir
+	}
+	if l2tpagent.UnitsInPlace(self, dataDir) {
+		return
+	}
+	if err := update.RequestSetup(ctx, dataDir); err != nil {
+		log.Warn("the L2TP agent's service is not in place; an L2TP tunnel will not start "+
+			"until the update script has been run once on this server", "error", err)
+		return
+	}
+	log.Info("the L2TP agent's service was put in place")
 }

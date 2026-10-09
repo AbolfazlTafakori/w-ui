@@ -229,3 +229,66 @@ func TestAPanelThatCannotInstallSaysSo(t *testing.T) {
 		t.Errorf("mode = %v, want direct when the panel can write its binary", m)
 	}
 }
+
+// A setup request installs nothing: the helper runs this build's Setup with
+// its own path and the data directory it was started with, and answers.
+func TestASetupRequestRunsSetupAndInstallsNothing(t *testing.T) {
+	c := stageRelease(t, "v9.9.9")
+	c.write(t, requestFile, []byte("setup\n"))
+	var gotDir, gotBin string
+	saved := Setup
+	Setup = func(dataDir, binary string) error { gotDir, gotBin = dataDir, binary; return nil }
+	t.Cleanup(func() { Setup = saved })
+
+	installed, err := ApplyStaged(c.dataDir, "v1.0.0")
+	if err != nil || installed != "" {
+		t.Fatalf("setup: installed %q, %v", installed, err)
+	}
+	if gotDir != c.dataDir || gotBin != c.installed {
+		t.Fatalf("Setup ran with %q, %q", gotDir, gotBin)
+	}
+	c.installedIs(t, "old panel")
+	if r := c.result(t); !r.OK || r.Version != "" {
+		t.Fatalf("result %+v", r)
+	}
+	if fileExists(filepath.Join(c.dataDir, StageDirName, requestFile)) {
+		t.Fatal("the request was left to start the helper again")
+	}
+
+	// A build with nothing to set up says so.
+	Setup = nil
+	c.write(t, requestFile, []byte("setup\n"))
+	if _, err := ApplyStaged(c.dataDir, "v1.0.0"); err == nil {
+		t.Fatal("a setup request with no Setup was answered as done")
+	}
+}
+
+// The panel's half of a setup request: the word, then the helper's answer.
+func TestRequestSetupAsksTheHelper(t *testing.T) {
+	savedW, savedUnit, savedDir := writable, HelperUnit, StageDir
+	t.Cleanup(func() { writable, HelperUnit, StageDir = savedW, savedUnit, savedDir })
+	writable = func() bool { return false }
+	HelperUnit = filepath.Join(t.TempDir(), "wui-update.path")
+	os.WriteFile(HelperUnit, nil, 0o644)
+	StageDir = filepath.Join(t.TempDir(), StageDirName)
+
+	go func() {
+		for {
+			b, err := os.ReadFile(filepath.Join(StageDir, requestFile))
+			if err == nil && string(b) == "setup\n" {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		raw, _ := json.Marshal(helperResult{OK: true})
+		writeAtomic(filepath.Join(StageDir, resultFile), raw)
+	}()
+	if err := RequestSetup(context.Background(), "/var/lib/wui"); err != nil {
+		t.Fatalf("setup through the helper: %v", err)
+	}
+
+	HelperUnit = filepath.Join(t.TempDir(), "absent.path")
+	if err := RequestSetup(context.Background(), "/var/lib/wui"); !errors.Is(err, ErrCannotInstall) {
+		t.Fatalf("no helper: %v", err)
+	}
+}

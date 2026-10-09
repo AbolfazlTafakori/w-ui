@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/l2tpagent"
 	"github.com/abolfazl/w-ui/internal/update"
 )
 
@@ -139,6 +140,12 @@ func applyUpdateCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "apply-update: nothing was installed: %v\n", err)
 		os.Exit(1)
 	}
+	if installed == "" {
+		// A setup request: the units are in place, and nothing was replaced
+		// that needs a restart.
+		fmt.Println("apply-update: the system's services are in place")
+		return nil
+	}
 	fmt.Printf("apply-update: installed %s over %s\n", installed, version)
 
 	// A moment for the panel to read the answer and tell the page, then the
@@ -148,5 +155,8 @@ func applyUpdateCommand(args []string) error {
 	if err != nil {
 		return fmt.Errorf("installed %s, but restarting the panel failed: %v: %s", installed, err, out)
 	}
+	// The L2TP agent runs from the same binary and is brought onto the new
+	// one too; only the agent restarts, and the tunnel's sessions stay up.
+	_ = exec.Command("systemctl", "try-restart", l2tpagent.ServiceUnit).Run()
 	return nil
 }

@@ -269,6 +269,14 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		if d.IsDir() && clean == filepath.Join(root, updateStageDir) {
 			return filepath.SkipDir
 		}
+		// What the panel tells the L2TP agent and what the agent answers:
+		// rebuilt from the database at every start. Restored on another
+		// machine, the description would start that machine's agent on a
+		// tunnel before its panel had said a word, and a waiting request
+		// would end a session there.
+		if d.IsDir() && clean == filepath.Join(root, l2tpStateDir) {
+			return filepath.SkipDir
+		}
 		// A dump waiting to be loaded is not data yet.
 		if d.Name() == PendingImportFile {
 			return nil
@@ -455,6 +463,10 @@ func (s *Service) prune() {
 // updateStageDir is where a downloaded update waits for the root helper,
 // inside the data directory.
 const updateStageDir = "update"
+
+// l2tpStateDir is where the panel and the L2TP agent talk, inside the data
+// directory.
+const l2tpStateDir = "l2tp"
 
 // freeName is base with the archive suffix, or base-2, base-3... when an
 // archive by that name exists: two taken within the same second -- a manual
