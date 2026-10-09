@@ -35,6 +35,13 @@ All notable changes to W-UI are recorded here. The format follows
   be chosen rather than pasted, and the result says how many were created,
   replaced, skipped and failed.
 
+### Security
+- **Built with Go 1.26.9 and golang.org/x/net 0.60.0,** which fix advisories
+  published against the versions 2.6.6 was built with: in net/http and its
+  HTTP/2 support, html/template, crypto/tls, net/textproto and os
+  (GO-2026-6599 to GO-2026-6617). The panel's web server, its customer page
+  and every outbound request it makes are built on them.
+
 ## [2.6.6] — 2026-10-08
 
 ### Fixed
