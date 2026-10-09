@@ -92,6 +92,10 @@ type CreateInterfaceInput struct {
 	// PSK is an L2TP tunnel's IPsec pre-shared key. Left empty, one is
 	// generated.
 	PSK string `json:"psk"`
+
+	// L2TPPlain also accepts L2TP without IPsec on an L2TP tunnel, for
+	// routers whose client has none.
+	L2TPPlain bool `json:"l2tpPlain"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -167,7 +171,11 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 				return nil, err
 			}
 		}
-		iface.L2TP = model.JSON(model.L2TPParams{PSK: psk})
+		iface.L2TP = model.JSON(model.L2TPParams{PSK: psk, AllowPlain: in.L2TPPlain})
+		if in.L2TPPlain {
+			s.log.Warn("L2TP without IPsec is accepted on this tunnel; those sessions are not encrypted",
+				"interface", in.Name)
+		}
 	} else {
 		// Every interface gets its own certificate authority, generated here
 		// rather than by easy-rsa so that the interface row is the only place
@@ -258,6 +266,8 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 		}
 	} else if in.PSK != "" {
 		return invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
+	} else if in.L2TPPlain {
+		return invalidField("l2tpPlain", "L2TP without IPsec applies to L2TP tunnels only")
 	}
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
 		return invalidField("listenPort", "listen port %d is out of range", in.ListenPort)
@@ -584,6 +594,10 @@ type UpdateInterfaceInput struct {
 	// PSK replaces an L2TP tunnel's pre-shared key. Every device on it needs
 	// the new one, and every session ends when it changes.
 	PSK *string `json:"psk"`
+
+	// L2TPPlain turns accepting L2TP without IPsec on or off. Every session
+	// on the tunnel ends when it changes.
+	L2TPPlain *bool `json:"l2tpPlain"`
 }
 
 // Update applies changes to an interface.
@@ -684,16 +698,37 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		}
 		fields["mtu"] = *in.MTU
 	}
-	if in.PSK != nil && *in.PSK != iface.L2TP.V.PSK {
+	// The key and whether plain L2TP is accepted live together; each change
+	// is made to what is there, so changing one keeps the other.
+	l2tp := iface.L2TP.V
+	l2tpChanged := false
+	if in.PSK != nil && *in.PSK != l2tp.PSK {
 		if iface.Protocol != model.ProtocolL2TP {
 			return nil, invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
 		}
 		if err := l2tpconf.CheckPSK(*in.PSK); err != nil {
 			return nil, invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
 		}
-		fields["l2tp"] = model.JSON(model.L2TPParams{PSK: *in.PSK})
+		l2tp.PSK = *in.PSK
+		l2tpChanged = true
 		s.log.Warn("L2TP pre-shared key changed; every customer on the tunnel needs the new one",
 			"interface", iface.Name)
+	}
+	if in.L2TPPlain != nil && *in.L2TPPlain != l2tp.AllowPlain {
+		if iface.Protocol != model.ProtocolL2TP {
+			return nil, invalidField("l2tpPlain", "L2TP without IPsec applies to L2TP tunnels only")
+		}
+		l2tp.AllowPlain = *in.L2TPPlain
+		l2tpChanged = true
+		if l2tp.AllowPlain {
+			s.log.Warn("L2TP without IPsec is now accepted on this tunnel; those sessions are not encrypted",
+				"interface", iface.Name)
+		} else {
+			s.log.Info("L2TP without IPsec is no longer accepted on this tunnel", "interface", iface.Name)
+		}
+	}
+	if l2tpChanged {
+		fields["l2tp"] = model.JSON(l2tp)
 	}
 	if in.DNS != nil {
 		if err := checkDNSList(strings.TrimSpace(*in.DNS)); err != nil {

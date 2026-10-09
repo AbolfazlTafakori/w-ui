@@ -193,7 +193,7 @@ func (a *Agent) apply(ctx context.Context, want *l2tpconf.State) error {
 		if err := a.sys.LoadIPsec(ctx, l2tpconf.Swanctl(want)); err != nil {
 			return fmt.Errorf("loading the IPsec connection: %w", err)
 		}
-		if err := a.sys.ApplyFirewall(ctx, l2tpconf.Guard()); err != nil {
+		if err := a.sys.ApplyFirewall(ctx, l2tpconf.Guard(want)); err != nil {
 			return fmt.Errorf("closing L2TP's port outside IPsec: %w", err)
 		}
 	}

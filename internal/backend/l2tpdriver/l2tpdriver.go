@@ -135,14 +135,15 @@ func state(iface *model.Interface, accounts []l2tpconf.Account) (*l2tpconf.State
 	return &l2tpconf.State{
 		Version: l2tpconf.SchemaVersion,
 		Interface: l2tpconf.Iface{
-			ID:       iface.ID,
-			Name:     iface.Name,
-			Subnet:   mustPrefix(iface.Subnet).Masked().String(),
-			Gateway:  gw.String(),
-			DNS:      resolvers(DNSFor(iface)),
-			MTU:      mtu,
-			PSK:      iface.L2TP.V.PSK,
-			Accounts: accounts,
+			ID:         iface.ID,
+			Name:       iface.Name,
+			Subnet:     mustPrefix(iface.Subnet).Masked().String(),
+			Gateway:    gw.String(),
+			DNS:        resolvers(DNSFor(iface)),
+			MTU:        mtu,
+			PSK:        iface.L2TP.V.PSK,
+			AllowPlain: iface.L2TP.V.AllowPlain,
+			Accounts:   accounts,
 		},
 	}, nil
 }

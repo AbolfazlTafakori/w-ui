@@ -63,10 +63,20 @@ func RunFile(name string) string { return path.Join(RunDir, name) }
 
 // Limits.
 const (
-	MinMTU       = 576
-	MaxMTU       = 1500
-	DefaultMTU   = 1400 // L2TP, ESP and NAT-T headers, inside a 1500-byte link
-	MinPSK       = 8
+	MinMTU = 576
+	MaxMTU = 1500
+	// DefaultMTU leaves room for PPP, L2TP, UDP, ESP and NAT-T around every
+	// packet on a path narrower than 1500 bytes: mobile networks and PPPoE
+	// links often are, and a packet that has to be fragmented after it is
+	// encrypted is one some networks drop. 1280 is what the most deployed
+	// L2TP/IPsec servers use for the same reason.
+	DefaultMTU = 1280
+	// MinPSK is one character. A key is handed to every customer, so it keeps
+	// out those who are not one and nothing more; and an operator moving an
+	// existing service here keeps the key its devices already hold, however
+	// short -- "123" is common. WeakPSK is below where the panel says so.
+	MinPSK       = 1
+	WeakPSK      = 8
 	MaxPSK       = 64
 	MinSecret    = 6
 	MaxSecret    = 64
@@ -89,12 +99,16 @@ type Iface struct {
 	// Subnet is the customers' address space; Gateway is the server's own
 	// address in it, the local end of every PPP session and the resolver the
 	// customers are handed when the panel's resolver is on.
-	Subnet   string    `json:"subnet"`
-	Gateway  string    `json:"gateway"`
-	DNS      []string  `json:"dns"`
-	MTU      int       `json:"mtu"`
-	PSK      string    `json:"psk"`
-	Accounts []Account `json:"accounts"`
+	Subnet  string   `json:"subnet"`
+	Gateway string   `json:"gateway"`
+	DNS     []string `json:"dns"`
+	MTU     int      `json:"mtu"`
+	PSK     string   `json:"psk"`
+	// AllowPlain also accepts L2TP without IPsec, for the routers whose
+	// L2TP client has none -- ASUS, OpenWrt, an ISP-style WAN connection.
+	// Those sessions are not encrypted unless the router asks for MPPE.
+	AllowPlain bool      `json:"allowPlain,omitempty"`
+	Accounts   []Account `json:"accounts"`
 }
 
 // Account is one device: the credentials it signs in with and the address it
@@ -432,7 +446,15 @@ func PPPOptions(s *State) string {
 	b.WriteString("auth\n")
 	b.WriteString("require-mschap-v2\n")
 	b.WriteString("refuse-pap\nrefuse-chap\nrefuse-mschap\nrefuse-eap\n")
-	b.WriteString("noccp\n")
+	if f.AllowPlain {
+		// A session that may be outside IPsec gets MPPE when the device asks
+		// for it -- MikroTik's default profile does, others can be told to --
+		// which needs CCP. Compression stays off: it is not worth its cost and
+		// some clients get it wrong.
+		b.WriteString("nobsdcomp\nnodeflate\n")
+	} else {
+		b.WriteString("noccp\n")
+	}
 	b.WriteString("nodefaultroute\n")
 	b.WriteString("noipdefault\n")
 	b.WriteString("lock\n")
@@ -450,16 +472,45 @@ func PPPOptions(s *State) string {
 // Swanctl renders the IPsec half for strongSwan: IKEv1 with the tunnel's
 // pre-shared key, transport mode, and only L2TP's own port carried.
 //
-// The proposals are wide on purpose. Each built-in client offers its own
-// fixed set -- Windows still leads with 3DES and modp1024 by default, iOS and
-// macOS with AES -- and one the server does not accept is a device that
-// cannot connect, with nothing on its screen to say why.
+// The proposals are wide on purpose, strongest first. Each built-in client
+// offers its own fixed set, and one the server does not accept is a device
+// that cannot connect, with nothing on its screen to say why:
+//
+//   - Windows, unchanged, offers 3DES, SHA-1 and the 1024-bit group only
+//     (Microsoft's own table); AES-256 and the 2048-bit group come with a
+//     registry value nobody sets.
+//   - iOS and macOS lead with AES-256, SHA-256 and the 2048-bit group.
+//   - MikroTik's L2TP client with IPsec uses its default profile: SHA-1,
+//     AES-128 or 3DES, the 1024-bit group; Android 11 and earlier the same
+//     weak group.
+//   - Windows told to prefer the stronger set, and other clients, may offer
+//     the elliptic-curve groups.
+//
+// The 1024-bit group and 3DES stay because the most common client in the
+// world cannot connect without them; the rest are only ever chosen when a
+// device offers nothing better.
+var ikeProposals = []string{
+	"aes256-sha256-modp2048", "aes256-sha256-ecp384", "aes256-sha256-ecp256",
+	"aes256-sha384-modp2048", "aes128-sha256-modp2048", "aes128-sha256-ecp256",
+	"aes256-sha1-modp2048", "aes128-sha1-modp2048", "aes256-sha1-modp1536",
+	"aes256-sha1-modp1024", "aes128-sha1-modp1024", "3des-sha1-modp1024",
+}
+
+// espProposals are the same, for the data: AES-GCM where a device offers it,
+// then AES with SHA-2, then the SHA-1 and 3DES that Windows, MikroTik and
+// older Android use.
+var espProposals = []string{
+	"aes256gcm16", "aes128gcm16",
+	"aes256-sha256", "aes128-sha256", "aes256-sha512",
+	"aes256-sha1", "aes128-sha1", "3des-sha1",
+}
+
 func Swanctl(s *State) string {
 	var b strings.Builder
 	b.WriteString("connections {\n")
 	fmt.Fprintf(&b, "  %s {\n", ServerName)
 	b.WriteString("    version = 1\n")
-	b.WriteString("    proposals = aes256-sha256-modp2048,aes128-sha256-modp2048,aes256-sha1-modp2048,aes128-sha1-modp2048,aes256-sha1-modp1024,aes128-sha1-modp1024,3des-sha1-modp1024\n")
+	fmt.Fprintf(&b, "    proposals = %s\n", strings.Join(ikeProposals, ","))
 	b.WriteString("    dpd_delay = 30s\n")
 	b.WriteString("    local {\n      auth = psk\n    }\n")
 	b.WriteString("    remote {\n      auth = psk\n    }\n")
@@ -468,7 +519,7 @@ func Swanctl(s *State) string {
 	b.WriteString("        mode = transport\n")
 	fmt.Fprintf(&b, "        local_ts = dynamic[udp/%d]\n", PortL2TP)
 	b.WriteString("        remote_ts = dynamic[udp]\n")
-	b.WriteString("        esp_proposals = aes256-sha256,aes128-sha256,aes256-sha1,aes128-sha1,3des-sha1\n")
+	fmt.Fprintf(&b, "        esp_proposals = %s\n", strings.Join(espProposals, ","))
 	b.WriteString("        dpd_action = clear\n")
 	b.WriteString("      }\n")
 	b.WriteString("    }\n")
@@ -488,8 +539,13 @@ const GuardTable = "wui_l2tp"
 // Guard renders the agent's firewall program: L2TP's port answers only what
 // came out of IPsec. Plain L2TP carries the password exchange with nothing
 // around it, and a server that accepted it would let anyone who never had the
-// pre-shared key try customers' passwords.
-func Guard() string {
+// pre-shared key try customers' passwords -- so the port is opened to it only
+// on a tunnel that says it serves routers without IPsec, and then the table
+// is taken away.
+func Guard(s *State) string {
+	if s.Interface.AllowPlain {
+		return GuardRemoval()
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "add table inet %s\n", GuardTable)
 	fmt.Fprintf(&b, "delete table inet %s\n", GuardTable)

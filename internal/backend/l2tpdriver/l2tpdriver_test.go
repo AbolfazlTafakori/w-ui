@@ -215,7 +215,9 @@ func TestProfileListsEveryServerAndTheSignIn(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "off.example.com") || strings.Count(got, "vpn.example.com") != 1 {
+	// The list of servers is everything above the first system's steps.
+	head := got[:strings.Index(got, "Windows:")]
+	if strings.Contains(got, "off.example.com") || strings.Count(head, "vpn.example.com") != 1 {
 		t.Errorf("a disabled or repeated host was listed:\n%s", got)
 	}
 	if strings.Index(got, "a.example.com") > strings.Index(got, "b.example.com") {
@@ -251,5 +253,45 @@ func TestSessionDevicesAreTheLinksPPPNamed(t *testing.T) {
 	agentReports(t, p, l2tpconf.Report{At: now - 3600, State: l2tpconf.AgentRunning})
 	if _, err := d.SessionDevices(context.Background()); !errors.Is(err, ErrNoAgent) {
 		t.Fatalf("stale report: %v", err)
+	}
+}
+
+// Every system and router with an L2TP client is told where its settings
+// are; the ones that have no IPsec only on a tunnel that accepts them.
+func TestTheSignInSheetCoversEveryClient(t *testing.T) {
+	iface, _ := setup(t)
+	acc := &model.Account{Username: "s9-laptop", Secret: "Pa$$word1"}
+	got := Profile(acc, iface)
+	for _, want := range []string{
+		"Windows:", "AssumeUDPEncapsulationContextOnSendRule /t REG_DWORD /d 2",
+		"iPhone:", "Send All Traffic", "macOS:", "Android:", "Linux:", "Keenetic:", "Omada:",
+		`connect-to="vpn.example.com" user="s9-laptop" password="Pa\$\$word1" use-ipsec=yes ipsec-secret="SharedKey123"`,
+		"One device per address",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ASUS") || strings.Contains(got, "OpenWrt") {
+		t.Errorf("routers without IPsec are offered a tunnel that refuses them:\n%s", got)
+	}
+
+	iface.L2TP = model.JSON(model.L2TPParams{PSK: "SharedKey123", AllowPlain: true})
+	got = Profile(acc, iface)
+	for _, want := range []string{"ASUS:", "OpenWrt:", "use-ipsec=no", "not encrypted"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q with plain L2TP accepted:\n%s", want, got)
+		}
+	}
+}
+
+// The agent is told whether plain L2TP is accepted, and a change to it
+// reopens the tunnel.
+func TestTheStateCarriesPlainL2TP(t *testing.T) {
+	iface, p := setup(t)
+	iface.L2TP = model.JSON(model.L2TPParams{PSK: "SharedKey123", AllowPlain: true})
+	_ = New().Open(context.Background(), iface)
+	if !readStateFile(t, p).Interface.AllowPlain {
+		t.Fatal("the state does not say plain L2TP is accepted")
 	}
 }

@@ -74,7 +74,8 @@ func TestL2TPInputIsChecked(t *testing.T) {
 		in   CreateInterfaceInput
 		want wantErr
 	}{
-		{"short key", CreateInterfaceInput{PSK: "short"}, wantErr{"psk", "pre-shared key is 8 to 64"}},
+		{"space in key", CreateInterfaceInput{PSK: "two words"}, wantErr{"psk", "pre-shared key is 1 to 64"}},
+		{"long key", CreateInterfaceInput{PSK: strings.Repeat("k", 65)}, wantErr{"psk", "pre-shared key is 1 to 64"}},
 		{"quote in key", CreateInterfaceInput{PSK: `has"quote1`}, wantErr{"psk", "pre-shared key"}},
 		{"v6 subnet", CreateInterfaceInput{Subnet: "fd00::/64"}, wantErr{"subnet", "an L2TP subnet is IPv4"}},
 		{"tiny subnet", CreateInterfaceInput{Subnet: "10.77.0.0/31"}, wantErr{"subnet", "a /30 or larger"}},
@@ -83,8 +84,14 @@ func TestL2TPInputIsChecked(t *testing.T) {
 		_, err := createL2TP(t, svc, c.in)
 		check(t, c.name, err, c.want)
 	}
-	// A key on anything else means nothing and is said so.
+	// Plain L2TP on anything else means nothing either.
 	_, err := svc.Create(context.Background(), CreateInterfaceInput{
+		Name: "wg2", Protocol: model.ProtocolWireGuard, ListenPort: freeUDPPort(t),
+		Subnet: "10.80.0.0/24", EndpointHost: "h", L2TPPlain: true,
+	})
+	check(t, "plain on wireguard", err, wantErr{"l2tpPlain", "applies to L2TP tunnels only"})
+	// A key on anything else means nothing and is said so.
+	_, err = svc.Create(context.Background(), CreateInterfaceInput{
 		Name: "wg1", Protocol: model.ProtocolWireGuard, ListenPort: freeUDPPort(t),
 		Subnet: "10.79.0.0/24", EndpointHost: "h", PSK: "SharedKey123",
 	})
@@ -296,4 +303,40 @@ func TestAnAppsBundleLeavesOutTheL2TPSignIn(t *testing.T) {
 			t.Errorf("format %q: %s, want %s", c.format, got, c.want)
 		}
 	}
+}
+
+// An existing service's key is kept as it is, and routers without IPsec can
+// be let in -- each turned on and off without touching the other.
+func TestAnL2TPTunnelForAnExistingServiceAndItsRouters(t *testing.T) {
+	db, _ := seeded(t)
+	svc := NewInterfaces(db, ipam.NewPools(), quietLog())
+	iface, err := createL2TP(t, svc, CreateInterfaceInput{PSK: "123", L2TPPlain: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iface.L2TP.V.PSK != "123" || !iface.L2TP.V.AllowPlain {
+		t.Fatalf("made with %+v", iface.L2TP.V)
+	}
+	ctx := context.Background()
+	off := false
+	got, err := svc.Update(ctx, iface.ID, UpdateInterfaceInput{L2TPPlain: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.L2TP.V.AllowPlain || got.L2TP.V.PSK != "123" {
+		t.Fatalf("turning plain L2TP off: %+v", got.L2TP.V)
+	}
+	key := "NewKey2026"
+	got, err = svc.Update(ctx, iface.ID, UpdateInterfaceInput{PSK: &key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.L2TP.V.AllowPlain || got.L2TP.V.PSK != key {
+		t.Fatalf("changing the key: %+v", got.L2TP.V)
+	}
+	on := true
+	var wg model.Interface
+	db.Where("name = ?", "wg0").First(&wg)
+	_, err = svc.Update(ctx, wg.ID, UpdateInterfaceInput{L2TPPlain: &on})
+	check(t, "plain on wireguard", err, wantErr{"l2tpPlain", "applies to L2TP tunnels only"})
 }

@@ -53,7 +53,8 @@ func TestValidateRefusesWhatCouldReachAFileInTheWrongShape(t *testing.T) {
 		"non-ASCII password":       func(s *State) { s.Interface.Accounts[0].Secret = "پسورد123" },
 		"quote in the key":         func(s *State) { s.Interface.PSK = `Shared"Key` },
 		"newline in the key":       func(s *State) { s.Interface.PSK = "Shared\nKey123" },
-		"short key":                func(s *State) { s.Interface.PSK = "short" },
+		"no key":                   func(s *State) { s.Interface.PSK = "" },
+		"space in the key":         func(s *State) { s.Interface.PSK = "Shared Key" },
 		"slash in the name":        func(s *State) { s.Interface.Name = "../etc" },
 		"long name":                func(s *State) { s.Interface.Name = "a-very-long-tunnel-name" },
 		"address outside":          func(s *State) { s.Interface.Accounts[0].IP = "10.78.0.3" },
@@ -111,7 +112,7 @@ func TestChapSecretsKeepsWhatIsNotOurs(t *testing.T) {
 
 func TestPPPOptionsTakeTheAddressFromTheSecretsLine(t *testing.T) {
 	got := PPPOptions(valid())
-	for _, want := range []string{"name wui-l2tp\n", "10.77.0.1:\n", "require-mschap-v2\n", "refuse-pap\n", "ms-dns 1.1.1.1\n", "mtu 1400\n"} {
+	for _, want := range []string{"name wui-l2tp\n", "10.77.0.1:\n", "require-mschap-v2\n", "refuse-pap\n", "ms-dns 1.1.1.1\n", "mtu 1280\n", "noccp\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -131,8 +132,75 @@ func TestSwanctlCarriesTheKeyAndOnlyL2TP(t *testing.T) {
 }
 
 func TestGuardDropsL2TPOutsideIPsec(t *testing.T) {
-	if !strings.Contains(Guard(), "udp dport 1701 meta ipsec missing drop") {
-		t.Errorf("guard:\n%s", Guard())
+	if g := Guard(valid()); !strings.Contains(g, "udp dport 1701 meta ipsec missing drop") {
+		t.Errorf("guard:\n%s", g)
+	}
+}
+
+// A tunnel that serves routers without IPsec opens the port to them, and
+// lets a router that asks for MPPE have it; the sign-in is still MS-CHAPv2
+// only, never a password sent as it is.
+func TestATunnelForRoutersWithoutIPsec(t *testing.T) {
+	s := valid()
+	s.Interface.AllowPlain = true
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if g := Guard(s); strings.Contains(g, "drop") || g != GuardRemoval() {
+		t.Errorf("the port stays closed to plain L2TP:\n%s", g)
+	}
+	opts := PPPOptions(s)
+	if strings.Contains(opts, "noccp") || !strings.Contains(opts, "nobsdcomp\n") || !strings.Contains(opts, "nodeflate\n") {
+		t.Errorf("MPPE cannot be negotiated:\n%s", opts)
+	}
+	for _, want := range []string{"require-mschap-v2\n", "refuse-pap\n", "refuse-chap\n"} {
+		if !strings.Contains(opts, want) {
+			t.Errorf("missing %q:\n%s", want, opts)
+		}
+	}
+	// A different tunnel as far as the agent is concerned: xl2tpd restarts.
+	if Fingerprint(PPPOptions(valid())) == Fingerprint(opts) {
+		t.Error("turning plain L2TP on changes nothing the agent would notice")
+	}
+}
+
+// Each client that has a built-in L2TP/IPsec offers its own fixed set; the
+// server has to accept at least one combination from each, or that device
+// cannot connect and nothing on its screen says why.
+func TestEveryBuiltInClientFindsAProposal(t *testing.T) {
+	got := Swanctl(valid())
+	for client, want := range map[string][]string{
+		"Windows as installed (3DES, SHA-1, group 2)":       {"3des-sha1-modp1024", "esp_proposals = ", "3des-sha1"},
+		"Windows told to prefer AES-256 and group 14":       {"aes256-sha1-modp2048", "aes256-sha1"},
+		"iOS and macOS (AES-256, SHA-256, group 14)":        {"aes256-sha256-modp2048", "aes256-sha256"},
+		"MikroTik with use-ipsec (AES-128, SHA-1, group 2)": {"aes128-sha1-modp1024", "aes128-sha1"},
+		"Android 11 and earlier (group 2)":                  {"aes256-sha1-modp1024"},
+		"NetworkManager-l2tp defaults (group 14)":           {"aes128-sha1-modp2048"},
+		"clients offering elliptic curves":                  {"aes256-sha256-ecp384", "aes256-sha256-ecp256"},
+		"clients offering AES-GCM for the data":             {"aes256gcm16", "aes128gcm16"},
+	} {
+		for _, w := range want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: %q is not offered", client, w)
+			}
+		}
+	}
+	// Strongest first: a device that offers both gets the better one.
+	if strings.Index(got, "aes256-sha256-modp2048") > strings.Index(got, "3des-sha1-modp1024") {
+		t.Error("the proposals are not strongest first")
+	}
+}
+
+// A key an existing service already handed out is kept as it is, however
+// short; the panel says so rather than refuse it.
+func TestAShortKeyFromAnExistingServiceIsAccepted(t *testing.T) {
+	for _, k := range []string{"1", "123", "vpn"} {
+		if err := CheckPSK(k); err != nil {
+			t.Errorf("%q: %v", k, err)
+		}
+	}
+	if WeakPSK <= 3 {
+		t.Errorf("WeakPSK is %d; a key as short as 123 must be called weak", WeakPSK)
 	}
 }
 

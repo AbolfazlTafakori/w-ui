@@ -284,7 +284,7 @@ func fingerprint(i *model.Interface) string {
 	fp := fmt.Sprintf("%s|%s|%d|%s|%s|%d|%s",
 		i.Name, i.Protocol, i.ListenPort, i.Subnet, i.PublicKey, i.MTU, i.Mode)
 	if i.Protocol == model.ProtocolL2TP {
-		fp += "|" + i.L2TP.V.PSK + "|" + i.DNS
+		fp += fmt.Sprintf("|%s|%s|%t", i.L2TP.V.PSK, i.DNS, i.L2TP.V.AllowPlain)
 	}
 	return fp
 }

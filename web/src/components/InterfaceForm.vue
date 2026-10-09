@@ -39,6 +39,7 @@ const form = ref(
         // where it is stored; the scrubbed view keeps it and drops the keys.
         transport: props.iface.openvpn?.transport || 'udp',
         psk: props.iface.l2tp?.psk || '',
+        l2tpPlain: !!props.iface.l2tp?.allowPlain,
         enabled: props.iface.enabled,
       }
     : {
@@ -51,6 +52,7 @@ const form = ref(
         nodeId: 0,
         transport: 'udp',
         psk: '',
+        l2tpPlain: false,
         enabled: true,
       },
 )
@@ -64,6 +66,9 @@ const canChooseNode = computed(() => props.nodes.length > 1)
 const isWireGuard = computed(() => form.value.protocol === 'wireguard')
 const isOpenVPN = computed(() => form.value.protocol === 'openvpn')
 const isL2TP = computed(() => form.value.protocol === 'l2tp')
+// Below this a key is said to be weak: kept for devices that already hold
+// it, never the panel's own choice.
+const WEAK_PSK = 8
 
 // A key from the same alphabet the server draws one from when the field is
 // left empty: letters and digits, which every device's VPN settings take.
@@ -226,7 +231,10 @@ defineExpose({ showError })
               </button>
             </div>
             <span v-if="fieldName === 'psk'" class="field-error" role="alert">{{ fieldError }}</span>
-            <span v-else class="hint">{{ t('interface.pskHint') }}</span>
+            <template v-else>
+              <span v-if="form.psk && form.psk.length < WEAK_PSK" class="hint warn-hint">{{ t('interface.pskWeak') }}</span>
+              <span class="hint">{{ t('interface.pskHint') }}</span>
+            </template>
           </div>
 
           <!-- OpenVPN only: WireGuard and L2TP are UDP and have no other
@@ -273,6 +281,18 @@ defineExpose({ showError })
           </div>
         </div>
 
+        <!-- L2TP only: routers whose L2TP client has no IPsec. Off unless
+             turned on, and the form says what it costs while it is. -->
+        <div v-if="isL2TP" class="enable-row">
+          <div>
+            <div class="enable-label">{{ t('interface.l2tpPlain') }}</div>
+            <div class="hint">{{ t('interface.l2tpPlainHint') }}</div>
+            <div v-if="form.l2tpPlain" class="hint warn-hint">{{ t('interface.l2tpPlainWarn') }}</div>
+            <span v-if="fieldName === 'l2tpPlain'" class="field-error" role="alert">{{ fieldError }}</span>
+          </div>
+          <Toggle v-model="form.l2tpPlain" :label="t('interface.l2tpPlain')" class="spacer" />
+        </div>
+
         <div v-if="isWireGuard" class="field">
           <label for="if-mode">{{ t('interface.mode') }}</label>
           <select id="if-mode" data-field="mode" :class="{ bad: fieldName === 'mode' }" @input="clearError('mode')" v-model="form.mode">
@@ -305,6 +325,9 @@ defineExpose({ showError })
 </template>
 
 <style scoped>
+.warn-hint {
+  color: var(--warn, #d48806);
+}
 /* The key and the button that draws a new one, on one line. */
 .psk-row {
   display: flex;

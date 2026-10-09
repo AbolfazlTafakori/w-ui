@@ -276,6 +276,7 @@ function exportable(i) {
     // Top level, as the API takes it: a tunnel made from this keeps the key
     // every device already has.
     psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
+    l2tpPlain: i.protocol === 'l2tp' && i.l2tp?.allowPlain ? true : undefined,
   }
 }
 function exportOne(i) {
@@ -317,7 +318,7 @@ const importFile = ref(null)
 // OpenVPN blocks whole. The server refuses a field it does not know rather
 // than guess at it, so those never imported; the transport inside the OpenVPN
 // block is the one part of them worth keeping.
-const IMPORT_FIELDS = ['name', 'protocol', 'enabled', 'listenPort', 'subnet', 'endpointHost', 'mtu', 'dns', 'natInterface', 'mode', 'transport', 'psk', 'nodeId']
+const IMPORT_FIELDS = ['name', 'protocol', 'enabled', 'listenPort', 'subnet', 'endpointHost', 'mtu', 'dns', 'natInterface', 'mode', 'transport', 'psk', 'l2tpPlain', 'nodeId']
 function importable(raw) {
   const out = {}
   for (const k of IMPORT_FIELDS) {
@@ -783,19 +784,22 @@ async function submitForm(input) {
         ...(input.protocol === 'openvpn' && input.transport ? { transport: input.transport } : {}),
         // Only when it changed: a new key ends every session on the tunnel.
         ...(input.protocol === 'l2tp' && input.psk && input.psk !== (formFor.value.iface.l2tp?.psk || '') ? { psk: input.psk } : {}),
+        // The same for routers without IPsec: a change restarts the tunnel.
+        ...(input.protocol === 'l2tp' && input.l2tpPlain !== !!formFor.value.iface.l2tp?.allowPlain ? { l2tpPlain: input.l2tpPlain } : {}),
       })
       notify(t('interface.updated'), 'success')
     } else {
       // transport is OpenVPN's alone and the server refuses it elsewhere, so
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
-      const { transport, psk, ...rest } = input
+      const { transport, psk, l2tpPlain, ...rest } = input
       await api.createInterface({
         ...rest,
         listenPort: Number(input.listenPort),
         mtu: Number(input.mtu),
         ...(input.protocol === 'openvpn' && transport ? { transport } : {}),
         ...(input.protocol === 'l2tp' && psk ? { psk } : {}),
+        ...(input.protocol === 'l2tp' && l2tpPlain ? { l2tpPlain: true } : {}),
       })
       notify(t('interface.created'), 'success')
     }

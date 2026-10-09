@@ -77,6 +77,9 @@ func (t *Template) Export(ctx context.Context) (TemplateDoc, error) {
 		if i.Protocol == model.ProtocolL2TP && i.L2TP.V.PSK != "" {
 			row["psk"] = i.L2TP.V.PSK
 		}
+		if i.Protocol == model.ProtocolL2TP && i.L2TP.V.AllowPlain {
+			row["l2tpPlain"] = true
+		}
 		doc.Inbounds = append(doc.Inbounds, mustJSON(row))
 	}
 
