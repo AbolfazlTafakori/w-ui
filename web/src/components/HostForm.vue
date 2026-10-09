@@ -51,7 +51,7 @@ const inboundOptions = computed(() =>
   props.interfaces.map((i) => ({
     value: i.id,
     label: `${i.name} (${i.protocol}@${i.listenPort})`,
-    tags: [{ text: i.protocol, kind: i.protocol === 'openvpn' ? 'orange' : 'green' }],
+    tags: [{ text: i.protocol, kind: { openvpn: 'orange', l2tp: 'purple' }[i.protocol] || 'green' }],
   })),
 )
 

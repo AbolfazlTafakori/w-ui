@@ -1283,7 +1283,7 @@ async function submitForm(input) {
                 </td>
                 <td>
                   <template v-if="inboundChips(c).length">
-                    <span v-for="ib in inboundChips(c).slice(0, INBOUND_CHIP_LIMIT)" :key="ib.name" class="atag" :class="ib.protocol === 'openvpn' ? 'orange' : 'gold'" style="margin: 2px" :title="ib.name">{{ ib.name }}</span>
+                    <span v-for="ib in inboundChips(c).slice(0, INBOUND_CHIP_LIMIT)" :key="ib.name" class="atag" :class="{ openvpn: 'orange', l2tp: 'purple' }[ib.protocol] || 'gold'" style="margin: 2px" :title="ib.name">{{ ib.name }}</span>
                     <span v-if="inboundChips(c).length > INBOUND_CHIP_LIMIT" class="atag default" style="margin: 2px; cursor: pointer" :title="inboundChips(c).slice(INBOUND_CHIP_LIMIT).map((x) => x.name).join(', ')">+{{ inboundChips(c).length - INBOUND_CHIP_LIMIT }}</span>
                   </template>
                   <span v-else class="cell-empty">—</span>

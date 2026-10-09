@@ -269,6 +269,9 @@ function exportable(i) {
     name: i.name, protocol: i.protocol, listenPort: i.listenPort, subnet: i.subnet,
     endpointHost: i.endpointHost, mtu: i.mtu, dns: i.dns, natInterface: i.natInterface,
     mode: i.mode, awg: i.awg || undefined, openvpn: i.openvpn || undefined,
+    // Top level, as the API takes it: a tunnel made from this keeps the key
+    // every device already has.
+    psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
   }
 }
 function exportOne(i) {
@@ -735,17 +738,21 @@ async function submitForm(input) {
         // Only sent for OpenVPN, and only when it actually moved: the server
         // refuses the field on a WireGuard interface rather than ignoring it.
         ...(input.protocol === 'openvpn' && input.transport ? { transport: input.transport } : {}),
+        // Only when it changed: a new key ends every session on the tunnel.
+        ...(input.protocol === 'l2tp' && input.psk && input.psk !== (formFor.value.iface.l2tp?.psk || '') ? { psk: input.psk } : {}),
       })
       notify(t('interface.updated'), 'success')
     } else {
       // transport is OpenVPN's alone and the server refuses it elsewhere, so
       // a WireGuard interface must not carry the form's default along with it.
-      const { transport, ...rest } = input
+      // The same for psk, which is L2TP's.
+      const { transport, psk, ...rest } = input
       await api.createInterface({
         ...rest,
         listenPort: Number(input.listenPort),
         mtu: Number(input.mtu),
         ...(input.protocol === 'openvpn' && transport ? { transport } : {}),
+        ...(input.protocol === 'l2tp' && psk ? { psk } : {}),
       })
       notify(t('interface.created'), 'success')
     }

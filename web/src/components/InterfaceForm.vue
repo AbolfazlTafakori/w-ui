@@ -18,6 +18,8 @@ const editing = computed(() => !!props.iface)
 const defaults = {
   wireguard: { name: 'wg0', listenPort: 51820, subnet: '10.66.0.0/16', mtu: 1420 },
   openvpn: { name: 'ovpn0', listenPort: 1194, subnet: '10.8.0.0/16', mtu: 1500 },
+  // The port is not a choice: the clients built into the devices use 1701.
+  l2tp: { name: 'l2tp0', listenPort: 1701, subnet: '10.77.0.0/16', mtu: 1400 },
 }
 
 const form = ref(
@@ -36,6 +38,7 @@ const form = ref(
         // Nested under openvpn on the way out of the API, because that is
         // where it is stored; the scrubbed view keeps it and drops the keys.
         transport: props.iface.openvpn?.transport || 'udp',
+        psk: props.iface.l2tp?.psk || '',
         enabled: props.iface.enabled,
       }
     : {
@@ -47,6 +50,7 @@ const form = ref(
         mode: 'standard',
         nodeId: 0,
         transport: 'udp',
+        psk: '',
         enabled: true,
       },
 )
@@ -58,12 +62,23 @@ const protocols = computed(() => store.meta?.protocols || ['wireguard'])
 // never added a node would otherwise show a select with a single option.
 const canChooseNode = computed(() => props.nodes.length > 1)
 const isWireGuard = computed(() => form.value.protocol === 'wireguard')
+const isOpenVPN = computed(() => form.value.protocol === 'openvpn')
+const isL2TP = computed(() => form.value.protocol === 'l2tp')
+
+// A key from the same alphabet the server draws one from when the field is
+// left empty: letters and digits, which every device's VPN settings take.
+function randomPSK(n = 24) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const bytes = new Uint8Array(n)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
+}
 
 // Switching protocol swaps in that protocol's conventional port and subnet, so
 // the operator is not left with a WireGuard port on an OpenVPN interface.
 function onProtocolChange() {
   Object.assign(form.value, defaults[form.value.protocol])
-  if (form.value.protocol === 'openvpn') form.value.mode = 'standard'
+  if (form.value.protocol !== 'wireguard') form.value.mode = 'standard'
 }
 
 const fieldError = ref('')
@@ -183,15 +198,41 @@ defineExpose({ showError })
               type="number"
               min="1"
               max="65535"
+              :readonly="isL2TP"
               required
             />
             <span v-if="fieldName === 'listenPort'" class="field-error" role="alert">{{ fieldError }}</span>
+            <span v-else-if="isL2TP" class="hint">{{ t('interface.l2tpPortHint') }}</span>
           </div>
 
-          <!-- OpenVPN only: WireGuard is UDP and has no other option, so
-               offering the choice there would be offering a setting that does
-               nothing. -->
-          <div v-if="!isWireGuard" class="field">
+          <!-- L2TP only: the IPsec key every device types in beside its own
+               sign-in. Left empty, the server generates one. -->
+          <div v-if="isL2TP" class="field">
+            <label for="if-psk">{{ t('interface.psk') }}</label>
+            <div class="psk-row">
+              <input
+                id="if-psk"
+                data-field="psk"
+                class="mono"
+                :class="{ bad: fieldName === 'psk' }"
+                @input="clearError('psk')"
+                v-model="form.psk"
+                autocomplete="off"
+                maxlength="64"
+                :placeholder="t('client.openvpnGenerated')"
+              />
+              <button type="button" class="btn sm icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="form.psk = randomPSK(); clearError('psk')">
+                <Icon name="refresh" :size="13" />
+              </button>
+            </div>
+            <span v-if="fieldName === 'psk'" class="field-error" role="alert">{{ fieldError }}</span>
+            <span v-else class="hint">{{ t('interface.pskHint') }}</span>
+          </div>
+
+          <!-- OpenVPN only: WireGuard and L2TP are UDP and have no other
+               option, so offering the choice there would be offering a
+               setting that does nothing. -->
+          <div v-if="isOpenVPN" class="field">
             <label for="if-transport">{{ t('interface.transport') }}</label>
             <select
               id="if-transport"
@@ -264,6 +305,21 @@ defineExpose({ showError })
 </template>
 
 <style scoped>
+/* The key and the button that draws a new one, on one line. */
+.psk-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.psk-row input {
+  flex: 1;
+  min-width: 0;
+}
+.psk-row .btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+}
 .card-body {
   display: flex;
   flex-direction: column;

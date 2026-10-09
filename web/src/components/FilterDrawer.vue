@@ -45,6 +45,7 @@ const groupOptions = computed(() => props.groups.map((g) => ({ value: g, label: 
 const protocolOptions = [
   { value: 'wireguard', label: t('protocol.wireguard') },
   { value: 'openvpn', label: t('protocol.openvpn') },
+  { value: 'l2tp', label: t('protocol.l2tp') },
 ]
 
 // Three-state rows: All, then the two answers. Their Radio.Group with

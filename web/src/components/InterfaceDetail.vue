@@ -18,6 +18,20 @@ const awg = computed(() => i.value.awg || {})
 // the box by hand, and guessing at it from the fields would be worse.
 const serverConfig = computed(() => {
   const f = i.value
+  if (f.protocol === 'l2tp') {
+    // Carried by the wui-l2tp agent, as root: strongSwan for the IPsec half,
+    // xl2tpd and pppd for L2TP, one PPP link per session.
+    return [
+      '# IPsec (strongSwan): IKEv1, pre-shared key, UDP 500 and 4500',
+      '# L2TP (xl2tpd): UDP 1701 inside IPsec',
+      `local ${f.subnet.replace(/\.0\/\d+$/, '.1')}`,
+      `subnet ${f.subnet}`,
+      `mtu ${f.mtu}`,
+      `ms-dns ${f.dns || '1.1.1.1'}`,
+      'require-mschap-v2',
+      '# One line per device in /etc/ppp/chap-secrets, with its own address.',
+    ].join('\n')
+  }
   if (f.protocol !== 'wireguard') {
     return [
       `port ${f.listenPort}`,
@@ -148,6 +162,16 @@ const poolPercent = computed(() =>
           <div class="cred">
             <code>{{ i.publicKey }}</code>
             <button class="btn sm icon" :aria-label="t('action.copy')" @click="copy(i.publicKey)">
+              <Icon name="copy" :size="13" />
+            </button>
+          </div>
+        </div>
+
+        <div v-if="i.l2tp?.psk" class="field">
+          <label>{{ t('interface.psk') }}</label>
+          <div class="cred">
+            <code>{{ i.l2tp.psk }}</code>
+            <button class="btn sm icon" :aria-label="t('action.copy')" @click="copy(i.l2tp.psk)">
               <Icon name="copy" :size="13" />
             </button>
           </div>

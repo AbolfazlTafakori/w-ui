@@ -133,7 +133,18 @@ function toggleCfg(key) {
   next.has(key) ? next.delete(key) : next.add(key)
   openCfg.value = next
 }
-const protoColor = { wireguard: 'gold', openvpn: 'orange' }
+const protoColor = { wireguard: 'gold', openvpn: 'orange', l2tp: 'purple' }
+// The tag a tunnel's files are listed under.
+const groupTag = {
+  wireguard: { cls: 'cyan', key: 'client.wireguardConfig' },
+  openvpn: { cls: 'orange', key: 'client.openvpnConfig' },
+  l2tp: { cls: 'purple', key: 'client.l2tpConfig' },
+}
+function tagOf(protocol) {
+  return groupTag[protocol] || groupTag.openvpn
+}
+// A device that signs in with a username and password, shown with them.
+const withLogin = (cf) => (cf.protocol === 'openvpn' || cf.protocol === 'l2tp') && cf.device.username
 function ifaceLabel(id) {
   const i = ifaceById.value[id]
   return i ? i.name : `#${id}`
@@ -273,13 +284,13 @@ const expiryText = computed(() => {
             <div class="acollapse-item" :class="{ open: openCfg.has(g.key) }">
               <div class="acollapse-header" role="button" tabindex="0" :aria-expanded="openCfg.has(g.key)" @click="toggleCfg(g.key)" @keydown.enter="toggleCfg(g.key)">
                 <span class="acollapse-expand"><AntIcon name="RightOutlined" /></span>
-                <span class="acollapse-label"><span class="atag" :class="g.protocol === 'wireguard' ? 'cyan' : 'orange'" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ g.protocol === 'wireguard' ? t('client.wireguardConfig') : t('client.openvpnConfig') }}</span><span v-if="g.tunnel" class="cfg-meta">{{ g.tunnel }}</span></span>
+                <span class="acollapse-label"><span class="atag" :class="tagOf(g.protocol).cls" style="margin: 0; font-weight: 600; letter-spacing: 0.3px">{{ t(tagOf(g.protocol).key) }}</span><span v-if="g.tunnel" class="cfg-meta">{{ g.tunnel }}</span></span>
                 <span class="cfg-count">{{ g.items.length > 1 ? t('client.nUsers', { n: g.items.length }) : t('client.oneUser') }}</span>
               </div>
               <div v-if="openCfg.has(g.key)" class="acollapse-content cfg-users">
                 <div v-for="cf in g.items" :key="cf.key" class="cfg-user" :class="{ open: openCfg.has(cf.key) }">
                   <div class="cfg-user-head">
-                    <span class="cfg-user-name">{{ cf.who }}<span v-if="cf.hostName" class="cfg-meta">{{ cf.hostName }}</span><code v-if="cf.protocol === 'openvpn' && cf.device.username" class="cfg-user-login ltr">{{ cf.device.username }}</code></span>
+                    <span class="cfg-user-name">{{ cf.who }}<span v-if="cf.hostName" class="cfg-meta">{{ cf.hostName }}</span><code v-if="withLogin(cf)" class="cfg-user-login ltr">{{ cf.device.username }}</code></span>
                     <div class="config-block-actions">
                       <button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.body)"><AntIcon name="CopyOutlined" /></button>
                       <button class="abtn small icon" :title="t('action.download')" :aria-label="t('action.download')" @click="downloadText(cf.body, cf.filename)"><AntIcon name="DownloadOutlined" /></button>
@@ -288,10 +299,10 @@ const expiryText = computed(() => {
                     </div>
                   </div>
                   <div v-if="openCfg.has(cf.key)" class="cfg-user-body">
-                    <!-- An OpenVPN user's login, read off here for passing on. -->
-                    <div v-if="cf.protocol === 'openvpn' && cf.device.username" class="cfg-login">
-                      <span class="hint">{{ t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
-                      <span class="hint">{{ t('client.openvpnPassword') }}</span><code class="ltr">{{ cf.device.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.password)"><AntIcon name="CopyOutlined" /></button>
+                    <!-- An OpenVPN or L2TP user's login, read off here for passing on. -->
+                    <div v-if="withLogin(cf)" class="cfg-login">
+                      <span class="hint">{{ cf.protocol === 'l2tp' ? t('client.loginUsername') : t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
+                      <span class="hint">{{ cf.protocol === 'l2tp' ? t('client.loginPassword') : t('client.openvpnPassword') }}</span><code class="ltr">{{ cf.device.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.password)"><AntIcon name="CopyOutlined" /></button>
                     </div>
                     <code class="config-block-text">{{ cf.body }}</code>
                   </div>

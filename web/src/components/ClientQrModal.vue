@@ -140,7 +140,7 @@ async function copy(text) {
               <AntIcon name="LinkOutlined" /><span>{{ t('client.subscriptionTitle') }}</span>
             </button>
             <button v-for="tn in tunnels" :key="tn.key" type="button" class="qr-tab" role="tab" :class="{ active: tab === tn.key }" :aria-selected="tab === tn.key" @click="tab = tn.key">
-              <i class="qr-dot" :class="tn.protocol === 'openvpn' ? 'orange' : 'cyan'"></i><span>{{ tn.name }}</span>
+              <i class="qr-dot" :class="{ openvpn: 'orange', l2tp: 'purple' }[tn.protocol] || 'cyan'"></i><span>{{ tn.name }}</span>
               <span v-if="tn.entries.length > 1" class="qr-tab-count">{{ tn.entries.length }}</span>
             </button>
           </div>
@@ -162,11 +162,11 @@ async function copy(text) {
             <!-- An OpenVPN user's login, read off here for passing on. -->
             <dl v-if="entry.username" class="qr-login">
               <div>
-                <dt>{{ t('client.openvpnUsername') }}</dt>
+                <dt>{{ current.protocol === 'l2tp' ? t('client.loginUsername') : t('client.openvpnUsername') }}</dt>
                 <dd><code class="ltr">{{ entry.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(entry.username)"><AntIcon name="CopyOutlined" /></button></dd>
               </div>
               <div>
-                <dt>{{ t('client.openvpnPassword') }}</dt>
+                <dt>{{ current.protocol === 'l2tp' ? t('client.loginPassword') : t('client.openvpnPassword') }}</dt>
                 <dd><code class="ltr">{{ entry.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(entry.password)"><AntIcon name="CopyOutlined" /></button></dd>
               </div>
             </dl>
@@ -195,6 +195,7 @@ async function copy(text) {
 .qr-dot { width: 7px; height: 7px; border-radius: 50%; }
 .qr-dot.cyan { background: var(--tag-cyan-ink, #13c2c2); }
 .qr-dot.orange { background: var(--tag-orange-ink, #fa8c16); }
+.qr-dot.purple { background: var(--tag-purple-ink, #722ed1); }
 
 .qr-pick { margin-bottom: 12px; }
 .qr-seg { display: flex; }

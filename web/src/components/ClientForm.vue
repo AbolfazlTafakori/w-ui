@@ -42,14 +42,19 @@ function randomSecret(n = 16) {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
 }
 
-// The logins the customer's OpenVPN users have now, in the plan's order
-// (user 1 first), from the first OpenVPN tunnel they are on. Every user
-// has one -- issued with their file -- and the form shows it as it is,
-// so it can be read off and told to them, or typed over to change it.
+// The tunnels a device signs in to with a username and password.
+const LOGIN_PROTOCOLS = ['openvpn', 'l2tp']
+
+// The logins the customer's users have now, in the plan's order (user 1
+// first), from the first OpenVPN or L2TP tunnel they are on. Every user has
+// one -- issued with their file -- and the form shows it as it is, so it can
+// be read off and told to them, or typed over to change it.
 function currentOpenVPNLogins() {
-  const ovpn = (props.interfaces || []).filter((i) => i.protocol === 'openvpn').map((i) => i.id)
-  if (!ovpn.length) return []
-  const on = (props.client?.accounts || []).filter((a) => a.interfaceId === ovpn[0]).sort((a, b) => a.id - b.id)
+  const accounts = props.client?.accounts || []
+  const logins = (props.interfaces || []).filter((i) => LOGIN_PROTOCOLS.includes(i.protocol)).map((i) => i.id)
+  const first = logins.find((id) => accounts.some((a) => a.interfaceId === id))
+  if (first === undefined) return []
+  const on = accounts.filter((a) => a.interfaceId === first).sort((a, b) => a.id - b.id)
   return on.map((a) => ({ username: a.username || '', password: a.password || '' }))
 }
 function hoursLeft(iso) {
@@ -125,7 +130,8 @@ const userCount = computed(() => {
 // operator usually rotates and then reads the new login off the Links tab.
 async function rotateUser(user, protocol) {
   if (!props.client) return
-  if (!window.confirm(t('client.rotateOneConfirm', { n: user, kind: protocol === 'openvpn' ? 'OpenVPN' : 'WireGuard' }))) return
+  const kind = { openvpn: 'OpenVPN', l2tp: 'L2TP', wireguard: 'WireGuard' }[protocol] || protocol
+  if (!window.confirm(t('client.rotateOneConfirm', { n: user, kind }))) return
   rotating.value = true
   rotated.value = ''
   try {
@@ -235,10 +241,17 @@ function openvpnChanges() {
 }
 
 const chosen = computed(() => props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)))
-// Whether any tunnel picked is OpenVPN: those log in with a username and
-// password, and a reseller may want to choose them rather than be handed
-// generated ones.
+// Whether any tunnel picked is OpenVPN or L2TP: those log in with a
+// username and password, and a reseller may want to choose them rather than
+// be handed generated ones. One login per user serves both.
 const hasOpenVPN = computed(() => chosen.value.some((i) => i.protocol === 'openvpn'))
+const hasL2TP = computed(() => chosen.value.some((i) => i.protocol === 'l2tp'))
+const hasLogins = computed(() => hasOpenVPN.value || hasL2TP.value)
+const loginLabel = computed(() =>
+  hasOpenVPN.value && hasL2TP.value ? t('client.loginBoth') : hasL2TP.value ? t('client.l2tpLogin') : t('client.openvpnLogin'),
+)
+const usernameLabel = computed(() => (hasL2TP.value ? t('client.loginUsername') : t('client.openvpnUsername')))
+const passwordLabel = computed(() => (hasL2TP.value ? t('client.loginPassword') : t('client.openvpnPassword')))
 
 const allChosen = computed(
   () => props.interfaces.length > 0 && form.value.interfaceIds.length === props.interfaces.length,
@@ -337,7 +350,7 @@ async function submit() {
       durationDays: form.value.startOnFirstUse ? planDays() : 0,
       resetCycle: form.value.resetCycle,
       ...(editing.value ? { status: form.value.enabled ? 'active' : 'disabled' } : { enabled: form.value.enabled }),
-      ...(hasOpenVPN.value && openvpnChanges().length ? { openvpnUsers: openvpnChanges() } : {}),
+      ...(hasLogins.value && openvpnChanges().length ? { openvpnUsers: openvpnChanges() } : {}),
       deviceNames: form.value.deviceNames.map((d) => d.trim()).filter(Boolean),
       ...(form.value.subId.trim() && form.value.subId.trim() !== (props.client?.subId || '') ? { subId: form.value.subId.trim() } : {}),
     })
@@ -490,30 +503,33 @@ async function submit() {
                 <button v-if="hasOpenVPN" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'openvpn')">
                   <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateOpenVPN') }}</span>
                 </button>
+                <button v-if="hasL2TP" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'l2tp')">
+                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateL2TP') }}</span>
+                </button>
               </div>
               <p v-if="rotated" class="hint ok-hint">{{ rotated }}</p>
             </div>
 
-            <template v-if="hasOpenVPN">
+            <template v-if="hasLogins">
               <!-- One login per user, in the plan's order. A plan for
                    several is several people, each logging in as
                    themselves. -->
               <div v-for="(row, i) in openvpnRows" :key="i" class="aform-item ovpn-user">
                 <label class="aform-label">
                   <template v-if="openvpnRows.length > 1">{{ t('client.userN', { n: i + 1 }) }}</template>
-                  <template v-else>{{ t('client.openvpnLogin') }}</template>
-                  <HelpTip v-if="i === 0" :text="t('client.openvpnHint')" />
+                  <template v-else>{{ loginLabel }}</template>
+                  <HelpTip v-if="i === 0" :text="hasL2TP ? t('client.l2tpHint') : t('client.openvpnHint')" />
                 </label>
                 <div class="arow16">
                   <div class="acol12">
                     <div class="acompact">
-                      <label class="ainput block"><input v-model="row.username" class="ltr" autocomplete="off" maxlength="48" :placeholder="t('client.openvpnUsername') + ' — ' + t('client.openvpnGenerated')" /></label>
+                      <label class="ainput block"><input v-model="row.username" class="ltr" autocomplete="off" maxlength="48" :placeholder="usernameLabel + ' — ' + t('client.openvpnGenerated')" /></label>
                       <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="row.username = randomHandle(12)"><AntIcon name="ReloadOutlined" /></button>
                     </div>
                   </div>
                   <div class="acol12">
                     <div class="acompact">
-                      <label class="ainput block"><input v-model="row.password" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="t('client.openvpnPassword') + ' — ' + t('client.openvpnGenerated')" /></label>
+                      <label class="ainput block"><input v-model="row.password" class="ltr" type="text" autocomplete="off" maxlength="64" :placeholder="passwordLabel + ' — ' + t('client.openvpnGenerated')" /></label>
                       <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="row.password = randomSecret()"><AntIcon name="ReloadOutlined" /></button>
                     </div>
                   </div>
