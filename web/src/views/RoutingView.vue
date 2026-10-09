@@ -124,9 +124,9 @@ async function loadOutbounds() {
   try {
     outbounds.value = await api.get('/api/outbounds', { background: true })
     interfaces.value = await api.get('/api/interfaces', { background: true })
-    const cs = await api.get('/api/clients?perPage=500', { background: true })
+    const cs = await api.allClients()
     const names = {}
-    for (const c of cs.items || cs || []) names[String(c.id)] = c.name
+    for (const c of cs) names[String(c.id)] = c.name
     clientNames.value = names
   } catch {
     // The rule form falls back to a free-text tag if this fails, so a failure

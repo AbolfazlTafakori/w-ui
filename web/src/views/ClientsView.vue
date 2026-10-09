@@ -776,9 +776,31 @@ const moreItems = computed(() =>
       ],
 )
 
-// Import: a JSON list in the shape the export writes.
+// Import: a JSON list in the shape the export writes -- the file it
+// downloads, chosen here, or its text pasted.
 const importOpen = ref(false)
 const importText = ref('')
+const importFile = ref(null)
+// The export names no tunnel -- one on the old server means nothing here --
+// so the operator says which one they go on, and what to do about a name
+// that is already taken. Skip is the default: it is the one that cannot
+// overwrite a plan somebody is paying for.
+const importTo = ref(0)
+const importConflict = ref('skip')
+const importBusy = ref(false)
+function openImport() {
+  importTo.value = interfaces.value[0]?.id || 0
+  importConflict.value = 'skip'
+  importOpen.value = true
+}
+function pickImportFile() {
+  importFile.value?.click()
+}
+async function onImportFile(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (file) importText.value = await file.text()
+}
 async function runImport() {
   let parsed
   try {
@@ -788,31 +810,69 @@ async function runImport() {
     return
   }
   // The export's own file ({ exportedAt, count, clients }) or a bare list of
-  // customers, alike. Neither names an interface -- one on the old server
-  // means nothing here -- so they go on the first one, and a name already
-  // taken is skipped rather than overwritten.
-  const body = Array.isArray(parsed) ? { clients: parsed } : { ...parsed }
-  if (!body.interfaceId) body.interfaceId = interfaces.value[0]?.id
-  if (!body.onConflict) body.onConflict = 'skip'
+  // customers, alike.
+  const clients = Array.isArray(parsed) ? parsed : parsed?.clients
+  if (!Array.isArray(clients) || !clients.length) {
+    notify(t('outbound.importInvalidJson'), 'error')
+    return
+  }
+  importBusy.value = true
   try {
-    const rep = await api.post('/api/clients/import', body)
-    notify(`${t('client.menu.import')}: ${nf(rep.created || 0)}`, 'success')
-    importOpen.value = false
-    importText.value = ''
-    await load()
+    const rep = await api.post('/api/clients/import', {
+      clients,
+      interfaceId: Number(importTo.value),
+      onConflict: importConflict.value,
+    })
+    // Every outcome said, not only what was made: importing a list into the
+    // panel it came from makes nothing and skips everyone, and "0" alone
+    // read as an import that did not work.
+    const summary = t('client.importDone', {
+      created: nf(rep.created || 0),
+      replaced: nf(rep.replaced || 0),
+      skipped: nf(rep.skipped || 0),
+      failed: nf(rep.failed || 0),
+    })
+    const problems = rep.problems || []
+    notify(problems.length ? `${summary}\n${problems.join('\n')}` : summary, rep.failed ? 'error' : 'success')
+    if (!rep.failed) {
+      importOpen.value = false
+      importText.value = ''
+    }
+    if (rep.created || rep.replaced) await load()
   } catch (err) {
     notify(err.message, 'error')
+  } finally {
+    importBusy.value = false
   }
 }
 
-// Sub links: every selected customer's subscription address, one per line.
+// Sub links: every selected customer's subscription address, one per line,
+// read for each of them -- the list's rows do not carry it. A customer whose
+// link could not be read is named, so the lines still say who is who.
 const subLinksOpen = ref(false)
-const subLinksText = computed(() =>
-  (page.value?.items || [])
-    .filter((c) => selected.value.has(c.id))
-    .map((c) => c.subscriptionUrl || c.subscription?.url || `${c.name}: —`)
-    .join('\n'),
-)
+const subLinksText = ref('')
+const subLinksBusy = ref(false)
+async function openSubLinks() {
+  const chosen = ids()
+  const names = new Map((page.value?.items || []).map((c) => [c.id, c.name]))
+  subLinksText.value = ''
+  subLinksOpen.value = true
+  subLinksBusy.value = true
+  try {
+    const links = await api.subscriptionLinks(chosen)
+    subLinksText.value = chosen.map((id, i) => links[i] || `${names.get(id) || `#${id}`}: —`).join('\n')
+  } finally {
+    subLinksBusy.value = false
+  }
+}
+async function copySubLinks() {
+  try {
+    await navigator.clipboard.writeText(subLinksText.value)
+    notify(t('action.copied'), 'success')
+  } catch {
+    notify(t('action.copyFailed'), 'error')
+  }
+}
 
 // Time or traffic for the selection: its own dialog, which works out what
 // will happen before anything does.
@@ -878,14 +938,8 @@ function pickMore(key) {
       },
     })
   }
-  if (key === 'subLinks') {
-    subLinksOpen.value = true
-    return
-  }
-  if (key === 'import') {
-    importOpen.value = true
-    return
-  }
+  if (key === 'subLinks') return openSubLinks()
+  if (key === 'import') return openImport()
   if (key === 'purgeDepleted' || key === 'purgeUnattached') {
     const status = key === 'purgeDepleted' ? 'depleted' : 'unattached'
     const count = key === 'purgeDepleted' ? (stats.value?.exhausted ?? 0) + (stats.value?.expired ?? 0) : null
@@ -1336,10 +1390,30 @@ async function submitForm(input) {
       </div>
       <div class="card-body">
         <div class="field"><textarea v-model="importText" class="ltr mono" rows="12" spellcheck="false" placeholder="[ { ... } ]"></textarea></div>
+        <input ref="importFile" type="file" accept=".json,application/json" hidden @change="onImportFile" />
+        <div class="field">
+          <label for="ci-to">{{ t('client.importTo') }}</label>
+          <select id="ci-to" v-model="importTo">
+            <option v-for="i in interfaces" :key="i.id" :value="i.id">{{ i.name }} · {{ i.protocol }}:{{ i.listenPort }}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ci-conflict">{{ t('client.importConflict') }}</label>
+          <select id="ci-conflict" v-model="importConflict">
+            <option value="skip">{{ t('client.importSkip') }}</option>
+            <option value="rename">{{ t('client.importRename') }}</option>
+            <option value="replace">{{ t('client.importReplace') }}</option>
+          </select>
+        </div>
+        <p class="muted small">{{ t('client.importHint') }}</p>
       </div>
       <div class="modal-foot">
+        <button type="button" class="btn" @click="pickImportFile"><Icon name="upload" :size="14" /><span>{{ t('action.chooseFile') }}</span></button>
         <button type="button" class="btn" @click="importOpen = false">{{ t('common.close') }}</button>
-        <button class="btn primary" :disabled="!importText.trim()" @click="runImport">{{ t('client.menu.import') }}</button>
+        <button class="btn primary" :disabled="importBusy || !importText.trim() || !importTo" @click="runImport">
+          <span v-if="importBusy" class="spin"></span>
+          <template v-else>{{ t('client.menu.import') }}</template>
+        </button>
       </div>
     </div>
   </div>
@@ -1351,10 +1425,14 @@ async function submitForm(input) {
         <button class="act" :aria-label="t('common.close')" @click="subLinksOpen = false"><Icon name="close" :size="16" /></button>
       </div>
       <div class="card-body">
-        <div class="field"><textarea class="ltr mono" rows="10" readonly spellcheck="false" :value="subLinksText"></textarea></div>
+        <div class="field"><textarea class="ltr mono" rows="10" readonly spellcheck="false" :value="subLinksText" :placeholder="subLinksBusy ? '…' : ''"></textarea></div>
       </div>
       <div class="modal-foot">
         <button type="button" class="btn" @click="subLinksOpen = false">{{ t('common.close') }}</button>
+        <button class="btn primary" :disabled="subLinksBusy || !subLinksText" @click="copySubLinks">
+          <span v-if="subLinksBusy" class="spin"></span>
+          <template v-else><Icon name="copy" :size="14" /><span>{{ t('action.copy') }}</span></template>
+        </button>
       </div>
     </div>
   </div>
