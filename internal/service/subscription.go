@@ -445,12 +445,7 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 	if err != nil {
 		return nil, err
 	}
-	parts := make([]backend.ClientProfile, 0, len(rendered))
-	for _, d := range rendered {
-		parts = append(parts, d.Profile)
-	}
-
-	body, ctype := encodeBundle(parts, format)
+	body, ctype := encodeBundle(bundleParts(rendered, byID, format), format)
 
 	return &Bundle{
 		Body:        body,
@@ -947,6 +942,28 @@ func (s *Subscriptions) byToken(ctx context.Context, token string) (*model.Clien
 }
 
 // encodeBundle puts the configurations into the shape asked for.
+// bundleParts is what goes into the file an app fetches.
+//
+// An L2TP sign-in is a page of text for a person, typed into the device's own
+// settings. In the text an app imports it would be lines the app cannot read
+// between the configurations it can, so it is left out there -- unless it is
+// all the customer has, when the text is at least something a person can
+// read. An archive holds each as a file of its own and carries them all.
+func bundleParts(rendered []RenderedDevice, byID map[uint]model.Interface, format string) []backend.ClientProfile {
+	all := make([]backend.ClientProfile, 0, len(rendered))
+	importable := make([]backend.ClientProfile, 0, len(rendered))
+	for _, d := range rendered {
+		all = append(all, d.Profile)
+		if byID[d.Account.InterfaceID].Protocol != model.ProtocolL2TP {
+			importable = append(importable, d.Profile)
+		}
+	}
+	if strings.EqualFold(format, "zip") || len(importable) == 0 {
+		return all
+	}
+	return importable
+}
+
 func encodeBundle(parts []backend.ClientProfile, format string) (body []byte, contentType string) {
 	switch strings.ToLower(format) {
 	case "zip":

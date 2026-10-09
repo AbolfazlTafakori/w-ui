@@ -276,7 +276,15 @@ func (p *Pool) logOnce(iface *model.Interface, err error) {
 // Deliberately narrow. A rename or a note should not tear down a live tunnel,
 // but a key, a port or a subnet means the device is no longer the one the
 // database describes.
+//
+// An L2TP tunnel's pre-shared key and resolvers are read by the agent from
+// the state the driver writes when it opens, so a change to either has to
+// reopen it to reach the customers.
 func fingerprint(i *model.Interface) string {
-	return fmt.Sprintf("%s|%s|%d|%s|%s|%d|%s",
+	fp := fmt.Sprintf("%s|%s|%d|%s|%s|%d|%s",
 		i.Name, i.Protocol, i.ListenPort, i.Subnet, i.PublicKey, i.MTU, i.Mode)
+	if i.Protocol == model.ProtocolL2TP {
+		fp += "|" + i.L2TP.V.PSK + "|" + i.DNS
+	}
+	return fp
 }

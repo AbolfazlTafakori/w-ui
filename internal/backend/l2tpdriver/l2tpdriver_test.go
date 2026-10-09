@@ -222,3 +222,34 @@ func TestProfileListsEveryServerAndTheSignIn(t *testing.T) {
 		t.Errorf("hosts are not in their order:\n%s", got)
 	}
 }
+
+// Shaping follows each session to its own link; a name pppd would not give a
+// link never reaches tc.
+func TestSessionDevicesAreTheLinksPPPNamed(t *testing.T) {
+	iface, p := setup(t)
+	now := time.Now().Unix()
+	agentReports(t, p, l2tpconf.Report{At: now, State: l2tpconf.AgentRunning, Sessions: []l2tpconf.Session{
+		{Account: 1, Device: "ppp0", Since: now - 60},
+		{Account: 2, Device: "ppp12", Since: now - 5},
+		{Account: 3, Device: "eth0"},
+		{Account: 4, Device: "ppp0\nqdisc del dev eth0 root"},
+		{Account: 5, Device: "ppp"},
+		{Account: 0, Device: "ppp3"},
+	}})
+	d := New()
+	if err := d.Open(context.Background(), iface); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.SessionDevices(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Device != "ppp0" || got[0].AccountID != 1 || got[0].Since != now-60 ||
+		got[1].Device != "ppp12" || got[1].AccountID != 2 {
+		t.Fatalf("session devices = %+v", got)
+	}
+	agentReports(t, p, l2tpconf.Report{At: now - 3600, State: l2tpconf.AgentRunning})
+	if _, err := d.SessionDevices(context.Background()); !errors.Is(err, ErrNoAgent) {
+		t.Fatalf("stale report: %v", err)
+	}
+}

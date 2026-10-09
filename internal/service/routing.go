@@ -845,16 +845,27 @@ func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.R
 		}
 	}
 	if r.Interfaces != "" {
-		byID := map[string]string{}
+		byID := map[string]model.Interface{}
 		for _, i := range ifaces {
-			byID[strconv.FormatUint(uint64(i.ID), 10)] = i.Name
+			byID[strconv.FormatUint(uint64(i.ID), 10)] = i
 		}
 		for _, id := range splitList(r.Interfaces) {
-			if name := byID[id]; name != "" {
-				mr.Inbounds = append(mr.Inbounds, name)
+			i, ok := byID[id]
+			if !ok || i.Name == "" {
+				continue
 			}
+			// An L2TP tunnel's sessions arrive on PPP devices that come and
+			// go, never on the one device its name is; its subnet is what
+			// every one of them comes from.
+			if i.Protocol == model.ProtocolL2TP {
+				if pfx, err := netip.ParsePrefix(i.Subnet); err == nil {
+					mr.InboundNets = append(mr.InboundNets, pfx.Masked())
+				}
+				continue
+			}
+			mr.Inbounds = append(mr.Inbounds, i.Name)
 		}
-		if len(mr.Inbounds) == 0 {
+		if len(mr.Inbounds) == 0 && len(mr.InboundNets) == 0 {
 			return false
 		}
 	}

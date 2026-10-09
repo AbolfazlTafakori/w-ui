@@ -13,6 +13,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/dnsproxy"
@@ -315,6 +316,7 @@ func (e *Engine) Apply(ctx context.Context) {
 	}
 	wgconf.DNSFor = dnsFor
 	ovpnconf.DNSFor = dnsFor
+	l2tpdriver.DNSFor = dnsFor
 	e.syncDNS(ctx, cfg)
 }
 

@@ -176,12 +176,18 @@ type MarkRule struct {
 	SourcePorts []PortRange
 	// Inbounds are the tunnel devices the traffic has to arrive on.
 	Inbounds []string
+	// InboundNets are tunnels with no one device to name -- an L2TP
+	// tunnel's sessions each come and go on a PPP device of their own --
+	// matched instead by the tunnel's subnet, which is every one of its
+	// customers' sources. Either list arriving is enough.
+	InboundNets []netip.Prefix
 }
 
 // Empty reports whether nothing at all is being matched.
 func (r MarkRule) Empty() bool {
 	return len(r.Addrs) == 0 && len(r.Ports) == 0 && r.Protocol == "" &&
-		len(r.Sources) == 0 && len(r.SourcePorts) == 0 && len(r.Inbounds) == 0
+		len(r.Sources) == 0 && len(r.SourcePorts) == 0 && len(r.Inbounds) == 0 &&
+		len(r.InboundNets) == 0
 }
 
 // bittorrentPorts are the ports BitTorrent clients use by default.
@@ -411,6 +417,18 @@ func writeMarkRule(b *strings.Builder, r MarkRule) error {
 		return errors.New("matches nothing")
 	}
 
+	// Arriving on a named device or from a tunnel's subnet is one rule each:
+	// an nftables rule matches all of what it says, and either is enough.
+	if len(r.Inbounds) > 0 && len(r.InboundNets) > 0 {
+		named, nets := r, r
+		named.InboundNets = nil
+		nets.Inbounds = nil
+		if err := writeMarkRule(b, named); err != nil {
+			return err
+		}
+		return writeMarkRule(b, nets)
+	}
+
 	// Destinations of both families need two statements: an nftables rule
 	// is one family. Written twice rather than one family silently dropped.
 	if v4s, v6s := v4(r.Addrs), v6(r.Addrs); len(v4s) > 0 && len(v6s) > 0 {
@@ -435,6 +453,13 @@ func writeMarkRule(b *strings.Builder, r MarkRule) error {
 		names := append([]string(nil), r.Inbounds...)
 		sort.Strings(names)
 		match = append(match, "iifname { "+quoted(names)+" }")
+	}
+	if len(r.InboundNets) > 0 {
+		nets := v4(r.InboundNets)
+		if len(nets) == 0 {
+			return nil
+		}
+		match = append(match, "ip saddr { "+prefixList(nets)+" }")
 	}
 	if len(r.Addrs) > 0 {
 		if v6s := v6(r.Addrs); len(v6s) > 0 {

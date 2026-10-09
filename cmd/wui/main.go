@@ -25,6 +25,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/api"
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/backup"
@@ -196,6 +197,7 @@ func run() error {
 	// OpenVPN keeps its per-interface files under the data directory, so the
 	// whole of the panel's state stays in one place and one backup.
 	ovpndriver.DataRoot = cfg.DataDir
+	l2tpdriver.DataRoot = cfg.DataDir
 
 	registerBackends(log)
 
@@ -752,6 +754,7 @@ func registerBackends(log *slog.Logger) {
 	// fills in whatever is still unclaimed.
 	wgdriver.Register()
 	ovpndriver.Register()
+	l2tpdriver.Register()
 
 	for _, p := range []model.Protocol{model.ProtocolWireGuard, model.ProtocolOpenVPN} {
 		if backend.Supports(p) {

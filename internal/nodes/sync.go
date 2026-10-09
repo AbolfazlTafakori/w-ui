@@ -403,6 +403,10 @@ func interfaceState(iface model.Interface) service.NodeInterface {
 		v := ovpn
 		out.OpenVPN = &v
 	}
+	if iface.Protocol == model.ProtocolL2TP {
+		v := iface.L2TP.V
+		out.L2TP = &v
+	}
 	return out
 }
 

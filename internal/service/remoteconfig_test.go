@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -24,6 +25,9 @@ func init() {
 	}
 	if !backend.Supports(model.ProtocolOpenVPN) {
 		ovpndriver.Register()
+	}
+	if !backend.Supports(model.ProtocolL2TP) {
+		l2tpdriver.Register()
 	}
 }
 

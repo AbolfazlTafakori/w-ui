@@ -75,7 +75,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `there is no group called "…"` | A rule or a bulk action named a group that does not exist. | Create the group first, or fix the name. |
 | `a group called "…" already exists` / `a group needs a name` / `that name is too long` | | |
 | `a tag prefix can only contain letters, digits, - and _` / `a tag cannot contain a comma or a space` | | |
-| `an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel` | Credentials were typed for a customer with no OpenVPN tunnel ticked. | Tick an OpenVPN tunnel, or leave the fields empty. |
+| `a username and password only apply when the customer is on an OpenVPN or L2TP tunnel` | Credentials were typed for a customer with no OpenVPN or L2TP tunnel ticked. | Tick an OpenVPN or L2TP tunnel, or leave the fields empty. |
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` | | Something like `roya` or `roya.k`. |
 | `two users were given the same username "…"; each logs in as themselves` | Two rows on the Credentials tab carry one username. | A different one per user. |
 | `the username "…" is already used on …` | Usernames are unique per OpenVPN tunnel. | Another name. |

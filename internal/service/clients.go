@@ -18,6 +18,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -438,7 +439,10 @@ func (s *Clients) buildAccount(client *model.Client, iface *model.Interface, nam
 		acc.PublicKey = pair.Public.String()
 		acc.PresharedKey = pair.Preshared.String()
 
-	case model.ProtocolOpenVPN:
+	case model.ProtocolOpenVPN, model.ProtocolL2TP:
+		// The same shape on both: a username and a password typed into the
+		// client, drawn from an alphabet every client and pppd's secrets
+		// file take as it is.
 		secret, err := ovpnconf.NewSecret(16)
 		if err != nil {
 			return nil, err
@@ -2049,7 +2053,7 @@ type openvpnCreds struct {
 // apply puts the wish for one user on their account; a user with no wish
 // keeps what they have or what was generated.
 func (c openvpnCreds) apply(acc *model.Account, iface *model.Interface, userIndex int) {
-	if iface.Protocol != model.ProtocolOpenVPN || userIndex >= len(c.users) {
+	if !iface.Protocol.UsesCredentials() || userIndex >= len(c.users) {
 		return
 	}
 	u := c.users[userIndex]
@@ -2062,17 +2066,21 @@ func (c openvpnCreds) apply(acc *model.Account, iface *model.Interface, userInde
 }
 
 // checkOpenVPNCredentials validates what was typed for each user and makes
-// sure every name is free on every OpenVPN tunnel it would be used on, and
-// that no two users were given the same one. selfID is the customer whose
-// own accounts do not count as a clash.
+// sure every name is free on every tunnel it would be used on -- OpenVPN and
+// L2TP, the two where a device signs in with one -- and that no two users
+// were given the same one. selfID is the customer whose own accounts do not
+// count as a clash.
 func (s *Clients) checkOpenVPNCredentials(ctx context.Context, ifaces []*model.Interface, selfID uint, users []OpenVPNUser) (openvpnCreds, error) {
 	if len(users) == 0 {
 		return openvpnCreds{}, nil
 	}
-	hasOVPN := false
+	hasOVPN, hasL2TP := false, false
 	for _, f := range ifaces {
-		if f.Protocol == model.ProtocolOpenVPN {
+		if f.Protocol.UsesCredentials() {
 			hasOVPN = true
+		}
+		if f.Protocol == model.ProtocolL2TP {
+			hasL2TP = true
 		}
 	}
 	given := false
@@ -2085,7 +2093,7 @@ func (s *Clients) checkOpenVPNCredentials(ctx context.Context, ifaces []*model.I
 		return openvpnCreds{}, nil
 	}
 	if !hasOVPN {
-		return openvpnCreds{}, invalidField("openvpnUsername", "an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel")
+		return openvpnCreds{}, invalidField("openvpnUsername", "a username and password only apply when the customer is on an OpenVPN or L2TP tunnel")
 	}
 	seen := map[string]bool{}
 	out := make([]OpenVPNUser, len(users))
@@ -2106,7 +2114,7 @@ func (s *Clients) checkOpenVPNCredentials(ctx context.Context, ifaces []*model.I
 			}
 			seen[strings.ToLower(username)] = true
 			for _, f := range ifaces {
-				if f.Protocol != model.ProtocolOpenVPN {
+				if !f.Protocol.UsesCredentials() {
 					continue
 				}
 				var n int64
@@ -2128,6 +2136,14 @@ func (s *Clients) checkOpenVPNCredentials(ctx context.Context, ifaces []*model.I
 			}
 			if strings.ContainsAny(u.Password, " \t\r\n") {
 				return openvpnCreds{}, invalidField("openvpnPassword", "an OpenVPN password cannot contain spaces")
+			}
+			// pppd's secrets file holds the password as it is, so on L2TP it
+			// takes what that file can carry and nothing that would read as
+			// its own syntax.
+			if hasL2TP {
+				if err := l2tpconf.CheckSecret(u.Password); err != nil {
+					return openvpnCreds{}, invalidField("openvpnPassword", "an L2TP password is printable characters with no spaces, quotes, # or backslash")
+				}
 			}
 		}
 		out[i] = OpenVPNUser{Username: username, Password: u.Password}
@@ -2155,7 +2171,7 @@ func (s *Clients) setOpenVPNCredentials(ctx context.Context, client *model.Clien
 			return err
 		}
 		byIface[a.InterfaceID] = f
-		if f.Protocol == model.ProtocolOpenVPN {
+		if f.Protocol.UsesCredentials() {
 			ovpn = append(ovpn, f)
 		}
 	}
@@ -2168,7 +2184,7 @@ func (s *Clients) setOpenVPNCredentials(ctx context.Context, client *model.Clien
 		for i := range accounts {
 			a := &accounts[i]
 			f := byIface[a.InterfaceID]
-			if f.Protocol != model.ProtocolOpenVPN {
+			if !f.Protocol.UsesCredentials() {
 				continue
 			}
 			creds.apply(a, f, index[f.ID])

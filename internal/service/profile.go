@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgconf"
@@ -15,8 +16,8 @@ type Profile struct {
 	MIMEType string `json:"mimeType"`
 	Body     string `json:"body"`
 
-	// Username and Secret are set for OpenVPN, where the credential is entered
-	// in the client rather than carried in the file.
+	// Username and Secret are set for OpenVPN and L2TP, where the credential
+	// is entered in the client rather than carried in a key.
 	Username string `json:"username,omitempty"`
 	Secret   string `json:"secret,omitempty"`
 	// The host this file was written for, when it was written for one.
@@ -68,6 +69,8 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 			p = renderWireGuard(&acc, &at)
 		case model.ProtocolOpenVPN:
 			p = renderOpenVPN(&acc, &at)
+		case model.ProtocolL2TP:
+			p = renderL2TP(&acc, &at)
 		default:
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
 		}
@@ -101,6 +104,19 @@ func renderOpenVPN(acc *model.Account, iface *model.Interface) *Profile {
 		Filename: fmt.Sprintf("%s.ovpn", filenameFor(acc)),
 		MIMEType: "application/x-openvpn-profile",
 		Body:     ovpnconf.RenderClient(acc, iface),
+		Username: acc.Username,
+		Secret:   acc.Secret,
+	}
+}
+
+// renderL2TP is the sign-in a customer types into their device: an L2TP
+// client imports no file. Rendered by the driver's own function, the same one
+// the subscription uses, so the two cannot disagree.
+func renderL2TP(acc *model.Account, iface *model.Interface) *Profile {
+	return &Profile{
+		Filename: fmt.Sprintf("%s-l2tp.txt", filenameFor(acc)),
+		MIMEType: "text/plain; charset=utf-8",
+		Body:     l2tpdriver.Profile(acc, iface),
 		Username: acc.Username,
 		Secret:   acc.Secret,
 	}

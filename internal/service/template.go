@@ -72,6 +72,11 @@ func (t *Template) Export(ctx context.Context) (TemplateDoc, error) {
 		if i.Protocol == model.ProtocolOpenVPN && i.OpenVPN.V.Transport != "" {
 			row["transport"] = i.OpenVPN.V.Transport
 		}
+		// The key every customer's device holds. A panel rebuilt from this
+		// document with a new one would have every device ask for it again.
+		if i.Protocol == model.ProtocolL2TP && i.L2TP.V.PSK != "" {
+			row["psk"] = i.L2TP.V.PSK
+		}
 		doc.Inbounds = append(doc.Inbounds, mustJSON(row))
 	}
 

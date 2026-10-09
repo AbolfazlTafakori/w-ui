@@ -54,9 +54,13 @@ func BuildNAT(nets []netip.Prefix, tunnels []string) string {
 	// Traffic going back into a tunnel is left alone. Rewriting it would make
 	// one customer's packets arrive at another as though they came from the
 	// server, and the per-peer address filter exists precisely to stop that.
+	// Matched by destination as well as by device: an L2TP customer is
+	// reached through a PPP device of the session's own, which is never the
+	// tunnel's name.
 	if len(tunnels) > 0 {
 		fmt.Fprintf(&b, "\t\toifname { %s } return\n", quoted(tunnels))
 	}
+	fmt.Fprintf(&b, "\t\tip daddr { %s } return\n", prefixList(v4))
 
 	fmt.Fprintf(&b, "\t\tip saddr { %s } counter masquerade\n", prefixList(v4))
 	b.WriteString("\t}\n}\n")

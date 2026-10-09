@@ -95,3 +95,14 @@ func TestTheProgramIsStable(t *testing.T) {
 		t.Errorf("the same tunnels in another order gave a different program:\n%s\n---\n%s", a, b)
 	}
 }
+
+// Traffic to another customer is left alone by its destination too: an L2TP
+// customer is reached through a PPP device that is never a tunnel's name.
+func TestTrafficToACustomerIsLeftAloneByAddress(t *testing.T) {
+	got := BuildNAT(nets(t, "10.99.0.0/24", "10.77.0.0/24"), []string{"wg0"})
+	ret := strings.Index(got, "ip daddr { 10.77.0.0/24, 10.99.0.0/24 } return")
+	masq := strings.Index(got, "masquerade")
+	if ret < 0 || ret > masq {
+		t.Fatalf("customer-bound traffic is not excluded by address before the masquerade:\n%s", got)
+	}
+}

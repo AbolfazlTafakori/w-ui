@@ -266,14 +266,11 @@ func (d *Driver) Stats(context.Context) ([]backend.Stat, error) {
 	if !open {
 		return nil, backend.ErrNotOpen
 	}
-	r, err := readReport(paths)
+	r, err := freshReport(paths)
 	if err != nil {
 		return nil, err
 	}
 	at := time.Unix(r.At, 0)
-	if time.Since(at) > reportStale {
-		return nil, ErrNoAgent
-	}
 	out := make([]backend.Stat, 0, len(r.Sessions))
 	for _, s := range r.Sessions {
 		if s.Account == 0 {
@@ -288,6 +285,47 @@ func (d *Driver) Stats(context.Context) ([]backend.Stat, error) {
 		})
 	}
 	return out, nil
+}
+
+// SessionDevices is the PPP link each connected customer is on, from the
+// agent's report, for shaping to follow them there.
+//
+// The names go to tc, so only what pppd itself names a link is passed on.
+func (d *Driver) SessionDevices(context.Context) ([]backend.SessionDevice, error) {
+	d.mu.Lock()
+	paths := d.paths
+	open := d.iface != nil
+	d.mu.Unlock()
+	if !open {
+		return nil, backend.ErrNotOpen
+	}
+	r, err := freshReport(paths)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]backend.SessionDevice, 0, len(r.Sessions))
+	for _, s := range r.Sessions {
+		if s.Account == 0 || !pppDevice(s.Device) {
+			continue
+		}
+		out = append(out, backend.SessionDevice{AccountID: s.Account, Device: s.Device, Since: s.Since})
+	}
+	return out, nil
+}
+
+// pppDevice reports whether a name is one pppd gives a link: ppp and a unit
+// number.
+func pppDevice(name string) bool {
+	unit, ok := strings.CutPrefix(name, "ppp")
+	if !ok || unit == "" || len(unit) > 5 {
+		return false
+	}
+	for _, c := range unit {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // Kick asks the agent to end an account's session.
@@ -395,6 +433,18 @@ func readState(p l2tpconf.Paths) (*l2tpconf.State, error) {
 		return nil, err
 	}
 	return l2tpconf.Decode(raw)
+}
+
+// freshReport is the agent's report, if the agent is still writing it.
+func freshReport(p l2tpconf.Paths) (l2tpconf.Report, error) {
+	r, err := readReport(p)
+	if err != nil {
+		return l2tpconf.Report{}, err
+	}
+	if time.Since(time.Unix(r.At, 0)) > reportStale {
+		return l2tpconf.Report{}, ErrNoAgent
+	}
+	return r, nil
 }
 
 func readReport(p l2tpconf.Paths) (l2tpconf.Report, error) {

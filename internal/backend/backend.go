@@ -135,6 +135,24 @@ type Destroyer interface {
 	Destroy(ctx context.Context) error
 }
 
+// SessionDevicer is a driver whose customers each arrive on a link of their
+// own that lasts as long as the session -- L2TP's PPP devices. What a
+// customer is sent leaves through that link rather than through the tunnel's
+// own device, so a rate limit has to be laid there.
+type SessionDevicer interface {
+	SessionDevices(ctx context.Context) ([]SessionDevice, error)
+}
+
+// SessionDevice is one connected session's link.
+type SessionDevice struct {
+	AccountID uint
+	Device    string
+	// Since is when the session began, in Unix seconds. A device name a later
+	// session reuses is a new device with nothing laid on it, and this is how
+	// the two are told apart.
+	Since int64
+}
+
 // removers is how each protocol takes a device down by name, registered by
 // the driver packages that know how. It needs no open driver.
 var removers = map[model.Protocol]func(context.Context, *model.Interface) error{}

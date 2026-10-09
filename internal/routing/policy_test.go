@@ -398,3 +398,31 @@ func TestTCPSegmentsAreClampedToTheRouteMTU(t *testing.T) {
 		t.Fatal("the MSS is not clamped")
 	}
 }
+
+// A rule on an L2TP tunnel matches its subnet: the tunnel's sessions arrive
+// on PPP devices of their own, never on the device its name is. A rule on an
+// L2TP tunnel and a named one is two rules, either matching.
+func TestARuleOnASubnetTunnelMatchesItsSources(t *testing.T) {
+	p := customerPolicy()
+	p.Rules = []MarkRule{
+		{Mark: MarkBase | 4, InboundNets: mustPrefixes(t, "10.77.0.0/24")},
+		{Mark: MarkBase | 4, Inbounds: []string{"wg0"}, InboundNets: mustPrefixes(t, "10.78.0.0/24"), Ports: []PortRange{{443, 443}}, Protocol: "tcp"},
+	}
+	out, err := BuildRuleset(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "ip saddr { 10.77.0.0/24 }") {
+		t.Fatalf("the subnet is not matched:\n%s", out)
+	}
+	named := strings.Contains(out, `iifname { "wg0" }`)
+	byNet := strings.Contains(out, "ip saddr { 10.78.0.0/24 }")
+	if !named || !byNet {
+		t.Fatalf("a rule on both was not split into one each:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, `iifname { "wg0" }`) && strings.Contains(line, "10.78.0.0/24") {
+			t.Fatalf("both in one rule would match neither:\n%s", line)
+		}
+	}
+}

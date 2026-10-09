@@ -75,7 +75,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `there is no group called "…"` | قانون یا عمل گروهی گروهی را نام برده که نیست. | اول گروه را بساز، یا نام را درست کن. |
 | `a group called "…" already exists` / `a group needs a name` / `that name is too long` |  |  |
 | `a tag prefix can only contain letters, digits, - and _` / `a tag cannot contain a comma or a space` |  |  |
-| `an OpenVPN username and password only apply when the customer is on an OpenVPN tunnel` | برای مشتری‌ای که تانل OpenVPN ندارد نام کاربری/رمز وارد شده. | یک تانل OpenVPN تیک بزن، یا فیلدها را خالی بگذار. |
+| `a username and password only apply when the customer is on an OpenVPN or L2TP tunnel` | برای مشتری‌ای که تانل OpenVPN یا L2TP ندارد نام کاربری/رمز وارد شده. | یک تانل OpenVPN یا L2TP تیک بزن، یا فیلدها را خالی بگذار. |
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` |  | چیزی مثل `roya` یا `roya.k`. |
 | `two users were given the same username "…"; each logs in as themselves` | دو ردیف تب Credentials یک نام کاربری دارند. | برای هر کاربر یکی متفاوت. |
 | `the username "…" is already used on …` | نام کاربری روی هر تانل OpenVPN یکتاست. | نام دیگری. |

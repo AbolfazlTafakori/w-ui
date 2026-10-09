@@ -59,6 +59,7 @@ type subPageView struct {
 	UsageSince string
 	HasWG      bool // any device on a WireGuard tunnel: its apps are offered
 	HasOVPN    bool // any on OpenVPN
+	HasL2TP    bool // any on L2TP, which needs no app: the device has it built in
 	HasQuota   bool
 	Unlimited  bool
 	Active     bool
@@ -303,16 +304,21 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
-		if len(d.Config) <= subPageQRLimit {
+		// An L2TP sign-in is typed into the device's own settings; no app
+		// scans it, so a QR of it would only be something to puzzle over.
+		if len(d.Config) <= subPageQRLimit && d.Protocol != "l2tp" {
 			if png, err := qrcode.Encode(d.Config, qrcode.Low, 220); err == nil {
 				entry.QR = template.URL("data:image/png;base64," +
 					base64.StdEncoding.EncodeToString(png))
 			}
 		}
 		v.Devices = append(v.Devices, entry)
-		if d.Protocol == "openvpn" {
+		switch d.Protocol {
+		case "openvpn":
 			v.HasOVPN = true
-		} else {
+		case "l2tp":
+			v.HasL2TP = true
+		default:
 			v.HasWG = true
 		}
 	}
@@ -321,13 +327,39 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 	if page.FilesSince != nil {
 		v.UsageSince = page.FilesSince.Local().Format("2006-01-02 15:04")
 	}
-	dict, _ := json.Marshal(subPageStrings)
+	dict, _ := json.Marshal(pageStrings(v.HasL2TP))
 	v.Strings = template.JS(dict)
 	return v
 }
 
 // subPageStrings are the page's words in both languages, keyed as the classic panel's
 // subscription strings are, so the language button can swap them in place.
+// subPageL2TPStrings are added only to a page with an L2TP sign-in on it, so
+// that every other customer's page is, to the byte, what it was before L2TP.
+var subPageL2TPStrings = map[string]map[string]string{
+	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN"},
+	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN"},
+}
+
+// pageStrings is the dictionary a page is given.
+func pageStrings(l2tp bool) map[string]map[string]string {
+	if !l2tp {
+		return subPageStrings
+	}
+	out := make(map[string]map[string]string, len(subPageStrings))
+	for lang, words := range subPageStrings {
+		merged := make(map[string]string, len(words)+len(subPageL2TPStrings[lang]))
+		for k, v := range words {
+			merged[k] = v
+		}
+		for k, v := range subPageL2TPStrings[lang] {
+			merged[k] = v
+		}
+		out[lang] = merged
+	}
+	return out
+}
+
 var subPageStrings = map[string]map[string]string{
 	"en": {
 		"title": "Subscription info", "subId": "Subscription ID", "email": "Email", "status": "Status",
@@ -944,7 +976,9 @@ a.row-title:hover { text-decoration: underline; }
 .menu { max-width: calc(100vw - 24px); }
 /* On a phone the id beside the title is the same one in the table below. */
 @media (max-width: 480px) { .card-title .tag { display: none; } .card-head { font-size: 15px; } }
-</style>
+{{ if .HasL2TP }}.usage-dot.purple { background: var(--tag-purple-ink); }
+.menu .menu-note { display: block; padding: 5px 12px; color: var(--ink); font-size: 13px; line-height: 20px; opacity: .75; }
+{{ end }}</style>
 </head>
 <body>
 {{ if .Preview }}<div class="preview-bar">Preview — {{ .Template }} — sample figures, not a customer</div>{{ end }}
@@ -1039,7 +1073,7 @@ a.row-title:hover { text-decoration: underline; }
             <table class="usage-grid">
               <thead><tr>
                 <th class="usage-corner"><span data-i="user">User</span></th>
-                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
+                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else if eq .Protocol "l2tp" }}purple{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
                 <th class="usage-sum" data-i="total">Total</th>
               </tr></thead>
               <tbody>
@@ -1084,7 +1118,7 @@ a.row-title:hover { text-decoration: underline; }
         <div class="cfg cfg-group">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else }}config{{ end }}">Config</span>
+            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if eq .Protocol "l2tp" }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else }}config{{ end }}">Config</span>
             {{ if .Tunnel }}<span class="cfg-meta">{{ .Tunnel }}</span>{{ end }}
             <span class="cfg-count">{{ if gt (len .Devices) 1 }}<span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span>{{ else }}<span data-i="oneUser">1 user</span>{{ end }}</span>
           </div>
@@ -1092,7 +1126,7 @@ a.row-title:hover { text-decoration: underline; }
             {{ range .Devices }}
             <div class="cfg-user">
               <div class="cfg-user-head">
-                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (eq .Protocol "openvpn") .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
+                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (or (eq .Protocol "openvpn") (eq .Protocol "l2tp")) .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
                   <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
                   <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
@@ -1121,6 +1155,8 @@ a.row-title:hover { text-decoration: underline; }
             <a href="https://play.google.com/store/apps/details?id=org.amnezia.awg" target="_blank" rel="noopener noreferrer">AmneziaWG</a>
             {{ end }}{{ if .HasOVPN }}
             <a href="https://play.google.com/store/apps/details?id=net.openvpn.openvpn" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
+            {{ end }}{{ if .HasL2TP }}
+            <span class="menu-note" data-i="l2tpBuiltIn">L2TP/IPsec: built in, under Settings → VPN</span>
             {{ end }}
           </div>
         </div>
@@ -1132,6 +1168,8 @@ a.row-title:hover { text-decoration: underline; }
             <a href="https://apps.apple.com/app/amneziawg/id6478942365" target="_blank" rel="noopener noreferrer">AmneziaWG</a>
             {{ end }}{{ if .HasOVPN }}
             <a href="https://apps.apple.com/app/openvpn-connect/id590379981" target="_blank" rel="noopener noreferrer">OpenVPN Connect</a>
+            {{ end }}{{ if .HasL2TP }}
+            <span class="menu-note" data-i="l2tpBuiltIn">L2TP/IPsec: built in, under Settings → VPN</span>
             {{ end }}
           </div>
         </div>
@@ -1325,6 +1363,8 @@ func setDownload(h http.Header, filename string) {
 		ctype = "application/x-openvpn-profile"
 	case ".conf":
 		ctype = "application/x-wireguard-profile"
+	case ".txt":
+		ctype = "text/plain; charset=utf-8"
 	}
 	h.Set("Content-Type", ctype)
 	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s",

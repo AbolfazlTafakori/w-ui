@@ -337,3 +337,35 @@ func TestUsageTableCountsAFileOncePerHost(t *testing.T) {
 		t.Fatalf("a file shown for three hosts was counted %s, rows %+v", u.Grand, u.Rows)
 	}
 }
+
+// An L2TP sign-in is typed into the device: no QR, no app to fetch, and the
+// page says where it goes instead.
+func TestSubPageShowsAnL2TPSignIn(t *testing.T) {
+	v := newSubView(&service.SubPage{
+		Name: "Ali", Status: "active",
+		Devices: []service.SubPageDevice{{
+			ID: 1, Protocol: "l2tp", Tunnel: "l2tp0", Name: "device-1",
+			Config: "Server: vpn.example.com", Username: "s1-ali", Filename: "ali-l2tp.txt",
+		}},
+	}, "token", false)
+	if len(v.Devices) != 1 || v.Devices[0].QR != "" {
+		t.Fatalf("an L2TP sign-in was given a QR: %+v", v.Devices)
+	}
+	if !v.HasL2TP || v.HasWG || v.HasOVPN {
+		t.Fatalf("apps offered: wg=%v ovpn=%v l2tp=%v", v.HasWG, v.HasOVPN, v.HasL2TP)
+	}
+	var buf strings.Builder
+	if err := subPageTemplate.Execute(&buf, v); err != nil {
+		t.Fatal(err)
+	}
+	html := buf.String()
+	for _, want := range []string{`data-i="l2tpConfig"`, `tag tag-config purple`, `data-i="l2tpBuiltIn"`, `s1-ali`,
+		`.menu .menu-note`, `L2TP/IPsec sign-in`, `ورود L2TP/IPsec`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("the page is missing %s", want)
+		}
+	}
+	if strings.Contains(html, "com.wireguard.android") {
+		t.Error("a WireGuard app was offered for an L2TP sign-in")
+	}
+}

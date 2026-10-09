@@ -49,6 +49,7 @@ type NodeInterface struct {
 	PublicKey    string               `json:"publicKey,omitempty"`
 	AWG          *model.AWGParams     `json:"awg,omitempty"`
 	OpenVPN      *model.OpenVPNParams `json:"openvpn,omitempty"`
+	L2TP         *model.L2TPParams    `json:"l2tp,omitempty"`
 }
 
 // NodeClient is one customer's presence on this node.
@@ -197,6 +198,25 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 	}
 	if in.OpenVPN != nil {
 		iface.OpenVPN = model.JSON(*in.OpenVPN)
+	}
+	if in.Protocol == model.ProtocolL2TP {
+		if in.L2TP == nil || in.L2TP.PSK == "" {
+			return nil, invalidField("interface.l2tp", "an L2TP tunnel arrived without its pre-shared key")
+		}
+		// A server carries one L2TP tunnel: the ports are fixed and the agent
+		// serves one. A second, from another panel or made here, would have
+		// the two overwrite each other's customers.
+		var other int64
+		if err := tx.Model(&model.Interface{}).
+			Where("node_id = ? AND protocol = ? AND NOT (managed = ? AND origin_id = ?)",
+				nodeID, model.ProtocolL2TP, true, in.OriginID).
+			Count(&other).Error; err != nil {
+			return nil, fmt.Errorf("count L2TP tunnels: %w", err)
+		}
+		if other > 0 {
+			return nil, invalidField("interface.protocol", "this server already carries an L2TP tunnel; it can carry one")
+		}
+		iface.L2TP = model.JSON(*in.L2TP)
 	}
 
 	if err := tx.Save(&iface).Error; err != nil {

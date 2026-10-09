@@ -132,6 +132,8 @@ type Reconciler struct {
 	// kernel cannot shape would otherwise log the same line every couple of
 	// seconds for as long as it runs, which buries everything else.
 	lastShapeErr string
+	// sessions is what has been laid on each session's own link.
+	sessions sessionShapes
 	// lastPrune is when stale connection addresses were last swept.
 	lastPrune time.Time
 	// lastRenew is when plans that renew by the period were last looked at.
@@ -495,9 +497,12 @@ type desired struct {
 	rules      []enforce.Rule
 	shaping    []shaper.Client
 	devices    []string
-	perIface   map[uint][]backend.DesiredAccount
-	clients    int
-	accounts   int
+	// sessionRate is the class of each device whose customer has a rate,
+	// for tunnels that carry each session on a link of its own.
+	sessionRate map[uint]shaper.Client
+	perIface    map[uint][]backend.DesiredAccount
+	clients     int
+	accounts    int
 }
 
 // apply reads the desired state and pushes it to the enforcer and the drivers.
@@ -541,6 +546,8 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 			r.setShapeErr("")
 		}
 	}
+
+	r.shapeSessions(ctx, d)
 
 	// Routing comes after enforcement and before the drivers.
 	//
@@ -768,13 +775,14 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	suspended := r.lastSuspended(service.SuspendedOwners(ctx, r.db, now))
 
 	d := &desired{
-		rules:      make([]enforce.Rule, 0, len(clients)),
-		shaping:    make([]shaper.Client, 0, len(clients)),
-		perIface:   map[uint][]backend.DesiredAccount{},
-		clients:    len(clients),
-		accounts:   len(accounts),
-		interfaces: interfaces,
-		devices:    shapedDevices(interfaces),
+		rules:       make([]enforce.Rule, 0, len(clients)),
+		shaping:     make([]shaper.Client, 0, len(clients)),
+		sessionRate: map[uint]shaper.Client{},
+		perIface:    map[uint][]backend.DesiredAccount{},
+		clients:     len(clients),
+		accounts:    len(accounts),
+		interfaces:  interfaces,
+		devices:     shapedDevices(interfaces),
 	}
 
 	for _, c := range clients {
@@ -836,6 +844,9 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 					"account", a.ID, "ip", a.IP)
 				continue
 			}
+			if c.RateBitsPerSec > 0 {
+				d.sessionRate[a.ID] = shaper.Client{Key: enforce.Key(c.ID), RateBitsPerSec: c.RateBitsPerSec}
+			}
 			d.perIface[a.InterfaceID] = append(d.perIface[a.InterfaceID], backend.DesiredAccount{
 				ID:           a.ID,
 				DeviceName:   a.DeviceName,
@@ -874,6 +885,12 @@ func shapedDevices(interfaces []model.Interface) []string {
 	}
 
 	for _, iface := range interfaces {
+		// An L2TP tunnel's own device is a placeholder that carries nothing;
+		// its customers' traffic leaves by each session's link, which is
+		// shaped on its own (see shapeSessions).
+		if iface.Protocol == model.ProtocolL2TP {
+			continue
+		}
 		// Only the tunnel devices, which this panel created and nothing else
 		// uses. The egress interface is deliberately left alone: it is the
 		// machine's main network card, and replacing its root qdisc would throw

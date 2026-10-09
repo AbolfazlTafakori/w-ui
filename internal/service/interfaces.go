@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -86,6 +88,10 @@ type CreateInterfaceInput struct {
 	// before anyone is put on it. Absent means enabled, which is what someone
 	// filling in this form almost always wants.
 	Enabled *bool `json:"enabled"`
+
+	// PSK is an L2TP tunnel's IPsec pre-shared key. Left empty, one is
+	// generated.
+	PSK string `json:"psk"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -119,6 +125,11 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	if err := s.checkSubnetFree(ctx, nodeID, 0, in.Subnet); err != nil {
 		return nil, err
 	}
+	if in.Protocol == model.ProtocolL2TP {
+		if err := s.checkL2TPPlace(ctx, node, 0); err != nil {
+			return nil, err
+		}
+	}
 
 	iface := model.Interface{
 		Name:         in.Name,
@@ -145,6 +156,18 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		if in.Mode == model.ModeAmnezia {
 			iface.AWG = model.JSON(NewAWGParams())
 		}
+	} else if in.Protocol == model.ProtocolL2TP {
+		// The key every device types in beside its own sign-in. Handed to
+		// every customer, so it opens the IPsec half for them and nothing
+		// more: who they are is their username and password.
+		psk := in.PSK
+		if psk == "" {
+			var err error
+			if psk, err = ovpnconf.NewSecret(24); err != nil {
+				return nil, err
+			}
+		}
+		iface.L2TP = model.JSON(model.L2TPParams{PSK: psk})
 	} else {
 		// Every interface gets its own certificate authority, generated here
 		// rather than by easy-rsa so that the interface row is the only place
@@ -218,6 +241,24 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	if !backend.Supports(in.Protocol) {
 		return invalidField("protocol", "no driver available for %q on this server", in.Protocol)
 	}
+	if in.Protocol == model.ProtocolL2TP {
+		// L2TP's ports are not the operator's to choose: the clients built
+		// into Windows, macOS and iOS use 1701 inside IPsec on 500 and 4500,
+		// with no setting for any of them.
+		in.ListenPort = l2tpconf.PortL2TP
+		if in.PSK != "" {
+			if err := l2tpconf.CheckPSK(in.PSK); err != nil {
+				return invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
+			}
+		}
+		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
+			if err := checkL2TPSubnet(p); err != nil {
+				return err
+			}
+		}
+	} else if in.PSK != "" {
+		return invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
+	}
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
 		return invalidField("listenPort", "listen port %d is out of range", in.ListenPort)
 	}
@@ -246,6 +287,10 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	}
 	if checkPort {
 		if err := checkPortFree(in.ListenPort, proto); err != nil {
+			if in.Protocol == model.ProtocolL2TP {
+				return &FieldError{Field: "listenPort", Err: fmt.Errorf(
+					"%w; L2TP needs UDP 1701 and nothing else can hold it -- an xl2tpd already running on this server would", err)}
+			}
 			return &FieldError{Field: "listenPort", Err: err}
 		}
 	}
@@ -266,9 +311,12 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	}
 	if in.MTU == 0 {
 		in.MTU = 1420
+		if in.Protocol == model.ProtocolL2TP {
+			in.MTU = l2tpconf.DefaultMTU
+		}
 	}
-	if in.MTU < 576 || in.MTU > 9000 {
-		return invalidField("mtu", "MTU %d is out of range (576-9000)", in.MTU)
+	if err := checkMTU(in.Protocol, in.MTU); err != nil {
+		return err
 	}
 	if in.DNS == "" {
 		in.DNS = "1.1.1.1"
@@ -532,6 +580,10 @@ type UpdateInterfaceInput struct {
 	// on it needs their configuration again afterwards, so it is not a setting
 	// to change idly.
 	Transport *string `json:"transport"`
+
+	// PSK replaces an L2TP tunnel's pre-shared key. Every device on it needs
+	// the new one, and every session ends when it changes.
+	PSK *string `json:"psk"`
 }
 
 // Update applies changes to an interface.
@@ -561,6 +613,9 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		fields["name"] = name
 	}
 	if in.ListenPort != nil && *in.ListenPort != iface.ListenPort {
+		if iface.Protocol == model.ProtocolL2TP {
+			return nil, invalidField("listenPort", "L2TP is always on UDP 1701; the clients have no setting for another port")
+		}
 		port := *in.ListenPort
 		if port < 1 || port > 65535 {
 			return nil, invalidField("listenPort", "listen port %d is out of range", port)
@@ -599,8 +654,14 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	var newSubnet string
 	if in.Subnet != nil && strings.TrimSpace(*in.Subnet) != iface.Subnet {
 		newSubnet = strings.TrimSpace(*in.Subnet)
-		if _, err := netip.ParsePrefix(newSubnet); err != nil {
+		pfx, err := netip.ParsePrefix(newSubnet)
+		if err != nil {
 			return nil, invalidField("subnet", "subnet %q: %v", newSubnet, err)
+		}
+		if iface.Protocol == model.ProtocolL2TP {
+			if err := checkL2TPSubnet(pfx); err != nil {
+				return nil, err
+			}
 		}
 		if err := s.checkSubnetFree(ctx, iface.NodeID, id, newSubnet); err != nil {
 			return nil, err
@@ -618,10 +679,21 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		fields["endpoint_host"] = host
 	}
 	if in.MTU != nil {
-		if *in.MTU < 576 || *in.MTU > 9000 {
-			return nil, invalidField("mtu", "MTU %d is out of range (576-9000)", *in.MTU)
+		if err := checkMTU(iface.Protocol, *in.MTU); err != nil {
+			return nil, err
 		}
 		fields["mtu"] = *in.MTU
+	}
+	if in.PSK != nil && *in.PSK != iface.L2TP.V.PSK {
+		if iface.Protocol != model.ProtocolL2TP {
+			return nil, invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
+		}
+		if err := l2tpconf.CheckPSK(*in.PSK); err != nil {
+			return nil, invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
+		}
+		fields["l2tp"] = model.JSON(model.L2TPParams{PSK: *in.PSK})
+		s.log.Warn("L2TP pre-shared key changed; every customer on the tunnel needs the new one",
+			"interface", iface.Name)
 	}
 	if in.DNS != nil {
 		if err := checkDNSList(strings.TrimSpace(*in.DNS)); err != nil {
@@ -1039,4 +1111,77 @@ func checkNetDevice(name string) error {
 		return invalidField("natInterface", "a device name can only contain letters, digits, . - and _ (found %q)", string(r))
 	}
 	return nil
+}
+
+// checkMTU is the range a tunnel's MTU can take: a PPP link inside L2TP and
+// IPsec sits in a 1500-byte link and cannot be larger than it.
+func checkMTU(p model.Protocol, mtu int) error {
+	if p == model.ProtocolL2TP {
+		if mtu < l2tpconf.MinMTU || mtu > l2tpconf.MaxMTU {
+			return invalidField("mtu", "an L2TP MTU is %d to %d; %d leaves room for its headers", l2tpconf.MinMTU, l2tpconf.MaxMTU, l2tpconf.DefaultMTU)
+		}
+		return nil
+	}
+	if mtu < 576 || mtu > 9000 {
+		return invalidField("mtu", "MTU %d is out of range (576-9000)", mtu)
+	}
+	return nil
+}
+
+// checkL2TPSubnet is the subnet an L2TP tunnel can take: pppd hands out IPv4
+// addresses only, and the gateway and one device need two of them.
+func checkL2TPSubnet(p netip.Prefix) error {
+	if !p.Addr().Is4() || p.Bits() > 30 {
+		return invalidField("subnet", "an L2TP subnet is IPv4 with room for at least two devices (a /30 or larger)")
+	}
+	return nil
+}
+
+// checkL2TPPlace refuses a second L2TP tunnel on a server, and one on a node
+// whose panel predates L2TP.
+//
+// One per server because the ports are fixed: two tunnels would both need
+// UDP 1701, and the clients cannot be told to use another. selfID is the
+// tunnel being moved, which does not count against itself.
+func (s *Interfaces) checkL2TPPlace(ctx context.Context, node *model.Node, selfID uint) error {
+	var n int64
+	q := s.db.WithContext(ctx).Model(&model.Interface{}).
+		Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolL2TP)
+	if selfID != 0 {
+		q = q.Where("id <> ?", selfID)
+	}
+	if err := q.Count(&n).Error; err != nil {
+		return fmt.Errorf("service: count L2TP tunnels: %w", err)
+	}
+	if n > 0 {
+		return invalidField("protocol", "%s already has an L2TP tunnel; a server carries one, because the clients use fixed ports", node.Name)
+	}
+	if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
+		v := node.Version
+		if v == "" {
+			v = "an unknown version"
+		}
+		return invalidField("nodeId", "%s runs %s; L2TP needs W-UI 3.0 or later on the node. Update it first", node.Name, v)
+	}
+	return nil
+}
+
+// versionAtLeast reports whether a release name like "v3.1.2" is at least
+// major.minor. A development build is taken to have everything; a name that
+// cannot be read is not.
+func versionAtLeast(v string, major, minor int) bool {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if strings.HasPrefix(v, "dev") {
+		return true
+	}
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return false
+	}
+	ma, err1 := strconv.Atoi(parts[0])
+	mi, err2 := strconv.Atoi(strings.SplitN(parts[1], "-", 2)[0])
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return ma > major || (ma == major && mi >= minor)
 }

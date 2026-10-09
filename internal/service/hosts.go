@@ -208,8 +208,11 @@ func (s *Hosts) Check(ctx context.Context, id uint) (*CheckResult, error) {
 	}
 	res.OK = true
 	res.LatencyMS = int(d.Milliseconds())
-	if iface.IsWireGuard() {
+	switch iface.Protocol {
+	case model.ProtocolWireGuard:
 		res.Error = "the address answers; a WireGuard tunnel cannot be proved from here"
+	case model.ProtocolL2TP:
+		res.Error = "the address answers; an L2TP tunnel is IPsec and cannot be proved from here"
 	}
 	db.Model(&h).Updates(map[string]any{
 		"reachable": true, "last_check_at": now, "last_error": "",
