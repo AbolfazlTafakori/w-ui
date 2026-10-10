@@ -180,6 +180,9 @@ func (a *Agent) apply(ctx context.Context, want *l2tpconf.State) error {
 		if err := a.sys.WriteRun("xl2tpd.conf", l2tpconf.XL2TPD(want)); err != nil {
 			return fmt.Errorf("writing xl2tpd's configuration: %w", err)
 		}
+		if err := a.sys.WriteRun("l2tp-secrets", l2tpconf.TunnelSecrets(want)); err != nil {
+			return fmt.Errorf("writing xl2tpd's tunnel secret: %w", err)
+		}
 	}
 	// Written every pass that differs: pppd reads it at each sign-in, so a
 	// new device can sign in at once and a removed one cannot, with nothing

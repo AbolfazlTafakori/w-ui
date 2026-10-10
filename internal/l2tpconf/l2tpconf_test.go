@@ -153,10 +153,17 @@ func TestATunnelForRoutersWithoutIPsec(t *testing.T) {
 	if strings.Contains(opts, "noccp") || !strings.Contains(opts, "nobsdcomp\n") || !strings.Contains(opts, "nodeflate\n") {
 		t.Errorf("MPPE cannot be negotiated:\n%s", opts)
 	}
-	for _, want := range []string{"require-mschap-v2\n", "refuse-pap\n", "refuse-chap\n"} {
+	for _, want := range []string{"require-mschap-v2\n", "require-chap\n", "refuse-pap\n"} {
 		if !strings.Contains(opts, want) {
 			t.Errorf("missing %q:\n%s", want, opts)
 		}
+	}
+	if strings.Contains(opts, "refuse-chap") {
+		t.Errorf("a router that only has CHAP is turned away:\n%s", opts)
+	}
+	// A tunnel for phones and computers stays MS-CHAPv2 only.
+	if o := PPPOptions(valid()); !strings.Contains(o, "refuse-chap\n") || strings.Contains(o, "require-chap") {
+		t.Errorf("an IPsec-only tunnel accepts CHAP:\n%s", o)
 	}
 	// A different tunnel as far as the agent is concerned: xl2tpd restarts.
 	if Fingerprint(PPPOptions(valid())) == Fingerprint(opts) {
@@ -208,6 +215,28 @@ func TestKickNames(t *testing.T) {
 	for name, want := range map[string]bool{"12": true, "0": false, "012": false, "-1": false, "a": false, "../1": false, "99999999999": false} {
 		if _, ok := ParseKickName(name); ok != want {
 			t.Errorf("ParseKickName(%q) ok=%v, want %v", name, ok, want)
+		}
+	}
+}
+
+// A modem with a "Tunnel Password" field may ask the server to prove it; the
+// server answers with the tunnel's key, and never asks a client to prove one.
+func TestTheTunnelSecretIsTheKey(t *testing.T) {
+	x := XL2TPD(valid())
+	for _, want := range []string{"auth file = /run/wui-l2tp/l2tp-secrets\n", "challenge = no\n"} {
+		if !strings.Contains(x, want) {
+			t.Errorf("missing %q in:\n%s", want, x)
+		}
+	}
+	if got := TunnelSecrets(valid()); got != "* * SharedKey123\n" {
+		t.Errorf("secrets = %q", got)
+	}
+	// What xl2tpd would cut short or read as a comment is not written.
+	for _, k := range []string{"key!123", "key;123"} {
+		s := valid()
+		s.Interface.PSK = k
+		if got := TunnelSecrets(s); strings.Contains(got, k) || !strings.HasPrefix(got, "#") {
+			t.Errorf("%q: secrets = %q", k, got)
 		}
 	}
 }

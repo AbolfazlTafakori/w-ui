@@ -276,9 +276,20 @@ func TestTheSignInSheetCoversEveryClient(t *testing.T) {
 		t.Errorf("routers without IPsec are offered a tunnel that refuses them:\n%s", got)
 	}
 
+	saved := serverIPv4
+	serverIPv4 = func(host string) []string {
+		if host == "vpn.example.com" {
+			return []string{"203.0.113.7"}
+		}
+		return nil
+	}
+	t.Cleanup(func() { serverIPv4 = saved })
 	iface.L2TP = model.JSON(model.L2TPParams{PSK: "SharedKey123", AllowPlain: true})
 	got = Profile(acc, iface)
-	for _, want := range []string{"ASUS:", "OpenWrt:", "use-ipsec=no", "not encrypted"} {
+	for _, want := range []string{"ASUS:", "OpenWrt:", "use-ipsec=no", "not encrypted",
+		"Irancell TF-i60", "Huawei 4G/5G", "TP-Link:", "D-Link:", "Tenda:", "Xiaomi:", "ADSL and VDSL modems",
+		"tunnel password or L2TP key, it is the pre-shared key",
+		"Server IP, for a router that takes no name: 203.0.113.7"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q with plain L2TP accepted:\n%s", want, got)
 		}
@@ -293,5 +304,18 @@ func TestTheStateCarriesPlainL2TP(t *testing.T) {
 	_ = New().Open(context.Background(), iface)
 	if !readStateFile(t, p).Interface.AllowPlain {
 		t.Fatal("the state does not say plain L2TP is accepted")
+	}
+}
+
+// A key xl2tpd cannot carry as a tunnel secret is not offered as one.
+func TestTheSheetOffersTheKeyAsATunnelPasswordOnlyWhenItWorks(t *testing.T) {
+	iface, _ := setup(t)
+	saved := serverIPv4
+	serverIPv4 = func(string) []string { return nil }
+	t.Cleanup(func() { serverIPv4 = saved })
+	iface.L2TP = model.JSON(model.L2TPParams{PSK: "key!123", AllowPlain: true})
+	got := Profile(&model.Account{Username: "u", Secret: "Secret11"}, iface)
+	if strings.Contains(got, "tunnel password or L2TP key") || strings.Contains(got, "Server IP") {
+		t.Errorf("offered what will not work:\n%s", got)
 	}
 }

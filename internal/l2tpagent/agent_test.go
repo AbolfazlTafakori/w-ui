@@ -148,7 +148,7 @@ func TestTheFirstStepBringsTheTunnelUp(t *testing.T) {
 	if err := a.Step(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []string{"install", "run:options", "run:xl2tpd.conf", "secrets", "ipsec", "firewall", "start"} {
+	for _, c := range []string{"install", "run:options", "run:xl2tpd.conf", "run:l2tp-secrets", "secrets", "ipsec", "firewall", "start"} {
 		if sys.count(c) != 1 {
 			t.Errorf("%s ran %d times, want once (calls %v)", c, sys.count(c), sys.calls)
 		}

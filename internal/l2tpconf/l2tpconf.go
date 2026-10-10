@@ -424,7 +424,13 @@ func XL2TPD(s *State) string {
 	b.WriteString("[global]\n")
 	fmt.Fprintf(&b, "port = %d\n", PortL2TP)
 	b.WriteString("access control = no\n")
+	fmt.Fprintf(&b, "auth file = %s\n", RunFile("l2tp-secrets"))
 	b.WriteString("\n[lns default]\n")
+	// Never asks a client to prove a tunnel password: the clients built
+	// into Windows, macOS and iOS have none. One that asks the server to
+	// prove it -- a modem with a "Tunnel Password" field -- is answered with
+	// the secret in the auth file.
+	b.WriteString("challenge = no\n")
 	b.WriteString("assign ip = no\n")
 	b.WriteString("require chap = yes\n")
 	b.WriteString("refuse pap = yes\n")
@@ -433,6 +439,29 @@ func XL2TPD(s *State) string {
 	fmt.Fprintf(&b, "pppoptfile = %s\n", RunFile("options"))
 	b.WriteString("length bit = yes\n")
 	return b.String()
+}
+
+// TunnelSecrets renders xl2tpd's auth file: the secret a modem's L2TP
+// client may ask the server to prove it knows, in the "Tunnel Password"
+// field of the Greenpacket modems Irancell sells (TF-i60, GP-2101) and of
+// Huawei's. Iranian services tell customers to type their key there, so it
+// is the tunnel's pre-shared key: one key for the customer to know, wherever
+// a device asks for one.
+//
+// xl2tpd reads a secret up to the first space or "!", and a ";" or "#" as the
+// start of a comment; a key holding any of those cannot be carried, and the
+// file then holds none -- a modem that asks is refused, and every other
+// client is as before.
+func TunnelSecrets(s *State) string {
+	if !TunnelSecretUsable(s.Interface.PSK) {
+		return "# the pre-shared key holds a character this file cannot carry\n"
+	}
+	return "* * " + s.Interface.PSK + "\n"
+}
+
+// TunnelSecretUsable reports whether a key can be xl2tpd's tunnel secret.
+func TunnelSecretUsable(psk string) bool {
+	return psk != "" && !strings.ContainsAny(psk, "!;# \t")
 }
 
 // PPPOptions renders the options pppd runs each session with.
@@ -445,7 +474,18 @@ func PPPOptions(s *State) string {
 	fmt.Fprintf(&b, "%s:\n", f.Gateway)
 	b.WriteString("auth\n")
 	b.WriteString("require-mschap-v2\n")
-	b.WriteString("refuse-pap\nrefuse-chap\nrefuse-mschap\nrefuse-eap\n")
+	if f.AllowPlain {
+		// Routers' L2TP clients are built on all sorts of PPP; CHAP is the
+		// one every one of them has. It is still a challenge, never the
+		// password itself -- and against a recorded sign-in a long random
+		// password holds up better under CHAP than under MS-CHAPv2, whose
+		// strength does not depend on the password at all. PAP, the
+		// password as it is, is never accepted.
+		b.WriteString("require-chap\n")
+		b.WriteString("refuse-pap\nrefuse-mschap\nrefuse-eap\n")
+	} else {
+		b.WriteString("refuse-pap\nrefuse-chap\nrefuse-mschap\nrefuse-eap\n")
+	}
 	if f.AllowPlain {
 		// A session that may be outside IPsec gets MPPE when the device asks
 		// for it -- MikroTik's default profile does, others can be told to --

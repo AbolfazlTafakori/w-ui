@@ -221,7 +221,7 @@
   "interface.pskWeak": "A key this short is easy to guess. Keep it only because devices already use it; otherwise leave the field empty for a strong one.",
   "interface.l2tpPortHint": "Fixed: L2TP is UDP 1701 inside IPsec on UDP 500 and 4500. The clients built into Windows, macOS and iOS have no setting for another port, so a server carries one L2TP tunnel.",
   "interface.l2tpPlain": "Also accept routers without IPsec",
-  "interface.l2tpPlainHint": "For routers whose L2TP client has no IPsec: ASUS, OpenWrt, an ISP-style L2TP connection. Phones and computers keep using IPsec either way.",
+  "interface.l2tpPlainHint": "For routers and modems whose L2TP client has no IPsec: Irancell TF-i60 and GP-2101, Huawei 4G/5G, TP-Link, D-Link, Tenda, Xiaomi, ASUS, OpenWrt. Phones and computers keep using IPsec either way, and a modem that asks for a tunnel password is given the pre-shared key.",
   "interface.l2tpPlainWarn": "Those sessions are not encrypted unless the router asks for MPPE, and their sign-in can be cracked from a recording of it. Turn this on only for routers that cannot do IPsec. Changing it restarts the tunnel.",
   "interface.mode": "Mode",
   "interface.mode.standard": "Standard",

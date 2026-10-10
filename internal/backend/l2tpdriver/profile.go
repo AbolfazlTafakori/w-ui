@@ -1,11 +1,17 @@
 package l2tpdriver
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"net/netip"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/l2tpconf"
 )
 
 // Servers is every address a customer can dial for this tunnel: the
@@ -85,16 +91,46 @@ MikroTik: /interface l2tp-client add name=wui-l2tp connect-to=`)
           pre-shared key.
 Omada:    VPN > VPN Client > L2TP; IPsec Encryption: Encrypted; the
           pre-shared key, username and password.
+TP-Link Archer with VPN Client (AX20, AX23, AX55, AX73 and others):
+          Advanced > VPN Client > Add > L2TP/IPSec; server, username,
+          password, IPsec pre-shared key.
 `)
 	if iface.L2TP.V.AllowPlain {
 		b.WriteString(`
-Routers without IPsec -- this server accepts L2TP without it too. The
-connection is then not encrypted: use it only where nothing else will do.
+Routers and modems without IPsec -- this server accepts L2TP without it
+too. The connection is then not encrypted: use it only where nothing else
+will do. One router carries the whole home on one connection.
+`)
+		if l2tpconf.TunnelSecretUsable(psk) {
+			b.WriteString("Where a modem asks for a tunnel password or L2TP key, it is the pre-shared key.\n")
+		}
+		if ips := serverIPv4(server); len(ips) > 0 {
+			fmt.Fprintf(&b, "Server IP, for a router that takes no name: %s\n", strings.Join(ips, " or "))
+		}
+		b.WriteString(`Irancell TF-i60 (G1, B1, H1), GP-2101: Settings > VPN > L2TP; server,
+          username, password; Tunnel Password: the pre-shared key.
+Huawei 4G/5G (B311, B316, B525, B535, B612 and others): Advanced >
+          Router > VPN > L2TP VPN client; LNS address: the server;
+          Hostname: anything; Tunnel password: the pre-shared key; PPP user
+          name and password.
+TP-Link:  Advanced > Network > Internet (older panels: Network > WAN) >
+          Internet Connection Type: L2TP (or Russia L2TP); Secondary
+          connection: Dynamic IP; server, username, password. The router's
+          WAN port goes to the modem, and reaches the server through it.
+D-Link:   Setup > Internet > Manual Internet Connection Setup > L2TP
+          (Dual Access); Address Mode: Dynamic IP; server, username, password.
+Tenda:    Internet Settings > Connection Type: L2TP (or VPN > PPTP/L2TP
+          Client); server, username, password.
+Xiaomi:   Advanced settings > VPN > Add service > Protocol: L2TP; server,
+          username, password.
 ASUS:     VPN > VPN Fusion (or VPN Client) > Add profile > L2TP; server,
           username, password.
 OpenWrt:  Network > Interfaces > Add new interface > Protocol: L2TP
           (packages xl2tpd and ppp-mod-pppol2tp); server, username, password.
 MikroTik: as above with use-ipsec=no.
+ADSL and VDSL modems (TP-Link TD-W8961N, TD-W9970, D-Link DSL-124,
+DSL-2750U, Utel and most others) have no L2TP client: put one of these
+routers behind the modem, or connect each device itself.
 `)
 	}
 	b.WriteString(`
@@ -112,3 +148,48 @@ ends the first. That is L2TP/IPsec itself, on every server.
 func rosQuote(v string) string {
 	return `"` + strings.ReplaceAll(v, "$", `\$`) + `"`
 }
+
+// serverIPv4 is a host name's IPv4 addresses, for the routers whose L2TP
+// server field takes no names -- several TP-Link models. Nothing for an
+// address already, or for a name that does not resolve in time. Remembered
+// for a while: the sheet is drawn on every view of a customer's page.
+var serverIPv4 = func(host string) []string {
+	if host == "" {
+		return nil
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return nil
+	}
+	ipCache.mu.Lock()
+	c, ok := ipCache.by[host]
+	ipCache.mu.Unlock()
+	if ok && time.Since(c.at) < ipCacheFor {
+		return c.ips
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+	var ips []string
+	if err == nil {
+		for _, a := range addrs {
+			ips = append(ips, a.Unmap().String())
+		}
+		sort.Strings(ips)
+	}
+	ipCache.mu.Lock()
+	ipCache.by[host] = ipEntry{ips: ips, at: time.Now()}
+	ipCache.mu.Unlock()
+	return ips
+}
+
+const ipCacheFor = 10 * time.Minute
+
+type ipEntry struct {
+	ips []string
+	at  time.Time
+}
+
+var ipCache = struct {
+	mu sync.Mutex
+	by map[string]ipEntry
+}{by: map[string]ipEntry{}}
