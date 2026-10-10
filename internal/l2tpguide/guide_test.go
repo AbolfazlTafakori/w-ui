@@ -54,7 +54,7 @@ func TestEveryDeviceGetsEverythingItNeeds(t *testing.T) {
 		}
 	}
 	for _, id := range []string{"windows", "ios", "macos", "android", "android12", "linux", "mikrotik", "keenetic",
-		"tfi60", "huawei", "tplink-wan", "dlink", "tenda", "xiaomi", "asus", "openwrt"} {
+		"tfi60", "huawei", "tplink-c6", "tplink-ax23", "dlink-842r1", "tenda", "xiaomi", "asus", "openwrt"} {
 		if !seen[id] {
 			t.Errorf("%s is missing", id)
 		}
@@ -73,7 +73,7 @@ func TestDevicesWithoutIPsecOnlyWhereTheyCanConnect(t *testing.T) {
 		return "," + strings.Join(out, ",") + ","
 	}
 	strict, open := ids(Visible(false)), ids(Visible(true))
-	for _, id := range []string{"tfi60", "huawei", "asus", "openwrt", "mikrotik-plain"} {
+	for _, id := range []string{"tfi60", "huawei", "asus", "openwrt", "mikrotik-plain", "tplink-c6", "tplink-mr6400", "dlink-842r1"} {
 		if strings.Contains(strict, ","+id+",") {
 			t.Errorf("%s is offered a tunnel that refuses it", id)
 		}
@@ -81,7 +81,7 @@ func TestDevicesWithoutIPsecOnlyWhereTheyCanConnect(t *testing.T) {
 			t.Errorf("%s is missing where it can connect", id)
 		}
 	}
-	for _, id := range []string{"windows", "mikrotik", adslID} {
+	for _, id := range []string{"windows", "mikrotik", "tplink-ax23", "omada", adslID, "tplink-w9960", "tenda"} {
 		if !strings.Contains(strict, ","+id+",") {
 			t.Errorf("%s is missing", id)
 		}
@@ -109,10 +109,10 @@ func TestRowsAreTheCustomersValues(t *testing.T) {
 	}
 
 	// A router whose field takes no name is given the numbers.
-	d, _ := ByID("dlink")
+	d, _ := ByID("omada")
 	for _, r := range d.Rows(v) {
-		if r.Label == "L2TP Server IP Address" && r.Value != "203.0.113.7" {
-			t.Errorf("D-Link server: %+v", r)
+		if r.Label == "Server IP" && r.Value != "203.0.113.7" {
+			t.Errorf("Omada server: %+v", r)
 		}
 	}
 	// The tunnel password is the key, unless xl2tpd could not carry it.
@@ -158,7 +158,7 @@ func TestPlainTextCarriesEveryDevice(t *testing.T) {
 		"Pre-shared key:  SharedKey123", "Username:        s9-laptop",
 		"== Windows 10 / 11 ==", "AssumeUDPEncapsulationContextOnSendRule",
 		`connect-to="vpn.example.com" user="s9-laptop" password="Pa\$\$word1" use-ipsec=yes ipsec-secret="SharedKey123"`,
-		"== ADSL / VDSL modem", "One device per address",
+		"== Other ADSL / VDSL modems", "One device per address",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
@@ -169,7 +169,7 @@ func TestPlainTextCarriesEveryDevice(t *testing.T) {
 	}
 	v.AllowPlain = true
 	got = PlainText(v)
-	for _, want := range []string{"== Huawei 4G/5G", "== Irancell TF-i60", "not encrypted", "use-ipsec=no"} {
+	for _, want := range []string{"== Huawei 4G/5G", "== Irancell TF-i60", "== TP-Link TL-MR6400 v9 (4G)", "not encrypted", "use-ipsec=no"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q with plain L2TP accepted:\n%s", want, got)
 		}
@@ -191,5 +191,19 @@ func TestStringsInEveryLanguage(t *testing.T) {
 		if _, ok := s["en"][NameKey(g.ID)]; !ok {
 			t.Errorf("%s has no name in the dictionary", g.ID)
 		}
+	}
+}
+
+// The catalogue the customer chooses from: every family a maker's emulator
+// or manual was read for, by the name on the box -- fifty to seventy of them.
+func TestTheCatalogueIsWide(t *testing.T) {
+	if n := len(All()); n < 50 || n > 75 {
+		t.Errorf("%d devices", n)
+	}
+	// A router that requires MPPE is refused (pppd can only require it of
+	// every session); D-Link's page has the switch, so its guide says off.
+	g, _ := ByID("dlink-842r1")
+	if !strings.Contains(g.Notes[0].EN, "No encryption") {
+		t.Errorf("D-Link is not told to leave MPPE off: %+v", g.Notes)
 	}
 }

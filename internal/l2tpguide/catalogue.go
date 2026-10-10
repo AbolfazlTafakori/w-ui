@@ -30,7 +30,7 @@ var words = map[string]Text{
 	"l2tpOthers": {EN: "If it does not answer, use instead", FA: "اگر جواب نداد، به‌جایش"},
 }
 
-// adslID is the entry that is not a client at all: the modems that have none.
+// adslID is the generic entry for the modems with no client at all.
 const adslID = "adsl"
 
 // rosQuote is a value as RouterOS's console reads it back unchanged: quoted,
@@ -52,13 +52,179 @@ func mikrotik(ipsec bool) func(Values) string {
 	}
 }
 
-// The catalogue. Each device's path and field names are its own, as its
-// maker's documentation and its settings pages show them; where a family's
-// models differ, the common menu comes first and the older one in brackets.
+// ── families ─────────────────────────────────────────────────────────────
+//
+// Most makers put one set of pages on many models. Each family below is one
+// such set, as its maker's emulator (or, where there is none, its manual)
+// shows it; every model that wears it is its own entry, so a customer finds
+// the name printed on their own box.
+
+// Notes several families share.
+var (
+	noteBehindModem = Text{
+		EN: "The router's WAN (Internet) port goes to a LAN port of the modem; it reaches the server through the modem.",
+		FA: "پورت WAN (Internet) روتر به یکی از پورت‌های LAN مودم وصل می‌شود؛ روتر از طریق مودم به سرور می‌رسد.",
+	}
+	noteDeviceList = Text{
+		EN: "Turn VPN Client on, then under Device List add the devices that should go through it.",
+		FA: "VPN Client را روشن کنید، سپس در Device List دستگاه‌هایی را که باید از VPN بروند اضافه کنید.",
+	}
+	noteKey32 = Text{
+		EN: "This page takes a key of at most 32 characters.",
+		FA: "این صفحه کلیدی تا ۳۲ کاراکتر می‌پذیرد.",
+	}
+	noteNoClient = Text{
+		EN: "This model has no L2TP client of its own. Put one of the routers in this list behind it, or set up each device itself.",
+		FA: "این مدل کلاینت L2TP ندارد. یکی از روترهای این فهرست را پشتش بگذارید، یا روی خود هر دستگاه تنظیم کنید.",
+	}
+	note4G = Text{
+		EN: "It runs over the SIM card's connection; nothing else is needed in front of it.",
+		FA: "روی اینترنت همان سیم‌کارت کار می‌کند؛ چیز دیگری جلویش لازم نیست.",
+	}
+	noteNoMPPE = Text{
+		EN: "Under All Settings, leave Authentication protocol on AUTO and set Encryption protocol to No encryption: the server does not do MPPE, and a router that requires it is refused.",
+		FA: "در All Settings، گزینه Authentication protocol را روی AUTO بگذارید و Encryption protocol را روی No encryption: سرور MPPE ندارد و روتری که آن را اجباری کند رد می‌شود.",
+	}
+)
+
+// tplinkInternet is TP-Link's and Mercusys's current pages (Archer C6 v4,
+// C64, C80, TL-WR840N v7, Mercusys MW301R ...): the Internet page's L2TP.
+func tplinkInternet(id string, name Text) Guide {
+	return Guide{
+		ID: id, Name: name, Kind: Router,
+		Path: "Advanced > Network > Internet",
+		Fields: []Field{
+			{Label: "Internet Connection Type", Value: "L2TP"},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+			{Label: "Dynamic IP / Static IP", Value: "Dynamic IP"},
+			{Label: "VPN Server IP/Domain Name", Source: Server},
+			{Label: "Connection Mode", Value: "Auto"},
+		},
+		Notes: []Text{noteBehindModem},
+	}
+}
+
+// tplinkVPNClient is the VPN Client of TP-Link's Wi-Fi 6 routers and
+// Mercusys's: L2TP/IPSec with the key, for the devices chosen in Device List.
+func tplinkVPNClient(id string, name Text, path string, notes ...Text) Guide {
+	return Guide{
+		ID: id, Name: name, Kind: Router, IPsec: true,
+		Path: path,
+		Fields: []Field{
+			{Label: "Description", Source: Anything},
+			{Label: "VPN Type", Value: "L2TP/IPSec"},
+			{Label: "VPN Server", Source: Server},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+			{Label: "IPSec Pre-Shared Key", Source: PSK},
+		},
+		Notes: append([]Text{noteDeviceList}, notes...),
+	}
+}
+
+const tplinkVPNClientPath = "Advanced > VPN Client > Server List > Add"
+
+// tplinkClassicMTK is the older green pages of Archer C20 and C50.
+func tplinkClassicMTK(id string, name Text) Guide {
+	return Guide{
+		ID: id, Name: name, Kind: Router,
+		Path: "Network > WAN",
+		Fields: []Field{
+			{Label: "Connection Type", Value: "L2TP"},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+			{Label: "Addressing Type", Value: "Dynamic IP"},
+			{Label: "Server IP Address/Name", Source: Server},
+			{Label: "Connection Mode", Value: "Connect automatically"},
+		},
+		Notes: []Text{noteBehindModem},
+	}
+}
+
+// tplinkUserRpm is the oldest pages, still on TL-WR940N and many TL-WR841N.
+func tplinkUserRpm(id string, name Text) Guide {
+	return Guide{
+		ID: id, Name: name, Kind: Router,
+		Path: "Network > WAN",
+		Fields: []Field{
+			{Label: "WAN Connection Type", Value: "L2TP/Russia L2TP"},
+			{Label: "User Name", Source: Username},
+			{Label: "Password", Source: Password},
+			{Label: "Confirm Password", Source: Password},
+			{Label: "Dynamic IP / Static IP", Value: "Dynamic IP"},
+			{Label: "Server IP Address/Name", Source: Server},
+			{Label: "Connection Mode", Value: "Connect Automatically"},
+		},
+		Notes: []Text{noteBehindModem},
+	}
+}
+
+// tplink4G is the VPN Client of TP-Link's 4G routers: L2TP without IPsec,
+// over the SIM card.
+func tplink4G(id string, name Text) Guide {
+	return Guide{
+		ID: id, Name: name, Kind: Router,
+		Path: "Advanced > VPN Client > Server List > Add",
+		Fields: []Field{
+			{Label: "Description", Source: Anything},
+			{Label: "VPN Type", Value: "L2TPv2"},
+			{Label: "VPN Server", Source: Server},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+		},
+		Notes: []Text{note4G, noteDeviceList},
+	}
+}
+
+// tplinkEWAN is the DSL modem routers whose L2TP is only in Wireless Router
+// mode, on the Ethernet WAN port.
+func tplinkEWAN(id string, name Text) Guide {
+	return Guide{
+		ID: id, Name: name, Kind: Router,
+		Path: "Advanced > Operation Mode: Wireless Router Mode, then Advanced > Network > Internet",
+		Fields: []Field{
+			{Label: "Connection Type", Value: "L2TP"},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+			{Label: "Server IP Address/Name", Source: Server},
+		},
+		Notes: []Text{{
+			EN: "Only in Wireless Router Mode: the phone line is not used, and the Ethernet WAN port goes to another modem's LAN port.",
+			FA: "فقط در Wireless Router Mode: خط تلفن استفاده نمی‌شود و پورت Ethernet WAN به پورت LAN یک مودم دیگر وصل می‌شود.",
+		}},
+	}
+}
+
+// dlinkAnweb is D-Link's pages on DIR-615/T4, DIR-825/R1, DIR-842/R1 and
+// the DWR-921 4G router.
+func dlinkAnweb(id string, name Text, notes ...Text) Guide {
+	return Guide{
+		ID: id, Name: name, Kind: Router,
+		Path: "Connections Setup > WAN > + (Add)",
+		Fields: []Field{
+			{Label: "Connection type", Value: "L2TP"},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+			{Label: "VPN server address", Source: Server},
+		},
+		Notes: append([]Text{noteNoMPPE}, notes...),
+	}
+}
+
+// noClient is a model with no L2TP client at all, said so by name.
+func noClient(id string, name Text, extra ...Text) Guide {
+	return Guide{ID: id, Name: name, Kind: Router, Notes: append([]Text{noteNoClient}, extra...)}
+}
+
+func en(s string) Text { return Text{EN: s} }
+
+// The catalogue. Phones and computers first, then routers with IPsec, the
+// models without a client, and the routers and modems without IPsec.
 var catalogue = []Guide{
 	// ── phones and computers ──────────────────────────────────────────────
 	{
-		ID: "windows", Name: Text{EN: "Windows 10 / 11"}, Kind: Device, IPsec: true,
+		ID: "windows", Name: en("Windows 10 / 11"), Kind: Device, IPsec: true,
 		Path: "Settings > Network & internet > VPN > Add VPN",
 		Fields: []Field{
 			{Label: "VPN provider", Value: "Windows (built-in)"},
@@ -79,7 +245,7 @@ var catalogue = []Guide{
 		},
 	},
 	{
-		ID: "ios", Name: Text{EN: "iPhone / iPad"}, Kind: Device, IPsec: true,
+		ID: "ios", Name: en("iPhone / iPad"), Kind: Device, IPsec: true,
 		Path: "Settings > General > VPN & Device Management > VPN > Add VPN Configuration",
 		Fields: []Field{
 			{Label: "Type", Value: "L2TP"},
@@ -93,7 +259,7 @@ var catalogue = []Guide{
 		},
 	},
 	{
-		ID: "macos", Name: Text{EN: "macOS"}, Kind: Device, IPsec: true,
+		ID: "macos", Name: en("macOS"), Kind: Device, IPsec: true,
 		Path: "System Settings > VPN > Add VPN Configuration > L2TP over IPSec",
 		Fields: []Field{
 			{Label: "Display name", Source: Anything},
@@ -129,7 +295,7 @@ var catalogue = []Guide{
 		}},
 	},
 	{
-		ID: "linux", Name: Text{EN: "Linux (NetworkManager)"}, Kind: Device, IPsec: true,
+		ID: "linux", Name: en("Linux (NetworkManager)"), Kind: Device, IPsec: true,
 		Path: "Settings > Network > VPN > + > Layer 2 Tunneling Protocol (L2TP)",
 		Fields: []Field{
 			{Label: "Gateway", Source: Server},
@@ -144,7 +310,7 @@ var catalogue = []Guide{
 		}},
 	},
 	{
-		ID: "chromeos", Name: Text{EN: "ChromeOS"}, Kind: Device, IPsec: true,
+		ID: "chromeos", Name: en("ChromeOS"), Kind: Device, IPsec: true,
 		Path: "Settings > Network > Add connection > Add built-in VPN",
 		Fields: []Field{
 			{Label: "Service name", Source: Anything},
@@ -159,7 +325,7 @@ var catalogue = []Guide{
 
 	// ── routers with IPsec ────────────────────────────────────────────────
 	{
-		ID: "mikrotik", Name: Text{EN: "MikroTik (RouterOS)"}, Kind: Router, IPsec: true,
+		ID: "mikrotik", Name: en("MikroTik (RouterOS: hAP, hEX, RB, CCR)"), Kind: Router, IPsec: true,
 		Path: "Interfaces > + > L2TP Client > Dial Out (or paste the command in Terminal)",
 		Fields: []Field{
 			{Label: "Connect To", Source: Server},
@@ -172,8 +338,8 @@ var catalogue = []Guide{
 		Command: mikrotik(true),
 	},
 	{
-		ID: "keenetic", Name: Text{EN: "Keenetic"}, Kind: Router, IPsec: true,
-		Path: "Internet > Other connections > VPN connections > Add connection",
+		ID: "keenetic", Name: en("Keenetic (Giga, Ultra, Viva, Hero, Runner 4G and others)"), Kind: Router, IPsec: true,
+		Path: "Internet > Other connections > VPN connections > Create connection",
 		Fields: []Field{
 			{Label: "Type (protocol)", Value: "L2TP/IPsec"},
 			{Label: "Connection name", Source: Anything},
@@ -182,43 +348,63 @@ var catalogue = []Guide{
 			{Label: "Password", Source: Password},
 			{Label: "Secret key", Source: PSK},
 		},
-	},
-	{
-		ID: "tplink-vpn", Name: Text{EN: "TP-Link Archer with VPN Client (AX20, AX23, AX55, AX73 and others)"}, Kind: Router, IPsec: true,
-		Path: "Advanced > VPN Client > Server List > Add",
-		Fields: []Field{
-			{Label: "Description", Source: Anything},
-			{Label: "VPN Type", Value: "L2TP/IPSec"},
-			{Label: "VPN Server", Source: Server},
-			{Label: "Username", Source: Username},
-			{Label: "Password", Source: Password},
-			{Label: "IPSec Pre-Shared Key", Source: PSK},
-		},
 		Notes: []Text{{
-			EN: "Then under Device List, add the devices that should go through the VPN.",
-			FA: "سپس در Device List دستگاه‌هایی را که باید از VPN بروند اضافه کنید.",
+			EN: "Needs the system component \"IKEv1/IPsec and IKEv2/IPsec VPN servers, L2TP/IPsec VPN client, Site-to-site IPsec VPN\" (General system settings > Component options).",
+			FA: "کامپوننت «IKEv1/IPsec and IKEv2/IPsec VPN servers, L2TP/IPsec VPN client, Site-to-site IPsec VPN» لازم است (General system settings > Component options).",
 		}},
 	},
+	tplinkVPNClient("tplink-ax23", en("TP-Link Archer AX23 v2"), "Advanced > VPN Client > Server List > Add > Set up manually", noteKey32),
+	tplinkVPNClient("tplink-ax55", en("TP-Link Archer AX55 / AX55 Pro"), tplinkVPNClientPath),
+	tplinkVPNClient("tplink-ax73", en("TP-Link Archer AX73 v2"), tplinkVPNClientPath),
+	tplinkVPNClient("tplink-ax53", en("TP-Link Archer AX53 v2"), tplinkVPNClientPath),
+	tplinkVPNClient("tplink-ax10", en("TP-Link Archer AX10 v3 / AX1500 v3"), tplinkVPNClientPath),
+	tplinkVPNClient("tplink-ax21", en("TP-Link Archer AX21 v3"), tplinkVPNClientPath),
+	tplinkVPNClient("mercusys-mr70x", en("Mercusys MR70X"), tplinkVPNClientPath),
 	{
-		ID: "omada", Name: Text{EN: "TP-Link Omada (ER605, ER7206 and others)"}, Kind: Router, IPsec: true,
-		Path: "VPN > L2TP > L2TP Client (controller: Settings > VPN > Create New VPN > Client > L2TP)",
+		ID: "omada", Name: en("TP-Link Omada ER605 / ER7206"), Kind: Router, IPsec: true,
+		Path: "VPN > L2TP > L2TP Client > Add",
 		Fields: []Field{
-			{Label: "Username", Source: Username},
+			{Label: "Tunnel", Source: Anything},
+			{Label: "Account Name", Source: Username},
 			{Label: "Password", Source: Password},
 			{Label: "Server IP", Source: ServerIP},
-			{Label: "IPsec Encryption", Value: "Encrypted"},
+			{Label: "IPSec Encryption", Value: "Encrypted"},
 			{Label: "Pre-shared Key", Source: PSK},
 			{Label: "Working Mode", Value: "NAT"},
+			{Label: "Status", Value: "Enable"},
 		},
 	},
-
 	{
-		ID: adslID, Name: Text{EN: "ADSL / VDSL modem (TD-W8961N, TD-W9970, DSL-124, DSL-2750U, Utel and others)", FA: "مودم ADSL / VDSL (TD-W8961N، TD-W9970، DSL-124، DSL-2750U، یوتل و دیگران)"}, Kind: Router,
+		ID: "dlink-842v2", Name: en("D-Link DIR-842 V2 (EU firmware)"), Kind: Router, IPsec: true,
+		Path: "Settings > Internet > WAN > ADVANCED MODE > + (Add)",
+		Fields: []Field{
+			{Label: "Connection type", Value: "L2TP over IPsec"},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+			{Label: "VPN server address", Source: Server},
+			{Label: "Pre-shared key", Source: PSK},
+			{Label: "Enable PFS", Value: "off"},
+		},
 		Notes: []Text{{
-			EN: "These modems have no L2TP client of their own. Put one of the routers in this list behind the modem, or set up each device itself.",
-			FA: "این مودم‌ها کلاینت L2TP ندارند. یکی از روترهای این فهرست را پشت مودم بگذارید، یا روی خود هر دستگاه تنظیم کنید.",
+			EN: "After APPLY, choose \"to the Internet\" and the connection the router already has.",
+			FA: "بعد از APPLY گزینه «to the Internet» و اتصالی را که روتر از قبل دارد انتخاب کنید.",
 		}},
 	},
+
+	// ── models with no L2TP client ────────────────────────────────────────
+	noClient("tplink-w9960", en("TP-Link TD-W9960 (VDSL/ADSL)")),
+	noClient("tplink-w9970", en("TP-Link TD-W9970 (VDSL/ADSL)")),
+	noClient("tplink-vr", en("TP-Link Archer VR300 / VR400 (VDSL/ADSL)")),
+	{
+		ID: adslID, Name: Text{EN: "Other ADSL / VDSL modems (TD-W8961N, Utel and others)", FA: "مودم‌های دیگر ADSL / VDSL (TD-W8961N، یوتل و دیگران)"}, Kind: Router,
+		Notes: []Text{noteNoClient},
+	},
+	noClient("dlink-dsl", en("D-Link DSL-2750U / DSL-224")),
+	noClient("tplink-extender", en("Wi-Fi extenders (TP-Link RE200, RE305, TL-WA850RE and others)"), Text{
+		EN: "An extender only repeats the router's Wi-Fi: the router it extends is the one to set up.",
+		FA: "تقویت‌کننده فقط وای‌فای روتر را تکرار می‌کند: باید خود روتری را که تقویت می‌کند تنظیم کنید.",
+	}),
+	noClient("tenda", en("Tenda AC6 v5, AC10 v3, N301 v4 and other current Tenda")),
 
 	// ── routers and modems without IPsec ──────────────────────────────────
 	{
@@ -232,13 +418,10 @@ var catalogue = []Guide{
 			{Label: "Password", Source: Password},
 			{Label: "Tunnel Password", Source: TunnelPassword},
 		},
-		Notes: []Text{{
-			EN: "TF-i60 E1 has no VPN settings.",
-			FA: "مدل TF-i60 E1 تنظیمات VPN ندارد.",
-		}},
+		Notes: []Text{{EN: "TF-i60 E1 has no VPN settings.", FA: "مدل TF-i60 E1 تنظیمات VPN ندارد."}},
 	},
 	{
-		ID: "huawei", Name: Text{EN: "Huawei 4G/5G (B311, B316, B525, B535, B612, 4G Router 2/3)"}, Kind: Router,
+		ID: "huawei", Name: en("Huawei 4G/5G: B311B, B316, 4G CPE 3 (B535), 4G Router 2/3 Pro, 4G CPE 5, 5G CPE Pro"), Kind: Router,
 		Path: "Advanced > Router > VPN",
 		Fields: []Field{
 			{Label: "Enable VPN", Value: "on"},
@@ -249,74 +432,64 @@ var catalogue = []Guide{
 			{Label: "PPP user name", Source: Username},
 			{Label: "PPP password", Source: Password},
 		},
+		Notes: []Text{note4G},
 	},
+	tplink4G("tplink-mr6400", en("TP-Link TL-MR6400 v9 (4G)")),
+	tplink4G("tplink-mr100", en("TP-Link TL-MR100 v5 (4G)")),
+	tplink4G("tplink-mr200", en("TP-Link Archer MR200 v9 (4G)")),
+	tplink4G("tplink-mr600", en("TP-Link Archer MR600 v5 (4G+)")),
+	tplink4G("tplink-mr6500v", en("TP-Link TL-MR6500v v3 (4G)")),
+	dlinkAnweb("dlink-dwr921", en("D-Link DWR-921 (4G)"), note4G),
+	tplinkInternet("tplink-c6", en("TP-Link Archer C6 v4")),
+	tplinkInternet("tplink-c64", en("TP-Link Archer C64")),
+	tplinkInternet("tplink-c80", en("TP-Link Archer C80")),
+	tplinkInternet("tplink-c86", en("TP-Link Archer C86")),
+	tplinkInternet("tplink-a6", en("TP-Link Archer A6 v4")),
+	tplinkInternet("tplink-c24", en("TP-Link Archer C24 v2")),
+	tplinkInternet("tplink-ax12", en("TP-Link Archer AX12")),
+	tplinkInternet("tplink-ax20", en("TP-Link Archer AX20 v2")),
+	tplinkInternet("tplink-ax72", en("TP-Link Archer AX72")),
+	tplinkInternet("tplink-wr840n", en("TP-Link TL-WR840N v7")),
+	tplinkInternet("tplink-wr841n", en("TP-Link TL-WR841N v14")),
+	tplinkInternet("tplink-wr845n", en("TP-Link TL-WR845N v4")),
+	tplinkClassicMTK("tplink-c20", en("TP-Link Archer C20 v6")),
+	tplinkClassicMTK("tplink-c50", en("TP-Link Archer C50 v6")),
+	tplinkUserRpm("tplink-wr940n", en("TP-Link TL-WR940N, and TL-WR841N up to v13")),
+	tplinkEWAN("tplink-vr600", en("TP-Link Archer VR600 v2")),
+	tplinkEWAN("tplink-w8970", en("TP-Link TD-W8970 v3")),
+	tplinkInternet("mercusys-mw301r", en("Mercusys MW301R")),
+	tplinkInternet("mercusys-mw302r", en("Mercusys MW302R")),
+	tplinkInternet("mercusys-mw325r", en("Mercusys MW325R")),
+	tplinkInternet("mercusys-ac12", en("Mercusys AC12")),
+	tplinkInternet("mercusys-mr50g", en("Mercusys MR50G")),
+	dlinkAnweb("dlink-842r1", en("D-Link DIR-842/R1"), noteBehindModem),
+	dlinkAnweb("dlink-825r1", en("D-Link DIR-825/R1"), noteBehindModem),
+	dlinkAnweb("dlink-615t4", en("D-Link DIR-615/T4"), noteBehindModem),
 	{
-		ID: "tplink-wan", Name: Text{EN: "TP-Link router (TL-WR840N, TL-WR940N, Archer C6, C20, C50, C80 and others)"}, Kind: Router,
-		Path: "Advanced > Network > Internet (older panels: Network > WAN)",
+		ID: "asus", Name: en("ASUS (RT-AX, RT-AC, RT-N, TUF, ROG)"), Kind: Router,
+		Path: "Advanced Settings > VPN > VPN Client (VPN Fusion) > Add profile > L2TP",
 		Fields: []Field{
-			{Label: "Internet Connection Type", Value: "L2TP (or Russia L2TP)"},
-			{Label: "Username", Source: Username},
-			{Label: "Password", Source: Password},
-			{Label: "Secondary Connection", Value: "Dynamic IP"},
-			{Label: "VPN Server IP/Domain Name", Source: ServerIP},
-			{Label: "Connection Mode", Value: "Connect Automatically"},
-		},
-		Notes: []Text{{
-			EN: "The router's WAN port goes to a LAN port of the modem; it reaches the server through the modem.",
-			FA: "پورت WAN روتر به یکی از پورت‌های LAN مودم وصل می‌شود؛ روتر از طریق مودم به سرور می‌رسد.",
-		}},
-	},
-	{
-		ID: "dlink", Name: Text{EN: "D-Link router (DIR-615, DIR-822, DIR-842 and others)"}, Kind: Router,
-		Path: "Setup > Internet > Manual Internet Connection Setup",
-		Fields: []Field{
-			{Label: "My Internet Connection is", Value: "L2TP (Username/Password)"},
-			{Label: "Address Mode", Value: "Dynamic IP"},
-			{Label: "L2TP Server IP Address", Source: ServerIP},
-			{Label: "Username", Source: Username},
-			{Label: "Password", Source: Password},
-			{Label: "Reconnect Mode", Value: "Always on"},
-		},
-		Notes: []Text{{
-			EN: "The router's WAN port goes to a LAN port of the modem.",
-			FA: "پورت WAN روتر به یکی از پورت‌های LAN مودم وصل می‌شود.",
-		}},
-	},
-	{
-		ID: "tenda", Name: Text{EN: "Tenda (AC6, AC10, AC21 and others)"}, Kind: Router,
-		Path: "Internet Settings (or VPN > PPTP/L2TP Client)",
-		Fields: []Field{
-			{Label: "Connection Type", Value: "L2TP (or Russia L2TP)"},
-			{Label: "Server IP/Domain Name", Source: ServerIP},
-			{Label: "Username", Source: Username},
-			{Label: "Password", Source: Password},
-			{Label: "Address Mode", Value: "Dynamic"},
-		},
-	},
-	{
-		ID: "xiaomi", Name: Text{EN: "Xiaomi (Mi Router 4A, 4C, AX3000 and others)"}, Kind: Router,
-		Path: "Advanced settings > VPN > Add service",
-		Fields: []Field{
-			{Label: "Name", Source: Anything},
-			{Label: "Protocol", Value: "L2TP"},
-			{Label: "Server", Source: Server},
-			{Label: "Username", Source: Username},
-			{Label: "Password", Source: Password},
-		},
-	},
-	{
-		ID: "asus", Name: Text{EN: "ASUS"}, Kind: Router,
-		Path: "VPN > VPN Fusion > Add profile (older: VPN > VPN Client > Add profile)",
-		Fields: []Field{
-			{Label: "VPN type", Value: "L2TP"},
 			{Label: "Description", Source: Anything},
 			{Label: "VPN Server", Source: Server},
 			{Label: "Username", Source: Username},
 			{Label: "Password", Source: Password},
 		},
+		Notes: []Text{{EN: "Then click Activate.", FA: "سپس Activate را بزنید."}},
 	},
 	{
-		ID: "openwrt", Name: Text{EN: "OpenWrt"}, Kind: Router,
+		ID: "xiaomi", Name: en("Xiaomi (Router 4A, 4C, AX3000T, AX3000 and others)"), Kind: Router,
+		Path: "Additional settings > VPN > Add service",
+		Fields: []Field{
+			{Label: "Protocol", Value: "L2TP"},
+			{Label: "Name", Source: Anything},
+			{Label: "Server", Source: Server},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+		},
+		Notes: []Text{{EN: "Save, then turn the service on.", FA: "ذخیره کنید و سرویس را روشن کنید."}},
+	},
+	{
+		ID: "openwrt", Name: en("OpenWrt"), Kind: Router,
 		Path: "Network > Interfaces > Add new interface > Protocol: L2TP",
 		Fields: []Field{
 			{Label: "L2TP Server", Source: Server},

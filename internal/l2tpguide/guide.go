@@ -111,7 +111,9 @@ func All() []Guide { return catalogue }
 func Visible(allowPlain bool) []Guide {
 	out := make([]Guide, 0, len(catalogue))
 	for _, g := range catalogue {
-		if g.IPsec || allowPlain || g.ID == adslID {
+		// A model with no client at all is listed everywhere, so a
+		// customer who has one learns what to do instead.
+		if g.IPsec || allowPlain || len(g.Fields) == 0 {
 			out = append(out, g)
 		}
 	}
@@ -237,13 +239,16 @@ type Entry struct {
 	ID    string `json:"id"`
 	Name  Text   `json:"name"`
 	Group Group  `json:"group"`
+	// NoClient is a model with no L2TP client: listed so its owner learns
+	// what to do instead, never as something a tunnel serves.
+	NoClient bool `json:"noClient,omitempty"`
 }
 
 // Devices is every device there is a guide for.
 func Devices() []Entry {
 	out := make([]Entry, 0, len(catalogue))
 	for _, g := range catalogue {
-		out = append(out, Entry{ID: g.ID, Name: g.Name, Group: GroupOf(g)})
+		out = append(out, Entry{ID: g.ID, Name: g.Name, Group: GroupOf(g), NoClient: g.Kind == Router && len(g.Fields) == 0})
 	}
 	return out
 }
@@ -306,7 +311,7 @@ func PlainText(v Values) string {
 
 	plainShown := false
 	for _, g := range Visible(v.AllowPlain) {
-		if !g.IPsec && g.ID != adslID && !plainShown {
+		if !g.IPsec && len(g.Fields) > 0 && !plainShown {
 			plainShown = true
 			b.WriteString("\n-- Without IPsec, which this server accepts too: the connection is not encrypted.\n")
 			b.WriteString("-- Use it only where nothing else will do.\n")

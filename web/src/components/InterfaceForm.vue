@@ -93,7 +93,7 @@ watch(
   { immediate: true },
 )
 const deviceName = (d) => (store.locale === 'fa' && d.name.fa) || d.name.en
-const ipsecDevices = computed(() => l2tpDevices.value.filter((d) => d.group !== 'plain' && d.id !== 'adsl' && d.id !== 'android12'))
+const ipsecDevices = computed(() => l2tpDevices.value.filter((d) => d.group !== 'plain' && !d.noClient && d.id !== 'android12'))
 const plainDevices = computed(() => l2tpDevices.value.filter((d) => d.group === 'plain'))
 const devicesOpen = ref(false)
 

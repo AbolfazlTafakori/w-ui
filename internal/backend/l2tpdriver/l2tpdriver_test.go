@@ -282,7 +282,7 @@ func TestTheProfileIsTheCatalogueFilledIn(t *testing.T) {
 	iface, _ := setup(t)
 	got := Profile(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
 	for _, want := range []string{"Server:          vpn.example.com", "Pre-shared key:  SharedKey123",
-		"== Windows 10 / 11 ==", "== iPhone / iPad ==", "== MikroTik (RouterOS) ==", "s9-laptop", "Secret11"} {
+		"== Windows 10 / 11 ==", "== iPhone / iPad ==", "== MikroTik (RouterOS: hAP, hEX, RB, CCR) ==", "s9-laptop", "Secret11"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
