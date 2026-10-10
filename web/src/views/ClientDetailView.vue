@@ -8,6 +8,7 @@ import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import L2tpGuide from '../components/L2tpGuide.vue'
 
 const props = defineProps({ id: { type: [String, Number], required: true } })
 const router = useRouter()
@@ -408,7 +409,10 @@ async function copy(text) {
             <p class="muted small">{{ t('device.qrHint') }}</p>
           </div>
 
-          <div v-if="profile.username" class="creds">
+          <!-- An L2TP sign-in: the customer's device, its own fields, rather
+               than every device's at once. -->
+          <L2tpGuide v-if="profile.guides" :guides="profile.guides" />
+          <div v-else-if="profile.username" class="creds">
             <div class="field">
               <label>{{ t('auth.username') }}</label>
               <div class="cred">
@@ -435,7 +439,7 @@ async function copy(text) {
                  front of whoever is looking at the panel -- over a shoulder, in
                  a screen share, in a screenshot of something else -- gives away
                  the tunnel to anyone who can read it. -->
-            <div class="secret">
+            <div v-if="!profile.guides" class="secret">
               <button class="btn sm ghost" @click="showConfig = !showConfig">
                 <Icon :name="showConfig ? 'eyeOff' : 'eye'" :size="14" />
                 {{ showConfig ? t('device.hideConfig') : t('device.revealConfig') }}

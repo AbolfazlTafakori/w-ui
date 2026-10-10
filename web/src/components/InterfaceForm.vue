@@ -1,5 +1,6 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { api } from '../lib/api.js'
 import { store, t } from '../lib/store.js'
 import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
@@ -66,6 +67,25 @@ const canChooseNode = computed(() => props.nodes.length > 1)
 const isWireGuard = computed(() => form.value.protocol === 'wireguard')
 const isOpenVPN = computed(() => form.value.protocol === 'openvpn')
 const isL2TP = computed(() => form.value.protocol === 'l2tp')
+
+// The devices an L2TP tunnel serves, read once when the form first shows
+// one: with IPsec always, and those without when the switch below is on.
+const l2tpDevices = ref([])
+watch(
+  isL2TP,
+  async (on) => {
+    if (!on || l2tpDevices.value.length) return
+    try {
+      l2tpDevices.value = await api.l2tpDevices()
+    } catch {
+      /* the list is a convenience; the form works without it */
+    }
+  },
+  { immediate: true },
+)
+const deviceName = (d) => (store.locale === 'fa' && d.name.fa) || d.name.en
+const ipsecDevices = computed(() => l2tpDevices.value.filter((d) => d.group !== 'plain' && d.id !== 'adsl' && d.id !== 'android12'))
+const plainDevices = computed(() => l2tpDevices.value.filter((d) => d.group === 'plain'))
 // Below this a key is said to be weak: kept for devices that already hold
 // it, never the panel's own choice.
 const WEAK_PSK = 8
@@ -293,6 +313,19 @@ defineExpose({ showError })
           <Toggle v-model="form.l2tpPlain" :label="t('interface.l2tpPlain')" class="spacer" />
         </div>
 
+        <!-- What the customers of this tunnel can connect from: each gets
+             their own device's steps on their page. -->
+        <div v-if="isL2TP && l2tpDevices.length" class="l2tp-devices">
+          <div class="dev-line">
+            <span class="dev-label">{{ t('interface.l2tpDevicesIPsec') }}</span>
+            <span v-for="d in ipsecDevices" :key="d.id" class="dev-chip" dir="ltr">{{ deviceName(d) }}</span>
+          </div>
+          <div class="dev-line" :class="{ off: !form.l2tpPlain }">
+            <span class="dev-label">{{ form.l2tpPlain ? t('interface.l2tpDevicesPlainOn') : t('interface.l2tpDevicesPlainOff') }}</span>
+            <span v-for="d in plainDevices" :key="d.id" class="dev-chip" dir="ltr">{{ deviceName(d) }}</span>
+          </div>
+        </div>
+
         <div v-if="isWireGuard" class="field">
           <label for="if-mode">{{ t('interface.mode') }}</label>
           <select id="if-mode" data-field="mode" :class="{ bad: fieldName === 'mode' }" @input="clearError('mode')" v-model="form.mode">
@@ -327,6 +360,32 @@ defineExpose({ showError })
 <style scoped>
 .warn-hint {
   color: var(--warn, #d48806);
+}
+.l2tp-devices {
+  display: grid;
+  gap: 8px;
+  margin-top: -6px;
+}
+.dev-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.dev-line.off {
+  opacity: 0.55;
+}
+.dev-label {
+  width: 100%;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.dev-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 /* The key and the button that draws a new one, on one line. */
 .psk-row {

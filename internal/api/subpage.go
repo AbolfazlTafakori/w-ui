@@ -409,32 +409,28 @@ func guideViews(v l2tpguide.Values, detected string) []guideView {
 	if !found {
 		detected = "windows"
 	}
+	heads := map[l2tpguide.Group]string{
+		l2tpguide.GroupDevice: "l2tpGroupDevice",
+		l2tpguide.GroupRouter: "l2tpGroupRouter",
+		l2tpguide.GroupPlain:  "l2tpGroupPlain",
+	}
 	out := make([]guideView, 0, len(visible))
-	last := ""
-	for _, g := range visible {
-		group := "l2tpGroupDevice"
-		switch {
-		case g.Kind == l2tpguide.Router && (g.IPsec || len(g.Fields) == 0):
-			group = "l2tpGroupRouter"
-		case g.Kind == l2tpguide.Router:
-			group = "l2tpGroupPlain"
-		}
+	var last l2tpguide.Group
+	for _, g := range l2tpguide.Views(v) {
 		gv := guideView{
 			ID: g.ID, Name: g.Name.EN, NameKey: l2tpguide.NameKey(g.ID),
 			Selected: g.ID == detected,
-			Plain:    !g.IPsec && len(g.Fields) > 0,
+			Plain:    g.Group == l2tpguide.GroupPlain,
 			Path:     g.Path,
-			Rows:     g.Rows(v),
+			Rows:     g.Rows,
+			Command:  g.Command,
 		}
-		if group != last {
-			gv.Head, gv.HeadText = group, words[group]
-			last = group
+		if g.Group != last {
+			gv.Head, gv.HeadText = heads[g.Group], words[heads[g.Group]]
+			last = g.Group
 		}
 		for i, n := range g.Notes {
 			gv.Notes = append(gv.Notes, guideNote{Key: l2tpguide.NoteKey(g.ID, i), Text: n.EN})
-		}
-		if g.Command != nil {
-			gv.Command = g.Command(v)
 		}
 		out = append(out, gv)
 	}

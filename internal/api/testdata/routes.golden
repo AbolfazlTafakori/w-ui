@@ -34,6 +34,7 @@ POST   /api/clients/import                            Customers      auth=true  
 GET    /api/devices/{id}/profile                      Devices        auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 GET    /api/devices/{id}/profiles                     Devices        auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 DELETE /api/devices/{id}                              Devices        auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
+GET    /api/l2tp/devices                              Devices        auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/node/sync                                 Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/node/usage                                Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/node/sessions                             Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes

@@ -185,6 +185,10 @@ func (s *Server) routes() []Route {
 			handler: s.handleProfiles},
 		{Method: "DELETE", Path: "/api/devices/{id}", Group: "Devices", Auth: true,
 			Summary: "Remove a device and free its address.", handler: s.handleRemoveDevice},
+		{Method: "GET", Path: "/api/l2tp/devices", Group: "Devices", Auth: true,
+			Summary: "Every system, router and modem there is an L2TP guide for, and which list it is in.",
+			Note:    "group is device, router (with IPsec) or plain (without IPsec, listed only on a tunnel that accepts it). A device's own fields, filled in, are the guides of its profiles.",
+			handler: s.handleL2TPDevices},
 
 		// ── Being a node ──
 		//

@@ -372,6 +372,8 @@ export const api = {
   profile: (id) => request('GET', `/api/devices/${id}/profile`),
   downloadProfile: (id) => saveFile(`/api/devices/${id}/profile?download=1`, `device-${id}.conf`),
   downloadClients: () => saveFile('/api/clients/export', 'clients.json'),
+  // Every device an L2TP sign-in has a guide for, and which list it is in.
+  l2tpDevices: () => request('GET', '/api/l2tp/devices'),
   allClients,
   subscriptionLinks,
 }

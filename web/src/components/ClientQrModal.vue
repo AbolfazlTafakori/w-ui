@@ -11,6 +11,7 @@ import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
+import L2tpGuide from './L2tpGuide.vue'
 
 const props = defineProps({
   client: { type: Object, required: true },
@@ -88,6 +89,7 @@ onMounted(async () => {
               showQr: wg,
               username: wg ? '' : d.username || '',
               password: wg ? '' : d.password || '',
+              guides: p.guides || null,
             })
           }
         } catch (e) {
@@ -159,8 +161,10 @@ async function copy(text) {
 
           <div v-if="entry" class="qr-panel">
             <QrPanel :key="entry.key" :value="entry.value" :remark="entry.remark" :download-name="entry.downloadName || ''" :show-qr="entry.showQr" />
+            <!-- An L2TP sign-in: the customer's device, its own fields. -->
+            <L2tpGuide v-if="entry.guides" :key="`g-${entry.key}`" :guides="entry.guides" />
             <!-- An OpenVPN user's login, read off here for passing on. -->
-            <dl v-if="entry.username" class="qr-login">
+            <dl v-else-if="entry.username" class="qr-login">
               <div>
                 <dt>{{ current.protocol === 'l2tp' ? t('client.loginUsername') : t('client.openvpnUsername') }}</dt>
                 <dd><code class="ltr">{{ entry.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(entry.username)"><AntIcon name="CopyOutlined" /></button></dd>

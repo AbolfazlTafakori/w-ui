@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/abolfazl/w-ui/internal/l2tpguide"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -112,4 +113,9 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// handleL2TPDevices is the list of devices an L2TP sign-in has a guide for.
+func (s *Server) handleL2TPDevices(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, l2tpguide.Devices())
 }

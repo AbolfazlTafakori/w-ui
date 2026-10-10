@@ -8,6 +8,7 @@ import { store, t, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, isOnline } from '../lib/format.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
+import L2tpGuide from './L2tpGuide.vue'
 
 const props = defineProps({
   client: { type: Object, required: true },
@@ -78,7 +79,7 @@ async function load() {
         // One block per host on the device's inbound, as the subscription
         // hands them out.
         for (const p of await api.get(`/api/devices/${d.id}/profiles`, { background: true })) {
-          out.push({ key: `${d.id}-${p.hostId || 0}`, device: d, who, tunnel: iface.name || '', protocol, hostName: p.hostName || '', body: p.body, filename: p.filename })
+          out.push({ key: `${d.id}-${p.hostId || 0}`, device: d, who, tunnel: iface.name || '', protocol, hostName: p.hostName || '', body: p.body, filename: p.filename, guides: p.guides || null })
         }
       } catch {
         /* a device whose profile cannot be rendered is left out */
@@ -298,7 +299,11 @@ const expiryText = computed(() => {
                       <button class="abtn small icon cfg-show" :title="t('client.show')" :aria-label="t('client.show')" :aria-expanded="openCfg.has(cf.key)" @click="toggleCfg(cf.key)"><AntIcon name="RightOutlined" /></button>
                     </div>
                   </div>
-                  <div v-if="openCfg.has(cf.key)" class="cfg-user-body">
+                  <!-- An L2TP sign-in: the customer's device, its own fields. -->
+                  <div v-if="openCfg.has(cf.key) && cf.guides" class="cfg-user-body">
+                    <L2tpGuide :guides="cf.guides" />
+                  </div>
+                  <div v-else-if="openCfg.has(cf.key)" class="cfg-user-body">
                     <!-- An OpenVPN or L2TP user's login, read off here for passing on. -->
                     <div v-if="withLogin(cf)" class="cfg-login">
                       <span class="hint">{{ cf.protocol === 'l2tp' ? t('client.loginUsername') : t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>

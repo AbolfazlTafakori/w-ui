@@ -39,7 +39,10 @@ type Values struct {
 }
 
 // Text is a sentence in each language the customer's page speaks.
-type Text struct{ EN, FA string }
+type Text struct {
+	EN string `json:"en"`
+	FA string `json:"fa,omitempty"`
+}
 
 // Kind is which list a device is in.
 type Kind string
@@ -127,13 +130,15 @@ func ByID(id string) (Guide, bool) {
 
 // Row is one filled-in field.
 type Row struct {
-	Label string
+	Label string `json:"label"`
 	// Value is what goes in the field; for words rather than a value, the
-	// English, with Key naming them for the page's other languages.
-	Value string
-	Key   string
+	// English, with Key naming them for the page's other languages and
+	// Words carrying them for the panel, which has no such dictionary.
+	Value string `json:"value"`
+	Key   string `json:"key,omitempty"`
+	Words *Text  `json:"words,omitempty"`
 	// Copy is whether the value is the customer's own, worth a copy button.
-	Copy bool
+	Copy bool `json:"copy,omitempty"`
 }
 
 // Rows fills a device's fields with a customer's values.
@@ -161,14 +166,84 @@ func (g Guide) Rows(v Values) []Row {
 			if l2tpconf.TunnelSecretUsable(v.PSK) {
 				r.Value, r.Copy = v.PSK, true
 			} else {
-				r.Value, r.Key = words[keyEmpty].EN, keyEmpty
+				r.Key = keyEmpty
 			}
 		case Anything:
-			r.Value, r.Key = words[keyAnything].EN, keyAnything
+			r.Key = keyAnything
 		case Empty:
-			r.Value, r.Key = words[keyEmpty].EN, keyEmpty
+			r.Key = keyEmpty
+		}
+		if r.Key != "" {
+			w := words[r.Key]
+			r.Value, r.Words = w.EN, &w
 		}
 		out = append(out, r)
+	}
+	return out
+}
+
+// Group is which list a device is shown under.
+type Group string
+
+const (
+	// GroupDevice is phones and computers.
+	GroupDevice Group = "device"
+	// GroupRouter is routers with IPsec, and the modems with no client.
+	GroupRouter Group = "router"
+	// GroupPlain is routers and modems without IPsec: not encrypted.
+	GroupPlain Group = "plain"
+)
+
+// GroupOf is the list a device is shown under.
+func GroupOf(g Guide) Group {
+	switch {
+	case g.Kind == Device:
+		return GroupDevice
+	case g.IPsec || len(g.Fields) == 0:
+		return GroupRouter
+	}
+	return GroupPlain
+}
+
+// View is one device filled in with a customer's values, ready to show:
+// on the customer's page and in the panel alike.
+type View struct {
+	ID      string `json:"id"`
+	Name    Text   `json:"name"`
+	Group   Group  `json:"group"`
+	Path    string `json:"path,omitempty"`
+	Rows    []Row  `json:"rows,omitempty"`
+	Notes   []Text `json:"notes,omitempty"`
+	Command string `json:"command,omitempty"`
+}
+
+// Views is every device a tunnel serves, filled in.
+func Views(v Values) []View {
+	visible := Visible(v.AllowPlain)
+	out := make([]View, 0, len(visible))
+	for _, g := range visible {
+		view := View{ID: g.ID, Name: g.Name, Group: GroupOf(g), Path: g.Path, Rows: g.Rows(v), Notes: g.Notes}
+		if g.Command != nil {
+			view.Command = g.Command(v)
+		}
+		out = append(out, view)
+	}
+	return out
+}
+
+// Entry is one device of the list, with no customer in it: what a tunnel's
+// form shows it serves.
+type Entry struct {
+	ID    string `json:"id"`
+	Name  Text   `json:"name"`
+	Group Group  `json:"group"`
+}
+
+// Devices is every device there is a guide for.
+func Devices() []Entry {
+	out := make([]Entry, 0, len(catalogue))
+	for _, g := range catalogue {
+		out = append(out, Entry{ID: g.ID, Name: g.Name, Group: GroupOf(g)})
 	}
 	return out
 }
