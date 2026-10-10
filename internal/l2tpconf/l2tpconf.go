@@ -1,5 +1,6 @@
-// Package l2tpconf is the L2TP/IPsec tunnel as data: what the panel asks for,
-// how it is checked, and the configuration files the server stack reads.
+// Package l2tpconf is the PPP tunnels as data -- L2TP/IPsec, and PPTP beside
+// it -- what the panel asks for, how it is checked, and the configuration
+// files the server stack reads.
 //
 // L2TP is served by programs that only run as root -- pppd refuses to start
 // otherwise, and the kernel's L2TP sockets are a family the panel's sandbox
@@ -39,6 +40,15 @@ const (
 	PortIKE  = 500  // IPsec key exchange
 	PortNATT = 4500 // IPsec through NAT
 	PortL2TP = 1701 // L2TP itself, only ever inside IPsec
+	// PortPPTP is PPTP's control connection, over TCP; its data goes in GRE
+	// beside it. Fixed too: no built-in client has a setting for it.
+	PortPPTP = 1723
+)
+
+// Protocols a state can describe.
+const (
+	ProtocolL2TP = "l2tp"
+	ProtocolPPTP = "pptp"
 )
 
 // ServerName is the name this server gives itself to pppd, and the server
@@ -47,6 +57,10 @@ const (
 // used by the panel's tunnel alone and never by any other PPP link the
 // machine might run.
 const ServerName = "wui-l2tp"
+
+// ServerNamePPTP is the same for the PPTP tunnel: its own name, so each
+// tunnel's pppd matches its own customers' lines and never the other's.
+const ServerNamePPTP = "wui-pptp"
 
 // SchemaVersion is the shape of State. The agent refuses a state written in
 // a shape it does not know rather than guessing at it.
@@ -88,8 +102,22 @@ const (
 // State is the whole of what the panel asks the agent for. An absent state
 // file means no L2TP tunnel on this server.
 type State struct {
-	Version   int   `json:"version"`
-	Interface Iface `json:"interface"`
+	Version int `json:"version"`
+	// Protocol is "pptp" for the PPTP tunnel; empty or "l2tp" is L2TP, as
+	// every state written before there was a second one is.
+	Protocol  string `json:"protocol,omitempty"`
+	Interface Iface  `json:"interface"`
+}
+
+// IsPPTP is whether the state describes the PPTP tunnel.
+func (s *State) IsPPTP() bool { return s.Protocol == ProtocolPPTP }
+
+// Server is the name the state's pppd gives itself.
+func (s *State) Server() string {
+	if s.IsPPTP() {
+		return ServerNamePPTP
+	}
+	return ServerName
 }
 
 // Iface is the tunnel.
@@ -156,6 +184,9 @@ func (s *State) Validate() error {
 	if s.Version != SchemaVersion {
 		return invalid("state version %d, this build reads %d", s.Version, SchemaVersion)
 	}
+	if s.Protocol != "" && s.Protocol != ProtocolL2TP && s.Protocol != ProtocolPPTP {
+		return invalid("protocol %q is neither %s nor %s", s.Protocol, ProtocolL2TP, ProtocolPPTP)
+	}
 	f := &s.Interface
 	if f.ID == 0 {
 		return invalid("the tunnel has no id")
@@ -182,7 +213,12 @@ func (s *State) Validate() error {
 	if f.MTU < MinMTU || f.MTU > MaxMTU {
 		return invalid("MTU %d is outside %d-%d", f.MTU, MinMTU, MaxMTU)
 	}
-	if err := checkPSK(f.PSK); err != nil {
+	if s.IsPPTP() {
+		// PPTP has no key and no IPsec to go without.
+		if f.PSK != "" || f.AllowPlain {
+			return invalid("a PPTP tunnel has no pre-shared key")
+		}
+	} else if err := checkPSK(f.PSK); err != nil {
 		return err
 	}
 	if len(f.Accounts) > MaxAccounts {
@@ -303,6 +339,17 @@ type Paths struct{ Dir string }
 // NewPaths is the shared directory under the panel's data directory.
 func NewPaths(dataDir string) Paths { return Paths{Dir: filepath.Join(dataDir, "l2tp")} }
 
+// NewPPTPPaths is the PPTP tunnel's, beside it.
+func NewPPTPPaths(dataDir string) Paths { return Paths{Dir: filepath.Join(dataDir, "pptp")} }
+
+// PathsFor is the directory of a protocol's tunnel.
+func PathsFor(dataDir, protocol string) Paths {
+	if protocol == ProtocolPPTP {
+		return NewPPTPPaths(dataDir)
+	}
+	return NewPaths(dataDir)
+}
+
 // State is what the panel writes and the agent reads.
 func (p Paths) State() string { return filepath.Join(p.Dir, "state.json") }
 
@@ -362,26 +409,30 @@ type Session struct {
 	TX uint64 `json:"tx"`
 }
 
-// pppSecretsBegin and pppSecretsEnd fence the panel's lines in
+// secretsFence is the pair of lines that fence a tunnel's own lines in
 // /etc/ppp/chap-secrets. Everything outside them belongs to whoever else
-// uses that file and is kept exactly as it was.
-const (
-	pppSecretsBegin = "# BEGIN W-UI L2TP -- written by the panel; edits here are replaced"
-	pppSecretsEnd   = "# END W-UI L2TP"
-)
+// uses that file and is kept exactly as it was; each tunnel has its own pair,
+// so writing one tunnel's customers never touches the other's.
+func secretsFence(protocol string) (begin, end string) {
+	if protocol == ProtocolPPTP {
+		return "# BEGIN W-UI PPTP -- written by the panel; edits here are replaced", "# END W-UI PPTP"
+	}
+	return "# BEGIN W-UI L2TP -- written by the panel; edits here are replaced", "# END W-UI L2TP"
+}
 
-// ChapSecrets returns /etc/ppp/chap-secrets with the panel's block replaced
+// ChapSecrets returns /etc/ppp/chap-secrets with a tunnel's block replaced
 // by one line per account, or removed when s is nil. Lines outside the block
 // are kept byte for byte.
-func ChapSecrets(existing string, s *State) string {
+func ChapSecrets(existing, protocol string, s *State) string {
+	begin, end := secretsFence(protocol)
 	var kept []string
 	inside := false
 	for _, line := range strings.Split(existing, "\n") {
 		switch {
-		case strings.TrimSpace(line) == pppSecretsBegin:
+		case strings.TrimSpace(line) == begin:
 			inside = true
 			continue
-		case strings.TrimSpace(line) == pppSecretsEnd:
+		case strings.TrimSpace(line) == end:
 			inside = false
 			continue
 		case inside:
@@ -402,13 +453,13 @@ func ChapSecrets(existing string, s *State) string {
 	}
 	accs := append([]Account(nil), s.Interface.Accounts...)
 	sort.Slice(accs, func(i, j int) bool { return accs[i].Username < accs[j].Username })
-	b.WriteString(pppSecretsBegin + "\n")
+	b.WriteString(begin + "\n")
 	for _, a := range accs {
 		// client  server  secret  address: the address column is what pppd
 		// gives the peer, so a device always comes up on its own address.
-		fmt.Fprintf(&b, "%s %s \"%s\" %s\n", a.Username, ServerName, a.Secret, a.IP)
+		fmt.Fprintf(&b, "%s %s \"%s\" %s\n", a.Username, s.Server(), a.Secret, a.IP)
 	}
-	b.WriteString(pppSecretsEnd + "\n")
+	b.WriteString(end + "\n")
 	return b.String()
 }
 
@@ -502,6 +553,46 @@ func PPPOptions(s *State) string {
 	// minutes, and its session -- and its address -- freed.
 	b.WriteString("lcp-echo-interval 30\nlcp-echo-failure 4\n")
 	b.WriteString("connect-delay 5000\n")
+	return b.String()
+}
+
+// PPTPD renders pptpd's configuration.
+//
+// pptpd hands out no addresses: "delegate" leaves that to pppd, which takes
+// each device's from its secrets line -- the address its usage is counted by,
+// as on L2TP.
+func PPTPD(s *State) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "option %s\n", RunFile("pptp-options"))
+	b.WriteString("delegate\n")
+	// pptpd's own limit on sessions; the panel's is the accounts.
+	b.WriteString("connections 4096\n")
+	return b.String()
+}
+
+// PPTPOptions renders the options the PPTP tunnel's pppd runs each session
+// with: MS-CHAPv2 and 128-bit MPPE, required, and nothing else. PPTP has no
+// other protection -- that, and that both have been broken for years, is why
+// the panel says so wherever it offers PPTP -- but nothing weaker than what
+// it has is accepted.
+func PPTPOptions(s *State) string {
+	f := s.Interface
+	var b strings.Builder
+	fmt.Fprintf(&b, "name %s\n", ServerNamePPTP)
+	fmt.Fprintf(&b, "%s:\n", f.Gateway)
+	b.WriteString("auth\n")
+	b.WriteString("require-mschap-v2\n")
+	b.WriteString("refuse-pap\nrefuse-chap\nrefuse-mschap\nrefuse-eap\n")
+	b.WriteString("require-mppe-128\n")
+	b.WriteString("nobsdcomp\nnodeflate\n")
+	b.WriteString("nodefaultroute\n")
+	b.WriteString("noipdefault\n")
+	b.WriteString("lock\n")
+	fmt.Fprintf(&b, "mtu %d\nmru %d\n", f.MTU, f.MTU)
+	for _, d := range f.DNS {
+		fmt.Fprintf(&b, "ms-dns %s\n", d)
+	}
+	b.WriteString("lcp-echo-interval 30\nlcp-echo-failure 4\n")
 	return b.String()
 }
 

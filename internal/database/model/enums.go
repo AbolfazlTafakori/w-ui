@@ -12,12 +12,16 @@ const (
 	// connect to with nothing installed, a shared key for the tunnel and a
 	// username and password per device.
 	ProtocolL2TP Protocol = "l2tp"
+	// ProtocolPPTP is PPTP: the oldest VPN there is, for the routers and
+	// modems that have nothing else. Its encryption has been broken for
+	// years, and the panel says so wherever it offers it.
+	ProtocolPPTP Protocol = "pptp"
 )
 
 // Valid reports whether p is a protocol the panel knows how to serve.
 func (p Protocol) Valid() bool {
 	switch p {
-	case ProtocolWireGuard, ProtocolOpenVPN, ProtocolL2TP:
+	case ProtocolWireGuard, ProtocolOpenVPN, ProtocolL2TP, ProtocolPPTP:
 		return true
 	}
 	return false
@@ -26,8 +30,12 @@ func (p Protocol) Valid() bool {
 // UsesCredentials reports whether a device on this protocol signs in with a
 // username and password, held on its account, rather than carrying a key.
 func (p Protocol) UsesCredentials() bool {
-	return p == ProtocolOpenVPN || p == ProtocolL2TP
+	return p == ProtocolOpenVPN || p == ProtocolL2TP || p == ProtocolPPTP
 }
+
+// IsPPP reports whether a protocol's sessions are pppd's, run by the root
+// agent: L2TP and PPTP.
+func (p Protocol) IsPPP() bool { return p == ProtocolL2TP || p == ProtocolPPTP }
 
 func (p Protocol) String() string { return string(p) }
 

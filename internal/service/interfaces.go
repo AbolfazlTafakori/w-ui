@@ -129,8 +129,8 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	if err := s.checkSubnetFree(ctx, nodeID, 0, in.Subnet); err != nil {
 		return nil, err
 	}
-	if in.Protocol == model.ProtocolL2TP {
-		if err := s.checkL2TPPlace(ctx, node, 0); err != nil {
+	if in.Protocol.IsPPP() {
+		if err := s.checkPPPPlace(ctx, node, in.Protocol, 0); err != nil {
 			return nil, err
 		}
 	}
@@ -176,6 +176,10 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 			s.log.Warn("L2TP without IPsec is accepted on this tunnel; those sessions are not encrypted",
 				"interface", in.Name)
 		}
+	} else if in.Protocol == model.ProtocolPPTP {
+		// Nothing of its own: a sign-in per device, and pppd's MPPE.
+		s.log.Warn("a PPTP tunnel was made; its encryption has been broken for years",
+			"interface", in.Name)
 	} else {
 		// Every interface gets its own certificate authority, generated here
 		// rather than by easy-rsa so that the interface row is the only place
@@ -264,9 +268,19 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 				return err
 			}
 		}
-	} else if in.PSK != "" {
+	} else if in.Protocol == model.ProtocolPPTP {
+		// PPTP's port is not the operator's to choose either: every client
+		// built into a router or a computer dials TCP 1723.
+		in.ListenPort = l2tpconf.PortPPTP
+		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
+			if err := checkL2TPSubnet(p); err != nil {
+				return err
+			}
+		}
+	}
+	if in.Protocol != model.ProtocolL2TP && in.PSK != "" {
 		return invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
-	} else if in.L2TPPlain {
+	} else if in.Protocol != model.ProtocolL2TP && in.L2TPPlain {
 		return invalidField("l2tpPlain", "L2TP without IPsec applies to L2TP tunnels only")
 	}
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
@@ -292,7 +306,7 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	// being free says nothing about TCP 443, which is the port most worth
 	// asking about because a web server is so often already on it.
 	proto := "udp"
-	if in.Transport == "tcp" {
+	if in.Transport == "tcp" || in.Protocol == model.ProtocolPPTP {
 		proto = "tcp"
 	}
 	if checkPort {
@@ -300,6 +314,10 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 			if in.Protocol == model.ProtocolL2TP {
 				return &FieldError{Field: "listenPort", Err: fmt.Errorf(
 					"%w; L2TP needs UDP 1701 and nothing else can hold it -- an xl2tpd already running on this server would", err)}
+			}
+			if in.Protocol == model.ProtocolPPTP {
+				return &FieldError{Field: "listenPort", Err: fmt.Errorf(
+					"%w; PPTP needs TCP 1723 and nothing else can hold it -- a pptpd already running on this server would", err)}
 			}
 			return &FieldError{Field: "listenPort", Err: err}
 		}
@@ -321,7 +339,7 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	}
 	if in.MTU == 0 {
 		in.MTU = 1420
-		if in.Protocol == model.ProtocolL2TP {
+		if in.Protocol.IsPPP() {
 			in.MTU = l2tpconf.DefaultMTU
 		}
 	}
@@ -630,6 +648,9 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		if iface.Protocol == model.ProtocolL2TP {
 			return nil, invalidField("listenPort", "L2TP is always on UDP 1701; the clients have no setting for another port")
 		}
+		if iface.Protocol == model.ProtocolPPTP {
+			return nil, invalidField("listenPort", "PPTP is always on TCP 1723; the clients have no setting for another port")
+		}
 		port := *in.ListenPort
 		if port < 1 || port > 65535 {
 			return nil, invalidField("listenPort", "listen port %d is out of range", port)
@@ -672,7 +693,7 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		if err != nil {
 			return nil, invalidField("subnet", "subnet %q: %v", newSubnet, err)
 		}
-		if iface.Protocol == model.ProtocolL2TP {
+		if iface.Protocol.IsPPP() {
 			if err := checkL2TPSubnet(pfx); err != nil {
 				return nil, err
 			}
@@ -1149,11 +1170,11 @@ func checkNetDevice(name string) error {
 }
 
 // checkMTU is the range a tunnel's MTU can take: a PPP link inside L2TP and
-// IPsec sits in a 1500-byte link and cannot be larger than it.
+// IPsec, or PPTP's GRE, sits in a 1500-byte link and cannot be larger than it.
 func checkMTU(p model.Protocol, mtu int) error {
-	if p == model.ProtocolL2TP {
+	if p.IsPPP() {
 		if mtu < l2tpconf.MinMTU || mtu > l2tpconf.MaxMTU {
-			return invalidField("mtu", "an L2TP MTU is %d to %d; %d leaves room for its headers", l2tpconf.MinMTU, l2tpconf.MaxMTU, l2tpconf.DefaultMTU)
+			return invalidField("mtu", "an %s MTU is %d to %d; %d leaves room for its headers", strings.ToUpper(string(p)), l2tpconf.MinMTU, l2tpconf.MaxMTU, l2tpconf.DefaultMTU)
 		}
 		return nil
 	}
@@ -1172,31 +1193,33 @@ func checkL2TPSubnet(p netip.Prefix) error {
 	return nil
 }
 
-// checkL2TPPlace refuses a second L2TP tunnel on a server, and one on a node
-// whose panel predates L2TP.
+// checkPPPPlace refuses a second L2TP or PPTP tunnel on a server, and one on
+// a node whose panel predates it.
 //
-// One per server because the ports are fixed: two tunnels would both need
-// UDP 1701, and the clients cannot be told to use another. selfID is the
-// tunnel being moved, which does not count against itself.
-func (s *Interfaces) checkL2TPPlace(ctx context.Context, node *model.Node, selfID uint) error {
+// One of each per server because the ports are fixed: two L2TP tunnels would
+// both need UDP 1701, two PPTP tunnels TCP 1723, and the clients cannot be
+// told to use another. selfID is the tunnel being moved, which does not count
+// against itself.
+func (s *Interfaces) checkPPPPlace(ctx context.Context, node *model.Node, p model.Protocol, selfID uint) error {
+	name := strings.ToUpper(string(p))
 	var n int64
 	q := s.db.WithContext(ctx).Model(&model.Interface{}).
-		Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolL2TP)
+		Where("node_id = ? AND protocol = ?", node.ID, p)
 	if selfID != 0 {
 		q = q.Where("id <> ?", selfID)
 	}
 	if err := q.Count(&n).Error; err != nil {
-		return fmt.Errorf("service: count L2TP tunnels: %w", err)
+		return fmt.Errorf("service: count %s tunnels: %w", name, err)
 	}
 	if n > 0 {
-		return invalidField("protocol", "%s already has an L2TP tunnel; a server carries one, because the clients use fixed ports", node.Name)
+		return invalidField("protocol", "%s already has an %s tunnel; a server carries one, because the clients use fixed ports", node.Name, name)
 	}
 	if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
 		v := node.Version
 		if v == "" {
 			v = "an unknown version"
 		}
-		return invalidField("nodeId", "%s runs %s; L2TP needs W-UI 3.0 or later on the node. Update it first", node.Name, v)
+		return invalidField("nodeId", "%s runs %s; %s needs W-UI 3.0 or later on the node. Update it first", node.Name, v, name)
 	}
 	return nil
 }

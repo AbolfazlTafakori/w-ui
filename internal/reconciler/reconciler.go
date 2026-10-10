@@ -885,10 +885,10 @@ func shapedDevices(interfaces []model.Interface) []string {
 	}
 
 	for _, iface := range interfaces {
-		// An L2TP tunnel's own device is a placeholder that carries nothing;
-		// its customers' traffic leaves by each session's link, which is
-		// shaped on its own (see shapeSessions).
-		if iface.Protocol == model.ProtocolL2TP {
+		// An L2TP or PPTP tunnel's own device is a placeholder that carries
+		// nothing; its customers' traffic leaves by each session's link,
+		// which is shaped on its own (see shapeSessions).
+		if iface.Protocol.IsPPP() {
 			continue
 		}
 		// Only the tunnel devices, which this panel created and nothing else

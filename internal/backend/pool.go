@@ -277,13 +277,13 @@ func (p *Pool) logOnce(iface *model.Interface, err error) {
 // but a key, a port or a subnet means the device is no longer the one the
 // database describes.
 //
-// An L2TP tunnel's pre-shared key and resolvers are read by the agent from
-// the state the driver writes when it opens, so a change to either has to
-// reopen it to reach the customers.
+// An L2TP or PPTP tunnel's resolvers -- and L2TP's pre-shared key -- are read
+// by the agent from the state the driver writes when it opens, so a change to
+// any has to reopen it to reach the customers.
 func fingerprint(i *model.Interface) string {
 	fp := fmt.Sprintf("%s|%s|%d|%s|%s|%d|%s",
 		i.Name, i.Protocol, i.ListenPort, i.Subnet, i.PublicKey, i.MTU, i.Mode)
-	if i.Protocol == model.ProtocolL2TP {
+	if i.Protocol.IsPPP() {
 		fp += fmt.Sprintf("|%s|%s|%t", i.L2TP.V.PSK, i.DNS, i.L2TP.V.AllowPlain)
 	}
 	return fp

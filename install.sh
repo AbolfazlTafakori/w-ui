@@ -780,7 +780,7 @@ write_l2tp_agent() {
   have_systemd || return 0
   cat >/etc/systemd/system/wui-l2tp.service <<HELPER
 [Unit]
-Description=W-UI — L2TP/IPsec agent: runs the L2TP tunnel the panel describes
+Description=W-UI — PPP agent: runs the L2TP and PPTP tunnels the panel describes
 After=network-online.target
 Wants=network-online.target
 # Started by wui-l2tp.path while the panel describes a tunnel. An agent that
@@ -790,7 +790,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 ExecStart=$BIN_PATH l2tp-agent $DATA_DIR
-# Only the agent is stopped, never xl2tpd and the sessions it carries: a
+# Only the agent is stopped, never xl2tpd, pptpd and the sessions they carry: a
 # restart, an update's included, must not disconnect anyone. The next run
 # adopts them.
 KillMode=process
@@ -799,10 +799,11 @@ RestartSec=5
 HELPER
   cat >/etc/systemd/system/wui-l2tp.path <<HELPER
 [Unit]
-Description=W-UI — start the L2TP agent while the panel describes an L2TP tunnel
+Description=W-UI — start the PPP agent while the panel describes an L2TP or PPTP tunnel
 
 [Path]
 PathExists=$DATA_DIR/l2tp/state.json
+PathExists=$DATA_DIR/pptp/state.json
 Unit=wui-l2tp.service
 
 [Install]

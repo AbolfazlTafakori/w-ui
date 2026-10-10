@@ -75,8 +75,8 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 			p = renderWireGuard(&acc, &at)
 		case model.ProtocolOpenVPN:
 			p = renderOpenVPN(&acc, &at)
-		case model.ProtocolL2TP:
-			p = renderL2TP(&acc, &at)
+		case model.ProtocolL2TP, model.ProtocolPPTP:
+			p = renderPPP(&acc, &at)
 		default:
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
 		}
@@ -116,12 +116,12 @@ func renderOpenVPN(acc *model.Account, iface *model.Interface) *Profile {
 	}
 }
 
-// renderL2TP is the sign-in a customer types into their device: an L2TP
-// client imports no file. Rendered by the driver's own function, the same one
-// the subscription uses, so the two cannot disagree.
-func renderL2TP(acc *model.Account, iface *model.Interface) *Profile {
+// renderPPP is the sign-in a customer types into their device: an L2TP or
+// PPTP client imports no file. Rendered by the driver's own function, the same
+// one the subscription uses, so the two cannot disagree.
+func renderPPP(acc *model.Account, iface *model.Interface) *Profile {
 	return &Profile{
-		Filename: fmt.Sprintf("%s-l2tp.txt", filenameFor(acc)),
+		Filename: fmt.Sprintf("%s-%s.txt", filenameFor(acc), iface.Protocol),
 		MIMEType: "text/plain; charset=utf-8",
 		Body:     l2tpdriver.Profile(acc, iface),
 		Username: acc.Username,

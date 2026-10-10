@@ -40,7 +40,7 @@ func Units(binary, dataDir string) (service, watch string, err error) {
 		return "", "", fmt.Errorf("%w: %q, %q", ErrUnitPath, binary, dataDir)
 	}
 	service = `[Unit]
-Description=W-UI — L2TP/IPsec agent: runs the L2TP tunnel the panel describes
+Description=W-UI — PPP agent: runs the L2TP and PPTP tunnels the panel describes
 After=network-online.target
 Wants=network-online.target
 # Started by wui-l2tp.path while the panel describes a tunnel. An agent that
@@ -50,7 +50,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 ExecStart=` + binary + ` l2tp-agent ` + dataDir + `
-# Only the agent is stopped, never xl2tpd and the sessions it carries: a
+# Only the agent is stopped, never xl2tpd, pptpd and the sessions they carry: a
 # restart, an update's included, must not disconnect anyone. The next run
 # adopts them.
 KillMode=process
@@ -58,10 +58,11 @@ Restart=on-failure
 RestartSec=5
 `
 	watch = `[Unit]
-Description=W-UI — start the L2TP agent while the panel describes an L2TP tunnel
+Description=W-UI — start the PPP agent while the panel describes an L2TP or PPTP tunnel
 
 [Path]
 PathExists=` + path.Join(dataDir, "l2tp", "state.json") + `
+PathExists=` + path.Join(dataDir, "pptp", "state.json") + `
 Unit=wui-l2tp.service
 
 [Install]

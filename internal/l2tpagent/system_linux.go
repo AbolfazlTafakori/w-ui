@@ -27,10 +27,6 @@ const (
 	// swanctlFile is the agent's one file in strongSwan's configuration,
 	// beside whatever else is there.
 	swanctlFile = "wui-l2tp.conf"
-	// startedMarker records that strongSwan was started by this agent, so
-	// taking the tunnel down stops it again -- and leaves it alone when it
-	// was running for something else.
-	startedMarker = "strongswan-started-by-wui"
 
 	cmdTimeout     = 30 * time.Second
 	installTimeout = 15 * time.Minute
@@ -77,44 +73,63 @@ func have(bin string) bool {
 	return err == nil
 }
 
-func (s *linuxSystem) missing() []string {
+func (s *linuxSystem) missing(protocol string) []string {
 	var out []string
-	for _, bin := range []string{"xl2tpd", "pppd", "swanctl"} {
+	bins := []string{"xl2tpd", "pppd", "swanctl"}
+	if protocol == l2tpconf.ProtocolPPTP {
+		bins = []string{"pptpd", "pppd"}
+	}
+	for _, bin := range bins {
 		if !have(bin) {
 			out = append(out, bin)
 		}
 	}
-	if _, err := swanctlDir(); err != nil {
-		out = append(out, "strongSwan's swanctl directory")
+	if protocol != l2tpconf.ProtocolPPTP {
+		if _, err := swanctlDir(); err != nil {
+			out = append(out, "strongSwan's swanctl directory")
+		}
 	}
 	return out
 }
 
-// packagedUnits are the services the IPsec and L2TP packages can bring with
-// them, under the names the distributions give them.
+// packagedUnits are the services the IPsec, L2TP and PPTP packages can bring
+// with them, under the names the distributions give them.
 var packagedUnits = []string{
 	"xl2tpd.service", "strongswan.service", "strongswan-starter.service",
-	"strongswan-swanctl.service", "ipsec.service",
+	"strongswan-swanctl.service", "ipsec.service", "pptpd.service",
 }
 
-// EnsurePackages installs strongSwan, xl2tpd and pppd when any is missing.
+// packages are what a protocol's tunnel is installed from, by family.
+func packages(protocol, family string) []string {
+	switch {
+	case protocol == l2tpconf.ProtocolPPTP:
+		return []string{"pptpd", "ppp"}
+	case family == "debian":
+		return []string{"strongswan-swanctl", "charon-systemd", "xl2tpd", "ppp"}
+	}
+	return []string{"strongswan", "xl2tpd", "ppp"}
+}
+
+// EnsurePackages installs what a protocol's tunnel needs when any of it is
+// missing: strongSwan, xl2tpd and pppd for L2TP; pptpd and pppd for PPTP.
 //
-// The installer and the update script install them too; this is for a panel
-// updated from its own button, or a machine where that install failed. What it
-// installs is not left running for nothing: the packaged xl2tpd service would
-// take L2TP's port from the agent's own, and strongSwan is started by the
-// agent while a tunnel exists and stopped when it goes.
+// The installer and the update script install L2TP's too; this is for a panel
+// updated from its own button, or a machine where that install failed, and
+// for PPTP, which is installed the first time a PPTP tunnel is made. What it
+// installs is not left running for nothing: a packaged xl2tpd or pptpd would
+// take the port from the agent's own, and strongSwan is started by the agent
+// while a tunnel exists and stopped when it goes.
 //
 // Nothing already on the machine is touched. A package that would have to be
 // removed -- libreswan, say, for another VPN -- stops the install instead, and
 // a service that was enabled or running before is left as it was: it is the
 // operator's, not ours to switch off.
-func (s *linuxSystem) EnsurePackages(ctx context.Context) error {
-	gone := s.missing()
+func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error {
+	gone := s.missing(protocol)
 	if len(gone) == 0 {
 		return nil
 	}
-	s.log.Info("installing the L2TP/IPsec stack", "missing", strings.Join(gone, ", "))
+	s.log.Info("installing what the tunnel needs", "protocol", protocol, "missing", strings.Join(gone, ", "))
 	theirs := map[string]bool{}
 	for _, unit := range packagedUnits {
 		theirs[unit] = s.inUse(ctx, unit)
@@ -128,8 +143,8 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context) error {
 		_ = upd.Run()
 		cctx, cancel := context.WithTimeout(ctx, installTimeout)
 		defer cancel()
-		cmd := exec.CommandContext(cctx, "apt-get", "install", "-y", "-qq", "--no-remove",
-			"strongswan-swanctl", "charon-systemd", "xl2tpd", "ppp")
+		args := append([]string{"install", "-y", "-qq", "--no-remove"}, packages(protocol, family)...)
+		cmd := exec.CommandContext(cctx, "apt-get", args...)
 		cmd.Env = env
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("apt-get install: %v: %s", err, tail(out))
@@ -140,7 +155,8 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context) error {
 		if id != "fedora" {
 			_, _ = s.run(ctx, installTimeout, "", "dnf", "install", "-y", "-q", "epel-release")
 		}
-		if _, err := s.run(ctx, installTimeout, "", "dnf", "install", "-y", "-q", "strongswan", "xl2tpd", "ppp"); err != nil {
+		args := append([]string{"install", "-y", "-q"}, packages(protocol, family)...)
+		if _, err := s.run(ctx, installTimeout, "", "dnf", args...); err != nil {
 			return err
 		}
 	default:
@@ -153,7 +169,7 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context) error {
 			_, _ = s.run(ctx, cmdTimeout, "", "systemctl", "disable", "--now", unit)
 		}
 	}
-	if left := s.missing(); len(left) > 0 {
+	if left := s.missing(protocol); len(left) > 0 {
 		return fmt.Errorf("still missing after installing: %s", strings.Join(left, ", "))
 	}
 	return nil
@@ -211,7 +227,7 @@ func writeAtomic(path, body string, mode os.FileMode) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func (s *linuxSystem) WriteSecrets(st *l2tpconf.State) error {
+func (s *linuxSystem) WriteSecrets(protocol string, st *l2tpconf.State) error {
 	existing, err := os.ReadFile(chapSecrets)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -219,7 +235,7 @@ func (s *linuxSystem) WriteSecrets(st *l2tpconf.State) error {
 	if st == nil && errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	body := l2tpconf.ChapSecrets(string(existing), st)
+	body := l2tpconf.ChapSecrets(string(existing), protocol, st)
 	if body == string(existing) {
 		return nil
 	}
@@ -236,7 +252,17 @@ func (s *linuxSystem) WriteRun(name, body string) error {
 	return writeAtomic(l2tpconf.RunFile(name), body, 0o600)
 }
 
-func (s *linuxSystem) RemoveRun() error { return os.RemoveAll(l2tpconf.RunDir) }
+// RemoveRun removes some of the agent's files, and the directory once it is
+// empty: the other tunnel's files, while it runs, stay where they are.
+func (s *linuxSystem) RemoveRun(names ...string) error {
+	for _, n := range names {
+		if err := os.Remove(l2tpconf.RunFile(n)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	_ = os.Remove(l2tpconf.RunDir) // only when empty
+	return nil
+}
 
 // ── IPsec ────────────────────────────────────────────────────────────────────
 
@@ -336,16 +362,45 @@ func (s *linuxSystem) ApplyFirewall(ctx context.Context, script string) error {
 	return err
 }
 
-// ── xl2tpd ───────────────────────────────────────────────────────────────────
+// ── daemons ──────────────────────────────────────────────────────────────────
 
-func pidFile() string { return l2tpconf.RunFile("xl2tpd.pid") }
+// daemon is how one tunnel's daemon is run.
+type daemon struct {
+	bin  string
+	conf string // its configuration, which also tells the agent's own apart
+	pid  string
+	log  string
+	args func() []string
+}
 
-// runningXl2tpd is the pid of the agent's own xl2tpd, when it is alive: the
-// pid file names it, and the process is xl2tpd reading the agent's
+func daemonOf(protocol string) daemon {
+	if protocol == l2tpconf.ProtocolPPTP {
+		return daemon{
+			bin: "pptpd", conf: l2tpconf.RunFile("pptpd.conf"),
+			pid: l2tpconf.RunFile("pptpd.pid"), log: l2tpconf.RunFile("pptpd.log"),
+			// -f: in the foreground, so the pid the agent records is the one
+			// that runs.
+			args: func() []string {
+				return []string{"-f", "-c", l2tpconf.RunFile("pptpd.conf"), "-p", l2tpconf.RunFile("pptpd.pid")}
+			},
+		}
+	}
+	return daemon{
+		bin: "xl2tpd", conf: l2tpconf.RunFile("xl2tpd.conf"),
+		pid: l2tpconf.RunFile("xl2tpd.pid"), log: l2tpconf.RunFile("xl2tpd.log"),
+		args: func() []string {
+			return []string{"-D", "-c", l2tpconf.RunFile("xl2tpd.conf"), "-p", l2tpconf.RunFile("xl2tpd.pid"),
+				"-C", l2tpconf.RunFile("l2tp-control")}
+		},
+	}
+}
+
+// running is the pid of the agent's own daemon, when it is alive: the pid
+// file names it, and the process is that daemon reading the agent's
 // configuration -- a recycled pid belonging to something else is not taken
 // for it.
-func runningXl2tpd() (int, bool) {
-	raw, err := os.ReadFile(pidFile())
+func (d daemon) running() (int, bool) {
+	raw, err := os.ReadFile(d.pid)
 	if err != nil {
 		return 0, false
 	}
@@ -358,69 +413,68 @@ func runningXl2tpd() (int, bool) {
 		return pid, false
 	}
 	args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
-	if len(args) == 0 || filepath.Base(args[0]) != "xl2tpd" || !strings.Contains(string(cmdline), l2tpconf.RunFile("xl2tpd.conf")) {
+	if len(args) == 0 || filepath.Base(args[0]) != d.bin || !strings.Contains(string(cmdline), d.conf) {
 		return pid, false
 	}
 	return pid, true
 }
 
-func (s *linuxSystem) L2TPRunning() bool {
-	_, ok := runningXl2tpd()
+func (s *linuxSystem) Running(protocol string) bool {
+	_, ok := daemonOf(protocol).running()
 	return ok
 }
 
-func (s *linuxSystem) StartL2TP(ctx context.Context) error {
-	if pid, ok := runningXl2tpd(); ok {
-		s.log.Info("adopted the running xl2tpd", "pid", pid)
+func (s *linuxSystem) Start(ctx context.Context, protocol string) error {
+	d := daemonOf(protocol)
+	if pid, ok := d.running(); ok {
+		s.log.Info("adopted the running "+d.bin, "pid", pid)
 		return nil
 	}
-	bin, err := exec.LookPath("xl2tpd")
+	bin, err := exec.LookPath(d.bin)
 	if err != nil {
-		return errors.New("xl2tpd is not installed")
+		return fmt.Errorf("%s is not installed", d.bin)
 	}
-	_ = os.Remove(pidFile())
-	logf, err := os.OpenFile(l2tpconf.RunFile("xl2tpd.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	_ = os.Remove(d.pid)
+	logf, err := os.OpenFile(d.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
 	defer logf.Close()
-	cmd := exec.Command(bin, "-D",
-		"-c", l2tpconf.RunFile("xl2tpd.conf"),
-		"-p", pidFile(),
-		"-C", l2tpconf.RunFile("l2tp-control"))
+	cmd := exec.Command(bin, d.args()...)
 	cmd.Stdout = logf
 	cmd.Stderr = logf
 	// Its own session, so it outlives the agent: the agent is restarted on
-	// every update, and the sessions xl2tpd carries must not end with it.
+	// every update, and the sessions the daemon carries must not end with it.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	if err := writeAtomic(pidFile(), strconv.Itoa(cmd.Process.Pid)+"\n", 0o600); err != nil {
-		s.log.Warn("could not write xl2tpd's pid file", "error", err)
+	if err := writeAtomic(d.pid, strconv.Itoa(cmd.Process.Pid)+"\n", 0o600); err != nil {
+		s.log.Warn("could not write the pid file", "daemon", d.bin, "error", err)
 	}
-	// Waited on, so an xl2tpd that exits is reaped rather than left a
-	// zombie for as long as the agent runs.
+	// Waited on, so a daemon that exits is reaped rather than left a zombie
+	// for as long as the agent runs.
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	// A port another program holds, or a configuration xl2tpd refuses, ends
-	// it within a moment; reported here rather than as a customer who cannot
-	// connect.
+	// A port another program holds, or a configuration the daemon refuses,
+	// ends it within a moment; reported here rather than as a customer who
+	// cannot connect.
 	select {
 	case err := <-exited:
-		body, _ := os.ReadFile(l2tpconf.RunFile("xl2tpd.log"))
-		return fmt.Errorf("xl2tpd exited at start (%v): %s", err, tail(body))
+		body, _ := os.ReadFile(d.log)
+		return fmt.Errorf("%s exited at start (%v): %s", d.bin, err, tail(body))
 	case <-time.After(1500 * time.Millisecond):
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	s.log.Info("started xl2tpd", "pid", cmd.Process.Pid)
+	s.log.Info("started "+d.bin, "pid", cmd.Process.Pid)
 	return nil
 }
 
-func (s *linuxSystem) StopL2TP(ctx context.Context) error {
-	pid, ok := runningXl2tpd()
+func (s *linuxSystem) Stop(ctx context.Context, protocol string) error {
+	d := daemonOf(protocol)
+	pid, ok := d.running()
 	if !ok {
 		return nil
 	}
@@ -435,7 +489,7 @@ func (s *linuxSystem) StopL2TP(ctx context.Context) error {
 	if syscall.Kill(pid, 0) == nil {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
-	_ = os.Remove(pidFile())
+	_ = os.Remove(d.pid)
 	return nil
 }
 

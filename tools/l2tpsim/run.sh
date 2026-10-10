@@ -45,7 +45,7 @@ scenario() {
 	# away without saying so does until dead-peer detection clears it.
 	if MSYS_NO_PATHCONV=1 docker run --rm --privileged --network l2tpsim --ip "172.31.77.$((100 + n))" \
 		-e NAME="$1" -e EXPECT="$2" -e PSK="$3" -e IKE="$4" -e ESP="$5" -e TUNNEL="$6" -e PPPOPTS="$7" \
-		-e SERVER="$SERVER" -e USER="$user" -e PASS="$pass_" -e VERBOSE="${VERBOSE:-}" \
+		-e SERVER="$SERVER" -e USER="$user" -e PASS="$pass_" -e VERBOSE="${VERBOSE:-}" -e PPTP="${PPTP:-}" \
 		"$img" /sim/client.sh; then
 		pass=$((pass + 1))
 	else
@@ -82,6 +82,18 @@ scenario "MikroTik without IPsec (mschap2, chap)"         ok "" "" "" "" 'refuse
 scenario "Huawei / TF-i60 with a Tunnel password"         ok "" "" "" "$PSK" "$ms"
 scenario "Tunnel password that is not the key"            fail "" "" "" "not-the-key" "$ms"
 scenario "PAP only, still never accepted"                 fail "" "" "" "" 'refuse-chap\nrefuse-mschap\nrefuse-mschap-v2\nrefuse-eap'
+
+echo "== server: PPTP"
+start_server "-pptp"
+export PPTP=1
+scenario "Windows PPTP (MS-CHAP v2, MPPE required)"       ok "" "" "" "" 'require-mppe-128\nrefuse-pap\nrefuse-eap\nrefuse-chap\nrefuse-mschap'
+scenario "TP-Link VPN Client PPTP, Encryption Max (MPPE)" ok "" "" "" "" 'require-mppe-128'
+scenario "D-Link PPTP, MS-CHAPv2 and MPPE 128 bit"        ok "" "" "" "" 'require-mppe-128\nrefuse-pap\nrefuse-chap\nrefuse-mschap\nrefuse-eap'
+scenario "MikroTik pptp-client, mschap2, default-encryption" ok "" "" "" "" 'require-mppe-128\nrefuse-pap\nrefuse-chap\nrefuse-mschap\nrefuse-eap'
+scenario "Router with encryption off: refused"            fail "" "" "" "" 'nomppe'
+scenario "CHAP only, never accepted"                      fail "" "" "" "" 'refuse-mschap\nrefuse-mschap-v2\nrefuse-pap\nrefuse-eap'
+scenario "PAP only, never accepted"                       fail "" "" "" "" 'refuse-chap\nrefuse-mschap\nrefuse-mschap-v2\nrefuse-eap'
+unset PPTP
 
 echo
 echo "$pass passed, $fail failed, of $n"

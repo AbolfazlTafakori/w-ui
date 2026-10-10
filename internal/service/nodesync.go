@@ -218,6 +218,19 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 		}
 		iface.L2TP = model.JSON(*in.L2TP)
 	}
+	if in.Protocol == model.ProtocolPPTP {
+		// One PPTP tunnel a server, for the same reason: TCP 1723 is fixed.
+		var other int64
+		if err := tx.Model(&model.Interface{}).
+			Where("node_id = ? AND protocol = ? AND NOT (managed = ? AND origin_id = ?)",
+				nodeID, model.ProtocolPPTP, true, in.OriginID).
+			Count(&other).Error; err != nil {
+			return nil, fmt.Errorf("count PPTP tunnels: %w", err)
+		}
+		if other > 0 {
+			return nil, invalidField("interface.protocol", "this server already carries a PPTP tunnel; it can carry one")
+		}
+	}
 
 	if err := tx.Save(&iface).Error; err != nil {
 		return nil, fmt.Errorf("store managed interface: %w", err)

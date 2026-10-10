@@ -32,6 +32,19 @@ const serverConfig = computed(() => {
       '# One line per device in /etc/ppp/chap-secrets, with its own address.',
     ].join('\n')
   }
+  if (f.protocol === 'pptp') {
+    // The same agent runs pptpd and pppd for it.
+    return [
+      '# PPTP (pptpd): TCP 1723, data in GRE (IP protocol 47)',
+      `localip ${f.subnet.replace(/\.0\/\d+$/, '.1')}`,
+      `subnet ${f.subnet}`,
+      `mtu ${f.mtu}`,
+      `ms-dns ${f.dns || '1.1.1.1'}`,
+      'require-mschap-v2',
+      'require-mppe-128',
+      '# One line per device in /etc/ppp/chap-secrets, with its own address.',
+    ].join('\n')
+  }
   if (f.protocol !== 'wireguard') {
     return [
       `port ${f.listenPort}`,

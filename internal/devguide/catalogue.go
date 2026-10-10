@@ -599,7 +599,7 @@ var catalogue = []Guide{
 					{Label: "Allow", Value: "mschap2"},
 				},
 				Command: func(v Values) string {
-					return fmt.Sprintf("/interface pptp-client add name=wui-pptp connect-to=%s user=%s password=%s allow=mschap2 disabled=no",
+					return fmt.Sprintf("/interface pptp-client add name=wui-pptp connect-to=%s user=%s password=%s allow=mschap2 profile=default-encryption disabled=no",
 						rosQuote(v.Server), rosQuote(v.Username), rosQuote(v.Password))
 				},
 			},

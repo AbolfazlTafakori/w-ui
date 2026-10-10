@@ -28,11 +28,11 @@ type fakeSys struct {
 
 func (f *fakeSys) log(c string) { f.calls = append(f.calls, c) }
 
-func (f *fakeSys) EnsurePackages(context.Context) error {
+func (f *fakeSys) EnsurePackages(context.Context, string) error {
 	f.log("install")
 	return f.installErr
 }
-func (f *fakeSys) WriteSecrets(s *l2tpconf.State) error {
+func (f *fakeSys) WriteSecrets(_ string, s *l2tpconf.State) error {
 	f.log("secrets")
 	f.secrets = s
 	return nil
@@ -45,7 +45,7 @@ func (f *fakeSys) WriteRun(name, body string) error {
 	f.run[name] = body
 	return nil
 }
-func (f *fakeSys) RemoveRun() error { f.log("rmrun"); f.run = nil; return nil }
+func (f *fakeSys) RemoveRun(...string) error { f.log("rmrun"); f.run = nil; return nil }
 func (f *fakeSys) LoadIPsec(_ context.Context, conf string) error {
 	f.log("ipsec")
 	f.ipsec = conf
@@ -57,9 +57,9 @@ func (f *fakeSys) ApplyFirewall(_ context.Context, script string) error {
 	f.firewall = script
 	return nil
 }
-func (f *fakeSys) StartL2TP(context.Context) error { f.log("start"); f.running = true; return nil }
-func (f *fakeSys) StopL2TP(context.Context) error  { f.log("stop"); f.running = false; return nil }
-func (f *fakeSys) L2TPRunning() bool               { return f.running }
+func (f *fakeSys) Start(context.Context, string) error { f.log("start"); f.running = true; return nil }
+func (f *fakeSys) Stop(context.Context, string) error  { f.log("stop"); f.running = false; return nil }
+func (f *fakeSys) Running(string) bool                 { return f.running }
 func (f *fakeSys) Sessions(gw netip.Addr) ([]Live, error) {
 	f.gatewayAsked = gw
 	out := append([]Live(nil), f.sessions...)
@@ -134,7 +134,7 @@ func state(mutate ...func(*l2tpconf.State)) []byte {
 func rig() (*Agent, *fakeSys, *fakeFiles) {
 	sys := &fakeSys{}
 	files := &fakeFiles{state: state()}
-	a := New(sys, files, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	a := New(l2tpconf.ProtocolL2TP, sys, files, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	a.now = func() time.Time { return time.Unix(1700000000, 0) }
 	return a, sys, files
 }

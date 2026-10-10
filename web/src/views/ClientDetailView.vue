@@ -203,7 +203,7 @@ async function copy(text) {
 }
 // An L2TP file is the sign-in written out for every device: nothing worth
 // revealing in the panel, where the setup card shows one device at a time.
-const isL2TP = (p) => (p.guides || []).some((g) => g.protocol === 'l2tp')
+const isL2TP = (p) => /-(l2tp|pptp)\.txt$/.test(p.filename || '')
 </script>
 
 <template>

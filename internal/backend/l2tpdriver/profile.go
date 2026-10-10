@@ -52,7 +52,7 @@ func Profile(acc *model.Account, iface *model.Interface) string {
 // tunnel's addresses and key, and this device's sign-in.
 func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
 	v := devguide.Values{
-		Protocol:   "l2tp",
+		Protocol:   string(iface.Protocol),
 		Tunnel:     iface.Name,
 		PSK:        iface.L2TP.V.PSK,
 		Username:   acc.Username,

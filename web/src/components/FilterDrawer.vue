@@ -46,6 +46,7 @@ const protocolOptions = [
   { value: 'wireguard', label: t('protocol.wireguard') },
   { value: 'openvpn', label: t('protocol.openvpn') },
   { value: 'l2tp', label: t('protocol.l2tp') },
+  { value: 'pptp', label: t('protocol.pptp') },
 ]
 
 // Three-state rows: All, then the two answers. Their Radio.Group with

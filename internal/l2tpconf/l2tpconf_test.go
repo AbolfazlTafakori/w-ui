@@ -87,7 +87,7 @@ func TestValidateRefusesWhatCouldReachAFileInTheWrongShape(t *testing.T) {
 // tunnel removes only the fence.
 func TestChapSecretsKeepsWhatIsNotOurs(t *testing.T) {
 	existing := "# other links\nalice * \"pw\" *\n"
-	got := ChapSecrets(existing, valid())
+	got := ChapSecrets(existing, ProtocolL2TP, valid())
 	if !strings.HasPrefix(got, existing) {
 		t.Fatalf("the other lines were not kept:\n%s", got)
 	}
@@ -100,11 +100,11 @@ func TestChapSecretsKeepsWhatIsNotOurs(t *testing.T) {
 		}
 	}
 	// Written again over itself: one block, not two.
-	again := ChapSecrets(got, valid())
+	again := ChapSecrets(got, ProtocolL2TP, valid())
 	if again != got {
 		t.Fatalf("rewriting is not idempotent:\n%s", again)
 	}
-	removed := ChapSecrets(got, nil)
+	removed := ChapSecrets(got, ProtocolL2TP, nil)
 	if removed != existing {
 		t.Fatalf("removing left %q, want %q", removed, existing)
 	}

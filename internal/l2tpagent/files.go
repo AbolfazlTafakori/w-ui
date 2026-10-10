@@ -27,30 +27,69 @@ type rootFiles struct {
 	root *os.Root
 }
 
-// OpenFiles opens the panel's L2TP directory under dataDir. dataDir's parent
-// belongs to root, so the data directory itself cannot be swapped; the L2TP
-// directory inside it is opened through the data directory's root, so it
-// cannot be a link to somewhere else either.
-func OpenFiles(dataDir string) (Files, func(), error) {
+// OpenFiles opens a tunnel's directory under dataDir: l2tp, or pptp.
+// dataDir's parent belongs to root, so the data directory itself cannot be
+// swapped; the tunnel's directory inside it is opened through the data
+// directory's root, so it cannot be a link to somewhere else either.
+func OpenFiles(dataDir, protocol string) (Files, func(), error) {
 	data, err := os.OpenRoot(dataDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("opening the panel's data directory: %w", err)
 	}
 	// Never created here: a directory root made would be one the panel's
 	// user could not write its state into. No directory is no tunnel.
-	dir := path.Base(l2tpconf.NewPaths("").Dir)
+	dir := path.Base(l2tpconf.PathsFor("", protocol).Dir)
 	root, err := data.OpenRoot(dir)
 	data.Close()
 	if errors.Is(err, fs.ErrNotExist) {
-		return noFiles{}, func() {}, nil
+		// Looked for again on every pass: the agent runs for whichever
+		// tunnel exists, and the panel may make the other's directory while
+		// it does.
+		w := &waitingFiles{dataDir: dataDir, protocol: protocol}
+		return w, w.close, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("opening the L2TP directory: %w", err)
+		return nil, nil, fmt.Errorf("opening the %s directory: %w", protocol, err)
 	}
 	return &rootFiles{root: root}, func() { root.Close() }, nil
 }
 
-// noFiles is a panel with no L2TP directory: no tunnel, nothing to report.
+// waitingFiles is a tunnel directory that did not exist when the agent
+// started: no tunnel until it does, and then the directory itself.
+type waitingFiles struct {
+	dataDir, protocol string
+	open              Files
+	done              func()
+}
+
+func (w *waitingFiles) files() Files {
+	if w.open == nil {
+		if f, done, err := OpenFiles(w.dataDir, w.protocol); err == nil {
+			if _, still := f.(*waitingFiles); !still {
+				w.open, w.done = f, done
+			} else {
+				done()
+			}
+		}
+	}
+	if w.open == nil {
+		return noFiles{}
+	}
+	return w.open
+}
+
+func (w *waitingFiles) close() {
+	if w.done != nil {
+		w.done()
+	}
+}
+
+func (w *waitingFiles) ReadState() ([]byte, bool, error)    { return w.files().ReadState() }
+func (w *waitingFiles) WriteReport(r l2tpconf.Report) error { return w.files().WriteReport(r) }
+func (w *waitingFiles) RemoveReport() error                 { return w.files().RemoveReport() }
+func (w *waitingFiles) TakeKicks() ([]uint, error)          { return w.files().TakeKicks() }
+
+// noFiles is a tunnel with no directory: no tunnel, nothing to report.
 type noFiles struct{}
 
 func (noFiles) ReadState() ([]byte, bool, error)  { return nil, false, nil }

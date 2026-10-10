@@ -1,4 +1,5 @@
-// Package l2tpdriver is the panel's side of the L2TP/IPsec tunnel.
+// Package l2tpdriver is the panel's side of the PPP tunnels: L2TP/IPsec, and
+// PPTP, which the same agent runs beside it the same way.
 //
 // The tunnel itself is run by the root agent (package l2tpagent): pppd only
 // runs as root, and the panel does not. This driver describes the tunnel to
@@ -56,19 +57,23 @@ const startGrace = 15 * time.Minute
 
 // Errors.
 var (
-	ErrNoAgent = errors.New("l2tpdriver: the L2TP service (wui-l2tp) is not answering")
+	ErrNoAgent = errors.New("l2tpdriver: the L2TP and PPTP service (wui-l2tp) is not answering")
 	ErrNoPSK   = errors.New("l2tpdriver: the tunnel has no pre-shared key; recreate it")
 )
 
-// Register makes the driver available to the backend registry.
+// Register makes the drivers available to the backend registry.
 func Register() {
 	backend.Register(model.ProtocolL2TP, func() backend.Backend { return New() })
 	backend.RegisterRemover(model.ProtocolL2TP, Remove)
+	backend.Register(model.ProtocolPPTP, func() backend.Backend { return NewPPTP() })
+	backend.RegisterRemover(model.ProtocolPPTP, Remove)
 }
 
-// Driver is one L2TP tunnel. A server carries one at most.
+// Driver is one PPP tunnel: L2TP or PPTP. A server carries one of each at
+// most, since neither's port can be moved.
 type Driver struct {
-	log *slog.Logger
+	log      *slog.Logger
+	protocol model.Protocol
 
 	mu    sync.Mutex
 	iface *model.Interface
@@ -78,13 +83,16 @@ type Driver struct {
 	written time.Time
 }
 
-// New builds an unopened driver.
-func New() *Driver { return &Driver{log: slog.Default()} }
+// New builds an unopened L2TP driver.
+func New() *Driver { return &Driver{log: slog.Default(), protocol: model.ProtocolL2TP} }
+
+// NewPPTP builds an unopened PPTP driver.
+func NewPPTP() *Driver { return &Driver{log: slog.Default(), protocol: model.ProtocolPPTP} }
 
 // SetLogger attaches the panel's logger.
 func (d *Driver) SetLogger(l *slog.Logger) { d.log = l }
 
-func (d *Driver) Protocol() model.Protocol { return model.ProtocolL2TP }
+func (d *Driver) Protocol() model.Protocol { return d.protocol }
 
 // Open describes the tunnel to the agent and reports whether the agent is
 // carrying it.
@@ -93,13 +101,13 @@ func (d *Driver) Protocol() model.Protocol { return model.ProtocolL2TP }
 // before the first Sync, and a state written then with nobody in it would
 // have the agent end every customer's session as removed.
 func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
-	if iface.Protocol != model.ProtocolL2TP {
+	if iface.Protocol != d.protocol {
 		return fmt.Errorf("%w: %s is %s", backend.ErrWrongProtocol, iface.Name, iface.Protocol)
 	}
-	if iface.L2TP.V.PSK == "" {
+	if iface.Protocol == model.ProtocolL2TP && iface.L2TP.V.PSK == "" {
 		return ErrNoPSK
 	}
-	paths := l2tpconf.NewPaths(DataRoot)
+	paths := l2tpconf.PathsFor(DataRoot, string(iface.Protocol))
 	if err := os.MkdirAll(paths.KickDir(), 0o750); err != nil {
 		return fmt.Errorf("l2tpdriver: %w", err)
 	}
@@ -132,20 +140,25 @@ func state(iface *model.Interface, accounts []l2tpconf.Account) (*l2tpconf.State
 	if mtu < l2tpconf.MinMTU || mtu > l2tpconf.MaxMTU {
 		mtu = l2tpconf.DefaultMTU
 	}
-	return &l2tpconf.State{
+	st := &l2tpconf.State{
 		Version: l2tpconf.SchemaVersion,
 		Interface: l2tpconf.Iface{
-			ID:         iface.ID,
-			Name:       iface.Name,
-			Subnet:     mustPrefix(iface.Subnet).Masked().String(),
-			Gateway:    gw.String(),
-			DNS:        resolvers(DNSFor(iface)),
-			MTU:        mtu,
-			PSK:        iface.L2TP.V.PSK,
-			AllowPlain: iface.L2TP.V.AllowPlain,
-			Accounts:   accounts,
+			ID:       iface.ID,
+			Name:     iface.Name,
+			Subnet:   mustPrefix(iface.Subnet).Masked().String(),
+			Gateway:  gw.String(),
+			DNS:      resolvers(DNSFor(iface)),
+			MTU:      mtu,
+			Accounts: accounts,
 		},
-	}, nil
+	}
+	if iface.Protocol == model.ProtocolPPTP {
+		st.Protocol = l2tpconf.ProtocolPPTP
+	} else {
+		st.Interface.PSK = iface.L2TP.V.PSK
+		st.Interface.AllowPlain = iface.L2TP.V.AllowPlain
+	}
+	return st, nil
 }
 
 // write puts the state on disk if it differs from what is there, and returns
@@ -207,16 +220,16 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 		}
 		acc := l2tpconf.Account{ID: a.ID, Username: a.Username, Secret: a.Secret, IP: a.IP.String()}
 		if err := l2tpconf.CheckUsername(acc.Username); err != nil {
-			d.log.Warn("an L2TP device was left out", "account", a.ID, "error", err)
+			d.log.Warn("a device was left out", "protocol", d.protocol, "account", a.ID, "error", err)
 			continue
 		}
 		if err := l2tpconf.CheckSecret(acc.Secret); err != nil {
-			d.log.Warn("an L2TP device was left out: its password cannot be used on L2TP; set a new one",
-				"account", a.ID, "error", err)
+			d.log.Warn("a device was left out: its password cannot be used here; set a new one",
+				"protocol", d.protocol, "account", a.ID, "error", err)
 			continue
 		}
 		if !a.IP.Is4() || !pfx.Contains(a.IP) || a.IP == gw || names[acc.Username] {
-			d.log.Warn("an L2TP device was left out", "account", a.ID, "address", a.IP)
+			d.log.Warn("a device was left out", "protocol", d.protocol, "account", a.ID, "address", a.IP)
 			continue
 		}
 		names[acc.Username] = true
@@ -347,7 +360,7 @@ func (d *Driver) Kick(_ context.Context, accountID uint) error {
 // Render produces the customer's sign-in details.
 func (d *Driver) Render(_ context.Context, acc *model.Account, iface *model.Interface) (backend.ClientProfile, error) {
 	return backend.ClientProfile{
-		Filename: acc.DeviceName + "-l2tp.txt",
+		Filename: acc.DeviceName + "-" + string(iface.Protocol) + ".txt",
 		MIMEType: "text/plain; charset=utf-8",
 		Body:     []byte(Profile(acc, iface)),
 	}, nil
@@ -391,6 +404,9 @@ func (d *Driver) agentError(opening bool) error {
 		return fmt.Errorf("l2tpdriver: %s", r.Error)
 	case r.State == l2tpconf.AgentInstalling:
 		if opening {
+			if d.protocol == model.ProtocolPPTP {
+				return errors.New("l2tpdriver: installing pptpd and pppd")
+			}
 			return errors.New("l2tpdriver: installing strongSwan, xl2tpd and pppd")
 		}
 		return nil
@@ -418,10 +434,11 @@ func (d *Driver) Destroy(ctx context.Context) error {
 	return Remove(ctx, iface)
 }
 
-// Remove takes an L2TP tunnel down by its record: the state goes, and the
-// agent, seeing no state, ends every session, unloads IPsec and stops.
+// Remove takes a tunnel down by its record: the state goes, and the agent,
+// seeing no state, ends every session -- and on L2TP unloads IPsec -- and
+// stops when it carries no other tunnel.
 func Remove(ctx context.Context, iface *model.Interface) error {
-	paths := l2tpconf.NewPaths(DataRoot)
+	paths := l2tpconf.PathsFor(DataRoot, string(iface.Protocol))
 	if err := os.Remove(paths.State()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("l2tpdriver: %w", err)
 	}

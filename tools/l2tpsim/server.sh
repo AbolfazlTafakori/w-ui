@@ -4,6 +4,18 @@
 set -eu
 
 mkdir -p /run/wui-l2tp /etc/swanctl/conf.d /var/run/xl2tpd
+
+# PPTP: pptpd, started as the agent starts it.
+if [ -f /conf/pptpd.conf ]; then
+	cp /conf/pptpd.conf /conf/pptp-options /run/wui-l2tp/
+	cp /conf/chap-secrets /etc/ppp/chap-secrets
+	chmod 600 /etc/ppp/chap-secrets /run/wui-l2tp/*
+	busybox syslogd -O /run/wui-l2tp/syslog
+	pptpd -f -c /run/wui-l2tp/pptpd.conf -p /run/wui-l2tp/pptpd.pid >/run/wui-l2tp/pptpd.log 2>&1 &
+	sleep 1
+	echo "server ready"
+	exec tail -f /dev/null
+fi
 cp /conf/options /conf/xl2tpd.conf /conf/l2tp-secrets /run/wui-l2tp/
 cp /conf/chap-secrets /etc/ppp/chap-secrets
 cp /conf/wui-l2tp.conf /etc/swanctl/conf.d/wui-l2tp.conf

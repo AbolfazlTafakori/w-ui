@@ -431,11 +431,18 @@ var ProtocolNames = map[Protocol]Text{
 	PPTP:      {EN: "PPTP (weak encryption)", FA: "PPTP (رمزگذاری ضعیف)"},
 }
 
-// PlainText is an L2TP sign-in as a file, for the download and the Telegram
-// bot: the sign-in, then every device that dials it, filled in, in English.
+// PlainText is an L2TP or PPTP sign-in as a file, for the download and the
+// Telegram bot: the sign-in, then every device that dials it, filled in, in
+// English.
 func PlainText(v Values) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "L2TP/IPsec — %s\n\n", v.Tunnel)
+	pptp := v.Protocol == "pptp"
+	if pptp {
+		fmt.Fprintf(&b, "PPTP — %s\n\n", v.Tunnel)
+		b.WriteString("-- PPTP's encryption has been broken for years: use it only where nothing else will do.\n\n")
+	} else {
+		fmt.Fprintf(&b, "L2TP/IPsec — %s\n\n", v.Tunnel)
+	}
 	fmt.Fprintf(&b, "Server:          %s\n", v.Server)
 	for _, s := range v.Others {
 		fmt.Fprintf(&b, "                 %s (if the first does not answer)\n", s)
@@ -443,7 +450,9 @@ func PlainText(v Values) string {
 	if v.ServerIP != "" {
 		fmt.Fprintf(&b, "Server IP:       %s (for a router that takes no name)\n", v.ServerIP)
 	}
-	fmt.Fprintf(&b, "Pre-shared key:  %s\n", v.PSK)
+	if !pptp {
+		fmt.Fprintf(&b, "Pre-shared key:  %s\n", v.PSK)
+	}
 	fmt.Fprintf(&b, "Username:        %s\n", v.Username)
 	fmt.Fprintf(&b, "Password:        %s\n", v.Password)
 
@@ -489,7 +498,9 @@ func PlainText(v Values) string {
 			fmt.Fprintf(&b, "  %s\n", n.EN)
 		}
 	}
-	b.WriteString("\n" + words[keyOneDevice].EN + "\n")
+	if !pptp {
+		b.WriteString("\n" + words[keyOneDevice].EN + "\n")
+	}
 	return b.String()
 }
 

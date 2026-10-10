@@ -313,13 +313,14 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
-		if d.Guide != nil && d.Protocol == "l2tp" {
+		ppp := d.Protocol == "l2tp" || d.Protocol == "pptp"
+		if d.Guide != nil && ppp {
 			entry.SignIn = l2tpSignIn(*d.Guide)
 			entry.CopyIcon = v.Icons["CopyOutlined"]
 		}
-		// An L2TP sign-in is typed into the device's own settings; no app
+		// An L2TP or PPTP sign-in is typed into the device's own settings; no app
 		// scans it, so a QR of it would only be something to puzzle over.
-		if len(d.Config) <= subPageQRLimit && d.Protocol != "l2tp" {
+		if len(d.Config) <= subPageQRLimit && !ppp {
 			if png, err := qrcode.Encode(d.Config, qrcode.Low, 220); err == nil {
 				entry.QR = template.URL("data:image/png;base64," +
 					base64.StdEncoding.EncodeToString(png))
@@ -329,7 +330,7 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		switch d.Protocol {
 		case "openvpn":
 			v.HasOVPN = true
-		case "l2tp":
+		case "l2tp", "pptp":
 			v.HasL2TP = true
 		default:
 			v.HasWG = true
@@ -351,8 +352,8 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 // subPageL2TPStrings are added only to a page with an L2TP sign-in on it, so
 // that every other customer's page is, to the byte, what it was before L2TP.
 var subPageL2TPStrings = map[string]map[string]string{
-	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN"},
-	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN"},
+	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN"},
+	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN"},
 }
 
 // pageStrings is the dictionary a page is given: the guides' words on a page
@@ -387,12 +388,14 @@ func pageStrings(l2tp, setup bool) map[string]map[string]string {
 
 // l2tpSignIn is an L2TP file's own four values, for its row.
 func l2tpSignIn(v devguide.Values) []devguide.Row {
-	return []devguide.Row{
-		{Label: "Server", Value: v.Server, Copy: true},
-		{Label: "Pre-shared key", Value: v.PSK, Copy: true},
-		{Label: "Username", Value: v.Username, Copy: true},
-		{Label: "Password", Value: v.Password, Copy: true},
+	rows := []devguide.Row{{Label: "Server", Value: v.Server, Copy: true}}
+	// PPTP has no key of its own: the sign-in is all there is.
+	if v.PSK != "" {
+		rows = append(rows, devguide.Row{Label: "Pre-shared key", Value: v.PSK, Copy: true})
 	}
+	return append(rows,
+		devguide.Row{Label: "Username", Value: v.Username, Copy: true},
+		devguide.Row{Label: "Password", Value: v.Password, Copy: true})
 }
 
 // setupCard is the device picker and every guide it can show.
@@ -1282,7 +1285,7 @@ a.row-title:hover { text-decoration: underline; }
             <table class="usage-grid">
               <thead><tr>
                 <th class="usage-corner"><span data-i="user">User</span></th>
-                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else if eq .Protocol "l2tp" }}purple{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
+                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") }}purple{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
                 <th class="usage-sum" data-i="total">Total</th>
               </tr></thead>
               <tbody>
@@ -1324,10 +1327,10 @@ a.row-title:hover { text-decoration: underline; }
              when there are several), and opens on one line per user, each
              with copy, download and QR of their own file. A plan for one
              opens on one line, named after the customer. -->
-        <div class="cfg cfg-group{{ if eq .Protocol "l2tp" }} open{{ end }}">
+        <div class="cfg cfg-group{{ if or (eq .Protocol "l2tp") (eq .Protocol "pptp") }} open{{ end }}">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if eq .Protocol "l2tp" }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else }}config{{ end }}">Config</span>
+            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else if eq .Protocol "pptp" }}pptpConfig{{ else }}config{{ end }}">Config</span>
             {{ if .Tunnel }}<span class="cfg-meta">{{ .Tunnel }}</span>{{ end }}
             <span class="cfg-count">{{ if gt (len .Devices) 1 }}<span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span>{{ else }}<span data-i="oneUser">1 user</span>{{ end }}</span>
           </div>
@@ -1335,7 +1338,7 @@ a.row-title:hover { text-decoration: underline; }
             {{ range .Devices }}
             <div class="cfg-user{{ if .SignIn }} open{{ end }}">
               <div class="cfg-user-head">
-                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (or (eq .Protocol "openvpn") (eq .Protocol "l2tp")) .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
+                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (or (eq .Protocol "openvpn") (eq .Protocol "l2tp") (eq .Protocol "pptp")) .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
                   <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
                   <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>

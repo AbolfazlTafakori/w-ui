@@ -78,7 +78,7 @@ func TestFilesRefuseLinksOutOfTheDirectory(t *testing.T) {
 	// A kick request that is a link to a file outside.
 	_ = os.Symlink(secret, filepath.Join(dir, "kick", "7"))
 
-	files, done, err := OpenFiles(data)
+	files, done, err := OpenFiles(data, l2tpconf.ProtocolL2TP)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,12 +113,12 @@ func TestFilesRefuseALinkedDirectory(t *testing.T) {
 	if err := os.Symlink(outside, l2tpconf.NewPaths(data).Dir); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := OpenFiles(data); err == nil {
+	if _, _, err := OpenFiles(data, l2tpconf.ProtocolL2TP); err == nil {
 		t.Fatal("a linked L2TP directory was opened")
 	}
 
 	empty := t.TempDir()
-	files, done, err := OpenFiles(empty)
+	files, done, err := OpenFiles(empty, l2tpconf.ProtocolL2TP)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,9 +1,12 @@
-// Package l2tpagent is the root half of the L2TP/IPsec tunnel.
+// Package l2tpagent is the root half of the PPP tunnels: L2TP/IPsec, and
+// PPTP beside it.
 //
 // It runs as `wui l2tp-agent <data dir>`, as root, started by a systemd path
-// unit the moment the panel writes an L2TP state file and stopping on its own
-// when that file is gone. Nothing runs, and no port is held, on a server with
-// no L2TP tunnel.
+// unit the moment the panel writes a tunnel's state file and stopping on its
+// own when no such file is left. Nothing runs, and no port is held, on a
+// server with neither tunnel. Each tunnel is an Agent of its own, with its
+// own state, report, daemon and block of credentials: one never touches the
+// other's customers.
 //
 // The panel runs as an unprivileged user in a sandbox and cannot run pppd,
 // so it describes the tunnel in a file and this carries it out: xl2tpd, the
@@ -33,17 +36,18 @@ import (
 // System is what the agent does to the machine. The Linux implementation
 // runs the real programs; tests give it a recording stand-in.
 type System interface {
-	// EnsurePackages installs whatever of strongSwan, xl2tpd and pppd is
-	// missing. It is called before the first apply of each run.
-	EnsurePackages(ctx context.Context) error
+	// EnsurePackages installs whatever a protocol's tunnel needs and is
+	// missing: strongSwan, xl2tpd and pppd for L2TP, pptpd and pppd for
+	// PPTP. It is called before the first apply of each run.
+	EnsurePackages(ctx context.Context, protocol string) error
 
-	// WriteSecrets replaces /etc/ppp/chap-secrets with the panel's block
-	// set from s, or removed when s is nil, keeping every other line.
-	WriteSecrets(s *l2tpconf.State) error
+	// WriteSecrets replaces a tunnel's block in /etc/ppp/chap-secrets with
+	// one set from s, or removes it when s is nil, keeping every other line.
+	WriteSecrets(protocol string, s *l2tpconf.State) error
 	// WriteRun writes one of the agent's own files in l2tpconf.RunDir.
 	WriteRun(name, body string) error
-	// RemoveRun takes the agent's directory away.
-	RemoveRun() error
+	// RemoveRun takes some of the agent's files away.
+	RemoveRun(names ...string) error
 
 	// LoadIPsec writes the IPsec connection and has strongSwan load it,
 	// starting strongSwan if it is not running. UnloadIPsec removes it, and
@@ -54,12 +58,12 @@ type System interface {
 	// ApplyFirewall loads an nftables program.
 	ApplyFirewall(ctx context.Context, script string) error
 
-	// StartL2TP starts xl2tpd on the agent's configuration, or adopts the
-	// one an earlier run left; StopL2TP ends it and every session it
-	// carries. L2TPRunning reports whether it is up.
-	StartL2TP(ctx context.Context) error
-	StopL2TP(ctx context.Context) error
-	L2TPRunning() bool
+	// Start starts a tunnel's daemon -- xl2tpd, or pptpd -- on the agent's
+	// configuration, or adopts the one an earlier run left; Stop ends it and
+	// every session it carries. Running reports whether it is up.
+	Start(ctx context.Context, protocol string) error
+	Stop(ctx context.Context, protocol string) error
+	Running(protocol string) bool
 
 	// Sessions lists every PPP session on the machine whose local end is
 	// gateway -- every session of this tunnel, whoever it belongs to --
@@ -90,12 +94,19 @@ type Files interface {
 	TakeKicks() ([]uint, error)
 }
 
-// Agent carries out the panel's L2TP state.
+// startedMarker records that strongSwan was started by this agent, so taking
+// the L2TP tunnel down stops it again -- and leaves it alone when it was
+// running for something else.
+const startedMarker = "strongswan-started-by-wui"
+
+// Agent carries out the panel's state for one tunnel.
 type Agent struct {
-	sys   System
-	files Files
-	log   *slog.Logger
-	now   func() time.Time
+	// protocol is the tunnel's: l2tpconf.ProtocolL2TP or ProtocolPPTP.
+	protocol string
+	sys      System
+	files    Files
+	log      *slog.Logger
+	now      func() time.Time
 
 	// installed is whether this run has already made sure of the packages.
 	installed bool
@@ -112,16 +123,29 @@ type Agent struct {
 	// seen is the password each live session signed in with, as a
 	// fingerprint, by session.
 	seen map[string]string
+	// idle is whether the last pass found no tunnel and took it down, so the
+	// next such pass has nothing to do.
+	idle bool
 }
 
-// New builds an agent.
-func New(sys System, files Files, log *slog.Logger) *Agent {
-	return &Agent{sys: sys, files: files, log: log, now: time.Now}
+// New builds the agent of a protocol's tunnel.
+func New(protocol string, sys System, files Files, log *slog.Logger) *Agent {
+	return &Agent{protocol: protocol, sys: sys, files: files, log: log.With("tunnel", protocol), now: time.Now}
 }
 
-// ErrNoTunnel is returned by Step when the panel has no L2TP tunnel here: the
-// agent has taken everything down and its run is over.
-var ErrNoTunnel = errors.New("l2tpagent: no L2TP tunnel is configured")
+// ErrNoTunnel is returned by Step when the panel has no tunnel of this agent's
+// protocol here: the agent has taken it down.
+var ErrNoTunnel = errors.New("l2tpagent: no tunnel is configured")
+
+func (a *Agent) pptp() bool { return a.protocol == l2tpconf.ProtocolPPTP }
+
+// name is the tunnel as the log and the report say it.
+func (a *Agent) name() string {
+	if a.pptp() {
+		return "PPTP"
+	}
+	return "L2TP"
+}
 
 // Step does one pass: reads the state, brings the machine to it, ends the
 // sessions it should, and writes the report.
@@ -131,20 +155,27 @@ func (a *Agent) Step(ctx context.Context) error {
 		return a.fail(fmt.Errorf("reading the panel's state: %w", err))
 	}
 	if !ok {
-		a.teardown(ctx)
+		if a.applied != nil || !a.idle {
+			a.teardown(ctx)
+		}
+		a.idle = true
 		return ErrNoTunnel
 	}
+	a.idle = false
 	want, err := l2tpconf.Decode(raw)
 	if err != nil {
 		// What is running stays as it is: a state that cannot be carried
 		// out is no reason to take down one that works.
 		return a.fail(fmt.Errorf("the panel's state was refused: %w", err))
 	}
+	if want.IsPPTP() != a.pptp() {
+		return a.fail(fmt.Errorf("the panel's state is for %s, not %s", want.Protocol, a.protocol))
+	}
 
 	if !a.installed {
 		a.report(l2tpconf.AgentInstalling, "", nil)
-		if err := a.sys.EnsurePackages(ctx); err != nil {
-			return a.fail(fmt.Errorf("installing strongSwan, xl2tpd and pppd: %w", err))
+		if err := a.sys.EnsurePackages(ctx, a.protocol); err != nil {
+			return a.fail(fmt.Errorf("installing what %s needs: %w", a.name(), err))
 		}
 		a.installed = true
 	}
@@ -174,25 +205,21 @@ func (a *Agent) apply(ctx context.Context, want *l2tpconf.State) error {
 	tunnelChanged := tunnel != a.appliedFor
 
 	if tunnelChanged {
-		if err := a.sys.WriteRun("options", l2tpconf.PPPOptions(want)); err != nil {
-			return fmt.Errorf("writing pppd's options: %w", err)
-		}
-		if err := a.sys.WriteRun("xl2tpd.conf", l2tpconf.XL2TPD(want)); err != nil {
-			return fmt.Errorf("writing xl2tpd's configuration: %w", err)
-		}
-		if err := a.sys.WriteRun("l2tp-secrets", l2tpconf.TunnelSecrets(want)); err != nil {
-			return fmt.Errorf("writing xl2tpd's tunnel secret: %w", err)
+		for _, f := range a.configFiles(want) {
+			if err := a.sys.WriteRun(f.name, f.body); err != nil {
+				return fmt.Errorf("writing %s: %w", f.name, err)
+			}
 		}
 	}
 	// Written every pass that differs: pppd reads it at each sign-in, so a
 	// new device can sign in at once and a removed one cannot, with nothing
 	// restarted.
 	if a.applied == nil || !sameAccounts(a.applied, want) {
-		if err := a.sys.WriteSecrets(want); err != nil {
+		if err := a.sys.WriteSecrets(a.protocol, want); err != nil {
 			return fmt.Errorf("writing the credentials: %w", err)
 		}
 	}
-	if tunnelChanged {
+	if tunnelChanged && !a.pptp() {
 		if err := a.sys.LoadIPsec(ctx, l2tpconf.Swanctl(want)); err != nil {
 			return fmt.Errorf("loading the IPsec connection: %w", err)
 		}
@@ -203,23 +230,23 @@ func (a *Agent) apply(ctx context.Context, want *l2tpconf.State) error {
 
 	switch {
 	case tunnelChanged && a.applied != nil:
-		// The tunnel's own settings changed. xl2tpd and every pppd it runs
-		// read them at start, so the change takes a restart -- which ends
-		// every session on the tunnel, as a change of address or resolver
-		// has to.
-		a.log.Info("L2TP settings changed; restarting xl2tpd")
-		if err := a.sys.StopL2TP(ctx); err != nil {
-			return fmt.Errorf("stopping xl2tpd: %w", err)
+		// The tunnel's own settings changed. The daemon and every pppd it
+		// runs read them at start, so the change takes a restart -- which
+		// ends every session on the tunnel, as a change of address or
+		// resolver has to.
+		a.log.Info(a.name() + " settings changed; restarting its daemon")
+		if err := a.sys.Stop(ctx, a.protocol); err != nil {
+			return fmt.Errorf("stopping the %s daemon: %w", a.name(), err)
 		}
-		if err := a.sys.StartL2TP(ctx); err != nil {
-			return fmt.Errorf("starting xl2tpd: %w", err)
+		if err := a.sys.Start(ctx, a.protocol); err != nil {
+			return fmt.Errorf("starting the %s daemon: %w", a.name(), err)
 		}
-	case !a.sys.L2TPRunning():
-		// The first pass of this run adopts an xl2tpd an earlier run left,
+	case !a.sys.Running(a.protocol):
+		// The first pass of this run adopts a daemon an earlier run left,
 		// which is how restarting the agent keeps everyone connected; one
 		// that has died is started again.
-		if err := a.sys.StartL2TP(ctx); err != nil {
-			return fmt.Errorf("starting xl2tpd: %w", err)
+		if err := a.sys.Start(ctx, a.protocol); err != nil {
+			return fmt.Errorf("starting the %s daemon: %w", a.name(), err)
 		}
 	}
 
@@ -305,32 +332,65 @@ func (a *Agent) rememberSignIns(want *l2tpconf.State, live []Live) {
 
 func sessionKey(s Live) string { return fmt.Sprintf("%d/%d", s.PID, s.Since) }
 
-// teardown takes everything down: the panel has no L2TP tunnel here any more.
+// teardown takes the tunnel down: the panel has none of this protocol here
+// any more. Only this tunnel's daemon, credentials and files go; the other
+// tunnel, if there is one, is left as it is.
 func (a *Agent) teardown(ctx context.Context) {
-	steps := []struct {
+	type step struct {
 		what string
 		do   func() error
-	}{
-		{"stopping xl2tpd", func() error { return a.sys.StopL2TP(ctx) }},
-		{"removing the IPsec connection", func() error { return a.sys.UnloadIPsec(ctx) }},
-		{"removing the credentials", func() error { return a.sys.WriteSecrets(nil) }},
-		{"opening L2TP's port again", func() error { return a.sys.ApplyFirewall(ctx, l2tpconf.GuardRemoval()) }},
-		{"removing the agent's files", a.sys.RemoveRun},
-		{"removing the report", a.files.RemoveReport},
 	}
+	steps := []step{
+		{"stopping the daemon", func() error { return a.sys.Stop(ctx, a.protocol) }},
+		{"removing the credentials", func() error { return a.sys.WriteSecrets(a.protocol, nil) }},
+	}
+	if !a.pptp() {
+		steps = append(steps,
+			step{"removing the IPsec connection", func() error { return a.sys.UnloadIPsec(ctx) }},
+			step{"opening L2TP's port again", func() error { return a.sys.ApplyFirewall(ctx, l2tpconf.GuardRemoval()) }})
+	}
+	steps = append(steps,
+		step{"removing the agent's files", func() error { return a.sys.RemoveRun(a.ownFiles()...) }},
+		step{"removing the report", a.files.RemoveReport})
 	for _, s := range steps {
 		if err := s.do(); err != nil {
-			a.log.Warn("tearing down the L2TP tunnel", "step", s.what, "error", err)
+			a.log.Warn("tearing down the tunnel", "step", s.what, "error", err)
 		}
 	}
 	a.applied = nil
 	a.appliedFor = ""
-	a.log.Info("L2TP tunnel taken down: the panel has none on this server")
+	a.log.Info(a.name() + " tunnel taken down: the panel has none on this server")
+}
+
+type runFile struct{ name, body string }
+
+// configFiles are the files the tunnel's daemon and pppd read.
+func (a *Agent) configFiles(s *l2tpconf.State) []runFile {
+	if a.pptp() {
+		return []runFile{
+			{"pptp-options", l2tpconf.PPTPOptions(s)},
+			{"pptpd.conf", l2tpconf.PPTPD(s)},
+		}
+	}
+	return []runFile{
+		{"options", l2tpconf.PPPOptions(s)},
+		{"xl2tpd.conf", l2tpconf.XL2TPD(s)},
+		{"l2tp-secrets", l2tpconf.TunnelSecrets(s)},
+	}
+}
+
+// ownFiles are every file of this tunnel's in the run directory: its
+// configuration and what its daemon leaves there.
+func (a *Agent) ownFiles() []string {
+	if a.pptp() {
+		return []string{"pptp-options", "pptpd.conf", "pptpd.pid", "pptpd.log"}
+	}
+	return []string{"options", "xl2tpd.conf", "l2tp-secrets", "xl2tpd.pid", "xl2tpd.log", "l2tp-control", startedMarker}
 }
 
 func (a *Agent) fail(err error) error {
 	a.failure = err.Error()
-	a.log.Error("L2TP", "error", err)
+	a.log.Error(a.name(), "error", err)
 	a.report(l2tpconf.AgentFailed, a.failure, nil)
 	return err
 }
@@ -349,14 +409,22 @@ func (a *Agent) report(state, msg string, live []Live) {
 	}
 }
 
-// Run steps every interval until the context ends or the panel has no tunnel.
+// Run steps every agent every interval until the context ends or the panel
+// has no tunnel of any of theirs: one with no tunnel keeps looking, for as
+// long as another has one, and starts its own the moment the panel asks.
 // Stopped by its context -- systemd stopping the unit, for an update -- it
-// leaves xl2tpd and every session running, for the next run to adopt.
-func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
+// leaves every daemon and session running, for the next run to adopt.
+func Run(ctx context.Context, interval time.Duration, agents ...*Agent) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
-		if err := a.Step(ctx); errors.Is(err, ErrNoTunnel) {
+		none := true
+		for _, a := range agents {
+			if err := a.Step(ctx); !errors.Is(err, ErrNoTunnel) {
+				none = false
+			}
+		}
+		if none {
 			return nil
 		}
 		select {
@@ -370,6 +438,9 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 // tunnelFingerprint covers everything but the accounts.
 func tunnelFingerprint(s *l2tpconf.State) string {
 	f := s.Interface
+	if s.IsPPTP() {
+		return l2tpconf.Fingerprint(l2tpconf.PPTPOptions(s), l2tpconf.PPTPD(s), f.Subnet)
+	}
 	return l2tpconf.Fingerprint(l2tpconf.PPPOptions(s), l2tpconf.XL2TPD(s), l2tpconf.Swanctl(s), f.Subnet)
 }
 

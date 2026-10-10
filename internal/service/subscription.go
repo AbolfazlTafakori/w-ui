@@ -970,7 +970,7 @@ func bundleParts(rendered []RenderedDevice, byID map[uint]model.Interface, forma
 	importable := make([]backend.ClientProfile, 0, len(rendered))
 	for _, d := range rendered {
 		all = append(all, d.Profile)
-		if byID[d.Account.InterfaceID].Protocol != model.ProtocolL2TP {
+		if !byID[d.Account.InterfaceID].Protocol.IsPPP() {
 			importable = append(importable, d.Profile)
 		}
 	}

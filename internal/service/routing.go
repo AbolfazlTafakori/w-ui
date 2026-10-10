@@ -854,10 +854,10 @@ func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.R
 			if !ok || i.Name == "" {
 				continue
 			}
-			// An L2TP tunnel's sessions arrive on PPP devices that come and
-			// go, never on the one device its name is; its subnet is what
-			// every one of them comes from.
-			if i.Protocol == model.ProtocolL2TP {
+			// An L2TP or PPTP tunnel's sessions arrive on PPP devices that
+			// come and go, never on the one device its name is; its subnet
+			// is what every one of them comes from.
+			if i.Protocol.IsPPP() {
 				if pfx, err := netip.ParsePrefix(i.Subnet); err == nil {
 					mr.InboundNets = append(mr.InboundNets, pfx.Masked())
 				}

@@ -10,6 +10,7 @@
 #   USER PASS
 #   PPPOPTS  extra pppd options, one per line (\n-separated)
 #   TUNNEL   a tunnel password the client asks the server to prove; empty for none
+#   PPTP     1 for a PPTP client instead of L2TP
 #   EXPECT   ok or fail
 set -u
 
@@ -78,6 +79,23 @@ EOF
 	detail="ipsec=up($(swanctl --list-sas 2>/dev/null | grep -o -m1 -E '(AES_[A-Z0-9_]+|3DES_CBC)[^,]*' | head -1))"
 fi
 
+if [ "${PPTP:-}" = 1 ]; then
+	{
+		echo "pty \"pptp $SERVER --nolaunchpppd\""
+		echo "name $USER"
+		echo "user $USER"
+		echo "password $PASS"
+		echo "remotename wui-pptp"
+		echo "noauth"
+		echo "nodefaultroute"
+		echo "noipdefault"
+		echo "nobsdcomp"
+		echo "nodeflate"
+		echo "debug"
+		printf '%b\n' "${PPPOPTS:-}"
+	} > /tmp/sim/options
+	pppd file /tmp/sim/options >/tmp/sim/pppd.log 2>&1 &
+else
 {
 	echo "[global]"
 	echo "port = 1701"
@@ -107,6 +125,7 @@ if [ -n "$TUNNEL" ]; then echo "* * $TUNNEL" > /tmp/sim/l2tp-secrets; chmod 600 
 xl2tpd -D -c /tmp/sim/xl2tpd.conf -p /tmp/sim/xl2tpd.pid -C /var/run/xl2tpd/l2tp-control >/tmp/sim/xl2tpd.log 2>&1 &
 sleep 1
 echo "c sim" > /var/run/xl2tpd/l2tp-control
+fi
 
 i=0
 addr=""
@@ -117,7 +136,7 @@ while [ "$i" -lt 25 ]; do
 done
 if [ -z "$addr" ]; then
 	detail="$detail ppp=down"
-	cat /tmp/sim/xl2tpd.log >> /tmp/sim/syslog
+	cat /tmp/sim/xl2tpd.log /tmp/sim/pppd.log >> /tmp/sim/syslog 2>/dev/null
 	finish fail
 fi
 mppe=$(grep -o -m1 -E 'MPPE [0-9]+-bit[^"]*enabled' /tmp/sim/syslog || true)

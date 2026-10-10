@@ -274,7 +274,7 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		// machine, the description would start that machine's agent on a
 		// tunnel before its panel had said a word, and a waiting request
 		// would end a session there.
-		if d.IsDir() && clean == filepath.Join(root, l2tpStateDir) {
+		if d.IsDir() && (clean == filepath.Join(root, l2tpStateDir) || clean == filepath.Join(root, pptpStateDir)) {
 			return filepath.SkipDir
 		}
 		// A dump waiting to be loaded is not data yet.
@@ -467,6 +467,9 @@ const updateStageDir = "update"
 // l2tpStateDir is where the panel and the L2TP agent talk, inside the data
 // directory.
 const l2tpStateDir = "l2tp"
+
+// pptpStateDir is the same for the PPTP tunnel.
+const pptpStateDir = "pptp"
 
 // freeName is base with the archive suffix, or base-2, base-3... when an
 // archive by that name exists: two taken within the same second -- a manual

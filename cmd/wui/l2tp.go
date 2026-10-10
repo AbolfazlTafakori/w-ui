@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/l2tpagent"
+	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/update"
 )
 
@@ -41,20 +42,23 @@ func l2tpAgentCommand(args []string) error {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	files, done, err := l2tpagent.OpenFiles(args[0])
-	if err != nil {
-		return fmt.Errorf("l2tp-agent: %w", err)
-	}
-	defer done()
-
 	// Stopped by systemd -- for an update, or a restart -- the agent leaves
-	// xl2tpd and every session running, for its next run to adopt.
+	// xl2tpd, pptpd and every session running, for its next run to adopt.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	agent := l2tpagent.New(l2tpagent.NewSystem(log), files, log)
-	log.Info("l2tp agent started", "version", version, "data", args[0])
-	return agent.Run(ctx, l2tpAgentInterval)
+	sys := l2tpagent.NewSystem(log)
+	var agents []*l2tpagent.Agent
+	for _, p := range []string{l2tpconf.ProtocolL2TP, l2tpconf.ProtocolPPTP} {
+		files, done, err := l2tpagent.OpenFiles(args[0], p)
+		if err != nil {
+			return fmt.Errorf("l2tp-agent: %w", err)
+		}
+		defer done()
+		agents = append(agents, l2tpagent.New(p, sys, files, log))
+	}
+	log.Info("ppp agent started", "version", version, "data", args[0])
+	return l2tpagent.Run(ctx, l2tpAgentInterval, agents...)
 }
 
 // ensureL2TPUnits puts the L2TP agent's systemd units in place when they are

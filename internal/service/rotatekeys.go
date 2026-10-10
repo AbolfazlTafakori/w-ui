@@ -90,7 +90,7 @@ func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput)
 	}
 	if p := model.Protocol(strings.ToLower(strings.TrimSpace(in.Protocol))); p != "" {
 		if !p.Valid() {
-			return 0, invalidField("protocol", "a protocol is %q, %q or %q", model.ProtocolWireGuard, model.ProtocolOpenVPN, model.ProtocolL2TP)
+			return 0, invalidField("protocol", "a protocol is %q, %q, %q or %q", model.ProtocolWireGuard, model.ProtocolOpenVPN, model.ProtocolL2TP, model.ProtocolPPTP)
 		}
 		kept := chosen[:0]
 		for _, a := range chosen {
@@ -138,7 +138,7 @@ func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput)
 			}
 			out = append(out, fresh{id: a.ID, wg: true,
 				private: pair.Private.String(), public: pair.Public.String(), preshared: pair.Preshared.String()})
-		case model.ProtocolOpenVPN, model.ProtocolL2TP:
+		case model.ProtocolOpenVPN, model.ProtocolL2TP, model.ProtocolPPTP:
 			secret, err := ovpnconf.NewSecret(16)
 			if err != nil {
 				return 0, err

@@ -43,7 +43,7 @@ function randomSecret(n = 16) {
 }
 
 // The tunnels a device signs in to with a username and password.
-const LOGIN_PROTOCOLS = ['openvpn', 'l2tp']
+const LOGIN_PROTOCOLS = ['openvpn', 'l2tp', 'pptp']
 
 // The logins the customer's users have now, in the plan's order (user 1
 // first), from the first OpenVPN or L2TP tunnel they are on. Every user has
@@ -246,6 +246,7 @@ const chosen = computed(() => props.interfaces.filter((i) => form.value.interfac
 // be handed generated ones. One login per user serves both.
 const hasOpenVPN = computed(() => chosen.value.some((i) => i.protocol === 'openvpn'))
 const hasL2TP = computed(() => chosen.value.some((i) => i.protocol === 'l2tp'))
+const hasPPTP = computed(() => chosen.value.some((i) => i.protocol === 'pptp'))
 const hasLogins = computed(() => hasOpenVPN.value || hasL2TP.value)
 const loginLabel = computed(() =>
   hasOpenVPN.value && hasL2TP.value ? t('client.loginBoth') : hasL2TP.value ? t('client.l2tpLogin') : t('client.openvpnLogin'),
@@ -504,6 +505,9 @@ async function submit() {
                   <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateOpenVPN') }}</span>
                 </button>
                 <button v-if="hasL2TP" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'l2tp')">
+                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateL2TP') }}</span>
+                </button>
+                <button v-if="hasPPTP" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'pptp')">
                   <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateL2TP') }}</span>
                 </button>
               </div>

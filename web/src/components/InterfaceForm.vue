@@ -26,6 +26,8 @@ const defaults = {
   openvpn: { name: 'ovpn0', listenPort: 1194, subnet: '10.8.0.0/16', mtu: 1500 },
   // The port is not a choice: the clients built into the devices use 1701.
   l2tp: { name: 'l2tp0', listenPort: 1701, subnet: '10.77.0.0/16', mtu: 1400 },
+  // TCP 1723, for the same reason: every client has it fixed.
+  pptp: { name: 'pptp0', listenPort: 1723, subnet: '10.78.0.0/16', mtu: 1400 },
 }
 
 const form = ref(
@@ -66,7 +68,7 @@ const busy = ref(false)
 
 // The protocols in the order they are usually chosen, whatever order the
 // server lists them in; one it adds later goes at the end.
-const ORDER = ['wireguard', 'openvpn', 'l2tp']
+const ORDER = ['wireguard', 'openvpn', 'l2tp', 'pptp']
 const rank = (p) => (ORDER.includes(p) ? ORDER.indexOf(p) : ORDER.length)
 const protocols = computed(() => [...(store.meta?.protocols || ['wireguard'])].sort((a, b) => rank(a) - rank(b)))
 
@@ -76,6 +78,9 @@ const canChooseNode = computed(() => props.nodes.length > 1)
 const isWireGuard = computed(() => form.value.protocol === 'wireguard')
 const isOpenVPN = computed(() => form.value.protocol === 'openvpn')
 const isL2TP = computed(() => form.value.protocol === 'l2tp')
+const isPPTP = computed(() => form.value.protocol === 'pptp')
+// A port the clients cannot be told to change.
+const fixedPort = computed(() => isL2TP.value || isPPTP.value)
 
 // The devices an L2TP tunnel serves, read once when the form first shows
 // one: with IPsec always, and those without when the switch is on.
@@ -269,10 +274,10 @@ defineExpose({ showError })
           <div class="arow16">
             <div class="acol6">
               <div class="aform-item">
-                <label class="aform-label required" for="if-port">{{ t('interface.port') }} <HelpTip v-if="isL2TP" :text="t('interface.l2tpPortHint')" /></label>
-                <label class="ainput number" :class="{ invalid: fieldName === 'listenPort', disabled: isL2TP }">
-                  <input id="if-port" v-model="form.listenPort" data-field="listenPort" type="number" min="1" max="65535" class="ltr" :readonly="isL2TP" required @input="clearError('listenPort')" />
-                  <AntIcon v-if="isL2TP" name="LockOutlined" class="ainput-suffix" />
+                <label class="aform-label required" for="if-port">{{ t('interface.port') }} <HelpTip v-if="fixedPort" :text="t(isPPTP ? 'interface.pptpPortHint' : 'interface.l2tpPortHint')" /></label>
+                <label class="ainput number" :class="{ invalid: fieldName === 'listenPort', disabled: fixedPort }">
+                  <input id="if-port" v-model="form.listenPort" data-field="listenPort" type="number" min="1" max="65535" class="ltr" :readonly="fixedPort" required @input="clearError('listenPort')" />
+                  <AntIcon v-if="fixedPort" name="LockOutlined" class="ainput-suffix" />
                 </label>
                 <p v-if="fieldName === 'listenPort'" class="field-error" role="alert">{{ fieldError }}</p>
               </div>
@@ -439,6 +444,10 @@ defineExpose({ showError })
             </div>
           </section>
 
+          <!-- PPTP: said plainly before it is made, and every time it is
+               opened, so it is never chosen by accident. -->
+          <div v-if="isPPTP" class="aalert warning slim pptp-warn"><AntIcon name="WarningOutlined" /><span>{{ t('interface.pptpWarn') }}</span></div>
+
           <!-- Port, subnet and mode are baked into every config already handed
                out: changing them is allowed, and said to cost every customer a
                new configuration, so it is done knowingly. -->
@@ -518,6 +527,7 @@ defineExpose({ showError })
 
 .aalert.slim { margin-top: 8px; padding: 6px 12px; font-size: 13px; line-height: 20px; align-items: flex-start; }
 .aalert.slim > .anticon { margin-top: 3px; line-height: 1; }
+.pptp-warn { margin: 0 0 24px; }
 .edit-note { margin-bottom: 8px; font-size: 13px; line-height: 20px; align-items: flex-start; }
 .edit-note > .anticon { margin-top: 3px; line-height: 1; }
 .if-form > .aalert.error { margin-bottom: 16px; }
