@@ -109,7 +109,7 @@ type L2TPParams struct {
 	PSK string `json:"psk"`
 	// AllowPlain also accepts L2TP without IPsec, for routers whose L2TP
 	// client has none. Off unless an operator turns it on: those sessions are
-	// not encrypted unless the router asks for MPPE.
+	// not encrypted.
 	AllowPlain bool `json:"allowPlain"`
 }
 

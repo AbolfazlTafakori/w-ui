@@ -106,7 +106,7 @@ type Iface struct {
 	PSK     string   `json:"psk"`
 	// AllowPlain also accepts L2TP without IPsec, for the routers whose
 	// L2TP client has none -- ASUS, OpenWrt, an ISP-style WAN connection.
-	// Those sessions are not encrypted unless the router asks for MPPE.
+	// Those sessions are not encrypted.
 	AllowPlain bool      `json:"allowPlain,omitempty"`
 	Accounts   []Account `json:"accounts"`
 }
@@ -486,15 +486,11 @@ func PPPOptions(s *State) string {
 	} else {
 		b.WriteString("refuse-pap\nrefuse-chap\nrefuse-mschap\nrefuse-eap\n")
 	}
-	if f.AllowPlain {
-		// A session that may be outside IPsec gets MPPE when the device asks
-		// for it -- MikroTik's default profile does, others can be told to --
-		// which needs CCP. Compression stays off: it is not worth its cost and
-		// some clients get it wrong.
-		b.WriteString("nobsdcomp\nnodeflate\n")
-	} else {
-		b.WriteString("noccp\n")
-	}
+	// No CCP, so no MPPE either. pppd cannot offer MPPE to the devices that
+	// ask and leave it out for those that do not: it is required of every
+	// session or refused, and requiring it would shut out the routers whose
+	// PPP has only CHAP. A device set to require MPPE is told to turn it off.
+	b.WriteString("noccp\n")
 	b.WriteString("nodefaultroute\n")
 	b.WriteString("noipdefault\n")
 	b.WriteString("lock\n")
@@ -539,10 +535,21 @@ var ikeProposals = []string{
 // espProposals are the same, for the data: AES-GCM where a device offers it,
 // then AES with SHA-2, then the SHA-1 and 3DES that Windows, MikroTik and
 // older Android use.
+//
+// Each again with a key exchange of its own, for the devices that ask for
+// perfect forward secrecy: a proposal with no group matches only a device
+// that asks for none, and MikroTik's default profile asks for group 2, D-Link
+// and Omada for whatever their PFS switch says. Those are the same sets with
+// the groups the IKE proposals above already accept.
 var espProposals = []string{
 	"aes256gcm16", "aes128gcm16",
 	"aes256-sha256", "aes128-sha256", "aes256-sha512",
 	"aes256-sha1", "aes128-sha1", "3des-sha1",
+	"aes256gcm16-modp2048", "aes128gcm16-modp2048", "aes256gcm16-ecp256",
+	"aes256-sha256-modp2048", "aes128-sha256-modp2048", "aes256-sha256-ecp256",
+	"aes256-sha1-modp2048", "aes128-sha1-modp2048",
+	"aes256-sha1-modp1536", "aes128-sha1-modp1536",
+	"aes256-sha1-modp1024", "aes128-sha1-modp1024", "3des-sha1-modp1024",
 }
 
 func Swanctl(s *State) string {
@@ -557,8 +564,10 @@ func Swanctl(s *State) string {
 	b.WriteString("    children {\n")
 	fmt.Fprintf(&b, "      %s {\n", ServerName)
 	b.WriteString("        mode = transport\n")
-	fmt.Fprintf(&b, "        local_ts = dynamic[udp/%d]\n", PortL2TP)
-	b.WriteString("        remote_ts = dynamic[udp]\n")
+	// UDP by its number: the name needs /etc/protocols, which a minimal
+	// system can be without, and swanctl then refuses the whole connection.
+	fmt.Fprintf(&b, "        local_ts = dynamic[17/%d]\n", PortL2TP)
+	b.WriteString("        remote_ts = dynamic[17]\n")
 	fmt.Fprintf(&b, "        esp_proposals = %s\n", strings.Join(espProposals, ","))
 	b.WriteString("        dpd_action = clear\n")
 	b.WriteString("      }\n")

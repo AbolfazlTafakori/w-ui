@@ -124,7 +124,7 @@ func TestPPPOptionsTakeTheAddressFromTheSecretsLine(t *testing.T) {
 
 func TestSwanctlCarriesTheKeyAndOnlyL2TP(t *testing.T) {
 	got := Swanctl(valid())
-	for _, want := range []string{"version = 1", "mode = transport", "local_ts = dynamic[udp/1701]", `secret = "SharedKey123"`} {
+	for _, want := range []string{"version = 1", "mode = transport", "local_ts = dynamic[17/1701]", `secret = "SharedKey123"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -138,8 +138,8 @@ func TestGuardDropsL2TPOutsideIPsec(t *testing.T) {
 }
 
 // A tunnel that serves routers without IPsec opens the port to them, and
-// lets a router that asks for MPPE have it; the sign-in is still MS-CHAPv2
-// only, never a password sent as it is.
+// accepts the CHAP their PPP has; never a password sent as it is, and no
+// MPPE, which pppd could only require of every router.
 func TestATunnelForRoutersWithoutIPsec(t *testing.T) {
 	s := valid()
 	s.Interface.AllowPlain = true
@@ -150,8 +150,8 @@ func TestATunnelForRoutersWithoutIPsec(t *testing.T) {
 		t.Errorf("the port stays closed to plain L2TP:\n%s", g)
 	}
 	opts := PPPOptions(s)
-	if strings.Contains(opts, "noccp") || !strings.Contains(opts, "nobsdcomp\n") || !strings.Contains(opts, "nodeflate\n") {
-		t.Errorf("MPPE cannot be negotiated:\n%s", opts)
+	if !strings.Contains(opts, "noccp\n") || strings.Contains(opts, "mppe") {
+		t.Errorf("MPPE is negotiated, and would be required of every router:\n%s", opts)
 	}
 	for _, want := range []string{"require-mschap-v2\n", "require-chap\n", "refuse-pap\n"} {
 		if !strings.Contains(opts, want) {
