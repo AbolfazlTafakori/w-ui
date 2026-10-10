@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/l2tpguide"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -347,7 +348,7 @@ func TestSubPageShowsAnL2TPSignIn(t *testing.T) {
 			ID: 1, Protocol: "l2tp", Tunnel: "l2tp0", Name: "device-1",
 			Config: "Server: vpn.example.com", Username: "s1-ali", Filename: "ali-l2tp.txt",
 		}},
-	}, "token", false)
+	}, "token", false, "")
 	if len(v.Devices) != 1 || v.Devices[0].QR != "" {
 		t.Fatalf("an L2TP sign-in was given a QR: %+v", v.Devices)
 	}
@@ -367,5 +368,61 @@ func TestSubPageShowsAnL2TPSignIn(t *testing.T) {
 	}
 	if strings.Contains(html, "com.wireguard.android") {
 		t.Error("a WireGuard app was offered for an L2TP sign-in")
+	}
+}
+
+// An L2TP sign-in is a list of devices, opened on the one the browser is,
+// each with the customer's own values and the device's own field names.
+func TestSubPageGuidesAnL2TPSignInByDevice(t *testing.T) {
+	render := func(allowPlain bool, ua string) (subPageView, string) {
+		v := newSubView(&service.SubPage{
+			Name: "Ali", Status: "active",
+			Devices: []service.SubPageDevice{{
+				ID: 1, Protocol: "l2tp", Tunnel: "l2tp0", Name: "device-1", Config: "text", Username: "s1-ali",
+				L2TP: &l2tpguide.Values{Tunnel: "l2tp0", Server: "vpn.example.com", Others: []string{"b.example.com"},
+					PSK: "SharedKey123", Username: "s1-ali", Password: "Secret11", AllowPlain: allowPlain},
+			}},
+		}, "token", false, ua)
+		var buf strings.Builder
+		if err := subPageTemplate.Execute(&buf, v); err != nil {
+			t.Fatal(err)
+		}
+		return v, buf.String()
+	}
+
+	v, html := render(false, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)")
+	var selected []string
+	for _, g := range v.Devices[0].Guides {
+		if g.Selected {
+			selected = append(selected, g.ID)
+		}
+	}
+	if strings.Join(selected, ",") != "ios" {
+		t.Fatalf("selected %v, want ios", selected)
+	}
+	for _, want := range []string{
+		`<select class="guide-select" dir="ltr">`, `<option value="ios" selected data-i="l2tpg.ios">iPhone / iPad</option>`,
+		`<div class="guide" data-guide="ios">`, `<div class="guide" data-guide="windows" hidden>`,
+		`<dt dir="ltr">Secret</dt>`, `data-text="SharedKey123"`, `data-text="Secret11"`, `b.example.com`,
+		`wui.sub.l2tpDevice`, `.guide-select`, `class="cfg-user open"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("the page is missing %s", want)
+		}
+	}
+	if strings.Contains(html, `data-guide="huawei"`) || strings.Contains(html, `data-i="l2tpGroupPlain"`) {
+		t.Error("routers without IPsec are offered a tunnel that refuses them")
+	}
+	// Its words are in the page's Persian dictionary.
+	if !strings.Contains(string(v.Strings), "l2tpg.android12") || !strings.Contains(string(v.Strings), "دستگاه شما") {
+		t.Error("the guide's words are not in the dictionary")
+	}
+
+	_, html = render(true, "curl/8")
+	for _, want := range []string{`data-guide="huawei"`, `data-i="l2tpGroupPlain"`, `data-i="l2tpPlainWarn"`,
+		`<option value="windows" selected`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("with plain L2TP accepted the page is missing %s", want)
+		}
 	}
 }

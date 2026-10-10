@@ -17,6 +17,7 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
+	"github.com/abolfazl/w-ui/internal/l2tpguide"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -85,7 +86,14 @@ type subPageView struct {
 
 type subPageDevice struct {
 	service.SubPageDevice
-	QR template.URL
+	// Guides are the devices an L2TP sign-in can be typed into, one shown
+	// at a time; empty on every other protocol. GuideOthers are the other
+	// addresses to try, and CopyIcon the button's, for the guide's own
+	// template, which cannot reach the page's.
+	Guides      []guideView
+	GuideOthers string
+	CopyIcon    template.HTML
+	QR          template.URL
 	// Row is what the user's line is called inside a tunnel's menu: the
 	// customer's own name for a plan of one, "User n" for a plan of
 	// several, a file's own name when it was given one.
@@ -134,14 +142,14 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 		return true
 	}
 
-	s.renderSubPage(w, page, token, false)
+	s.renderSubPage(w, page, token, false, r.UserAgent())
 	return true
 }
 
 // renderSubPage writes the page for one customer -- or, for a preview, for
-// nobody in particular.
-func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, token string, preview bool) {
-	v := newSubView(page, token, preview)
+// nobody in particular. userAgent picks the device an L2TP sign-in opens on.
+func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, token string, preview bool, userAgent string) {
+	v := newSubView(page, token, preview, userAgent)
 
 	var buf bytes.Buffer
 	if err := subPageTemplate.Execute(&buf, v); err != nil {
@@ -199,7 +207,7 @@ type subLiveStatus struct {
 const onlineWindow = 3 * time.Minute
 
 func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, token string) {
-	v := newSubView(page, token, false)
+	v := newSubView(page, token, false, "")
 	st := subLiveStatus{
 		Rev:    page.Rev,
 		Active: v.Active, StatusKey: v.StatusKey, HasQuota: v.HasQuota,
@@ -220,7 +228,7 @@ func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, to
 }
 
 // newSubView works the page's figures out from the customer's record.
-func newSubView(page *service.SubPage, token string, preview bool) subPageView {
+func newSubView(page *service.SubPage, token string, preview bool, userAgent string) subPageView {
 	v := subPageView{
 		Logo:     subLogo,
 		Page:     page,
@@ -304,6 +312,11 @@ func newSubView(page *service.SubPage, token string, preview bool) subPageView {
 	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
+		if d.L2TP != nil {
+			entry.Guides = guideViews(*d.L2TP, l2tpguide.Detect(userAgent))
+			entry.GuideOthers = strings.Join(d.L2TP.Others, ", ")
+			entry.CopyIcon = v.Icons["CopyOutlined"]
+		}
 		// An L2TP sign-in is typed into the device's own settings; no app
 		// scans it, so a QR of it would only be something to puzzle over.
 		if len(d.Config) <= subPageQRLimit && d.Protocol != "l2tp" {
@@ -346,19 +359,106 @@ func pageStrings(l2tp bool) map[string]map[string]string {
 	if !l2tp {
 		return subPageStrings
 	}
+	guides := l2tpguide.Strings()
 	out := make(map[string]map[string]string, len(subPageStrings))
 	for lang, words := range subPageStrings {
-		merged := make(map[string]string, len(words)+len(subPageL2TPStrings[lang]))
+		merged := make(map[string]string, len(words)+len(subPageL2TPStrings[lang])+len(guides[lang]))
 		for k, v := range words {
 			merged[k] = v
 		}
 		for k, v := range subPageL2TPStrings[lang] {
 			merged[k] = v
 		}
+		for k, v := range guides[lang] {
+			merged[k] = v
+		}
 		out[lang] = merged
 	}
 	return out
 }
+
+// guideView is one device in an L2TP sign-in's list.
+type guideView struct {
+	ID, Name, NameKey string
+	// Head and HeadText are the heading of the list this device opens, on
+	// the first device of each.
+	Head, HeadText string
+	Selected       bool
+	// Plain is a device without IPsec, which is told it is not encrypted.
+	Plain   bool
+	Path    string
+	Rows    []l2tpguide.Row
+	Notes   []guideNote
+	Command string
+}
+
+type guideNote struct{ Key, Text string }
+
+// guideViews is every device the tunnel serves, filled in with the
+// customer's values, the detected one selected -- or Windows, where the
+// browser is a device the tunnel does not list.
+func guideViews(v l2tpguide.Values, detected string) []guideView {
+	words := l2tpguide.Strings()["en"]
+	visible := l2tpguide.Visible(v.AllowPlain)
+	found := false
+	for _, g := range visible {
+		if g.ID == detected {
+			found = true
+		}
+	}
+	if !found {
+		detected = "windows"
+	}
+	out := make([]guideView, 0, len(visible))
+	last := ""
+	for _, g := range visible {
+		group := "l2tpGroupDevice"
+		switch {
+		case g.Kind == l2tpguide.Router && (g.IPsec || len(g.Fields) == 0):
+			group = "l2tpGroupRouter"
+		case g.Kind == l2tpguide.Router:
+			group = "l2tpGroupPlain"
+		}
+		gv := guideView{
+			ID: g.ID, Name: g.Name.EN, NameKey: l2tpguide.NameKey(g.ID),
+			Selected: g.ID == detected,
+			Plain:    !g.IPsec && len(g.Fields) > 0,
+			Path:     g.Path,
+			Rows:     g.Rows(v),
+		}
+		if group != last {
+			gv.Head, gv.HeadText = group, words[group]
+			last = group
+		}
+		for i, n := range g.Notes {
+			gv.Notes = append(gv.Notes, guideNote{Key: l2tpguide.NoteKey(g.ID, i), Text: n.EN})
+		}
+		if g.Command != nil {
+			gv.Command = g.Command(v)
+		}
+		out = append(out, gv)
+	}
+	return out
+}
+
+// l2tpGuideTemplate is one L2TP sign-in: a list of devices, and each
+// device's own fields, one shown at a time.
+const l2tpGuideTemplate = `{{ $icon := .CopyIcon }}<div class="l2tp-guide">
+<label class="guide-pick"><span data-i="l2tpDevice">Your device</span>
+<select class="guide-select" dir="ltr">{{ range .Guides }}{{ if .Head }}<option disabled data-i="{{ .Head }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}">{{ .Name }}</option>{{ end }}</select>
+</label>{{ if .GuideOthers }}
+<div class="guide-others"><span data-i="l2tpOthers">If it does not answer, use instead</span>: <span dir="ltr">{{ .GuideOthers }}</span></div>{{ end }}
+{{ range .Guides }}<div class="guide" data-guide="{{ .ID }}"{{ if not .Selected }} hidden{{ end }}>{{ if .Plain }}
+<p class="guide-warn" data-i="l2tpPlainWarn">This device has no IPsec: the connection is not encrypted. Use it only where nothing else will do.</p>{{ end }}{{ if .Path }}
+<div class="guide-path" dir="ltr">{{ .Path }}</div>{{ end }}{{ if .Rows }}
+<dl class="guide-fields">{{ range .Rows }}<div class="guide-row"><dt dir="ltr">{{ .Label }}</dt><dd>{{ if .Key }}<span data-i="{{ .Key }}">{{ .Value }}</span>{{ else }}<code dir="ltr">{{ .Value }}</code>{{ end }}{{ if .Copy }}<button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button>{{ end }}</dd></div>{{ end }}</dl>{{ end }}{{ range .Notes }}
+<p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Command }}
+<div class="guide-cmd"><code dir="ltr">{{ .Command }}</code><button class="btn sm copy" type="button" data-text="{{ .Command }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button></div>{{ end }}
+</div>{{ end }}
+</div>`
+
+// The guide is a template of the page's own, added before it is ever run.
+var _ = template.Must(subPageTemplate.New("l2tpGuide").Parse(l2tpGuideTemplate))
 
 var subPageStrings = map[string]map[string]string{
 	"en": {
@@ -977,6 +1077,22 @@ a.row-title:hover { text-decoration: underline; }
 /* On a phone the id beside the title is the same one in the table below. */
 @media (max-width: 480px) { .card-title .tag { display: none; } .card-head { font-size: 15px; } }
 {{ if .HasL2TP }}.usage-dot.purple { background: var(--tag-purple-ink); }
+.l2tp-guide { display: grid; gap: 10px; }
+.guide-pick { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.guide-select { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; }
+.guide-others { font-size: 12px; color: var(--muted); }
+.guide { display: grid; gap: 8px; }
+.guide[hidden] { display: none; }
+.guide-path { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.guide-fields { display: grid; gap: 6px; margin: 0; }
+.guide-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; border-radius: 6px; background: var(--surface-2); }
+.guide-row dt { font-size: 12px; color: var(--muted); }
+.guide-row dd { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; }
+.guide-row code, .guide-cmd code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.guide-note { margin: 0; font-size: 12px; color: var(--muted); }
+.guide-warn { margin: 0; font-size: 12px; color: var(--tag-orange-ink); }
+.guide-cmd { display: flex; align-items: flex-start; gap: 6px; padding: 8px 10px; border-radius: 6px; background: var(--surface-2); }
+.guide-cmd code { flex: 1; font-size: 12px; }
 .menu .menu-note { display: block; padding: 5px 12px; color: var(--ink); font-size: 13px; line-height: 20px; opacity: .75; }
 {{ end }}</style>
 </head>
@@ -1124,7 +1240,7 @@ a.row-title:hover { text-decoration: underline; }
           </div>
           <div class="cfg-body cfg-users">
             {{ range .Devices }}
-            <div class="cfg-user">
+            <div class="cfg-user{{ if .Guides }} open{{ end }}">
               <div class="cfg-user-head">
                 <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (or (eq .Protocol "openvpn") (eq .Protocol "l2tp")) .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
@@ -1135,7 +1251,7 @@ a.row-title:hover { text-decoration: underline; }
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body"><code class="cfg-text">{{ .Config }}</code></div>
+              <div class="cfg-user-body">{{ if .Guides }}{{ template "l2tpGuide" . }}{{ else }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
             </div>
             {{ end }}
           </div>
@@ -1249,7 +1365,19 @@ a.row-title:hover { text-decoration: underline; }
   $('.pop').forEach(function (p) { p.addEventListener('click', function (e) { if (e.target === p) closeMenus(); }); });
   $('.pop-card').forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); }); });
   document.addEventListener('click', closeMenus);
-
+{{ if .HasL2TP }}
+  // An L2TP sign-in shows one device's fields at a time. The device chosen
+  // is remembered, so a customer who picked their router sees it again.
+  $('.l2tp-guide').forEach(function (box) {
+    var sel = box.querySelector('.guide-select');
+    function show(id) { box.querySelectorAll('.guide').forEach(function (g) { g.hidden = g.getAttribute('data-guide') !== id; }); }
+    try {
+      var saved = localStorage.getItem('wui.sub.l2tpDevice');
+      if (saved && [].some.call(sel.options, function (o) { return o.value === saved && !o.disabled; })) { sel.value = saved; show(saved); }
+    } catch (e) {}
+    sel.addEventListener('change', function () { show(sel.value); try { localStorage.setItem('wui.sub.l2tpDevice', sel.value); } catch (e) {} });
+  });
+{{ end }}
   // The network look: a slow constellation drawn behind the page. Nothing
   // when the visitor asked for less motion.
   if (html.getAttribute('data-layout') === 'network' && !matchMedia('(prefers-reduced-motion: reduce)').matches) {

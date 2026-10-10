@@ -103,7 +103,7 @@ func (s *Server) serveSubPreview(w http.ResponseWriter, r *http.Request) bool {
 	page := previewPage(tpl)
 	page.Title = cfg.Title
 	page.SubURL = "https://" + r.Host + cfg.Path + "sampletoken"
-	s.renderSubPage(w, page, "sampletoken", true)
+	s.renderSubPage(w, page, "sampletoken", true, r.UserAgent())
 	return true
 }
 

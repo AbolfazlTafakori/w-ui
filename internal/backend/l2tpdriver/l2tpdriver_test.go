@@ -201,30 +201,6 @@ func TestKickAndRemove(t *testing.T) {
 	}
 }
 
-func TestProfileListsEveryServerAndTheSignIn(t *testing.T) {
-	iface, _ := setup(t)
-	iface.Hosts = []model.Host{
-		{Address: "b.example.com", Priority: 2, Enabled: true},
-		{Address: "a.example.com", Priority: 1, Enabled: true},
-		{Address: "off.example.com", Priority: 0, Enabled: false},
-		{Address: "vpn.example.com", Priority: 3, Enabled: true},
-	}
-	got := Profile(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
-	for _, want := range []string{"Server:          vpn.example.com", "a.example.com", "b.example.com", "SharedKey123", "s9-laptop", "Secret11"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q in:\n%s", want, got)
-		}
-	}
-	// The list of servers is everything above the first system's steps.
-	head := got[:strings.Index(got, "Windows:")]
-	if strings.Contains(got, "off.example.com") || strings.Count(head, "vpn.example.com") != 1 {
-		t.Errorf("a disabled or repeated host was listed:\n%s", got)
-	}
-	if strings.Index(got, "a.example.com") > strings.Index(got, "b.example.com") {
-		t.Errorf("hosts are not in their order:\n%s", got)
-	}
-}
-
 // Shaping follows each session to its own link; a name pppd would not give a
 // link never reaches tc.
 func TestSessionDevicesAreTheLinksPPPNamed(t *testing.T) {
@@ -256,46 +232,6 @@ func TestSessionDevicesAreTheLinksPPPNamed(t *testing.T) {
 	}
 }
 
-// Every system and router with an L2TP client is told where its settings
-// are; the ones that have no IPsec only on a tunnel that accepts them.
-func TestTheSignInSheetCoversEveryClient(t *testing.T) {
-	iface, _ := setup(t)
-	acc := &model.Account{Username: "s9-laptop", Secret: "Pa$$word1"}
-	got := Profile(acc, iface)
-	for _, want := range []string{
-		"Windows:", "AssumeUDPEncapsulationContextOnSendRule /t REG_DWORD /d 2",
-		"iPhone:", "Send All Traffic", "macOS:", "Android:", "Linux:", "Keenetic:", "Omada:",
-		`connect-to="vpn.example.com" user="s9-laptop" password="Pa\$\$word1" use-ipsec=yes ipsec-secret="SharedKey123"`,
-		"One device per address",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q in:\n%s", want, got)
-		}
-	}
-	if strings.Contains(got, "ASUS") || strings.Contains(got, "OpenWrt") {
-		t.Errorf("routers without IPsec are offered a tunnel that refuses them:\n%s", got)
-	}
-
-	saved := serverIPv4
-	serverIPv4 = func(host string) []string {
-		if host == "vpn.example.com" {
-			return []string{"203.0.113.7"}
-		}
-		return nil
-	}
-	t.Cleanup(func() { serverIPv4 = saved })
-	iface.L2TP = model.JSON(model.L2TPParams{PSK: "SharedKey123", AllowPlain: true})
-	got = Profile(acc, iface)
-	for _, want := range []string{"ASUS:", "OpenWrt:", "use-ipsec=no", "not encrypted",
-		"Irancell TF-i60", "Huawei 4G/5G", "TP-Link:", "D-Link:", "Tenda:", "Xiaomi:", "ADSL and VDSL modems",
-		"tunnel password or L2TP key, it is the pre-shared key",
-		"Server IP, for a router that takes no name: 203.0.113.7"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q with plain L2TP accepted:\n%s", want, got)
-		}
-	}
-}
-
 // The agent is told whether plain L2TP is accepted, and a change to it
 // reopens the tunnel.
 func TestTheStateCarriesPlainL2TP(t *testing.T) {
@@ -307,15 +243,48 @@ func TestTheStateCarriesPlainL2TP(t *testing.T) {
 	}
 }
 
-// A key xl2tpd cannot carry as a tunnel secret is not offered as one.
-func TestTheSheetOffersTheKeyAsATunnelPasswordOnlyWhenItWorks(t *testing.T) {
+// The sheet's values are the tunnel's addresses in their order -- disabled
+// and repeated hosts left out -- its key, and this device's sign-in.
+func TestGuideValuesAreTheCustomersOwn(t *testing.T) {
 	iface, _ := setup(t)
+	iface.Hosts = []model.Host{
+		{Address: "b.example.com", Priority: 2, Enabled: true},
+		{Address: "a.example.com", Priority: 1, Enabled: true},
+		{Address: "off.example.com", Priority: 0, Enabled: false},
+		{Address: "vpn.example.com", Priority: 3, Enabled: true},
+	}
+	v := GuideValues(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
+	if v.Server != "vpn.example.com" || strings.Join(v.Others, ",") != "a.example.com,b.example.com" ||
+		v.PSK != "SharedKey123" || v.Username != "s9-laptop" || v.Password != "Secret11" || v.Tunnel != "l2tp0" {
+		t.Fatalf("values = %+v", v)
+	}
+	// The address as numbers is looked up only where routers that need it
+	// are served.
+	if v.ServerIP != "" {
+		t.Fatalf("looked up an address for a tunnel with no such routers: %+v", v)
+	}
 	saved := serverIPv4
-	serverIPv4 = func(string) []string { return nil }
+	serverIPv4 = func(host string) []string {
+		if host == "vpn.example.com" {
+			return []string{"203.0.113.7"}
+		}
+		return nil
+	}
 	t.Cleanup(func() { serverIPv4 = saved })
-	iface.L2TP = model.JSON(model.L2TPParams{PSK: "key!123", AllowPlain: true})
-	got := Profile(&model.Account{Username: "u", Secret: "Secret11"}, iface)
-	if strings.Contains(got, "tunnel password or L2TP key") || strings.Contains(got, "Server IP") {
-		t.Errorf("offered what will not work:\n%s", got)
+	iface.L2TP = model.JSON(model.L2TPParams{PSK: "SharedKey123", AllowPlain: true})
+	if v := GuideValues(&model.Account{Username: "u", Secret: "Secret11"}, iface); v.ServerIP != "203.0.113.7" || !v.AllowPlain {
+		t.Fatalf("values = %+v", v)
+	}
+}
+
+// The file a customer downloads is the catalogue, filled in.
+func TestTheProfileIsTheCatalogueFilledIn(t *testing.T) {
+	iface, _ := setup(t)
+	got := Profile(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
+	for _, want := range []string{"Server:          vpn.example.com", "Pre-shared key:  SharedKey123",
+		"== Windows 10 / 11 ==", "== iPhone / iPad ==", "== MikroTik (RouterOS) ==", "s9-laptop", "Secret11"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
 	}
 }
