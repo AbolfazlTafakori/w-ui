@@ -21,7 +21,8 @@ var words = map[string]Text{
 	},
 	"l2tpDevice":      {EN: "Your device", FA: "دستگاه شما"},
 	"l2tpGroupDevice": {EN: "Phones and computers", FA: "گوشی و کامپیوتر"},
-	"l2tpGroupRouter": {EN: "Routers and modems", FA: "روتر و مودم"},
+	"l2tpGroupRouter": {EN: "Routers and modems with IPsec", FA: "روتر و مودم با IPsec"},
+	"l2tpGroupNone":   {EN: "Models with no L2TP client", FA: "مدل‌هایی که کلاینت L2TP ندارند"},
 	"l2tpGroupPlain":  {EN: "Routers and modems without IPsec (not encrypted)", FA: "روتر و مودم بدون IPsec (بدون رمزگذاری)"},
 	"l2tpPlainWarn": {
 		EN: "This device has no IPsec: the connection is not encrypted. Use it only where nothing else will do.",
@@ -67,7 +68,7 @@ var (
 	}
 	noteDeviceList = Text{
 		EN: "Turn VPN Client on, then under Device List add the devices that should go through it.",
-		FA: "VPN Client را روشن کنید، سپس در Device List دستگاه‌هایی را که باید از VPN بروند اضافه کنید.",
+		FA: "ابتدا VPN Client را روشن کنید، سپس در Device List دستگاه‌هایی را که باید از VPN بروند اضافه کنید.",
 	}
 	noteKey32 = Text{
 		EN: "This page takes a key of at most 32 characters.",
@@ -220,7 +221,7 @@ func noClient(id string, name Text, extra ...Text) Guide {
 func en(s string) Text { return Text{EN: s} }
 
 // The catalogue. Phones and computers first, then routers with IPsec, the
-// models without a client, and the routers and modems without IPsec.
+// routers and modems without IPsec, and last the models with no client.
 var catalogue = []Guide{
 	// ── phones and computers ──────────────────────────────────────────────
 	{
@@ -391,21 +392,6 @@ var catalogue = []Guide{
 		}},
 	},
 
-	// ── models with no L2TP client ────────────────────────────────────────
-	noClient("tplink-w9960", en("TP-Link TD-W9960 (VDSL/ADSL)")),
-	noClient("tplink-w9970", en("TP-Link TD-W9970 (VDSL/ADSL)")),
-	noClient("tplink-vr", en("TP-Link Archer VR300 / VR400 (VDSL/ADSL)")),
-	{
-		ID: adslID, Name: Text{EN: "Other ADSL / VDSL modems (TD-W8961N, Utel and others)", FA: "مودم‌های دیگر ADSL / VDSL (TD-W8961N، یوتل و دیگران)"}, Kind: Router,
-		Notes: []Text{noteNoClient},
-	},
-	noClient("dlink-dsl", en("D-Link DSL-2750U / DSL-224")),
-	noClient("tplink-extender", en("Wi-Fi extenders (TP-Link RE200, RE305, TL-WA850RE and others)"), Text{
-		EN: "An extender only repeats the router's Wi-Fi: the router it extends is the one to set up.",
-		FA: "تقویت‌کننده فقط وای‌فای روتر را تکرار می‌کند: باید خود روتری را که تقویت می‌کند تنظیم کنید.",
-	}),
-	noClient("tenda", en("Tenda AC6 v5, AC10 v3, N301 v4 and other current Tenda")),
-
 	// ── routers and modems without IPsec ──────────────────────────────────
 	{
 		ID: "tfi60", Name: Text{EN: "Irancell TF-i60 (G1, B1, H1), GP-2101", FA: "ایرانسل TF-i60 (G1، B1، H1)، GP-2101"}, Kind: Router,
@@ -516,4 +502,19 @@ var catalogue = []Guide{
 		},
 		Command: mikrotik(false),
 	},
+
+	// ── models with no L2TP client ────────────────────────────────────────
+	noClient("tplink-w9960", en("TP-Link TD-W9960 (VDSL/ADSL)")),
+	noClient("tplink-w9970", en("TP-Link TD-W9970 (VDSL/ADSL)")),
+	noClient("tplink-vr", en("TP-Link Archer VR300 / VR400 (VDSL/ADSL)")),
+	{
+		ID: adslID, Name: Text{EN: "Other ADSL / VDSL modems (TD-W8961N, Utel and others)", FA: "مودم‌های دیگر ADSL / VDSL (TD-W8961N، یوتل و دیگران)"}, Kind: Router,
+		Notes: []Text{noteNoClient},
+	},
+	noClient("dlink-dsl", en("D-Link DSL-2750U / DSL-224")),
+	noClient("tplink-extender", en("Wi-Fi extenders (TP-Link RE200, RE305, TL-WA850RE and others)"), Text{
+		EN: "An extender only repeats the router's Wi-Fi: the router it extends is the one to set up.",
+		FA: "تقویت‌کننده فقط وای‌فای روتر را تکرار می‌کند: باید خود روتری را که تقویت می‌کند تنظیم کنید.",
+	}),
+	noClient("tenda", en("Tenda AC6 v5, AC10 v3, N301 v4 and other current Tenda")),
 }

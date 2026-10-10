@@ -62,12 +62,10 @@ func GuideValues(acc *model.Account, iface *model.Interface) l2tpguide.Values {
 	if len(servers) > 0 {
 		v.Server = servers[0]
 		v.Others = servers[1:]
-		// Numbers for the routers whose field takes no name -- only looked up
-		// where those routers are served at all.
-		if v.AllowPlain {
-			if ips := serverIPv4(v.Server); len(ips) > 0 {
-				v.ServerIP = ips[0]
-			}
+		// Numbers for the routers whose field takes no name: Omada's, which
+		// has IPsec and is listed on every tunnel, as well as the others.
+		if ips := serverIPv4(v.Server); len(ips) > 0 {
+			v.ServerIP = ips[0]
 		}
 	}
 	return v
@@ -87,7 +85,13 @@ var serverIPv4 = func(host string) []string {
 	ipCache.mu.Lock()
 	c, ok := ipCache.by[host]
 	ipCache.mu.Unlock()
-	if ok && time.Since(c.at) < ipCacheFor {
+	// A name that did not resolve is asked again soon: a page drawn while
+	// DNS was down should not go without the numbers for ten minutes.
+	keep := ipCacheFor
+	if len(c.ips) == 0 {
+		keep = ipRetryAfter
+	}
+	if ok && time.Since(c.at) < keep {
 		return c.ips
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -106,7 +110,10 @@ var serverIPv4 = func(host string) []string {
 	return ips
 }
 
-const ipCacheFor = 10 * time.Minute
+const (
+	ipCacheFor   = 10 * time.Minute
+	ipRetryAfter = time.Minute
+)
 
 type ipEntry struct {
 	ips []string

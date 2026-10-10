@@ -360,14 +360,16 @@ func TestSubPageShowsAnL2TPSignIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := buf.String()
-	for _, want := range []string{`data-i="l2tpConfig"`, `tag tag-config purple`, `data-i="l2tpBuiltIn"`, `s1-ali`,
-		`.menu .menu-note`, `L2TP/IPsec sign-in`, `ورود L2TP/IPsec`} {
+	for _, want := range []string{`data-i="l2tpConfig"`, `tag tag-config purple`, `s1-ali`,
+		`L2TP/IPsec sign-in`, `ورود L2TP/IPsec`, `class="cfg cfg-group open"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the page is missing %s", want)
 		}
 	}
-	if strings.Contains(html, "com.wireguard.android") {
-		t.Error("a WireGuard app was offered for an L2TP sign-in")
+	// L2TP is built into the device: a plan that is only L2TP is offered
+	// no app at all, and opens on its sign-in rather than a folded row.
+	if strings.Contains(html, "com.wireguard.android") || strings.Contains(html, `class="apps"`) {
+		t.Error("an app was offered for an L2TP sign-in")
 	}
 }
 

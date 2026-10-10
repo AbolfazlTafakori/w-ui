@@ -413,6 +413,7 @@ func guideViews(v l2tpguide.Values, detected string) []guideView {
 		l2tpguide.GroupDevice: "l2tpGroupDevice",
 		l2tpguide.GroupRouter: "l2tpGroupRouter",
 		l2tpguide.GroupPlain:  "l2tpGroupPlain",
+		l2tpguide.GroupNone:   "l2tpGroupNone",
 	}
 	out := make([]guideView, 0, len(visible))
 	var last l2tpguide.Group
@@ -1227,7 +1228,7 @@ a.row-title:hover { text-decoration: underline; }
              when there are several), and opens on one line per user, each
              with copy, download and QR of their own file. A plan for one
              opens on one line, named after the customer. -->
-        <div class="cfg cfg-group">
+        <div class="cfg cfg-group{{ if eq .Protocol "l2tp" }} open{{ end }}">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
             <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if eq .Protocol "l2tp" }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else }}config{{ end }}">Config</span>
@@ -1257,8 +1258,9 @@ a.row-title:hover { text-decoration: underline; }
       {{ end }}
 
       <!-- The apps only: the files are handed out per user in the rows
-           above, and repeating them here made the menu a second list. -->
-      <div class="apps">
+           above, and repeating them here made the menu a second list. A
+           plan that is only L2TP needs none: the device has it built in. -->
+      {{ if or .HasWG .HasOVPN (not .HasL2TP) }}<div class="apps">
         <div class="app">
           <button class="btn lg primary" type="button" data-menu="android"><span class="anticon">{{ index .Icons "AndroidOutlined" }}</span> Android <span class="anticon">{{ index .Icons "DownOutlined" }}</span></button>
           <div class="menu" id="menu-android">
@@ -1285,7 +1287,7 @@ a.row-title:hover { text-decoration: underline; }
             {{ end }}
           </div>
         </div>
-      </div>
+      </div>{{ end }}
     </div>
   </div>
 </div></div>

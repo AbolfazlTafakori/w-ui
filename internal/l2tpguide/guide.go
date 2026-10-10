@@ -190,10 +190,13 @@ type Group string
 const (
 	// GroupDevice is phones and computers.
 	GroupDevice Group = "device"
-	// GroupRouter is routers with IPsec, and the modems with no client.
+	// GroupRouter is routers and modems with IPsec.
 	GroupRouter Group = "router"
 	// GroupPlain is routers and modems without IPsec: not encrypted.
 	GroupPlain Group = "plain"
+	// GroupNone is the models with no L2TP client at all, listed so their
+	// owners learn what to do instead.
+	GroupNone Group = "none"
 )
 
 // GroupOf is the list a device is shown under.
@@ -201,7 +204,9 @@ func GroupOf(g Guide) Group {
 	switch {
 	case g.Kind == Device:
 		return GroupDevice
-	case g.IPsec || len(g.Fields) == 0:
+	case len(g.Fields) == 0:
+		return GroupNone
+	case g.IPsec:
 		return GroupRouter
 	}
 	return GroupPlain
@@ -248,7 +253,7 @@ type Entry struct {
 func Devices() []Entry {
 	out := make([]Entry, 0, len(catalogue))
 	for _, g := range catalogue {
-		out = append(out, Entry{ID: g.ID, Name: g.Name, Group: GroupOf(g), NoClient: g.Kind == Router && len(g.Fields) == 0})
+		out = append(out, Entry{ID: g.ID, Name: g.Name, Group: GroupOf(g), NoClient: GroupOf(g) == GroupNone})
 	}
 	return out
 }
@@ -309,8 +314,12 @@ func PlainText(v Values) string {
 	fmt.Fprintf(&b, "Username:        %s\n", v.Username)
 	fmt.Fprintf(&b, "Password:        %s\n", v.Password)
 
-	plainShown := false
+	plainShown, noneShown := false, false
 	for _, g := range Visible(v.AllowPlain) {
+		if GroupOf(g) == GroupNone && !noneShown {
+			noneShown = true
+			b.WriteString("\n-- These have no L2TP client of their own:\n")
+		}
 		if !g.IPsec && len(g.Fields) > 0 && !plainShown {
 			plainShown = true
 			b.WriteString("\n-- Without IPsec, which this server accepts too: the connection is not encrypted.\n")

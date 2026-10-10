@@ -114,9 +114,16 @@ const pskStrength = computed(() => {
 // left empty: letters and digits, which every device's VPN settings take.
 function randomPSK(n = 24) {
   const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  const bytes = new Uint8Array(n)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
+  // Bytes past the last whole multiple of the alphabet are drawn again, so
+  // every character is as likely as every other.
+  const limit = 256 - (256 % alphabet.length)
+  let out = ''
+  while (out.length < n) {
+    const bytes = new Uint8Array(n)
+    crypto.getRandomValues(bytes)
+    for (const b of bytes) if (b < limit && out.length < n) out += alphabet[b % alphabet.length]
+  }
+  return out
 }
 
 async function copy(v) {
@@ -371,6 +378,9 @@ defineExpose({ showError })
               <p v-if="fieldName === 'psk'" class="field-error" role="alert">{{ fieldError }}</p>
               <Transition name="reveal">
                 <div v-if="fieldName !== 'psk' && form.psk && form.psk.length < WEAK_PSK" class="aalert warning slim"><AntIcon name="WarningOutlined" /><span>{{ t('interface.pskWeak') }}</span></div>
+              </Transition>
+              <Transition name="reveal">
+                <div v-if="fieldName !== 'psk' && form.psk.length > 32" class="aalert info slim"><AntIcon name="InfoCircleOutlined" /><span>{{ t('interface.pskLong') }}</span></div>
               </Transition>
             </div>
 

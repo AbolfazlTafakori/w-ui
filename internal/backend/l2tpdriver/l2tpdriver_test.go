@@ -253,16 +253,6 @@ func TestGuideValuesAreTheCustomersOwn(t *testing.T) {
 		{Address: "off.example.com", Priority: 0, Enabled: false},
 		{Address: "vpn.example.com", Priority: 3, Enabled: true},
 	}
-	v := GuideValues(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
-	if v.Server != "vpn.example.com" || strings.Join(v.Others, ",") != "a.example.com,b.example.com" ||
-		v.PSK != "SharedKey123" || v.Username != "s9-laptop" || v.Password != "Secret11" || v.Tunnel != "l2tp0" {
-		t.Fatalf("values = %+v", v)
-	}
-	// The address as numbers is looked up only where routers that need it
-	// are served.
-	if v.ServerIP != "" {
-		t.Fatalf("looked up an address for a tunnel with no such routers: %+v", v)
-	}
 	saved := serverIPv4
 	serverIPv4 = func(host string) []string {
 		if host == "vpn.example.com" {
@@ -271,6 +261,16 @@ func TestGuideValuesAreTheCustomersOwn(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { serverIPv4 = saved })
+	v := GuideValues(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
+	if v.Server != "vpn.example.com" || strings.Join(v.Others, ",") != "a.example.com,b.example.com" ||
+		v.PSK != "SharedKey123" || v.Username != "s9-laptop" || v.Password != "Secret11" || v.Tunnel != "l2tp0" {
+		t.Fatalf("values = %+v", v)
+	}
+	// The address as numbers on every tunnel: Omada's field takes no name,
+	// and Omada has IPsec.
+	if v.ServerIP != "203.0.113.7" {
+		t.Fatalf("no address as numbers on a tunnel with IPsec only: %+v", v)
+	}
 	iface.L2TP = model.JSON(model.L2TPParams{PSK: "SharedKey123", AllowPlain: true})
 	if v := GuideValues(&model.Account{Username: "u", Secret: "Secret11"}, iface); v.ServerIP != "203.0.113.7" || !v.AllowPlain {
 		t.Fatalf("values = %+v", v)

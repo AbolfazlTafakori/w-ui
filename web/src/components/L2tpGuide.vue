@@ -38,7 +38,7 @@ const current = computed(() => props.guides.find((g) => g.id === chosen.value))
 // The guide carries both languages; the panel's own is chosen here.
 const say = (text) => (text ? (store.locale === 'fa' && text.fa) || text.en : '')
 const groups = computed(() =>
-  ['device', 'router', 'plain']
+  ['device', 'router', 'plain', 'none']
     .map((key) => ({ key, items: props.guides.filter((g) => g.group === key) }))
     .filter((g) => g.items.length),
 )

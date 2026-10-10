@@ -207,3 +207,49 @@ func TestTheCatalogueIsWide(t *testing.T) {
 		t.Errorf("D-Link is not told to leave MPPE off: %+v", g.Notes)
 	}
 }
+
+// Every note a device carries is written in Persian too, not left to fall
+// back to the English.
+func TestEveryNoteHasPersian(t *testing.T) {
+	for _, g := range All() {
+		for i, n := range g.Notes {
+			if n.FA == "" {
+				t.Errorf("%s note %d has no Persian: %q", g.ID, i, n.EN)
+			}
+		}
+	}
+	for k, w := range words {
+		if w.FA == "" {
+			t.Errorf("%s has no Persian", k)
+		}
+	}
+}
+
+// A Persian sentence opens with a Persian word: the page sets each line's
+// direction by its first letter, and one that opens with a Latin name is
+// laid out left to right with its words out of order.
+func TestPersianNotesOpenInPersian(t *testing.T) {
+	persian := func(s string) bool {
+		for _, r := range s {
+			switch {
+			case r >= 0x0600 && r <= 0x06FF:
+				return true
+			case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+				return false
+			}
+		}
+		return true
+	}
+	for _, g := range All() {
+		for i, n := range g.Notes {
+			if n.FA != "" && !persian(n.FA) {
+				t.Errorf("%s note %d opens in Latin: %q", g.ID, i, n.FA)
+			}
+		}
+	}
+	for k, w := range words {
+		if !persian(w.FA) {
+			t.Errorf("%s opens in Latin: %q", k, w.FA)
+		}
+	}
+}
