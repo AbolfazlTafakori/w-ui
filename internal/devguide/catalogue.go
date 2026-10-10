@@ -75,6 +75,14 @@ var (
 		EN: "PPTP is accepted only with MS-CHAPv2 and 128-bit MPPE: choose those wherever the page offers them.",
 		FA: "سرور، PPTP را فقط با MS-CHAPv2 و MPPE ۱۲۸ بیتی می‌پذیرد: هر جا صفحه گزینه‌اش را دارد همین‌ها را انتخاب کنید.",
 	}
+	noteUnchecked = Text{
+		EN: "Not checked against this model's own pages: the names here may differ a little from what it shows.",
+		FA: "این راهنما با صفحه‌های خود این مدل چک نشده: ممکن است نام گزینه‌ها کمی فرق داشته باشد.",
+	}
+	noteMaybeNone = Text{
+		EN: "If its settings have no VPN section, this model has no VPN client: set up each device itself.",
+		FA: "اگر تنظیماتش بخش VPN ندارد، این مدل کلاینت VPN ندارد: روی خود هر دستگاه تنظیم کنید.",
+	}
 	noteImportFile = Text{
 		EN: "Download the file from this page first, then choose it here.",
 		FA: "ابتدا فایل را از همین صفحه دانلود کنید، سپس اینجا انتخابش کنید.",
@@ -930,6 +938,75 @@ var catalogue = []Guide{
 		FA: "تقویت‌کننده فقط وای‌فای روتر را تکرار می‌کند: باید خود روتری را که تقویت می‌کند تنظیم کنید.",
 	}),
 	noClient("tenda", en("Tenda AC6 v5, AC10 v3, N301 v4 and other current Tenda")),
+
+	// ── found in the maker's own guide, without an emulator ──────────────
+	router("cisco-rv160", en("Cisco RV160 / RV260"), ciscoRV160(L2TPPlain), ciscoRV160(PPTP)),
+	router("dlink-x1560", en("D-Link DIR-X1560 / DIR-X1530 / DIR-X1860"), dlinkIntl(L2TPPlain), dlinkIntl(PPTP)),
+
+	// ── not checked against the device: no manual or emulator found ──────
+	router("netis", en("Netis WF2409E / WF2419 and other Netis"), uncheckedWAN("Advanced > Network > WAN", L2TPPlain), uncheckedWAN("Advanced > Network > WAN", PPTP)),
+	router("totolink", en("TOTOLINK N300RT / A3002R and other TOTOLINK"), uncheckedWAN("Advanced Setup > Network > WAN", L2TPPlain), uncheckedWAN("Advanced Setup > Network > WAN", PPTP)),
+	router("irancell-i40", Text{EN: "Irancell FD-i40 / TD-i40 (4G/TD-LTE)", FA: "ایرانسل FD-i40 / TD-i40 (4G/TD-LTE)"},
+		withNotes(uncheckedWAN("VPN", L2TPPlain), note4G), withNotes(uncheckedWAN("VPN", PPTP), note4G)),
+	router("irancell-m40", Text{EN: "Irancell FD-M40 (pocket 4G)", FA: "ایرانسل FD-M40 (جیبی 4G)"},
+		withNotes(uncheckedWAN("VPN", L2TPPlain), note4G, noteMaybeNone), withNotes(uncheckedWAN("VPN", PPTP), note4G, noteMaybeNone)),
+	{
+		ID: "edgerouter", Name: en("Ubiquiti EdgeRouter X / 4 (EdgeOS)"), Kind: Router,
+		Setups: []Setup{{
+			Protocol: OpenVPN,
+			Path:     "CLI (SSH), configure",
+			Fields: []Field{
+				{Label: "/config/auth/wui.ovpn", Source: File},
+				{Label: "Username", Source: Username},
+				{Label: "Password", Source: Password},
+			},
+			Notes: []Text{
+				{
+					EN: "Copy the file to /config/auth/wui.ovpn, and add a line to it: auth-user-pass /config/auth/wui.pass. That second file holds the username on its first line and the password on its second.",
+					FA: "فایل را در /config/auth/wui.ovpn کپی کنید و این خط را به آن اضافه کنید: auth-user-pass /config/auth/wui.pass. فایل دوم در خط اول نام کاربری و در خط دوم رمز را دارد.",
+				},
+				noteUnchecked,
+			},
+			Command: func(Values) string {
+				return "set interfaces openvpn vtun0 config-file /config/auth/wui.ovpn\ncommit ; save"
+			},
+		}},
+	},
+}
+
+// The maker's pages for these were not found: the guide is the settings
+// every such page asks for, and says so.
+func uncheckedWAN(path string, p Protocol) Setup {
+	return Setup{
+		Protocol: p,
+		Path:     path,
+		Fields: []Field{
+			{Label: "WAN / Connection Type", Value: wanName(p)},
+			{Label: "Server", Source: Server},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+		},
+		Notes: []Text{noteBehindModem, noteUnchecked},
+	}
+}
+
+// RV160 and RV260, from Cisco's own WAN guide: the same as the RV34x but
+// for the tab, and PPTP's MPPE is a box of its own.
+func ciscoRV160(p Protocol) Setup {
+	f := []Field{
+		{Label: "Connection Type", Value: wanName(p)},
+		{Label: "IP Assignment", Value: "DHCP"},
+		{Label: wanName(p) + " Server IP/FQDN", Source: Server},
+		{Label: "Username", Source: Username},
+		{Label: "Password", Source: Password},
+		{Label: "Keep Alive", Value: "✓"},
+	}
+	notes := []Text{noteBehindModem}
+	if p == PPTP {
+		f = append(f, Field{Label: "MPPE Encryption", Value: "✓"})
+		notes = append(notes, notePPTPMPPE)
+	}
+	return Setup{Protocol: p, Path: "WAN > WAN Settings > IPv4", Fields: f, Notes: notes}
 }
 
 func noteNotDocumented(maker string) Text {
