@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/abolfazl/w-ui/internal/l2tpguide"
+	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -373,17 +373,25 @@ func TestSubPageShowsAnL2TPSignIn(t *testing.T) {
 	}
 }
 
-// An L2TP sign-in is a list of devices, opened on the one the browser is,
-// each with the customer's own values and the device's own field names.
-func TestSubPageGuidesAnL2TPSignInByDevice(t *testing.T) {
+// The setup card: the device the browser is, then the connections of the
+// plan that device can dial, each with the customer's own values and the
+// device's own field names.
+func TestSubPageSetsUpADevice(t *testing.T) {
 	render := func(allowPlain bool, ua string) (subPageView, string) {
 		v := newSubView(&service.SubPage{
 			Name: "Ali", Status: "active",
-			Devices: []service.SubPageDevice{{
-				ID: 1, Protocol: "l2tp", Tunnel: "l2tp0", Name: "device-1", Config: "text", Username: "s1-ali",
-				L2TP: &l2tpguide.Values{Tunnel: "l2tp0", Server: "vpn.example.com", Others: []string{"b.example.com"},
-					PSK: "SharedKey123", Username: "s1-ali", Password: "Secret11", AllowPlain: allowPlain},
-			}},
+			Devices: []service.SubPageDevice{
+				{
+					ID: 1, Protocol: "l2tp", Tunnel: "l2tp0", Name: "device-1", Config: "text", Username: "s1-ali",
+					Guide: &devguide.Values{Protocol: "l2tp", Tunnel: "l2tp0", Server: "vpn.example.com", Others: []string{"b.example.com"},
+						PSK: "SharedKey123", Username: "s1-ali", Password: "Secret11", AllowPlain: allowPlain},
+				},
+				{
+					ID: 2, Protocol: "wireguard", Tunnel: "wg0", Name: "device-1", Config: "[Interface]", Filename: "ali.conf",
+					Guide: &devguide.Values{Protocol: "wireguard", Tunnel: "wg0", Server: "vpn.example.com", Port: 51820, File: "ali.conf",
+						WG: devguide.WGValues{PrivateKey: "cHJpdg==", Address: "10.66.0.2/32", PublicKey: "cHVi", MTU: 1420, Keepalive: 25}},
+				},
+			},
 		}, "token", false, ua)
 		var buf strings.Builder
 		if err := subPageTemplate.Execute(&buf, v); err != nil {
@@ -393,38 +401,51 @@ func TestSubPageGuidesAnL2TPSignInByDevice(t *testing.T) {
 	}
 
 	v, html := render(false, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)")
+	if v.Setup == nil {
+		t.Fatal("no setup card")
+	}
 	var selected []string
-	for _, g := range v.Devices[0].Guides {
-		if g.Selected {
-			selected = append(selected, g.ID)
+	for _, d := range v.Setup.Devices {
+		if d.Selected {
+			selected = append(selected, d.ID)
 		}
 	}
 	if strings.Join(selected, ",") != "ios" {
 		t.Fatalf("selected %v, want ios", selected)
 	}
 	for _, want := range []string{
-		`<select class="guide-select" dir="ltr">`, `<option value="ios" selected data-i="l2tpg.ios">iPhone / iPad</option>`,
-		`<div class="guide" data-guide="ios">`, `<div class="guide" data-guide="windows" hidden>`,
-		`<dt dir="ltr">Secret</dt>`, `data-text="SharedKey123"`, `data-text="Secret11"`, `b.example.com`,
-		`wui.sub.l2tpDevice`, `.guide-select`, `class="cfg-user open"`,
+		`<option value="ios" selected data-i="dg.ios">iPhone / iPad</option>`,
+		`data-device="ios" data-file="0" data-protocol="l2tp"`, `data-device="ios" data-file="1" data-protocol="wireguard"`,
+		`data-device="tplink-ax53" data-file="1" data-protocol="wireguard"`, `<dt dir="ltr">Import from Config File</dt>`,
+		`<dt dir="ltr">Secret</dt>`, `data-text="SharedKey123"`, `data-text="Secret11"`, `data-others="b.example.com"`,
+		`wui.sub.device`, `data-i="dgSetup"`, `class="cfg-user open"`, `<dt>Pre-shared key</dt>`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the page is missing %s", want)
 		}
 	}
-	if strings.Contains(html, `data-guide="huawei"`) || strings.Contains(html, `data-i="l2tpGroupPlain"`) {
-		t.Error("routers without IPsec are offered a tunnel that refuses them")
+	if strings.Contains(html, `data-protocol="l2tp-plain"`) {
+		t.Error("L2TP without IPsec is offered on a tunnel that refuses it")
 	}
 	// Its words are in the page's Persian dictionary.
-	if !strings.Contains(string(v.Strings), "l2tpg.android12") || !strings.Contains(string(v.Strings), "دستگاه شما") {
+	if !strings.Contains(string(v.Strings), "dg.android12") || !strings.Contains(string(v.Strings), "دستگاه شما") {
 		t.Error("the guide's words are not in the dictionary")
 	}
 
 	_, html = render(true, "curl/8")
-	for _, want := range []string{`data-guide="huawei"`, `data-i="l2tpGroupPlain"`, `data-i="l2tpPlainWarn"`,
+	for _, want := range []string{`data-device="huawei" data-file="0" data-protocol="l2tp-plain"`, `data-i="dgWeak"`,
 		`<option value="windows" selected`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("with plain L2TP accepted the page is missing %s", want)
 		}
+	}
+}
+
+// A page with no files has no card, and its words and script are the same
+// as before there was one.
+func TestSubPageWithoutFilesHasNoCard(t *testing.T) {
+	v := newSubView(&service.SubPage{Name: "Ali", Status: "active"}, "token", false, "")
+	if v.Setup != nil || strings.Contains(string(v.Strings), "dgSetup") {
+		t.Fatal("a page with no files was given a setup card")
 	}
 }

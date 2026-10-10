@@ -11,7 +11,7 @@ import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
-import L2tpGuide from './L2tpGuide.vue'
+import DeviceSetup from './DeviceSetup.vue'
 
 const props = defineProps({
   client: { type: Object, required: true },
@@ -161,10 +161,8 @@ async function copy(text) {
 
           <div v-if="entry" class="qr-panel">
             <QrPanel :key="entry.key" :value="entry.value" :remark="entry.remark" :download-name="entry.downloadName || ''" :show-qr="entry.showQr" />
-            <!-- An L2TP sign-in: the customer's device, its own fields. -->
-            <L2tpGuide v-if="entry.guides" :key="`g-${entry.key}`" :guides="entry.guides" />
-            <!-- An OpenVPN user's login, read off here for passing on. -->
-            <dl v-else-if="entry.username" class="qr-login">
+            <!-- An OpenVPN or L2TP user's login, read off here for passing on. -->
+            <dl v-if="entry.username" class="qr-login">
               <div>
                 <dt>{{ current.protocol === 'l2tp' ? t('client.loginUsername') : t('client.openvpnUsername') }}</dt>
                 <dd><code class="ltr">{{ entry.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(entry.username)"><AntIcon name="CopyOutlined" /></button></dd>
@@ -174,6 +172,8 @@ async function copy(text) {
                 <dd><code class="ltr">{{ entry.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(entry.password)"><AntIcon name="CopyOutlined" /></button></dd>
               </div>
             </dl>
+            <!-- This file on the customer's own device: phone, computer or router. -->
+            <DeviceSetup v-if="entry.guides && entry.guides.length" :key="`s-${entry.key}`" :files="[{ key: entry.key, label: entry.label, guides: entry.guides }]" />
           </div>
         </template>
       </div>

@@ -8,7 +8,7 @@ import { store, t, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, isOnline } from '../lib/format.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
-import L2tpGuide from './L2tpGuide.vue'
+import DeviceSetup from './DeviceSetup.vue'
 
 const props = defineProps({
   client: { type: Object, required: true },
@@ -93,6 +93,13 @@ async function load() {
   }
 }
 onMounted(load)
+
+// The files the setup card offers, named as their rows are.
+const setupFiles = computed(() =>
+  configs.value
+    .filter((cf) => cf.guides && cf.guides.length)
+    .map((cf) => ({ key: cf.key, label: [cf.tunnel, cf.who, cf.hostName].filter(Boolean).join(' · '), guides: cf.guides })),
+)
 
 async function copy(text) {
   try {
@@ -299,11 +306,7 @@ const expiryText = computed(() => {
                       <button class="abtn small icon cfg-show" :title="t('client.show')" :aria-label="t('client.show')" :aria-expanded="openCfg.has(cf.key)" @click="toggleCfg(cf.key)"><AntIcon name="RightOutlined" /></button>
                     </div>
                   </div>
-                  <!-- An L2TP sign-in: the customer's device, its own fields. -->
-                  <div v-if="openCfg.has(cf.key) && cf.guides" class="cfg-user-body">
-                    <L2tpGuide :guides="cf.guides" />
-                  </div>
-                  <div v-else-if="openCfg.has(cf.key)" class="cfg-user-body">
+                  <div v-if="openCfg.has(cf.key)" class="cfg-user-body">
                     <!-- An OpenVPN or L2TP user's login, read off here for passing on. -->
                     <div v-if="withLogin(cf)" class="cfg-login">
                       <span class="hint">{{ cf.protocol === 'l2tp' ? t('client.loginUsername') : t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
@@ -315,6 +318,12 @@ const expiryText = computed(() => {
               </div>
             </div>
           </div>
+          <!-- One device at a time: the customer's phone, computer or router,
+               then which of their files to put on it. -->
+          <template v-if="setupFiles.length">
+            <div class="adivider"><span class="adivider-text">{{ t('setup.title') }}</span></div>
+            <DeviceSetup :files="setupFiles" />
+          </template>
         </template>
       </div>
     </div>

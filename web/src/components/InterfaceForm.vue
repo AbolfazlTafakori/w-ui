@@ -93,8 +93,8 @@ watch(
   { immediate: true },
 )
 const deviceName = (d) => (store.locale === 'fa' && d.name.fa) || d.name.en
-const ipsecDevices = computed(() => l2tpDevices.value.filter((d) => d.group !== 'plain' && !d.noClient && d.id !== 'android12'))
-const plainDevices = computed(() => l2tpDevices.value.filter((d) => d.group === 'plain'))
+const ipsecDevices = computed(() => l2tpDevices.value.filter((d) => d.supports.includes('l2tp')))
+const plainDevices = computed(() => l2tpDevices.value.filter((d) => d.supports.includes('l2tp-plain') && !d.supports.includes('l2tp')))
 const devicesOpen = ref(false)
 
 // Below this a key is said to be weak: kept for devices that already hold

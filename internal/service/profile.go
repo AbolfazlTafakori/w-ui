@@ -6,7 +6,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
-	"github.com/abolfazl/w-ui/internal/l2tpguide"
+	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
@@ -26,10 +26,10 @@ type Profile struct {
 	HostName        string `json:"hostName,omitempty"`
 	HostDescription string `json:"hostDescription,omitempty"`
 
-	// Guides are, on L2TP, where each device's settings are and what goes in
-	// each field, filled in: the body is all of them as text, and a page
-	// shows one device at a time from these.
-	Guides []l2tpguide.View `json:"guides,omitempty"`
+	// Guides are, for every device that can dial this file's protocol, where
+	// its settings are and what goes in each field, filled in: a page shows
+	// the one the customer picks.
+	Guides []devguide.View `json:"guides,omitempty"`
 }
 
 // Profile renders the configuration for one device: the first of its host
@@ -81,6 +81,7 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
 		}
 		p.Filename = variantFilename(clientFilename(owner.Name, acc.DeviceName, p.Filename, single), v)
+		p.Guides = devguide.Views(guideValues(&acc, &at, p.Filename))
 		if v.Host != nil {
 			p.HostID = v.Host.ID
 			p.HostName = v.Host.Name
@@ -123,7 +124,6 @@ func renderL2TP(acc *model.Account, iface *model.Interface) *Profile {
 		Filename: fmt.Sprintf("%s-l2tp.txt", filenameFor(acc)),
 		MIMEType: "text/plain; charset=utf-8",
 		Body:     l2tpdriver.Profile(acc, iface),
-		Guides:   l2tpguide.Views(l2tpdriver.GuideValues(acc, iface)),
 		Username: acc.Username,
 		Secret:   acc.Secret,
 	}

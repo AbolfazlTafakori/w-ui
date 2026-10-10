@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
-	"github.com/abolfazl/w-ui/internal/l2tpguide"
+	"github.com/abolfazl/w-ui/internal/devguide"
 )
 
 // Servers is every address a customer can dial for this tunnel: the
@@ -45,13 +45,14 @@ func Servers(iface *model.Interface) []string {
 // router and modem the tunnel serves -- the same catalogue the customer's page
 // shows one device of at a time.
 func Profile(acc *model.Account, iface *model.Interface) string {
-	return l2tpguide.PlainText(GuideValues(acc, iface))
+	return devguide.PlainText(GuideValues(acc, iface))
 }
 
 // GuideValues are a customer's own values for the device guides: the
 // tunnel's addresses and key, and this device's sign-in.
-func GuideValues(acc *model.Account, iface *model.Interface) l2tpguide.Values {
-	v := l2tpguide.Values{
+func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
+	v := devguide.Values{
+		Protocol:   "l2tp",
 		Tunnel:     iface.Name,
 		PSK:        iface.L2TP.V.PSK,
 		Username:   acc.Username,
@@ -64,18 +65,18 @@ func GuideValues(acc *model.Account, iface *model.Interface) l2tpguide.Values {
 		v.Others = servers[1:]
 		// Numbers for the routers whose field takes no name: Omada's, which
 		// has IPsec and is listed on every tunnel, as well as the others.
-		if ips := serverIPv4(v.Server); len(ips) > 0 {
+		if ips := ServerIPv4(v.Server); len(ips) > 0 {
 			v.ServerIP = ips[0]
 		}
 	}
 	return v
 }
 
-// serverIPv4 is a host name's IPv4 addresses, for the routers whose L2TP
+// ServerIPv4 is a host name's IPv4 addresses, for the routers whose
 // server field takes no names -- several TP-Link models. Nothing for an
 // address already, or for a name that does not resolve in time. Remembered
 // for a while: the sheet is drawn on every view of a customer's page.
-var serverIPv4 = func(host string) []string {
+var ServerIPv4 = func(host string) []string {
 	if host == "" {
 		return nil
 	}

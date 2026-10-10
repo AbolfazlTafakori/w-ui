@@ -253,14 +253,14 @@ func TestGuideValuesAreTheCustomersOwn(t *testing.T) {
 		{Address: "off.example.com", Priority: 0, Enabled: false},
 		{Address: "vpn.example.com", Priority: 3, Enabled: true},
 	}
-	saved := serverIPv4
-	serverIPv4 = func(host string) []string {
+	saved := ServerIPv4
+	ServerIPv4 = func(host string) []string {
 		if host == "vpn.example.com" {
 			return []string{"203.0.113.7"}
 		}
 		return nil
 	}
-	t.Cleanup(func() { serverIPv4 = saved })
+	t.Cleanup(func() { ServerIPv4 = saved })
 	v := GuideValues(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
 	if v.Server != "vpn.example.com" || strings.Join(v.Others, ",") != "a.example.com,b.example.com" ||
 		v.PSK != "SharedKey123" || v.Username != "s9-laptop" || v.Password != "Secret11" || v.Tunnel != "l2tp0" {
@@ -282,7 +282,7 @@ func TestTheProfileIsTheCatalogueFilledIn(t *testing.T) {
 	iface, _ := setup(t)
 	got := Profile(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
 	for _, want := range []string{"Server:          vpn.example.com", "Pre-shared key:  SharedKey123",
-		"== Windows 10 / 11 ==", "== iPhone / iPad ==", "== MikroTik (RouterOS: hAP, hEX, RB, CCR) ==", "s9-laptop", "Secret11"} {
+		"== Windows 10 / 11 ==", "== iPhone / iPad ==", "== MikroTik (RouterOS 7: hAP, hEX, RB, CCR) ==", "s9-laptop", "Secret11"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}

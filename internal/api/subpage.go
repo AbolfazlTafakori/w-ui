@@ -17,7 +17,7 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/abolfazl/w-ui/internal/l2tpguide"
+	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -76,8 +76,11 @@ type subPageView struct {
 	LastOnline string
 	SubQR      template.URL
 	Strings    template.JS // the two dictionaries, for the language button
-	Lang       string
-	Icons      map[string]template.HTML
+	// Setup is the card that sets up a device: the customer's device, then
+	// the connection of their plan it can dial, and that device's fields.
+	Setup *setupCard
+	Lang  string
+	Icons map[string]template.HTML
 	// Template is the look, one of service.SubTemplates; Preview marks a
 	// page rendered from sample figures for the settings page.
 	Template string
@@ -86,14 +89,12 @@ type subPageView struct {
 
 type subPageDevice struct {
 	service.SubPageDevice
-	// Guides are the devices an L2TP sign-in can be typed into, one shown
-	// at a time; empty on every other protocol. GuideOthers are the other
-	// addresses to try, and CopyIcon the button's, for the guide's own
-	// template, which cannot reach the page's.
-	Guides      []guideView
-	GuideOthers string
-	CopyIcon    template.HTML
-	QR          template.URL
+	// SignIn is an L2TP file's sign-in, shown in its row: what the setup
+	// card's fields are filled with. CopyIcon is the button's, for the row's
+	// own template, which cannot reach the page's.
+	SignIn   []devguide.Row
+	CopyIcon template.HTML
+	QR       template.URL
 	// Row is what the user's line is called inside a tunnel's menu: the
 	// customer's own name for a plan of one, "User n" for a plan of
 	// several, a file's own name when it was given one.
@@ -312,9 +313,8 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
-		if d.L2TP != nil {
-			entry.Guides = guideViews(*d.L2TP, l2tpguide.Detect(userAgent))
-			entry.GuideOthers = strings.Join(d.L2TP.Others, ", ")
+		if d.Guide != nil && d.Protocol == "l2tp" {
+			entry.SignIn = l2tpSignIn(*d.Guide)
 			entry.CopyIcon = v.Icons["CopyOutlined"]
 		}
 		// An L2TP sign-in is typed into the device's own settings; no app
@@ -337,10 +337,11 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	v.Groups = groupDevices(v.Devices, page.Name)
 	v.Usage = usageTable(v.Devices, page.Name)
+	v.Setup = newSetupCard(v.Devices, devguide.Detect(userAgent), v.Icons["CopyOutlined"])
 	if page.FilesSince != nil {
 		v.UsageSince = page.FilesSince.Local().Format("2006-01-02 15:04")
 	}
-	dict, _ := json.Marshal(pageStrings(v.HasL2TP))
+	dict, _ := json.Marshal(pageStrings(v.HasL2TP, v.Setup != nil))
 	v.Strings = template.JS(dict)
 	return v
 }
@@ -354,20 +355,27 @@ var subPageL2TPStrings = map[string]map[string]string{
 	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN"},
 }
 
-// pageStrings is the dictionary a page is given.
-func pageStrings(l2tp bool) map[string]map[string]string {
-	if !l2tp {
+// pageStrings is the dictionary a page is given: the guides' words on a page
+// with a setup card, the L2TP row's on a page with an L2TP sign-in, and on
+// any other page exactly what it was.
+func pageStrings(l2tp, setup bool) map[string]map[string]string {
+	if !l2tp && !setup {
 		return subPageStrings
 	}
-	guides := l2tpguide.Strings()
 	out := make(map[string]map[string]string, len(subPageStrings))
+	var guides map[string]map[string]string
+	if setup {
+		guides = devguide.Strings()
+	}
 	for lang, words := range subPageStrings {
 		merged := make(map[string]string, len(words)+len(subPageL2TPStrings[lang])+len(guides[lang]))
 		for k, v := range words {
 			merged[k] = v
 		}
-		for k, v := range subPageL2TPStrings[lang] {
-			merged[k] = v
+		if l2tp {
+			for k, v := range subPageL2TPStrings[lang] {
+				merged[k] = v
+			}
 		}
 		for k, v := range guides[lang] {
 			merged[k] = v
@@ -377,31 +385,117 @@ func pageStrings(l2tp bool) map[string]map[string]string {
 	return out
 }
 
-// guideView is one device in an L2TP sign-in's list.
-type guideView struct {
+// l2tpSignIn is an L2TP file's own four values, for its row.
+func l2tpSignIn(v devguide.Values) []devguide.Row {
+	return []devguide.Row{
+		{Label: "Server", Value: v.Server, Copy: true},
+		{Label: "Pre-shared key", Value: v.PSK, Copy: true},
+		{Label: "Username", Value: v.Username, Copy: true},
+		{Label: "Password", Value: v.Password, Copy: true},
+	}
+}
+
+// setupCard is the device picker and every guide it can show.
+type setupCard struct {
+	Devices  []setupDevice
+	Files    []setupFile
+	Views    []setupView
+	CopyIcon template.HTML
+}
+
+// setupDevice is one device in the picker.
+type setupDevice struct {
 	ID, Name, NameKey string
 	// Head and HeadText are the heading of the list this device opens, on
 	// the first device of each.
 	Head, HeadText string
 	Selected       bool
-	// Plain is a device without IPsec, which is told it is not encrypted.
-	Plain   bool
-	Path    string
-	Rows    []l2tpguide.Row
-	Notes   []guideNote
-	Command string
+	// Supports is the protocols the device dials, for the line that says so
+	// when the customer's plan has none of them.
+	Supports []setupProtocol
+	Notes    []guideNote
+}
+
+type setupProtocol struct{ Key, Name string }
+
+// setupFile is one of the customer's files, as the connection picker names
+// it: its protocol, and which file when the plan has several of that one.
+type setupFile struct {
+	Index       int
+	Name, Key   string
+	Suffix      string
+	Others      string
+	ProtocolKey string
+}
+
+// setupView is one device's guide for one file.
+type setupView struct {
+	Device   string
+	File     int
+	Protocol string
+	Weak     bool
+	Path     string
+	Rows     []devguide.Row
+	Notes    []guideNote
+	Command  string
 }
 
 type guideNote struct{ Key, Text string }
 
-// guideViews is every device the tunnel serves, filled in with the
-// customer's values, the detected one selected -- or Windows, where the
-// browser is a device the tunnel does not list.
-func guideViews(v l2tpguide.Values, detected string) []guideView {
-	words := l2tpguide.Strings()["en"]
-	visible := l2tpguide.Visible(v.AllowPlain)
+// newSetupCard is the card for a page's files: nothing for a page with none.
+// The device the browser is opens it, or Windows where the browser is a
+// device the catalogue does not list.
+func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) *setupCard {
+	if len(devices) == 0 {
+		return nil
+	}
+	words := devguide.Strings()["en"]
+	card := &setupCard{CopyIcon: icon}
+	count := map[string]int{}
+	for _, d := range devices {
+		if d.Guide != nil {
+			for _, p := range d.Guide.Served() {
+				count[string(p)]++
+			}
+		}
+	}
+	for i, d := range devices {
+		if d.Guide == nil {
+			continue
+		}
+		for _, p := range d.Guide.Served() {
+			f := setupFile{Index: i, Name: devguide.ProtocolNames[p].EN, Key: devguide.ProtocolKey(p), ProtocolKey: string(p)}
+			if count[string(p)] > 1 {
+				f.Suffix = d.Label
+				if f.Suffix == "" {
+					f.Suffix = d.Filename
+				}
+			}
+			if p == devguide.L2TP || p == devguide.L2TPPlain || p == devguide.PPTP {
+				f.Others = strings.Join(d.Guide.Others, ", ")
+			}
+			card.Files = append(card.Files, f)
+		}
+		for _, view := range devguide.Views(*d.Guide) {
+			sv := setupView{Device: view.Device, File: i, Protocol: string(view.Protocol), Weak: view.Weak,
+				Path: view.Path, Rows: view.Rows, Command: view.Command}
+			for n, note := range view.Notes {
+				sv.Notes = append(sv.Notes, guideNote{Key: devguide.NoteKey(view.Device, view.Protocol, n), Text: note.EN})
+			}
+			card.Views = append(card.Views, sv)
+		}
+	}
+	if len(card.Files) == 0 {
+		return nil
+	}
+	heads := map[devguide.Group]string{
+		devguide.GroupDevice: "dgGroupDevice",
+		devguide.GroupRouter: "dgGroupRouter",
+		devguide.GroupNone:   "dgGroupNone",
+	}
+	var last devguide.Group
 	found := false
-	for _, g := range visible {
+	for _, g := range devguide.All() {
 		if g.ID == detected {
 			found = true
 		}
@@ -409,44 +503,37 @@ func guideViews(v l2tpguide.Values, detected string) []guideView {
 	if !found {
 		detected = "windows"
 	}
-	heads := map[l2tpguide.Group]string{
-		l2tpguide.GroupDevice: "l2tpGroupDevice",
-		l2tpguide.GroupRouter: "l2tpGroupRouter",
-		l2tpguide.GroupPlain:  "l2tpGroupPlain",
-		l2tpguide.GroupNone:   "l2tpGroupNone",
+	for _, g := range devguide.All() {
+		group := devguide.GroupOf(g)
+		d := setupDevice{ID: g.ID, Name: g.Name.EN, NameKey: devguide.NameKey(g.ID), Selected: g.ID == detected}
+		if group != last {
+			d.Head, d.HeadText = heads[group], words[heads[group]]
+			last = group
+		}
+		for _, p := range g.Supports() {
+			d.Supports = append(d.Supports, setupProtocol{Key: devguide.ProtocolKey(p), Name: devguide.ProtocolNames[p].EN})
+		}
+		for n, note := range g.Notes {
+			d.Notes = append(d.Notes, guideNote{Key: devguide.NoteKey(g.ID, "", n), Text: note.EN})
+		}
+		card.Devices = append(card.Devices, d)
 	}
-	out := make([]guideView, 0, len(visible))
-	var last l2tpguide.Group
-	for _, g := range l2tpguide.Views(v) {
-		gv := guideView{
-			ID: g.ID, Name: g.Name.EN, NameKey: l2tpguide.NameKey(g.ID),
-			Selected: g.ID == detected,
-			Plain:    g.Group == l2tpguide.GroupPlain,
-			Path:     g.Path,
-			Rows:     g.Rows,
-			Command:  g.Command,
-		}
-		if g.Group != last {
-			gv.Head, gv.HeadText = heads[g.Group], words[heads[g.Group]]
-			last = g.Group
-		}
-		for i, n := range g.Notes {
-			gv.Notes = append(gv.Notes, guideNote{Key: l2tpguide.NoteKey(g.ID, i), Text: n.EN})
-		}
-		out = append(out, gv)
-	}
-	return out
+	return card
 }
 
-// l2tpGuideTemplate is one L2TP sign-in: a list of devices, and each
-// device's own fields, one shown at a time.
-const l2tpGuideTemplate = `{{ $icon := .CopyIcon }}<div class="l2tp-guide">
-<label class="guide-pick"><span data-i="l2tpDevice">Your device</span>
-<select class="guide-select" dir="ltr">{{ range .Guides }}{{ if .Head }}<option disabled data-i="{{ .Head }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}">{{ .Name }}</option>{{ end }}</select>
-</label>{{ if .GuideOthers }}
-<div class="guide-others"><span data-i="l2tpOthers">If it does not answer, use instead</span>: <span dir="ltr">{{ .GuideOthers }}</span></div>{{ end }}
-{{ range .Guides }}<div class="guide" data-guide="{{ .ID }}"{{ if not .Selected }} hidden{{ end }}>{{ if .Plain }}
-<p class="guide-warn" data-i="l2tpPlainWarn">This device has no IPsec: the connection is not encrypted. Use it only where nothing else will do.</p>{{ end }}{{ if .Path }}
+// setupTemplate is the card: the two pickers, and every guide, one shown.
+const setupTemplate = `{{ $icon := .CopyIcon }}<div class="setup">
+<label class="guide-pick"><span data-i="dgDevice">Your device</span>
+<select class="guide-select setup-device" dir="ltr">{{ range .Devices }}{{ if .Head }}<option disabled data-i="{{ .Head }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}">{{ .Name }}</option>{{ end }}</select>
+</label>
+<label class="guide-pick setup-file-pick"><span data-i="dgProtocol">Connection</span>
+<select class="guide-select setup-file"></select>
+</label>
+<div class="setup-files" hidden>{{ range .Files }}<span data-file="{{ .Index }}" data-protocol="{{ .ProtocolKey }}" data-key="{{ .Key }}" data-suffix="{{ .Suffix }}" data-others="{{ .Others }}">{{ .Name }}</span>{{ end }}</div>
+<div class="guide-others" hidden><span data-i="dgOthers">If it does not answer, use instead</span>: <span class="others" dir="ltr"></span></div>
+{{ range .Devices }}<div class="setup-device-notes" data-device="{{ .ID }}" hidden>{{ range .Notes }}<p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Supports }}<div class="setup-none"><p class="guide-note" data-i="dgNoneOfPlan">This device can dial none of the connections on your plan. It can dial:</p><p class="guide-note setup-supports">{{ range $i, $p := .Supports }}{{ if $i }} · {{ end }}<span data-i="{{ $p.Key }}">{{ $p.Name }}</span>{{ end }}</p></div>{{ end }}</div>{{ end }}
+{{ range .Views }}<div class="guide" data-device="{{ .Device }}" data-file="{{ .File }}" data-protocol="{{ .Protocol }}" hidden>{{ if .Weak }}
+<p class="guide-warn" data-i="dgWeak">This connection is not encrypted, or only with a cipher long since broken. Use it only where nothing else will do.</p>{{ end }}{{ if .Path }}
 <div class="guide-path" dir="ltr">{{ .Path }}</div>{{ end }}{{ if .Rows }}
 <dl class="guide-fields">{{ range .Rows }}<div class="guide-row"><dt dir="ltr">{{ .Label }}</dt><dd>{{ if .Key }}<span data-i="{{ .Key }}">{{ .Value }}</span>{{ else }}<code dir="ltr">{{ .Value }}</code>{{ end }}{{ if .Copy }}<button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button>{{ end }}</dd></div>{{ end }}</dl>{{ end }}{{ range .Notes }}
 <p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Command }}
@@ -454,8 +541,14 @@ const l2tpGuideTemplate = `{{ $icon := .CopyIcon }}<div class="l2tp-guide">
 </div>{{ end }}
 </div>`
 
-// The guide is a template of the page's own, added before it is ever run.
-var _ = template.Must(subPageTemplate.New("l2tpGuide").Parse(l2tpGuideTemplate))
+// signInTemplate is an L2TP row's four values.
+const signInTemplate = `{{ $icon := .CopyIcon }}<dl class="guide-fields">{{ range .SignIn }}<div class="guide-row"><dt>{{ .Label }}</dt><dd><code dir="ltr">{{ .Value }}</code><button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button></dd></div>{{ end }}</dl>`
+
+// Both are templates of the page's own, added before it is ever run.
+var (
+	_ = template.Must(subPageTemplate.New("setup").Parse(setupTemplate))
+	_ = template.Must(subPageTemplate.New("signIn").Parse(signInTemplate))
+)
 
 var subPageStrings = map[string]map[string]string{
 	"en": {
@@ -1074,7 +1167,9 @@ a.row-title:hover { text-decoration: underline; }
 /* On a phone the id beside the title is the same one in the table below. */
 @media (max-width: 480px) { .card-title .tag { display: none; } .card-head { font-size: 15px; } }
 {{ if .HasL2TP }}.usage-dot.purple { background: var(--tag-purple-ink); }
-.l2tp-guide { display: grid; gap: 10px; }
+.menu .menu-note { display: block; padding: 5px 12px; color: var(--ink); font-size: 13px; line-height: 20px; opacity: .75; }
+{{ end }}{{ if .Setup }}.setup-card { padding: 14px; }
+.setup { display: grid; gap: 10px; }
 .guide-pick { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .guide-select { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; }
 .guide-others { font-size: 12px; color: var(--muted); }
@@ -1090,7 +1185,8 @@ a.row-title:hover { text-decoration: underline; }
 .guide-warn { margin: 0; font-size: 12px; color: var(--tag-orange-ink); }
 .guide-cmd { display: flex; align-items: flex-start; gap: 6px; padding: 8px 10px; border-radius: 6px; background: var(--surface-2); }
 .guide-cmd code { flex: 1; font-size: 12px; }
-.menu .menu-note { display: block; padding: 5px 12px; color: var(--ink); font-size: 13px; line-height: 20px; opacity: .75; }
+.guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
+.setup-device-notes { display: grid; gap: 6px; }
 {{ end }}</style>
 </head>
 <body>
@@ -1237,7 +1333,7 @@ a.row-title:hover { text-decoration: underline; }
           </div>
           <div class="cfg-body cfg-users">
             {{ range .Devices }}
-            <div class="cfg-user{{ if .Guides }} open{{ end }}">
+            <div class="cfg-user{{ if .SignIn }} open{{ end }}">
               <div class="cfg-user-head">
                 <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (or (eq .Protocol "openvpn") (eq .Protocol "l2tp")) .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
@@ -1248,13 +1344,19 @@ a.row-title:hover { text-decoration: underline; }
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body">{{ if .Guides }}{{ template "l2tpGuide" . }}{{ else }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
+              <div class="cfg-user-body">{{ if .SignIn }}{{ template "signIn" . }}{{ else }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
             </div>
             {{ end }}
           </div>
         </div>
         {{ end }}
       </div>
+      {{ end }}
+      {{ if .Setup }}
+      <!-- One device's steps: the customer picks their phone, computer or
+           router, then the connection of their plan it can dial. -->
+      <div class="divider"><span data-i="dgSetup">Set up a device</span></div>
+      <div class="links setup-card">{{ template "setup" .Setup }}</div>
       {{ end }}
 
       <!-- The apps only: the files are handed out per user in the rows
@@ -1312,7 +1414,8 @@ a.row-title:hover { text-decoration: underline; }
     $('[data-i]').forEach(function (el) { var k = el.getAttribute('data-i'); if (d[k]) el.textContent = d[k]; });
     $('[data-i-title]').forEach(function (el) { var k = el.getAttribute('data-i-title'); if (d[k]) { el.title = d[k]; el.setAttribute('aria-label', d[k]); } });
     $('#menu-lang button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === l); });
-    try { localStorage.setItem('wui.sub.lang', l); } catch (e) {}
+    try { localStorage.setItem('wui.sub.lang', l); } catch (e) {}{{ if .Setup }}
+    document.dispatchEvent(new Event('wui:lang'));{{ end }}
   }
   applyLang(lang());
   $('#menu-lang button').forEach(function (b) { b.addEventListener('click', function () { applyLang(b.getAttribute('data-lang')); closeMenus(); }); });
@@ -1363,17 +1466,54 @@ a.row-title:hover { text-decoration: underline; }
   $('.pop').forEach(function (p) { p.addEventListener('click', function (e) { if (e.target === p) closeMenus(); }); });
   $('.pop-card').forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); }); });
   document.addEventListener('click', closeMenus);
-{{ if .HasL2TP }}
-  // An L2TP sign-in shows one device's fields at a time. The device chosen
-  // is remembered, so a customer who picked their router sees it again.
-  $('.l2tp-guide').forEach(function (box) {
-    var sel = box.querySelector('.guide-select');
-    function show(id) { box.querySelectorAll('.guide').forEach(function (g) { g.hidden = g.getAttribute('data-guide') !== id; }); }
+{{ if .Setup }}
+  // The setup card: a device, then the files of the plan that device can
+  // dial, then that device's fields for the file chosen. The device is
+  // remembered, so a customer who picked their router sees it again.
+  $('.setup').forEach(function (box) {
+    var dev = box.querySelector('.setup-device'), file = box.querySelector('.setup-file');
+    var pick = box.querySelector('.setup-file-pick'), others = box.querySelector('.guide-others');
+    var files = [].slice.call(box.querySelectorAll('.setup-files [data-file]'));
+    function word(key, fallback) { var d = window.__wuiDict || {}, l = document.documentElement.lang === 'fa' ? 'fa' : 'en'; return (d[l] && d[l][key]) || fallback; }
+    function show() {
+      var id = dev.value, f = file.value;
+      box.querySelectorAll('.guide').forEach(function (g) { g.hidden = !(g.getAttribute('data-device') === id && g.getAttribute('data-file') + '/' + g.getAttribute('data-protocol') === f); });
+      var o = files.filter(function (x) { return x.getAttribute('data-file') + '/' + x.getAttribute('data-protocol') === f; })[0];
+      var list = o ? o.getAttribute('data-others') : '';
+      others.hidden = !list;
+      if (list) others.querySelector('.others').textContent = list;
+    }
+    function fill() {
+      var id = dev.value, prev = file.value;
+      file.innerHTML = '';
+      files.forEach(function (x) {
+        var key = x.getAttribute('data-file') + '/' + x.getAttribute('data-protocol');
+        if (!box.querySelector('.guide[data-device="' + id + '"][data-file="' + x.getAttribute('data-file') + '"][data-protocol="' + x.getAttribute('data-protocol') + '"]')) return;
+        var opt = document.createElement('option');
+        opt.value = key;
+        var suffix = x.getAttribute('data-suffix');
+        opt.textContent = word(x.getAttribute('data-key'), x.textContent) + (suffix ? ' · ' + suffix : '');
+        file.appendChild(opt);
+      });
+      if ([].some.call(file.options, function (o) { return o.value === prev; })) file.value = prev;
+      pick.hidden = file.options.length === 0;
+      // The device's own notes, and when the plan has nothing it dials,
+      // what it does dial; nothing at all when there is neither.
+      box.querySelectorAll('.setup-device-notes').forEach(function (n) {
+        var none = n.querySelector('.setup-none'), dials = file.options.length > 0;
+        if (none) none.hidden = dials;
+        n.hidden = n.getAttribute('data-device') !== id || (dials && !n.querySelector(':scope > .guide-note'));
+      });
+      show();
+    }
     try {
-      var saved = localStorage.getItem('wui.sub.l2tpDevice');
-      if (saved && [].some.call(sel.options, function (o) { return o.value === saved && !o.disabled; })) { sel.value = saved; show(saved); }
+      var saved = localStorage.getItem('wui.sub.device') || localStorage.getItem('wui.sub.l2tpDevice');
+      if (saved && [].some.call(dev.options, function (o) { return o.value === saved && !o.disabled; })) dev.value = saved;
     } catch (e) {}
-    sel.addEventListener('change', function () { show(sel.value); try { localStorage.setItem('wui.sub.l2tpDevice', sel.value); } catch (e) {} });
+    dev.addEventListener('change', function () { fill(); try { localStorage.setItem('wui.sub.device', dev.value); } catch (e) {} });
+    file.addEventListener('change', show);
+    document.addEventListener('wui:lang', fill);
+    fill();
   });
 {{ end }}
   // The network look: a slow constellation drawn behind the page. Nothing

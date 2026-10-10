@@ -8,7 +8,7 @@ import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
-import L2tpGuide from '../components/L2tpGuide.vue'
+import DeviceSetup from '../components/DeviceSetup.vue'
 
 const props = defineProps({ id: { type: [String, Number], required: true } })
 const router = useRouter()
@@ -201,6 +201,9 @@ async function copy(text) {
     notify(t('action.copyFailed'), 'error')
   }
 }
+// An L2TP file is the sign-in written out for every device: nothing worth
+// revealing in the panel, where the setup card shows one device at a time.
+const isL2TP = (p) => (p.guides || []).some((g) => g.protocol === 'l2tp')
 </script>
 
 <template>
@@ -409,10 +412,7 @@ async function copy(text) {
             <p class="muted small">{{ t('device.qrHint') }}</p>
           </div>
 
-          <!-- An L2TP sign-in: the customer's device, its own fields, rather
-               than every device's at once. -->
-          <L2tpGuide v-if="profile.guides" :guides="profile.guides" />
-          <div v-else-if="profile.username" class="creds">
+          <div v-if="profile.username" class="creds">
             <div class="field">
               <label>{{ t('auth.username') }}</label>
               <div class="cred">
@@ -439,7 +439,7 @@ async function copy(text) {
                  front of whoever is looking at the panel -- over a shoulder, in
                  a screen share, in a screenshot of something else -- gives away
                  the tunnel to anyone who can read it. -->
-            <div v-if="!profile.guides" class="secret">
+            <div v-if="!isL2TP(profile)" class="secret">
               <button class="btn sm ghost" @click="showConfig = !showConfig">
                 <Icon :name="showConfig ? 'eyeOff' : 'eye'" :size="14" />
                 {{ showConfig ? t('device.hideConfig') : t('device.revealConfig') }}
@@ -447,6 +447,8 @@ async function copy(text) {
               <p v-if="!showConfig" class="muted small">{{ t('device.configHidden') }}</p>
               <pre v-else class="config">{{ profile.body }}</pre>
             </div>
+            <!-- This file on the customer's own device: phone, computer or router. -->
+            <DeviceSetup v-if="profile.guides && profile.guides.length" :files="[{ key: profile.filename, label: profile.account.deviceName, guides: profile.guides }]" />
         </div>
 
         <div class="modal-foot">

@@ -22,10 +22,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
-	"github.com/abolfazl/w-ui/internal/l2tpguide"
+	"github.com/abolfazl/w-ui/internal/devguide"
 )
 
 // Setting keys for the subscription service.
@@ -676,10 +675,9 @@ type SubPageDevice struct {
 	HostID          uint
 	HostName        string
 	HostDescription string
-	// L2TP is the customer's values for the device guides, on an L2TP
-	// tunnel: the page shows the fields of the device they pick rather than
-	// a file nothing imports.
-	L2TP *l2tpguide.Values
+	// Guide is this file's values for the device guides: the page fills in
+	// the fields of the device the customer picks with them.
+	Guide *devguide.Values
 }
 
 // Unlimited reports whether this plan has no volume ceiling.
@@ -878,10 +876,17 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			dev.HostName = d.Host.Name
 			dev.HostDescription = d.Host.Description
 		}
-		if iface, ok := byID[d.Account.InterfaceID]; ok && iface.Protocol == model.ProtocolL2TP {
+		if iface, ok := byID[d.Account.InterfaceID]; ok {
 			acc := d.Account
-			vals := l2tpdriver.GuideValues(&acc, &iface)
-			dev.L2TP = &vals
+			if d.Host != nil {
+				// As the file was written: the host's address where it has one.
+				if d.Host.Address != "" {
+					iface.EndpointHost = d.Host.Address
+				}
+				iface.ListenPort = d.Host.EffectivePort(iface.ListenPort)
+			}
+			vals := guideValues(&acc, &iface, dev.Filename)
+			dev.Guide = &vals
 		}
 		page.Devices = append(page.Devices, dev)
 	}
