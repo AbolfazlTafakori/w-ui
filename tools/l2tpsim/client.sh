@@ -89,6 +89,7 @@ if [ "${PPTP:-}" = 1 ]; then
 		echo "noauth"
 		echo "nodefaultroute"
 		echo "noipdefault"
+		echo "usepeerdns"
 		echo "nobsdcomp"
 		echo "nodeflate"
 		echo "debug"
@@ -116,6 +117,7 @@ if [ -n "$TUNNEL" ]; then echo "* * $TUNNEL" > /tmp/sim/l2tp-secrets; chmod 600 
 	echo "noauth"
 	echo "nodefaultroute"
 	echo "noipdefault"
+	echo "usepeerdns"
 	echo "mtu 1280"
 	echo "mru 1280"
 	echo "debug"
@@ -141,8 +143,12 @@ if [ -z "$addr" ]; then
 fi
 mppe=$(grep -o -m1 -E 'MPPE [0-9]+-bit[^"]*enabled' /tmp/sim/syslog || true)
 detail="$detail ppp=$addr ${mppe:+mppe=\"$mppe\"}"
-if ping -c 2 -W 3 -I ppp0 10.77.0.1 >/dev/null 2>&1; then
-	finish ok
-fi
-detail="$detail ping=lost"
+bad=0
+# The address the panel gave this device, and no other.
+got=${addr%%/*}
+if [ "$got" = "$WANT_IP" ]; then detail="$detail address=yes"; else detail="$detail address=no($got!=$WANT_IP)"; bad=1; fi
+# The server's DNS, handed over in IPCP.
+if grep -q "primary   DNS address 1.1.1.1" /tmp/sim/syslog; then detail="$detail dns=yes"; else detail="$detail dns=no"; bad=1; fi
+if ping -c 2 -W 3 -I ppp0 10.77.0.1 >/dev/null 2>&1; then detail="$detail gateway=yes"; else detail="$detail gateway=no"; bad=1; fi
+[ "$bad" = 0 ] && finish ok
 finish fail
