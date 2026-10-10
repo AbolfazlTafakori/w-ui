@@ -995,12 +995,12 @@ PersistentKeepalive = 25
       });
       if ([].some.call(file.options, function (o) { return o.value === prev; })) file.value = prev;
       pick.hidden = file.options.length === 0;
+      
+      
       box.querySelectorAll('.setup-device-notes').forEach(function (n) {
-        var mine = n.getAttribute('data-device') === id;
-        n.hidden = !mine;
-        var none = n.querySelector('.setup-none');
-        if (none) none.hidden = file.options.length > 0;
-        if (mine && !n.querySelector('.guide-note')) n.hidden = true;
+        var none = n.querySelector('.setup-none'), dials = file.options.length > 0;
+        if (none) none.hidden = dials;
+        n.hidden = n.getAttribute('data-device') !== id || (dials && !n.querySelector(':scope > .guide-note'));
       });
       show();
     }
