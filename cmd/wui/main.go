@@ -301,6 +301,10 @@ func run() error {
 		LocalNodeID: local.ID,
 	})
 	rec.Start(ctx)
+	// The sharing record begins with this release; what earlier ones logged
+	// is read back into it once, in the background: a year of log can take a
+	// while, and nothing waits on it.
+	go rec.ImportSharingOnce(ctx)
 	// Outbound subscriptions are fetched on their own intervals.
 	go service.NewOutboundSubs(db, outbounds, log).Run(ctx)
 

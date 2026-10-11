@@ -161,3 +161,77 @@ func journalTime(stamp string) time.Time {
 	}
 	return time.UnixMicro(usec).UTC()
 }
+
+// ScanJournal reads this panel's lines from the journal back to since, oldest
+// first, and hands keep each one the panel itself wrote whose message is one
+// of msgs. It streams: a year of a busy panel's log is far more than should
+// be held in memory to find a handful of lines in it.
+func ScanJournal(ctx context.Context, since time.Time, msgs []string, keep func(Entry)) error {
+	want := make(map[string]bool, len(msgs))
+	for _, m := range msgs {
+		want[m] = true
+	}
+	cmd := exec.CommandContext(ctx, "journalctl",
+		"-u", journalUnit,
+		"--since", since.UTC().Format("2006-01-02 15:04:05")+" UTC",
+		"-o", "json",
+		"--output-fields", "MESSAGE,PRIORITY",
+		"--no-pager",
+	)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		if strings.Contains(err.Error(), "executable file not found") {
+			return fmt.Errorf("this server has no journalctl")
+		}
+		return err
+	}
+	sc := bufio.NewScanner(out)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Bytes()
+		// Most lines are not wanted; a cheap look first saves decoding them.
+		hit := false
+		for m := range want {
+			if bytes.Contains(line, []byte(m)) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			continue
+		}
+		var row struct {
+			Message   string `json:"MESSAGE"`
+			Priority  string `json:"PRIORITY"`
+			Timestamp string `json:"__REALTIME_TIMESTAMP"`
+		}
+		if json.Unmarshal(line, &row) != nil || row.Message == "" {
+			continue
+		}
+		e := journalEntry(row.Message, row.Priority, row.Timestamp)
+		if want[e.Message] && e.Fields != nil {
+			keep(e)
+		}
+	}
+	scanErr := sc.Err()
+	waitErr := cmd.Wait()
+	msg := strings.TrimSpace(errBuf.String())
+	if strings.Contains(msg, "insufficient permissions") {
+		return ErrJournalDenied
+	}
+	if scanErr != nil {
+		return scanErr
+	}
+	if waitErr != nil {
+		if msg == "" {
+			msg = waitErr.Error()
+		}
+		return fmt.Errorf("could not read the system journal: %s", msg)
+	}
+	return nil
+}

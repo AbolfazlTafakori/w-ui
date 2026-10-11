@@ -280,7 +280,8 @@ var newSinceNewestFixture = map[string]string{}
 // runtimeKeys are kept by the panel for itself, not set by an operator.
 var runtimeKeys = map[string]bool{
 	"notify.backupLastAt": true, "notify.backupLastSchedule": true,
-	"usage.files_since": true,
+	"usage.files_since":     true,
+	"sharing.historyImport": true,
 }
 
 // The newest fixture holds every setting this build can store, so the

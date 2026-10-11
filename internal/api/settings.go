@@ -517,3 +517,37 @@ func (s *Server) handleSharing(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, report)
 }
+
+// sharingHistory is the record and how reading the log back went.
+type sharingHistory struct {
+	Events []model.SharingEvent      `json:"events"`
+	Import *reconciler.SharingImport `json:"import,omitempty"`
+}
+
+// handleSharingHistory lists the sharing record, newest first.
+func (s *Server) handleSharingHistory(w http.ResponseWriter, r *http.Request) {
+	if s.rec == nil {
+		writeJSON(w, http.StatusOK, sharingHistory{Events: []model.SharingEvent{}})
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	events, err := s.rec.SharingHistory(r.Context(), limit)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	out := sharingHistory{Events: events}
+	if st, ok := s.rec.SharingImportStatus(); ok {
+		out.Import = &st
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleSharingImport reads the log back into the record again.
+func (s *Server) handleSharingImport(w http.ResponseWriter, r *http.Request) {
+	if s.rec == nil {
+		writeJSON(w, http.StatusOK, reconciler.SharingImport{State: "unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.rec.ImportSharingFromLog(r.Context()))
+}

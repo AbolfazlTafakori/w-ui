@@ -621,6 +621,14 @@ func (s *Server) routes() []Route {
 			Summary: "Credentials seen from several places at once.",
 			Note:    "Evidence, not proof. Nothing is disconnected automatically.",
 			handler: s.handleSharing},
+		{Method: "GET", Path: "/api/sharing/history", Group: "Server", Auth: true,
+			Summary: "Every time a device was seen in several places at once, or held off for going over its plan.",
+			Note:    "Kept after the live report moves on and after the customer is deleted. Takes limit. The time before this release is read back from the server's log once.",
+			handler: s.handleSharingHistory},
+		{Method: "POST", Path: "/api/sharing/history/import", Group: "Server", Auth: true, Operator: true,
+			Summary: "Read the server's log back into the sharing record again.",
+			Note:    "For a server whose log could not be read the first time. Nothing is added twice.",
+			handler: s.handleSharingImport},
 
 		// ── Settings and backups ──
 		{Method: "GET", Path: "/api/settings", Group: "Settings", Auth: true,

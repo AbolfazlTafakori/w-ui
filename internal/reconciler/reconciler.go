@@ -136,6 +136,8 @@ type Reconciler struct {
 	sessions sessionShapes
 	// lastPrune is when stale connection addresses were last swept.
 	lastPrune time.Time
+	// lastHistory is when the sharing report was last written down.
+	lastHistory time.Time
 	// lastRenew is when plans that renew by the period were last looked at.
 	lastRenew time.Time
 }
@@ -379,6 +381,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 		r.log.Warn("could not record connection addresses", "error", err)
 	}
 	r.maybePrune(ctx, now)
+	r.maybeRecordSharing(ctx, now)
 
 	return total, nil
 }
@@ -962,6 +965,7 @@ func (r *Reconciler) holdOver(ctx context.Context, c *model.Client, accs []model
 		r.log.Info("connection limit reached; device held off",
 			"client", c.Name, "device", h.Account.DeviceName, "on", where,
 			"limit", c.DeviceLimit, "until", h.Until.Format(time.Kitchen))
+		r.recordHeld(ctx, c, h, where, now)
 		if h.Node != 0 {
 			if r.OnHold != nil {
 				r.OnHold(h.Node, service.NodeHold{OriginID: h.Account.ID, Until: h.Until})

@@ -644,6 +644,48 @@ type AccountEndpoint struct {
 	Hits      uint64    `gorm:"not null;default:1" json:"hits"`
 }
 
+// SharingEvent is one time a device was used from several places at once,
+// or held off for going over its plan's connections: the record of it, kept
+// after the live report has moved on and after the customer is deleted.
+//
+// The customer's and device's names are copied in, not looked up, for that
+// reason: a record that said "account 412" once the customer was gone would
+// say nothing.
+type SharingEvent struct {
+	ID uint `gorm:"primaryKey" json:"id"`
+	// Kind is SharingShared or SharingHeld.
+	Kind      string `gorm:"size:16;not null;index;uniqueIndex:idx_sharing_event" json:"kind"`
+	AccountID uint   `gorm:"index;not null;default:0" json:"accountId"`
+	ClientID  uint   `gorm:"index;not null;default:0" json:"clientId"`
+	// The names as they were, which is what identifies a record from the
+	// log too, where there are no ids.
+	ClientName string `gorm:"size:128;not null;uniqueIndex:idx_sharing_event" json:"clientName"`
+	DeviceName string `gorm:"size:64;not null;uniqueIndex:idx_sharing_event" json:"deviceName"`
+	// Addrs are the public addresses, comma-separated.
+	Addrs string `gorm:"type:text" json:"addrs"`
+	// Limit is the plan's connections when the device was held off, and
+	// Place where the hold was carried out: "here", or "node N".
+	Limit int    `gorm:"column:plan_limit;not null;default:0" json:"limit"`
+	Place string `gorm:"size:32" json:"place"`
+	// Source is SharingLive, or SharingFromLog for what was read back from
+	// the server's log of the time before this was kept.
+	Source    string    `gorm:"size:16;not null" json:"source"`
+	StartedAt time.Time `gorm:"not null;index;uniqueIndex:idx_sharing_event" json:"startedAt"`
+	LastSeen  time.Time `gorm:"not null;index" json:"lastSeen"`
+
+	// Deleted says the customer is gone since: filled when the record is
+	// read, never stored.
+	Deleted bool `gorm:"-" json:"deleted"`
+}
+
+// What a SharingEvent is, and where it came from.
+const (
+	SharingShared  = "shared" // seen from several places at once
+	SharingHeld    = "held"   // held off: over the plan's connections
+	SharingLive    = "live"
+	SharingFromLog = "log"
+)
+
 // AllModels is the migration set, in dependency order.
 func AllModels() []any {
 	return []any{
@@ -659,6 +701,7 @@ func AllModels() []any {
 		&Group{},
 		&ClientGroup{},
 		&AccountEndpoint{},
+		&SharingEvent{},
 		&Outbound{},
 		&OutboundSub{},
 		&Balancer{},

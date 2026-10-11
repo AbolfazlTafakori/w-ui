@@ -6,6 +6,35 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Sharing history.** The Sharing page has a **History** tab: every file
+  that has been on the list, and every device held off for going over its
+  plan's users, is kept there -- after it leaves the list, and after the
+  customer is deleted -- with its addresses, its plan and when. On the
+  first start, the log of earlier releases is read back into it: the holds
+  they logged, and files they logged connecting from three or more places
+  inside ten minutes.
+- **PPTP**, as a tunnel of its own, for routers and modems that have
+  nothing else: off until made, one per server on TCP 1723, MS-CHAPv2 and
+  128-bit MPPE required, and said to be weak wherever it is offered.
+- **Device guides for 78 routers, modems and phones**, chosen from two
+  lists -- the device, then the connection it can make -- on the customer's
+  page and in the panel.
+
+### Fixed
+- **The sharing notice is sent.** Telegram and mail offered a *sharing*
+  notice that nothing ever sent. It now goes once, when a file first shows
+  on the list.
+- **One L2TP or PPTP sign-in is one session.** A sign-in used again from
+  another device left both connected on one address; the newer now replaces
+  the older, as OpenVPN does.
+- **Two devices on one sign-in at once count as two.** Where a protocol
+  hands back a session per device (L2TP, PPTP, OpenVPN with duplicates
+  allowed), the readings cancelled out and the second device went
+  uncounted against the plan's users. Each session is now followed on its
+  own; two count as two only while both are moving traffic, so a phone
+  changing networks is still one.
+
 ## [2.6.6] — 2026-10-08
 
 ### Fixed

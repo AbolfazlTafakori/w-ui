@@ -2,6 +2,7 @@
 package logger
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -68,3 +69,9 @@ func New(level, format string) (*slog.Logger, error) {
 	slog.SetDefault(l)
 	return l, nil
 }
+
+// ErrJournalDenied is the panel's user not being allowed to read the system
+// journal, which by default it is not.
+var ErrJournalDenied = errors.New("this panel's user cannot read the system journal. To allow it, run: " +
+	"usermod -aG systemd-journal wui && systemctl restart wui -- " +
+	"note that this also lets the panel read other services' logs on this machine")

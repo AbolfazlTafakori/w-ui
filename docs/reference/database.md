@@ -17,6 +17,7 @@ One SQLite file: `/var/lib/wui/wui.db` (with its `-wal` and `-shm` companions wh
 | `clients` | customers: quota, expiry, users (`device_limit`), renewal, status, subscription token, Telegram id |
 | `accounts` | one row per customer device: key or credential, address, last handshake |
 | `account_endpoints` | where each device was last seen from (sharing detection) |
+| `sharing_events` | the sharing history: each time a device was used from several places or held off, kept after the customer is deleted |
 | `traffic_samples` | usage history |
 | `ip_leases` | address allocation |
 | `groups`, `hosts`, `outbounds`, `outbound_subs`, `balancers`, `routing_rules` | what their pages show |
