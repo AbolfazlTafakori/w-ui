@@ -160,6 +160,8 @@ type Interface struct {
 	// L2TP is left out of the API for every other protocol, so their
 	// interfaces answer exactly as they did before it existed.
 	L2TP JSONField[L2TPParams] `gorm:"type:text;column:l2tp" json:"l2tp,omitzero"`
+	// IKEv2 likewise, for the IKEv2 tunnels alone.
+	IKEv2 JSONField[IKEv2Params] `gorm:"type:text;column:ikev2" json:"ikev2,omitzero"`
 
 	// Configured is set on the way out of the API, not stored. It lets a page
 	// say that certificates exist without being handed them.
@@ -346,6 +348,12 @@ type Account struct {
 
 	DeviceName string `gorm:"size:64;not null" json:"deviceName"`
 	IP         string `gorm:"size:45;not null;uniqueIndex:idx_iface_ip" json:"ip"`
+
+	// IKEv2 certificate: the device's own, signed by its tunnel's
+	// authority, for the ways that sign in by certificate. Handed to the
+	// customer in a file only they can open (PKCS#12, under their password).
+	CertPEM    string `gorm:"type:text" json:"-"`
+	CertKeyPEM string `gorm:"type:text" json:"-"`
 
 	// WireGuard credentials.
 	PrivateKey   string `gorm:"size:64" json:"-"`

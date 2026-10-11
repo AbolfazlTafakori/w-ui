@@ -48,7 +48,7 @@ func l2tpAgentCommand(args []string) error {
 	defer stop()
 
 	sys := l2tpagent.NewSystem(log)
-	var agents []*l2tpagent.Agent
+	var agents []l2tpagent.Stepper
 	for _, p := range []string{l2tpconf.ProtocolL2TP, l2tpconf.ProtocolPPTP} {
 		files, done, err := l2tpagent.OpenFiles(args[0], p)
 		if err != nil {
@@ -57,6 +57,13 @@ func l2tpAgentCommand(args []string) error {
 		defer done()
 		agents = append(agents, l2tpagent.New(p, sys, files, log))
 	}
+	// IKEv2 beside them, in the strongSwan L2TP's IPsec runs in.
+	ikeFiles, ikeDone, err := l2tpagent.OpenFiles(args[0], l2tpconf.ProtocolIKEv2)
+	if err != nil {
+		return fmt.Errorf("l2tp-agent: %w", err)
+	}
+	defer ikeDone()
+	agents = append(agents, l2tpagent.NewIKEv2(l2tpagent.NewIPsecSystem(log), ikeFiles, log))
 	log.Info("ppp agent started", "version", version, "data", args[0])
 	return l2tpagent.Run(ctx, l2tpAgentInterval, agents...)
 }

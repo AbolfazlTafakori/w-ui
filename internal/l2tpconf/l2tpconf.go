@@ -49,6 +49,9 @@ const (
 const (
 	ProtocolL2TP = "l2tp"
 	ProtocolPPTP = "pptp"
+	// ProtocolIKEv2 is the IKEv2 tunnel, which the same agent carries
+	// (package ikev2conf describes it); named here for its directory.
+	ProtocolIKEv2 = "ikev2"
 )
 
 // ServerName is the name this server gives itself to pppd, and the server
@@ -346,6 +349,9 @@ func NewPPTPPaths(dataDir string) Paths { return Paths{Dir: filepath.Join(dataDi
 func PathsFor(dataDir, protocol string) Paths {
 	if protocol == ProtocolPPTP {
 		return NewPPTPPaths(dataDir)
+	}
+	if protocol == ProtocolIKEv2 {
+		return Paths{Dir: filepath.Join(dataDir, "ikev2")}
 	}
 	return NewPaths(dataDir)
 }

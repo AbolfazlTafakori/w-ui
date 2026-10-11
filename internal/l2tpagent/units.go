@@ -58,11 +58,12 @@ Restart=on-failure
 RestartSec=5
 `
 	watch = `[Unit]
-Description=W-UI — start the PPP agent while the panel describes an L2TP or PPTP tunnel
+Description=W-UI — start the PPP agent while the panel describes an L2TP, PPTP or IKEv2 tunnel
 
 [Path]
 PathExists=` + path.Join(dataDir, "l2tp", "state.json") + `
 PathExists=` + path.Join(dataDir, "pptp", "state.json") + `
+PathExists=` + path.Join(dataDir, "ikev2", "state.json") + `
 Unit=wui-l2tp.service
 
 [Install]

@@ -113,6 +113,42 @@ type L2TPParams struct {
 	AllowPlain bool `json:"allowPlain"`
 }
 
+// IKEv2Params holds interface-scoped IKEv2/IPsec settings.
+//
+// A tunnel can let a device sign in four ways, each one a type in the VPN
+// settings Android, iOS, macOS and Windows have built in; which ones it
+// allows is the operator's choice. Every device has one identity for all of
+// them -- its username -- and one address.
+//
+// The tunnel is its own certificate authority: it signs the server's
+// certificate, which every way but PSK shows the device, and each device's
+// own, for the two that sign in by certificate. The keys are stored here,
+// like OpenVPN's, and taken out on the way out of the API (redactKeys).
+type IKEv2Params struct {
+	// MSCHAPv2 is a username and password (EAP-MSCHAPv2), PSK a key of the
+	// device's own, RSA a certificate, EAPTLS a certificate inside EAP.
+	MSCHAPv2 bool `json:"mschapv2"`
+	PSK      bool `json:"psk"`
+	RSA      bool `json:"rsa"`
+	EAPTLS   bool `json:"eapTls"`
+
+	CACert     string `json:"caCert,omitempty"`
+	CAKey      string `json:"caKey,omitempty"`
+	ServerCert string `json:"serverCert,omitempty"`
+	ServerKey  string `json:"serverKey,omitempty"`
+	// ServerNames are the names and addresses the server's certificate is
+	// for: what devices dial. A device checking it (iOS, Windows) refuses a
+	// certificate that does not name what it dialled.
+	ServerNames []string `json:"serverNames,omitempty"`
+}
+
+// AnyMode reports whether the tunnel lets a device in at all.
+func (p IKEv2Params) AnyMode() bool { return p.MSCHAPv2 || p.PSK || p.RSA || p.EAPTLS }
+
+// ByCertificate reports whether a device may sign in with a certificate of
+// its own, which then has to be issued to it.
+func (p IKEv2Params) ByCertificate() bool { return p.RSA || p.EAPTLS }
+
 // OpenVPNParams holds interface-scoped OpenVPN settings.
 //
 // The panel runs OpenVPN in credential-only mode: verify-client-cert none plus

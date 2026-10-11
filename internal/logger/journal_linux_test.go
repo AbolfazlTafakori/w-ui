@@ -79,7 +79,7 @@ func TestTheJournalIsScannedForTheLinesAskedFor(t *testing.T) {
 	if conn.Fields["device"] != "Ali / Home / Phone" || conn.Fields["from"] != "203.0.113.7" {
 		t.Fatalf("connection fields %+v", conn.Fields)
 	}
-	if hold.Time.IsZero() || !conn.Time.After(hold.Time) {
+	if hold.Time.IsZero() || conn.Time.Before(hold.Time) {
 		t.Fatalf("times %v %v, want each line's own, oldest first", hold.Time, conn.Time)
 	}
 }

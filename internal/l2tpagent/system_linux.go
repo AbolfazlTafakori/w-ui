@@ -44,6 +44,9 @@ type linuxSystem struct {
 // NewSystem is the system on this machine.
 func NewSystem(log *slog.Logger) System { return &linuxSystem{log: log} }
 
+// NewIPsecSystem is the system the IKEv2 tunnel runs on: the same machine.
+func NewIPsecSystem(log *slog.Logger) IPsecSystem { return &linuxSystem{log: log} }
+
 func (s *linuxSystem) run(ctx context.Context, timeout time.Duration, stdin string, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -76,8 +79,16 @@ func have(bin string) bool {
 func (s *linuxSystem) missing(protocol string) []string {
 	var out []string
 	bins := []string{"xl2tpd", "pppd", "swanctl"}
-	if protocol == l2tpconf.ProtocolPPTP {
+	switch protocol {
+	case l2tpconf.ProtocolPPTP:
 		bins = []string{"pptpd", "pppd"}
+	case l2tpconf.ProtocolIKEv2:
+		bins = []string{"swanctl"}
+		for _, p := range ikev2Plugins {
+			if !havePlugin(p) {
+				out = append(out, "strongSwan's "+p+" plugin")
+			}
+		}
 	}
 	for _, bin := range bins {
 		if !have(bin) {
@@ -104,6 +115,12 @@ func packages(protocol, family string) []string {
 	switch {
 	case protocol == l2tpconf.ProtocolPPTP:
 		return []string{"pptpd", "ppp"}
+	case protocol == l2tpconf.ProtocolIKEv2 && family == "debian":
+		// The EAP methods and AES-GCM are in packages of their own there.
+		return []string{"strongswan-swanctl", "charon-systemd", "libcharon-extauth-plugins",
+			"libcharon-extra-plugins", "libstrongswan-standard-plugins"}
+	case protocol == l2tpconf.ProtocolIKEv2:
+		return []string{"strongswan"}
 	case family == "debian":
 		return []string{"strongswan-swanctl", "charon-systemd", "xl2tpd", "ppp"}
 	}
@@ -341,18 +358,10 @@ func (s *linuxSystem) UnloadIPsec(ctx context.Context) error {
 			return err
 		}
 	}
-	unit := strongswanUnit()
-	if _, err := os.Stat(l2tpconf.RunFile(startedMarker)); err == nil {
-		_, err := s.run(ctx, cmdTimeout, "", "systemctl", "stop", unit)
-		return err
-	}
-	if s.active(ctx, unit) {
-		// Running for something else too: the connection is taken out of it
-		// and the rest left as it is.
-		_, err := s.run(ctx, cmdTimeout, "", "swanctl", "--load-all", "--noprompt")
-		return err
-	}
-	return nil
+	// Stopped only when nothing of the panel's is left in it -- the IKEv2
+	// tunnel runs in the same strongSwan -- and the agent started it;
+	// otherwise L2TP's connection is taken out and the rest left running.
+	return s.releaseCharon(ctx)
 }
 
 // ── firewall ─────────────────────────────────────────────────────────────────

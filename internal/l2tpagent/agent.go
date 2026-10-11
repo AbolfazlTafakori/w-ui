@@ -413,7 +413,7 @@ func (a *Agent) ownFiles() []string {
 	if a.pptp() {
 		return []string{"pptp-options", "pptpd.conf", "pptpd.pid", "pptpd.log"}
 	}
-	return []string{"options", "xl2tpd.conf", "l2tp-secrets", "xl2tpd.pid", "xl2tpd.log", "l2tp-control", startedMarker}
+	return []string{"options", "xl2tpd.conf", "l2tp-secrets", "xl2tpd.pid", "xl2tpd.log", "l2tp-control"}
 }
 
 func (a *Agent) fail(err error) error {
@@ -442,7 +442,13 @@ func (a *Agent) report(state, msg string, live []Live) {
 // long as another has one, and starts its own the moment the panel asks.
 // Stopped by its context -- systemd stopping the unit, for an update -- it
 // leaves every daemon and session running, for the next run to adopt.
-func Run(ctx context.Context, interval time.Duration, agents ...*Agent) error {
+// Stepper is a tunnel's agent: Agent for the PPP tunnels, IKEv2Agent for
+// IKEv2.
+type Stepper interface {
+	Step(ctx context.Context) error
+}
+
+func Run(ctx context.Context, interval time.Duration, agents ...Stepper) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {

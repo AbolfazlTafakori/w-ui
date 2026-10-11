@@ -15,6 +15,7 @@ require (
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10
 	gorm.io/driver/postgres v1.5.9
 	gorm.io/gorm v1.25.12
+	software.sslmate.com/src/go-pkcs12 v0.6.0
 )
 
 require (

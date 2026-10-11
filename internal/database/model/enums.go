@@ -16,12 +16,18 @@ const (
 	// modems that have nothing else. Its encryption has been broken for
 	// years, and the panel says so wherever it offers it.
 	ProtocolPPTP Protocol = "pptp"
+	// ProtocolIKEv2 is IKEv2/IPsec: what Android 12 and newer, iOS, macOS and
+	// Windows connect to with nothing installed, now that Android has dropped
+	// L2TP and PPTP. A device signs in by username and password (EAP-
+	// MSCHAPv2), by a key of its own (PSK), or by a certificate (RSA or
+	// EAP-TLS), whichever the tunnel allows.
+	ProtocolIKEv2 Protocol = "ikev2"
 )
 
 // Valid reports whether p is a protocol the panel knows how to serve.
 func (p Protocol) Valid() bool {
 	switch p {
-	case ProtocolWireGuard, ProtocolOpenVPN, ProtocolL2TP, ProtocolPPTP:
+	case ProtocolWireGuard, ProtocolOpenVPN, ProtocolL2TP, ProtocolPPTP, ProtocolIKEv2:
 		return true
 	}
 	return false
@@ -30,12 +36,17 @@ func (p Protocol) Valid() bool {
 // UsesCredentials reports whether a device on this protocol signs in with a
 // username and password, held on its account, rather than carrying a key.
 func (p Protocol) UsesCredentials() bool {
-	return p == ProtocolOpenVPN || p == ProtocolL2TP || p == ProtocolPPTP
+	return p == ProtocolOpenVPN || p == ProtocolL2TP || p == ProtocolPPTP || p == ProtocolIKEv2
 }
 
 // IsPPP reports whether a protocol's sessions are pppd's, run by the root
 // agent: L2TP and PPTP.
 func (p Protocol) IsPPP() bool { return p == ProtocolL2TP || p == ProtocolPPTP }
+
+// ByAgent reports whether a protocol's tunnel is carried by the root agent
+// rather than by the panel itself: L2TP and PPTP (pppd), and IKEv2
+// (strongSwan). Its port is the system's, so a server has one of each.
+func (p Protocol) ByAgent() bool { return p.IsPPP() || p == ProtocolIKEv2 }
 
 func (p Protocol) String() string { return string(p) }
 

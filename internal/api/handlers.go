@@ -138,6 +138,15 @@ func redactKeys(iface model.Interface) model.Interface {
 	iface.OpenVPN = model.JSON(p)
 	iface.Configured = configured
 
+	// IKEv2's authority and server keys likewise; its certificates are
+	// public, and a page shows them to whoever installs them.
+	if iface.Protocol == model.ProtocolIKEv2 {
+		k := iface.IKEv2.V
+		iface.Configured = k.CAKey != "" && k.ServerKey != ""
+		k.CAKey, k.ServerKey = "", ""
+		iface.IKEv2 = model.JSON(k)
+	}
+
 	// The WireGuard private key is already hidden by its struct tag; cleared
 	// here as well so this function is the one place to look.
 	iface.PrivateKey = ""
