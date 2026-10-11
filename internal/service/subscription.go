@@ -25,6 +25,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
+	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
@@ -72,7 +73,19 @@ type Subscriptions struct {
 func NewSubscriptions(
 	db *gorm.DB, pool *backend.Pool, hosts *Hosts, log *slog.Logger,
 ) *Subscriptions {
-	return &Subscriptions{db: db, pool: pool, hosts: hosts, log: log}
+	s := &Subscriptions{db: db, pool: pool, hosts: hosts, log: log}
+	// An OpenVPN profile is listed in the customer's app under the name the
+	// seller gave their subscription page, and the tunnel's.
+	ovpnconf.ProfileName = func(iface *model.Interface) string {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cfg, err := s.Settings(ctx)
+		if err != nil || strings.TrimSpace(cfg.Title) == "" {
+			return iface.Name
+		}
+		return strings.TrimSpace(cfg.Title) + " · " + iface.Name
+	}
+	return s
 }
 
 // SubSettings is what the settings page can change.

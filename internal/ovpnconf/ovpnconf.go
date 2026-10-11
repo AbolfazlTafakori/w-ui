@@ -186,6 +186,31 @@ func RenderProfile(iface *model.Interface) string {
 	if iface.MTU > 0 {
 		fmt.Fprintf(&b, "tun-mtu %d\n", iface.MTU)
 	}
+	b.WriteString("sndbuf 0\nrcvbuf 0\n")
+
+	// Windows asks every network card's DNS at once and takes the first
+	// answer: with the tunnel up it still asks the ISP's, which answers a
+	// filtered name with its own block page and sees every name looked up.
+	// This keeps Windows to the tunnel's. Written here rather than pushed,
+	// and after ignore-unknown-option, so a client that does not know it --
+	// any but Windows' -- passes over it instead of refusing the file.
+	b.WriteString("ignore-unknown-option block-outside-dns\n")
+	b.WriteString("block-outside-dns\n")
+
+	if transport(p) == "udp" {
+		// UDP has no connection to close: a client that disconnects tells
+		// the server so, and its session ends then instead of a minute later
+		// when its keepalive runs out. A device the customer moves to is not
+		// held off over a session that is in fact already over. TCP closes
+		// its connection and does not take the option.
+		b.WriteString("explicit-exit-notify 1\n")
+	}
+
+	// The name OpenVPN Connect lists the profile under, instead of an
+	// address. Other clients ignore it.
+	if name := cleanName(ProfileName(iface)); name != "" {
+		fmt.Fprintf(&b, "setenv FRIENDLY_NAME %q\n", name)
+	}
 	b.WriteString("verb 3\n")
 
 	if p.CACert != "" {
@@ -278,6 +303,16 @@ func RenderServer(iface *model.Interface, l Layout) (string, error) {
 	b.WriteString("persist-key\npersist-tun\n")
 	if iface.MTU > 0 {
 		fmt.Fprintf(&b, "tun-mtu %d\n", iface.MTU)
+	}
+	// The socket buffers sized by the kernel rather than OpenVPN's old fixed
+	// default, which caps a fast or distant connection well below its link;
+	// pushed too, so every file already handed out gets the same.
+	b.WriteString("sndbuf 0\nrcvbuf 0\n")
+	b.WriteString("push \"sndbuf 0\"\npush \"rcvbuf 0\"\n")
+	if transport(p) == "udp" {
+		// A restart of the server tells every UDP client at once, which
+		// reconnects then rather than after its keepalive runs out.
+		b.WriteString("explicit-exit-notify 1\n")
 	}
 
 	b.WriteString("\npush \"redirect-gateway def1 bypass-dhcp\"\n")
@@ -456,6 +491,27 @@ func transport(p model.OpenVPNParams) string {
 // DNSFor is the resolver pushed to customers. The engine replaces it while
 // the panel's own resolver is on; by default it is the interface's.
 var DNSFor = func(iface *model.Interface) string { return iface.DNS }
+
+// ProfileName is the name a profile is listed under in OpenVPN Connect: the
+// panel sets it to the subscription's title and the tunnel. Cleaned by
+// cleanName, whatever it returns.
+var ProfileName = func(iface *model.Interface) string { return iface.Name }
+
+// cleanName keeps a name to what a quoted setenv value holds as it is: no
+// line breaks, quotes or backslashes, and not too long for a list.
+func cleanName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == '"' || r == '\\' || r < 0x20 || r == 0x7f:
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+	if r := []rune(s); len(r) > 64 {
+		s = string(r[:64])
+	}
+	return s
+}
 
 // dnsServers splits the interface's DNS field, which holds a comma-separated
 // list, into individual addresses.

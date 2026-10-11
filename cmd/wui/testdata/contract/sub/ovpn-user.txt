@@ -21,6 +21,12 @@ data-ciphers AES-256-GCM
 cipher AES-256-GCM
 auth SHA256
 tun-mtu 1420
+sndbuf 0
+rcvbuf 0
+ignore-unknown-option block-outside-dns
+block-outside-dns
+explicit-exit-notify 1
+setenv FRIENDLY_NAME "W-UI · fx-ovpn"
 verb 3
 
 <ca>

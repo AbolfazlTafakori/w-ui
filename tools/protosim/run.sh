@@ -82,7 +82,7 @@ client_args() {
 	n=$((n + 1))
 	CLIENT=(--privileged --network protosim --ip "172.31.66.$((100 + n))"
 		-e NAME="$1" -e PROTOCOL="$2" -e DEVICE="$3" -e EXPECT="$4"
-		-e GATEWAY=10.66.0.1 -e INTERNET="$INTERNET" -e DNS=1.1.1.1 -e MTU=1420 -e SERVER_IP="$SERVER" -e SPECIALS="${SPECIALS:-}"
+		-e GATEWAY=10.66.0.1 -e INTERNET="$INTERNET" -e DNS=1.1.1.1 -e MTU=1420 -e SERVER_IP="$SERVER" -e SPECIALS="${SPECIALS:-}" -e OLDFILE="${OLDFILE:-}"
 		-e VERBOSE="${VERBOSE:-}")
 }
 # client NAME PROTOCOL DEVICE EXPECT
@@ -121,6 +121,38 @@ same_sign_in() {
 	docker rm -f protosim-hold >/dev/null 2>&1 || true
 }
 
+# sessions_of USER: how many sessions the OpenVPN server holds for a user,
+# asked of its management socket.
+sessions_of() {
+	docker exec protosim-server python3 -c "
+import socket, sys
+s = socket.socket(socket.AF_UNIX)
+s.connect('/var/lib/wui/openvpn/ovpn0/management.sock')
+s.sendall(b'status 2\n')
+buf = b''
+while b'END' not in buf:
+    buf += s.recv(65536)
+print(sum(1 for l in buf.decode().splitlines() if l.startswith('CLIENT_LIST,$1,')))
+"
+}
+
+# left_at_once LABEL WANT: a UDP device disconnects; seven seconds later the
+# server still holds WANT sessions for it -- none with explicit-exit-notify,
+# whose exit OpenVPN carries out five seconds after it is told, and one for a
+# file from before it, held until the keepalive runs out two minutes on.
+left_at_once() {
+	local label=$1 want=$2 got
+	client "$label: a device that disconnects" openvpn dev02 ok
+	sleep 5
+	got=$(sessions_of s1-dev02)
+	if [ "$got" = "$want" ]; then
+		verdict PASS "$label: sessions left 7s after it disconnected: $got"
+	else
+		verdict FAIL "$label: sessions left 7s after it disconnected: $got, want $want"
+		docker exec protosim-server sh -c 'tail -n 25 /var/lib/wui/openvpn/ovpn0/*.log' 2>&1
+	fi
+}
+
 suite() { # label client-protocol harness-flags...
 	local label=$1 proto=$2; shift 2
 	# ONLY=text runs only the suites whose label has it in.
@@ -136,6 +168,11 @@ suite() { # label client-protocol harness-flags...
 	client "$label: first device, still in"       "$proto" dev01 ok
 	# How long each sync of the whole tunnel took on the server.
 	docker logs protosim-server 2>&1 | grep -o 'devices=[0-9]* took=[^ ]*' | sed 's/^/  sync: /'
+	if [ "$label" = "OpenVPN over UDP" ]; then
+		left_at_once "$label" 0
+	elif [ "$label" = "OpenVPN over UDP, a file from before" ]; then
+		left_at_once "$label" 1
+	fi
 	if [ "$proto" != wireguard ] && [ "$proto" != amneziawg ]; then
 		# One WireGuard key on two devices is not the driver's to stop: the
 		# kernel keeps one endpoint per peer, and the panel's reconciler
@@ -154,6 +191,10 @@ SPECIALS=1 suite "AmneziaWG 2 (ranges, I1-I2)" amneziawg -protocol wireguard -aw
 SPECIALS=1 suite "AmneziaWG 2 at scale (3000 devices)" amneziawg -protocol wireguard -awg awg2 -extra 3000
 suite "OpenVPN over UDP" openvpn -protocol openvpn -transport udp
 suite "OpenVPN over TCP" openvpn -protocol openvpn -transport tcp
+# The files customers already hold, from before the connection options,
+# against the server as it is now.
+OLDFILE=1 suite "OpenVPN over UDP, a file from before" openvpn -protocol openvpn -transport udp
+OLDFILE=1 suite "OpenVPN over TCP, a file from before" openvpn -protocol openvpn -transport tcp
 suite "L2TP/IPsec" l2tp -protocol l2tp
 suite "L2TP without IPsec" l2tp-plain -protocol l2tp -plain
 suite "PPTP" pptp -protocol pptp

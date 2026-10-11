@@ -39,6 +39,12 @@ finish() {
 		echo "---- routes"; ip route 2>/dev/null; ip rule 2>/dev/null
 	fi
 	[ "$verdict" = PASS ] || exit 1
+	# Disconnected the way a customer does it, so the server hears it leave
+	# (or, for a file from before explicit-exit-notify, does not).
+	if [ "$PROTOCOL" = openvpn ] && [ "${HOLD:-}" != 1 ] && [ -f /tmp/ovpn.pid ]; then
+		kill -TERM "$(cat /tmp/ovpn.pid)" 2>/dev/null
+		sleep 2
+	fi
 	[ "${HOLD:-}" = 1 ] && [ "$got" = ok ] && hold
 	exit 0
 }
@@ -165,8 +171,16 @@ openvpn)
 	# whether the server cut it off, not what the device does next.
 	again=""
 	[ "${HOLD:-}" = 1 ] && again="--remap-usr1 SIGTERM"
+	profile="/out/$DEVICE.profile"
+	if [ "${OLDFILE:-}" = 1 ]; then
+		# A file handed out before the connection options: what customers
+		# already hold has to keep working against the server as it is now.
+		grep -v -e 'block-outside-dns' -e 'explicit-exit-notify' -e '^sndbuf' -e '^rcvbuf' -e 'FRIENDLY_NAME' \
+			"$profile" > /tmp/old.ovpn
+		profile=/tmp/old.ovpn
+	fi
 	# shellcheck disable=SC2086
-	openvpn --config "/out/$DEVICE.profile" --auth-user-pass "/out/$DEVICE.creds" $again \
+	openvpn --config "$profile" --auth-user-pass "/out/$DEVICE.creds" $again \
 		--log /tmp/client.log --daemon --writepid /tmp/ovpn.pid
 	i=0
 	while [ "$i" -lt 25 ]; do

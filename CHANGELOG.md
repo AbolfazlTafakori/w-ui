@@ -7,6 +7,12 @@ All notable changes to W-UI are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **OpenVPN connects better**, without touching the one-sign-in rule:
+  - Windows keeps to the tunnel's DNS (`block-outside-dns`), so a filtered name is not answered by the ISP's resolver.
+  - A UDP device that disconnects says so (`explicit-exit-notify`), and its session ends in five seconds instead of two minutes.
+  - The kernel sizes the socket buffers (`sndbuf`/`rcvbuf 0`), so a fast or distant link is no longer capped. This is pushed to files already handed out too.
+  - OpenVPN Connect lists the profile by the subscription's title and the tunnel instead of an address.
+  - The DNS and exit options are in the file, not pushed, so every file handed out before keeps connecting. This is tested against the server as it is now.
 - **AmneziaWG, all of it.**
   - **I1 to I5** are written into the server and every customer's file. Before each handshake the device sends packets that look like QUIC, a DNS query or STUN. The form offers these ready-made, or you can write your own from the tags both the kernel module and the phone apps read.
   - **Filled in by the panel, in the form, from the start**: choosing AmneziaWG opens the values already drawn for that server, unlike its other AmneziaWG tunnels (no shared identifier or handshake padding, a different packet before the handshake), fitted to the MTU and kept light for a busy tunnel. Modern (AmneziaWG 2) or Compatible, for devices that cannot be updated. Tested end to end with 3000 devices on one tunnel.
