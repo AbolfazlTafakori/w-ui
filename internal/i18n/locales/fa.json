@@ -19,6 +19,7 @@
   "protocol.openvpn": "OpenVPN",
   "protocol.l2tp": "L2TP/IPsec",
   "protocol.pptp": "PPTP",
+  "interface.awgPresetCustom": "دلخواه شما",
   "interface.awgLevel": "نوع پروفایل",
   "interface.awgLevel.modern": "جدید (AmneziaWG 2)",
   "interface.awgLevel.classic": "سازگار (همه‌ی اپ‌ها)",

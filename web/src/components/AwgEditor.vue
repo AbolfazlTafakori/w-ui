@@ -60,6 +60,13 @@ function applyPreset(key, id) {
   const preset = presets.value.find((x) => x.id === id)
   if (preset) set(key, preset.value)
 }
+// Which ready packet a field holds: its id, "custom" for one typed by
+// hand, nothing for an empty field.
+function presetOf(v) {
+  const s = (v || '').trim()
+  if (!s) return ''
+  return presets.value.find((x) => x.value === s)?.id || 'custom'
+}
 const invalid = (key) => props.fieldName === `awg.${key}`
 </script>
 
@@ -124,12 +131,16 @@ const invalid = (key) => props.fieldName === `awg.${key}`
             <input :data-field="`awg.${k}`" class="ltr mono" autocomplete="off" spellcheck="false" :placeholder="t('interface.awgOff')" :value="p[k] || ''" @input="str(k)($event)" />
           </label>
           <div class="aselect awg-preset">
-            <select :aria-label="t('interface.awgPreset')" value="" @change="applyPreset(k, $event.target.value); $event.target.value = ''">
-              <option value="">{{ t('interface.awgPreset') }}</option>
+            <!-- Names the packet in the field: a ready one by its name, one
+                 typed by hand as the operator's own. -->
+            <select :aria-label="t('interface.awgPreset')" :value="presetOf(p[k])" @change="applyPreset(k, $event.target.value)">
+              <option value="" disabled>{{ t('interface.awgPreset') }}</option>
               <option v-for="pr in presets" :key="pr.id" :value="pr.id">{{ t(`interface.awgPresetName.${pr.id}`) }}</option>
+              <option v-if="presetOf(p[k]) === 'custom'" value="custom" disabled>{{ t('interface.awgPresetCustom') }}</option>
             </select>
           </div>
-          <button v-if="p[k]" type="button" class="abtn icon" :title="t('action.clear')" :aria-label="t('action.clear')" @click="set(k, '')"><AntIcon name="CloseOutlined" /></button>
+          <!-- Always there, so a row does not change width as it fills. -->
+          <button type="button" class="abtn icon" :class="{ hide: !p[k] }" :disabled="!p[k]" :title="t('action.clear')" :aria-label="t('action.clear')" @click="set(k, '')"><AntIcon name="CloseOutlined" /></button>
         </div>
         <p v-if="invalid(k)" class="field-error" role="alert">{{ fieldError }}</p>
       </div>
@@ -159,7 +170,8 @@ const invalid = (key) => props.fieldName === `awg.${key}`
 .awg-special { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .awg-special .ainput { flex: 1; min-width: 0; }
 .awg-i { width: 22px; color: var(--muted); font-size: 13px; }
-.awg-preset { flex: 0 0 auto; width: 140px; }
+.awg-preset { flex: 0 0 auto; width: 150px; }
+.abtn.hide { visibility: hidden; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 @media (max-width: 520px) {
   .awg-special { flex-wrap: wrap; }

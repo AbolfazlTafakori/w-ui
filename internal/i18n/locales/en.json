@@ -19,6 +19,7 @@
   "protocol.openvpn": "OpenVPN",
   "protocol.l2tp": "L2TP/IPsec",
   "protocol.pptp": "PPTP",
+  "interface.awgPresetCustom": "Your own",
   "interface.awgLevel": "Kind of profile",
   "interface.awgLevel.modern": "Modern (AmneziaWG 2)",
   "interface.awgLevel.classic": "Compatible (every app)",
