@@ -82,7 +82,7 @@ client_args() {
 	n=$((n + 1))
 	CLIENT=(--privileged --network protosim --ip "172.31.66.$((100 + n))"
 		-e NAME="$1" -e PROTOCOL="$2" -e DEVICE="$3" -e EXPECT="$4"
-		-e GATEWAY=10.66.0.1 -e INTERNET="$INTERNET" -e DNS=1.1.1.1 -e MTU=1420
+		-e GATEWAY=10.66.0.1 -e INTERNET="$INTERNET" -e DNS=1.1.1.1 -e MTU=1420 -e SERVER_IP="$SERVER" -e SPECIALS="${SPECIALS:-}"
 		-e VERBOSE="${VERBOSE:-}")
 }
 # client NAME PROTOCOL DEVICE EXPECT
@@ -134,7 +134,7 @@ suite() { # label client-protocol harness-flags...
 	drop_last
 	client "$label: third device, taken away"     "$proto" dev03 fail
 	client "$label: first device, still in"       "$proto" dev01 ok
-	if [ "$proto" != wireguard ]; then
+	if [ "$proto" != wireguard ] && [ "$proto" != amneziawg ]; then
 		# One WireGuard key on two devices is not the driver's to stop: the
 		# kernel keeps one endpoint per peer, and the panel's reconciler
 		# holds a fought-over file off (internal/reconciler, tested there).
@@ -143,6 +143,11 @@ suite() { # label client-protocol harness-flags...
 }
 
 suite "WireGuard" wireguard -protocol wireguard
+# AmneziaWG on amneziawg-go, as on a server without the module: a profile as
+# the panel draws one, and one with identifier ranges and I1-I2 from the
+# form's ready packets, whose QUIC packet has to be seen on the wire.
+suite "AmneziaWG" amneziawg -protocol wireguard -awg classic
+SPECIALS=1 suite "AmneziaWG 2 (ranges, I1-I2)" amneziawg -protocol wireguard -awg awg2
 suite "OpenVPN over UDP" openvpn -protocol openvpn -transport udp
 suite "OpenVPN over TCP" openvpn -protocol openvpn -transport tcp
 suite "L2TP/IPsec" l2tp -protocol l2tp

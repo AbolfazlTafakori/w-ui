@@ -39,6 +39,8 @@ import (
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/routing"
+	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/wgconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
@@ -50,6 +52,7 @@ func main() {
 	protocol := flag.String("protocol", "", "wireguard, openvpn, l2tp, pptp or ikev2")
 	plain := flag.Bool("plain", false, "l2tp: also accept routers without IPsec")
 	transport := flag.String("transport", "udp", "openvpn: udp or tcp")
+	awg := flag.String("awg", "", "wireguard: an AmneziaWG profile -- classic (Jc to H4, as the panel draws one) or awg2 (identifier ranges and I1-I2 from the form's ready packets)")
 	endpoint := flag.String("endpoint", "", "the address clients dial")
 	out := flag.String("out", "/out", "where device files are written")
 	flag.Parse()
@@ -75,6 +78,16 @@ func main() {
 		must(err)
 		iface.Name, iface.ListenPort, iface.MTU = "wg0", 51820, 1420
 		iface.PrivateKey, iface.PublicKey = pair.Private.String(), pair.Public.String()
+		if *awg != "" {
+			p := service.NewAWGParams()
+			if *awg == "awg2" {
+				p.H1Max, p.H2Max, p.H3Max, p.H4Max = p.H1+5000, p.H2+5000, p.H3+5000, p.H4+5000
+				presets := service.AWGPresets()
+				p.I1, p.I2 = presets[0].Value, presets[1].Value
+			}
+			iface.Mode = model.ModeAmnezia
+			iface.AWG = model.JSON(p)
+		}
 		d := wgdriver.New()
 		d.SetLogger(log)
 		drv = d
@@ -175,6 +188,9 @@ func main() {
 		p, err := drv.Render(ctx, &a, iface)
 		must(err)
 		must(os.WriteFile(filepath.Join(*out, a.DeviceName+".profile"), p.Body, 0o644))
+		if iface.Mode == model.ModeAmnezia {
+			must(os.WriteFile(filepath.Join(*out, a.DeviceName+".avpn"), []byte(wgconf.AmneziaVPNKey(string(p.Body))), 0o644))
+		}
 		creds := a.Username + "\n" + a.Secret + "\n"
 		must(os.WriteFile(filepath.Join(*out, a.DeviceName+".creds"), []byte(creds), 0o600))
 		must(os.WriteFile(filepath.Join(*out, a.DeviceName+".ip"), []byte(a.IP), 0o644))

@@ -308,7 +308,9 @@ do_uninstall() {
   # it, and is what takes an L2TP tunnel down.
   remove_l2tp_agent
   have_systemd && systemctl disable --now wui-update.path >/dev/null 2>&1 || true
-  rm -f "$UNIT" /etc/systemd/system/wui-update.path /etc/systemd/system/wui-update.service
+  have_systemd && systemctl disable wui-amnezia-kmod.service >/dev/null 2>&1 || true
+  rm -f "$UNIT" /etc/systemd/system/wui-update.path /etc/systemd/system/wui-update.service \
+    /etc/systemd/system/wui-amnezia-kmod.service /usr/local/libexec/wui-amnezia-kmod
   have_systemd && systemctl daemon-reload || true
   rm -f "$BIN_PATH" "$MENU_PATH"
   ok "binary and unit removed"
@@ -471,6 +473,9 @@ install_wireguard() {
 # some throughput and nothing else: no headers, no DKMS, and no tunnel that dies
 # the next time the machine takes a kernel upgrade and reboots.
 AMNEZIA_TOOLS_TAG="v3.1.20260812"
+# The daemon from the same release as the tools: a version both ends of a
+# profile were made for, rather than whatever the branch holds that day.
+AMNEZIA_GO_TAG="v3.1.20260812"
 GO_BOOTSTRAP_VERSION="1.25.1"
 
 install_amnezia_userspace() {
@@ -537,7 +542,7 @@ amnezia_build_go() {
     }
   fi
 
-  git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-go.git \
+  git clone --depth 1 -b "$AMNEZIA_GO_TAG" https://github.com/amnezia-vpn/amneziawg-go.git \
     "$tmp/go-src" >/dev/null 2>&1 || {
     warn "could not fetch amneziawg-go"
     return 1
@@ -638,10 +643,10 @@ install_amnezia() {
   if have awg; then
     AMNEZIA_OK=1
     ok "awg $(awg --version 2>/dev/null | awk '{print $2}')"
-    if [[ -r /sys/module/amneziawg/version ]]; then
+    if [[ -r /sys/module/amneziawg/version ]] ||
+       { modprobe amneziawg 2>/dev/null && [[ -r /sys/module/amneziawg/version ]]; }; then
       ok "kernel module $(cat /sys/module/amneziawg/version)"
-    elif modprobe amneziawg 2>/dev/null && [[ -r /sys/module/amneziawg/version ]]; then
-      ok "kernel module $(cat /sys/module/amneziawg/version)"
+      amnezia_future_kernels
     else
       # The tools are here but nothing can make the device. Rather than leave
       # that to be discovered when the first obfuscated tunnel refuses to start,
@@ -654,6 +659,104 @@ install_amnezia() {
     warn "awg not found after install"
     install_amnezia_userspace
   fi
+}
+
+# amnezia_future_kernels keeps the AmneziaWG module working across kernel
+# upgrades. The module is built by DKMS for each kernel, and DKMS can only
+# build it where that kernel's headers are installed: the headers of the
+# running kernel alone, which is all a VPS has by default, leave the next
+# kernel without a module and every obfuscated tunnel down after the reboot
+# that installs it. So:
+#
+#   - the headers' meta-package follows the kernel's, so each new kernel
+#     arrives with its headers and DKMS builds the module as it installs;
+#   - wui-amnezia-kmod builds it at boot when that did not happen (a kernel
+#     installed before this, or a headers package that came late);
+#   - and amneziawg-go is there besides, so a kernel no module builds for
+#     still carries the tunnels, in userspace, rather than none.
+amnezia_future_kernels() {
+  local meta=""
+  case "$FAMILY" in
+    debian)
+      # 6.8.0-45-generic -> generic, 6.1.0-25-cloud-amd64 -> cloud-amd64:
+      # the flavour the kernel's own meta-package is named after.
+      meta="linux-headers-${KERNEL#*-*-}"
+      [[ "$meta" == "linux-headers-$KERNEL" ]] && meta=""
+      ;;
+    rhel) meta="kernel-devel" ;;
+  esac
+  if [[ -n "$meta" ]]; then
+    if pkg_install "$meta"; then
+      ok "$meta: each new kernel gets its headers, and the module is rebuilt for it"
+    else
+      warn "no $meta package; the module is rebuilt at boot for a new kernel instead"
+    fi
+  fi
+  write_amnezia_kmod
+  if ! have amneziawg-go; then
+    local tmp
+    tmp="$(mktemp -d)" || return 0
+    if amnezia_build_go "$tmp"; then
+      ok "amneziawg-go installed besides, for a kernel the module does not build on"
+    else
+      warn "amneziawg-go did not build; a kernel the module cannot build on would leave obfuscated tunnels down"
+    fi
+    rm -rf "$tmp"
+  fi
+}
+
+# write_amnezia_kmod installs the boot-time check: before the panel starts,
+# the module is loaded, or built for the running kernel and then loaded. It
+# never fails the boot -- the panel falls back to amneziawg-go on its own --
+# and it leaves the reason in /var/log/wui-amnezia-kmod.log.
+write_amnezia_kmod() {
+  have_systemd || return 0
+  install -d -m 0755 /usr/local/libexec
+  cat >/usr/local/libexec/wui-amnezia-kmod <<'KMOD'
+#!/usr/bin/env bash
+# W-UI: the AmneziaWG module for the running kernel, built if it has to be.
+k="$(uname -r)"
+log=/var/log/wui-amnezia-kmod.log
+modprobe amneziawg 2>/dev/null && exit 0
+command -v dkms >/dev/null 2>&1 || exit 0
+{
+  echo "== $(date -Is) kernel $k: no amneziawg module; building it"
+  if [[ ! -d "/lib/modules/$k/build" ]]; then
+    if command -v apt-get >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y -qq "linux-headers-$k"
+    elif command -v dnf >/dev/null 2>&1; then
+      timeout 300 dnf install -y -q "kernel-devel-$k"
+    fi
+  fi
+  timeout 600 dkms autoinstall -k "$k"
+  depmod -a "$k"
+  if modprobe amneziawg; then
+    echo "module loaded"
+  else
+    echo "still no module; obfuscated tunnels run on amneziawg-go"
+  fi
+} >>"$log" 2>&1
+exit 0
+KMOD
+  chmod 0755 /usr/local/libexec/wui-amnezia-kmod
+  cat >/etc/systemd/system/wui-amnezia-kmod.service <<UNIT
+[Unit]
+Description=W-UI — the AmneziaWG kernel module for the running kernel
+After=network-online.target
+Wants=network-online.target
+Before=wui.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/wui-amnezia-kmod
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable wui-amnezia-kmod.service >/dev/null 2>&1 || true
+  ok "wui-amnezia-kmod (rebuilds the module at boot after a kernel upgrade)"
 }
 
 install_openvpn() {

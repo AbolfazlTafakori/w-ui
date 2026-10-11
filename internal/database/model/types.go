@@ -87,15 +87,66 @@ type AWGParams struct {
 	H3 uint32 `json:"h3"` // cookie identifier
 	H4 uint32 `json:"h4"` // data identifier
 
+	// H1Max-H4Max make each identifier a range (AmneziaWG 2.0): every packet
+	// carries a value drawn from H..HMax rather than one fixed number, so no
+	// single value marks the protocol. Zero, or no more than H, is the single
+	// value H -- what every profile before ranges was, and what a panel that
+	// predates them reads.
+	H1Max uint32 `json:"h1Max,omitempty"`
+	H2Max uint32 `json:"h2Max,omitempty"`
+	H3Max uint32 `json:"h3Max,omitempty"`
+	H4Max uint32 `json:"h4Max,omitempty"`
+
 	// AmneziaWG 3.0+. HeaderProtectionKey requires S1-S4 >= 12 because the
 	// ChaCha20 nonce is drawn from the first 12 bytes of the S padding.
 	HeaderProtectionKey string `json:"headerProtectionKey,omitempty"`
 
+	// I1-I5 are packets sent before each handshake to look like another
+	// protocol (AmneziaWG 1.5): a chain of tags, <b 0x..> bytes, <r N>
+	// random bytes, <rc N> random letters, <rd N> random digits, <t> the
+	// time. Only the sender uses them.
 	I1 string `json:"i1,omitempty"`
 	I2 string `json:"i2,omitempty"`
 	I3 string `json:"i3,omitempty"`
 	I4 string `json:"i4,omitempty"`
 	I5 string `json:"i5,omitempty"`
+}
+
+// HeaderRange is identifier n (1-4) as a range: lo-hi, or lo alone.
+func (p AWGParams) HeaderRange(n int) (lo, hi uint32) {
+	switch n {
+	case 1:
+		lo, hi = p.H1, p.H1Max
+	case 2:
+		lo, hi = p.H2, p.H2Max
+	case 3:
+		lo, hi = p.H3, p.H3Max
+	case 4:
+		lo, hi = p.H4, p.H4Max
+	}
+	if hi < lo {
+		hi = lo
+	}
+	return lo, hi
+}
+
+// Specials are I1-I5 in order.
+func (p AWGParams) Specials() [5]string { return [5]string{p.I1, p.I2, p.I3, p.I4, p.I5} }
+
+// UsesAWG2 reports whether the profile needs AmneziaWG 1.5 or later on both
+// ends: identifier ranges, or packets before the handshake.
+func (p AWGParams) UsesAWG2() bool {
+	for n := 1; n <= 4; n++ {
+		if lo, hi := p.HeaderRange(n); hi > lo {
+			return true
+		}
+	}
+	for _, s := range p.Specials() {
+		if s != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // L2TPParams holds interface-scoped L2TP/IPsec settings.

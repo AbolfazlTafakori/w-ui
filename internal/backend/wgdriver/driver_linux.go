@@ -37,6 +37,22 @@ type Driver struct {
 	// byKey maps a peer's public key to the account it belongs to, so stats
 	// read back from the kernel can be attributed without a database lookup.
 	byKey map[string]uint
+	// warned is what has been logged once already, so a warning that holds
+	// on every sync is said once and not every few seconds.
+	warned map[string]bool
+}
+
+func (d *Driver) warnOnce(key, msg string, args ...any) {
+	d.mu.Lock()
+	if d.warned == nil {
+		d.warned = map[string]bool{}
+	}
+	seen := d.warned[key]
+	d.warned[key] = true
+	d.mu.Unlock()
+	if !seen {
+		d.log.Warn(msg, args...)
+	}
 }
 
 // New builds an unopened driver.
@@ -219,7 +235,31 @@ func (d *Driver) configureDevice(ctx context.Context, iface *model.Interface) er
 // drops all live sessions. syncconf changes only what differs, so customers who
 // were not touched keep their connection.
 func (d *Driver) syncConfFile(ctx context.Context, iface *model.Interface, peers []wgconf.Peer) error {
-	text := wgconf.RenderServer(iface, peers)
+	err := d.applyConf(ctx, iface, wgconf.RenderServer(iface, peers))
+	if err == nil {
+		return nil
+	}
+	p := iface.AWG.V
+	hasSpecials := p.I1 != "" || p.I2 != "" || p.I3 != "" || p.I4 != "" || p.I5 != ""
+	if hasSpecials {
+		// An AmneziaWG on this server older than I1-I5 refuses the whole
+		// file over them. They are only ever the sender's -- customers'
+		// devices send theirs either way -- so the tunnel is carried
+		// without them rather than not at all.
+		if err2 := d.applyConf(ctx, iface, wgconf.RenderServerPlain(iface, peers)); err2 == nil {
+			d.warnOnce(iface.Name+"/specials", "this server's AmneziaWG does not know I1-I5; the tunnel runs without the server sending them -- update amneziawg to have it send them too",
+				"interface", iface.Name)
+			return nil
+		}
+	}
+	if p.UsesAWG2() {
+		return fmt.Errorf("%w (the profile uses AmneziaWG 1.5+ settings -- identifier ranges or I1-I5 -- which this server's amneziawg may be too old for; update it)", err)
+	}
+	return err
+}
+
+// applyConf writes a full configuration and applies it with awg syncconf.
+func (d *Driver) applyConf(ctx context.Context, iface *model.Interface, text string) error {
 
 	// 0600 because the file carries the server's private key for as long as it
 	// exists, which is a few milliseconds but still on disk.

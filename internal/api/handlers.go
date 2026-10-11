@@ -26,6 +26,8 @@ type metaResponse struct {
 	EnforcementMessage string           `json:"enforcementMessage,omitempty"`
 	ShapingActive      bool             `json:"shapingActive"`
 	ShapingMessage     string           `json:"shapingMessage,omitempty"`
+	// AWGPresets are the ready I1-I5 packets the tunnel form offers.
+	AWGPresets []service.AWGPreset `json:"awgPresets,omitempty"`
 }
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +44,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp.Version = s.version
+	resp.AWGPresets = service.AWGPresets()
 	if err := s.enforcer.Health(r.Context()); err != nil {
 		resp.EnforcementMessage = err.Error()
 	} else {

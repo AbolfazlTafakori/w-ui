@@ -9,6 +9,7 @@ import { store, t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
 import HelpTip from './HelpTip.vue'
 import Toggle from './Toggle.vue'
+import AwgEditor from './AwgEditor.vue'
 
 const props = defineProps({
   // When present the dialog edits that interface instead of creating one.
@@ -60,6 +61,9 @@ const form = ref(
         psk: props.iface.l2tp?.psk || '',
         l2tpPlain: !!props.iface.l2tp?.allowPlain,
         ikev2Modes: ikeModesOf(props.iface.ikev2),
+        // A copy to edit; what is sent is compared with the tunnel's own.
+        awg: { ...(props.iface.awg || {}) },
+        regenerateAwg: false,
         enabled: props.iface.enabled,
       }
     : {
@@ -356,6 +360,17 @@ defineExpose({ showError })
               </div>
             </div>
           </div>
+
+          <!-- An AmneziaWG tunnel's profile, every value editable. A tunnel
+               being made gets one drawn for it; it is edited once it exists. -->
+          <AwgEditor
+            v-if="editing && isWireGuard && form.mode === 'amnezia' && props.iface.mode === 'amnezia'"
+            v-model="form.awg"
+            v-model:regenerate="form.regenerateAwg"
+            :field-name="fieldName"
+            :field-error="fieldError"
+            @clear="clearError"
+          />
 
           <!-- OpenVPN only: WireGuard and L2TP are UDP and have no other
                option, so offering the choice there would be offering a

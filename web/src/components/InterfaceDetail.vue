@@ -96,11 +96,14 @@ const serverConfig = computed(() => {
       `S2 = ${p.s2}`,
       `S3 = ${p.s3}`,
       `S4 = ${p.s4}`,
-      `H1 = ${p.h1}`,
-      `H2 = ${p.h2}`,
-      `H3 = ${p.h3}`,
-      `H4 = ${p.h4}`,
+      ...[1, 2, 3, 4].map((n) => {
+        const lo = p[`h${n}`]
+        const hi = p[`h${n}Max`]
+        return `H${n} = ${hi > lo ? `${lo}-${hi}` : lo}`
+      }),
     )
+    if (p.headerProtectionKey) lines.push(`HeaderProtectionKey = ${p.headerProtectionKey}`)
+    for (const n of [1, 2, 3, 4, 5]) if (p[`i${n}`]) lines.push(`I${n} = ${p[`i${n}`]}`)
   }
   lines.push(
     '',

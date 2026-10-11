@@ -102,6 +102,8 @@ type subPageDevice struct {
 	CopyIcon template.HTML
 	// Files are an IKEv2 file's certificates, to download.
 	Files []ikev2File
+	// AmneziaQR is the AmneziaVPN key as a QR code, for an AmneziaWG file.
+	AmneziaQR template.URL
 	// Ref names this file to the copy buttons: "ID.HostID".
 	Ref string
 	// Setup is, for an L2TP or PPTP file, the guide that is its row: the
@@ -377,6 +379,12 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		if len(d.Config) <= subPageQRLimit && !ppp {
 			if png, err := qrcode.Encode(d.Config, qrcode.Low, 220); err == nil {
 				entry.QR = template.URL("data:image/png;base64," +
+					base64.StdEncoding.EncodeToString(png))
+			}
+		}
+		if d.AmneziaKey != "" && len(d.AmneziaKey) <= subPageQRLimit {
+			if png, err := qrcode.Encode(d.AmneziaKey, qrcode.Low, 220); err == nil {
+				entry.AmneziaQR = template.URL("data:image/png;base64," +
 					base64.StdEncoding.EncodeToString(png))
 			}
 		}
@@ -718,7 +726,7 @@ var subPageStrings = map[string]map[string]string{
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
 		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "usageSince": "Split by user since", "total": "Total", "allUsers": "All users", "tunnel": "Tunnel",
 		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
-		"subSettings": "Subscription", "tapToClose": "Tap outside to close",
+		"subSettings": "Subscription", "tapToClose": "Tap outside to close", "amneziaKeyHint": "For the AmneziaVPN app: copy the key, or scan it.",
 	},
 	"fa": {
 		"title": "اطلاعات سابسکریپشن", "subId": "شناسه اشتراک", "email": "ایمیل", "status": "وضعیت",
@@ -729,7 +737,7 @@ var subPageStrings = map[string]map[string]string{
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
 		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "usageSince": "تفکیک کاربرها از", "total": "جمع", "allUsers": "همهٔ کاربران", "tunnel": "تانل",
 		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
-		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید",
+		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید", "amneziaKeyHint": "برای اپ AmneziaVPN: کلید را کپی کنید یا اسکن کنید.",
 	},
 }
 
@@ -1347,6 +1355,8 @@ a.row-title:hover { text-decoration: underline; }
 .setup-device-notes { display: grid; gap: 6px; }
 .cfg-user-body > .setup { display: grid; gap: 12px; }
 .ike-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.awg-key { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.awg-key-text { flex: 1 1 160px; min-width: 0; color: var(--muted); font-size: 13px; }
 .cfg-user-body > .setup .guide-path { margin-top: 4px; }
 .dsel { position: relative; }
 .dsel-btn { display: flex; align-items: center; gap: 8px; text-align: start; cursor: pointer; }
@@ -1544,7 +1554,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body">{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}{{ with .Files }}<div class="ike-files">{{ range . }}<a class="btn sm" href="{{ .Href }}" download="{{ .Name }}" dir="ltr">{{ .Name }}</a>{{ end }}</div>{{ end }}</div>
+              <div class="cfg-user-body">{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}{{ if .AmneziaKey }}<div class="awg-key"><span class="tag" dir="ltr">AmneziaVPN</span><span class="awg-key-text" data-i="amneziaKeyHint">For the AmneziaVPN app: copy the key, or scan it.</span><button class="btn sm copy" type="button" data-text="{{ .AmneziaKey }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>{{ if .AmneziaQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button><div class="pop"><div class="pop-card"><span class="tag qr-tag" dir="ltr">AmneziaVPN</span><img src="{{ .AmneziaQR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}</div>{{ end }}{{ with .Files }}<div class="ike-files">{{ range . }}<a class="btn sm" href="{{ .Href }}" download="{{ .Name }}" dir="ltr">{{ .Name }}</a>{{ end }}</div>{{ end }}</div>
             </div>
             {{ end }}
           </div>

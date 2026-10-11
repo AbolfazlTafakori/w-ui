@@ -27,6 +27,10 @@ type Profile struct {
 	HostName        string `json:"hostName,omitempty"`
 	HostDescription string `json:"hostDescription,omitempty"`
 
+	// AmneziaKey is an AmneziaWG file as the AmneziaVPN app imports it, in
+	// a link or a QR code.
+	AmneziaKey string `json:"amneziaKey,omitempty"`
+
 	// Guides are, for every device that can dial this file's protocol, where
 	// its settings are and what goes in each field, filled in: a page shows
 	// the one the customer picks.
@@ -97,11 +101,15 @@ func renderWireGuard(acc *model.Account, iface *model.Interface) *Profile {
 	// Rendered by the shared generator, the same one the driver writes the
 	// server side with. Two copies would eventually disagree and hand a
 	// customer a file the server no longer matches.
-	return &Profile{
+	p := &Profile{
 		Filename: fmt.Sprintf("%s.conf", filenameFor(acc)),
 		MIMEType: "text/plain; charset=utf-8",
 		Body:     wgconf.RenderClient(acc, iface),
 	}
+	if iface.Mode == model.ModeAmnezia {
+		p.AmneziaKey = wgconf.AmneziaVPNKey(p.Body)
+	}
+	return p
 }
 
 func renderOpenVPN(acc *model.Account, iface *model.Interface) *Profile {

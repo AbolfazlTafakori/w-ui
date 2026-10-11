@@ -25,6 +25,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
+	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
 // Setting keys for the subscription service.
@@ -697,6 +698,9 @@ type SubPageDevice struct {
 	// Guide is this file's values for the device guides: the page fills in
 	// the fields of the device the customer picks with them.
 	Guide *devguide.Values
+	// AmneziaKey is an AmneziaWG file as the AmneziaVPN app imports it
+	// (wgconf.AmneziaVPNKey); empty for any other.
+	AmneziaKey string
 }
 
 // Unlimited reports whether this plan has no volume ceiling.
@@ -889,6 +893,9 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			User:      user,
 			Username:  d.Account.Username,
 			UsedBytes: d.Account.UpBytes + d.Account.DownBytes,
+		}
+		if f := byID[d.Account.InterfaceID]; f.Protocol == model.ProtocolWireGuard && f.Mode == model.ModeAmnezia {
+			dev.AmneziaKey = wgconf.AmneziaVPNKey(string(d.Profile.Body))
 		}
 		if d.Host != nil {
 			dev.HostID = d.Host.ID

@@ -286,6 +286,10 @@ func fingerprint(i *model.Interface) string {
 	if i.Protocol.IsPPP() {
 		fp += fmt.Sprintf("|%s|%s|%t", i.L2TP.V.PSK, i.DNS, i.L2TP.V.AllowPlain)
 	}
+	if i.Mode == model.ModeAmnezia {
+		// A new profile is set on the device by opening it again.
+		fp += fmt.Sprintf("|%+v", i.AWG.V)
+	}
 	if i.Protocol == model.ProtocolIKEv2 {
 		p := i.IKEv2.V
 		fp += fmt.Sprintf("|%s|%s|%t%t%t%t|%s|%s", i.DNS, i.EndpointHost, p.MSCHAPv2, p.PSK, p.RSA, p.EAPTLS, p.ServerCert, p.CACert)

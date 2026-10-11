@@ -43,7 +43,7 @@ func Gateway(subnet string) (netip.Addr, int, error) {
 // These values must be byte-identical on both ends. Rendering them from one
 // function is what guarantees that; two copies would eventually disagree and
 // every handshake would fail with nothing in the logs to say why.
-func amneziaLines(p model.AWGParams) []string {
+func amneziaLines(p model.AWGParams, specials bool) []string {
 	lines := []string{
 		fmt.Sprintf("Jc = %d", p.Jc),
 		fmt.Sprintf("Jmin = %d", p.Jmin),
@@ -52,15 +52,31 @@ func amneziaLines(p model.AWGParams) []string {
 		fmt.Sprintf("S2 = %d", p.S2),
 		fmt.Sprintf("S3 = %d", p.S3),
 		fmt.Sprintf("S4 = %d", p.S4),
-		fmt.Sprintf("H1 = %d", p.H1),
-		fmt.Sprintf("H2 = %d", p.H2),
-		fmt.Sprintf("H3 = %d", p.H3),
-		fmt.Sprintf("H4 = %d", p.H4),
+	}
+	for n := 1; n <= 4; n++ {
+		lines = append(lines, fmt.Sprintf("H%d = %s", n, HeaderValue(p, n)))
 	}
 	if p.HeaderProtectionKey != "" {
 		lines = append(lines, "HeaderProtectionKey = "+p.HeaderProtectionKey)
 	}
+	if specials {
+		for i, v := range p.Specials() {
+			if v != "" {
+				lines = append(lines, fmt.Sprintf("I%d = %s", i+1, v))
+			}
+		}
+	}
 	return lines
+}
+
+// HeaderValue is identifier n as a configuration writes it: "lo-hi" for a
+// range, the number alone otherwise.
+func HeaderValue(p model.AWGParams, n int) string {
+	lo, hi := p.HeaderRange(n)
+	if hi > lo {
+		return fmt.Sprintf("%d-%d", lo, hi)
+	}
+	return fmt.Sprintf("%d", lo)
 }
 
 // DNSFor is the resolver a customer's profile names. The engine replaces it
@@ -70,6 +86,7 @@ var DNSFor = func(iface *model.Interface) string { return iface.DNS }
 // RenderClient produces the file a customer imports.
 func RenderClient(acc *model.Account, iface *model.Interface) string {
 	var b strings.Builder
+	const specials = true
 
 	b.WriteString("[Interface]\n")
 	fmt.Fprintf(&b, "PrivateKey = %s\n", acc.PrivateKey)
@@ -86,7 +103,7 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 
 	if iface.Mode == model.ModeAmnezia {
 		b.WriteString("\n# AmneziaWG obfuscation — must match the server exactly\n")
-		for _, l := range amneziaLines(iface.AWG.V) {
+		for _, l := range amneziaLines(iface.AWG.V, specials) {
 			b.WriteString(l + "\n")
 		}
 	}
@@ -116,6 +133,18 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 // this. It is the only way to reach an AmneziaWG one, whose obfuscation
 // parameters netlink knows nothing about.
 func RenderServer(iface *model.Interface, peers []Peer) string {
+	return renderServer(iface, peers, true)
+}
+
+// RenderServerPlain is RenderServer without I1-I5, for an AmneziaWG on the
+// server too old to send them. They are only ever the sender's: the server
+// takes every customer's without knowing them, and leaves them out of the
+// handshakes it begins itself.
+func RenderServerPlain(iface *model.Interface, peers []Peer) string {
+	return renderServer(iface, peers, false)
+}
+
+func renderServer(iface *model.Interface, peers []Peer, specials bool) string {
 	var b strings.Builder
 	b.WriteString("[Interface]\n")
 	fmt.Fprintf(&b, "ListenPort = %d\n", iface.ListenPort)
@@ -123,7 +152,7 @@ func RenderServer(iface *model.Interface, peers []Peer) string {
 
 	if iface.Mode == model.ModeAmnezia {
 		b.WriteString("\n# AmneziaWG obfuscation — must match every client exactly\n")
-		for _, l := range amneziaLines(iface.AWG.V) {
+		for _, l := range amneziaLines(iface.AWG.V, specials) {
 			b.WriteString(l + "\n")
 		}
 	}
@@ -146,6 +175,7 @@ func RenderServer(iface *model.Interface, peers []Peer) string {
 // RenderServerHuman is the copyable version shown in the panel, with the key
 // withheld and the NAT rules an operator would otherwise have to remember.
 func RenderServerHuman(iface *model.Interface, natIface string) (string, error) {
+	const specials = true
 	gw, bits, err := Gateway(iface.Subnet)
 	if err != nil {
 		return "", err
@@ -164,7 +194,7 @@ func RenderServerHuman(iface *model.Interface, natIface string) (string, error) 
 	}
 	if iface.Mode == model.ModeAmnezia {
 		b.WriteString("\n# AmneziaWG obfuscation — must match every client exactly\n")
-		for _, l := range amneziaLines(iface.AWG.V) {
+		for _, l := range amneziaLines(iface.AWG.V, specials) {
 			b.WriteString(l + "\n")
 		}
 	}

@@ -7,6 +7,12 @@ All notable changes to W-UI are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **AmneziaWG, all of it.**
+  - **I1 to I5** are written into the server and every customer's file. Before each handshake the device sends packets that look like QUIC, a DNS query or STUN. The form offers these ready-made, or you can write your own from the tags both the kernel module and the phone apps read.
+  - **Every obfuscation value is editable** on the tunnel, and is checked as AmneziaWG checks it, the refusal naming the field. This includes identifier ranges (AmneziaWG 2.0) and the header protection key. **Draw new values** keeps the operator's I1 to I5.
+  - **AmneziaVPN key**: every AmneziaWG file is also offered as the AmneziaVPN app imports it, a link or a QR code, on the customer's page and in the panel.
+  - **Kernel upgrades no longer take AmneziaWG down**: each new kernel gets its headers so DKMS rebuilds the module, `wui-amnezia-kmod` rebuilds it at boot when that did not happen, and `amneziawg-go` is installed besides, pinned to the same release as the tools.
+  - **S4 is now drawn to fit a 1500-byte link** at the default MTU.
 - **IKEv2**, the VPN built into Android 12+, iPhone, Mac and Windows, in
   all four of Android's types: username and password (MSCHAPv2, through a
   RADIUS server of the panel's own, so Windows works too), key (PSK),

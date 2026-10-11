@@ -646,6 +646,12 @@ type UpdateInterfaceInput struct {
 	// on the tunnel ends when it changes.
 	L2TPPlain *bool `json:"l2tpPlain"`
 
+	// AWG replaces an AmneziaWG tunnel's obfuscation profile, as the
+	// operator typed it; RegenerateAWG draws a new one instead. Either way
+	// every customer on the tunnel needs their file again.
+	AWG           *model.AWGParams `json:"awg"`
+	RegenerateAWG bool             `json:"regenerateAwg"`
+
 	// IKEv2Modes replaces the ways into an IKEv2 tunnel. A device signed in
 	// by a way taken away is ended.
 	IKEv2Modes *[]string `json:"ikev2Modes"`
@@ -715,7 +721,7 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		if mode == model.ModeAmnezia && iface.Protocol != model.ProtocolWireGuard {
 			return nil, invalidField("mode", "AmneziaWG mode applies to WireGuard only")
 		}
-		if mode == model.ModeAmnezia && iface.AWG.V.Jc == 0 {
+		if mode == model.ModeAmnezia && iface.AWG.V.Jc == 0 && in.AWG == nil {
 			fields["awg"] = model.JSON(NewAWGParams())
 		}
 		fields["mode"] = mode
@@ -754,6 +760,15 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 			return nil, err
 		}
 		fields["mtu"] = *in.MTU
+	}
+	if in.AWG != nil || in.RegenerateAWG {
+		if err := s.updateAWG(ctx, iface, in, fields); err != nil {
+			return nil, err
+		}
+	} else if in.MTU != nil && iface.Mode == model.ModeAmnezia && iface.AWG.V.S4 > awgMaxS4(*in.MTU) {
+		// A larger MTU leaves less room for the data packets' padding.
+		return nil, invalidField("mtu", "with S4 = %d an MTU of %d makes every data packet too big for the link; at most %d, or lower S4 first",
+			iface.AWG.V.S4, *in.MTU, awgPacketLimit-awgDataOverhead-iface.AWG.V.S4)
 	}
 	// The key and whether plain L2TP is accepted live together; each change
 	// is made to what is there, so changing one keeps the other.
@@ -1102,6 +1117,80 @@ func (s *Interfaces) PoolUsage(id uint) (Usage, error) {
 	return Usage{InterfaceID: id, Allocated: alloc.InUse(), Capacity: alloc.Capacity()}, nil
 }
 
+// updateAWG puts a new obfuscation profile in fields: the one typed, checked
+// as AmneziaWG would check it, or a freshly drawn one.
+func (s *Interfaces) updateAWG(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	mode := iface.Mode
+	if m, ok := fields["mode"].(model.InterfaceMode); ok {
+		mode = m
+	}
+	if iface.Protocol != model.ProtocolWireGuard || mode != model.ModeAmnezia {
+		return invalidField("awg", "obfuscation settings apply to AmneziaWG tunnels only")
+	}
+	mtu := iface.MTU
+	if v, ok := fields["mtu"].(int); ok {
+		mtu = v
+	}
+	var p model.AWGParams
+	if in.RegenerateAWG {
+		p = NewAWGParams()
+		// What is drawn is sized for the default MTU; a larger one gets
+		// the padding that still fits.
+		if p.S4 > awgMaxS4(mtu) {
+			p.S4 = awgMaxS4(mtu)
+		}
+		if in.AWG != nil {
+			// The packets before the handshake are the operator's choice;
+			// a new draw of the numbers keeps them.
+			p.I1, p.I2, p.I3, p.I4, p.I5 = in.AWG.I1, in.AWG.I2, in.AWG.I3, in.AWG.I4, in.AWG.I5
+		}
+	} else {
+		p = *in.AWG
+		p.HeaderProtectionKey = strings.TrimSpace(p.HeaderProtectionKey)
+		for _, v := range []*string{&p.I1, &p.I2, &p.I3, &p.I4, &p.I5} {
+			*v = strings.TrimSpace(*v)
+		}
+		// A range that is one value is that value: stored as before ranges.
+		for _, h := range []struct{ lo, hi *uint32 }{{&p.H1, &p.H1Max}, {&p.H2, &p.H2Max}, {&p.H3, &p.H3Max}, {&p.H4, &p.H4Max}} {
+			if *h.hi <= *h.lo {
+				*h.hi = 0
+			}
+		}
+	}
+	if err := checkAWG(p, mtu); err != nil {
+		return err
+	}
+	if p.UsesAWG2() {
+		if err := s.checkAWG2Node(ctx, iface.NodeID); err != nil {
+			return err
+		}
+	}
+	if p != iface.AWG.V {
+		fields["awg"] = model.JSON(p)
+		s.log.Warn("AmneziaWG settings changed; every customer on the tunnel needs their file again",
+			"interface", iface.Name)
+	}
+	return nil
+}
+
+// checkAWG2Node refuses identifier ranges and I1-I5 on a node whose panel
+// predates them: it would write the profile without them, and its
+// customers' files would not match its server.
+func (s *Interfaces) checkAWG2Node(ctx context.Context, nodeID uint) error {
+	var node model.Node
+	if err := s.db.WithContext(ctx).First(&node, nodeID).Error; err != nil {
+		return fmt.Errorf("service: load node: %w", err)
+	}
+	if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
+		v := node.Version
+		if v == "" {
+			v = "an unknown version"
+		}
+		return invalidField("awg", "%s runs %s; identifier ranges and I1-I5 need W-UI 3.0 or later on the node. Update it first", node.Name, v)
+	}
+	return nil
+}
+
 // handshakeLengthGap is the difference between an initiation packet and a
 // response packet, 148 - 92. Padding that closes it makes the two the same size.
 const handshakeLengthGap = 56
@@ -1152,7 +1241,9 @@ func NewAWGParams() model.AWGParams {
 		S1: s1,
 		S2: s2,
 		S3: between(12, 55),
-		S4: between(12, 27),
+		// No more than fits a 1500-byte link at the default MTU of 1420
+		// (awgMaxS4): a data packet past it is split in two.
+		S4: between(12, 20),
 
 		H1: uint32(between(100000, 500000)),
 		H2: uint32(between(1000000, 5000000)),

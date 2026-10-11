@@ -105,6 +105,22 @@ An interface that still has customers cannot be deleted. The panel says how many
 | **Egress interface** | `eth0` | The server's network card customer traffic leaves through, to the internet. | A device name, up to 15 characters. |
 | **Mode** | Standard | WireGuard only. **AmneziaWG** pads and disguises the handshake so it does not look like WireGuard to a filter; its obfuscation parameters are generated for you. Customers need an AmneziaWG-capable app (see [Client apps](/guide/client-apps)). | Needs AmneziaWG installed on the server. |
 
+### AmneziaWG obfuscation
+
+An AmneziaWG tunnel gets its obfuscation values drawn for it when it is made. Once it exists, **Edit** shows every one of them:
+
+- **Jc, Jmin, Jmax**: the junk packets sent before each handshake.
+- **S1 to S4**: the padding on each message type. S2 must not be S1 + 56, and S4 has to fit the link: at most 1440 minus the MTU.
+- **H1 to H4**: the value each message type is marked with, above 4. Give a second value to make it a range (AmneziaWG 2.0): each packet then carries a value of its own from it. The four must not overlap.
+- **HeaderProtectionKey**: AmneziaWG 3 header protection, a key in base64. Needs S1 to S4 of at least 12.
+- **I1 to I5**: packets sent before each handshake to look like another protocol. Pick a ready one (QUIC, a DNS query, STUN) or write your own from the tags `<b 0x…>`, `<r N>`, `<rc N>`, `<rd N>` and `<t>`, the ones both the kernel module and the phone apps read.
+
+Every value is checked as AmneziaWG checks it, and a refusal names the field. **Draw new values** replaces the numbers and keeps I1 to I5. After any change every customer on the tunnel needs their file again. Ranges and I1 to I5 need AmneziaWG 1.5 or later on the device, and W-UI 3.0 or later on a node.
+
+A customer's page offers each AmneziaWG file a second way as well: the **AmneziaVPN** key, to copy or scan into the AmneziaVPN app. It is the same file.
+
+The installer keeps the AmneziaWG kernel module working across kernel upgrades. Each new kernel gets its headers, so DKMS rebuilds the module as the kernel installs. `wui-amnezia-kmod` builds it at boot if that did not happen. `amneziawg-go` is installed besides, so a kernel the module cannot be built for still carries the tunnels.
+
 ### IKEv2
 
 An IKEv2 tunnel is the VPN built into Android 12 and newer, iPhone, Mac and

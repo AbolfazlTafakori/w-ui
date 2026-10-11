@@ -13,7 +13,7 @@
 #   dns       the server's DNS reaches the device
 #   mtu       the tunnel's MTU is the one the panel set (WireGuard)
 #
-#   NAME PROTOCOL(wireguard|openvpn|l2tp|l2tp-plain|pptp|
+#   NAME PROTOCOL(wireguard|amneziawg|openvpn|l2tp|l2tp-plain|pptp|
 #        ikev2-mschapv2|ikev2-psk|ikev2-rsa|ikev2-eap-tls) DEVICE
 #   EXPECT(ok|fail) GATEWAY INTERNET DNS MTU
 #   HOLD     1: once in, stay, and note in /state when the tunnel is taken
@@ -52,7 +52,7 @@ hold() {
 		gone=0
 		case "$PROTOCOL" in
 		openvpn) kill -0 "$(cat /tmp/ovpn.pid 2>/dev/null)" 2>/dev/null || gone=1 ;;
-		wireguard) ;;
+		wireguard|amneziawg) ;;
 		ikev2-*) swanctl --list-sas 2>/dev/null | grep -q ESTABLISHED || gone=1 ;;
 		*) ip link show ppp0 >/dev/null 2>&1 || gone=1 ;;
 		esac
@@ -100,6 +100,64 @@ wireguard)
 	done
 	if [ "${hs:-0}" -eq 0 ]; then check connect no; finish fail; fi
 	check connect yes
+	;;
+amneziawg)
+	# The AmneziaWG app's way: awg-quick with the file as it was handed out,
+	# on amneziawg-go, as on a phone. The AmneziaVPN key is checked to be
+	# that same file, and what goes on the wire before the handshake is
+	# captured, to see the packets I1 and I2 describe really sent.
+	dev=wg0
+	mkdir -p /etc/amnezia/amneziawg
+	cp "/out/$DEVICE.profile" /etc/amnezia/amneziawg/wg0.conf
+	chmod 600 /etc/amnezia/amneziawg/wg0.conf
+	if [ -f "/out/$DEVICE.avpn" ]; then
+		python3 - "/out/$DEVICE.avpn" "/out/$DEVICE.profile" <<'PYK' && check avpn yes || check avpn no
+import base64, sys, zlib
+key = open(sys.argv[1]).read().strip()
+assert key.startswith("vpn://")
+body = key[len("vpn://"):]
+raw = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+data = zlib.decompress(raw[4:])
+assert int.from_bytes(raw[:4], "big") == len(data)
+assert data == open(sys.argv[2], "rb").read()
+PYK
+	fi
+	[ -x /usr/sbin/nft ] && mv /usr/sbin/nft /usr/sbin/nft.off
+	for t in iptables-restore ip6tables-restore; do
+		printf '#!/bin/sh\ncat >/dev/null\n' > "/usr/local/bin/$t"; chmod +x "/usr/local/bin/$t"
+	done
+	tcpdump -i eth0 -n -U -w /tmp/wire.pcap udp and dst host "$SERVER_IP" >/dev/null 2>&1 &
+	cap=$!
+	sleep 1
+	if ! awg-quick up wg0 >/tmp/client.log 2>&1; then
+		check connect no; finish fail
+	fi
+	i=0; hs=0
+	while [ "$i" -lt 12 ]; do
+		ping -c 1 -W 1 "$GATEWAY" >/dev/null 2>&1
+		hs=$(awg show wg0 latest-handshakes | awk '{print $2}')
+		[ "${hs:-0}" -gt 0 ] && break
+		i=$((i + 1))
+	done
+	if [ "${hs:-0}" -eq 0 ]; then check connect no; finish fail; fi
+	check connect yes
+	if [ -n "${SPECIALS:-}" ]; then
+		sleep 1; kill "$cap" 2>/dev/null; sleep 1
+		# I1 is the QUIC Initial: 1250 bytes beginning c3 00000001 08.
+		tcpdump -r /tmp/wire.pcap -n -x 2>/dev/null | python3 -c "
+import re, sys
+pkts, cur = [], []
+for line in sys.stdin:
+    if not line.startswith((' ', '\t')):
+        if cur: pkts.append(bytes.fromhex(''.join(cur)))
+        cur = []
+    else:
+        cur += re.findall(r'[0-9a-f]{4}', line.split(':', 1)[1])
+if cur: pkts.append(bytes.fromhex(''.join(cur)))
+payloads = [p[28:] for p in pkts]
+sys.exit(0 if any(len(p) == 1250 and p[:6] == bytes.fromhex('c30000000108') for p in payloads) else 1)
+" && check specials yes || check specials no
+	fi
 	;;
 openvpn)
 	dev=tun0
@@ -236,7 +294,7 @@ ping -c 2 -W 3 -I "$src" "$GATEWAY" >/dev/null 2>&1 && check gateway yes || chec
 ping -c 2 -W 3 -I "$src" "$INTERNET" >/dev/null 2>&1 && check internet yes || check internet no
 
 case "$PROTOCOL" in
-wireguard|openvpn)
+wireguard|amneziawg|openvpn)
 	# Where a packet for anywhere would go.
 	via=$(ip route get 8.8.8.8 2>/dev/null | grep -o "dev [^ ]*" | awk '{print $2}')
 	[ "$via" = "$dev" ] && check route yes || check "route(via=$via)" no
@@ -249,7 +307,7 @@ ikev2-*)
 esac
 
 case "$PROTOCOL" in
-wireguard)
+wireguard|amneziawg)
 	grep -q "nameserver $DNS" /etc/resolv.conf && check dns yes || check dns no
 	mtu=$(cat /sys/class/net/wg0/mtu)
 	[ "$mtu" = "$MTU" ] && check mtu yes || check "mtu($mtu)" no

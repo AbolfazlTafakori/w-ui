@@ -90,6 +90,8 @@ onMounted(async () => {
               username: wg ? '' : d.username || '',
               password: wg ? '' : d.password || '',
               guides: p.guides || null,
+              // An AmneziaWG file as the AmneziaVPN app imports it.
+              amneziaKey: p.amneziaKey || '',
             })
           }
         } catch (e) {
@@ -105,6 +107,18 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+})
+
+// Which form of an AmneziaWG file is shown: the file itself, which the
+// AmneziaWG app scans, or the key the AmneziaVPN app takes.
+const awgView = ref('file')
+const shown = computed(() => {
+  const e = entry.value
+  if (!e) return null
+  if (e.amneziaKey && awgView.value === 'amnezia') {
+    return { ...e, key: `${e.key}-avpn`, value: e.amneziaKey, downloadName: '' }
+  }
+  return e
 })
 
 // The first user of a tunnel is shown when it is opened for the first time.
@@ -160,7 +174,11 @@ async function copy(text) {
           </div>
 
           <div v-if="entry" class="qr-panel">
-            <QrPanel :key="entry.key" :value="entry.value" :remark="entry.remark" :download-name="entry.downloadName || ''" :show-qr="entry.showQr" />
+            <div v-if="entry.amneziaKey" class="aradio-group qr-seg awg-view" role="tablist">
+              <button type="button" role="tab" class="aradio-btn" :class="{ active: awgView === 'file' }" :aria-selected="awgView === 'file'" @click="awgView = 'file'">{{ t('client.awgFileView') }}</button>
+              <button type="button" role="tab" class="aradio-btn" :class="{ active: awgView === 'amnezia' }" :aria-selected="awgView === 'amnezia'" @click="awgView = 'amnezia'">AmneziaVPN</button>
+            </div>
+            <QrPanel :key="shown.key" :value="shown.value" :remark="shown.remark" :download-name="shown.downloadName || ''" :show-qr="shown.showQr" />
             <!-- An OpenVPN or L2TP user's login, read off here for passing on. -->
             <dl v-if="entry.username" class="qr-login">
               <div>
@@ -202,6 +220,7 @@ async function copy(text) {
 .qr-dot.purple { background: var(--tag-purple-ink, #722ed1); }
 
 .qr-pick { margin-bottom: 12px; }
+.awg-view { margin-bottom: 12px; }
 .qr-seg { display: flex; }
 .qr-seg .aradio-btn { flex: 1 1 0; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
