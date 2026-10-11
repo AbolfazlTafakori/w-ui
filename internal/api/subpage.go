@@ -584,15 +584,35 @@ func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) 
 	}
 	var last devguide.Group
 	found := false
+	// The list is the devices that can make one of this card's connections:
+	// an Android 12 phone has no L2TP, and offering it on an L2TP row is a
+	// choice that leads nowhere. The models with no VPN client stay, at the
+	// end: choosing one says what to do instead.
+	dials := map[string]bool{}
+	for _, view := range card.Views {
+		dials[view.Device] = true
+	}
+	listed := func(g devguide.Guide) bool { return dials[g.ID] || devguide.GroupOf(g) == devguide.GroupNone }
 	for _, g := range devguide.All() {
-		if g.ID == detected {
+		if g.ID == detected && listed(g) {
 			found = true
 		}
 	}
 	if !found {
-		detected = "windows"
+		// The device this is, when it cannot make these connections, or
+		// is not known: the first that can.
+		detected = ""
+		for _, g := range devguide.All() {
+			if dials[g.ID] {
+				detected = g.ID
+				break
+			}
+		}
 	}
 	for _, g := range devguide.All() {
+		if !listed(g) {
+			continue
+		}
 		group := devguide.GroupOf(g)
 		d := setupDevice{ID: g.ID, Name: g.Name.EN, NameKey: devguide.NameKey(g.ID), Selected: g.ID == detected}
 		if group != last {
@@ -1285,6 +1305,23 @@ a.row-title:hover { text-decoration: underline; }
 .dsel.open .dsel-caret { transform: translateY(2px) rotate(-135deg); }
 .dsel.open .dsel-btn { border-color: var(--accent); }
 .dsel-pop { position: absolute; z-index: 40; inset-inline: 0; top: calc(100% + 6px); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 16px 40px -12px rgba(0, 0, 0, .6); }
+.dsel.up .dsel-pop { top: auto; bottom: calc(100% + 6px); box-shadow: 0 -16px 40px -12px rgba(0, 0, 0, .6); }
+.dsel-sheet-head { display: none; }
+.dsel-backdrop { position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, .55); }
+.dsel-backdrop[hidden] { display: none; }
+html.dsel-lock, html.dsel-lock body { overflow: hidden; }
+/* On a phone the list is a sheet from the bottom of the screen: the page
+   behind it dimmed, its title and close at the top, and the list as tall as
+   the screen allows. */
+.dsel-pop.sheet { position: fixed; z-index: 60; inset: auto 0 0 0; top: auto; display: flex; flex-direction: column; max-height: 82vh; max-height: 82dvh; padding: 6px 14px calc(14px + env(safe-area-inset-bottom)); border: 0; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; box-shadow: 0 -20px 50px rgba(0, 0, 0, .5); animation: dsel-up .22s ease-out; }
+.dsel-pop.sheet[hidden] { display: none; }
+.dsel-pop.sheet .dsel-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 2px 12px; font-size: 15px; font-weight: 600; color: var(--ink); }
+.dsel-pop.sheet .dsel-sheet-head::before { content: ""; position: absolute; top: 6px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 4px; background: var(--line); }
+.dsel-shut { width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.dsel-pop.sheet .dsel-list { flex: 1; max-height: none; }
+.dsel-pop.sheet .dsel-item { padding: 12px 10px; font-size: 15px; }
+@keyframes dsel-up { from { transform: translateY(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dsel-pop.sheet { animation: none; } }
 .dsel-pop[hidden] { display: none; }
 .dsel-search-box { position: relative; }
 .dsel-search { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; outline: none; }
@@ -1702,7 +1739,14 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
     list.className = 'dsel-list'; list.setAttribute('role', 'listbox');
     none.className = 'dsel-none'; none.setAttribute('data-i', 'dgNoMatch'); none.hidden = true;
     none.textContent = word('dgNoMatch', 'No device matches.');
-    pop.appendChild(sbox); pop.appendChild(list); pop.appendChild(none);
+    var head = document.createElement('div'), title = document.createElement('span'), shut = document.createElement('button');
+    head.className = 'dsel-sheet-head';
+    title.setAttribute('data-i', 'dgDevice'); title.textContent = word('dgDevice', 'Your device');
+    shut.type = 'button'; shut.className = 'dsel-shut'; shut.setAttribute('aria-label', 'Close'); shut.textContent = '\u00d7';
+    head.appendChild(title); head.appendChild(shut);
+    var backdrop = document.createElement('div'); backdrop.className = 'dsel-backdrop'; backdrop.hidden = true;
+    document.body.appendChild(backdrop);
+    pop.appendChild(head); pop.appendChild(sbox); pop.appendChild(list); pop.appendChild(none);
     combo.appendChild(btn); combo.appendChild(pop);
     // Out of the label the select sat in: a click anywhere in a label is
     // handed to the first button in it -- this one -- which would open the
@@ -1761,20 +1805,57 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
       items.forEach(function (it, i) { if (it.getAttribute('data-v') === dev.value) at = i; });
       mark(q ? (items.length ? 0 : -1) : at);
     }
+    var phone = window.matchMedia('(max-width: 640px)');
+    function place() {
+      combo.classList.remove('up');
+      list.style.maxHeight = '';
+      if (phone.matches) return;
+      var r = btn.getBoundingClientRect();
+      var below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+      var up = below < 300 && above > below;
+      combo.classList.toggle('up', up);
+      // Room for the list: the side it opens on, less the search above it.
+      list.style.maxHeight = Math.max(150, Math.min(340, (up ? above : below) - 76)) + 'px';
+    }
     function open() {
+      var sheet = phone.matches;
+      combo.classList.toggle('sheet', sheet);
+      pop.classList.toggle('sheet', sheet);
+      // A sheet is the page's, not the card's: anything around the card that
+      // makes a layer of its own would hold a fixed sheet inside it.
+      if (sheet) document.body.appendChild(pop);
       pop.hidden = false; combo.classList.add('open'); btn.setAttribute('aria-expanded', 'true');
-      search.value = ''; render();
-      search.focus({ preventScroll: true });
+      backdrop.hidden = !sheet;
+      document.documentElement.classList.toggle('dsel-lock', sheet);
+      search.value = ''; render(); place();
+      // On a phone the keyboard would cover the list it opens on; the
+      // search is a tap away. Elsewhere typing starts at once.
+      if (!sheet) search.focus({ preventScroll: true });
     }
     function close(back) {
       if (pop.hidden) return;
       pop.hidden = true; combo.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
-      if (back) btn.focus();
+      if (pop.parentNode !== combo) combo.appendChild(pop);
+      pop.classList.remove('sheet');
+      backdrop.hidden = true;
+      document.documentElement.classList.remove('dsel-lock');
+      if (back && !phone.matches) btn.focus({ preventScroll: true });
+    }
+    // The chosen device's fields, brought into view when they are below it.
+    function reveal() {
+      var g = [].filter.call(box.querySelectorAll('.guide'), function (x) { return !x.hidden; })[0] || box;
+      var top = g.getBoundingClientRect().top;
+      if (top > window.innerHeight * 0.55) {
+        window.scrollBy({ top: combo.getBoundingClientRect().top - 72, behavior: 'smooth' });
+      }
     }
     function choose(v) {
       if (dev.value !== v) { dev.value = v; dev.dispatchEvent(new Event('change')); }
-      setBtn(); close(true);
+      setBtn(); close(true); reveal();
     }
+    shut.addEventListener('click', function () { close(true); });
+    backdrop.addEventListener('click', function () { close(false); });
+    window.addEventListener('resize', function () { if (!pop.hidden && !combo.classList.contains('sheet')) place(); });
     btn.addEventListener('click', function (e) { e.stopPropagation(); if (pop.hidden) open(); else close(true); });
     pop.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', function () { close(false); });

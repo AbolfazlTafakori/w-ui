@@ -449,6 +449,23 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 			t.Fatalf("the L2TP row's guide has a %s view", view.Protocol)
 		}
 	}
+	// The list is what can make the row's connection: an Android 12 phone
+	// has no L2TP, so it is not offered there -- but it is for WireGuard. The
+	// models with no client stay, to say what to do instead.
+	listed := func(c *setupCard, id string) bool {
+		for _, d := range c.Devices {
+			if d.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+	if listed(l2tp.Setup, "android12") || !listed(v.Setup, "android12") {
+		t.Error("Android 12 is offered on the L2TP row, or not on WireGuard")
+	}
+	if !listed(l2tp.Setup, "android") || !listed(l2tp.Setup, "tplink-w9960") {
+		t.Error("a device that dials L2TP, or a model with no client, is missing from the L2TP row")
+	}
 	for _, view := range v.Setup.Views {
 		if view.Protocol != "wireguard" {
 			t.Fatalf("the page's card has a %s guide", view.Protocol)
