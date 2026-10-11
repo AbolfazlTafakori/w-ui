@@ -7,6 +7,14 @@ All notable changes to W-UI are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **IKEv2**, the VPN built into Android 12+, iPhone, Mac and Windows, in
+  all four of Android's types: username and password (MSCHAPv2, through a
+  RADIUS server of the panel's own, so Windows works too), key (PSK),
+  certificate (RSA) and certificate in EAP (EAP-TLS). One tunnel per
+  server on UDP 500/4500, beside L2TP; certificates made, issued and
+  renewed by the panel; one sign-in per device, as on every protocol. The
+  customer's page has each device's steps, the server's certificate and
+  the device's `.p12`, with the sign-in withheld like L2TP's.
 - **Sharing history.** The Sharing page has a **History** tab: every file
   that has been on the list, and every device held off for going over its
   plan's users, is kept there -- after it leaves the list, and after the

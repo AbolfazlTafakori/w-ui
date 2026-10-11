@@ -286,5 +286,9 @@ func fingerprint(i *model.Interface) string {
 	if i.Protocol.IsPPP() {
 		fp += fmt.Sprintf("|%s|%s|%t", i.L2TP.V.PSK, i.DNS, i.L2TP.V.AllowPlain)
 	}
+	if i.Protocol == model.ProtocolIKEv2 {
+		p := i.IKEv2.V
+		fp += fmt.Sprintf("|%s|%s|%t%t%t%t|%s|%s", i.DNS, i.EndpointHost, p.MSCHAPv2, p.PSK, p.RSA, p.EAPTLS, p.ServerCert, p.CACert)
+	}
 	return fp
 }

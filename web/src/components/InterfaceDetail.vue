@@ -32,6 +32,19 @@ const serverConfig = computed(() => {
       '# One line per device in /etc/ppp/chap-secrets, with its own address.',
     ].join('\n')
   }
+  if (f.protocol === 'ikev2') {
+    // strongSwan, the same as L2TP's, run by the same agent.
+    const p = f.ikev2 || {}
+    const ways = [p.mschapv2 && 'eap-mschapv2 (via RADIUS)', p.psk && 'psk', p.rsa && 'pubkey', p.eapTls && 'eap-tls'].filter(Boolean)
+    return [
+      '# IPsec (strongSwan): IKEv2, UDP 500 and 4500',
+      `# id ${f.endpointHost}`,
+      `# auth ${ways.join(', ')}`,
+      `subnet ${f.subnet}`,
+      `dns ${f.dns || '1.1.1.1'}`,
+      '# One connection per device, its identity its username, with its own address.',
+    ].join('\n')
+  }
   if (f.protocol === 'pptp') {
     // The same agent runs pptpd and pppd for it.
     return [

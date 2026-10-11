@@ -107,17 +107,22 @@ func TestEachDeviceIsItsOwnConnection(t *testing.T) {
 	s := tunnel(t)
 	conf := Swanctl(s)
 	for _, want := range []string{
-		"wui-ikev2-10-mschapv2 {", "wui-ikev2-10-psk {", "wui-ikev2-10-rsa {", "wui-ikev2-10-eap-tls {",
-		`id = "s1-ali"`, `eap_id = "s1-ali"`, "auth = eap-mschapv2", "auth = eap-tls", `id = "tls-s1-ali"`, "eap_id = %any",
+		"wui-ikev2-password {", "auth = eap-radius", "pools = radius", "unique = no",
+		"wui-ikev2-10-psk {", "wui-ikev2-10-rsa {", "wui-ikev2-10-eap-tls {",
+		`id = "s1-ali"`, "auth = eap-tls", `id = "tls-s1-ali"`, "eap_id = %any",
 		"pools = wui-ikev2-10", "addrs = 10.79.0.2/32", "dns = 1.1.1.1", "unique = replace",
 		"certs = wui-ikev2-10.pem", "cacerts = wui-ikev2-ca.pem", `id = "vpn.example.com"`,
 		"modp1024", "fragmentation = yes",
 		"ike-wui-ikev2-10 {\n    id = \"s1-ali\"\n    secret = \"Pws1-alix9\"",
-		"eap-wui-ikev2-11 {\n    id = \"s1-sara\"",
 	} {
 		if !strings.Contains(conf, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+	// Passwords are RADIUS's: none is in strongSwan's file, and no device
+	// has a password connection of its own.
+	if strings.Contains(conf, "eap-wui-ikev2") || strings.Contains(conf, "-mschapv2 {") {
+		t.Fatal("a password is in strongSwan's own file")
 	}
 	// No secret without an identity: a key with none would stand in for
 	// any device.
@@ -129,10 +134,10 @@ func TestEachDeviceIsItsOwnConnection(t *testing.T) {
 	// Only what is on: PSK alone has no certificates and no EAP.
 	s.Interface.Modes = []string{ModePSK}
 	conf = Swanctl(s)
-	if strings.Contains(conf, "eap") || strings.Contains(conf, "certs") || !strings.Contains(conf, "wui-ikev2-11-psk") {
+	if strings.Contains(conf, "eap") || strings.Contains(conf, "certs") || strings.Contains(conf, "radius") || !strings.Contains(conf, "wui-ikev2-11-psk") {
 		t.Fatalf("PSK alone:\n%s", conf)
 	}
-	for _, f := range Files(s) {
+	for _, f := range Files(s, "x") {
 		if f.Dir != "conf.d" {
 			t.Fatalf("PSK alone writes %s/%s", f.Dir, f.Name)
 		}
@@ -142,12 +147,16 @@ func TestEachDeviceIsItsOwnConnection(t *testing.T) {
 func TestEveryFileHasItsPlace(t *testing.T) {
 	s := tunnel(t)
 	got := map[string]bool{}
-	for _, f := range Files(s) {
+	for _, f := range Files(s, "RadSecret9") {
 		got[f.Dir+"/"+f.Name] = f.Secret
+		if f.Dir == SettingsDir && (!strings.Contains(f.Body, "secret = RadSecret9") || !strings.Contains(f.Body, "address = 127.0.0.1")) {
+			t.Fatalf("RADIUS settings:\n%s", f.Body)
+		}
 	}
 	for name, secret := range map[string]bool{
 		"x509ca/wui-ikev2-ca.pem": false, "x509/wui-ikev2-server.pem": false, "private/wui-ikev2-server.pem": true,
 		"x509/wui-ikev2-10.pem": false, "x509/wui-ikev2-11.pem": false, "conf.d/wui-ikev2.conf": true,
+		"strongswan.d/wui-ikev2-radius.conf": true,
 	} {
 		if s, ok := got[name]; !ok || s != secret {
 			t.Errorf("%s: present=%v secret=%v", name, ok, s)

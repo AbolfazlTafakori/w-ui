@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
@@ -28,6 +29,9 @@ func init() {
 	}
 	if !backend.Supports(model.ProtocolL2TP) {
 		l2tpdriver.Register()
+	}
+	if !backend.Supports(model.ProtocolIKEv2) {
+		ikev2driver.Register()
 	}
 }
 

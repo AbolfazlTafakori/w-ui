@@ -47,6 +47,7 @@ const protocolOptions = [
   { value: 'openvpn', label: t('protocol.openvpn') },
   { value: 'l2tp', label: t('protocol.l2tp') },
   { value: 'pptp', label: t('protocol.pptp') },
+  { value: 'ikev2', label: t('protocol.ikev2') },
 ]
 
 // Three-state rows: All, then the two answers. Their Radio.Group with

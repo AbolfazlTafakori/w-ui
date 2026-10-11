@@ -123,6 +123,8 @@ same_sign_in() {
 
 suite() { # label client-protocol harness-flags...
 	local label=$1 proto=$2; shift 2
+	# ONLY=text runs only the suites whose label has it in.
+	case "$label" in *"${ONLY:-}"*) ;; *) return ;; esac
 	echo "== $label"
 	start_server "$@"
 	client "$label: first device"                 "$proto" dev01 ok
@@ -146,12 +148,19 @@ suite "OpenVPN over TCP" openvpn -protocol openvpn -transport tcp
 suite "L2TP/IPsec" l2tp -protocol l2tp
 suite "L2TP without IPsec" l2tp-plain -protocol l2tp -plain
 suite "PPTP" pptp -protocol pptp
+# One IKEv2 tunnel, entered every way a phone or a computer has built in.
+suite "IKEv2 by password (MSCHAPv2)" ikev2-mschapv2 -protocol ikev2
+suite "IKEv2 by key (PSK)" ikev2-psk -protocol ikev2
+suite "IKEv2 by certificate (RSA)" ikev2-rsa -protocol ikev2
+suite "IKEv2 by certificate in EAP (EAP-TLS)" ikev2-eap-tls -protocol ikev2
 
 echo
 echo "$pass passed, $fail failed"
 ok=$([ "$fail" -eq 0 ] && echo 1 || echo 0)
 
-echo
-echo "== Devices and routers on L2TP and PPTP (tools/l2tpsim)"
-bash "$here/../l2tpsim/run.sh" || ok=0
+if [ -z "${ONLY:-}" ]; then
+	echo
+	echo "== Devices and routers on L2TP and PPTP (tools/l2tpsim)"
+	bash "$here/../l2tpsim/run.sh" || ok=0
+fi
 [ "$ok" = 1 ]

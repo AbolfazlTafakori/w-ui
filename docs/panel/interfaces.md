@@ -105,6 +105,26 @@ An interface that still has customers cannot be deleted. The panel says how many
 | **Egress interface** | `eth0` | The server's network card customer traffic leaves through, to the internet. | A device name, up to 15 characters. |
 | **Mode** | Standard | WireGuard only. **AmneziaWG** pads and disguises the handshake so it does not look like WireGuard to a filter; its obfuscation parameters are generated for you. Customers need an AmneziaWG-capable app (see [Client apps](/guide/client-apps)). | Needs AmneziaWG installed on the server. |
 
+### IKEv2
+
+An IKEv2 tunnel is the VPN built into Android 12 and newer, iPhone, Mac and
+Windows. It is always on UDP 500 and 4500, one per server, and shares
+strongSwan with an L2TP tunnel on the same server. Choose the ways a device
+may sign in; all four are on by default:
+
+| Way | Devices | What the device needs |
+|---|---|---|
+| Username and password (MSCHAPv2) | Android, iPhone, Mac, Windows | its sign-in, and the server's certificate installed once |
+| Key (PSK) | Android, iPhone, Mac | its username as the identity, its password as the key |
+| Certificate (RSA) | Android, iPhone, Mac | its own `.p12` file |
+| Certificate in EAP (EAP-TLS) | Android | its own `.p12` file |
+
+The panel makes the tunnel's certificate authority and the server's
+certificate, issues each device its own, and renews them. The customer's
+page offers the server's certificate and the device's `.p12`, which opens
+only with the device's password. IKEv2 runs on this server only for now,
+not on a node.
+
 ### Changing an interface later
 
 Everything except the protocol and the server can be changed after creation.

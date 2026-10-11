@@ -16,10 +16,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/radiusd"
 )
 
 const (
@@ -39,6 +41,13 @@ var swanctlDirs = []string{"/etc/swanctl/conf.d", "/etc/strongswan/swanctl/conf.
 // linuxSystem runs the real programs.
 type linuxSystem struct {
 	log *slog.Logger
+
+	// The RADIUS server IKEv2's password sign-ins are checked by, while
+	// the tunnel allows them.
+	radiusMu     sync.Mutex
+	radius       *radiusd.Server
+	radiusSecret string
+	radiusStop   context.CancelFunc
 }
 
 // NewSystem is the system on this machine.

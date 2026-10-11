@@ -7,7 +7,7 @@
 // (routing.BuildNAT) and waits, so clients in other containers can dial in
 // with those files.
 //
-// L2TP and PPTP run as they do on a customer's server: the panel's driver
+// L2TP, PPTP and IKEv2 run as they do on a customer's server: the panel's driver
 // describes the tunnel, and the root agent -- run here in the same process,
 // as `wui l2tp-agent` runs it -- brings up strongSwan, xl2tpd or pptpd and
 // ends the sessions that should not exist.
@@ -29,10 +29,12 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpagent"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
@@ -45,7 +47,7 @@ import (
 const devices = 3
 
 func main() {
-	protocol := flag.String("protocol", "", "wireguard, openvpn, l2tp or pptp")
+	protocol := flag.String("protocol", "", "wireguard, openvpn, l2tp, pptp or ikev2")
 	plain := flag.Bool("plain", false, "l2tp: also accept routers without IPsec")
 	transport := flag.String("transport", "udp", "openvpn: udp or tcp")
 	endpoint := flag.String("endpoint", "", "the address clients dial")
@@ -66,6 +68,7 @@ func main() {
 	}
 
 	var drv backend.Backend
+	var ca ikev2conf.Authority
 	switch iface.Protocol {
 	case model.ProtocolWireGuard:
 		pair, err := wgkey.NewPair()
@@ -101,6 +104,23 @@ func main() {
 		// The panel's data directory, which the installer makes.
 		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
 		startAgent(ctx, log, l2tpdriver.DataRoot)
+	case model.ProtocolIKEv2:
+		// All four ways in, an authority and the server's certificate, as
+		// the panel makes them (service.newIKEv2Params).
+		var err error
+		ca, err = ikev2conf.NewAuthority("ike0")
+		must(err)
+		srv, err := ca.IssueServer([]string{*endpoint})
+		must(err)
+		iface.Name, iface.ListenPort, iface.MTU = "ike0", 500, 1400
+		iface.IKEv2 = model.JSON(model.IKEv2Params{MSCHAPv2: true, PSK: true, RSA: true, EAPTLS: true,
+			CACert: ca.Cert, CAKey: ca.Key, ServerCert: srv.Cert, ServerKey: srv.Key, ServerNames: []string{*endpoint}})
+		l2tpdriver.DataRoot = "/var/lib/wui"
+		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
+		d := ikev2driver.New()
+		d.SetLogger(log)
+		drv = d
+		startAgent(ctx, log, l2tpdriver.DataRoot)
 	default:
 		fail("unknown protocol %q", *protocol)
 	}
@@ -127,6 +147,11 @@ func main() {
 			must(err)
 			a.Username, a.Secret = fmt.Sprintf("s1-dev%02d", i), secret
 		}
+		if iface.Protocol == model.ProtocolIKEv2 {
+			dev, err := ca.IssueDevice(a.Username)
+			must(err)
+			a.CertPEM, a.CertKeyPEM = dev.Cert, dev.Key
+		}
 		accounts = append(accounts, a)
 	}
 	sync := func(n int) {
@@ -135,7 +160,7 @@ func main() {
 			want = append(want, backend.DesiredAccount{
 				ID: a.ID, DeviceName: a.DeviceName, IP: netip.MustParseAddr(a.IP),
 				PublicKey: a.PublicKey, PresharedKey: a.PresharedKey,
-				Username: a.Username, Secret: a.Secret,
+				Username: a.Username, Secret: a.Secret, Cert: a.CertPEM,
 			})
 		}
 		rep, err := drv.Sync(ctx, want)
@@ -166,6 +191,15 @@ func main() {
 	} else {
 		stranger.DeviceName = "stranger"
 		stranger.Secret = "NotThePassword123"
+	}
+	if iface.Protocol == model.ProtocolIKEv2 {
+		// A certificate for the first device's name, from an authority
+		// that is not the tunnel's.
+		other, err := ikev2conf.NewAuthority("other")
+		must(err)
+		dev, err := other.IssueDevice(stranger.Username)
+		must(err)
+		stranger.CertPEM, stranger.CertKeyPEM = dev.Cert, dev.Key
 	}
 	p, err := drv.Render(ctx, &stranger, iface)
 	must(err)
@@ -258,6 +292,18 @@ func openTunnel(ctx context.Context, drv backend.Backend, iface *model.Interface
 // writeSignIn writes what an L2TP or PPTP device is set up with, from the
 // same values the customer's page shows: server, key, username, password.
 func writeSignIn(dir, name string, a *model.Account, iface *model.Interface) {
+	if iface.Protocol == model.ProtocolIKEv2 {
+		// The page's values, and the files it hands out: the tunnel's
+		// authority and the device's own certificate.
+		v := ikev2driver.GuideValues(a, iface)
+		env := fmt.Sprintf("SERVER=%s\nSERVERID=%s\nUSER=%s\nPASS=%s\nTLSID=%s\n",
+			v.Server, v.ServerID, v.Username, v.Password, v.IKEv2.TLSIdentity)
+		must(os.WriteFile(filepath.Join(dir, name+".env"), []byte(env), 0o644))
+		must(os.WriteFile(filepath.Join(dir, "ca.crt"), []byte(iface.IKEv2.V.CACert), 0o644))
+		must(os.WriteFile(filepath.Join(dir, name+".crt"), []byte(a.CertPEM), 0o644))
+		must(os.WriteFile(filepath.Join(dir, name+".key"), []byte(a.CertKeyPEM), 0o644))
+		return
+	}
 	if !iface.Protocol.IsPPP() {
 		return
 	}

@@ -216,7 +216,7 @@ func (s *Server) serveSubReveal(w http.ResponseWriter, r *http.Request, token st
 	}
 	value, ok := "", false
 	for _, d := range page.Devices {
-		if d.Guide == nil || !devguide.Protocol(d.Guide.Protocol).IsPPP() ||
+		if d.Guide == nil || !d.Guide.Withholds() ||
 			req.Ref != strconv.FormatUint(uint64(d.ID), 10)+"."+strconv.FormatUint(uint64(d.HostID), 10) {
 			continue
 		}

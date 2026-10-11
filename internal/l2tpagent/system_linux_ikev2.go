@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/radiusd"
 )
 
 // The IKEv2 tunnel on Linux: strongSwan's swanctl files, shared with L2TP's.
@@ -24,7 +26,7 @@ var pluginDirs = []string{"/usr/lib/ipsec/plugins", "/usr/lib64/strongswan/plugi
 
 // ikev2Plugins are the plugins IKEv2's ways of signing in need beyond what
 // L2TP's IPsec does: Debian ships them in packages of their own.
-var ikev2Plugins = []string{"eap-mschapv2", "eap-tls", "eap-identity"}
+var ikev2Plugins = []string{"eap-mschapv2", "eap-tls", "eap-identity", "eap-radius"}
 
 func havePlugin(name string) bool {
 	for _, d := range pluginDirs {
@@ -48,6 +50,23 @@ func swanctlRoot() (string, error) {
 // ikev2Dirs are the swanctl directories the tunnel writes into.
 var ikev2Dirs = []string{"x509ca", "x509", "private", "conf.d"}
 
+// settingsDir is strongSwan's settings directory beside swanctl's:
+// /etc/strongswan.d, or /etc/strongswan/strongswan.d on the RHEL family.
+func settingsDir(root string) string {
+	if filepath.Base(filepath.Dir(root)) == "strongswan" {
+		return filepath.Join(filepath.Dir(root), "strongswan.d")
+	}
+	return filepath.Join(filepath.Dir(root), "strongswan.d")
+}
+
+// fileDir is where a tunnel file goes.
+func fileDir(root, dir string) string {
+	if dir == ikev2conf.SettingsDir {
+		return settingsDir(root)
+	}
+	return filepath.Join(root, dir)
+}
+
 func (s *linuxSystem) WriteSwanctl(files []ikev2conf.File) error {
 	root, err := swanctlRoot()
 	if err != nil {
@@ -55,7 +74,7 @@ func (s *linuxSystem) WriteSwanctl(files []ikev2conf.File) error {
 	}
 	keep := map[string]bool{}
 	for _, f := range files {
-		dir := filepath.Join(root, f.Dir)
+		dir := fileDir(root, f.Dir)
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return err
 		}
@@ -76,8 +95,8 @@ func (s *linuxSystem) WriteSwanctl(files []ikev2conf.File) error {
 // removeIKEv2Files removes the tunnel's own files -- by their prefix --
 // except those kept.
 func removeIKEv2Files(root string, keep map[string]bool) error {
-	for _, d := range ikev2Dirs {
-		entries, err := os.ReadDir(filepath.Join(root, d))
+	for _, d := range append(append([]string(nil), ikev2Dirs...), ikev2conf.SettingsDir) {
+		entries, err := os.ReadDir(fileDir(root, d))
 		if err != nil {
 			continue
 		}
@@ -85,7 +104,7 @@ func removeIKEv2Files(root string, keep map[string]bool) error {
 			if !strings.HasPrefix(e.Name(), ikev2conf.Prefix) {
 				continue
 			}
-			path := filepath.Join(root, d, e.Name())
+			path := filepath.Join(fileDir(root, d), e.Name())
 			if keep[path] {
 				continue
 			}
@@ -101,7 +120,43 @@ func (s *linuxSystem) LoadSwanctl(ctx context.Context) error {
 	if err := s.ensureCharon(ctx); err != nil {
 		return err
 	}
-	return s.loadAll(ctx)
+	// The RADIUS settings are strongSwan's own, read again on request.
+	if err := s.loadAll(ctx); err != nil {
+		return err
+	}
+	_, err := s.run(ctx, cmdTimeout, "", "swanctl", "--reload-settings")
+	return err
+}
+
+func (s *linuxSystem) ServeRadius(secret string, lookup radiusd.Lookup) error {
+	s.radiusMu.Lock()
+	defer s.radiusMu.Unlock()
+	if s.radius != nil && s.radiusSecret == secret {
+		s.radius.SetLookup(lookup)
+		return nil
+	}
+	if s.radius != nil {
+		s.radiusStop()
+		s.radius = nil
+	}
+	addr := net.JoinHostPort(ikev2conf.RadiusHost, strconv.Itoa(ikev2conf.RadiusPort))
+	srv, err := radiusd.Listen(addr, []byte(secret), lookup, s.log.With("part", "radius"))
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go srv.Serve(ctx)
+	s.radius, s.radiusSecret, s.radiusStop = srv, secret, cancel
+	return nil
+}
+
+func (s *linuxSystem) StopRadius() {
+	s.radiusMu.Lock()
+	defer s.radiusMu.Unlock()
+	if s.radius != nil {
+		s.radiusStop()
+		s.radius = nil
+	}
 }
 
 // ensureCharon starts strongSwan when it is not running, noting that the

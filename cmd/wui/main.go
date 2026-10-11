@@ -25,6 +25,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/api"
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
@@ -760,6 +761,7 @@ func registerBackends(log *slog.Logger) {
 	wgdriver.Register()
 	ovpndriver.Register()
 	l2tpdriver.Register()
+	ikev2driver.Register()
 
 	for _, p := range []model.Protocol{model.ProtocolWireGuard, model.ProtocolOpenVPN} {
 		if backend.Supports(p) {

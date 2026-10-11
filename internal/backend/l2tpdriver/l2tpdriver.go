@@ -477,6 +477,43 @@ func readReport(p l2tpconf.Paths) (l2tpconf.Report, error) {
 	return r, nil
 }
 
+// Shared with the IKEv2 driver, which talks to the same agent the same way:
+// a state file, a report, a kick per account, and a device holding the
+// tunnel's gateway.
+
+// EnsureDevice gives a tunnel its device (see ensureDevice).
+func EnsureDevice(ctx context.Context, iface *model.Interface) error {
+	return ensureDeviceFn(ctx, iface)
+}
+
+// RemoveDevice takes it away.
+func RemoveDevice(ctx context.Context, iface *model.Interface) error {
+	return removeDeviceFn(ctx, iface)
+}
+
+// Gateway is the first host of a subnet.
+func Gateway(subnet string) (netip.Addr, error) { return gateway(subnet) }
+
+// Resolvers is the IPv4 resolvers of a comma-separated list, two at most.
+func Resolvers(field string) []string { return resolvers(field) }
+
+// ReadReport is the agent's report as it is; FreshReport only while the
+// agent is still writing it.
+func ReadReport(p l2tpconf.Paths) (l2tpconf.Report, error)  { return readReport(p) }
+func FreshReport(p l2tpconf.Paths) (l2tpconf.Report, error) { return freshReport(p) }
+
+// WriteAtomic writes a file through a temporary one renamed into place.
+func WriteAtomic(path string, body []byte, mode os.FileMode) error {
+	return writeAtomic(path, body, mode)
+}
+
+// ReportStale and StartGrace are how old a report may be, and how long the
+// agent is given to answer at first.
+const (
+	ReportStale = reportStale
+	StartGrace  = startGrace
+)
+
 // gateway is the first host of the subnet: the server's end of every session.
 func gateway(subnet string) (netip.Addr, error) {
 	p, err := netip.ParsePrefix(strings.TrimSpace(subnet))

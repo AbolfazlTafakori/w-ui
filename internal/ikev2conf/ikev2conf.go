@@ -373,8 +373,9 @@ func NewPaths(dataDir string) l2tpconf.Paths {
 
 // ── What the agent writes ───────────────────────────────────────────────
 
-// File is one file under /etc/swanctl the tunnel needs: Dir is the swanctl
-// directory it goes in (x509ca, x509, private, conf.d).
+// File is one file the tunnel needs: Dir is the swanctl directory it goes in
+// (x509ca, x509, private, conf.d), or SettingsDir for strongSwan's own
+// settings (strongswan.d).
 type File struct {
 	Dir, Name, Body string
 	// Secret is a file only root may read.
@@ -389,12 +390,50 @@ const (
 
 func accountFile(id uint) string { return Prefix + "-" + strconv.FormatUint(uint64(id), 10) + ".pem" }
 
+// SettingsDir is File.Dir for a file in strongSwan's settings directory.
+const SettingsDir = "strongswan.d"
+
+// RadiusConn is the one connection devices signing in by password come in
+// on; RADIUS (package radiusd) tells strongSwan who they are and which
+// address is theirs.
+const RadiusConn = Prefix + "-password"
+
+// RadiusAddr is where the agent's RADIUS server listens: loopback, for the
+// strongSwan on this machine alone.
+const (
+	RadiusHost = "127.0.0.1"
+	RadiusPort = 18120
+)
+
+// RadiusSettings points strongSwan's eap-radius plugin at the agent's
+// server, under a secret the agent makes and never writes anywhere else.
+func RadiusSettings(secret string) string {
+	return fmt.Sprintf(`# Written by W-UI's agent. Edits are replaced.
+charon {
+  plugins {
+    eap-radius {
+      servers {
+        %s {
+          address = %s
+          auth_port = %d
+          secret = %s
+        }
+      }
+    }
+  }
+}
+`, Prefix, RadiusHost, RadiusPort, secret)
+}
+
 // Files is every file the tunnel's strongSwan needs, the configuration
 // last. A file that is not in it and has the tunnel's prefix is the agent's
 // to remove.
-func Files(s *State) []File {
+func Files(s *State, radiusSecret string) []File {
 	f := &s.Interface
 	var out []File
+	if f.Has(ModeMSCHAPv2) {
+		out = append(out, File{Dir: SettingsDir, Name: Prefix + "-radius.conf", Body: RadiusSettings(radiusSecret), Secret: true})
+	}
 	if f.Has(ModeMSCHAPv2) || f.ByCertificate() {
 		out = append(out,
 			File{Dir: "x509ca", Name: caFile, Body: f.CACert},
@@ -474,8 +513,11 @@ func Swanctl(s *State) string {
 	var b strings.Builder
 	b.WriteString("# Written by W-UI's agent from the panel's IKEv2 tunnel. Edits are replaced.\n")
 	b.WriteString("connections {\n")
+	if f.Has(ModeMSCHAPv2) {
+		radiusConn(&b, f)
+	}
 	for _, a := range sorted(f.Accounts) {
-		for _, m := range []string{ModeMSCHAPv2, ModePSK, ModeRSA, ModeEAPTLS} {
+		for _, m := range []string{ModePSK, ModeRSA, ModeEAPTLS} {
 			if !f.Has(m) {
 				continue
 			}
@@ -497,19 +539,53 @@ func Swanctl(s *State) string {
 
 	b.WriteString("secrets {\n")
 	for _, a := range sorted(f.Accounts) {
-		// One secret per device and way: its password for EAP, the same
-		// as its key for PSK. Each is bound to the device's identity, so a
-		// key without one -- L2TP's, which every L2TP customer holds and
-		// the same strongSwan loads -- never stands in for a device's.
+		// A device's key for PSK is its password. Each is bound to the
+		// device's identity, so a key without one -- L2TP's, which every
+		// L2TP customer holds and the same strongSwan loads -- never
+		// stands in for a device's. Passwords for EAP are RADIUS's, not
+		// strongSwan's.
 		if f.Has(ModePSK) {
 			fmt.Fprintf(&b, "  ike-%s {\n    id = %q\n    secret = %q\n  }\n", PoolName(a.ID), a.Username, a.Secret)
-		}
-		if f.Has(ModeMSCHAPv2) {
-			fmt.Fprintf(&b, "  eap-%s {\n    id = %q\n    secret = %q\n  }\n", PoolName(a.ID), a.Username, a.Secret)
 		}
 	}
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// radiusConn is the connection for every device signing in by password,
+// whatever identity it announces -- Windows announces its address.
+func radiusConn(b *strings.Builder, f *Iface) {
+	fmt.Fprintf(b, "  %s {\n", RadiusConn)
+	b.WriteString("    version = 2\n")
+	fmt.Fprintf(b, "    proposals = %s\n", strings.Join(ikeProposals, ","))
+	// The address RADIUS gives, which is the device's own.
+	b.WriteString("    pools = radius\n")
+	// Not replaced by identity: the identity here can be a device's local
+	// address, which two customers in two homes may well share. The agent
+	// holds each device to one session, by its address.
+	b.WriteString("    unique = no\n")
+	b.WriteString("    mobike = yes\n")
+	b.WriteString("    fragmentation = yes\n")
+	b.WriteString("    dpd_delay = 30s\n")
+	b.WriteString("    send_cert = always\n")
+	b.WriteString("    send_certreq = no\n")
+	b.WriteString("    local {\n")
+	b.WriteString("      auth = pubkey\n")
+	fmt.Fprintf(b, "      certs = %s\n", serverFile)
+	fmt.Fprintf(b, "      id = %q\n", f.ServerID)
+	b.WriteString("    }\n")
+	b.WriteString("    remote {\n")
+	b.WriteString("      auth = eap-radius\n")
+	b.WriteString("      eap_id = %any\n")
+	b.WriteString("    }\n")
+	b.WriteString("    children {\n")
+	fmt.Fprintf(b, "      %s {\n", RadiusConn)
+	b.WriteString("        local_ts = 0.0.0.0/0\n")
+	fmt.Fprintf(b, "        esp_proposals = %s\n", strings.Join(espProposals, ","))
+	b.WriteString("        dpd_action = clear\n")
+	b.WriteString("      }\n")
+	b.WriteString("    }\n")
+	b.WriteString("  }\n")
 }
 
 func conn(b *strings.Builder, f *Iface, a Account, mode string) {
@@ -547,9 +623,6 @@ func conn(b *strings.Builder, f *Iface, a Account, mode string) {
 	switch mode {
 	case ModePSK:
 		b.WriteString("      auth = psk\n")
-	case ModeMSCHAPv2:
-		b.WriteString("      auth = eap-mschapv2\n")
-		fmt.Fprintf(b, "      eap_id = %q\n", a.Username)
 	case ModeRSA:
 		b.WriteString("      auth = pubkey\n")
 		fmt.Fprintf(b, "      certs = %s\n", accountFile(a.ID))
@@ -563,7 +636,7 @@ func conn(b *strings.Builder, f *Iface, a Account, mode string) {
 		fmt.Fprintf(b, "      cacerts = %s\n", caFile)
 	}
 	b.WriteString("    }\n")
-	if mode == ModeMSCHAPv2 || mode == ModeEAPTLS {
+	if mode == ModeEAPTLS {
 		// The server asks for no certificate where the device has none to
 		// give; Windows otherwise stalls on the request.
 		b.WriteString("    send_certreq = no\n")

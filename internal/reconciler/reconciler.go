@@ -692,6 +692,11 @@ func serviceableFor(c *model.Client, suspended map[uint]bool) bool {
 
 // readDesired builds the target state from the database in two queries.
 func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
+	// Before the accounts are read, so a device given a certificate on this
+	// pass is described to its tunnel with it.
+	if err := service.EnsureIKEv2Certs(ctx, r.db, r.localNodeID, time.Now()); err != nil {
+		r.log.Error("IKEv2 certificates", "error", err)
+	}
 	db := r.db.WithContext(ctx)
 
 	var clients []model.Client
@@ -858,6 +863,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 				PresharedKey: a.PresharedKey,
 				Username:     a.Username,
 				Secret:       a.Secret,
+				Cert:         a.CertPEM,
 			})
 		}
 	}
@@ -891,7 +897,7 @@ func shapedDevices(interfaces []model.Interface) []string {
 		// An L2TP or PPTP tunnel's own device is a placeholder that carries
 		// nothing; its customers' traffic leaves by each session's link,
 		// which is shaped on its own (see shapeSessions).
-		if iface.Protocol.IsPPP() {
+		if iface.Protocol.ByAgent() {
 			continue
 		}
 		// Only the tunnel devices, which this panel created and nothing else

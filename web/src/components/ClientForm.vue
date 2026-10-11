@@ -43,7 +43,7 @@ function randomSecret(n = 16) {
 }
 
 // The tunnels a device signs in to with a username and password.
-const LOGIN_PROTOCOLS = ['openvpn', 'l2tp', 'pptp']
+const LOGIN_PROTOCOLS = ['openvpn', 'ikev2', 'l2tp', 'pptp']
 
 // The logins the customer's users have now, in the plan's order (user 1
 // first), from the first OpenVPN or L2TP tunnel they are on. Every user has
@@ -245,7 +245,7 @@ const chosen = computed(() => props.interfaces.filter((i) => form.value.interfac
 // username and password, and a reseller may want to choose them rather than
 // be handed generated ones. One login per user serves both.
 const hasOpenVPN = computed(() => chosen.value.some((i) => i.protocol === 'openvpn'))
-const hasL2TP = computed(() => chosen.value.some((i) => i.protocol === 'l2tp'))
+const hasL2TP = computed(() => chosen.value.some((i) => i.protocol === 'l2tp' || i.protocol === 'ikev2'))
 const hasPPTP = computed(() => chosen.value.some((i) => i.protocol === 'pptp'))
 const hasLogins = computed(() => hasOpenVPN.value || hasL2TP.value)
 const loginLabel = computed(() =>

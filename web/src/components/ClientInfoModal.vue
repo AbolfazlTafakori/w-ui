@@ -152,7 +152,7 @@ function tagOf(protocol) {
   return groupTag[protocol] || groupTag.openvpn
 }
 // A device that signs in with a username and password, shown with them.
-const withLogin = (cf) => ['openvpn', 'l2tp', 'pptp'].includes(cf.protocol) && cf.device.username
+const withLogin = (cf) => ['openvpn', 'ikev2', 'l2tp', 'pptp'].includes(cf.protocol) && cf.device.username
 function ifaceLabel(id) {
   const i = ifaceById.value[id]
   return i ? i.name : `#${id}`
@@ -309,8 +309,8 @@ const expiryText = computed(() => {
                   <div v-if="openCfg.has(cf.key)" class="cfg-user-body">
                     <!-- An OpenVPN or L2TP user's login, read off here for passing on. -->
                     <div v-if="withLogin(cf)" class="cfg-login">
-                      <span class="hint">{{ (cf.protocol === 'l2tp' || cf.protocol === 'pptp') ? t('client.loginUsername') : t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
-                      <span class="hint">{{ (cf.protocol === 'l2tp' || cf.protocol === 'pptp') ? t('client.loginPassword') : t('client.openvpnPassword') }}</span><code class="ltr">{{ cf.device.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.password)"><AntIcon name="CopyOutlined" /></button>
+                      <span class="hint">{{ (cf.protocol === 'l2tp' || cf.protocol === 'pptp' || cf.protocol === 'ikev2') ? t('client.loginUsername') : t('client.openvpnUsername') }}</span><code class="ltr">{{ cf.device.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.username)"><AntIcon name="CopyOutlined" /></button>
+                      <span class="hint">{{ (cf.protocol === 'l2tp' || cf.protocol === 'pptp' || cf.protocol === 'ikev2') ? t('client.loginPassword') : t('client.openvpnPassword') }}</span><code class="ltr">{{ cf.device.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(cf.device.password)"><AntIcon name="CopyOutlined" /></button>
                     </div>
                     <code class="config-block-text">{{ cf.body }}</code>
                   </div>

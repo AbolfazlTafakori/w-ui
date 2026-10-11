@@ -380,6 +380,26 @@ var catalogue = []Guide{
 				},
 			},
 			{
+				Protocol: IKEv2Password,
+				Path:     "Settings > Network & internet > VPN > Add VPN",
+				Fields: []Field{
+					{Label: "VPN provider", Value: "Windows (built-in)"},
+					{Label: "Connection name", Source: Anything},
+					{Label: "Server name or address", Source: Server},
+					{Label: "VPN type", Value: "IKEv2"},
+					{Label: "Type of sign-in info", Value: "User name and password"},
+					{Label: "User name", Source: Username},
+					{Label: "Password", Source: Password},
+				},
+				Notes: []Text{Text{
+					EN: "First install the server's certificate, once, in a Command Prompt opened as administrator, from the folder you saved it to:",
+					FA: "اول گواهی سرور را یک بار نصب کنید، در Command Prompt با دسترسی Administrator، از پوشه‌ای که ذخیره‌اش کرده‌اید:",
+				}},
+				Command: func(v Values) string {
+					return `certutil -addstore Root "` + v.IKEv2.CAFile + `"`
+				},
+			},
+			{
 				Protocol: PPTP,
 				Path:     "Settings > Network & internet > VPN > Add VPN",
 				Fields: []Field{
@@ -399,6 +419,59 @@ var catalogue = []Guide{
 		Setups: []Setup{
 			wgApp("WireGuard app > + > Create from file or archive", Field{Label: "File", Source: File}),
 			ovpnApp("OpenVPN Connect > Import Profile > File"),
+			{
+				Protocol: IKEv2Password,
+				Path:     "Settings > General > VPN & Device Management > VPN > Add VPN Configuration",
+				Fields: []Field{
+					{Label: "Type", Value: "IKEv2"},
+					{Label: "Description", Source: Anything},
+					{Label: "Server", Source: Server},
+					{Label: "Remote ID", Source: RemoteID},
+					{Label: "Local ID", Source: Empty},
+					{Label: "User Authentication", Value: "Username"},
+					{Label: "Username", Source: Username},
+					{Label: "Password", Source: Password},
+				},
+				Notes: []Text{Text{
+					EN: "First install the server's certificate: open its file from this page, then Settings > Profile Downloaded > Install, and Settings > General > About > Certificate Trust Settings: turn it on.",
+					FA: "اول گواهی سرور را نصب کنید: فایلش را از همین صفحه باز کنید، بعد تنظیمات > Profile Downloaded > Install، و تنظیمات > General > About > Certificate Trust Settings: روشنش کنید.",
+				}},
+			},
+			{
+				Protocol: IKEv2PSK,
+				Path:     "Settings > General > VPN & Device Management > VPN > Add VPN Configuration",
+				Fields: []Field{
+					{Label: "Type", Value: "IKEv2"},
+					{Label: "Description", Source: Anything},
+					{Label: "Server", Source: Server},
+					{Label: "Remote ID", Source: RemoteID},
+					{Label: "Local ID", Source: Username},
+					{Label: "User Authentication", Value: "None"},
+					{Label: "Use Certificate", Value: "off"},
+					{Label: "Secret", Source: Password},
+				},
+			},
+			{
+				Protocol: IKEv2RSA,
+				Path:     "Settings > General > VPN & Device Management > VPN > Add VPN Configuration",
+				Fields: []Field{
+					{Label: "Type", Value: "IKEv2"},
+					{Label: "Description", Source: Anything},
+					{Label: "Server", Source: Server},
+					{Label: "Remote ID", Source: RemoteID},
+					{Label: "Local ID", Source: Username},
+					{Label: "User Authentication", Value: "None"},
+					{Label: "Use Certificate", Value: "on"},
+					{Label: "Certificate", Source: CertFile},
+				},
+				Notes: []Text{Text{
+					EN: "First install your certificate: open your .p12 file from this page, then Settings > Profile Downloaded > Install; it asks for your password.",
+					FA: "اول گواهی خودتان را نصب کنید: فایل .p12 را از همین صفحه باز کنید، بعد تنظیمات > Profile Downloaded > Install؛ رمز خودتان را می‌خواهد.",
+				}, Text{
+					EN: "First install the server's certificate: open its file from this page, then Settings > Profile Downloaded > Install, and Settings > General > About > Certificate Trust Settings: turn it on.",
+					FA: "اول گواهی سرور را نصب کنید: فایلش را از همین صفحه باز کنید، بعد تنظیمات > Profile Downloaded > Install، و تنظیمات > General > About > Certificate Trust Settings: روشنش کنید.",
+				}},
+			},
 			{
 				Protocol: L2TP,
 				Path:     "Settings > General > VPN & Device Management > VPN > Add VPN Configuration",
@@ -420,6 +493,61 @@ var catalogue = []Guide{
 		Setups: []Setup{
 			wgApp("WireGuard app > Import Tunnel(s) from File", Field{Label: "File", Source: File}),
 			ovpnApp("OpenVPN Connect > Import Profile > File"),
+			{
+				Protocol: IKEv2Password,
+				Path:     "System Settings > Network > ⋯ > Add VPN Configuration > IKEv2",
+				Fields: []Field{
+					{Label: "Display Name", Source: Anything},
+					{Label: "Server Address", Source: Server},
+					{Label: "Remote ID", Source: RemoteID},
+					{Label: "Local ID", Source: Empty},
+					{Label: "Authentication", Value: "Username"},
+					{Label: "Username", Source: Username},
+					{Label: "Password", Source: Password},
+				},
+				Notes: []Text{Text{
+					EN: "First add the server's certificate to Keychain Access (open its file from this page) and set it to Always Trust.",
+					FA: "اول گواهی سرور را به Keychain Access اضافه کنید (فایلش را از همین صفحه باز کنید) و روی Always Trust بگذارید.",
+				}, Text{
+					EN: "Apple names the fields but not every choice under Authentication; the choice here may be worded a little differently on your Mac.",
+					FA: "اپل نام فیلدها را آورده ولی همه‌ی گزینه‌های Authentication را نه؛ ممکن است گزینه روی مک شما کمی متفاوت نوشته شده باشد.",
+				}},
+			},
+			{
+				Protocol: IKEv2PSK,
+				Path:     "System Settings > Network > ⋯ > Add VPN Configuration > IKEv2",
+				Fields: []Field{
+					{Label: "Display Name", Source: Anything},
+					{Label: "Server Address", Source: Server},
+					{Label: "Remote ID", Source: RemoteID},
+					{Label: "Local ID", Source: Username},
+					{Label: "Authentication", Value: "Shared secret"},
+					{Label: "Shared secret", Source: Password},
+				},
+				Notes: []Text{Text{
+					EN: "Apple names the fields but not every choice under Authentication; the choice here may be worded a little differently on your Mac.",
+					FA: "اپل نام فیلدها را آورده ولی همه‌ی گزینه‌های Authentication را نه؛ ممکن است گزینه روی مک شما کمی متفاوت نوشته شده باشد.",
+				}},
+			},
+			{
+				Protocol: IKEv2RSA,
+				Path:     "System Settings > Network > ⋯ > Add VPN Configuration > IKEv2",
+				Fields: []Field{
+					{Label: "Display Name", Source: Anything},
+					{Label: "Server Address", Source: Server},
+					{Label: "Remote ID", Source: RemoteID},
+					{Label: "Local ID", Source: Username},
+					{Label: "Authentication", Value: "Certificate"},
+					{Label: "Certificate", Source: CertFile},
+				},
+				Notes: []Text{Text{
+					EN: "First add the server's certificate to Keychain Access (open its file from this page) and set it to Always Trust.",
+					FA: "اول گواهی سرور را به Keychain Access اضافه کنید (فایلش را از همین صفحه باز کنید) و روی Always Trust بگذارید.",
+				}, Text{
+					EN: "Apple names the fields but not every choice under Authentication; the choice here may be worded a little differently on your Mac.",
+					FA: "اپل نام فیلدها را آورده ولی همه‌ی گزینه‌های Authentication را نه؛ ممکن است گزینه روی مک شما کمی متفاوت نوشته شده باشد.",
+				}},
+			},
 			{
 				Protocol: L2TP,
 				Path:     "System Settings > VPN > Add VPN Configuration > L2TP over IPSec",
@@ -473,12 +601,88 @@ var catalogue = []Guide{
 	{
 		ID: "android12", Name: Text{EN: "Android 12 and newer", FA: "اندروید ۱۲ و جدیدتر"}, Kind: Device,
 		Notes: []Text{{
-			EN: "Android 12 and newer have no L2TP or PPTP of their own; WireGuard and OpenVPN work through their apps.",
-			FA: "اندروید ۱۲ به بعد L2TP و PPTP ندارد؛ وایرگارد و OpenVPN با اپ خودشان کار می‌کنند.",
+			EN: "Android 12 and newer have IKEv2 built in, and no L2TP or PPTP; WireGuard and OpenVPN work through their apps.",
+			FA: "اندروید ۱۲ به بعد IKEv2 را داخل خودش دارد و L2TP و PPTP ندارد؛ وایرگارد و OpenVPN با اپ خودشان کار می‌کنند.",
 		}},
 		Setups: []Setup{
 			wgApp("WireGuard app > + > Import from file or archive", Field{Label: "File", Source: File}),
 			ovpnApp("OpenVPN Connect > Import Profile > File"),
+			{
+				Protocol: IKEv2Password,
+				Path:     "Settings > Network & internet > VPN > +",
+				Fields: []Field{
+					{Label: "Name", Source: Anything},
+					{Label: "Type", Value: "IKEv2/IPSec MSCHAPv2"},
+					{Label: "Server address", Source: Server},
+					{Label: "IPSec identifier", Source: Empty},
+					{Label: "IPSec CA certificate", Source: CAFile},
+					{Label: "IPSec server certificate", Value: "Received from server"},
+					{Label: "Username", Source: Username},
+					{Label: "Password", Source: Password},
+				},
+				Notes: []Text{Text{
+					EN: "First install the server's certificate: Settings > Security and privacy > More security settings > Install from device storage > CA certificate, and choose the file from this page.",
+					FA: "اول گواهی سرور را نصب کنید: تنظیمات > امنیت و حریم خصوصی > تنظیمات امنیتی بیشتر > نصب از حافظه دستگاه > گواهی CA، و فایل را از همین صفحه انتخاب کنید.",
+				}, Text{
+					EN: "On a Samsung: Settings > Connections > More connection settings > VPN > ⋮ > Add VPN profile.",
+					FA: "در سامسونگ: تنظیمات > اتصالات > تنظیمات بیشتر اتصال > VPN > ⋮ > افزودن نمایه VPN.",
+				}},
+			},
+			{
+				Protocol: IKEv2PSK,
+				Path:     "Settings > Network & internet > VPN > +",
+				Fields: []Field{
+					{Label: "Name", Source: Anything},
+					{Label: "Type", Value: "IKEv2/IPSec PSK"},
+					{Label: "Server address", Source: Server},
+					{Label: "IPSec identifier", Source: Username},
+					{Label: "IPSec pre-shared key", Source: Password},
+				},
+				Notes: []Text{Text{
+					EN: "On a Samsung: Settings > Connections > More connection settings > VPN > ⋮ > Add VPN profile.",
+					FA: "در سامسونگ: تنظیمات > اتصالات > تنظیمات بیشتر اتصال > VPN > ⋮ > افزودن نمایه VPN.",
+				}},
+			},
+			{
+				Protocol: IKEv2RSA,
+				Path:     "Settings > Network & internet > VPN > +",
+				Fields: []Field{
+					{Label: "Name", Source: Anything},
+					{Label: "Type", Value: "IKEv2/IPSec RSA"},
+					{Label: "Server address", Source: Server},
+					{Label: "IPSec identifier", Source: Username},
+					{Label: "IPSec user certificate", Source: CertFile},
+					{Label: "IPSec CA certificate", Source: CAFile},
+					{Label: "IPSec server certificate", Value: "Received from server"},
+				},
+				Notes: []Text{Text{
+					EN: "First install your certificate: Settings > Security and privacy > More security settings > Install from device storage > VPN and app user certificate, and choose your .p12 file; it opens with your password.",
+					FA: "اول گواهی خودتان را نصب کنید: تنظیمات > امنیت و حریم خصوصی > تنظیمات امنیتی بیشتر > نصب از حافظه دستگاه > گواهی کاربر VPN و برنامه، و فایل .p12 خود را انتخاب کنید؛ با رمز خودتان باز می‌شود.",
+				}, Text{
+					EN: "On a Samsung: Settings > Connections > More connection settings > VPN > ⋮ > Add VPN profile.",
+					FA: "در سامسونگ: تنظیمات > اتصالات > تنظیمات بیشتر اتصال > VPN > ⋮ > افزودن نمایه VPN.",
+				}},
+			},
+			{
+				Protocol: IKEv2TLS,
+				Path:     "Settings > Network & internet > VPN > +",
+				Fields: []Field{
+					{Label: "Name", Source: Anything},
+					{Label: "Type", Value: "IKEv2/IPSec EAP-TLS"},
+					{Label: "Server address", Source: Server},
+					{Label: "IPSec identifier", Source: TLSID},
+					{Label: "IPSec user certificate", Source: CertFile},
+					{Label: "IPSec CA certificate", Source: CAFile},
+					{Label: "IPSec server certificate", Value: "Received from server"},
+				},
+				Notes: []Text{Text{
+					EN: "First install your certificate: Settings > Security and privacy > More security settings > Install from device storage > VPN and app user certificate, and choose your .p12 file; it opens with your password.",
+					FA: "اول گواهی خودتان را نصب کنید: تنظیمات > امنیت و حریم خصوصی > تنظیمات امنیتی بیشتر > نصب از حافظه دستگاه > گواهی کاربر VPN و برنامه، و فایل .p12 خود را انتخاب کنید؛ با رمز خودتان باز می‌شود.",
+				}, Text{
+					EN: "On a Samsung: Settings > Connections > More connection settings > VPN > ⋮ > Add VPN profile.",
+					FA: "در سامسونگ: تنظیمات > اتصالات > تنظیمات بیشتر اتصال > VPN > ⋮ > افزودن نمایه VPN.",
+				}},
+			},
 		},
 	},
 	{

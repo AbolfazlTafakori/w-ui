@@ -10,6 +10,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/radiusd"
 )
 
 // errPlatform is the answer everywhere but Linux: L2TP is served by pppd and
@@ -24,11 +25,13 @@ func NewSystem(*slog.Logger) System { return otherSystem{} }
 // NewIPsecSystem is the same for IKEv2.
 func NewIPsecSystem(*slog.Logger) IPsecSystem { return otherSystem{} }
 
-func (otherSystem) WriteSwanctl([]ikev2conf.File) error   { return errPlatform }
-func (otherSystem) LoadSwanctl(context.Context) error     { return errPlatform }
-func (otherSystem) RemoveSwanctl(context.Context) error   { return nil }
-func (otherSystem) SAs(context.Context) ([]IKESA, error)  { return nil, errPlatform }
-func (otherSystem) Terminate(context.Context, uint) error { return errPlatform }
+func (otherSystem) WriteSwanctl([]ikev2conf.File) error      { return errPlatform }
+func (otherSystem) LoadSwanctl(context.Context) error        { return errPlatform }
+func (otherSystem) RemoveSwanctl(context.Context) error      { return nil }
+func (otherSystem) SAs(context.Context) ([]IKESA, error)     { return nil, errPlatform }
+func (otherSystem) Terminate(context.Context, uint) error    { return errPlatform }
+func (otherSystem) ServeRadius(string, radiusd.Lookup) error { return errPlatform }
+func (otherSystem) StopRadius()                              {}
 
 func (otherSystem) EnsurePackages(context.Context, string) error { return errPlatform }
 func (otherSystem) WriteSecrets(string, *l2tpconf.State) error   { return errPlatform }

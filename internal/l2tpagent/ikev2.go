@@ -2,14 +2,18 @@ package l2tpagent
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sort"
 	"strconv"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/radiusd"
 )
 
 // The IKEv2 tunnel.
@@ -38,6 +42,11 @@ type IPsecSystem interface {
 	SAs(ctx context.Context) ([]IKESA, error)
 	// Terminate ends one.
 	Terminate(ctx context.Context, id uint) error
+	// ServeRadius runs the RADIUS server password sign-ins are checked by,
+	// with these devices -- starting it, or telling the running one who is
+	// on the tunnel now. StopRadius stops it.
+	ServeRadius(secret string, lookup radiusd.Lookup) error
+	StopRadius()
 }
 
 // IKEv2Agent carries out the panel's IKEv2 tunnel.
@@ -56,6 +65,9 @@ type IKEv2Agent struct {
 	// it was first seen: one changed since ends the session.
 	seen map[uint]string
 	idle bool
+	// radiusSecret is what strongSwan and the RADIUS server share: made by
+	// this agent and written nowhere but strongSwan's settings.
+	radiusSecret string
 }
 
 // NewIKEv2 builds the IKEv2 tunnel's agent.
@@ -89,7 +101,21 @@ func (a *IKEv2Agent) Step(ctx context.Context) error {
 		a.installed = true
 	}
 
-	files := ikev2conf.Files(want)
+	if a.radiusSecret == "" {
+		b := make([]byte, 24)
+		if _, err := rand.Read(b); err != nil {
+			return a.fail(fmt.Errorf("making the RADIUS secret: %w", err))
+		}
+		a.radiusSecret = hex.EncodeToString(b)
+	}
+	if want.Interface.Has(ikev2conf.ModeMSCHAPv2) {
+		if err := a.sys.ServeRadius(a.radiusSecret, lookupFrom(want)); err != nil {
+			return a.fail(fmt.Errorf("starting the RADIUS server password sign-ins are checked by: %w", err))
+		}
+	} else {
+		a.sys.StopRadius()
+	}
+	files := ikev2conf.Files(want, a.radiusSecret)
 	print := filesFingerprint(files)
 	sas, listErr := a.sys.SAs(ctx)
 	// Written and loaded when they changed, and again when strongSwan is
@@ -131,10 +157,25 @@ func (a *IKEv2Agent) endUnwanted(ctx context.Context, want *ikev2conf.State, sas
 	for _, acc := range want.Interface.Accounts {
 		current[acc.ID] = acc
 	}
+	// Password sign-ins share one connection; their account is the one
+	// their address belongs to.
+	byIP := map[netip.Addr]uint{}
+	for _, acc := range want.Interface.Accounts {
+		if ip, err := netip.ParseAddr(acc.IP); err == nil {
+			byIP[ip] = acc.ID
+		}
+	}
+	accountOf := func(sa IKESA) (uint, bool) {
+		if sa.Conn == ikev2conf.RadiusConn {
+			id, ok := byIP[sa.VIP]
+			return id, ok || sa.VIP.IsValid()
+		}
+		return ikev2conf.ParseConnName(sa.Conn)
+	}
 	// The newest session of each account: the one established last.
 	newest := map[uint]IKESA{}
 	for _, sa := range sas {
-		acc, ok := ikev2conf.ParseConnName(sa.Conn)
+		acc, ok := accountOf(sa)
 		if !ok || !sa.Established {
 			continue
 		}
@@ -146,7 +187,7 @@ func (a *IKEv2Agent) endUnwanted(ctx context.Context, want *ikev2conf.State, sas
 	next := map[uint]string{}
 	var kept []l2tpconf.Session
 	for _, sa := range sas {
-		accID, ours := ikev2conf.ParseConnName(sa.Conn)
+		accID, ours := accountOf(sa)
 		if !ours || !sa.Established {
 			continue
 		}
@@ -189,7 +230,31 @@ func (a *IKEv2Agent) endUnwanted(ctx context.Context, want *ikev2conf.State, sas
 	return kept
 }
 
+// lookupFrom is who RADIUS lets in: every device on the tunnel, by its
+// username, with its password and address.
+func lookupFrom(s *ikev2conf.State) radiusd.Lookup {
+	users := make(map[string]radiusd.User, len(s.Interface.Accounts))
+	var dns []netip.Addr
+	for _, d := range s.Interface.DNS {
+		if a, err := netip.ParseAddr(d); err == nil {
+			dns = append(dns, a)
+		}
+	}
+	for _, a := range s.Interface.Accounts {
+		ip, err := netip.ParseAddr(a.IP)
+		if err != nil {
+			continue
+		}
+		users[a.Username] = radiusd.User{Password: a.Secret, IP: ip, DNS: dns}
+	}
+	return func(name string) (radiusd.User, bool) {
+		u, ok := users[name]
+		return u, ok
+	}
+}
+
 func (a *IKEv2Agent) teardown(ctx context.Context) {
+	a.sys.StopRadius()
 	if err := a.sys.RemoveSwanctl(ctx); err != nil {
 		a.log.Warn("tearing down the tunnel", "step", "removing it from strongSwan", "error", err)
 	}

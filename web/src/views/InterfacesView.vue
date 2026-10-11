@@ -786,13 +786,14 @@ async function submitForm(input) {
         ...(input.protocol === 'l2tp' && input.psk && input.psk !== (formFor.value.iface.l2tp?.psk || '') ? { psk: input.psk } : {}),
         // The same for routers without IPsec: a change restarts the tunnel.
         ...(input.protocol === 'l2tp' && input.l2tpPlain !== !!formFor.value.iface.l2tp?.allowPlain ? { l2tpPlain: input.l2tpPlain } : {}),
+        ...(input.protocol === 'ikev2' ? { ikev2Modes: input.ikev2Modes } : {}),
       })
       notify(t('interface.updated'), 'success')
     } else {
       // transport is OpenVPN's alone and the server refuses it elsewhere, so
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
-      const { transport, psk, l2tpPlain, ...rest } = input
+      const { transport, psk, l2tpPlain, ikev2Modes, ...rest } = input
       await api.createInterface({
         ...rest,
         listenPort: Number(input.listenPort),
@@ -800,6 +801,7 @@ async function submitForm(input) {
         ...(input.protocol === 'openvpn' && transport ? { transport } : {}),
         ...(input.protocol === 'l2tp' && psk ? { psk } : {}),
         ...(input.protocol === 'l2tp' && l2tpPlain ? { l2tpPlain: true } : {}),
+        ...(input.protocol === 'ikev2' ? { ikev2Modes } : {}),
       })
       notify(t('interface.created'), 'success')
     }

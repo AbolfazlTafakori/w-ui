@@ -40,9 +40,13 @@ type DesiredAccount struct {
 	PublicKey    string
 	PresharedKey string
 
-	// OpenVPN.
+	// OpenVPN, L2TP, PPTP and IKEv2.
 	Username string
 	Secret   string
+
+	// IKEv2: the device's certificate, in PEM, for a tunnel that lets it
+	// sign in by one.
+	Cert string
 }
 
 // Stat is what a driver observes for one account since the last call.

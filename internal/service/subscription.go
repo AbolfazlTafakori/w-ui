@@ -22,7 +22,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
@@ -587,8 +586,8 @@ func (s *Subscriptions) renderDevicesFor(
 			}
 			profile.Filename = variantFilename(clientFilename(c.Name, acc.DeviceName, profile.Filename, single), v)
 			rd := RenderedDevice{Account: acc, Profile: profile, Host: v.Host}
-			if iface.Protocol.IsPPP() {
-				rd.Withheld = []byte(l2tpdriver.WithheldProfile(&acc, &at))
+			if iface.Protocol.ByAgent() {
+				rd.Withheld = []byte(withheldText(&acc, &at))
 			}
 			out = append(out, rd)
 		}
@@ -992,7 +991,7 @@ func bundleParts(rendered []RenderedDevice, byID map[uint]model.Interface, forma
 	importable := make([]backend.ClientProfile, 0, len(rendered))
 	for _, d := range rendered {
 		all = append(all, d.Served())
-		if !byID[d.Account.InterfaceID].Protocol.IsPPP() {
+		if !byID[d.Account.InterfaceID].Protocol.ByAgent() {
 			importable = append(importable, d.Profile)
 		}
 	}

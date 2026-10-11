@@ -12,6 +12,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/radiusd"
 )
 
 // fakeIPsec records what the IKEv2 agent asks of the machine.
@@ -58,6 +59,11 @@ func (f *fakeIPsec) Terminate(_ context.Context, id uint) error {
 	f.sas = kept
 	return nil
 }
+func (f *fakeIPsec) ServeRadius(string, radiusd.Lookup) error {
+	f.calls = append(f.calls, "radius")
+	return nil
+}
+func (f *fakeIPsec) StopRadius() { f.calls = append(f.calls, "radius-stop") }
 func (f *fakeIPsec) count(c string) int {
 	n := 0
 	for _, x := range f.calls {

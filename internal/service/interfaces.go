@@ -96,6 +96,10 @@ type CreateInterfaceInput struct {
 	// L2TPPlain also accepts L2TP without IPsec on an L2TP tunnel, for
 	// routers whose client has none.
 	L2TPPlain bool `json:"l2tpPlain"`
+
+	// IKEv2Modes are the ways into an IKEv2 tunnel: mschapv2, psk, rsa and
+	// eap-tls. None given is all four.
+	IKEv2Modes []string `json:"ikev2Modes"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -129,7 +133,7 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	if err := s.checkSubnetFree(ctx, nodeID, 0, in.Subnet); err != nil {
 		return nil, err
 	}
-	if in.Protocol.IsPPP() {
+	if in.Protocol.ByAgent() {
 		if err := s.checkPPPPlace(ctx, node, in.Protocol, 0); err != nil {
 			return nil, err
 		}
@@ -176,6 +180,14 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 			s.log.Warn("L2TP without IPsec is accepted on this tunnel; those sessions are not encrypted",
 				"interface", in.Name)
 		}
+	} else if in.Protocol == model.ProtocolIKEv2 {
+		// Its own authority and the server's certificate, made here; each
+		// device's is issued on the reconciler's pass (EnsureIKEv2Certs).
+		p, err := newIKEv2Params(in.Name, in.EndpointHost, in.IKEv2Modes)
+		if err != nil {
+			return nil, err
+		}
+		iface.IKEv2 = model.JSON(p)
 	} else if in.Protocol == model.ProtocolPPTP {
 		// Nothing of its own: a sign-in per device, and pppd's MPPE.
 		s.log.Warn("a PPTP tunnel was made; its encryption has been broken for years",
@@ -277,6 +289,23 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 				return err
 			}
 		}
+	} else if in.Protocol == model.ProtocolIKEv2 {
+		// IKE's ports are fixed too: UDP 500 and 4500, the same strongSwan
+		// an L2TP tunnel on this server uses, so they are not checked as
+		// free -- strongSwan holding them is how it should be.
+		in.ListenPort = 500
+		checkPort = false
+		if _, err := ikev2Modes(in.IKEv2Modes); err != nil {
+			return err
+		}
+		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
+			if err := checkL2TPSubnet(p); err != nil {
+				return err
+			}
+		}
+	}
+	if in.Protocol != model.ProtocolIKEv2 && len(in.IKEv2Modes) > 0 {
+		return invalidField("ikev2Modes", "ways of signing in apply to IKEv2 tunnels only")
 	}
 	if in.Protocol != model.ProtocolL2TP && in.PSK != "" {
 		return invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
@@ -616,6 +645,10 @@ type UpdateInterfaceInput struct {
 	// L2TPPlain turns accepting L2TP without IPsec on or off. Every session
 	// on the tunnel ends when it changes.
 	L2TPPlain *bool `json:"l2tpPlain"`
+
+	// IKEv2Modes replaces the ways into an IKEv2 tunnel. A device signed in
+	// by a way taken away is ended.
+	IKEv2Modes *[]string `json:"ikev2Modes"`
 }
 
 // Update applies changes to an interface.
@@ -650,6 +683,9 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		}
 		if iface.Protocol == model.ProtocolPPTP {
 			return nil, invalidField("listenPort", "PPTP is always on TCP 1723; the clients have no setting for another port")
+		}
+		if iface.Protocol == model.ProtocolIKEv2 {
+			return nil, invalidField("listenPort", "IKEv2 is always on UDP 500 and 4500; the clients have no setting for another port")
 		}
 		port := *in.ListenPort
 		if port < 1 || port > 65535 {
@@ -693,7 +729,7 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		if err != nil {
 			return nil, invalidField("subnet", "subnet %q: %v", newSubnet, err)
 		}
-		if iface.Protocol.IsPPP() {
+		if iface.Protocol.ByAgent() {
 			if err := checkL2TPSubnet(pfx); err != nil {
 				return nil, err
 			}
@@ -750,6 +786,21 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	}
 	if l2tpChanged {
 		fields["l2tp"] = model.JSON(l2tp)
+	}
+	if in.IKEv2Modes != nil {
+		if iface.Protocol != model.ProtocolIKEv2 {
+			return nil, invalidField("ikev2Modes", "ways of signing in apply to IKEv2 tunnels only")
+		}
+		want, err := ikev2Modes(*in.IKEv2Modes)
+		if err != nil {
+			return nil, err
+		}
+		p := iface.IKEv2.V
+		if p.MSCHAPv2 != want.MSCHAPv2 || p.PSK != want.PSK || p.RSA != want.RSA || p.EAPTLS != want.EAPTLS {
+			p.MSCHAPv2, p.PSK, p.RSA, p.EAPTLS = want.MSCHAPv2, want.PSK, want.RSA, want.EAPTLS
+			fields["ikev2"] = model.JSON(p)
+			s.log.Info("IKEv2 ways of signing in changed", "interface", iface.Name)
+		}
 	}
 	if in.DNS != nil {
 		if err := checkDNSList(strings.TrimSpace(*in.DNS)); err != nil {
@@ -1213,6 +1264,12 @@ func (s *Interfaces) checkPPPPlace(ctx context.Context, node *model.Node, p mode
 	}
 	if n > 0 {
 		return invalidField("protocol", "%s already has an %s tunnel; a server carries one, because the clients use fixed ports", node.Name, name)
+	}
+	// An IKEv2 tunnel's certificates are made and renewed by the panel that
+	// runs it; one this panel shows a customer has to be the one the node
+	// serves, and nothing carries them across yet.
+	if p == model.ProtocolIKEv2 && node.Kind != model.KindLocal {
+		return invalidField("nodeId", "an IKEv2 tunnel runs on this server only for now, not on a node")
 	}
 	if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
 		v := node.Version

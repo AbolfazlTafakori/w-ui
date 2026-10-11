@@ -13,7 +13,8 @@
 #   dns       the server's DNS reaches the device
 #   mtu       the tunnel's MTU is the one the panel set (WireGuard)
 #
-#   NAME PROTOCOL(wireguard|openvpn|l2tp|l2tp-plain|pptp) DEVICE
+#   NAME PROTOCOL(wireguard|openvpn|l2tp|l2tp-plain|pptp|
+#        ikev2-mschapv2|ikev2-psk|ikev2-rsa|ikev2-eap-tls) DEVICE
 #   EXPECT(ok|fail) GATEWAY INTERNET DNS MTU
 #   HOLD     1: once in, stay, and note in /state when the tunnel is taken
 #            away (HOLD_KEY.up, then HOLD_KEY.ended); the device does not dial again
@@ -52,12 +53,13 @@ hold() {
 		case "$PROTOCOL" in
 		openvpn) kill -0 "$(cat /tmp/ovpn.pid 2>/dev/null)" 2>/dev/null || gone=1 ;;
 		wireguard) ;;
+		ikev2-*) swanctl --list-sas 2>/dev/null | grep -q ESTABLISHED || gone=1 ;;
 		*) ip link show ppp0 >/dev/null 2>&1 || gone=1 ;;
 		esac
 		# A UDP OpenVPN client is not told its session was replaced; that
 		# the server no longer carries its traffic is how it shows.
 		if [ "$gone" = 0 ]; then
-			if ping -c 1 -W 1 -I "$dev" "$GATEWAY" >/dev/null 2>&1; then misses=0; else misses=$((misses + 1)); fi
+			if ping -c 1 -W 1 -I "$src" "$GATEWAY" >/dev/null 2>&1; then misses=0; else misses=$((misses + 1)); fi
 			[ "$misses" -ge 3 ] && gone=1
 		fi
 		if [ "$gone" = 1 ]; then
@@ -140,22 +142,109 @@ l2tp|l2tp-plain|pptp)
 	fi
 	check connect yes
 	;;
+ikev2-*)
+	# strongSwan as a phone or a computer would be set up from the page:
+	# the server, its identity, and the way in this device was given.
+	# shellcheck disable=SC1090
+	. "/out/$DEVICE.env"
+	cp /out/ca.crt /etc/swanctl/x509ca/
+	cp "/out/$DEVICE.crt" /etc/swanctl/x509/dev.crt
+	cp "/out/$DEVICE.key" /etc/swanctl/rsa/dev.key
+	chmod 600 /etc/swanctl/rsa/dev.key
+	remote="auth = pubkey"
+	secrets=""
+	case "$PROTOCOL" in
+	ikev2-mschapv2)
+		# Windows announces its address, not its username: the server
+		# finds the device by the EAP identity alone.
+		local="auth = eap-mschapv2
+      eap_id = \"$USER\""
+		secrets="eap {
+    id = \"$USER\"
+    secret = \"$PASS\"
+  }" ;;
+	ikev2-psk)
+		remote="auth = psk"
+		local="auth = psk
+      id = \"$USER\""
+		secrets="ike {
+    id = \"$USER\"
+    secret = \"$PASS\"
+  }" ;;
+	ikev2-rsa)
+		local="auth = pubkey
+      certs = dev.crt
+      id = \"$USER\"" ;;
+	ikev2-eap-tls)
+		local="auth = eap-tls
+      certs = dev.crt
+      id = \"$TLSID\"" ;;
+	esac
+	cat > /etc/swanctl/conf.d/c.conf <<EOF
+connections {
+  c {
+    version = 2
+    remote_addrs = $SERVER
+    vips = 0.0.0.0
+    local {
+      $local
+    }
+    remote {
+      $remote
+      id = "$SERVERID"
+    }
+    children {
+      c {
+        remote_ts = 0.0.0.0/0
+      }
+    }
+  }
+}
+secrets {
+  $secrets
+}
+EOF
+	printf 'charon {\n filelog {\n f {\n path = /tmp/sim/charon.log\n default = 1\n }\n }\n}\n' > /etc/strongswan.d/charon-logging.conf
+	mkdir -p /tmp/sim
+	/usr/lib/ipsec/charon >/dev/null 2>&1 &
+	i=0
+	until swanctl --stats >/dev/null 2>&1; do i=$((i + 1)); [ "$i" -gt 50 ] && break; sleep 0.2; done
+	swanctl --load-all --noprompt >/tmp/client.log 2>&1
+	if ! swanctl --initiate --child c --timeout 20 >>/tmp/client.log 2>&1; then
+		check connect no; finish fail
+	fi
+	check connect yes
+	dev=ike
+	;;
 *)
 	log "unknown protocol $PROTOCOL"; exit 2
 	;;
 esac
 
-got_ip=$(ip -4 -o addr show dev "$dev" | awk '{print $4}' | cut -d/ -f1)
+if [ "$dev" = ike ]; then
+	# No device of its own: the address strongSwan was given sits on the
+	# network card, and the kernel's policies carry what it sends.
+	got_ip=$(ip -4 -o addr | grep -o "${want_ip%.*}\.[0-9]*" | head -1)
+else
+	got_ip=$(ip -4 -o addr show dev "$dev" | awk '{print $4}' | cut -d/ -f1)
+fi
+src=$dev
+[ "$dev" = ike ] && src=$got_ip
 [ "$got_ip" = "$want_ip" ] && check address yes || check "address($got_ip!=$want_ip)" no
 
-ping -c 2 -W 3 -I "$dev" "$GATEWAY" >/dev/null 2>&1 && check gateway yes || check gateway no
-ping -c 2 -W 3 -I "$dev" "$INTERNET" >/dev/null 2>&1 && check internet yes || check internet no
+ping -c 2 -W 3 -I "$src" "$GATEWAY" >/dev/null 2>&1 && check gateway yes || check gateway no
+ping -c 2 -W 3 -I "$src" "$INTERNET" >/dev/null 2>&1 && check internet yes || check internet no
 
 case "$PROTOCOL" in
 wireguard|openvpn)
 	# Where a packet for anywhere would go.
 	via=$(ip route get 8.8.8.8 2>/dev/null | grep -o "dev [^ ]*" | awk '{print $2}')
 	[ "$via" = "$dev" ] && check route yes || check "route(via=$via)" no
+	;;
+ikev2-*)
+	# Everything is sent from the tunnel's address, so into the tunnel.
+	from=$(ip route get 8.8.8.8 2>/dev/null | grep -o "src [^ ]*" | awk '{print $2}')
+	[ "$from" = "$got_ip" ] && check route yes || check "route(src=$from)" no
 	;;
 esac
 
@@ -167,6 +256,9 @@ wireguard)
 	;;
 openvpn)
 	grep "PUSH_REPLY" /tmp/client.log | grep -q "dhcp-option DNS $DNS" && check dns yes || check dns no
+	;;
+ikev2-*)
+	grep -q "DNS.*$DNS\|$DNS.*DNS" /tmp/sim/charon.log /tmp/client.log 2>/dev/null && check dns yes || check dns no
 	;;
 *)
 	grep -q "primary   DNS address $DNS" /tmp/sim/syslog && check dns yes || check dns no

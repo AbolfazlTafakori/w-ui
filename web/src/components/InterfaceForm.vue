@@ -28,6 +28,17 @@ const defaults = {
   l2tp: { name: 'l2tp0', listenPort: 1701, subnet: '10.77.0.0/16', mtu: 1400 },
   // TCP 1723, for the same reason: every client has it fixed.
   pptp: { name: 'pptp0', listenPort: 1723, subnet: '10.78.0.0/16', mtu: 1400 },
+  // UDP 500 and 4500, fixed as well.
+  ikev2: { name: 'ike0', listenPort: 500, subnet: '10.79.0.0/16', mtu: 1400 },
+}
+
+// The four ways into an IKEv2 tunnel, each a type in a device's own VPN
+// settings.
+const IKE_MODES = ['mschapv2', 'psk', 'rsa', 'eap-tls']
+const ikeModesOf = (p) => {
+  if (!p) return [...IKE_MODES]
+  const on = { mschapv2: p.mschapv2, psk: p.psk, rsa: p.rsa, 'eap-tls': p.eapTls }
+  return IKE_MODES.filter((m) => on[m])
 }
 
 const form = ref(
@@ -48,6 +59,7 @@ const form = ref(
         transport: props.iface.openvpn?.transport || 'udp',
         psk: props.iface.l2tp?.psk || '',
         l2tpPlain: !!props.iface.l2tp?.allowPlain,
+        ikev2Modes: ikeModesOf(props.iface.ikev2),
         enabled: props.iface.enabled,
       }
     : {
@@ -61,6 +73,7 @@ const form = ref(
         transport: 'udp',
         psk: '',
         l2tpPlain: false,
+        ikev2Modes: [...IKE_MODES],
         enabled: true,
       },
 )
@@ -68,7 +81,7 @@ const busy = ref(false)
 
 // The protocols in the order they are usually chosen, whatever order the
 // server lists them in; one it adds later goes at the end.
-const ORDER = ['wireguard', 'openvpn', 'l2tp', 'pptp']
+const ORDER = ['wireguard', 'openvpn', 'ikev2', 'l2tp', 'pptp']
 const rank = (p) => (ORDER.includes(p) ? ORDER.indexOf(p) : ORDER.length)
 const protocols = computed(() => [...(store.meta?.protocols || ['wireguard'])].sort((a, b) => rank(a) - rank(b)))
 
@@ -79,8 +92,19 @@ const isWireGuard = computed(() => form.value.protocol === 'wireguard')
 const isOpenVPN = computed(() => form.value.protocol === 'openvpn')
 const isL2TP = computed(() => form.value.protocol === 'l2tp')
 const isPPTP = computed(() => form.value.protocol === 'pptp')
+const isIKEv2 = computed(() => form.value.protocol === 'ikev2')
 // A port the clients cannot be told to change.
-const fixedPort = computed(() => isL2TP.value || isPPTP.value)
+const fixedPort = computed(() => isL2TP.value || isPPTP.value || isIKEv2.value)
+
+// A tunnel lets devices in at least one way: the last one on cannot be
+// switched off.
+function toggleIkeMode(m, on) {
+  const now = new Set(form.value.ikev2Modes)
+  if (on) now.add(m)
+  else if (now.size > 1) now.delete(m)
+  form.value.ikev2Modes = IKE_MODES.filter((x) => now.has(x))
+  clearError('ikev2Modes')
+}
 
 // The devices an L2TP tunnel serves, read once when the form first shows
 // one: with IPsec always, and those without when the switch is on.
@@ -274,7 +298,7 @@ defineExpose({ showError })
           <div class="arow16">
             <div class="acol6">
               <div class="aform-item">
-                <label class="aform-label required" for="if-port">{{ t('interface.port') }} <HelpTip v-if="fixedPort" :text="t(isPPTP ? 'interface.pptpPortHint' : 'interface.l2tpPortHint')" /></label>
+                <label class="aform-label required" for="if-port">{{ t('interface.port') }} <HelpTip v-if="fixedPort" :text="t(isPPTP ? 'interface.pptpPortHint' : isIKEv2 ? 'interface.ikev2PortHint' : 'interface.l2tpPortHint')" /></label>
                 <label class="ainput number" :class="{ invalid: fieldName === 'listenPort', disabled: fixedPort }">
                   <input id="if-port" v-model="form.listenPort" data-field="listenPort" type="number" min="1" max="65535" class="ltr" :readonly="fixedPort" required @input="clearError('listenPort')" />
                   <AntIcon v-if="fixedPort" name="LockOutlined" class="ainput-suffix" />
@@ -444,6 +468,28 @@ defineExpose({ showError })
             </div>
           </section>
 
+          <!-- IKEv2: the ways a device may sign in, each a type in its own
+               VPN settings. -->
+          <section v-if="isIKEv2" class="l2tp-box" aria-labelledby="if-ikev2">
+            <div id="if-ikev2" class="l2tp-head"><AntIcon name="SafetyCertificateOutlined" />{{ t('interface.ikev2Section') }}</div>
+            <div class="aform-item" data-field="ikev2Modes" tabindex="-1">
+              <div v-for="m in IKE_MODES" :key="m" class="opt-card ike-mode" :class="{ on: form.ikev2Modes.includes(m) }">
+                <div class="opt-text">
+                  <div class="opt-title">{{ t(`interface.ikev2Mode.${m}`) }}</div>
+                  <div class="opt-desc">{{ t(`interface.ikev2ModeDesc.${m}`) }}</div>
+                </div>
+                <Toggle
+                  :model-value="form.ikev2Modes.includes(m)"
+                  :label="t(`interface.ikev2Mode.${m}`)"
+                  :disabled="form.ikev2Modes.length === 1 && form.ikev2Modes.includes(m)"
+                  @update:model-value="(on) => toggleIkeMode(m, on)"
+                />
+              </div>
+              <p v-if="fieldName === 'ikev2Modes'" class="field-error" role="alert">{{ fieldError }}</p>
+              <div class="aalert info slim"><AntIcon name="InfoCircleOutlined" /><span>{{ t('interface.ikev2Note') }}</span></div>
+            </div>
+          </section>
+
           <!-- PPTP: said plainly before it is made, and every time it is
                opened, so it is never chosen by accident. -->
           <div v-if="isPPTP" class="aalert warning slim pptp-warn"><AntIcon name="WarningOutlined" /><span>{{ t('interface.pptpWarn') }}</span></div>
@@ -528,6 +574,7 @@ defineExpose({ showError })
 .aalert.slim { margin-top: 8px; padding: 6px 12px; font-size: 13px; line-height: 20px; align-items: flex-start; }
 .aalert.slim > .anticon { margin-top: 3px; line-height: 1; }
 .pptp-warn { margin: 0 0 24px; }
+.ike-mode { margin-bottom: 8px; }
 .edit-note { margin-bottom: 8px; font-size: 13px; line-height: 20px; align-items: flex-start; }
 .edit-note > .anticon { margin-top: 3px; line-height: 1; }
 .if-form > .aalert.error { margin-bottom: 16px; }

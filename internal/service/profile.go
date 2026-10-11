@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
@@ -75,7 +76,7 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 			p = renderWireGuard(&acc, &at)
 		case model.ProtocolOpenVPN:
 			p = renderOpenVPN(&acc, &at)
-		case model.ProtocolL2TP, model.ProtocolPPTP:
+		case model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2:
 			p = renderPPP(&acc, &at)
 		default:
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
@@ -123,10 +124,26 @@ func renderPPP(acc *model.Account, iface *model.Interface) *Profile {
 	return &Profile{
 		Filename: fmt.Sprintf("%s-%s.txt", filenameFor(acc), iface.Protocol),
 		MIMEType: "text/plain; charset=utf-8",
-		Body:     l2tpdriver.Profile(acc, iface),
+		Body:     signInText(acc, iface),
 		Username: acc.Username,
 		Secret:   acc.Secret,
 	}
+}
+
+// signInText is a typed-in sign-in as a page of text.
+func signInText(acc *model.Account, iface *model.Interface) string {
+	if iface.Protocol == model.ProtocolIKEv2 {
+		return ikev2driver.Profile(acc, iface)
+	}
+	return l2tpdriver.Profile(acc, iface)
+}
+
+// withheldText is signInText without the sign-in.
+func withheldText(acc *model.Account, iface *model.Interface) string {
+	if iface.Protocol == model.ProtocolIKEv2 {
+		return ikev2driver.WithheldProfile(acc, iface)
+	}
+	return l2tpdriver.WithheldProfile(acc, iface)
 }
 
 func filenameFor(acc *model.Account) string {

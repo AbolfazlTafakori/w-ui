@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
@@ -15,6 +16,11 @@ import (
 func guideValues(acc *model.Account, iface *model.Interface, file string) devguide.Values {
 	if iface.Protocol == model.ProtocolL2TP {
 		v := l2tpdriver.GuideValues(acc, iface)
+		v.File = file
+		return v
+	}
+	if iface.Protocol == model.ProtocolIKEv2 {
+		v := ikev2driver.GuideValues(acc, iface)
 		v.File = file
 		return v
 	}

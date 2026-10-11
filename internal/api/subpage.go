@@ -100,6 +100,8 @@ type subPageDevice struct {
 	// own template, which cannot reach the page's.
 	SignIn   []devguide.Row
 	CopyIcon template.HTML
+	// Files are an IKEv2 file's certificates, to download.
+	Files []ikev2File
 	// Ref names this file to the copy buttons: "ID.HostID".
 	Ref string
 	// Setup is, for an L2TP or PPTP file, the guide that is its row: the
@@ -130,6 +132,30 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 	// A copy button asking for one L2TP or PPTP sign-in value.
 	if view == "reveal" {
 		s.serveSubReveal(w, r, token)
+		return true
+	}
+	// An IKEv2 file: the tunnel's authority, or a device's certificate,
+	// which is useless without the password the page withholds.
+	if view == "ikev2" {
+		id, err := strconv.ParseUint(r.URL.Query().Get("device"), 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return true
+		}
+		name, body, err := s.subs.IKEv2FileFor(r.Context(), token, uint(id), r.URL.Query().Get("file"))
+		if err != nil {
+			http.NotFound(w, r)
+			return true
+		}
+		ct := "application/x-pkcs12"
+		if strings.HasSuffix(name, ".crt") {
+			ct = "application/x-x509-ca-cert"
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(body)
 		return true
 	}
 	// The stream a page holds open to be told the moment something changed.
@@ -338,12 +364,13 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
-		ppp := d.Protocol == "l2tp" || d.Protocol == "pptp"
+		ppp := d.Protocol == "l2tp" || d.Protocol == "pptp" || d.Protocol == "ikev2"
 		entry.Ref = fileRef(d)
 		entry.PPP = ppp
 		if d.Guide != nil && ppp {
 			entry.SignIn = l2tpSignIn(*d.Guide)
 			entry.CopyIcon = v.Icons["CopyOutlined"]
+			entry.Files = ikev2Files(d)
 		}
 		// An L2TP or PPTP sign-in is typed into the device's own settings; no app
 		// scans it, so a QR of it would only be something to puzzle over.
@@ -357,7 +384,7 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		switch d.Protocol {
 		case "openvpn":
 			v.HasOVPN = true
-		case "l2tp", "pptp":
+		case "l2tp", "pptp", "ikev2":
 			v.HasL2TP = true
 		default:
 			v.HasWG = true
@@ -398,11 +425,11 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 // subPageL2TPStrings are added only to a page with an L2TP sign-in on it, so
 // that every other customer's page is, to the byte, what it was before L2TP.
 var subPageL2TPStrings = map[string]map[string]string{
-	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN",
+	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "ikev2Config": "IKEv2 sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN",
 		"revealExpired": "This page has been open a while: reload it, then copy again.",
 		"revealBusy":    "Too many copies in a row: wait a minute.",
 		"revealFailed":  "Could not copy it; try again."},
-	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN",
+	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "ikev2Config": "ورود IKEv2", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN",
 		"revealExpired": "این صفحه مدتی باز مانده: یک بار تازه‌اش کنید و دوباره کپی کنید.",
 		"revealBusy":    "کپی‌های پشت سر هم زیاد شد: یک دقیقه صبر کنید.",
 		"revealFailed":  "کپی نشد؛ دوباره امتحان کنید."},
@@ -441,6 +468,9 @@ func pageStrings(l2tp, setup bool) map[string]map[string]string {
 // l2tpSignIn is an L2TP file's own four values, for its row.
 func l2tpSignIn(v devguide.Values) []devguide.Row {
 	rows := []devguide.Row{{Label: "Server", Value: v.Server, Copy: true}}
+	if v.Protocol == "ikev2" && v.ServerID != "" && v.ServerID != v.Server {
+		rows = append(rows, devguide.Row{Label: "Remote ID", Value: v.ServerID, Copy: true})
+	}
 	// PPTP has no key of its own: the sign-in is all there is. The rest is
 	// masked: the page copies it on a click, and never carries it.
 	if v.PSK != "" {
@@ -449,6 +479,25 @@ func l2tpSignIn(v devguide.Values) []devguide.Row {
 	return append(rows,
 		devguide.Row{Label: "Username", Value: devguide.Mask, Copy: true, Secret: devguide.SecretUsername},
 		devguide.Row{Label: "Password", Value: devguide.Mask, Copy: true, Secret: devguide.SecretPassword})
+}
+
+// ikev2File is a file an IKEv2 row offers for download.
+type ikev2File struct{ Name, Href string }
+
+// ikev2Files are an IKEv2 file's certificates, as links on its row.
+func ikev2Files(d service.SubPageDevice) []ikev2File {
+	if d.Guide == nil || d.Protocol != "ikev2" {
+		return nil
+	}
+	id := strconv.FormatUint(uint64(d.ID), 10)
+	var out []ikev2File
+	if f := d.Guide.IKEv2.CAFile; f != "" {
+		out = append(out, ikev2File{Name: f, Href: "?view=ikev2&file=" + service.IKEv2FileCA + "&device=" + id})
+	}
+	if f := d.Guide.IKEv2.CertFile; f != "" {
+		out = append(out, ikev2File{Name: f, Href: "?view=ikev2&file=" + service.IKEv2FileCert + "&device=" + id})
+	}
+	return out
 }
 
 // fileRef names a file to the copy buttons.
@@ -558,7 +607,7 @@ func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) 
 		// A sign-in the page withholds is withheld from the commands too:
 		// they are shown as the masked values make them.
 		var masked []devguide.View
-		if ppp := devguide.Protocol(d.Guide.Protocol).IsPPP(); ppp {
+		if d.Guide.Withholds() {
 			masked = devguide.Views(d.Guide.Masked())
 		}
 		for n, view := range views {
@@ -1297,6 +1346,7 @@ a.row-title:hover { text-decoration: underline; }
 .guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
 .setup-device-notes { display: grid; gap: 6px; }
 .cfg-user-body > .setup { display: grid; gap: 12px; }
+.ike-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .cfg-user-body > .setup .guide-path { margin-top: 4px; }
 .dsel { position: relative; }
 .dsel-btn { display: flex; align-items: center; gap: 8px; text-align: start; cursor: pointer; }
@@ -1432,7 +1482,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
             <table class="usage-grid">
               <thead><tr>
                 <th class="usage-corner"><span data-i="user">User</span></th>
-                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") }}purple{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
+                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") }}purple{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
                 <th class="usage-sum" data-i="total">Total</th>
               </tr></thead>
               <tbody>
@@ -1474,10 +1524,10 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
              when there are several), and opens on one line per user, each
              with copy, download and QR of their own file. A plan for one
              opens on one line, named after the customer. -->
-        <div class="cfg cfg-group{{ if or (eq .Protocol "l2tp") (eq .Protocol "pptp") }} open{{ end }}">
+        <div class="cfg cfg-group{{ if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") }} open{{ end }}">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else if eq .Protocol "pptp" }}pptpConfig{{ else }}config{{ end }}">Config</span>
+            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else if eq .Protocol "pptp" }}pptpConfig{{ else if eq .Protocol "ikev2" }}ikev2Config{{ else }}config{{ end }}">Config</span>
             {{ if .Tunnel }}<span class="cfg-meta">{{ .Tunnel }}</span>{{ end }}
             <span class="cfg-count">{{ if gt (len .Devices) 1 }}<span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span>{{ else }}<span data-i="oneUser">1 user</span>{{ end }}</span>
           </div>
@@ -1494,7 +1544,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body">{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
+              <div class="cfg-user-body">{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}{{ with .Files }}<div class="ike-files">{{ range . }}<a class="btn sm" href="{{ .Href }}" download="{{ .Name }}" dir="ltr">{{ .Name }}</a>{{ end }}</div>{{ end }}</div>
             </div>
             {{ end }}
           </div>

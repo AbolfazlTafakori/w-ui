@@ -8,6 +8,7 @@ RUN apt-get update -qq \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
       wireguard-tools openvpn openresolv iproute2 iputils-ping nftables procps \
       strongswan-charon strongswan-swanctl libstrongswan-extra-plugins \
+      libstrongswan-standard-plugins libcharon-extra-plugins libcharon-extauth-plugins \
       xl2tpd pptpd pptp-linux ppp busybox \
  && rm -rf /var/lib/apt/lists/*
 COPY systemctl /usr/local/bin/systemctl

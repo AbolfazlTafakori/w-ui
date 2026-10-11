@@ -62,6 +62,11 @@ func TestEverySetupGetsEverythingItNeeds(t *testing.T) {
 				if !has[File] || !has[Username] || !has[Password] {
 					t.Errorf("%s OpenVPN is not given the file and the sign-in", g.ID)
 				}
+			case IKEv2RSA, IKEv2TLS:
+				// The certificate is the sign-in; it opens with the password.
+				if !has[Server] || !has[CertFile] || (!has[Username] && !has[TLSID]) {
+					t.Errorf("%s %s is not told the server, its certificate and its identity", g.ID, s.Protocol)
+				}
 			default:
 				if !has[Server] && !has[ServerIP] {
 					t.Errorf("%s %s is not told the server", g.ID, s.Protocol)

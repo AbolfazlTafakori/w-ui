@@ -33,10 +33,26 @@ const (
 	// tunnel that says it accepts it.
 	L2TPPlain Protocol = "l2tp-plain"
 	PPTP      Protocol = "pptp"
+	// The four ways into an IKEv2 tunnel, each a type of its own in a
+	// device's VPN settings: a username and password (EAP-MSCHAPv2), a key
+	// of the device's own, a certificate, a certificate inside EAP.
+	IKEv2Password Protocol = "ikev2-mschapv2"
+	IKEv2PSK      Protocol = "ikev2-psk"
+	IKEv2RSA      Protocol = "ikev2-rsa"
+	IKEv2TLS      Protocol = "ikev2-eap-tls"
 )
 
 // Protocols are every protocol, in the order a device lists them.
-var Protocols = []Protocol{WireGuard, OpenVPN, L2TP, L2TPPlain, PPTP}
+var Protocols = []Protocol{WireGuard, OpenVPN, IKEv2Password, IKEv2PSK, IKEv2RSA, IKEv2TLS, L2TP, L2TPPlain, PPTP}
+
+// IsIKEv2 reports whether a setup is one of IKEv2's.
+func (p Protocol) IsIKEv2() bool {
+	return p == IKEv2Password || p == IKEv2PSK || p == IKEv2RSA || p == IKEv2TLS
+}
+
+// Withholds reports whether a setup's sign-in is one a customer's page
+// keeps out of the page: typed into the device, and all a stranger needs.
+func (p Protocol) Withholds() bool { return p.IsPPP() || p.IsIKEv2() }
 
 // Weak is whether a protocol's sessions are not encrypted, or only with a
 // cipher long since broken: said wherever it is offered.
@@ -69,6 +85,25 @@ type Values struct {
 	// WG is a WireGuard file's own values, for the devices whose form has a
 	// field for each.
 	WG WGValues
+	// ServerID is the identity an IKEv2 server announces, which a device
+	// checks it against (iOS and macOS call it Remote ID).
+	ServerID string
+	// IKEv2 is an IKEv2 file's own: the ways in the tunnel allows, and what
+	// the device installs.
+	IKEv2 IKEv2Values
+}
+
+// IKEv2Values are what an IKEv2 tunnel offers a device.
+type IKEv2Values struct {
+	MSCHAPv2, PSK, RSA, EAPTLS bool
+	// TLSIdentity is the identity the device announces to sign in by
+	// EAP-TLS: not its username (see ikev2conf.TLSIdentity).
+	TLSIdentity string
+	// CertFile is the file with the device's own certificate, to install;
+	// CAFile the tunnel's authority, which tells the device it is talking
+	// to this server.
+	CertFile string
+	CAFile   string
 }
 
 // WGValues are what a WireGuard file holds.
@@ -100,6 +135,21 @@ func (v Values) Served() []Protocol {
 		return []Protocol{L2TP}
 	case "pptp":
 		return []Protocol{PPTP}
+	case "ikev2":
+		var out []Protocol
+		if v.IKEv2.MSCHAPv2 {
+			out = append(out, IKEv2Password)
+		}
+		if v.IKEv2.PSK {
+			out = append(out, IKEv2PSK)
+		}
+		if v.IKEv2.RSA {
+			out = append(out, IKEv2RSA)
+		}
+		if v.IKEv2.EAPTLS {
+			out = append(out, IKEv2TLS)
+		}
+		return out
 	}
 	return nil
 }
@@ -153,6 +203,13 @@ const (
 	WGPresharedKey
 	WGAllowedIPs
 	WGKeepalive
+	// RemoteID is the IKEv2 server's identity.
+	RemoteID
+	// TLSID is the identity a device announces for EAP-TLS.
+	TLSID
+	// CertFile and CAFile are the certificates a device installs first.
+	CertFile
+	CAFile
 )
 
 // Field is one line of a device's form.
@@ -249,6 +306,7 @@ const (
 	SecretUsername = "username"
 	SecretPassword = "password"
 	SecretPSK      = "psk"
+	SecretTLSID    = "tlsid"
 )
 
 // Mask is what a page shows in a withheld value's place.
@@ -265,6 +323,9 @@ func (v Values) Masked() Values {
 	if v.PSK != "" {
 		v.PSK = Mask
 	}
+	if v.IKEv2.TLSIdentity != "" {
+		v.IKEv2.TLSIdentity = Mask
+	}
 	return v
 }
 
@@ -277,6 +338,8 @@ func (v Values) SecretOf(kind string) (string, bool) {
 		return v.Password, v.Password != ""
 	case SecretPSK:
 		return v.PSK, v.PSK != ""
+	case SecretTLSID:
+		return v.IKEv2.TLSIdentity, v.IKEv2.TLSIdentity != ""
 	}
 	return "", false
 }
@@ -284,7 +347,7 @@ func (v Values) SecretOf(kind string) (string, bool) {
 // Rows fills a setup's fields with a customer's values.
 func (s Setup) Rows(v Values) []Row {
 	out := make([]Row, 0, len(s.Fields))
-	ppp := s.Protocol.IsPPP()
+	ppp := s.Protocol.Withholds()
 	for _, f := range s.Fields {
 		r := Row{Label: f.Label}
 		own := func(val string) { r.Value, r.Copy = val, true }
@@ -346,6 +409,17 @@ func (s Setup) Rows(v Values) []Row {
 			own(v.WG.AllowedIPs)
 		case WGKeepalive:
 			own(strconv.Itoa(v.WG.Keepalive))
+		case RemoteID:
+			own(v.ServerID)
+		case TLSID:
+			own(v.IKEv2.TLSIdentity)
+			secret(SecretTLSID)
+		case CertFile:
+			own(v.IKEv2.CertFile)
+			r.Copy = false
+		case CAFile:
+			own(v.IKEv2.CAFile)
+			r.Copy = false
 		}
 		if r.Key != "" {
 			w := words[r.Key]
@@ -482,6 +556,11 @@ var ProtocolNames = map[Protocol]Text{
 	L2TP:      {EN: "L2TP/IPsec", FA: "L2TP/IPsec"},
 	L2TPPlain: {EN: "L2TP without IPsec (not encrypted)", FA: "L2TP بدون IPsec (بدون رمزگذاری)"},
 	PPTP:      {EN: "PPTP (weak encryption)", FA: "PPTP (رمزگذاری ضعیف)"},
+
+	IKEv2Password: {EN: "IKEv2 · username and password", FA: "IKEv2 · نام کاربری و رمز"},
+	IKEv2PSK:      {EN: "IKEv2 · key (PSK)", FA: "IKEv2 · کلید (PSK)"},
+	IKEv2RSA:      {EN: "IKEv2 · certificate (RSA)", FA: "IKEv2 · گواهی (RSA)"},
+	IKEv2TLS:      {EN: "IKEv2 · certificate in EAP (EAP-TLS)", FA: "IKEv2 · گواهی در EAP (EAP-TLS)"},
 }
 
 // PlainText is an L2TP or PPTP sign-in as a file, for the download and the
@@ -499,10 +578,14 @@ func WithheldText(v Values) string {
 func PlainText(v Values) string {
 	var b strings.Builder
 	pptp := v.Protocol == "pptp"
-	if pptp {
+	ike := v.Protocol == "ikev2"
+	switch {
+	case pptp:
 		fmt.Fprintf(&b, "PPTP — %s\n\n", v.Tunnel)
 		b.WriteString("-- PPTP's encryption has been broken for years: use it only where nothing else will do.\n\n")
-	} else {
+	case ike:
+		fmt.Fprintf(&b, "IKEv2/IPsec — %s\n\n", v.Tunnel)
+	default:
 		fmt.Fprintf(&b, "L2TP/IPsec — %s\n\n", v.Tunnel)
 	}
 	fmt.Fprintf(&b, "Server:          %s\n", v.Server)
@@ -512,11 +595,27 @@ func PlainText(v Values) string {
 	if v.ServerIP != "" {
 		fmt.Fprintf(&b, "Server IP:       %s (for a router that takes no name)\n", v.ServerIP)
 	}
-	if !pptp {
+	if ike {
+		fmt.Fprintf(&b, "Remote ID:       %s\n", v.ServerID)
+	} else if !pptp {
 		fmt.Fprintf(&b, "Pre-shared key:  %s\n", v.PSK)
 	}
 	fmt.Fprintf(&b, "Username:        %s\n", v.Username)
 	fmt.Fprintf(&b, "Password:        %s\n", v.Password)
+	if ike {
+		if v.IKEv2.PSK {
+			b.WriteString("Key (PSK):       the same as the password, with the username as the identifier\n")
+		}
+		if v.IKEv2.EAPTLS {
+			fmt.Fprintf(&b, "EAP-TLS identity: %s\n", v.IKEv2.TLSIdentity)
+		}
+		if v.IKEv2.RSA || v.IKEv2.EAPTLS {
+			fmt.Fprintf(&b, "Certificate:     %s (opens with the password)\n", v.IKEv2.CertFile)
+		}
+		if v.IKEv2.CAFile != "" {
+			fmt.Fprintf(&b, "Server's authority: %s\n", v.IKEv2.CAFile)
+		}
+	}
 
 	names := map[string]string{}
 	for _, g := range catalogue {
@@ -607,3 +706,13 @@ func NoteKey(id string, p Protocol, i int) string {
 	return fmt.Sprintf("dg.%s.%s.%d", id, p, i)
 }
 func ProtocolKey(p Protocol) string { return "dgp." + string(p) }
+
+// Withholds reports whether a file's sign-in is one a customer's page keeps
+// out of the page: typed into a device's own settings (L2TP, PPTP, IKEv2).
+func (v Values) Withholds() bool {
+	switch v.Protocol {
+	case "l2tp", "pptp", "ikev2":
+		return true
+	}
+	return false
+}
