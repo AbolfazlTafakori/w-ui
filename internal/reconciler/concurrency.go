@@ -69,6 +69,15 @@ type activity struct {
 	flips  int
 	flipAt time.Time
 	addrs  map[string]time.Time // address -> when traffic last came from it
+	// sessions is each session of a credential that has several at once,
+	// by where it comes from; nil while it has one.
+	sessions map[string]*sessionActivity
+}
+
+// sessionActivity is one of several sessions of a credential.
+type sessionActivity struct {
+	bytes       uint64    // its own counters, which started with it
+	first, last time.Time // when it first and last moved traffic
 }
 
 // remoteSession is one credential a node reported live.
@@ -143,51 +152,141 @@ func (c *concurrency) Events() []Event {
 }
 
 // observe folds one tick's readings from this server's own tunnels in.
+//
+// A WireGuard peer is one reading. A protocol with sessions of its own --
+// L2TP, PPTP, OpenVPN -- can hand back several for one credential at once,
+// each with counters that started with it; those are followed one by one
+// (observeSessions) rather than compared against each other.
 func (c *concurrency) observe(stats []backend.Stat, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	var order []uint
+	byAccount := map[uint][]backend.Stat{}
 	for _, s := range stats {
-		total := s.RX + s.TX
-		a := c.acts[s.AccountID]
-		if a == nil {
-			// First sight: remembered, not counted. A peer that was on before
-			// the panel started would otherwise look live for a window.
-			c.acts[s.AccountID] = &activity{bytes: total, addr: whereFrom(s.Endpoint), addrs: map[string]time.Time{}}
-			continue
+		if _, ok := byAccount[s.AccountID]; !ok {
+			order = append(order, s.AccountID)
 		}
-		if total == a.bytes {
-			continue
+		byAccount[s.AccountID] = append(byAccount[s.AccountID], s)
+	}
+	for _, id := range order {
+		if ss := byAccount[id]; len(ss) > 1 {
+			c.observeSessions(id, ss, now)
+		} else {
+			c.observeOne(ss[0], now)
 		}
-		if total < a.bytes {
-			// Counters start over when a peer is re-added or the tunnel
-			// restarts; that is not traffic.
-			a.bytes = total
-			continue
-		}
-		wasLive := now.Sub(a.moved) < activeWindow
+	}
+}
+
+// observeOne folds in the one reading a credential has this tick.
+func (c *concurrency) observeOne(s backend.Stat, now time.Time) {
+	total := s.RX + s.TX
+	a := c.acts[s.AccountID]
+	if a == nil {
+		// First sight: remembered, not counted. A peer that was on before
+		// the panel started would otherwise look live for a window.
+		c.acts[s.AccountID] = &activity{bytes: total, addr: whereFrom(s.Endpoint), addrs: map[string]time.Time{}}
+		return
+	}
+	// Back to one session: what was followed of several is over.
+	a.sessions = nil
+	if total == a.bytes {
+		return
+	}
+	if total < a.bytes {
+		// Counters start over when a peer is re-added, the tunnel restarts
+		// or a new session begins; that is not traffic.
 		a.bytes = total
-		a.moved = now
-		if !wasLive {
-			a.since = now
-			a.flips = 0
-			c.events = append(c.events, Event{Kind: "connected", Account: s.AccountID, Name: c.nameOf[s.AccountID], Addr: whereFrom(s.Endpoint)})
+		return
+	}
+	a.bytes = total
+	c.moved(s.AccountID, a, whereFrom(s.Endpoint), now)
+}
+
+// observeSessions folds in a credential with several sessions this tick.
+//
+// Each is followed on its own counters, keyed by where it comes from, and
+// remembers when it first and last moved traffic. Two sessions are two
+// devices only if those spans overlap: a phone back from another network
+// leaves a session that has stopped moving beside the new one, and that is
+// one device; two devices both keep moving.
+func (c *concurrency) observeSessions(id uint, ss []backend.Stat, now time.Time) {
+	a := c.acts[id]
+	first := a == nil
+	if first {
+		a = &activity{addrs: map[string]time.Time{}}
+		c.acts[id] = a
+	}
+	if a.sessions == nil {
+		a.sessions = map[string]*sessionActivity{}
+	}
+	present := map[string]bool{}
+	var total uint64
+	var newest string
+	for _, s := range ss {
+		key := s.Endpoint
+		present[key] = true
+		bytes := s.RX + s.TX
+		total += bytes
+		sa := a.sessions[key]
+		if sa == nil {
+			// Remembered, not counted, as any first sight.
+			a.sessions[key] = &sessionActivity{bytes: bytes}
+			continue
 		}
-		host := whereFrom(s.Endpoint)
-		if host != "" {
-			if a.addr != "" && host != a.addr {
-				if now.Sub(a.flipAt) > activeWindow {
-					a.flips = 0
-				}
-				a.flips++
-				a.flipAt = now
+		if bytes > sa.bytes && !first {
+			if sa.first.IsZero() {
+				sa.first = now
 			}
-			a.addr = host
-			a.addrs[host] = now
+			sa.last = now
+			if newest == "" || sa.first.After(a.sessions[newest].first) {
+				newest = key
+			}
 		}
-		for h, t := range a.addrs {
-			if now.Sub(t) >= activeWindow {
-				delete(a.addrs, h)
+		sa.bytes = bytes
+	}
+	for key := range a.sessions {
+		if !present[key] {
+			delete(a.sessions, key)
+		}
+	}
+	a.bytes = total
+	if newest == "" {
+		return
+	}
+	// The address the credential is used from now is its newest session's.
+	c.moved(id, a, whereFrom(newest), now)
+	for key, sa := range a.sessions {
+		if !sa.last.IsZero() && now.Sub(sa.last) < activeWindow {
+			if h := whereFrom(key); h != "" {
+				a.addrs[h] = sa.last
 			}
+		}
+	}
+}
+
+// moved records that a credential's traffic moved this tick, from host.
+func (c *concurrency) moved(id uint, a *activity, host string, now time.Time) {
+	wasLive := now.Sub(a.moved) < activeWindow
+	a.moved = now
+	if !wasLive {
+		a.since = now
+		a.flips = 0
+		c.events = append(c.events, Event{Kind: "connected", Account: id, Name: c.nameOf[id], Addr: host})
+	}
+	if host != "" {
+		if a.addr != "" && host != a.addr {
+			if now.Sub(a.flipAt) > activeWindow {
+				a.flips = 0
+			}
+			a.flips++
+			a.flipAt = now
+		}
+		a.addr = host
+		a.addrs[host] = now
+	}
+	for h, t := range a.addrs {
+		if now.Sub(t) >= activeWindow {
+			delete(a.addrs, h)
 		}
 	}
 }
@@ -237,10 +336,30 @@ func (a *activity) connections(now time.Time) int {
 	if a == nil || now.Sub(a.moved) >= activeWindow {
 		return 0
 	}
+	n := 1
 	if a.flips >= 2 && now.Sub(a.flipAt) < activeWindow && len(a.addrs) > 1 {
-		return len(a.addrs)
+		n = len(a.addrs)
 	}
-	return 1
+	if m := a.overlapping(now); m > n {
+		n = m
+	}
+	return n
+}
+
+// overlapping is how many of a credential's sessions moved traffic at the
+// same time, among those that moved within the window.
+func (a *activity) overlapping(now time.Time) int {
+	var spans []span
+	for key, sa := range a.sessions {
+		if sa.first.IsZero() || now.Sub(sa.last) >= activeWindow {
+			continue
+		}
+		spans = append(spans, span{addr: key, first: sa.first, last: sa.last})
+	}
+	if len(spans) < 2 {
+		return len(spans)
+	}
+	return concurrent(spans)
 }
 
 // liveAddrs lists the addresses a live credential is coming from.

@@ -274,11 +274,19 @@ func (a *Agent) endUnwanted(ctx context.Context, want *l2tpconf.State, live []Li
 		current[acc.ID] = acc
 	}
 
+	newest := newestSessions(live)
+
 	kept := live[:0]
 	for _, s := range live {
 		acc, ok := current[s.Account]
 		reason := ""
 		switch {
+		case ok && newest[s.Account] != sessionKey(s):
+			// One sign-in is one session, as OpenVPN holds it: a device that
+			// signs in again -- from another network, or another device --
+			// replaces the session before it. Both cannot stand anyway: the
+			// account has one address, and the second link would take it.
+			reason = "signed in again"
 		case !ok:
 			// No current account holds this address: the device was taken
 			// off the tunnel, or its account deleted.
@@ -331,6 +339,26 @@ func (a *Agent) rememberSignIns(want *l2tpconf.State, live []Live) {
 }
 
 func sessionKey(s Live) string { return fmt.Sprintf("%d/%d", s.PID, s.Since) }
+
+// newestSessions is the latest session of each account: the one that
+// started last, and of two that started in the same second the later pppd.
+func newestSessions(live []Live) map[uint]string {
+	best := map[uint]Live{}
+	for _, s := range live {
+		if s.Account == 0 {
+			continue
+		}
+		b, ok := best[s.Account]
+		if !ok || s.Since > b.Since || (s.Since == b.Since && s.PID > b.PID) {
+			best[s.Account] = s
+		}
+	}
+	out := make(map[uint]string, len(best))
+	for id, s := range best {
+		out[id] = sessionKey(s)
+	}
+	return out
+}
 
 // teardown takes the tunnel down: the panel has none of this protocol here
 // any more. Only this tunnel's daemon, credentials and files go; the other

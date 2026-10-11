@@ -240,6 +240,45 @@ func TestSessionsThatShouldNotExistAreEnded(t *testing.T) {
 	}
 }
 
+// One sign-in, one session: a second device -- or the same one back from
+// another network -- replaces the session before it, as OpenVPN does, and
+// other accounts' sessions are not touched.
+func TestASecondSignInReplacesTheFirst(t *testing.T) {
+	a, sys, files := rig()
+	sys.sessions = []Live{session(101, "10.77.0.2"), session(102, "10.77.0.3")}
+	_ = a.Step(context.Background())
+	if len(sys.ended) != 0 {
+		t.Fatalf("ended %v with one session each", sys.ended)
+	}
+
+	// The laptop's sign-in is used again, on a second link.
+	again := session(150, "10.77.0.2")
+	again.Device = "ppp7"
+	sys.sessions = append(sys.sessions, again)
+	_ = a.Step(context.Background())
+	if len(sys.ended) != 1 || sys.ended[0] != 101 {
+		t.Fatalf("ended %v, want the older laptop session", sys.ended)
+	}
+	if got := files.report.Sessions; len(got) != 2 {
+		t.Fatalf("report sessions %+v, want the phone and the new laptop session", got)
+	}
+	for _, s := range files.report.Sessions {
+		if s.Account == 1 && s.Device != "ppp7" {
+			t.Fatalf("the laptop is reported on %s, not its new link", s.Device)
+		}
+	}
+
+	// Two that started in the same second: the later pppd stays.
+	twin := session(160, "10.77.0.3")
+	twin.Since = 102
+	twin.Device = "ppp8"
+	sys.sessions = append(sys.sessions, twin)
+	_ = a.Step(context.Background())
+	if sys.ended[len(sys.ended)-1] != 102 {
+		t.Fatalf("ended %v, want the earlier pppd of the same second", sys.ended)
+	}
+}
+
 // A state that does not validate is reported and not carried out: what is
 // running keeps running.
 func TestARefusedStateChangesNothing(t *testing.T) {

@@ -7,6 +7,11 @@
 // (routing.BuildNAT) and waits, so clients in other containers can dial in
 // with those files.
 //
+// L2TP and PPTP run as they do on a customer's server: the panel's driver
+// describes the tunnel, and the root agent -- run here in the same process,
+// as `wui l2tp-agent` runs it -- brings up strongSwan, xl2tpd or pptpd and
+// ends the sessions that should not exist.
+//
 // Writing ctl/drop takes the last device away (a Sync without it), as the
 // panel does when a customer is disabled; ctl/dropped says it is done.
 package main
@@ -24,9 +29,12 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/l2tpagent"
+	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/wgkey"
@@ -37,7 +45,8 @@ import (
 const devices = 3
 
 func main() {
-	protocol := flag.String("protocol", "", "wireguard or openvpn")
+	protocol := flag.String("protocol", "", "wireguard, openvpn, l2tp or pptp")
+	plain := flag.Bool("plain", false, "l2tp: also accept routers without IPsec")
 	transport := flag.String("transport", "udp", "openvpn: udp or tcp")
 	endpoint := flag.String("endpoint", "", "the address clients dial")
 	out := flag.String("out", "/out", "where device files are written")
@@ -76,11 +85,27 @@ func main() {
 		d := ovpndriver.New()
 		d.SetLogger(log)
 		drv = d
+	case model.ProtocolL2TP, model.ProtocolPPTP:
+		iface.MTU = l2tpconf.DefaultMTU
+		if iface.Protocol == model.ProtocolL2TP {
+			psk, err := ovpnconf.NewSecret(24)
+			must(err)
+			iface.Name, iface.ListenPort = "l2tp0", l2tpconf.PortL2TP
+			iface.L2TP = model.JSON(model.L2TPParams{PSK: psk, AllowPlain: *plain})
+			drv = l2tpdriver.New()
+		} else {
+			iface.Name, iface.ListenPort = "pptp0", l2tpconf.PortPPTP
+			drv = l2tpdriver.NewPPTP()
+		}
+		l2tpdriver.DataRoot = "/var/lib/wui"
+		// The panel's data directory, which the installer makes.
+		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
+		startAgent(ctx, log, l2tpdriver.DataRoot)
 	default:
 		fail("unknown protocol %q", *protocol)
 	}
 
-	must(drv.Open(ctx, iface))
+	openTunnel(ctx, drv, iface)
 
 	// Every device as the panel makes one: an address of its own, and the
 	// protocol's credentials.
@@ -128,6 +153,7 @@ func main() {
 		creds := a.Username + "\n" + a.Secret + "\n"
 		must(os.WriteFile(filepath.Join(*out, a.DeviceName+".creds"), []byte(creds), 0o600))
 		must(os.WriteFile(filepath.Join(*out, a.DeviceName+".ip"), []byte(a.IP), 0o644))
+		writeSignIn(*out, a.DeviceName, &a, iface)
 	}
 	// A device the server never heard of: a WireGuard key it does not
 	// know, an OpenVPN password that is not the device's.
@@ -146,6 +172,7 @@ func main() {
 	must(os.WriteFile(filepath.Join(*out, "stranger.profile"), p.Body, 0o644))
 	must(os.WriteFile(filepath.Join(*out, "stranger.creds"), []byte(stranger.Username+"\n"+stranger.Secret+"\n"), 0o600))
 	must(os.WriteFile(filepath.Join(*out, "stranger.ip"), []byte(stranger.IP), 0o644))
+	writeSignIn(*out, "stranger", &stranger, iface)
 
 	// Customers out to the internet, as the panel's routing does it.
 	nat := routing.BuildNAT([]netip.Prefix{netip.MustParsePrefix(iface.Subnet)}, []string{iface.Name})
@@ -164,12 +191,75 @@ func main() {
 		if _, err := os.Stat(filepath.Join(ctl, "drop")); err == nil {
 			sync(devices - 1)
 			// Nothing more: the Sync alone has to end it -- OpenVPN's
-			// driver disconnects a removed sign-in, a WireGuard peer is gone.
+			// driver disconnects a removed sign-in, a WireGuard peer is
+			// gone, and the PPP agent ends a session no account holds.
 			must(os.Remove(filepath.Join(ctl, "drop")))
 			must(os.WriteFile(filepath.Join(ctl, "dropped"), nil, 0o644))
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// startAgent runs the PPP agent for both protocols, as the root service
+// does on a customer's server.
+func startAgent(ctx context.Context, log *slog.Logger, dataDir string) {
+	sys := l2tpagent.NewSystem(log)
+	var agents []*l2tpagent.Agent
+	for _, p := range []string{l2tpconf.ProtocolL2TP, l2tpconf.ProtocolPPTP} {
+		files, _, err := l2tpagent.OpenFiles(dataDir, p)
+		must(err)
+		agents = append(agents, l2tpagent.New(p, sys, files, log))
+	}
+	// The agent ends when no tunnel is described; wui-l2tp.path starts it
+	// again when one is (PathExists on each state.json). This does the same.
+	states := []string{
+		l2tpconf.PathsFor(dataDir, l2tpconf.ProtocolL2TP).State(),
+		l2tpconf.PathsFor(dataDir, l2tpconf.ProtocolPPTP).State(),
+	}
+	go func() {
+		for {
+			described := false
+			for _, p := range states {
+				if _, err := os.Stat(p); err == nil {
+					described = true
+				}
+			}
+			if !described {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			if err := l2tpagent.Run(ctx, time.Second, agents...); err != nil {
+				fail("agent: %v", err)
+			}
+		}
+	}()
+}
+
+// openTunnel opens the tunnel, waiting for the PPP agent's first report as
+// the panel's own reconciler would, by trying again.
+func openTunnel(ctx context.Context, drv backend.Backend, iface *model.Interface) {
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		err := drv.Open(ctx, iface)
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			fail("open: %v", err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// writeSignIn writes what an L2TP or PPTP device is set up with, from the
+// same values the customer's page shows: server, key, username, password.
+func writeSignIn(dir, name string, a *model.Account, iface *model.Interface) {
+	if !iface.Protocol.IsPPP() {
+		return
+	}
+	v := l2tpdriver.GuideValues(a, iface)
+	env := fmt.Sprintf("SERVER=%s\nPSK=%s\nUSER=%s\nPASS=%s\n", v.Server, v.PSK, v.Username, v.Password)
+	must(os.WriteFile(filepath.Join(dir, name+".env"), []byte(env), 0o644))
 }
 
 func must(err error) {

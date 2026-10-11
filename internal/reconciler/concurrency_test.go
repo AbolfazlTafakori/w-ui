@@ -311,3 +311,77 @@ func TestTwoDevicesBehindARelayAreToldApartByPort(t *testing.T) {
 		t.Fatalf("two devices on one file behind a relay were not caught: %+v", got)
 	}
 }
+
+// pstat is one session of a protocol with sessions of its own (L2TP, PPTP,
+// OpenVPN): its counters start at zero with the session, and the address
+// it reports has no port.
+func pstat(id uint, bytes uint64, ep string) backend.Stat {
+	return backend.Stat{AccountID: id, RX: bytes, Endpoint: ep}
+}
+
+// One sign-in on two devices at once, both moving traffic: two
+// connections, however their counters compare.
+func TestTwoSessionsOfOneSignInAtOnceAreTwoConnections(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{{ID: 10}}
+	c.observe([]backend.Stat{pstat(10, 5000, "1.1.1.1")}, t0)
+	c.observe([]backend.Stat{pstat(10, 6000, "1.1.1.1")}, t0.Add(2*time.Second))
+	// A second device signs in on the same account.
+	c.observe([]backend.Stat{pstat(10, 7000, "1.1.1.1"), pstat(10, 100, "2.2.2.2")}, t0.Add(4*time.Second))
+	c.observe([]backend.Stat{pstat(10, 8000, "1.1.1.1"), pstat(10, 300, "2.2.2.2")}, t0.Add(6*time.Second))
+	c.observe([]backend.Stat{pstat(10, 9000, "1.1.1.1"), pstat(10, 500, "2.2.2.2")}, t0.Add(8*time.Second))
+	if got := c.enforce(client, accs, t0.Add(8*time.Second)); len(got) != 1 {
+		t.Fatalf("two devices on one sign-in were not held off: %+v", got)
+	}
+}
+
+// A phone that comes back from another network leaves its old session
+// behind for a moment, silent. That is one device, not two.
+func TestASilentOldSessionBesideANewOneIsOneConnection(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{{ID: 10}}
+	c.observe([]backend.Stat{pstat(10, 5000, "1.1.1.1")}, t0)
+	c.observe([]backend.Stat{pstat(10, 6000, "1.1.1.1")}, t0.Add(2*time.Second))
+	// Wifi drops: the old session stops moving; the new one starts.
+	c.observe([]backend.Stat{pstat(10, 6000, "1.1.1.1"), pstat(10, 100, "2.2.2.2")}, t0.Add(4*time.Second))
+	c.observe([]backend.Stat{pstat(10, 6000, "1.1.1.1"), pstat(10, 300, "2.2.2.2")}, t0.Add(6*time.Second))
+	c.observe([]backend.Stat{pstat(10, 6000, "1.1.1.1"), pstat(10, 500, "2.2.2.2")}, t0.Add(8*time.Second))
+	// And then it is gone.
+	c.observe([]backend.Stat{pstat(10, 700, "2.2.2.2")}, t0.Add(10*time.Second))
+	for _, at := range []time.Duration{8, 10} {
+		if got := c.enforce(client, accs, t0.Add(at*time.Second)); got != nil {
+			t.Fatalf("a network change was held off at %ds: %+v", at, got)
+		}
+	}
+	if n, _, ok := c.lookup(10, t0.Add(10*time.Second)); !ok || n != 1 {
+		t.Fatalf("connections %d (%v), want one live", n, ok)
+	}
+}
+
+// A router whose session was replaced by another device signs straight
+// back in, and the two take the sign-in from each other, one session at a
+// time: the address flips back and forth, which is two devices.
+func TestTwoRoutersTakingOneSignInInTurnAreTwoConnections(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{{ID: 10}}
+	at := t0
+	step := func(bytes uint64, ep string) {
+		c.observe([]backend.Stat{pstat(10, bytes, ep)}, at)
+		at = at.Add(2 * time.Second)
+	}
+	step(5000, "1.1.1.1")
+	step(6000, "1.1.1.1")
+	step(50, "2.2.2.2") // the second router takes over: a new session
+	step(400, "2.2.2.2")
+	step(60, "1.1.1.1") // the first takes it back
+	step(500, "1.1.1.1")
+	if got := c.enforce(client, accs, at); len(got) != 1 {
+		t.Fatalf("two routers trading one sign-in were not held off: %+v", got)
+	}
+}

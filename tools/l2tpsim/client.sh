@@ -12,6 +12,8 @@
 #   TUNNEL   a tunnel password the client asks the server to prove; empty for none
 #   PPTP     1 for a PPTP client instead of L2TP
 #   EXPECT   ok or fail
+#   CONNECT_ONLY  1 to bring the link up and leave it, for tools/protosim to
+#                 check; the exit status says whether it came up
 set -u
 
 log() { echo "[$NAME] $*"; }
@@ -21,6 +23,11 @@ busybox syslogd -O /tmp/sim/syslog
 detail=""
 finish() {
 	got=$1
+	if [ "${CONNECT_ONLY:-}" = 1 ]; then
+		echo "pppclient: $got$detail" >&2
+		[ "$got" = ok ]
+		exit $?
+	fi
 	if [ "$got" = "$EXPECT" ]; then verdict=PASS; else verdict=FAIL; fi
 	echo "RESULT $verdict $NAME expected=$EXPECT got=$got $detail"
 	if [ "$verdict" = FAIL ] || [ "${VERBOSE:-}" = 1 ]; then
@@ -141,6 +148,7 @@ if [ -z "$addr" ]; then
 	cat /tmp/sim/xl2tpd.log /tmp/sim/pppd.log >> /tmp/sim/syslog 2>/dev/null
 	finish fail
 fi
+[ "${CONNECT_ONLY:-}" = 1 ] && exit 0
 mppe=$(grep -o -m1 -E 'MPPE [0-9]+-bit[^"]*enabled' /tmp/sim/syslog || true)
 detail="$detail ppp=$addr ${mppe:+mppe=\"$mppe\"}"
 bad=0

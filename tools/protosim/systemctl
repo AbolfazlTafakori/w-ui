@@ -1,0 +1,37 @@
+#!/bin/sh
+# A container has no systemd. The PPP agent asks it for one thing -- to run
+# strongSwan's charon while an L2TP tunnel exists -- and to leave packaged
+# units it did not install alone. This answers those the way systemd would,
+# and nothing else; xl2tpd and pptpd the agent starts itself.
+cmd=$1; shift
+[ "${1:-}" = "--quiet" ] && shift
+[ "${1:-}" = "--now" ] && shift
+unit=${1:-}
+
+charon_running() { pgrep -x charon >/dev/null 2>&1; }
+
+case "$unit" in
+strongswan.service|strongswan-swanctl.service|strongswan|strongswan-swanctl)
+	case "$cmd" in
+	start)
+		charon_running || { /usr/lib/ipsec/charon >/var/log/charon.log 2>&1 & }
+		exit 0 ;;
+	stop)
+		pkill -x charon; exit 0 ;;
+	is-active)
+		charon_running ;;
+	is-enabled)
+		exit 1 ;;
+	*)
+		exit 0 ;;
+	esac
+	;;
+*)
+	# Every other unit: not enabled, not running, and switching it off is
+	# a no-op.
+	case "$cmd" in
+	is-active|is-enabled) exit 3 ;;
+	*) exit 0 ;;
+	esac
+	;;
+esac
