@@ -490,8 +490,8 @@ a.row-title:hover { text-decoration: underline; }
 .guide-cmd code { flex: 1; font-size: 12px; }
 .guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
 .setup-device-notes { display: grid; gap: 6px; }
-.cfg-setup { margin: 4px 16px 6px; padding-top: 14px; border-top: 1px dashed var(--line); }
-.cfg-setup-title { margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+.cfg-user-body > .setup { display: grid; gap: 12px; }
+.cfg-user-body > .setup .guide-path { margin-top: 4px; }
 .dsel { position: relative; }
 .dsel-btn { display: flex; align-items: center; gap: 8px; text-align: start; cursor: pointer; }
 .dsel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -726,7 +726,6 @@ Endpoint = vpn.example.test:51901
 PersistentKeepalive = 25
 </code></div>
             </div>
-            
             
           </div>
         </div>
@@ -1170,7 +1169,7 @@ PersistentKeepalive = 25
         file.appendChild(opt);
       });
       if ([].some.call(file.options, function (o) { return o.value === prev; })) file.value = prev;
-      pick.hidden = file.options.length === 0;
+      pick.hidden = file.options.length <= 1;
       
       
       box.querySelectorAll('.setup-device-notes').forEach(function (n) {

@@ -420,13 +420,13 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<option value="ios" selected data-i="dg.ios" data-en="iPhone / iPad">iPhone / iPad</option>`,
-		`dsel-search`, `'dgSearch'`, `'dgNoMatch'`, `class="cfg-setup"`,
+		`dsel-search`, `'dgSearch'`, `'dgNoMatch'`,
 		`data-device="ios" data-file="0" data-protocol="l2tp"`, `data-device="ios" data-file="0" data-protocol="wireguard"`,
 		`data-device="tplink-ax53" data-file="0" data-protocol="wireguard"`, `<dt dir="ltr">Import from Config File</dt>`,
 		`<dt dir="ltr">Secret</dt>`, `data-ref="1.0" data-secret="psk"`, `data-ref="1.0" data-secret="password"`,
 		`data-ref="1.0" data-secret="username"`, `data-secret="cmd" data-device="mikrotik" data-protocol="l2tp"`,
 		`<code dir="ltr" class="secret">` + devguide.Mask + `</code>`, `data-others="b.example.com"`,
-		`wui.sub.device`, `data-i="dgSetup"`, `class="cfg-user open"`, `<dt>Pre-shared key</dt>`,
+		`wui.sub.device`, `data-i="dgSetup"`, `class="cfg-user open"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the page is missing %s", want)
@@ -435,14 +435,18 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 	if strings.Contains(html, `data-protocol="l2tp-plain"`) {
 		t.Error("L2TP without IPsec is offered on a tunnel that refuses it")
 	}
-	// The L2TP card is in the L2TP block, under its sign-ins; the page's own
-	// card is the WireGuard file's alone.
-	if len(v.Groups) != 2 || v.Groups[0].Protocol != "l2tp" || v.Groups[0].Setup == nil || v.Groups[1].Setup != nil {
+	// The L2TP user's row is its guide; the page's own card is the
+	// WireGuard file's alone.
+	if len(v.Groups) != 2 || v.Groups[0].Protocol != "l2tp" {
 		t.Fatalf("groups %+v", v.Groups)
 	}
-	for _, view := range v.Groups[0].Setup.Views {
+	l2tp := v.Groups[0].Devices[0]
+	if l2tp.Setup == nil || v.Groups[1].Devices[0].Setup != nil {
+		t.Fatal("the L2TP row has no guide, or the WireGuard row has one")
+	}
+	for _, view := range l2tp.Setup.Views {
 		if view.Protocol != "l2tp" {
-			t.Fatalf("the L2TP block's card has a %s guide", view.Protocol)
+			t.Fatalf("the L2TP row's guide has a %s view", view.Protocol)
 		}
 	}
 	for _, view := range v.Setup.Views {
@@ -450,9 +454,14 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 			t.Fatalf("the page's card has a %s guide", view.Protocol)
 		}
 	}
-	block := html[strings.Index(html, `data-i="l2tpConfig"`):]
-	if i, j := strings.Index(block, `class="cfg-setup"`), strings.Index(block, `data-protocol="l2tp"`); i < 0 || j < i {
-		t.Error("the L2TP guide is not under the L2TP sign-ins")
+	// The sign-in is shown once: in the device's fields, not again in rows
+	// of its own above them.
+	block := html[strings.Index(html, `data-i="l2tpConfig"`):strings.Index(html, `data-i="dgSetup"`)]
+	if strings.Contains(block, `<dt>Pre-shared key</dt>`) || strings.Contains(block, `<dt>Password</dt>`) {
+		t.Error("the L2TP sign-in is shown twice: in rows of its own and in the guide")
+	}
+	if !strings.Contains(block, `class="dsel`) && !strings.Contains(block, `class="guide-select setup-device"`) {
+		t.Error("the L2TP row does not open on the device list")
 	}
 	// The sign-in itself is nowhere in what the page sends: not in a field,
 	// not on a copy button, not in a command. Whatever reads the page finds

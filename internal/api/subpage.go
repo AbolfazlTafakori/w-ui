@@ -102,6 +102,10 @@ type subPageDevice struct {
 	CopyIcon template.HTML
 	// Ref names this file to the copy buttons: "ID.HostID".
 	Ref string
+	// Setup is, for an L2TP or PPTP file, the guide that is its row: the
+	// customer's device, and that device's fields filled in with this
+	// file's sign-in. The sign-in is shown there and nowhere else.
+	Setup *setupCard
 	// PPP is an L2TP or PPTP file, whose text carries the sign-in: the page
 	// never shows or copies that text, whatever else it has to show.
 	PPP bool
@@ -371,9 +375,14 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	v.Setup = newSetupCard(rest, detected, v.Icons["CopyOutlined"])
 	v.AnySetup = v.Setup != nil
 	for i := range v.Groups {
-		if g := &v.Groups[i]; len(g.Devices) > 0 && g.Devices[0].PPP {
-			g.Setup = newSetupCard(g.Devices, detected, v.Icons["CopyOutlined"])
-			v.AnySetup = v.AnySetup || g.Setup != nil
+		for j := range v.Groups[i].Devices {
+			d := &v.Groups[i].Devices[j]
+			if !d.PPP {
+				continue
+			}
+			if d.Setup = newSetupCard([]subPageDevice{*d}, detected, v.Icons["CopyOutlined"]); d.Setup != nil {
+				v.AnySetup = true
+			}
 		}
 	}
 	if page.FilesSince != nil {
@@ -1267,8 +1276,8 @@ a.row-title:hover { text-decoration: underline; }
 .guide-cmd code { flex: 1; font-size: 12px; }
 .guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
 .setup-device-notes { display: grid; gap: 6px; }
-.cfg-setup { margin: 4px 16px 6px; padding-top: 14px; border-top: 1px dashed var(--line); }
-.cfg-setup-title { margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+.cfg-user-body > .setup { display: grid; gap: 12px; }
+.cfg-user-body > .setup .guide-path { margin-top: 4px; }
 .dsel { position: relative; }
 .dsel-btn { display: flex; align-items: center; gap: 8px; text-align: start; cursor: pointer; }
 .dsel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1437,7 +1446,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
           </div>
           <div class="cfg-body cfg-users">
             {{ range .Devices }}
-            <div class="cfg-user{{ if .SignIn }} open{{ end }}">
+            <div class="cfg-user{{ if or .SignIn .Setup }} open{{ end }}">
               <div class="cfg-user-head">
                 <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (eq .Protocol "openvpn") .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
@@ -1448,15 +1457,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body">{{ if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
-            </div>
-            {{ end }}
-            {{ if .Setup }}
-            <!-- These sign-ins on the customer's own device: pick it, and
-                 its fields are filled in with them. -->
-            <div class="cfg-setup">
-              <div class="cfg-setup-title" data-i="dgSetup">Set up a device</div>
-              {{ template "setup" .Setup }}
+              <div class="cfg-user-body">{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
             </div>
             {{ end }}
           </div>
@@ -1809,7 +1810,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
         file.appendChild(opt);
       });
       if ([].some.call(file.options, function (o) { return o.value === prev; })) file.value = prev;
-      pick.hidden = file.options.length === 0;
+      pick.hidden = file.options.length <= 1;
       // The device's own notes, and when the plan has nothing it dials,
       // what it does dial; nothing at all when there is neither.
       box.querySelectorAll('.setup-device-notes').forEach(function (n) {
@@ -2084,9 +2085,6 @@ type subGroup struct {
 	Protocol string
 	Tunnel   string
 	Devices  []subPageDevice
-	// Setup is, for an L2TP or PPTP block, the card that sets a device up
-	// with these sign-ins: under them, where the customer reads them.
-	Setup *setupCard
 }
 
 // groupDevices arranges the files by tunnel, in the order they came. When
