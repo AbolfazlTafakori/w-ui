@@ -261,6 +261,20 @@ func (s *Server) handleUpdateInterface(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, redactKeys(*iface))
 }
 
+func (s *Server) handleDrawAWG(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	num := func(k string) int {
+		n, _ := strconv.Atoi(q.Get(k))
+		return n
+	}
+	p, err := s.ifaces.DrawAWGFor(r.Context(), uint(num("nodeId")), uint(num("except")), num("mtu"), q.Get("level"))
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
 func (s *Server) handleDeleteInterface(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {

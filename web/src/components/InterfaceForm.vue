@@ -22,6 +22,13 @@ const emit = defineEmits(['close', 'submit'])
 
 const editing = computed(() => !!props.iface)
 
+// Whether a profile uses AmneziaWG 1.5 and 2.0: ranges, or packets before
+// the handshake. It decides the kind of profile a new draw keeps to.
+function usesAwg2(p) {
+  if (!p) return false
+  return [1, 2, 3, 4].some((n) => p[`h${n}Max`] > p[`h${n}`]) || [1, 2, 3, 4, 5].some((n) => p[`i${n}`])
+}
+
 const defaults = {
   wireguard: { name: 'wg0', listenPort: 51820, subnet: '10.66.0.0/16', mtu: 1420 },
   openvpn: { name: 'ovpn0', listenPort: 1194, subnet: '10.8.0.0/16', mtu: 1500 },
@@ -63,7 +70,7 @@ const form = ref(
         ikev2Modes: ikeModesOf(props.iface.ikev2),
         // A copy to edit; what is sent is compared with the tunnel's own.
         awg: { ...(props.iface.awg || {}) },
-        regenerateAwg: false,
+        awgLevel: usesAwg2(props.iface.awg) ? 'modern' : 'classic',
         enabled: props.iface.enabled,
       }
     : {
@@ -78,10 +85,14 @@ const form = ref(
         psk: '',
         l2tpPlain: false,
         ikev2Modes: [...IKE_MODES],
+        // Drawn by the panel for this server the moment AmneziaWG is chosen.
+        awg: null,
+        awgLevel: 'modern',
         enabled: true,
       },
 )
 const busy = ref(false)
+
 
 // The protocols in the order they are usually chosen, whatever order the
 // server lists them in; one it adds later goes at the end.
@@ -99,6 +110,58 @@ const isPPTP = computed(() => form.value.protocol === 'pptp')
 const isIKEv2 = computed(() => form.value.protocol === 'ikev2')
 // A port the clients cannot be told to change.
 const fixedPort = computed(() => isL2TP.value || isPPTP.value || isIKEv2.value)
+
+// The AmneziaWG profile is drawn by the panel, for the server the tunnel is
+// on and unlike its other tunnels there: when AmneziaWG is chosen, when the
+// server or the kind of profile changes, and on asking. Shown filled in, and
+// sent back with the tunnel as the operator leaves it.
+const drawing = ref(false)
+let drawSeq = 0
+async function drawAwg(level = form.value.awgLevel) {
+  const seq = ++drawSeq
+  drawing.value = true
+  try {
+    const q = new URLSearchParams({
+      nodeId: String(form.value.nodeId || 0),
+      mtu: String(Number(form.value.mtu) || 1420),
+      level,
+      except: String(props.iface?.id || 0),
+    })
+    const p = await api.get(`/api/interfaces/awg-draw?${q}`)
+    if (seq !== drawSeq) return
+    form.value.awgLevel = level
+    form.value.awg = p
+    for (const k of Object.keys(p)) clearError(`awg.${k}`)
+  } catch (e) {
+    if (seq === drawSeq) notify(e.message, 'error')
+  } finally {
+    if (seq === drawSeq) drawing.value = false
+  }
+}
+const showsAwg = computed(() => isWireGuard.value && form.value.mode === 'amnezia')
+watch(
+  () => [showsAwg.value, form.value.nodeId],
+  ([on]) => {
+    if (on && !editing.value) drawAwg()
+  },
+)
+watch(
+  () => form.value.mode,
+  (m) => {
+    // An existing tunnel switched to AmneziaWG has no profile yet.
+    if (editing.value && m === 'amnezia' && props.iface.mode !== 'amnezia') drawAwg()
+  },
+)
+// A larger MTU leaves less room for the data packets' padding: the drawn
+// profile is fitted again, unless it is the operator's own by now.
+watch(
+  () => form.value.mtu,
+  (m) => {
+    if (!showsAwg.value || !form.value.awg || editing.value) return
+    const room = Math.max(0, 1440 - Number(m))
+    if ((form.value.awg.s4 || 0) > room) drawAwg()
+  },
+)
 
 // A tunnel lets devices in at least one way: the last one on cannot be
 // switched off.
@@ -364,13 +427,17 @@ defineExpose({ showError })
           <!-- An AmneziaWG tunnel's profile, every value editable. A tunnel
                being made gets one drawn for it; it is edited once it exists. -->
           <AwgEditor
-            v-if="editing && isWireGuard && form.mode === 'amnezia' && props.iface.mode === 'amnezia'"
+            v-if="showsAwg && form.awg"
             v-model="form.awg"
-            v-model:regenerate="form.regenerateAwg"
+            v-model:level="form.awgLevel"
+            :drawing="drawing"
+            :editing="editing && props.iface.mode === 'amnezia'"
             :field-name="fieldName"
             :field-error="fieldError"
+            @draw="(lv) => drawAwg(lv || form.awgLevel)"
             @clear="clearError"
           />
+          <div v-else-if="showsAwg && drawing" class="awg-wait"><AntIcon name="LoadingOutlined" class="spin" />{{ t('interface.awgDrawing') }}</div>
 
           <!-- OpenVPN only: WireGuard and L2TP are UDP and have no other
                option, so offering the choice there would be offering a
@@ -590,6 +657,9 @@ defineExpose({ showError })
 .aalert.slim > .anticon { margin-top: 3px; line-height: 1; }
 .pptp-warn { margin: 0 0 24px; }
 .ike-mode { margin-bottom: 8px; }
+.awg-wait { display: flex; align-items: center; gap: 8px; margin: 0 0 24px; color: var(--muted); }
+.awg-wait .spin { animation: awg-wait-spin 0.8s linear infinite; }
+@keyframes awg-wait-spin { to { transform: rotate(360deg); } }
 .edit-note { margin-bottom: 8px; font-size: 13px; line-height: 20px; align-items: flex-start; }
 .edit-note > .anticon { margin-top: 3px; line-height: 1; }
 .if-form > .aalert.error { margin-bottom: 16px; }

@@ -11,11 +11,15 @@ import HelpTip from './HelpTip.vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
-  regenerate: { type: Boolean, default: false },
+  // modern (ranges and a packet before the handshake) or classic.
+  level: { type: String, default: 'modern' },
+  drawing: { type: Boolean, default: false },
+  // An existing tunnel: a change means new files for its customers.
+  editing: { type: Boolean, default: false },
   fieldName: { type: String, default: '' },
   fieldError: { type: String, default: '' },
 })
-const emit = defineEmits(['update:modelValue', 'update:regenerate', 'clear'])
+const emit = defineEmits(['update:modelValue', 'update:level', 'draw', 'clear'])
 
 const p = computed(() => props.modelValue)
 // Each change is made to the latest value, not to the prop: two changes in
@@ -63,14 +67,22 @@ const invalid = (key) => props.fieldName === `awg.${key}`
   <section class="awg-box" aria-labelledby="awg-head">
     <div id="awg-head" class="awg-head">
       <AntIcon name="SafetyCertificateOutlined" />{{ t('interface.awgSection') }}
-      <button type="button" class="abtn small awg-regen" :class="{ active: regenerate }" @click="emit('update:regenerate', !regenerate)">
-        <AntIcon name="ReloadOutlined" />{{ regenerate ? t('interface.awgRegenOn') : t('interface.awgRegen') }}
+      <button type="button" class="abtn small awg-regen" :disabled="drawing" @click="emit('draw')">
+        <AntIcon name="ReloadOutlined" :class="{ spin: drawing }" />{{ t('interface.awgRegen') }}
       </button>
     </div>
-    <div class="aalert warning slim"><AntIcon name="WarningOutlined" /><span>{{ t('interface.awgEditWarn') }}</span></div>
+    <!-- The kind of profile the panel draws: what every app reads, or the
+         stronger one the current apps read. -->
+    <div class="aradio-group awg-level" role="radiogroup" :aria-label="t('interface.awgLevel')">
+      <button v-for="lv in ['modern', 'classic']" :key="lv" type="button" role="radio" class="aradio-btn" :class="{ active: level === lv }" :aria-checked="level === lv" :disabled="drawing" @click="level !== lv && (emit('update:level', lv), emit('draw', lv))">
+        {{ t(`interface.awgLevel.${lv}`) }}
+      </button>
+    </div>
+    <p class="awg-level-note">{{ t(`interface.awgLevelNote.${level}`) }}</p>
+    <div v-if="editing" class="aalert warning slim"><AntIcon name="WarningOutlined" /><span>{{ t('interface.awgEditWarn') }}</span></div>
     <p v-if="fieldName === 'awg'" class="field-error" role="alert">{{ fieldError }}</p>
 
-    <fieldset :disabled="regenerate" class="awg-fields">
+    <fieldset :disabled="drawing" class="awg-fields">
       <div class="awg-grid">
         <div v-for="f in NUMBERS" :key="f.key" class="aform-item">
           <label class="aform-label" :for="`awg-${f.key}`">{{ f.label }} <HelpTip :text="t(`interface.awgHint.${f.key}`)" /></label>
@@ -130,7 +142,11 @@ const invalid = (key) => props.fieldName === `awg.${key}`
 .awg-box { margin: 0 0 24px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2, transparent); display: grid; gap: 12px; }
 .awg-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .awg-regen { margin-inline-start: auto; }
-.awg-regen.active { border-color: var(--accent); color: var(--accent); }
+.awg-level { display: flex; }
+.awg-level .aradio-btn { flex: 1 1 0; }
+.awg-level-note { margin: -4px 0 0; color: var(--muted); font-size: 12px; }
+.spin { animation: awg-spin 0.8s linear infinite; }
+@keyframes awg-spin { to { transform: rotate(360deg); } }
 .awg-fields { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 12px; }
 .awg-fields:disabled { opacity: 0.5; }
 .awg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px 12px; }

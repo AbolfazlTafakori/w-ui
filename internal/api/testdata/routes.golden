@@ -41,6 +41,7 @@ POST   /api/node/sessions                             Nodes          auth=true  
 POST   /api/node/hold                                 Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/interfaces                                Interfaces     auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/interfaces                                Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
+GET    /api/interfaces/awg-draw                       Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 PATCH  /api/interfaces/{id}                           Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/interfaces/{id}/profile                   Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/interfaces/{id}/restart                   Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes

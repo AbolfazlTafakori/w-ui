@@ -52,6 +52,7 @@ func main() {
 	protocol := flag.String("protocol", "", "wireguard, openvpn, l2tp, pptp or ikev2")
 	plain := flag.Bool("plain", false, "l2tp: also accept routers without IPsec")
 	transport := flag.String("transport", "udp", "openvpn: udp or tcp")
+	extra := flag.Int("extra", 0, "wireguard: this many more devices on the tunnel besides the clients, to see it carry a server's worth")
 	awg := flag.String("awg", "", "wireguard: an AmneziaWG profile -- classic (Jc to H4, as the panel draws one) or awg2 (identifier ranges and I1-I2 from the form's ready packets)")
 	endpoint := flag.String("endpoint", "", "the address clients dial")
 	out := flag.String("out", "/out", "where device files are written")
@@ -78,6 +79,9 @@ func main() {
 		must(err)
 		iface.Name, iface.ListenPort, iface.MTU = "wg0", 51820, 1420
 		iface.PrivateKey, iface.PublicKey = pair.Private.String(), pair.Public.String()
+		if *extra > 0 {
+			iface.Subnet = "10.66.0.0/16"
+		}
 		if *awg != "" {
 			p := service.NewAWGParams()
 			if *awg == "awg2" {
@@ -167,6 +171,20 @@ func main() {
 		}
 		accounts = append(accounts, a)
 	}
+	// Devices that never connect, so the clients share the tunnel with as
+	// many peers as a full server has: every sync carries them all.
+	var crowd []backend.DesiredAccount
+	for i := range *extra {
+		pair, err := wgkey.NewPair()
+		must(err)
+		psk, err := wgkey.GeneratePresharedKey()
+		must(err)
+		crowd = append(crowd, backend.DesiredAccount{
+			ID: uint(1000 + i), DeviceName: fmt.Sprintf("crowd%05d", i),
+			IP:        netip.AddrFrom4([4]byte{10, 66, byte(16 + i/250), byte(2 + i%250)}),
+			PublicKey: pair.Public.String(), PresharedKey: psk.String(),
+		})
+	}
 	sync := func(n int) {
 		var want []backend.DesiredAccount
 		for _, a := range accounts[:n] {
@@ -176,9 +194,11 @@ func main() {
 				Username: a.Username, Secret: a.Secret, Cert: a.CertPEM,
 			})
 		}
+		want = append(want, crowd...)
+		start := time.Now()
 		rep, err := drv.Sync(ctx, want)
 		must(err)
-		log.Info("synced", "devices", n, "report", fmt.Sprintf("%+v", rep))
+		log.Info("synced", "devices", len(want), "took", time.Since(start).Round(time.Millisecond), "report", fmt.Sprintf("%d added %d removed", rep.Added, rep.Removed))
 	}
 	sync(devices)
 

@@ -100,6 +100,12 @@ type CreateInterfaceInput struct {
 	// IKEv2Modes are the ways into an IKEv2 tunnel: mschapv2, psk, rsa and
 	// eap-tls. None given is all four.
 	IKEv2Modes []string `json:"ikev2Modes"`
+
+	// AWG is an AmneziaWG tunnel's obfuscation profile as the form shows it,
+	// drawn by the panel (DrawAWG) and perhaps changed by the operator. None
+	// given, one is drawn here, of AWGLevel: modern (the default) or classic.
+	AWG      *model.AWGParams `json:"awg"`
+	AWGLevel string           `json:"awgLevel"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -162,7 +168,11 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		iface.PublicKey = pair.Public.String()
 
 		if in.Mode == model.ModeAmnezia {
-			iface.AWG = model.JSON(NewAWGParams())
+			p, err := s.awgForNew(ctx, node, in)
+			if err != nil {
+				return nil, err
+			}
+			iface.AWG = model.JSON(p)
 		}
 	} else if in.Protocol == model.ProtocolL2TP {
 		// The key every device types in beside its own sign-in. Handed to
@@ -722,7 +732,15 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 			return nil, invalidField("mode", "AmneziaWG mode applies to WireGuard only")
 		}
 		if mode == model.ModeAmnezia && iface.AWG.V.Jc == 0 && in.AWG == nil {
-			fields["awg"] = model.JSON(NewAWGParams())
+			mtu := iface.MTU
+			if in.MTU != nil {
+				mtu = *in.MTU
+			}
+			p, err := s.DrawAWG(ctx, iface.NodeID, iface.ID, mtu, AWGModern)
+			if err != nil {
+				return nil, err
+			}
+			fields["awg"] = model.JSON(p)
 		}
 		fields["mode"] = mode
 		s.log.Warn("tunnel mode changed; every customer needs their configuration again",
@@ -1117,6 +1135,43 @@ func (s *Interfaces) PoolUsage(id uint) (Usage, error) {
 	return Usage{InterfaceID: id, Allocated: alloc.InUse(), Capacity: alloc.Capacity()}, nil
 }
 
+// awgForNew is a new tunnel's profile: the one the form shows, checked, or
+// one drawn for this server.
+func (s *Interfaces) awgForNew(ctx context.Context, node *model.Node, in CreateInterfaceInput) (model.AWGParams, error) {
+	if in.AWG == nil {
+		level := in.AWGLevel
+		if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
+			level = AWGClassic // what a panel before 3.0 can write
+		}
+		return s.DrawAWG(ctx, node.ID, 0, in.MTU, level)
+	}
+	p := normalizeAWG(*in.AWG)
+	if err := checkAWG(p, in.MTU); err != nil {
+		return p, err
+	}
+	if p.UsesAWG2() {
+		if err := s.checkAWG2Node(ctx, node.ID); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
+}
+
+// normalizeAWG trims what was typed, and stores a one-value range as the
+// value, as every profile before ranges was.
+func normalizeAWG(p model.AWGParams) model.AWGParams {
+	p.HeaderProtectionKey = strings.TrimSpace(p.HeaderProtectionKey)
+	for _, v := range []*string{&p.I1, &p.I2, &p.I3, &p.I4, &p.I5} {
+		*v = strings.TrimSpace(*v)
+	}
+	for _, h := range []struct{ lo, hi *uint32 }{{&p.H1, &p.H1Max}, {&p.H2, &p.H2Max}, {&p.H3, &p.H3Max}, {&p.H4, &p.H4Max}} {
+		if *h.hi <= *h.lo {
+			*h.hi = 0
+		}
+	}
+	return p
+}
+
 // updateAWG puts a new obfuscation profile in fields: the one typed, checked
 // as AmneziaWG would check it, or a freshly drawn one.
 func (s *Interfaces) updateAWG(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
@@ -1133,29 +1188,22 @@ func (s *Interfaces) updateAWG(ctx context.Context, iface *model.Interface, in U
 	}
 	var p model.AWGParams
 	if in.RegenerateAWG {
-		p = NewAWGParams()
-		// What is drawn is sized for the default MTU; a larger one gets
-		// the padding that still fits.
-		if p.S4 > awgMaxS4(mtu) {
-			p.S4 = awgMaxS4(mtu)
+		level := AWGClassic
+		if iface.AWG.V.UsesAWG2() || (in.AWG != nil && in.AWG.UsesAWG2()) {
+			level = AWGModern
 		}
+		drawn, err := s.DrawAWG(ctx, iface.NodeID, iface.ID, mtu, level)
+		if err != nil {
+			return err
+		}
+		p = drawn
 		if in.AWG != nil {
 			// The packets before the handshake are the operator's choice;
 			// a new draw of the numbers keeps them.
 			p.I1, p.I2, p.I3, p.I4, p.I5 = in.AWG.I1, in.AWG.I2, in.AWG.I3, in.AWG.I4, in.AWG.I5
 		}
 	} else {
-		p = *in.AWG
-		p.HeaderProtectionKey = strings.TrimSpace(p.HeaderProtectionKey)
-		for _, v := range []*string{&p.I1, &p.I2, &p.I3, &p.I4, &p.I5} {
-			*v = strings.TrimSpace(*v)
-		}
-		// A range that is one value is that value: stored as before ranges.
-		for _, h := range []struct{ lo, hi *uint32 }{{&p.H1, &p.H1Max}, {&p.H2, &p.H2Max}, {&p.H3, &p.H3Max}, {&p.H4, &p.H4Max}} {
-			if *h.hi <= *h.lo {
-				*h.hi = 0
-			}
-		}
+		p = normalizeAWG(*in.AWG)
 	}
 	if err := checkAWG(p, mtu); err != nil {
 		return err

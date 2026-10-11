@@ -238,6 +238,12 @@ func (s *Server) routes() []Route {
 			Body: `{"name":"wg0","protocol":"wireguard","listenPort":51820,` +
 				`"subnet":"10.66.0.0/16","endpointHost":"vpn.example.com","natInterface":"eth0"}`,
 			handler: s.handleCreateInterface},
+		{Method: "GET", Path: "/api/interfaces/awg-draw", Group: "Interfaces", Auth: true,
+			Summary: "Draw an AmneziaWG obfuscation profile for a tunnel on a server, unlike its other tunnels.",
+			Note: "Query: nodeId (0 = this server), mtu, level (modern or classic), except " +
+				"(the tunnel it is for, when it exists). Nothing is stored: the form shows it, and " +
+				"it is sent back with the tunnel.",
+			handler: s.handleDrawAWG},
 		{Method: "PATCH", Path: "/api/interfaces/{id}", Group: "Interfaces", Auth: true,
 			Summary: "Change a tunnel. transport is OpenVPN only and moves every " +
 				"customer on it, who then need their configuration again.",

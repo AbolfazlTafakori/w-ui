@@ -86,6 +86,9 @@ func (s *Interfaces) Clone(ctx context.Context, id uint, in CloneInput) (*model.
 	// the same day, which is the one outcome it exists to avoid. Create()
 	// generates a fresh profile for the copy.
 
+	if src.Mode == model.ModeAmnezia && !src.AWG.V.UsesAWG2() {
+		create.AWGLevel = AWGClassic
+	}
 	out, err := s.Create(ctx, create)
 	if err != nil {
 		return nil, err

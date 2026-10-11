@@ -9,7 +9,8 @@ All notable changes to W-UI are recorded here. The format follows
 ### Added
 - **AmneziaWG, all of it.**
   - **I1 to I5** are written into the server and every customer's file. Before each handshake the device sends packets that look like QUIC, a DNS query or STUN. The form offers these ready-made, or you can write your own from the tags both the kernel module and the phone apps read.
-  - **Every obfuscation value is editable** on the tunnel, and is checked as AmneziaWG checks it, the refusal naming the field. This includes identifier ranges (AmneziaWG 2.0) and the header protection key. **Draw new values** keeps the operator's I1 to I5.
+  - **Filled in by the panel, in the form, from the start**: choosing AmneziaWG opens the values already drawn for that server, unlike its other AmneziaWG tunnels (no shared identifier or handshake padding, a different packet before the handshake), fitted to the MTU and kept light for a busy tunnel. Modern (AmneziaWG 2) or Compatible, for devices that cannot be updated. Tested end to end with 3000 devices on one tunnel.
+  - **Every obfuscation value is editable, and is checked as AmneziaWG checks it, the refusal naming the field. This includes identifier ranges (AmneziaWG 2.0) and the header protection key. **Draw new values** keeps the operator's I1 to I5.
   - **AmneziaVPN key**: every AmneziaWG file is also offered as the AmneziaVPN app imports it, a link or a QR code, on the customer's page and in the panel.
   - **Kernel upgrades no longer take AmneziaWG down**: each new kernel gets its headers so DKMS rebuilds the module, `wui-amnezia-kmod` rebuilds it at boot when that did not happen, and `amneziawg-go` is installed besides, pinned to the same release as the tools.
   - **S4 is now drawn to fit a 1500-byte link** at the default MTU.

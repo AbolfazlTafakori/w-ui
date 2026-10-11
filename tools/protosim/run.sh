@@ -134,6 +134,8 @@ suite() { # label client-protocol harness-flags...
 	drop_last
 	client "$label: third device, taken away"     "$proto" dev03 fail
 	client "$label: first device, still in"       "$proto" dev01 ok
+	# How long each sync of the whole tunnel took on the server.
+	docker logs protosim-server 2>&1 | grep -o 'devices=[0-9]* took=[^ ]*' | sed 's/^/  sync: /'
 	if [ "$proto" != wireguard ] && [ "$proto" != amneziawg ]; then
 		# One WireGuard key on two devices is not the driver's to stop: the
 		# kernel keeps one endpoint per peer, and the panel's reconciler
@@ -148,6 +150,8 @@ suite "WireGuard" wireguard -protocol wireguard
 # form's ready packets, whose QUIC packet has to be seen on the wire.
 suite "AmneziaWG" amneziawg -protocol wireguard -awg classic
 SPECIALS=1 suite "AmneziaWG 2 (ranges, I1-I2)" amneziawg -protocol wireguard -awg awg2
+# The same with 3000 more devices on the tunnel: what a full server carries.
+SPECIALS=1 suite "AmneziaWG 2 at scale (3000 devices)" amneziawg -protocol wireguard -awg awg2 -extra 3000
 suite "OpenVPN over UDP" openvpn -protocol openvpn -transport udp
 suite "OpenVPN over TCP" openvpn -protocol openvpn -transport tcp
 suite "L2TP/IPsec" l2tp -protocol l2tp

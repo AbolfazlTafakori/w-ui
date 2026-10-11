@@ -107,7 +107,11 @@ An interface that still has customers cannot be deleted. The panel says how many
 
 ### AmneziaWG obfuscation
 
-An AmneziaWG tunnel gets its obfuscation values drawn for it when it is made. Once it exists, **Edit** shows every one of them:
+Choosing AmneziaWG opens the obfuscation values in the form, already filled in. The panel draws them for the server the tunnel is on: valid as AmneziaWG checks them, fitted to the tunnel's MTU, and unlike every other AmneziaWG tunnel on that server, with no shared identifier, no shared handshake padding and, while there are kinds left, a different packet before the handshake. They are kept small enough to cost a busy tunnel little: a few junk packets of at most 250 bytes, data padding of at most 20. Change any of them before creating, or later with **Edit**.
+
+There are two kinds of profile. **Modern (AmneziaWG 2)** has identifier ranges and a disguised packet before each handshake; the current AmneziaWG and AmneziaVPN apps read it. **Compatible** is what every AmneziaWG app has ever read, for devices that cannot be updated. A node running W-UI before 3.0 always gets a compatible one.
+
+The values:
 
 - **Jc, Jmin, Jmax**: the junk packets sent before each handshake.
 - **S1 to S4**: the padding on each message type. S2 must not be S1 + 56, and S4 has to fit the link: at most 1440 minus the MTU.

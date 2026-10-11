@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -197,4 +200,172 @@ func AWGPresets() []AWGPreset {
 		// A STUN binding request, what calls and video meetings begin with.
 		{ID: "stun", Value: "<b 0x000100002112a442><r 12>"},
 	}
+}
+
+// The two kinds of profile the panel draws. Modern uses AmneziaWG 1.5 and
+// 2.0: each identifier a range, and a packet before every handshake that
+// looks like another protocol. Classic is the profile every AmneziaWG app
+// has ever read, for devices that cannot be updated.
+const (
+	AWGModern  = "modern"
+	AWGClassic = "classic"
+)
+
+// awgTaken is what the server's other AmneziaWG tunnels already use: the
+// identifiers, the handshake padding and the packets before the handshake.
+// A new profile stays clear of all of it, so no two tunnels on one server
+// look alike -- the second tunnel is usually there because the first was
+// blocked, and one rule must not catch both.
+type awgTaken struct {
+	spans    [][2]uint32
+	pads     map[[2]int]bool
+	specials map[string]bool
+}
+
+func (t awgTaken) overlaps(lo, hi uint32) bool {
+	for _, s := range t.spans {
+		if lo <= s[1] && s[0] <= hi {
+			return true
+		}
+	}
+	return false
+}
+
+// awgTakenOn reads the profiles of every AmneziaWG tunnel on a server but
+// except.
+func (s *Interfaces) awgTakenOn(ctx context.Context, nodeID, except uint) (awgTaken, error) {
+	t := awgTaken{pads: map[[2]int]bool{}, specials: map[string]bool{}}
+	var ifaces []model.Interface
+	q := s.db.WithContext(ctx).Where("node_id = ? AND protocol = ? AND mode = ?", nodeID, model.ProtocolWireGuard, model.ModeAmnezia)
+	if except != 0 {
+		q = q.Where("id <> ?", except)
+	}
+	if err := q.Find(&ifaces).Error; err != nil {
+		return t, fmt.Errorf("service: read AmneziaWG tunnels: %w", err)
+	}
+	for _, f := range ifaces {
+		p := f.AWG.V
+		for n := 1; n <= 4; n++ {
+			lo, hi := p.HeaderRange(n)
+			t.spans = append(t.spans, [2]uint32{lo, hi})
+		}
+		t.pads[[2]int{p.S1, p.S2}] = true
+		if p.I1 != "" {
+			t.specials[p.I1] = true
+		}
+	}
+	return t, nil
+}
+
+// DrawAWG draws a profile for a tunnel on a server: valid as AmneziaWG
+// checks it, sized for the tunnel's MTU, and unlike every other AmneziaWG
+// tunnel there. except is the tunnel being drawn for, when it exists.
+//
+// Sized for a tunnel carrying many: junk and padding are what every
+// handshake and every packet pays for, so they are kept to what disguises
+// the traffic -- a few junk packets of at most 250 bytes, data padding of
+// at most 20 -- and the packet before the handshake is sent once per
+// handshake, every two minutes or so per device.
+func (s *Interfaces) DrawAWG(ctx context.Context, nodeID, except uint, mtu int, level string) (model.AWGParams, error) {
+	if level == "" {
+		level = AWGModern
+	}
+	if level != AWGModern && level != AWGClassic {
+		return model.AWGParams{}, invalidField("awgLevel", "a profile is %q or %q", AWGModern, AWGClassic)
+	}
+	if mtu <= 0 {
+		mtu = 1420
+	}
+	taken, err := s.awgTakenOn(ctx, nodeID, except)
+	if err != nil {
+		return model.AWGParams{}, err
+	}
+	for range 1000 {
+		p := drawAWG(mtu, level, taken)
+		if checkAWG(p, mtu) == nil {
+			return p, nil
+		}
+	}
+	return model.AWGParams{}, fmt.Errorf("service: no AmneziaWG profile fits MTU %d beside this server's other tunnels", mtu)
+}
+
+// DrawAWGFor is DrawAWG for the form: node 0 is this server.
+func (s *Interfaces) DrawAWGFor(ctx context.Context, nodeID, except uint, mtu int, level string) (model.AWGParams, error) {
+	node, err := s.resolveNode(ctx, nodeID)
+	if err != nil {
+		return model.AWGParams{}, err
+	}
+	if level == AWGModern && node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
+		level = AWGClassic
+	}
+	return s.DrawAWG(ctx, node.ID, except, mtu, level)
+}
+
+func drawAWG(mtu int, level string, taken awgTaken) model.AWGParams {
+	p := NewAWGParams()
+	for taken.pads[[2]int{p.S1, p.S2}] {
+		q := NewAWGParams()
+		p.S1, p.S2 = q.S1, q.S2
+	}
+	if m := awgMaxS4(mtu); p.S4 > m {
+		p.S4 = m
+	}
+	// A width of 2^18 to 2^22 values per identifier: wide enough that no
+	// value repeats often enough to be a signature, narrow enough that four
+	// of them, and every other tunnel's, fit apart many times over.
+	var own awgTaken
+	own.spans = append(own.spans, taken.spans...)
+	ids := [4]*uint32{&p.H1, &p.H2, &p.H3, &p.H4}
+	maxes := [4]*uint32{&p.H1Max, &p.H2Max, &p.H3Max, &p.H4Max}
+	for i := range ids {
+		for {
+			var lo, hi uint32
+			if level == AWGModern {
+				width := uint32(randBetween(1<<18, 1<<22))
+				lo = uint32(randBetween(5, int(^uint32(0)-width)))
+				hi = lo + width
+			} else {
+				lo = uint32(randBetween(5, int(^uint32(0))))
+				hi = lo
+			}
+			if own.overlaps(lo, hi) {
+				continue
+			}
+			own.spans = append(own.spans, [2]uint32{lo, hi})
+			*ids[i] = lo
+			if hi > lo {
+				*maxes[i] = hi
+			} else {
+				*maxes[i] = 0
+			}
+			break
+		}
+	}
+	if level == AWGModern {
+		presets := AWGPresets()
+		var free []AWGPreset
+		for _, pr := range presets {
+			if !taken.specials[pr.Value] {
+				free = append(free, pr)
+			}
+		}
+		if len(free) == 0 {
+			free = presets
+		}
+		p.I1 = free[randBetween(0, len(free)-1)].Value
+	}
+	return p
+}
+
+// randBetween is a number from lo to hi, both included, from the kernel's
+// randomness.
+func randBetween(lo, hi int) int {
+	if hi <= lo {
+		return lo
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(hi-lo)+1))
+	if err != nil {
+		return lo
+	}
+	return lo + int(n.Int64())
 }
