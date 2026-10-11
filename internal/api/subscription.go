@@ -210,8 +210,12 @@ func (s *Server) handleRotateSubscription(w http.ResponseWriter, r *http.Request
 func (s *Server) SubscriptionRouter(next http.Handler, own bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only GET and HEAD. A subscription is a read, and answering a POST
-		// here would give a cross-site form somewhere a way to reach it.
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		// here would give a cross-site form somewhere a way to reach it. The
+		// one POST is the page's copy button asking for a withheld sign-in,
+		// which no form can send: it has to carry a header of its own and a
+		// JSON body, and come from the page's own origin (subreveal.go).
+		reveal := r.Method == http.MethodPost && r.URL.Query().Get("view") == "reveal"
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !reveal {
 			next.ServeHTTP(w, r)
 			return
 		}

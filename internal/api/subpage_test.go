@@ -360,11 +360,16 @@ func TestSubPageShowsAnL2TPSignIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := buf.String()
-	for _, want := range []string{`data-i="l2tpConfig"`, `tag tag-config purple`, `s1-ali`,
+	for _, want := range []string{`data-i="l2tpConfig"`, `tag tag-config purple`,
 		`L2TP/IPsec sign-in`, `ورود L2TP/IPsec`, `class="cfg cfg-group open"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the page is missing %s", want)
 		}
+	}
+	// The sign-in is not on the line, and the line's whole text -- which
+	// carries it -- has no copy button.
+	if strings.Contains(html, "s1-ali") || strings.Contains(html, "Server: vpn.example.com") {
+		t.Error("an L2TP sign-in is in the page")
 	}
 	// L2TP is built into the device: a plan that is only L2TP is offered
 	// no app at all, and opens on its sign-in rather than a folded row.
@@ -414,10 +419,13 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 		t.Fatalf("selected %v, want ios", selected)
 	}
 	for _, want := range []string{
-		`<option value="ios" selected data-i="dg.ios">iPhone / iPad</option>`,
+		`<option value="ios" selected data-i="dg.ios" data-en="iPhone / iPad">iPhone / iPad</option>`,
+		`class="guide-select setup-search"`, `data-i-ph="dgSearch"`, `data-i="dgNoMatch"`,
 		`data-device="ios" data-file="0" data-protocol="l2tp"`, `data-device="ios" data-file="1" data-protocol="wireguard"`,
 		`data-device="tplink-ax53" data-file="1" data-protocol="wireguard"`, `<dt dir="ltr">Import from Config File</dt>`,
-		`<dt dir="ltr">Secret</dt>`, `data-text="SharedKey123"`, `data-text="Secret11"`, `data-others="b.example.com"`,
+		`<dt dir="ltr">Secret</dt>`, `data-ref="1.0" data-secret="psk"`, `data-ref="1.0" data-secret="password"`,
+		`data-ref="1.0" data-secret="username"`, `data-secret="cmd" data-device="mikrotik" data-protocol="l2tp"`,
+		`<code dir="ltr" class="secret">` + devguide.Mask + `</code>`, `data-others="b.example.com"`,
 		`wui.sub.device`, `data-i="dgSetup"`, `class="cfg-user open"`, `<dt>Pre-shared key</dt>`,
 	} {
 		if !strings.Contains(html, want) {
@@ -426,6 +434,17 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 	}
 	if strings.Contains(html, `data-protocol="l2tp-plain"`) {
 		t.Error("L2TP without IPsec is offered on a tunnel that refuses it")
+	}
+	// The sign-in itself is nowhere in what the page sends: not in a field,
+	// not on a copy button, not in a command. Whatever reads the page finds
+	// the mask. WireGuard's file is the page's to show, for its app.
+	for _, secret := range []string{"SharedKey123", "Secret11", "s1-ali"} {
+		if strings.Contains(html, secret) {
+			t.Errorf("%s is in the page", secret)
+		}
+	}
+	if !strings.Contains(html, `ipsec-secret=`+devguide.Mask) && !strings.Contains(html, devguide.Mask) {
+		t.Error("the commands do not show the mask")
 	}
 	// Its words are in the page's Persian dictionary.
 	if !strings.Contains(string(v.Strings), "dg.android12") || !strings.Contains(string(v.Strings), "دستگاه شما") {

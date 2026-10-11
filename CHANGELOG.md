@@ -14,6 +14,13 @@ All notable changes to W-UI are recorded here. The format follows
   first start, the log of earlier releases is read back into it: the holds
   they logged, and files they logged connecting from three or more places
   inside ten minutes.
+- **L2TP and PPTP sign-ins are kept off the customer's page.** The
+  username, password and key show as a mask, and each copy button fetches
+  its value on the click -- from the page alone, counted and logged -- and
+  puts it on the clipboard without writing it into the page. What anyone
+  holding the link fetches (raw, download, archive) carries the mask too.
+- **Search in the device list** of the customer's page, by name, brand or
+  model, in English or Persian.
 - **PPTP**, as a tunnel of its own, for routers and modems that have
   nothing else: off until made, one per server on TCP 1723, MS-CHAPv2 and
   128-bit MPPE required, and said to be weak wherever it is offered.

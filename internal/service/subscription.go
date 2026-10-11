@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
@@ -520,10 +521,25 @@ func (s *Subscriptions) nodesOverAllowance(ctx context.Context) (map[uint]bool, 
 type RenderedDevice struct {
 	Account model.Account
 	Profile backend.ClientProfile
+	// Withheld is, for an L2TP or PPTP file, its text without the sign-in:
+	// what the link and a one-file download hand out, since anyone holding
+	// the link can fetch those. The customer's page has the sign-in, and
+	// shows it only on a click. Nil for every other protocol.
+	Withheld []byte
 	// Host is the endpoint this entry was written for; nil for the
 	// interface's own. A device on an interface with three hosts renders
 	// three times, once per host, as the classic panel fans its links out.
 	Host *model.Host
+}
+
+// Served is what the link and a one-file download hand out for this device:
+// its file, or for L2TP and PPTP the text without the sign-in.
+func (d RenderedDevice) Served() backend.ClientProfile {
+	p := d.Profile
+	if d.Withheld != nil {
+		p.Body = d.Withheld
+	}
+	return p
 }
 
 // renderDevices produces a configuration for every device that has a working
@@ -570,7 +586,11 @@ func (s *Subscriptions) renderDevicesFor(
 				continue
 			}
 			profile.Filename = variantFilename(clientFilename(c.Name, acc.DeviceName, profile.Filename, single), v)
-			out = append(out, RenderedDevice{Account: acc, Profile: profile, Host: v.Host})
+			rd := RenderedDevice{Account: acc, Profile: profile, Host: v.Host}
+			if iface.Protocol.IsPPP() {
+				rd.Withheld = []byte(l2tpdriver.WithheldProfile(&acc, &at))
+			}
+			out = append(out, rd)
 		}
 	}
 
@@ -926,14 +946,16 @@ func (s *Subscriptions) DeviceConfig(
 			continue
 		}
 		if hostID == 0 && r.Host == nil || r.Host != nil && r.Host.ID == hostID {
-			return &r.Profile, nil
+			p := r.Served()
+			return &p, nil
 		}
 	}
 	// A host that was asked for but is not on this device: the first
 	// rendering is still the right file for the device.
 	for i := range rendered {
 		if rendered[i].Account.ID == deviceID {
-			return &rendered[i].Profile, nil
+			p := rendered[i].Served()
+			return &p, nil
 		}
 	}
 	return nil, fmt.Errorf("%w: no such device on this subscription", ErrNotFound)
@@ -969,7 +991,7 @@ func bundleParts(rendered []RenderedDevice, byID map[uint]model.Interface, forma
 	all := make([]backend.ClientProfile, 0, len(rendered))
 	importable := make([]backend.ClientProfile, 0, len(rendered))
 	for _, d := range rendered {
-		all = append(all, d.Profile)
+		all = append(all, d.Served())
 		if !byID[d.Account.InterfaceID].Protocol.IsPPP() {
 			importable = append(importable, d.Profile)
 		}

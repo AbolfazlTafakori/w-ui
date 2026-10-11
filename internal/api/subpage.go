@@ -41,9 +41,12 @@ var subLogoPNG []byte
 var subLogo = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(subLogoPNG))
 
 type subPageView struct {
-	Logo    template.URL
-	Page    *service.SubPage
-	Nonce   string
+	Logo  template.URL
+	Page  *service.SubPage
+	Nonce string
+	// Reveal is the mark the page's copy buttons send for an L2TP or PPTP
+	// sign-in, which the page itself never carries (subreveal.go).
+	Reveal  string
 	SubID   string
 	Devices []subPageDevice
 	// Groups is the files by tunnel: a plan for one shows one row per
@@ -94,7 +97,12 @@ type subPageDevice struct {
 	// own template, which cannot reach the page's.
 	SignIn   []devguide.Row
 	CopyIcon template.HTML
-	QR       template.URL
+	// Ref names this file to the copy buttons: "ID.HostID".
+	Ref string
+	// PPP is an L2TP or PPTP file, whose text carries the sign-in: the page
+	// never shows or copies that text, whatever else it has to show.
+	PPP bool
+	QR  template.URL
 	// Row is what the user's line is called inside a tunnel's menu: the
 	// customer's own name for a plan of one, "User n" for a plan of
 	// several, a file's own name when it was given one.
@@ -111,6 +119,11 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 	view := strings.ToLower(r.URL.Query().Get("view"))
 	if view == "raw" || r.URL.Query().Get("format") != "" {
 		return false
+	}
+	// A copy button asking for one L2TP or PPTP sign-in value.
+	if view == "reveal" {
+		s.serveSubReveal(w, r, token)
+		return true
 	}
 	// The stream a page holds open to be told the moment something changed.
 	// Only for a link that exists, which the caller has already checked.
@@ -151,6 +164,9 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 // nobody in particular. userAgent picks the device an L2TP sign-in opens on.
 func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, token string, preview bool, userAgent string) {
 	v := newSubView(page, token, preview, userAgent)
+	if !preview && v.HasL2TP {
+		v.Reveal = s.reveals.issue(token, time.Now())
+	}
 
 	var buf bytes.Buffer
 	if err := subPageTemplate.Execute(&buf, v); err != nil {
@@ -177,6 +193,8 @@ func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, tok
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
+	// A customer's page is theirs alone: no index, no archive, no preview.
+	h.Set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
 }
@@ -314,6 +332,8 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
 		ppp := d.Protocol == "l2tp" || d.Protocol == "pptp"
+		entry.Ref = fileRef(d)
+		entry.PPP = ppp
 		if d.Guide != nil && ppp {
 			entry.SignIn = l2tpSignIn(*d.Guide)
 			entry.CopyIcon = v.Icons["CopyOutlined"]
@@ -352,8 +372,14 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 // subPageL2TPStrings are added only to a page with an L2TP sign-in on it, so
 // that every other customer's page is, to the byte, what it was before L2TP.
 var subPageL2TPStrings = map[string]map[string]string{
-	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN"},
-	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN"},
+	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN",
+		"revealExpired": "This page has been open a while: reload it, then copy again.",
+		"revealBusy":    "Too many copies in a row: wait a minute.",
+		"revealFailed":  "Could not copy it; try again."},
+	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN",
+		"revealExpired": "این صفحه مدتی باز مانده: یک بار تازه‌اش کنید و دوباره کپی کنید.",
+		"revealBusy":    "کپی‌های پشت سر هم زیاد شد: یک دقیقه صبر کنید.",
+		"revealFailed":  "کپی نشد؛ دوباره امتحان کنید."},
 }
 
 // pageStrings is the dictionary a page is given: the guides' words on a page
@@ -389,13 +415,31 @@ func pageStrings(l2tp, setup bool) map[string]map[string]string {
 // l2tpSignIn is an L2TP file's own four values, for its row.
 func l2tpSignIn(v devguide.Values) []devguide.Row {
 	rows := []devguide.Row{{Label: "Server", Value: v.Server, Copy: true}}
-	// PPTP has no key of its own: the sign-in is all there is.
+	// PPTP has no key of its own: the sign-in is all there is. The rest is
+	// masked: the page copies it on a click, and never carries it.
 	if v.PSK != "" {
-		rows = append(rows, devguide.Row{Label: "Pre-shared key", Value: v.PSK, Copy: true})
+		rows = append(rows, devguide.Row{Label: "Pre-shared key", Value: devguide.Mask, Copy: true, Secret: devguide.SecretPSK})
 	}
 	return append(rows,
-		devguide.Row{Label: "Username", Value: v.Username, Copy: true},
-		devguide.Row{Label: "Password", Value: v.Password, Copy: true})
+		devguide.Row{Label: "Username", Value: devguide.Mask, Copy: true, Secret: devguide.SecretUsername},
+		devguide.Row{Label: "Password", Value: devguide.Mask, Copy: true, Secret: devguide.SecretPassword})
+}
+
+// fileRef names a file to the copy buttons.
+func fileRef(d service.SubPageDevice) string {
+	return strconv.FormatUint(uint64(d.ID), 10) + "." + strconv.FormatUint(uint64(d.HostID), 10)
+}
+
+// maskRows replaces every withheld value with the mask.
+func maskRows(rows []devguide.Row) []devguide.Row {
+	out := make([]devguide.Row, len(rows))
+	for i, r := range rows {
+		if r.Secret != "" {
+			r.Value = devguide.Mask
+		}
+		out[i] = r
+	}
+	return out
 }
 
 // setupCard is the device picker and every guide it can show.
@@ -433,8 +477,13 @@ type setupFile struct {
 
 // setupView is one device's guide for one file.
 type setupView struct {
-	Device   string
-	File     int
+	Device string
+	File   int
+	// Ref names the file to the copy buttons; Secret marks a view whose
+	// command carries the sign-in, so it is shown masked and copied on a
+	// click.
+	Ref      string
+	Secret   bool
 	Protocol string
 	Weak     bool
 	Path     string
@@ -479,9 +528,20 @@ func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) 
 			}
 			card.Files = append(card.Files, f)
 		}
-		for _, view := range devguide.Views(*d.Guide) {
-			sv := setupView{Device: view.Device, File: i, Protocol: string(view.Protocol), Weak: view.Weak,
-				Path: view.Path, Rows: view.Rows, Command: view.Command}
+		views := devguide.Views(*d.Guide)
+		// A sign-in the page withholds is withheld from the commands too:
+		// they are shown as the masked values make them.
+		var masked []devguide.View
+		if ppp := devguide.Protocol(d.Guide.Protocol).IsPPP(); ppp {
+			masked = devguide.Views(d.Guide.Masked())
+		}
+		for n, view := range views {
+			sv := setupView{Device: view.Device, File: i, Ref: fileRef(d.SubPageDevice), Protocol: string(view.Protocol), Weak: view.Weak,
+				Path: view.Path, Rows: maskRows(view.Rows), Command: view.Command}
+			if masked != nil && n < len(masked) && masked[n].Device == view.Device && masked[n].Protocol == view.Protocol &&
+				masked[n].Command != view.Command {
+				sv.Command, sv.Secret = masked[n].Command, true
+			}
 			for n, note := range view.Notes {
 				sv.Notes = append(sv.Notes, guideNote{Key: devguide.NoteKey(view.Device, view.Protocol, n), Text: note.EN})
 			}
@@ -527,7 +587,9 @@ func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) 
 // setupTemplate is the card: the two pickers, and every guide, one shown.
 const setupTemplate = `{{ $icon := .CopyIcon }}<div class="setup">
 <label class="guide-pick"><span data-i="dgDevice">Your device</span>
-<select class="guide-select setup-device" dir="ltr">{{ range .Devices }}{{ if .Head }}<option disabled data-i="{{ .Head }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}">{{ .Name }}</option>{{ end }}</select>
+<span class="setup-search-box"><input type="search" class="guide-select setup-search" dir="auto" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search for your device or router" data-i-ph="dgSearch" aria-label="Search for your device or router"><span class="setup-search-count" aria-live="polite"></span></span>
+<select class="guide-select setup-device" dir="ltr">{{ range .Devices }}{{ if .Head }}<option disabled data-i="{{ .Head }}" data-en="{{ .HeadText }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}" data-en="{{ .Name }}">{{ .Name }}</option>{{ end }}</select>
+<span class="guide-note setup-search-none" data-i="dgNoMatch" hidden>No device matches; the full list is below.</span>
 </label>
 <label class="guide-pick setup-file-pick"><span data-i="dgProtocol">Connection</span>
 <select class="guide-select setup-file"></select>
@@ -535,17 +597,17 @@ const setupTemplate = `{{ $icon := .CopyIcon }}<div class="setup">
 <div class="setup-files" hidden>{{ range .Files }}<span data-file="{{ .Index }}" data-protocol="{{ .ProtocolKey }}" data-key="{{ .Key }}" data-suffix="{{ .Suffix }}" data-others="{{ .Others }}">{{ .Name }}</span>{{ end }}</div>
 <div class="guide-others" hidden><span data-i="dgOthers">If it does not answer, use instead</span>: <span class="others" dir="ltr"></span></div>
 {{ range .Devices }}<div class="setup-device-notes" data-device="{{ .ID }}" hidden>{{ range .Notes }}<p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Supports }}<div class="setup-none"><p class="guide-note" data-i="dgNoneOfPlan">This device can dial none of the connections on your plan. It can dial:</p><p class="guide-note setup-supports">{{ range $i, $p := .Supports }}{{ if $i }} · {{ end }}<span data-i="{{ $p.Key }}">{{ $p.Name }}</span>{{ end }}</p></div>{{ end }}</div>{{ end }}
-{{ range .Views }}<div class="guide" data-device="{{ .Device }}" data-file="{{ .File }}" data-protocol="{{ .Protocol }}" hidden>{{ if .Weak }}
+{{ range .Views }}{{ $ref := .Ref }}<div class="guide" data-device="{{ .Device }}" data-file="{{ .File }}" data-protocol="{{ .Protocol }}" hidden>{{ if .Weak }}
 <p class="guide-warn" data-i="dgWeak">This connection is not encrypted, or only with a cipher long since broken. Use it only where nothing else will do.</p>{{ end }}{{ if .Path }}
 <div class="guide-path" dir="ltr">{{ .Path }}</div>{{ end }}{{ if .Rows }}
-<dl class="guide-fields">{{ range .Rows }}<div class="guide-row"><dt dir="ltr">{{ .Label }}</dt><dd>{{ if .Key }}<span data-i="{{ .Key }}">{{ .Value }}</span>{{ else }}<code dir="ltr">{{ .Value }}</code>{{ end }}{{ if .Copy }}<button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button>{{ end }}</dd></div>{{ end }}</dl>{{ end }}{{ range .Notes }}
+<dl class="guide-fields">{{ range .Rows }}<div class="guide-row"><dt dir="ltr">{{ .Label }}</dt><dd>{{ if .Key }}<span data-i="{{ .Key }}">{{ .Value }}</span>{{ else if .Secret }}<code dir="ltr" class="secret">{{ .Value }}</code>{{ else }}<code dir="ltr">{{ .Value }}</code>{{ end }}{{ if .Secret }}<button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="{{ .Secret }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button>{{ else if .Copy }}<button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button>{{ end }}</dd></div>{{ end }}</dl>{{ end }}{{ range .Notes }}
 <p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Command }}
-<div class="guide-cmd"><code dir="ltr">{{ .Command }}</code><button class="btn sm copy" type="button" data-text="{{ .Command }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button></div>{{ end }}
+<div class="guide-cmd"><code dir="ltr">{{ .Command }}</code>{{ if .Secret }}<button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="cmd" data-device="{{ .Device }}" data-protocol="{{ .Protocol }}" data-i-title="copy">{{ else }}<button class="btn sm copy" type="button" data-text="{{ .Command }}" data-i-title="copy">{{ end }}<span class="anticon">{{ $icon }}</span></button></div>{{ end }}
 </div>{{ end }}
 </div>`
 
 // signInTemplate is an L2TP row's four values.
-const signInTemplate = `{{ $icon := .CopyIcon }}<dl class="guide-fields">{{ range .SignIn }}<div class="guide-row"><dt>{{ .Label }}</dt><dd><code dir="ltr">{{ .Value }}</code><button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button></dd></div>{{ end }}</dl>`
+const signInTemplate = `{{ $icon := .CopyIcon }}{{ $ref := .Ref }}<dl class="guide-fields">{{ range .SignIn }}<div class="guide-row"><dt>{{ .Label }}</dt><dd>{{ if .Secret }}<code dir="ltr" class="secret">{{ .Value }}</code><button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="{{ .Secret }}" data-i-title="copy">{{ else }}<code dir="ltr">{{ .Value }}</code><button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy">{{ end }}<span class="anticon">{{ $icon }}</span></button></dd></div>{{ end }}</dl>`
 
 // Both are templates of the page's own, added before it is ever run.
 var (
@@ -1190,6 +1252,12 @@ a.row-title:hover { text-decoration: underline; }
 .guide-cmd code { flex: 1; font-size: 12px; }
 .guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
 .setup-device-notes { display: grid; gap: 6px; }
+.setup-search-box { position: relative; display: block; margin-bottom: 6px; }
+.setup-search-box .setup-search { padding-inline-end: 64px; }
+.setup-search-count { position: absolute; inset-inline-end: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); pointer-events: none; }
+.setup-search-none { display: block; margin-top: 6px; }
+.setup-search-none[hidden] { display: none; }
+code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
 {{ end }}</style>
 </head>
 <body>
@@ -1338,16 +1406,16 @@ a.row-title:hover { text-decoration: underline; }
             {{ range .Devices }}
             <div class="cfg-user{{ if .SignIn }} open{{ end }}">
               <div class="cfg-user-head">
-                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (or (eq .Protocol "openvpn") (eq .Protocol "l2tp") (eq .Protocol "pptp")) .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
+                <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (eq .Protocol "openvpn") .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
-                  <button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
+                  {{ if not .PPP }}<button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>{{ end }}
                   <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
                   {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
                   <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ .Label }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body">{{ if .SignIn }}{{ template "signIn" . }}{{ else }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
+              <div class="cfg-user-body">{{ if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
             </div>
             {{ end }}
           </div>
@@ -1416,6 +1484,7 @@ a.row-title:hover { text-decoration: underline; }
     html.setAttribute('lang', l);
     $('[data-i]').forEach(function (el) { var k = el.getAttribute('data-i'); if (d[k]) el.textContent = d[k]; });
     $('[data-i-title]').forEach(function (el) { var k = el.getAttribute('data-i-title'); if (d[k]) { el.title = d[k]; el.setAttribute('aria-label', d[k]); } });
+    $('[data-i-ph]').forEach(function (el) { var k = el.getAttribute('data-i-ph'); if (d[k]) { el.placeholder = d[k]; el.setAttribute('aria-label', d[k]); } });
     $('#menu-lang button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === l); });
     try { localStorage.setItem('wui.sub.lang', l); } catch (e) {}{{ if .Setup }}
     document.dispatchEvent(new Event('wui:lang'));{{ end }}
@@ -1455,7 +1524,64 @@ a.row-title:hover { text-decoration: underline; }
     var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
     document.body.removeChild(ta); say(ok ? (done || d.copied) : 'Ctrl+C');
   }
-  $('button.copy').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); copyText(b.getAttribute('data-text') || ''); }); });
+  $('button.copy').forEach(function (b) { b.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (b.hasAttribute('data-secret')) { copySecret(b); return; }
+    copyText(b.getAttribute('data-text') || '');
+  }); });
+{{ if .Reveal }}
+  // A withheld sign-in: asked of the server on the click, put on the
+  // clipboard, and dropped. It is never written into the page, so nothing
+  // reading the page finds it. The request is this page's alone: a POST from
+  // its own origin, with a header and a mark another site cannot send.
+  var REVEAL = '{{ .Reveal }}';
+  function revealBody(b) {
+    return JSON.stringify({ mark: REVEAL, ref: b.getAttribute('data-ref'), what: b.getAttribute('data-secret'),
+      device: b.getAttribute('data-device') || '', protocol: b.getAttribute('data-protocol') || '' });
+  }
+  var revealURL = location.pathname + '?view=reveal';
+  function revealSay(status) {
+    var d = S[lang()] || S.en;
+    say(status === 409 ? d.revealExpired : status === 429 ? d.revealBusy : d.revealFailed);
+  }
+  function copySecret(b) {
+    var d = S[lang()] || S.en;
+    if (!(navigator.clipboard && window.isSecureContext)) {
+      // Plain http: the clipboard API is not there, and the old way only
+      // copies inside the click itself, so the value is asked for in it.
+      var x = new XMLHttpRequest();
+      try {
+        x.open('POST', revealURL, false);
+        x.setRequestHeader('Content-Type', 'application/json');
+        x.setRequestHeader('X-Wui-Reveal', '1');
+        x.send(revealBody(b));
+      } catch (e) { revealSay(0); return; }
+      if (x.status !== 200) { revealSay(x.status); return; }
+      var v = ''; try { v = JSON.parse(x.responseText).value || ''; } catch (e) {}
+      fallback(v); v = '';
+      return;
+    }
+    var asked = fetch(revealURL, { method: 'POST', credentials: 'same-origin', cache: 'no-store', referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json', 'X-Wui-Reveal': '1' }, body: revealBody(b) })
+      .then(function (r) { if (!r.ok) { var err = new Error('reveal'); err.status = r.status; throw err; } return r.json(); })
+      .then(function (j) { return j.value || ''; });
+    // Safari copies only inside the click: it is handed the value still on
+    // its way, which it waits for. The others write it once it is here.
+    if (window.ClipboardItem && navigator.clipboard.write) {
+      var item;
+      try { item = new ClipboardItem({ 'text/plain': asked.then(function (v) { return new Blob([v], { type: 'text/plain' }); }) }); } catch (e) { item = null; }
+      if (item) {
+        navigator.clipboard.write([item]).then(function () { say(d.copied); }, function () {
+          asked.then(function (v) { return navigator.clipboard.writeText(v); }).then(function () { say(d.copied); }, function (e) { revealSay(e && e.status); });
+        });
+        return;
+      }
+    }
+    asked.then(function (v) { return navigator.clipboard.writeText(v); }).then(function () { say(d.copied); }, function (e) { revealSay(e && e.status); });
+  }
+{{ else }}
+  function copySecret() {}
+{{ end }}
   var all = [];
   $('.cfg-text').forEach(function (c) { all.push(c.textContent); });
   $('button.copy-all').forEach(function (b) { b.addEventListener('click', function () { copyText(all.join('\n'), (S[lang()] || S.en).copyAllDone); }); });
@@ -1478,6 +1604,61 @@ a.row-title:hover { text-decoration: underline; }
     var pick = box.querySelector('.setup-file-pick'), others = box.querySelector('.guide-others');
     var files = [].slice.call(box.querySelectorAll('.setup-files [data-file]'));
     function word(key, fallback) { var d = window.__wuiDict || {}, l = document.documentElement.lang === 'fa' ? 'fa' : 'en'; return (d[l] && d[l][key]) || fallback; }
+    var search = box.querySelector('.setup-search'), none = box.querySelector('.setup-search-none'), count = box.querySelector('.setup-search-count');
+    var every = [].slice.call(dev.options);
+    // Persian and Arabic letters typed either way, digits either way, and
+    // no case: what a customer types finds what the list says.
+    function norm(t) {
+      return String(t || '').toLowerCase().replace(/\u200c/g, '')
+        .replace(/[\u064a\u0649]/g, '\u06cc').replace(/\u0643/g, '\u06a9')
+        .replace(/[\u06f0-\u06f9]/g, function (c) { return String(c.charCodeAt(0) - 0x6f0); })
+        .replace(/[\u0660-\u0669]/g, function (c) { return String(c.charCodeAt(0) - 0x660); })
+        .replace(/[\s\-_/().]+/g, ' ').trim();
+    }
+    function label(o) { return word(o.getAttribute('data-i'), o.getAttribute('data-en') || o.textContent); }
+    // What a customer types in Persian for a brand or a kind of device, and
+    // the English that is in the names: each device is found by either.
+    var FA = [['tp-link', '\u062a\u06cc\u200c\u067e\u06cc\u200c\u0644\u06cc\u0646\u06a9 \u062a\u06cc \u067e\u06cc \u0644\u06cc\u0646\u06a9 \u062a\u06cc\u067e\u06cc\u0644\u06cc\u0646\u06a9'],
+      ['mikrotik', '\u0645\u06cc\u06a9\u0631\u0648\u062a\u06cc\u06a9'], ['xiaomi', '\u0634\u06cc\u0627\u0626\u0648\u0645\u06cc \u0634\u06cc\u0627\u0648\u0645\u06cc \u0634\u06cc\u0627\u0645\u06cc'],
+      ['d-link', '\u062f\u06cc\u200c\u0644\u06cc\u0646\u06a9 \u062f\u06cc \u0644\u06cc\u0646\u06a9 \u062f\u06cc\u0644\u06cc\u0646\u06a9'], ['huawei', '\u0647\u0648\u0627\u0648\u06cc'],
+      ['irancell', '\u0627\u06cc\u0631\u0627\u0646\u0633\u0644'], ['zte', '\u0632\u062f\u062a\u06cc\u0627\u06cc \u0632\u062f\u200c\u062a\u06cc\u200c\u0627\u06cc'],
+      ['iphone', '\u0622\u06cc\u0641\u0648\u0646 \u0627\u06cc\u0641\u0648\u0646'], ['ipad', '\u0622\u06cc\u067e\u062f \u0627\u06cc\u067e\u062f'],
+      ['android', '\u0627\u0646\u062f\u0631\u0648\u06cc\u062f'], ['windows', '\u0648\u06cc\u0646\u062f\u0648\u0632'], ['macos', '\u0645\u06a9 \u0645\u06a9\u200c\u0628\u0648\u06a9'],
+      ['linux', '\u0644\u06cc\u0646\u0648\u06a9\u0633'], ['cisco', '\u0633\u06cc\u0633\u06a9\u0648'], ['keenetic', '\u06a9\u06cc\u0646\u062a\u06cc\u06a9'],
+      ['mercusys', '\u0645\u0631\u06a9\u0648\u0633\u06cc\u0633'], ['tenda', '\u062a\u0646\u062f\u0627'], ['netis', '\u0646\u062a\u06cc\u0633'],
+      ['totolink', '\u062a\u0648\u062a\u0648\u0644\u06cc\u0646\u06a9'], ['ubiquiti', '\u06cc\u0648\u0628\u06cc\u06a9\u06cc\u0648\u062a\u06cc \u06cc\u0648\u0628\u06cc\u06a9\u0648\u06cc\u062a\u06cc'],
+      ['omada', '\u0627\u0648\u0645\u0627\u062f\u0627'], ['draytek', '\u062f\u0631\u0627\u06cc\u062a\u06a9'], ['archer', '\u0622\u0631\u0686\u0631 \u0627\u0631\u0686\u0631'],
+      ['extender', '\u062a\u0642\u0648\u06cc\u062a \u06a9\u0646\u0646\u062f\u0647 \u0631\u06cc\u067e\u06cc\u062a\u0631'], ['4g', '\u0633\u06cc\u0645\u200c\u06a9\u0627\u0631\u062a\u06cc \u0633\u06cc\u0645 \u06a9\u0627\u0631\u062a\u06cc'],
+      ['modem', '\u0645\u0648\u062f\u0645'], ['router', '\u0631\u0648\u062a\u0631']];
+    function aliases(en) {
+      var e = norm(en), out = '';
+      FA.forEach(function (p) { if (e.indexOf(norm(p[0])) >= 0) out += ' ' + norm(p[1]); });
+      return out;
+    }
+    function filter() {
+      var q = norm(search.value), keep = [], head = null, headKept = false, n = 0;
+      every.forEach(function (o) {
+        o.textContent = label(o);
+        if (o.disabled) { head = o; headKept = false; return; }
+        var hay = o._hay || (o._hay = norm(o.getAttribute('data-en')) + ' ' + norm(o.value) + aliases(o.getAttribute('data-en') + ' ' + o.value));
+        var hit = !q || q.split(' ').every(function (w) { return (hay + ' ' + norm(o.textContent)).indexOf(w) >= 0; });
+        if (!hit) return;
+        if (head && !headKept) { keep.push(head); headKept = true; }
+        keep.push(o); n++;
+      });
+      var empty = q && n === 0;
+      none.hidden = !empty;
+      count.textContent = q && n ? word('dgMatches', '{n} found').replace('{n}', n) : '';
+      var show = empty ? every : keep, was = dev.value;
+      dev.innerHTML = '';
+      show.forEach(function (o) { dev.appendChild(o); });
+      if ([].some.call(dev.options, function (o) { return o.value === was && !o.disabled; })) { dev.value = was; return false; }
+      var first = [].filter.call(dev.options, function (o) { return !o.disabled; })[0];
+      if (first) dev.value = first.value;
+      return true;
+    }
+    search.addEventListener('input', function () { if (filter()) fill(); });
+    search.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); dev.focus(); } });
     function show() {
       var id = dev.value, f = file.value;
       box.querySelectorAll('.guide').forEach(function (g) { g.hidden = !(g.getAttribute('data-device') === id && g.getAttribute('data-file') + '/' + g.getAttribute('data-protocol') === f); });
@@ -1515,7 +1696,7 @@ a.row-title:hover { text-decoration: underline; }
     } catch (e) {}
     dev.addEventListener('change', function () { fill(); try { localStorage.setItem('wui.sub.device', dev.value); } catch (e) {} });
     file.addEventListener('change', show);
-    document.addEventListener('wui:lang', fill);
+    document.addEventListener('wui:lang', function () { filter(); fill(); });
     fill();
   });
 {{ end }}

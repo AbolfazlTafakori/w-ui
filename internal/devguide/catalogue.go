@@ -33,7 +33,10 @@ var words = map[string]Text{
 		EN: "This device can dial none of the connections on your plan. It can dial:",
 		FA: "این دستگاه هیچ‌کدام از اتصال‌های پلن شما را ندارد. این‌ها را دارد:",
 	},
-	"dgOthers": {EN: "If it does not answer, use instead", FA: "اگر جواب نداد، به‌جایش"},
+	"dgOthers":  {EN: "If it does not answer, use instead", FA: "اگر جواب نداد، به‌جایش"},
+	"dgSearch":  {EN: "Search for your device or router", FA: "جستجوی دستگاه یا روتر"},
+	"dgNoMatch": {EN: "No device matches; the full list is below.", FA: "دستگاهی پیدا نشد؛ فهرست کامل پایین است."},
+	"dgMatches": {EN: "{n} found", FA: "پیدا شد: {n}"},
 }
 
 // rosQuote is a value as RouterOS's console reads it back unchanged: quoted,

@@ -238,14 +238,61 @@ type Row struct {
 	Words *Text  `json:"words,omitempty"`
 	// Copy is whether the value is the customer's own, worth a copy button.
 	Copy bool `json:"copy,omitempty"`
+	// Secret names a sign-in value of a PPP connection -- SecretUsername,
+	// SecretPassword or SecretPSK -- which the customer's page never puts in
+	// the page itself: it shows a mask, and copies the value on a click.
+	Secret string `json:"secret,omitempty"`
+}
+
+// The sign-in values a customer's page withholds, by what they are.
+const (
+	SecretUsername = "username"
+	SecretPassword = "password"
+	SecretPSK      = "psk"
+)
+
+// Mask is what a page shows in a withheld value's place.
+const Mask = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+
+// IsPPP reports whether a protocol signs in with a username and password
+// typed into the device: L2TP, with IPsec or without, and PPTP.
+func (p Protocol) IsPPP() bool { return p == L2TP || p == L2TPPlain || p == PPTP }
+
+// Masked is v with its sign-in replaced by Mask, for a command shown on a
+// page that does not show the sign-in itself.
+func (v Values) Masked() Values {
+	v.Username, v.Password = Mask, Mask
+	if v.PSK != "" {
+		v.PSK = Mask
+	}
+	return v
+}
+
+// SecretOf is the value of a withheld field.
+func (v Values) SecretOf(kind string) (string, bool) {
+	switch kind {
+	case SecretUsername:
+		return v.Username, v.Username != ""
+	case SecretPassword:
+		return v.Password, v.Password != ""
+	case SecretPSK:
+		return v.PSK, v.PSK != ""
+	}
+	return "", false
 }
 
 // Rows fills a setup's fields with a customer's values.
 func (s Setup) Rows(v Values) []Row {
 	out := make([]Row, 0, len(s.Fields))
+	ppp := s.Protocol.IsPPP()
 	for _, f := range s.Fields {
 		r := Row{Label: f.Label}
 		own := func(val string) { r.Value, r.Copy = val, true }
+		secret := func(kind string) {
+			if ppp {
+				r.Secret = kind
+			}
+		}
 		switch f.Source {
 		case Fixed:
 			r.Value = f.Value
@@ -260,13 +307,19 @@ func (s Setup) Rows(v Values) []Row {
 			own(strconv.Itoa(v.Port))
 		case Username:
 			own(v.Username)
+			secret(SecretUsername)
 		case Password:
 			own(v.Password)
+			secret(SecretPassword)
 		case PSK:
 			own(v.PSK)
+			secret(SecretPSK)
 		case TunnelPassword:
-			if l2tpconf.TunnelSecretUsable(v.PSK) {
+			// A masked key stands for one that is usable: it is masked only
+			// where the real one would have been shown.
+			if v.PSK == Mask || l2tpconf.TunnelSecretUsable(v.PSK) {
 				own(v.PSK)
+				secret(SecretPSK)
 			} else {
 				r.Key = keyEmpty
 			}
@@ -434,6 +487,15 @@ var ProtocolNames = map[Protocol]Text{
 // PlainText is an L2TP or PPTP sign-in as a file, for the download and the
 // Telegram bot: the sign-in, then every device that dials it, filled in, in
 // English.
+// WithheldText is PlainText without the sign-in, for where anyone holding
+// the link -- an app, a script, a download -- reads it rather than the
+// customer: the username, password and key are on the customer's page, which
+// shows them only on a click.
+func WithheldText(v Values) string {
+	return "-- The username, password and key are not in this file. Open this link in a browser\n" +
+		"-- and copy them from your page there.\n\n" + PlainText(v.Masked())
+}
+
 func PlainText(v Values) string {
 	var b strings.Builder
 	pptp := v.Protocol == "pptp"

@@ -64,6 +64,7 @@ type Server struct {
 	router         *routing.Applier
 	subs           *service.Subscriptions
 	subMiss        *subMisses
+	reveals        *subReveals
 	subHub         *subHub
 	totpMu         sync.Mutex
 	totpUsed       map[uint]usedCode
@@ -159,6 +160,7 @@ func New(o Options) *Server {
 		router:    o.Router,
 		subs:      o.Subs,
 		subMiss:   newSubMisses(),
+		reveals:   newSubReveals(),
 		subHub:    newSubHub(),
 		obSubs:    service.NewOutboundSubs(o.DB, o.Outbounds, o.Logger),
 		balancers: service.NewBalancers(o.DB, o.Logger),

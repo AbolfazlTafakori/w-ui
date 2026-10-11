@@ -48,6 +48,12 @@ func Profile(acc *model.Account, iface *model.Interface) string {
 	return devguide.PlainText(GuideValues(acc, iface))
 }
 
+// WithheldProfile is Profile without the sign-in, for what the subscription
+// link hands to whoever fetches it rather than to the customer's page.
+func WithheldProfile(acc *model.Account, iface *model.Interface) string {
+	return devguide.WithheldText(GuideValues(acc, iface))
+}
+
 // GuideValues are a customer's own values for the device guides: the
 // tunnel's addresses and key, and this device's sign-in.
 func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
