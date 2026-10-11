@@ -80,10 +80,13 @@ type subPageView struct {
 	SubQR      template.URL
 	Strings    template.JS // the two dictionaries, for the language button
 	// Setup is the card that sets up a device: the customer's device, then
-	// the connection of their plan it can dial, and that device's fields.
-	Setup *setupCard
-	Lang  string
-	Icons map[string]template.HTML
+	// the connection of their plan it can dial, and that device's fields --
+	// for WireGuard and OpenVPN; an L2TP or PPTP block has its own (subGroup).
+	// AnySetup is whether the page has a card anywhere.
+	Setup    *setupCard
+	AnySetup bool
+	Lang     string
+	Icons    map[string]template.HTML
 	// Template is the look, one of service.SubTemplates; Preview marks a
 	// page rendered from sample figures for the settings page.
 	Template string
@@ -358,11 +361,25 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	v.Groups = groupDevices(v.Devices, page.Name)
 	v.Usage = usageTable(v.Devices, page.Name)
-	v.Setup = newSetupCard(v.Devices, devguide.Detect(userAgent), v.Icons["CopyOutlined"])
+	detected := devguide.Detect(userAgent)
+	var rest []subPageDevice
+	for _, d := range v.Devices {
+		if !d.PPP {
+			rest = append(rest, d)
+		}
+	}
+	v.Setup = newSetupCard(rest, detected, v.Icons["CopyOutlined"])
+	v.AnySetup = v.Setup != nil
+	for i := range v.Groups {
+		if g := &v.Groups[i]; len(g.Devices) > 0 && g.Devices[0].PPP {
+			g.Setup = newSetupCard(g.Devices, detected, v.Icons["CopyOutlined"])
+			v.AnySetup = v.AnySetup || g.Setup != nil
+		}
+	}
 	if page.FilesSince != nil {
 		v.UsageSince = page.FilesSince.Local().Format("2006-01-02 15:04")
 	}
-	dict, _ := json.Marshal(pageStrings(v.HasL2TP, v.Setup != nil))
+	dict, _ := json.Marshal(pageStrings(v.HasL2TP, v.AnySetup))
 	v.Strings = template.JS(dict)
 	return v
 }
@@ -587,9 +604,7 @@ func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) 
 // setupTemplate is the card: the two pickers, and every guide, one shown.
 const setupTemplate = `{{ $icon := .CopyIcon }}<div class="setup">
 <label class="guide-pick"><span data-i="dgDevice">Your device</span>
-<span class="setup-search-box"><input type="search" class="guide-select setup-search" dir="auto" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search for your device or router" data-i-ph="dgSearch" aria-label="Search for your device or router"><span class="setup-search-count" aria-live="polite"></span></span>
 <select class="guide-select setup-device" dir="ltr">{{ range .Devices }}{{ if .Head }}<option disabled data-i="{{ .Head }}" data-en="{{ .HeadText }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}" data-en="{{ .Name }}">{{ .Name }}</option>{{ end }}</select>
-<span class="guide-note setup-search-none" data-i="dgNoMatch" hidden>No device matches; the full list is below.</span>
 </label>
 <label class="guide-pick setup-file-pick"><span data-i="dgProtocol">Connection</span>
 <select class="guide-select setup-file"></select>
@@ -1233,7 +1248,7 @@ a.row-title:hover { text-decoration: underline; }
 @media (max-width: 480px) { .card-title .tag { display: none; } .card-head { font-size: 15px; } }
 {{ if .HasL2TP }}.usage-dot.purple { background: var(--tag-purple-ink); }
 .menu .menu-note { display: block; padding: 5px 12px; color: var(--ink); font-size: 13px; line-height: 20px; opacity: .75; }
-{{ end }}{{ if .Setup }}.setup-card { padding: 14px; }
+{{ end }}{{ if .AnySetup }}.setup-card { padding: 14px; }
 .setup { display: grid; gap: 10px; }
 .guide-pick { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .guide-select { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; }
@@ -1252,11 +1267,29 @@ a.row-title:hover { text-decoration: underline; }
 .guide-cmd code { flex: 1; font-size: 12px; }
 .guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
 .setup-device-notes { display: grid; gap: 6px; }
-.setup-search-box { position: relative; display: block; margin-bottom: 6px; }
-.setup-search-box .setup-search { padding-inline-end: 64px; }
-.setup-search-count { position: absolute; inset-inline-end: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); pointer-events: none; }
-.setup-search-none { display: block; margin-top: 6px; }
-.setup-search-none[hidden] { display: none; }
+.cfg-setup { margin: 4px 16px 6px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.cfg-setup-title { margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+.dsel { position: relative; }
+.dsel-btn { display: flex; align-items: center; gap: 8px; text-align: start; cursor: pointer; }
+.dsel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsel-caret { width: 7px; height: 7px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); transition: transform .2s; flex: none; }
+.dsel.open .dsel-caret { transform: translateY(2px) rotate(-135deg); }
+.dsel.open .dsel-btn { border-color: var(--accent); }
+.dsel-pop { position: absolute; z-index: 40; inset-inline: 0; top: calc(100% + 6px); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 16px 40px -12px rgba(0, 0, 0, .6); }
+.dsel-pop[hidden] { display: none; }
+.dsel-search-box { position: relative; }
+.dsel-search { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; outline: none; }
+.dsel-search:focus { border-color: var(--accent); }
+.dsel-count { display: block; padding: 6px 10px 0; font-size: 12px; color: var(--muted); }
+.dsel-count:empty { display: none; }
+.dsel-list { position: relative; max-height: min(320px, 50vh); margin-top: 6px; overflow-y: auto; overscroll-behavior: contain; }
+.dsel-head { padding: 10px 10px 4px; font-size: 12px; color: var(--muted); }
+.dsel-item { padding: 8px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; direction: ltr; text-align: start; }
+html[lang="fa"] .dsel-item { text-align: right; }
+.dsel-item:hover, .dsel-item.active { background: var(--surface-2); }
+.dsel-item.chosen { color: var(--accent); }
+.dsel-none { padding: 12px 10px; font-size: 13px; color: var(--muted); }
+.dsel-none[hidden] { display: none; }
 code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
 {{ end }}</style>
 </head>
@@ -1418,6 +1451,14 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
               <div class="cfg-user-body">{{ if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}</div>
             </div>
             {{ end }}
+            {{ if .Setup }}
+            <!-- These sign-ins on the customer's own device: pick it, and
+                 its fields are filled in with them. -->
+            <div class="cfg-setup">
+              <div class="cfg-setup-title" data-i="dgSetup">Set up a device</div>
+              {{ template "setup" .Setup }}
+            </div>
+            {{ end }}
           </div>
         </div>
         {{ end }}
@@ -1486,7 +1527,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
     $('[data-i-title]').forEach(function (el) { var k = el.getAttribute('data-i-title'); if (d[k]) { el.title = d[k]; el.setAttribute('aria-label', d[k]); } });
     $('[data-i-ph]').forEach(function (el) { var k = el.getAttribute('data-i-ph'); if (d[k]) { el.placeholder = d[k]; el.setAttribute('aria-label', d[k]); } });
     $('#menu-lang button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === l); });
-    try { localStorage.setItem('wui.sub.lang', l); } catch (e) {}{{ if .Setup }}
+    try { localStorage.setItem('wui.sub.lang', l); } catch (e) {}{{ if .AnySetup }}
     document.dispatchEvent(new Event('wui:lang'));{{ end }}
   }
   applyLang(lang());
@@ -1595,7 +1636,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
   $('.pop').forEach(function (p) { p.addEventListener('click', function (e) { if (e.target === p) closeMenus(); }); });
   $('.pop-card').forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); }); });
   document.addEventListener('click', closeMenus);
-{{ if .Setup }}
+{{ if .AnySetup }}
   // The setup card: a device, then the files of the plan that device can
   // dial, then that device's fields for the file chosen. The device is
   // remembered, so a customer who picked their router sees it again.
@@ -1604,7 +1645,6 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
     var pick = box.querySelector('.setup-file-pick'), others = box.querySelector('.guide-others');
     var files = [].slice.call(box.querySelectorAll('.setup-files [data-file]'));
     function word(key, fallback) { var d = window.__wuiDict || {}, l = document.documentElement.lang === 'fa' ? 'fa' : 'en'; return (d[l] && d[l][key]) || fallback; }
-    var search = box.querySelector('.setup-search'), none = box.querySelector('.setup-search-none'), count = box.querySelector('.setup-search-count');
     var every = [].slice.call(dev.options);
     // Persian and Arabic letters typed either way, digits either way, and
     // no case: what a customer types finds what the list says.
@@ -1635,30 +1675,119 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
       FA.forEach(function (p) { if (e.indexOf(norm(p[0])) >= 0) out += ' ' + norm(p[1]); });
       return out;
     }
-    function filter() {
-      var q = norm(search.value), keep = [], head = null, headKept = false, n = 0;
-      every.forEach(function (o) {
-        o.textContent = label(o);
-        if (o.disabled) { head = o; headKept = false; return; }
-        var hay = o._hay || (o._hay = norm(o.getAttribute('data-en')) + ' ' + norm(o.value) + aliases(o.getAttribute('data-en') + ' ' + o.value));
-        var hit = !q || q.split(' ').every(function (w) { return (hay + ' ' + norm(o.textContent)).indexOf(w) >= 0; });
-        if (!hit) return;
-        if (head && !headKept) { keep.push(head); headKept = true; }
-        keep.push(o); n++;
-      });
-      var empty = q && n === 0;
-      none.hidden = !empty;
-      count.textContent = q && n ? word('dgMatches', '{n} found').replace('{n}', n) : '';
-      var show = empty ? every : keep, was = dev.value;
-      dev.innerHTML = '';
-      show.forEach(function (o) { dev.appendChild(o); });
-      if ([].some.call(dev.options, function (o) { return o.value === was && !o.disabled; })) { dev.value = was; return false; }
-      var first = [].filter.call(dev.options, function (o) { return !o.disabled; })[0];
-      if (first) dev.value = first.value;
-      return true;
+    // The device list as a dropdown with its own search: the button shows
+    // the device chosen; open, it has the search above the devices. The
+    // select stays underneath -- it is what a page without script uses, and
+    // what everything else here reads.
+    var combo = document.createElement('div'), btn = document.createElement('button');
+    var btnText = document.createElement('span'), pop = document.createElement('div');
+    var search = document.createElement('input'), count = document.createElement('span');
+    var list = document.createElement('div'), none = document.createElement('div');
+    combo.className = 'dsel';
+    btn.type = 'button'; btn.className = 'guide-select dsel-btn';
+    btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+    btnText.className = 'dsel-value'; btn.appendChild(btnText);
+    var caretEl = document.createElement('span'); caretEl.className = 'dsel-caret'; caretEl.setAttribute('aria-hidden', 'true'); btn.appendChild(caretEl);
+    pop.className = 'dsel-pop'; pop.hidden = true;
+    var sbox = document.createElement('div'); sbox.className = 'dsel-search-box';
+    search.type = 'search'; search.className = 'dsel-search'; search.dir = 'auto';
+    search.autocomplete = 'off'; search.spellcheck = false;
+    search.setAttribute('autocapitalize', 'off'); search.setAttribute('enterkeyhint', 'search');
+    search.setAttribute('data-i-ph', 'dgSearch');
+    search.placeholder = word('dgSearch', 'Search for your device or router');
+    search.setAttribute('aria-label', search.placeholder);
+    count.className = 'dsel-count'; count.setAttribute('aria-live', 'polite');
+    sbox.appendChild(search); sbox.appendChild(count);
+    list.className = 'dsel-list'; list.setAttribute('role', 'listbox');
+    none.className = 'dsel-none'; none.setAttribute('data-i', 'dgNoMatch'); none.hidden = true;
+    none.textContent = word('dgNoMatch', 'No device matches.');
+    pop.appendChild(sbox); pop.appendChild(list); pop.appendChild(none);
+    combo.appendChild(btn); combo.appendChild(pop);
+    // Out of the label the select sat in: a click anywhere in a label is
+    // handed to the first button in it -- this one -- which would open the
+    // list again the moment a device in it was chosen.
+    var lab = dev.parentNode;
+    if (lab.tagName === 'LABEL') {
+      var holder = document.createElement('div');
+      holder.className = lab.className;
+      while (lab.firstChild) holder.appendChild(lab.firstChild);
+      lab.parentNode.replaceChild(holder, lab);
     }
-    search.addEventListener('input', function () { if (filter()) fill(); });
-    search.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); dev.focus(); } });
+    dev.parentNode.insertBefore(combo, dev);
+    dev.hidden = true; dev.tabIndex = -1; dev.setAttribute('aria-hidden', 'true');
+
+    var items = [], active = -1;
+    function setBtn() {
+      var o = dev.options[dev.selectedIndex];
+      btnText.textContent = o ? label(o) : '';
+    }
+    function mark(i) {
+      if (active >= 0 && items[active]) items[active].classList.remove('active');
+      active = i;
+      if (active >= 0 && items[active]) {
+        var it = items[active];
+        it.classList.add('active');
+        // Within the list only: scrolling it into view would move the page.
+        if (it.offsetTop < list.scrollTop) list.scrollTop = it.offsetTop - 28;
+        else if (it.offsetTop + it.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = it.offsetTop + it.offsetHeight - list.clientHeight + 4;
+      }
+    }
+    function render() {
+      var q = norm(search.value), head = null, headShown = false, n = 0;
+      list.innerHTML = ''; items = []; active = -1;
+      every.forEach(function (o) {
+        if (o.disabled) { head = o; headShown = false; return; }
+        var hay = o._hay || (o._hay = norm(o.getAttribute('data-en')) + ' ' + norm(o.value) + aliases(o.getAttribute('data-en') + ' ' + o.value));
+        var name = label(o);
+        if (q && !q.split(' ').every(function (w) { return (hay + ' ' + norm(name)).indexOf(w) >= 0; })) return;
+        if (head && !headShown) {
+          var h = document.createElement('div'); h.className = 'dsel-head'; h.textContent = label(head);
+          list.appendChild(h); headShown = true;
+        }
+        var it = document.createElement('div');
+        it.className = 'dsel-item'; it.setAttribute('role', 'option'); it.setAttribute('data-v', o.value);
+        it.textContent = name;
+        var on = o.value === dev.value;
+        it.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) it.classList.add('chosen');
+        it.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        it.addEventListener('click', function () { choose(o.value); });
+        list.appendChild(it); items.push(it); n++;
+      });
+      none.hidden = !(q && n === 0);
+      count.textContent = q && n ? word('dgMatches', '{n} found').replace('{n}', n) : '';
+      var at = -1;
+      items.forEach(function (it, i) { if (it.getAttribute('data-v') === dev.value) at = i; });
+      mark(q ? (items.length ? 0 : -1) : at);
+    }
+    function open() {
+      pop.hidden = false; combo.classList.add('open'); btn.setAttribute('aria-expanded', 'true');
+      search.value = ''; render();
+      search.focus({ preventScroll: true });
+    }
+    function close(back) {
+      if (pop.hidden) return;
+      pop.hidden = true; combo.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+      if (back) btn.focus();
+    }
+    function choose(v) {
+      if (dev.value !== v) { dev.value = v; dev.dispatchEvent(new Event('change')); }
+      setBtn(); close(true);
+    }
+    btn.addEventListener('click', function (e) { e.stopPropagation(); if (pop.hidden) open(); else close(true); });
+    pop.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', function () { close(false); });
+    search.addEventListener('input', render);
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) mark(Math.min(active + 1, items.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) mark(Math.max(active - 1, 0)); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (items[active]) choose(items[active].getAttribute('data-v')); }
+      else if (e.key === 'Escape') { e.preventDefault(); close(true); }
+      else if (e.key === 'Tab') { close(false); }
+    });
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); open(); }
+    });
     function show() {
       var id = dev.value, f = file.value;
       box.querySelectorAll('.guide').forEach(function (g) { g.hidden = !(g.getAttribute('data-device') === id && g.getAttribute('data-file') + '/' + g.getAttribute('data-protocol') === f); });
@@ -1694,9 +1823,10 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
       var saved = localStorage.getItem('wui.sub.device') || localStorage.getItem('wui.sub.l2tpDevice');
       if (saved && [].some.call(dev.options, function (o) { return o.value === saved && !o.disabled; })) dev.value = saved;
     } catch (e) {}
-    dev.addEventListener('change', function () { fill(); try { localStorage.setItem('wui.sub.device', dev.value); } catch (e) {} });
+    dev.addEventListener('change', function () { setBtn(); fill(); try { localStorage.setItem('wui.sub.device', dev.value); } catch (e) {} });
     file.addEventListener('change', show);
-    document.addEventListener('wui:lang', function () { filter(); fill(); });
+    document.addEventListener('wui:lang', function () { setBtn(); if (!pop.hidden) render(); fill(); });
+    setBtn();
     fill();
   });
 {{ end }}
@@ -1954,6 +2084,9 @@ type subGroup struct {
 	Protocol string
 	Tunnel   string
 	Devices  []subPageDevice
+	// Setup is, for an L2TP or PPTP block, the card that sets a device up
+	// with these sign-ins: under them, where the customer reads them.
+	Setup *setupCard
 }
 
 // groupDevices arranges the files by tunnel, in the order they came. When

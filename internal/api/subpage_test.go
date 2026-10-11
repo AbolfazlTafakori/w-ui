@@ -420,9 +420,9 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<option value="ios" selected data-i="dg.ios" data-en="iPhone / iPad">iPhone / iPad</option>`,
-		`class="guide-select setup-search"`, `data-i-ph="dgSearch"`, `data-i="dgNoMatch"`,
-		`data-device="ios" data-file="0" data-protocol="l2tp"`, `data-device="ios" data-file="1" data-protocol="wireguard"`,
-		`data-device="tplink-ax53" data-file="1" data-protocol="wireguard"`, `<dt dir="ltr">Import from Config File</dt>`,
+		`dsel-search`, `'dgSearch'`, `'dgNoMatch'`, `class="cfg-setup"`,
+		`data-device="ios" data-file="0" data-protocol="l2tp"`, `data-device="ios" data-file="0" data-protocol="wireguard"`,
+		`data-device="tplink-ax53" data-file="0" data-protocol="wireguard"`, `<dt dir="ltr">Import from Config File</dt>`,
 		`<dt dir="ltr">Secret</dt>`, `data-ref="1.0" data-secret="psk"`, `data-ref="1.0" data-secret="password"`,
 		`data-ref="1.0" data-secret="username"`, `data-secret="cmd" data-device="mikrotik" data-protocol="l2tp"`,
 		`<code dir="ltr" class="secret">` + devguide.Mask + `</code>`, `data-others="b.example.com"`,
@@ -434,6 +434,25 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 	}
 	if strings.Contains(html, `data-protocol="l2tp-plain"`) {
 		t.Error("L2TP without IPsec is offered on a tunnel that refuses it")
+	}
+	// The L2TP card is in the L2TP block, under its sign-ins; the page's own
+	// card is the WireGuard file's alone.
+	if len(v.Groups) != 2 || v.Groups[0].Protocol != "l2tp" || v.Groups[0].Setup == nil || v.Groups[1].Setup != nil {
+		t.Fatalf("groups %+v", v.Groups)
+	}
+	for _, view := range v.Groups[0].Setup.Views {
+		if view.Protocol != "l2tp" {
+			t.Fatalf("the L2TP block's card has a %s guide", view.Protocol)
+		}
+	}
+	for _, view := range v.Setup.Views {
+		if view.Protocol != "wireguard" {
+			t.Fatalf("the page's card has a %s guide", view.Protocol)
+		}
+	}
+	block := html[strings.Index(html, `data-i="l2tpConfig"`):]
+	if i, j := strings.Index(block, `class="cfg-setup"`), strings.Index(block, `data-protocol="l2tp"`); i < 0 || j < i {
+		t.Error("the L2TP guide is not under the L2TP sign-ins")
 	}
 	// The sign-in itself is nowhere in what the page sends: not in a field,
 	// not on a copy button, not in a command. Whatever reads the page finds

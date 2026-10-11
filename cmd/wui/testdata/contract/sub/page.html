@@ -490,11 +490,29 @@ a.row-title:hover { text-decoration: underline; }
 .guide-cmd code { flex: 1; font-size: 12px; }
 .guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
 .setup-device-notes { display: grid; gap: 6px; }
-.setup-search-box { position: relative; display: block; margin-bottom: 6px; }
-.setup-search-box .setup-search { padding-inline-end: 64px; }
-.setup-search-count { position: absolute; inset-inline-end: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); pointer-events: none; }
-.setup-search-none { display: block; margin-top: 6px; }
-.setup-search-none[hidden] { display: none; }
+.cfg-setup { margin: 4px 16px 6px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.cfg-setup-title { margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+.dsel { position: relative; }
+.dsel-btn { display: flex; align-items: center; gap: 8px; text-align: start; cursor: pointer; }
+.dsel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsel-caret { width: 7px; height: 7px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); transition: transform .2s; flex: none; }
+.dsel.open .dsel-caret { transform: translateY(2px) rotate(-135deg); }
+.dsel.open .dsel-btn { border-color: var(--accent); }
+.dsel-pop { position: absolute; z-index: 40; inset-inline: 0; top: calc(100% + 6px); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 16px 40px -12px rgba(0, 0, 0, .6); }
+.dsel-pop[hidden] { display: none; }
+.dsel-search-box { position: relative; }
+.dsel-search { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 14px; outline: none; }
+.dsel-search:focus { border-color: var(--accent); }
+.dsel-count { display: block; padding: 6px 10px 0; font-size: 12px; color: var(--muted); }
+.dsel-count:empty { display: none; }
+.dsel-list { position: relative; max-height: min(320px, 50vh); margin-top: 6px; overflow-y: auto; overscroll-behavior: contain; }
+.dsel-head { padding: 10px 10px 4px; font-size: 12px; color: var(--muted); }
+.dsel-item { padding: 8px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; direction: ltr; text-align: start; }
+html[lang="fa"] .dsel-item { text-align: right; }
+.dsel-item:hover, .dsel-item.active { background: var(--surface-2); }
+.dsel-item.chosen { color: var(--accent); }
+.dsel-none { padding: 12px 10px; font-size: 13px; color: var(--muted); }
+.dsel-none[hidden] { display: none; }
 code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
 </style>
 </head>
@@ -709,6 +727,7 @@ PersistentKeepalive = 25
 </code></div>
             </div>
             
+            
           </div>
         </div>
         
@@ -719,9 +738,7 @@ PersistentKeepalive = 25
       <div class="divider"><span data-i="dgSetup">Set up a device</span></div>
       <div class="links setup-card"><div class="setup">
 <label class="guide-pick"><span data-i="dgDevice">Your device</span>
-<span class="setup-search-box"><input type="search" class="guide-select setup-search" dir="auto" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search for your device or router" data-i-ph="dgSearch" aria-label="Search for your device or router"><span class="setup-search-count" aria-live="polite"></span></span>
 <select class="guide-select setup-device" dir="ltr"><option disabled data-i="dgGroupDevice" data-en="Phones and computers">Phones and computers</option><option value="windows" selected data-i="dg.windows" data-en="Windows 10 / 11">Windows 10 / 11</option><option value="ios" data-i="dg.ios" data-en="iPhone / iPad">iPhone / iPad</option><option value="macos" data-i="dg.macos" data-en="macOS">macOS</option><option value="android" data-i="dg.android" data-en="Android 11 and older">Android 11 and older</option><option value="android12" data-i="dg.android12" data-en="Android 12 and newer">Android 12 and newer</option><option value="linux" data-i="dg.linux" data-en="Linux (NetworkManager)">Linux (NetworkManager)</option><option value="chromeos" data-i="dg.chromeos" data-en="ChromeOS">ChromeOS</option><option disabled data-i="dgGroupRouter" data-en="Routers and modems">Routers and modems</option><option value="mikrotik" data-i="dg.mikrotik" data-en="MikroTik (RouterOS 7: hAP, hEX, RB, CCR)">MikroTik (RouterOS 7: hAP, hEX, RB, CCR)</option><option value="keenetic" data-i="dg.keenetic" data-en="Keenetic (Giga, Ultra, Viva, Hero, Runner 4G and others)">Keenetic (Giga, Ultra, Viva, Hero, Runner 4G and others)</option><option value="tplink-ax23" data-i="dg.tplink-ax23" data-en="TP-Link Archer AX23 v2">TP-Link Archer AX23 v2</option><option value="tplink-ax55pro" data-i="dg.tplink-ax55pro" data-en="TP-Link Archer AX55 Pro">TP-Link Archer AX55 Pro</option><option value="tplink-ax53" data-i="dg.tplink-ax53" data-en="TP-Link Archer AX53 v2">TP-Link Archer AX53 v2</option><option value="tplink-ax10" data-i="dg.tplink-ax10" data-en="TP-Link Archer AX10 v3 / AX1500 v3">TP-Link Archer AX10 v3 / AX1500 v3</option><option value="tplink-ax55" data-i="dg.tplink-ax55" data-en="TP-Link Archer AX55 v2">TP-Link Archer AX55 v2</option><option value="tplink-ax73" data-i="dg.tplink-ax73" data-en="TP-Link Archer AX73 v2">TP-Link Archer AX73 v2</option><option value="tplink-ax21" data-i="dg.tplink-ax21" data-en="TP-Link Archer AX21 v3">TP-Link Archer AX21 v3</option><option value="mercusys-mr70x" data-i="dg.mercusys-mr70x" data-en="Mercusys MR70X">Mercusys MR70X</option><option value="omada" data-i="dg.omada" data-en="TP-Link Omada ER605 / ER7206">TP-Link Omada ER605 / ER7206</option><option value="dlink-842v2" data-i="dg.dlink-842v2" data-en="D-Link DIR-842 V2 (EU firmware)">D-Link DIR-842 V2 (EU firmware)</option><option value="draytek" data-i="dg.draytek" data-en="DrayTek Vigor (2915, 2927 and others)">DrayTek Vigor (2915, 2927 and others)</option><option value="huawei" data-i="dg.huawei" data-en="Huawei 4G/5G: B311B, B316, 4G CPE 3 (B535), 4G Router 2/3 Pro, 4G CPE 5, 5G CPE Pro">Huawei 4G/5G: B311B, B316, 4G CPE 3 (B535), 4G Router 2/3 Pro, 4G CPE 5, 5G CPE Pro</option><option value="tfi60" data-i="dg.tfi60" data-en="Irancell TF-i60 (G1, B1, H1), GP-2101">Irancell TF-i60 (G1, B1, H1), GP-2101</option><option value="tplink-mr600" data-i="dg.tplink-mr600" data-en="TP-Link Archer MR600 v5 (4G&#43;)">TP-Link Archer MR600 v5 (4G&#43;)</option><option value="tplink-mr6400" data-i="dg.tplink-mr6400" data-en="TP-Link TL-MR6400 v9 (4G)">TP-Link TL-MR6400 v9 (4G)</option><option value="tplink-mr100" data-i="dg.tplink-mr100" data-en="TP-Link TL-MR100 v5 (4G)">TP-Link TL-MR100 v5 (4G)</option><option value="tplink-mr200" data-i="dg.tplink-mr200" data-en="TP-Link Archer MR200 v9 (4G)">TP-Link Archer MR200 v9 (4G)</option><option value="tplink-mr6500v" data-i="dg.tplink-mr6500v" data-en="TP-Link TL-MR6500v v3 (4G)">TP-Link TL-MR6500v v3 (4G)</option><option value="dlink-dwr921" data-i="dg.dlink-dwr921" data-en="D-Link DWR-921 (4G)">D-Link DWR-921 (4G)</option><option value="asus" data-i="dg.asus" data-en="ASUS (RT-AX, RT-AC, RT-N, TUF, ROG)">ASUS (RT-AX, RT-AC, RT-N, TUF, ROG)</option><option value="xiaomi" data-i="dg.xiaomi" data-en="Xiaomi (Router 4A, 4C, AX3000T, AX3000 and others)">Xiaomi (Router 4A, 4C, AX3000T, AX3000 and others)</option><option value="openwrt" data-i="dg.openwrt" data-en="OpenWrt">OpenWrt</option><option value="cisco-rv34x" data-i="dg.cisco-rv34x" data-en="Cisco RV340 / RV345">Cisco RV340 / RV345</option><option value="tplink-c6" data-i="dg.tplink-c6" data-en="TP-Link Archer C6 v4">TP-Link Archer C6 v4</option><option value="tplink-c6v2" data-i="dg.tplink-c6v2" data-en="TP-Link Archer C6 v2">TP-Link Archer C6 v2</option><option value="tplink-c64" data-i="dg.tplink-c64" data-en="TP-Link Archer C64">TP-Link Archer C64</option><option value="tplink-c80" data-i="dg.tplink-c80" data-en="TP-Link Archer C80">TP-Link Archer C80</option><option value="tplink-c86" data-i="dg.tplink-c86" data-en="TP-Link Archer C86">TP-Link Archer C86</option><option value="tplink-a6" data-i="dg.tplink-a6" data-en="TP-Link Archer A6 v4">TP-Link Archer A6 v4</option><option value="tplink-c24" data-i="dg.tplink-c24" data-en="TP-Link Archer C24 v2">TP-Link Archer C24 v2</option><option value="tplink-ax12" data-i="dg.tplink-ax12" data-en="TP-Link Archer AX12">TP-Link Archer AX12</option><option value="tplink-ax20" data-i="dg.tplink-ax20" data-en="TP-Link Archer AX20 v2">TP-Link Archer AX20 v2</option><option value="tplink-ax72" data-i="dg.tplink-ax72" data-en="TP-Link Archer AX72">TP-Link Archer AX72</option><option value="tplink-wr840n" data-i="dg.tplink-wr840n" data-en="TP-Link TL-WR840N v7">TP-Link TL-WR840N v7</option><option value="tplink-wr841n" data-i="dg.tplink-wr841n" data-en="TP-Link TL-WR841N v14">TP-Link TL-WR841N v14</option><option value="tplink-wr845n" data-i="dg.tplink-wr845n" data-en="TP-Link TL-WR845N v4">TP-Link TL-WR845N v4</option><option value="tplink-wr840n-v6" data-i="dg.tplink-wr840n-v6" data-en="TP-Link TL-WR840N v5 / v6">TP-Link TL-WR840N v5 / v6</option><option value="tplink-c20" data-i="dg.tplink-c20" data-en="TP-Link Archer C20 v4 / v5 / v6">TP-Link Archer C20 v4 / v5 / v6</option><option value="tplink-c50" data-i="dg.tplink-c50" data-en="TP-Link Archer C50 v4 / v6">TP-Link Archer C50 v4 / v6</option><option value="tplink-wr940n" data-i="dg.tplink-wr940n" data-en="TP-Link TL-WR940N, and TL-WR841N up to v13">TP-Link TL-WR940N, and TL-WR841N up to v13</option><option value="tplink-vr600" data-i="dg.tplink-vr600" data-en="TP-Link Archer VR600 v2">TP-Link Archer VR600 v2</option><option value="tplink-w8970" data-i="dg.tplink-w8970" data-en="TP-Link TD-W8970 v3">TP-Link TD-W8970 v3</option><option value="mercusys-mw301r" data-i="dg.mercusys-mw301r" data-en="Mercusys MW301R">Mercusys MW301R</option><option value="mercusys-mw302r" data-i="dg.mercusys-mw302r" data-en="Mercusys MW302R">Mercusys MW302R</option><option value="mercusys-mw325r" data-i="dg.mercusys-mw325r" data-en="Mercusys MW325R">Mercusys MW325R</option><option value="mercusys-ac12" data-i="dg.mercusys-ac12" data-en="Mercusys AC12">Mercusys AC12</option><option value="mercusys-mr50g" data-i="dg.mercusys-mr50g" data-en="Mercusys MR50G">Mercusys MR50G</option><option value="dlink-842r1" data-i="dg.dlink-842r1" data-en="D-Link DIR-842/R1">D-Link DIR-842/R1</option><option value="dlink-825r1" data-i="dg.dlink-825r1" data-en="D-Link DIR-825/R1">D-Link DIR-825/R1</option><option value="dlink-615t4" data-i="dg.dlink-615t4" data-en="D-Link DIR-615/T4">D-Link DIR-615/T4</option><option value="dlink-intl" data-i="dg.dlink-intl" data-en="D-Link, international firmware (DIR-819, DIR-859 and others with Settings &gt; Internet)">D-Link, international firmware (DIR-819, DIR-859 and others with Settings &gt; Internet)</option><option disabled data-i="dgGroupNone" data-en="Models with no VPN client">Models with no VPN client</option><option value="tplink-w9960" data-i="dg.tplink-w9960" data-en="TP-Link TD-W9960 (VDSL/ADSL)">TP-Link TD-W9960 (VDSL/ADSL)</option><option value="tplink-w9970" data-i="dg.tplink-w9970" data-en="TP-Link TD-W9970 (VDSL/ADSL)">TP-Link TD-W9970 (VDSL/ADSL)</option><option value="tplink-vr" data-i="dg.tplink-vr" data-en="TP-Link Archer VR300 / VR400 (VDSL/ADSL)">TP-Link Archer VR300 / VR400 (VDSL/ADSL)</option><option value="adsl" data-i="dg.adsl" data-en="Other ADSL / VDSL modems (TD-W8961N, Utel and others)">Other ADSL / VDSL modems (TD-W8961N, Utel and others)</option><option value="dlink-dsl" data-i="dg.dlink-dsl" data-en="D-Link DSL-2750U / DSL-224">D-Link DSL-2750U / DSL-224</option><option value="zte-vdsl" data-i="dg.zte-vdsl" data-en="ZTE ZXHN H108N / H168N / H267A (TCI, Shatel, Mobinnet modems)">ZTE ZXHN H108N / H168N / H267A (TCI, Shatel, Mobinnet modems)</option><option value="fiber-ont" data-i="dg.fiber-ont" data-en="Fiber modems: Huawei HG8245H, ZTE F660 / F670">Fiber modems: Huawei HG8245H, ZTE F660 / F670</option><option value="zte-4g" data-i="dg.zte-4g" data-en="ZTE 4G: MF286, MF283, MF297D, MF920">ZTE 4G: MF286, MF283, MF297D, MF920</option><option value="huawei-old" data-i="dg.huawei-old" data-en="Huawei 4G: B310, B315, B525, B612, B618, E5577">Huawei 4G: B310, B315, B525, B612, B618, E5577</option><option value="tplink-extender" data-i="dg.tplink-extender" data-en="Wi-Fi extenders (TP-Link RE200, RE305, TL-WA850RE and others)">Wi-Fi extenders (TP-Link RE200, RE305, TL-WA850RE and others)</option><option value="tenda" data-i="dg.tenda" data-en="Tenda AC6 v5, AC10 v3, N301 v4 and other current Tenda">Tenda AC6 v5, AC10 v3, N301 v4 and other current Tenda</option><option disabled data-i="dgGroupRouter" data-en="Routers and modems">Routers and modems</option><option value="cisco-rv160" data-i="dg.cisco-rv160" data-en="Cisco RV160 / RV260">Cisco RV160 / RV260</option><option value="dlink-x1560" data-i="dg.dlink-x1560" data-en="D-Link DIR-X1560 / DIR-X1530 / DIR-X1860">D-Link DIR-X1560 / DIR-X1530 / DIR-X1860</option><option value="netis" data-i="dg.netis" data-en="Netis WF2409E / WF2419 and other Netis">Netis WF2409E / WF2419 and other Netis</option><option value="totolink" data-i="dg.totolink" data-en="TOTOLINK N300RT / A3002R and other TOTOLINK">TOTOLINK N300RT / A3002R and other TOTOLINK</option><option value="irancell-i40" data-i="dg.irancell-i40" data-en="Irancell FD-i40 / TD-i40 (4G/TD-LTE)">Irancell FD-i40 / TD-i40 (4G/TD-LTE)</option><option value="irancell-m40" data-i="dg.irancell-m40" data-en="Irancell FD-M40 (pocket 4G)">Irancell FD-M40 (pocket 4G)</option><option value="edgerouter" data-i="dg.edgerouter" data-en="Ubiquiti EdgeRouter X / 4 (EdgeOS)">Ubiquiti EdgeRouter X / 4 (EdgeOS)</option></select>
-<span class="guide-note setup-search-none" data-i="dgNoMatch" hidden>No device matches; the full list is below.</span>
 </label>
 <label class="guide-pick setup-file-pick"><span data-i="dgProtocol">Connection</span>
 <select class="guide-select setup-file"></select>
@@ -989,7 +1006,6 @@ PersistentKeepalive = 25
     var pick = box.querySelector('.setup-file-pick'), others = box.querySelector('.guide-others');
     var files = [].slice.call(box.querySelectorAll('.setup-files [data-file]'));
     function word(key, fallback) { var d = window.__wuiDict || {}, l = document.documentElement.lang === 'fa' ? 'fa' : 'en'; return (d[l] && d[l][key]) || fallback; }
-    var search = box.querySelector('.setup-search'), none = box.querySelector('.setup-search-none'), count = box.querySelector('.setup-search-count');
     var every = [].slice.call(dev.options);
     
     
@@ -1020,30 +1036,119 @@ PersistentKeepalive = 25
       FA.forEach(function (p) { if (e.indexOf(norm(p[0])) >= 0) out += ' ' + norm(p[1]); });
       return out;
     }
-    function filter() {
-      var q = norm(search.value), keep = [], head = null, headKept = false, n = 0;
-      every.forEach(function (o) {
-        o.textContent = label(o);
-        if (o.disabled) { head = o; headKept = false; return; }
-        var hay = o._hay || (o._hay = norm(o.getAttribute('data-en')) + ' ' + norm(o.value) + aliases(o.getAttribute('data-en') + ' ' + o.value));
-        var hit = !q || q.split(' ').every(function (w) { return (hay + ' ' + norm(o.textContent)).indexOf(w) >= 0; });
-        if (!hit) return;
-        if (head && !headKept) { keep.push(head); headKept = true; }
-        keep.push(o); n++;
-      });
-      var empty = q && n === 0;
-      none.hidden = !empty;
-      count.textContent = q && n ? word('dgMatches', '{n} found').replace('{n}', n) : '';
-      var show = empty ? every : keep, was = dev.value;
-      dev.innerHTML = '';
-      show.forEach(function (o) { dev.appendChild(o); });
-      if ([].some.call(dev.options, function (o) { return o.value === was && !o.disabled; })) { dev.value = was; return false; }
-      var first = [].filter.call(dev.options, function (o) { return !o.disabled; })[0];
-      if (first) dev.value = first.value;
-      return true;
+    
+    
+    
+    
+    var combo = document.createElement('div'), btn = document.createElement('button');
+    var btnText = document.createElement('span'), pop = document.createElement('div');
+    var search = document.createElement('input'), count = document.createElement('span');
+    var list = document.createElement('div'), none = document.createElement('div');
+    combo.className = 'dsel';
+    btn.type = 'button'; btn.className = 'guide-select dsel-btn';
+    btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+    btnText.className = 'dsel-value'; btn.appendChild(btnText);
+    var caretEl = document.createElement('span'); caretEl.className = 'dsel-caret'; caretEl.setAttribute('aria-hidden', 'true'); btn.appendChild(caretEl);
+    pop.className = 'dsel-pop'; pop.hidden = true;
+    var sbox = document.createElement('div'); sbox.className = 'dsel-search-box';
+    search.type = 'search'; search.className = 'dsel-search'; search.dir = 'auto';
+    search.autocomplete = 'off'; search.spellcheck = false;
+    search.setAttribute('autocapitalize', 'off'); search.setAttribute('enterkeyhint', 'search');
+    search.setAttribute('data-i-ph', 'dgSearch');
+    search.placeholder = word('dgSearch', 'Search for your device or router');
+    search.setAttribute('aria-label', search.placeholder);
+    count.className = 'dsel-count'; count.setAttribute('aria-live', 'polite');
+    sbox.appendChild(search); sbox.appendChild(count);
+    list.className = 'dsel-list'; list.setAttribute('role', 'listbox');
+    none.className = 'dsel-none'; none.setAttribute('data-i', 'dgNoMatch'); none.hidden = true;
+    none.textContent = word('dgNoMatch', 'No device matches.');
+    pop.appendChild(sbox); pop.appendChild(list); pop.appendChild(none);
+    combo.appendChild(btn); combo.appendChild(pop);
+    
+    
+    
+    var lab = dev.parentNode;
+    if (lab.tagName === 'LABEL') {
+      var holder = document.createElement('div');
+      holder.className = lab.className;
+      while (lab.firstChild) holder.appendChild(lab.firstChild);
+      lab.parentNode.replaceChild(holder, lab);
     }
-    search.addEventListener('input', function () { if (filter()) fill(); });
-    search.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); dev.focus(); } });
+    dev.parentNode.insertBefore(combo, dev);
+    dev.hidden = true; dev.tabIndex = -1; dev.setAttribute('aria-hidden', 'true');
+
+    var items = [], active = -1;
+    function setBtn() {
+      var o = dev.options[dev.selectedIndex];
+      btnText.textContent = o ? label(o) : '';
+    }
+    function mark(i) {
+      if (active >= 0 && items[active]) items[active].classList.remove('active');
+      active = i;
+      if (active >= 0 && items[active]) {
+        var it = items[active];
+        it.classList.add('active');
+        
+        if (it.offsetTop < list.scrollTop) list.scrollTop = it.offsetTop - 28;
+        else if (it.offsetTop + it.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = it.offsetTop + it.offsetHeight - list.clientHeight + 4;
+      }
+    }
+    function render() {
+      var q = norm(search.value), head = null, headShown = false, n = 0;
+      list.innerHTML = ''; items = []; active = -1;
+      every.forEach(function (o) {
+        if (o.disabled) { head = o; headShown = false; return; }
+        var hay = o._hay || (o._hay = norm(o.getAttribute('data-en')) + ' ' + norm(o.value) + aliases(o.getAttribute('data-en') + ' ' + o.value));
+        var name = label(o);
+        if (q && !q.split(' ').every(function (w) { return (hay + ' ' + norm(name)).indexOf(w) >= 0; })) return;
+        if (head && !headShown) {
+          var h = document.createElement('div'); h.className = 'dsel-head'; h.textContent = label(head);
+          list.appendChild(h); headShown = true;
+        }
+        var it = document.createElement('div');
+        it.className = 'dsel-item'; it.setAttribute('role', 'option'); it.setAttribute('data-v', o.value);
+        it.textContent = name;
+        var on = o.value === dev.value;
+        it.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) it.classList.add('chosen');
+        it.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        it.addEventListener('click', function () { choose(o.value); });
+        list.appendChild(it); items.push(it); n++;
+      });
+      none.hidden = !(q && n === 0);
+      count.textContent = q && n ? word('dgMatches', '{n} found').replace('{n}', n) : '';
+      var at = -1;
+      items.forEach(function (it, i) { if (it.getAttribute('data-v') === dev.value) at = i; });
+      mark(q ? (items.length ? 0 : -1) : at);
+    }
+    function open() {
+      pop.hidden = false; combo.classList.add('open'); btn.setAttribute('aria-expanded', 'true');
+      search.value = ''; render();
+      search.focus({ preventScroll: true });
+    }
+    function close(back) {
+      if (pop.hidden) return;
+      pop.hidden = true; combo.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+      if (back) btn.focus();
+    }
+    function choose(v) {
+      if (dev.value !== v) { dev.value = v; dev.dispatchEvent(new Event('change')); }
+      setBtn(); close(true);
+    }
+    btn.addEventListener('click', function (e) { e.stopPropagation(); if (pop.hidden) open(); else close(true); });
+    pop.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', function () { close(false); });
+    search.addEventListener('input', render);
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) mark(Math.min(active + 1, items.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) mark(Math.max(active - 1, 0)); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (items[active]) choose(items[active].getAttribute('data-v')); }
+      else if (e.key === 'Escape') { e.preventDefault(); close(true); }
+      else if (e.key === 'Tab') { close(false); }
+    });
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); open(); }
+    });
     function show() {
       var id = dev.value, f = file.value;
       box.querySelectorAll('.guide').forEach(function (g) { g.hidden = !(g.getAttribute('data-device') === id && g.getAttribute('data-file') + '/' + g.getAttribute('data-protocol') === f); });
@@ -1079,9 +1184,10 @@ PersistentKeepalive = 25
       var saved = localStorage.getItem('wui.sub.device') || localStorage.getItem('wui.sub.l2tpDevice');
       if (saved && [].some.call(dev.options, function (o) { return o.value === saved && !o.disabled; })) dev.value = saved;
     } catch (e) {}
-    dev.addEventListener('change', function () { fill(); try { localStorage.setItem('wui.sub.device', dev.value); } catch (e) {} });
+    dev.addEventListener('change', function () { setBtn(); fill(); try { localStorage.setItem('wui.sub.device', dev.value); } catch (e) {} });
     file.addEventListener('change', show);
-    document.addEventListener('wui:lang', function () { filter(); fill(); });
+    document.addEventListener('wui:lang', function () { setBtn(); if (!pop.hidden) render(); fill(); });
+    setBtn();
     fill();
   });
 

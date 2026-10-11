@@ -12,7 +12,7 @@ The page a customer sees when they open their subscription link in a browser. It
 - **Usage by user and tunnel** — a fold-out table: one row per user, one column per tunnel, what each spent on each, and a total at the end of every row and under every column. Every figure is counted by the kernel on that device's own tunnel address, so the rows add up to the usage above to the byte. A plan shared by several people, and paid for together, is settled from it. For a plan whose current period began before 2.6.6, the table counts from the update and says so (**Split by user since …**): what came before was an estimate and was not kept;
 - one block per device **per host** — the config text, a copy button, a download, and a QR code that opens centred over the page;
 - for an L2TP or PPTP device, its sign-in -- server, key, username, password -- typed into the device rather than imported (see below);
-- **Set up a device**: the customer picks their device or router -- or searches for it, in English or Persian, by name, brand or model -- then the connection, and the page shows that device's own fields filled in;
+- **Set up a device**, under each L2TP or PPTP block's sign-ins: the customer opens the device list -- its search is at the top, in English or Persian, by name, brand or model -- picks their device or router, then the connection, and the page shows that device's own fields filled in with that block's sign-in. WireGuard and OpenVPN files have the same card of their own, below them;
 - the subscription link itself as a QR, for apps that speak subscriptions;
 - a language switch (English / Persian) and a theme switch;
 - the support link, the announcement and the profile title from Settings → Subscription.
