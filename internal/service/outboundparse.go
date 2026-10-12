@@ -24,6 +24,10 @@ import (
 // ParseOutbound reads a share link, a WireGuard .conf, an OpenVPN profile, or
 // an Xray outbound JSON object, and returns the outbound it describes.
 func ParseOutbound(text string) (*OutboundInput, error) {
+	// A file from Windows ends its lines with \r\n, one from an old Mac
+	// with \r alone; every reader below goes by \n.
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, invalidField("text", "nothing to import")
@@ -591,6 +595,10 @@ func parseOpenVPNProfile(text string) (*OutboundInput, error) {
 				port = f[2]
 			}
 			in.Address = net.JoinHostPort(f[1], port)
+			// A profile carries no name of its own; the server it dials
+			// is the one thing every profile has, so the tag starts as
+			// that and the form leaves it to be changed.
+			in.Tag = "ovpn-" + f[1]
 			break
 		}
 	}

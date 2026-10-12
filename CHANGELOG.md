@@ -7,6 +7,7 @@ All notable changes to W-UI are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A pasted OpenVPN profile is recognised.** The outbound form's paste box was one line high, and a browser drops the line breaks of anything pasted into one: a whole .ovpn became one long line no reader knew. It now keeps every line, grows as text is pasted, and still imports a link with Enter. A profile with Windows or old-Mac line endings is read too, and its tag starts as its server's name.
 - **OpenVPN connects better**, without touching the one-sign-in rule:
   - Windows keeps to the tunnel's DNS (`block-outside-dns`), so a filtered name is not answered by the ISP's resolver.
   - A UDP device that disconnects says so (`explicit-exit-notify`), and its session ends in five seconds instead of two minutes.

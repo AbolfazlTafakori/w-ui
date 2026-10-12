@@ -855,8 +855,20 @@ async function submit() {
         </form>
 
         <div v-show="tab === 'json'" class="json-tab">
-          <div class="compact">
-            <input v-model="linkInput" class="ltr" placeholder="vmess:// vless:// trojan:// ss:// hysteria2:// wireguard:// socks://" spellcheck="false" @keydown.enter.prevent="importLink" />
+          <div class="compact link-row">
+            <!-- A textarea, not an input: an input drops the line breaks of a
+                 pasted .ovpn or .conf, and the file read as one line is no
+                 longer one. One line high for a link, taller once text with
+                 lines in it is pasted. Enter imports; Shift+Enter is a new
+                 line. -->
+            <textarea
+              v-model="linkInput"
+              class="ltr mono link-box"
+              :rows="Math.min(10, Math.max(1, (linkInput.match(/\n/g) || []).length + 1))"
+              :placeholder="t('outbound.form.pasteHint')"
+              spellcheck="false"
+              @keydown.enter.exact.prevent="importLink"
+            ></textarea>
             <button type="button" class="btn" :title="t('outbound.form.uploadFile')" @click="pickFile"><Icon name="upload" :size="14" /></button>
             <button type="button" class="btn primary" :disabled="busy" @click="importLink">{{ t('outbound.form.import') }}</button>
           </div>
@@ -877,6 +889,20 @@ async function submit() {
 </template>
 
 <style scoped>
+.link-row { align-items: flex-start; }
+.link-row > .btn { height: 32px; }
+.link-box {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 11px;
+  line-height: 20px;
+  resize: vertical;
+  white-space: pre;
+  overflow-x: auto;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
 .ob-modal {
   max-width: 780px;
 }

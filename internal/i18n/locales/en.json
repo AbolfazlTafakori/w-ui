@@ -19,6 +19,7 @@
   "protocol.openvpn": "OpenVPN",
   "protocol.l2tp": "L2TP/IPsec",
   "protocol.pptp": "PPTP",
+  "outbound.form.pasteHint": "Paste a link (vmess://, vless://, trojan://, ss://, wireguard://) or a whole .ovpn / .conf file",
   "interface.awgPresetCustom": "Your own",
   "interface.awgLevel": "Kind of profile",
   "interface.awgLevel.modern": "Modern (AmneziaWG 2)",

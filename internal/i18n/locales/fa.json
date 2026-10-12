@@ -19,6 +19,7 @@
   "protocol.openvpn": "OpenVPN",
   "protocol.l2tp": "L2TP/IPsec",
   "protocol.pptp": "PPTP",
+  "outbound.form.pasteHint": "لینک (vmess://، vless://، trojan://، ss://، wireguard://) یا کل متن فایل .ovpn / .conf را اینجا بگذارید",
   "interface.awgPresetCustom": "دلخواه شما",
   "interface.awgLevel": "نوع پروفایل",
   "interface.awgLevel.modern": "جدید (AmneziaWG 2)",
