@@ -64,6 +64,13 @@ func l2tpAgentCommand(args []string) error {
 	}
 	defer ikeDone()
 	agents = append(agents, l2tpagent.NewIKEv2(l2tpagent.NewIPsecSystem(log), ikeFiles, log))
+	// OpenConnect too: ocserv, run from the agent's own files.
+	ocFiles, ocDone, err := l2tpagent.OpenFiles(args[0], l2tpconf.ProtocolOpenConnect)
+	if err != nil {
+		return fmt.Errorf("l2tp-agent: %w", err)
+	}
+	defer ocDone()
+	agents = append(agents, l2tpagent.NewOpenConnect(l2tpagent.NewOCSystem(log), ocFiles, log))
 	log.Info("ppp agent started", "version", version, "data", args[0])
 	return l2tpagent.Run(ctx, l2tpAgentInterval, agents...)
 }

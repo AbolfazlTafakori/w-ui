@@ -26,6 +26,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/api"
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
+	"github.com/abolfazl/w-ui/internal/backend/occdriver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
@@ -200,6 +201,9 @@ func run() error {
 	ovpndriver.DataRoot = cfg.DataDir
 	l2tpdriver.DataRoot = cfg.DataDir
 
+	// An OpenConnect tunnel that dials the panel's own name is given the
+	// panel's certificate, which devices trust as they are.
+	service.PanelCertFiles = func() (string, string) { return cfg.TLSCert, cfg.TLSKey }
 	registerBackends(log)
 
 	pools, err := loadPools(db, log)
@@ -762,6 +766,7 @@ func registerBackends(log *slog.Logger) {
 	ovpndriver.Register()
 	l2tpdriver.Register()
 	ikev2driver.Register()
+	occdriver.Register()
 
 	for _, p := range []model.Protocol{model.ProtocolWireGuard, model.ProtocolOpenVPN} {
 		if backend.Supports(p) {

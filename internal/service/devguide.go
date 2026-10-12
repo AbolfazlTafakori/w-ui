@@ -3,6 +3,7 @@ package service
 import (
 	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/occdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/wgconf"
@@ -21,6 +22,11 @@ func guideValues(acc *model.Account, iface *model.Interface, file string) devgui
 	}
 	if iface.Protocol == model.ProtocolIKEv2 {
 		v := ikev2driver.GuideValues(acc, iface)
+		v.File = file
+		return v
+	}
+	if iface.Protocol == model.ProtocolOpenConnect {
+		v := occdriver.GuideValues(acc, iface)
 		v.File = file
 		return v
 	}

@@ -366,7 +366,7 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
-		ppp := d.Protocol == "l2tp" || d.Protocol == "pptp" || d.Protocol == "ikev2"
+		ppp := d.Protocol == "l2tp" || d.Protocol == "pptp" || d.Protocol == "ikev2" || d.Protocol == "openconnect"
 		entry.Ref = fileRef(d)
 		entry.PPP = ppp
 		if d.Guide != nil && ppp {
@@ -392,7 +392,7 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		switch d.Protocol {
 		case "openvpn":
 			v.HasOVPN = true
-		case "l2tp", "pptp", "ikev2":
+		case "l2tp", "pptp", "ikev2", "openconnect":
 			v.HasL2TP = true
 		default:
 			v.HasWG = true
@@ -433,11 +433,11 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 // subPageL2TPStrings are added only to a page with an L2TP sign-in on it, so
 // that every other customer's page is, to the byte, what it was before L2TP.
 var subPageL2TPStrings = map[string]map[string]string{
-	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "ikev2Config": "IKEv2 sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN",
+	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "ikev2Config": "IKEv2 sign-in", "ocConfig": "OpenConnect (Cisco) sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN",
 		"revealExpired": "This page has been open a while: reload it, then copy again.",
 		"revealBusy":    "Too many copies in a row: wait a minute.",
 		"revealFailed":  "Could not copy it; try again."},
-	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "ikev2Config": "ورود IKEv2", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN",
+	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "ikev2Config": "ورود IKEv2", "ocConfig": "ورود OpenConnect (سیسکو)", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN",
 		"revealExpired": "این صفحه مدتی باز مانده: یک بار تازه‌اش کنید و دوباره کپی کنید.",
 		"revealBusy":    "کپی‌های پشت سر هم زیاد شد: یک دقیقه صبر کنید.",
 		"revealFailed":  "کپی نشد؛ دوباره امتحان کنید."},
@@ -476,6 +476,10 @@ func pageStrings(l2tp, setup bool) map[string]map[string]string {
 // l2tpSignIn is an L2TP file's own four values, for its row.
 func l2tpSignIn(v devguide.Values) []devguide.Row {
 	rows := []devguide.Row{{Label: "Server", Value: v.Server, Copy: true}}
+	if v.Protocol == "openconnect" {
+		// What the device dials, whole: the camouflage secret is part of it.
+		rows = []devguide.Row{{Label: "Server address", Value: v.OC.URL, Copy: true}}
+	}
 	if v.Protocol == "ikev2" && v.ServerID != "" && v.ServerID != v.Server {
 		rows = append(rows, devguide.Row{Label: "Remote ID", Value: v.ServerID, Copy: true})
 	}
@@ -1492,7 +1496,7 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
             <table class="usage-grid">
               <thead><tr>
                 <th class="usage-corner"><span data-i="user">User</span></th>
-                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") }}purple{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
+                {{ range .Usage.Tunnels }}<th><span class="usage-dot {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") (eq .Protocol "openconnect") }}purple{{ else }}cyan{{ end }}"></span>{{ .Name }}</th>{{ end }}
                 <th class="usage-sum" data-i="total">Total</th>
               </tr></thead>
               <tbody>
@@ -1534,10 +1538,10 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
              when there are several), and opens on one line per user, each
              with copy, download and QR of their own file. A plan for one
              opens on one line, named after the customer. -->
-        <div class="cfg cfg-group{{ if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") }} open{{ end }}">
+        <div class="cfg cfg-group{{ if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") (eq .Protocol "openconnect") }} open{{ end }}">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else if eq .Protocol "pptp" }}pptpConfig{{ else if eq .Protocol "ikev2" }}ikev2Config{{ else }}config{{ end }}">Config</span>
+            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") (eq .Protocol "openconnect") }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else if eq .Protocol "pptp" }}pptpConfig{{ else if eq .Protocol "ikev2" }}ikev2Config{{ else if eq .Protocol "openconnect" }}ocConfig{{ else }}config{{ end }}">Config</span>
             {{ if .Tunnel }}<span class="cfg-meta">{{ .Tunnel }}</span>{{ end }}
             <span class="cfg-count">{{ if gt (len .Devices) 1 }}<span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span>{{ else }}<span data-i="oneUser">1 user</span>{{ end }}</span>
           </div>

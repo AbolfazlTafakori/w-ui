@@ -163,6 +163,10 @@ type Interface struct {
 	// IKEv2 likewise, for the IKEv2 tunnels alone.
 	IKEv2 JSONField[IKEv2Params] `gorm:"type:text;column:ikev2" json:"ikev2,omitzero"`
 
+	// OpenConnect is the OpenConnect settings: certificate, DTLS and
+	// camouflage.
+	OpenConnect JSONField[OpenConnectParams] `gorm:"type:text;column:openconnect" json:"openconnect,omitzero"`
+
 	// Configured is set on the way out of the API, not stored. It lets a page
 	// say that certificates exist without being handed them.
 	Configured bool `gorm:"-" json:"configured"`

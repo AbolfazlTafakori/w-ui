@@ -52,6 +52,9 @@ const (
 	// ProtocolIKEv2 is the IKEv2 tunnel, which the same agent carries
 	// (package ikev2conf describes it); named here for its directory.
 	ProtocolIKEv2 = "ikev2"
+	// ProtocolOpenConnect is the OpenConnect tunnel (package occonf), the
+	// same agent's too.
+	ProtocolOpenConnect = "openconnect"
 )
 
 // ServerName is the name this server gives itself to pppd, and the server
@@ -353,6 +356,9 @@ func PathsFor(dataDir, protocol string) Paths {
 	if protocol == ProtocolIKEv2 {
 		return Paths{Dir: filepath.Join(dataDir, "ikev2")}
 	}
+	if protocol == ProtocolOpenConnect {
+		return Paths{Dir: filepath.Join(dataDir, "openconnect")}
+	}
 	return NewPaths(dataDir)
 }
 
@@ -396,6 +402,9 @@ type Report struct {
 	// running.
 	State string `json:"state"`
 	Error string `json:"error,omitempty"`
+	// Notice is what the operator should know of a tunnel that is running:
+	// something asked for that this server cannot do.
+	Notice string `json:"notice,omitempty"`
 	// Applied is the fingerprint of the state the tunnel is carrying.
 	Applied  string    `json:"applied,omitempty"`
 	Sessions []Session `json:"sessions"`

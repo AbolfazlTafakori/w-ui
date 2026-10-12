@@ -48,6 +48,12 @@ type linuxSystem struct {
 	radius       *radiusd.Server
 	radiusSecret string
 	radiusStop   context.CancelFunc
+
+	// The RADIUS server ocserv asks, while there is an OpenConnect tunnel.
+	ocRadiusMu     sync.Mutex
+	ocRadius       *radiusd.Server
+	ocRadiusSecret string
+	ocRadiusStop   context.CancelFunc
 }
 
 // NewSystem is the system on this machine.
@@ -55,6 +61,9 @@ func NewSystem(log *slog.Logger) System { return &linuxSystem{log: log} }
 
 // NewIPsecSystem is the system the IKEv2 tunnel runs on: the same machine.
 func NewIPsecSystem(log *slog.Logger) IPsecSystem { return &linuxSystem{log: log} }
+
+// NewOCSystem is the system the OpenConnect tunnel runs on: the same machine.
+func NewOCSystem(log *slog.Logger) OCSystem { return &linuxSystem{log: log} }
 
 func (s *linuxSystem) run(ctx context.Context, timeout time.Duration, stdin string, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -98,13 +107,21 @@ func (s *linuxSystem) missing(protocol string) []string {
 				out = append(out, "strongSwan's "+p+" plugin")
 			}
 		}
+	case l2tpconf.ProtocolOpenConnect:
+		bins = []string{"ocserv", "occtl"}
+		// ocserv's RADIUS client finds its server by the service name
+		// "radius", which is in /etc/services; a minimal image has none,
+		// and every sign-in would then fail before it is asked.
+		if !servicesKnowRadius() {
+			out = append(out, "/etc/services (netbase)")
+		}
 	}
 	for _, bin := range bins {
 		if !have(bin) {
 			out = append(out, bin)
 		}
 	}
-	if protocol != l2tpconf.ProtocolPPTP {
+	if protocol != l2tpconf.ProtocolPPTP && protocol != l2tpconf.ProtocolOpenConnect {
 		if _, err := swanctlDir(); err != nil {
 			out = append(out, "strongSwan's swanctl directory")
 		}
@@ -117,6 +134,24 @@ func (s *linuxSystem) missing(protocol string) []string {
 var packagedUnits = []string{
 	"xl2tpd.service", "strongswan.service", "strongswan-starter.service",
 	"strongswan-swanctl.service", "ipsec.service", "pptpd.service",
+	// ocserv's package starts its own on 443 (Debian by socket activation):
+	// the agent runs ocserv from its own files instead.
+	"ocserv.socket", "ocserv.service",
+}
+
+// servicesKnowRadius reports whether /etc/services names the radius port.
+func servicesKnowRadius() bool {
+	raw, err := os.ReadFile("/etc/services")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 2 && f[0] == "radius" && strings.HasPrefix(f[1], "1812/") {
+			return true
+		}
+	}
+	return false
 }
 
 // packages are what a protocol's tunnel is installed from, by family.
@@ -124,6 +159,10 @@ func packages(protocol, family string) []string {
 	switch {
 	case protocol == l2tpconf.ProtocolPPTP:
 		return []string{"pptpd", "ppp"}
+	case protocol == l2tpconf.ProtocolOpenConnect && family == "debian":
+		return []string{"ocserv", "netbase"}
+	case protocol == l2tpconf.ProtocolOpenConnect:
+		return []string{"ocserv"}
 	case protocol == l2tpconf.ProtocolIKEv2 && family == "debian":
 		// The EAP methods and AES-GCM are in packages of their own there.
 		return []string{"strongswan-swanctl", "charon-systemd", "libcharon-extauth-plugins",

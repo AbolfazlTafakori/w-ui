@@ -902,12 +902,13 @@ RestartSec=5
 HELPER
   cat >/etc/systemd/system/wui-l2tp.path <<HELPER
 [Unit]
-Description=W-UI — start the PPP agent while the panel describes an L2TP, PPTP or IKEv2 tunnel
+Description=W-UI — start the PPP agent while the panel describes an L2TP, PPTP, IKEv2 or OpenConnect tunnel
 
 [Path]
 PathExists=$DATA_DIR/l2tp/state.json
 PathExists=$DATA_DIR/pptp/state.json
 PathExists=$DATA_DIR/ikev2/state.json
+PathExists=$DATA_DIR/openconnect/state.json
 Unit=wui-l2tp.service
 
 [Install]

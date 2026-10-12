@@ -10,6 +10,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/occonf"
 	"github.com/abolfazl/w-ui/internal/radiusd"
 )
 
@@ -45,3 +46,19 @@ func (otherSystem) Stop(context.Context, string) error           { return nil }
 func (otherSystem) Running(string) bool                          { return false }
 func (otherSystem) Sessions(netip.Addr) ([]Live, error)          { return nil, errPlatform }
 func (otherSystem) EndSession(int) error                         { return errPlatform }
+
+// NewOCSystem is the same for OpenConnect.
+func NewOCSystem(*slog.Logger) OCSystem { return otherSystem{} }
+
+func (otherSystem) WriteOcserv([]occonf.File) (bool, bool, error)                { return false, false, errPlatform }
+func (otherSystem) RadiusSecret() string                                         { return "" }
+func (otherSystem) OcservRunning(context.Context) bool                           { return false }
+func (otherSystem) StartOcserv(context.Context) error                            { return errPlatform }
+func (otherSystem) RestartOcserv(context.Context) error                          { return errPlatform }
+func (otherSystem) ReloadOcserv(context.Context) error                           { return errPlatform }
+func (otherSystem) RemoveOcserv(context.Context) error                           { return nil }
+func (otherSystem) OcservUsers(context.Context) ([]OCUser, error)                { return nil, errPlatform }
+func (otherSystem) Disconnect(context.Context, int) error                        { return errPlatform }
+func (otherSystem) Camouflage(context.Context) bool                              { return false }
+func (otherSystem) ServeOCRadius(string, radiusd.Lookup, radiusd.OnAccept) error { return errPlatform }
+func (otherSystem) StopOCRadius()                                                {}

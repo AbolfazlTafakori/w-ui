@@ -26,6 +26,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/occonf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -100,6 +101,9 @@ type CreateInterfaceInput struct {
 	// IKEv2Modes are the ways into an IKEv2 tunnel: mschapv2, psk, rsa and
 	// eap-tls. None given is all four.
 	IKEv2Modes []string `json:"ikev2Modes"`
+
+	// OpenConnect is an OpenConnect tunnel's own settings.
+	OpenConnect *OpenConnectInput `json:"openconnect"`
 
 	// AWG is an AmneziaWG tunnel's obfuscation profile as the form shows it,
 	// drawn by the panel (DrawAWG) and perhaps changed by the operator. None
@@ -190,6 +194,14 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 			s.log.Warn("L2TP without IPsec is accepted on this tunnel; those sessions are not encrypted",
 				"interface", in.Name)
 		}
+	} else if in.Protocol == model.ProtocolOpenConnect {
+		// The certificate is made or taken here, so the tunnel opens with
+		// one; the reconciler's pass keeps it current.
+		p, err := newOpenConnectParams(in.EndpointHost, in.OpenConnect)
+		if err != nil {
+			return nil, err
+		}
+		iface.OpenConnect = model.JSON(p)
 	} else if in.Protocol == model.ProtocolIKEv2 {
 		// Its own authority and the server's certificate, made here; each
 		// device's is issued on the reconciler's pass (EnsureIKEv2Certs).
@@ -314,6 +326,27 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 			}
 		}
 	}
+	if in.Protocol == model.ProtocolOpenConnect {
+		// Any port: 443 by default, where it looks like the web; TLS on
+		// TCP and, with DTLS, the same number on UDP.
+		if in.ListenPort == 0 {
+			in.ListenPort = 443
+		}
+		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
+			if err := checkL2TPSubnet(p); err != nil {
+				return err
+			}
+		}
+		if in.OpenConnect != nil && in.OpenConnect.CamouflageSecret != nil {
+			if s := strings.TrimSpace(*in.OpenConnect.CamouflageSecret); s != "" {
+				if err := occonf.CheckCamouflage(s); err != nil {
+					return invalidField("openconnect.camouflageSecret", "the camouflage secret is %d to %d letters and digits", occonf.MinCamouflage, occonf.MaxCamouflage)
+				}
+			}
+		}
+	} else if in.OpenConnect != nil {
+		return invalidField("openconnect", "these settings apply to OpenConnect tunnels only")
+	}
 	if in.Protocol != model.ProtocolIKEv2 && len(in.IKEv2Modes) > 0 {
 		return invalidField("ikev2Modes", "ways of signing in apply to IKEv2 tunnels only")
 	}
@@ -345,8 +378,14 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	// being free says nothing about TCP 443, which is the port most worth
 	// asking about because a web server is so often already on it.
 	proto := "udp"
-	if in.Transport == "tcp" || in.Protocol == model.ProtocolPPTP {
+	if in.Transport == "tcp" || in.Protocol == model.ProtocolPPTP || in.Protocol == model.ProtocolOpenConnect {
 		proto = "tcp"
+	}
+	if checkPort && in.Protocol == model.ProtocolOpenConnect && (in.OpenConnect == nil || in.OpenConnect.DTLS == nil || *in.OpenConnect.DTLS) {
+		// DTLS takes the same number on UDP.
+		if err := checkPortFree(in.ListenPort, "udp"); err != nil {
+			return &FieldError{Field: "listenPort", Err: fmt.Errorf("%w; OpenConnect's DTLS needs UDP %d too, or turn DTLS off", err, in.ListenPort)}
+		}
 	}
 	if checkPort {
 		if err := checkPortFree(in.ListenPort, proto); err != nil {
@@ -380,6 +419,9 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 		in.MTU = 1420
 		if in.Protocol.IsPPP() {
 			in.MTU = l2tpconf.DefaultMTU
+		}
+		if in.Protocol == model.ProtocolOpenConnect {
+			in.MTU = occonf.DefaultMTU
 		}
 	}
 	if err := checkMTU(in.Protocol, in.MTU); err != nil {
@@ -665,6 +707,11 @@ type UpdateInterfaceInput struct {
 	// IKEv2Modes replaces the ways into an IKEv2 tunnel. A device signed in
 	// by a way taken away is ended.
 	IKEv2Modes *[]string `json:"ikev2Modes"`
+
+	// OpenConnect changes an OpenConnect tunnel's DTLS, camouflage or
+	// certificate. Every session ends when it changes, except for a new
+	// certificate alone.
+	OpenConnect *OpenConnectInput `json:"openconnect"`
 }
 
 // Update applies changes to an interface.
@@ -708,12 +755,17 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 			return nil, invalidField("listenPort", "listen port %d is out of range", port)
 		}
 		proto := "udp"
-		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" {
+		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" || iface.Protocol == model.ProtocolOpenConnect {
 			proto = "tcp"
 		}
 		if local, err := s.isLocal(ctx, iface.NodeID); err == nil && local {
 			if err := checkPortFree(port, proto); err != nil {
 				return nil, &FieldError{Field: "listenPort", Err: err}
+			}
+			if iface.Protocol == model.ProtocolOpenConnect && iface.OpenConnect.V.DTLS {
+				if err := checkPortFree(port, "udp"); err != nil {
+					return nil, &FieldError{Field: "listenPort", Err: fmt.Errorf("%w; OpenConnect's DTLS needs UDP %d too", err, port)}
+				}
 			}
 		}
 		fields["listen_port"] = port
@@ -819,6 +871,28 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	}
 	if l2tpChanged {
 		fields["l2tp"] = model.JSON(l2tp)
+	}
+	if in.OpenConnect != nil && iface.Protocol != model.ProtocolOpenConnect {
+		return nil, invalidField("openconnect", "these settings apply to OpenConnect tunnels only")
+	}
+	if iface.Protocol == model.ProtocolOpenConnect {
+		// A new address needs a certificate for it now, not at the next pass:
+		// devices dialling it would be refused until then.
+		host := iface.EndpointHost
+		if h, ok := fields["endpoint_host"].(string); ok {
+			host = h
+		}
+		p := iface.OpenConnect.V
+		if err := applyOpenConnect(&p, in.OpenConnect); err != nil {
+			return nil, err
+		}
+		if _, err := ocCertFor(&p, host, time.Now()); err != nil {
+			return nil, err
+		}
+		if p != iface.OpenConnect.V {
+			fields["openconnect"] = model.JSON(p)
+			s.log.Info("OpenConnect settings changed", "interface", iface.Name)
+		}
 	}
 	if in.IKEv2Modes != nil {
 		if iface.Protocol != model.ProtocolIKEv2 {
@@ -1362,6 +1436,12 @@ func checkNetDevice(name string) error {
 // checkMTU is the range a tunnel's MTU can take: a PPP link inside L2TP and
 // IPsec, or PPTP's GRE, sits in a 1500-byte link and cannot be larger than it.
 func checkMTU(p model.Protocol, mtu int) error {
+	if p == model.ProtocolOpenConnect {
+		if mtu < occonf.MinMTU || mtu > occonf.MaxMTU {
+			return invalidField("mtu", "an OpenConnect MTU is %d to %d; %d leaves room for DTLS on most links", occonf.MinMTU, occonf.MaxMTU, occonf.DefaultMTU)
+		}
+		return nil
+	}
 	if p.IsPPP() {
 		if mtu < l2tpconf.MinMTU || mtu > l2tpconf.MaxMTU {
 			return invalidField("mtu", "an %s MTU is %d to %d; %d leaves room for its headers", strings.ToUpper(string(p)), l2tpconf.MinMTU, l2tpconf.MaxMTU, l2tpconf.DefaultMTU)
@@ -1409,6 +1489,9 @@ func (s *Interfaces) checkPPPPlace(ctx context.Context, node *model.Node, p mode
 	// serves, and nothing carries them across yet.
 	if p == model.ProtocolIKEv2 && node.Kind != model.KindLocal {
 		return invalidField("nodeId", "an IKEv2 tunnel runs on this server only for now, not on a node")
+	}
+	if p == model.ProtocolOpenConnect && node.Kind != model.KindLocal {
+		return invalidField("nodeId", "an OpenConnect tunnel runs on this server only for now, not on a node")
 	}
 	if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
 		v := node.Version

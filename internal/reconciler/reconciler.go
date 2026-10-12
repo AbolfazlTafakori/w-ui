@@ -697,6 +697,9 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	if err := service.EnsureIKEv2Certs(ctx, r.db, r.localNodeID, time.Now()); err != nil {
 		r.log.Error("IKEv2 certificates", "error", err)
 	}
+	if err := service.EnsureOpenConnectCerts(ctx, r.db, r.localNodeID, time.Now()); err != nil {
+		r.log.Error("OpenConnect certificates", "error", err)
+	}
 	db := r.db.WithContext(ctx)
 
 	var clients []model.Client

@@ -439,7 +439,7 @@ func (s *Clients) buildAccount(client *model.Client, iface *model.Interface, nam
 		acc.PublicKey = pair.Public.String()
 		acc.PresharedKey = pair.Preshared.String()
 
-	case model.ProtocolOpenVPN, model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2:
+	case model.ProtocolOpenVPN, model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2, model.ProtocolOpenConnect:
 		// The same shape on both: a username and a password typed into the
 		// client, drawn from an alphabet every client and pppd's secrets
 		// file take as it is.

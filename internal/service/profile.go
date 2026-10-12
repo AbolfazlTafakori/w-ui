@@ -6,6 +6,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/occdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
@@ -80,7 +81,7 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 			p = renderWireGuard(&acc, &at)
 		case model.ProtocolOpenVPN:
 			p = renderOpenVPN(&acc, &at)
-		case model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2:
+		case model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2, model.ProtocolOpenConnect:
 			p = renderPPP(&acc, &at)
 		default:
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
@@ -143,6 +144,9 @@ func signInText(acc *model.Account, iface *model.Interface) string {
 	if iface.Protocol == model.ProtocolIKEv2 {
 		return ikev2driver.Profile(acc, iface)
 	}
+	if iface.Protocol == model.ProtocolOpenConnect {
+		return occdriver.Profile(acc, iface)
+	}
 	return l2tpdriver.Profile(acc, iface)
 }
 
@@ -150,6 +154,9 @@ func signInText(acc *model.Account, iface *model.Interface) string {
 func withheldText(acc *model.Account, iface *model.Interface) string {
 	if iface.Protocol == model.ProtocolIKEv2 {
 		return ikev2driver.WithheldProfile(acc, iface)
+	}
+	if iface.Protocol == model.ProtocolOpenConnect {
+		return occdriver.WithheldProfile(acc, iface)
 	}
 	return l2tpdriver.WithheldProfile(acc, iface)
 }

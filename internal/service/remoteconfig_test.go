@@ -11,6 +11,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/occdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -32,6 +33,9 @@ func init() {
 	}
 	if !backend.Supports(model.ProtocolIKEv2) {
 		ikev2driver.Register()
+	}
+	if !backend.Supports(model.ProtocolOpenConnect) {
+		occdriver.Register()
 	}
 }
 

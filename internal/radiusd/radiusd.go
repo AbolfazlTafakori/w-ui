@@ -1,5 +1,6 @@
 // Package radiusd is the RADIUS server strongSwan asks when a device signs
-// in to the IKEv2 tunnel by username and password.
+// in to the IKEv2 tunnel by username and password, and ocserv asks for an
+// OpenConnect sign-in (PAP, pap.go).
 //
 // strongSwan picks a device's connection by the identity it announces, and
 // a device signing in by password often announces none of its own --
@@ -90,6 +91,7 @@ type Server struct {
 
 	mu       sync.Mutex
 	lookup   Lookup
+	onAccept OnAccept
 	sessions map[string]*session
 	replies  map[string]cachedReply
 }
@@ -246,8 +248,14 @@ func (s *Server) handle(raw []byte, from string) ([]byte, error) {
 	if p.code != codeAccessRequest {
 		return nil, fmt.Errorf("code %d is not an Access-Request", p.code)
 	}
-	if !s.verify(raw, p) {
-		return nil, errors.New("the Message-Authenticator does not check out")
+	// A Message-Authenticator, where there is one, has to be right. A PAP
+	// request may come without (radcli sends none): it is believed only by
+	// the password it carries, which cannot be right without the secret.
+	pap := p.get(attrUserPassword) != nil && p.get(attrEAPMessage) == nil
+	if p.get(attrMessageAuth) != nil || !pap {
+		if !s.verify(raw, p) {
+			return nil, errors.New("the Message-Authenticator does not check out")
+		}
 	}
 	// A retransmission gets the same answer.
 	key := from + string(p.id) + string(p.auth)
@@ -264,7 +272,12 @@ func (s *Server) handle(raw []byte, from string) ([]byte, error) {
 	}
 	s.mu.Unlock()
 
-	reply := s.answer(p, now)
+	var reply []byte
+	if pap {
+		reply = s.pap(p)
+	} else {
+		reply = s.answer(p, now)
+	}
 	s.mu.Lock()
 	s.replies[key] = cachedReply{body: reply, expires: now.Add(replyCacheTTL)}
 	s.mu.Unlock()

@@ -200,6 +200,32 @@ func (p IKEv2Params) AnyMode() bool { return p.MSCHAPv2 || p.PSK || p.RSA || p.E
 // its own, which then has to be issued to it.
 func (p IKEv2Params) ByCertificate() bool { return p.RSA || p.EAPTLS }
 
+// OpenConnectParams holds interface-scoped OpenConnect settings.
+//
+// The server's certificate is the tunnel's own, made by the panel, unless
+// the panel has one of its own for the name devices dial (UsePanelCert):
+// the Cisco client refuses a certificate no authority it knows has signed
+// unless its "Block untrusted servers" switch is turned off, so a real one is
+// the one that needs nothing from the customer. Key is taken out on the way
+// out of the API (redactKeys).
+type OpenConnectParams struct {
+	// DTLS carries a signed-in device's traffic over UDP on the same port,
+	// which is faster; off, everything goes over TLS on TCP.
+	DTLS bool `json:"dtls"`
+	// Camouflage answers like an ordinary web server unless the address has
+	// "?CamouflageSecret" on it (ocserv 1.2 and later).
+	Camouflage       bool   `json:"camouflage"`
+	CamouflageSecret string `json:"camouflageSecret,omitempty"`
+	// UsePanelCert puts the panel's own certificate on the tunnel when it
+	// has one for the tunnel's address.
+	UsePanelCert bool   `json:"usePanelCert"`
+	Cert         string `json:"cert,omitempty"`
+	Key          string `json:"key,omitempty"`
+	// CertSource says whose certificate is on the tunnel now: "own" or
+	// "panel".
+	CertSource string `json:"certSource,omitempty"`
+}
+
 // OpenVPNParams holds interface-scoped OpenVPN settings.
 //
 // The panel runs OpenVPN in credential-only mode: verify-client-cert none plus

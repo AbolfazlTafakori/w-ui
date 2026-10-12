@@ -40,10 +40,13 @@ const (
 	IKEv2PSK      Protocol = "ikev2-psk"
 	IKEv2RSA      Protocol = "ikev2-rsa"
 	IKEv2TLS      Protocol = "ikev2-eap-tls"
+	// OpenConnect is what Cisco Secure Client (AnyConnect) speaks: the
+	// server's address and a username and password.
+	OpenConnect Protocol = "openconnect"
 )
 
 // Protocols are every protocol, in the order a device lists them.
-var Protocols = []Protocol{WireGuard, OpenVPN, IKEv2Password, IKEv2PSK, IKEv2RSA, IKEv2TLS, L2TP, L2TPPlain, PPTP}
+var Protocols = []Protocol{WireGuard, OpenVPN, OpenConnect, IKEv2Password, IKEv2PSK, IKEv2RSA, IKEv2TLS, L2TP, L2TPPlain, PPTP}
 
 // IsIKEv2 reports whether a setup is one of IKEv2's.
 func (p Protocol) IsIKEv2() bool {
@@ -52,7 +55,7 @@ func (p Protocol) IsIKEv2() bool {
 
 // Withholds reports whether a setup's sign-in is one a customer's page
 // keeps out of the page: typed into the device, and all a stranger needs.
-func (p Protocol) Withholds() bool { return p.IsPPP() || p.IsIKEv2() }
+func (p Protocol) Withholds() bool { return p.IsPPP() || p.IsIKEv2() || p == OpenConnect }
 
 // Weak is whether a protocol's sessions are not encrypted, or only with a
 // cipher long since broken: said wherever it is offered.
@@ -91,6 +94,21 @@ type Values struct {
 	// IKEv2 is an IKEv2 file's own: the ways in the tunnel allows, and what
 	// the device installs.
 	IKEv2 IKEv2Values
+	// OC is an OpenConnect tunnel's own.
+	OC OCValues
+}
+
+// OCValues are what an OpenConnect tunnel tells a device.
+type OCValues struct {
+	// URL is what the device dials: the server, its port when not 443, and
+	// "/?secret" when the tunnel hides itself.
+	URL string
+	// Pin is the server's certificate as OpenConnect pins it (pin-sha256),
+	// for the clients that take one instead of trusting an authority.
+	Pin string
+	// Untrusted is a certificate the tunnel made itself, which no device
+	// trusts on its own: the Cisco client has to be told to accept it.
+	Untrusted bool
 }
 
 // IKEv2Values are what an IKEv2 tunnel offers a device.
@@ -135,6 +153,8 @@ func (v Values) Served() []Protocol {
 		return []Protocol{L2TP}
 	case "pptp":
 		return []Protocol{PPTP}
+	case "openconnect":
+		return []Protocol{OpenConnect}
 	case "ikev2":
 		var out []Protocol
 		if v.IKEv2.MSCHAPv2 {
@@ -210,6 +230,10 @@ const (
 	// CertFile and CAFile are the certificates a device installs first.
 	CertFile
 	CAFile
+	// OCURL is the OpenConnect server's address as a device dials it; OCPin
+	// its certificate's pin.
+	OCURL
+	OCPin
 )
 
 // Field is one line of a device's form.
@@ -420,6 +444,10 @@ func (s Setup) Rows(v Values) []Row {
 		case CAFile:
 			own(v.IKEv2.CAFile)
 			r.Copy = false
+		case OCURL:
+			own(v.OC.URL)
+		case OCPin:
+			own(v.OC.Pin)
 		}
 		if r.Key != "" {
 			w := words[r.Key]
@@ -561,6 +589,7 @@ var ProtocolNames = map[Protocol]Text{
 	IKEv2PSK:      {EN: "IKEv2 · key (PSK)", FA: "IKEv2 · کلید (PSK)"},
 	IKEv2RSA:      {EN: "IKEv2 · certificate (RSA)", FA: "IKEv2 · گواهی (RSA)"},
 	IKEv2TLS:      {EN: "IKEv2 · certificate in EAP (EAP-TLS)", FA: "IKEv2 · گواهی در EAP (EAP-TLS)"},
+	OpenConnect:   {EN: "OpenConnect (Cisco AnyConnect)", FA: "OpenConnect (سیسکو AnyConnect)"},
 }
 
 // PlainText is an L2TP or PPTP sign-in as a file, for the download and the
@@ -579,7 +608,10 @@ func PlainText(v Values) string {
 	var b strings.Builder
 	pptp := v.Protocol == "pptp"
 	ike := v.Protocol == "ikev2"
+	oc := v.Protocol == "openconnect"
 	switch {
+	case oc:
+		fmt.Fprintf(&b, "OpenConnect (Cisco AnyConnect) — %s\n\n", v.Tunnel)
 	case pptp:
 		fmt.Fprintf(&b, "PPTP — %s\n\n", v.Tunnel)
 		b.WriteString("-- PPTP's encryption has been broken for years: use it only where nothing else will do.\n\n")
@@ -588,14 +620,22 @@ func PlainText(v Values) string {
 	default:
 		fmt.Fprintf(&b, "L2TP/IPsec — %s\n\n", v.Tunnel)
 	}
-	fmt.Fprintf(&b, "Server:          %s\n", v.Server)
+	if oc {
+		fmt.Fprintf(&b, "Server address:  %s\n", v.OC.URL)
+	} else {
+		fmt.Fprintf(&b, "Server:          %s\n", v.Server)
+	}
 	for _, s := range v.Others {
 		fmt.Fprintf(&b, "                 %s (if the first does not answer)\n", s)
 	}
 	if v.ServerIP != "" {
 		fmt.Fprintf(&b, "Server IP:       %s (for a router that takes no name)\n", v.ServerIP)
 	}
-	if ike {
+	if oc {
+		if v.OC.Pin != "" {
+			fmt.Fprintf(&b, "Certificate pin: %s\n", v.OC.Pin)
+		}
+	} else if ike {
 		fmt.Fprintf(&b, "Remote ID:       %s\n", v.ServerID)
 	} else if !pptp {
 		fmt.Fprintf(&b, "Pre-shared key:  %s\n", v.PSK)
@@ -711,7 +751,7 @@ func ProtocolKey(p Protocol) string { return "dgp." + string(p) }
 // out of the page: typed into a device's own settings (L2TP, PPTP, IKEv2).
 func (v Values) Withholds() bool {
 	switch v.Protocol {
-	case "l2tp", "pptp", "ikev2":
+	case "l2tp", "pptp", "ikev2", "openconnect":
 		return true
 	}
 	return false

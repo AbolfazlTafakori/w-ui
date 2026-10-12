@@ -350,6 +350,49 @@ func ovpnApp(path string) Setup {
 	}
 }
 
+// ciscoPhone is Cisco Secure Client on a phone or tablet: a connection with
+// the server's address, the sign-in asked for when it connects.
+func ciscoPhone(path string) Setup {
+	return Setup{
+		Protocol: OpenConnect,
+		Path:     path,
+		Fields: []Field{
+			{Label: "Description", Source: Anything},
+			{Label: "Server Address", Source: OCURL},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+		},
+		Notes: []Text{Text{
+		EN: "The username and password are asked for when it connects.",
+		FA: "نام کاربری و رمز موقع اتصال پرسیده می‌شود.",
+	}, Text{
+		EN: "If it says the server is untrusted: Settings > Block Untrusted Servers off, then connect again. The server's certificate is its own, not one a public authority signed.",
+		FA: "اگر گفت سرور نامعتبر است: تنظیمات > Block Untrusted Servers را خاموش کنید و دوباره وصل شوید. گواهی سرور مال خودش است، نه گواهی یک مرجع عمومی.",
+	}},
+	}
+}
+
+// ciscoDesktop is Cisco Secure Client on a computer: the address typed into
+// its window, the sign-in asked for when it connects.
+func ciscoDesktop() Setup {
+	return Setup{
+		Protocol: OpenConnect,
+		Path:     "Cisco Secure Client > VPN",
+		Fields: []Field{
+			{Label: "VPN", Source: OCURL},
+			{Label: "Username", Source: Username},
+			{Label: "Password", Source: Password},
+		},
+		Notes: []Text{Text{
+		EN: "The username and password are asked for when it connects.",
+		FA: "نام کاربری و رمز موقع اتصال پرسیده می‌شود.",
+	}, Text{
+		EN: "If it says the server is untrusted: the gear > Preferences > clear Block connections to untrusted servers, then connect again. The server's certificate is its own, not one a public authority signed.",
+		FA: "اگر گفت سرور نامعتبر است: چرخ‌دنده > Preferences > تیک Block connections to untrusted servers را بردارید و دوباره وصل شوید. گواهی سرور مال خودش است، نه گواهی یک مرجع عمومی.",
+	}},
+	}
+}
+
 // The catalogue. Phones and computers first, then routers and modems, and
 // last the models with no client.
 var catalogue = []Guide{
@@ -358,6 +401,7 @@ var catalogue = []Guide{
 		Setups: []Setup{
 			wgApp("WireGuard app > Add Tunnel > Import tunnel(s) from file", Field{Label: "File", Source: File}),
 			ovpnApp("OpenVPN Connect > + > Upload File"),
+			ciscoDesktop(),
 			{
 				Protocol: L2TP,
 				Path:     "Settings > Network & internet > VPN > Add VPN",
@@ -417,6 +461,7 @@ var catalogue = []Guide{
 	{
 		ID: "ios", Name: en("iPhone / iPad"), Kind: Device,
 		Setups: []Setup{
+			ciscoPhone("Cisco Secure Client > Connections > Add VPN Connection"),
 			wgApp("WireGuard app > + > Create from file or archive", Field{Label: "File", Source: File}),
 			ovpnApp("OpenVPN Connect > Import Profile > File"),
 			{
@@ -491,6 +536,7 @@ var catalogue = []Guide{
 	{
 		ID: "macos", Name: en("macOS"), Kind: Device,
 		Setups: []Setup{
+			ciscoDesktop(),
 			wgApp("WireGuard app > Import Tunnel(s) from File", Field{Label: "File", Source: File}),
 			ovpnApp("OpenVPN Connect > Import Profile > File"),
 			{
@@ -568,6 +614,7 @@ var catalogue = []Guide{
 	{
 		ID: "android", Name: Text{EN: "Android 11 and older", FA: "اندروید ۱۱ و قدیمی‌تر"}, Kind: Device,
 		Setups: []Setup{
+			ciscoPhone("Cisco Secure Client > Connections > Add New VPN Connection"),
 			wgApp("WireGuard app > + > Import from file or archive", Field{Label: "File", Source: File}),
 			ovpnApp("OpenVPN Connect > Import Profile > File"),
 			{
@@ -688,6 +735,27 @@ var catalogue = []Guide{
 	{
 		ID: "linux", Name: en("Linux (NetworkManager)"), Kind: Device,
 		Setups: []Setup{
+			{
+				Protocol: OpenConnect,
+				Path:     "Settings > Network > VPN > + > Cisco AnyConnect Compatible VPN (openconnect)",
+				Fields: []Field{
+					{Label: "Name", Source: Anything},
+					{Label: "Gateway", Source: OCURL},
+					{Label: "Username", Source: Username},
+					{Label: "Password", Source: Password},
+				},
+				Notes: []Text{{
+					EN: "Needs the network-manager-openconnect-gnome package. The username and password are asked for when it connects, and the first time, whether to accept the server's certificate. Or run:",
+					FA: "بسته network-manager-openconnect-gnome لازم است. نام کاربری و رمز موقع اتصال پرسیده می‌شود، و بار اول اینکه گواهی سرور را بپذیرد یا نه. یا اجرا کنید:",
+				}},
+				Command: func(v Values) string {
+					pin := ""
+					if v.OC.Pin != "" {
+						pin = " --servercert " + v.OC.Pin
+					}
+					return "sudo openconnect --protocol=anyconnect --user=" + v.Username + pin + " " + v.OC.URL
+				},
+			},
 			wgApp("Settings > Network > VPN > + > Import from file…", Field{Label: "File", Source: File}),
 			{
 				Protocol: OpenVPN,
@@ -732,6 +800,7 @@ var catalogue = []Guide{
 	{
 		ID: "chromeos", Name: en("ChromeOS"), Kind: Device,
 		Setups: []Setup{
+			ciscoPhone("Play Store > Cisco Secure Client > Connections > Add New VPN Connection"),
 			wgApp("Play Store > WireGuard app > + > Import from file or archive", Field{Label: "File", Source: File}),
 			{
 				Protocol: L2TP,
@@ -1052,6 +1121,20 @@ var catalogue = []Guide{
 	{
 		ID: "openwrt", Name: en("OpenWrt"), Kind: Router,
 		Setups: []Setup{
+			{
+				Protocol: OpenConnect,
+				Path:     "Network > Interfaces > Add new interface > Protocol: OpenConnect",
+				Fields: []Field{
+					{Label: "VPN Server", Source: OCURL},
+					{Label: "Username", Source: Username},
+					{Label: "Password", Source: Password},
+					{Label: "VPN Server's certificate SHA1 hash", Source: OCPin},
+				},
+				Notes: []Text{{
+					EN: "Needs the luci-proto-openconnect package; put the new interface in the wan firewall zone. The hash field takes the pin as it is.",
+					FA: "بسته luci-proto-openconnect لازم است؛ اینترفیس جدید را در زون فایروال wan بگذارید. فیلد hash همین pin را همان‌طور که هست می‌گیرد.",
+				}},
+			},
 			{
 				Protocol: WireGuard,
 				Path:     "Network > Interfaces > Add new interface > Protocol: WireGuard VPN > Load configuration…",

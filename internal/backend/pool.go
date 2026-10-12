@@ -290,6 +290,10 @@ func fingerprint(i *model.Interface) string {
 		// A new profile is set on the device by opening it again.
 		fp += fmt.Sprintf("|%+v", i.AWG.V)
 	}
+	if i.Protocol == model.ProtocolOpenConnect {
+		p := i.OpenConnect.V
+		fp += fmt.Sprintf("|%s|%s|%t|%t|%s|%s", i.DNS, i.EndpointHost, p.DTLS, p.Camouflage, p.CamouflageSecret, p.Cert)
+	}
 	if i.Protocol == model.ProtocolIKEv2 {
 		p := i.IKEv2.V
 		fp += fmt.Sprintf("|%s|%s|%t%t%t%t|%s|%s", i.DNS, i.EndpointHost, p.MSCHAPv2, p.PSK, p.RSA, p.EAPTLS, p.ServerCert, p.CACert)

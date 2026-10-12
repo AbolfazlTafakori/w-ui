@@ -283,12 +283,16 @@ func startAgent(ctx context.Context, log *slog.Logger, dataDir string) {
 	ikeFiles, _, err := l2tpagent.OpenFiles(dataDir, l2tpconf.ProtocolIKEv2)
 	must(err)
 	agents = append(agents, l2tpagent.NewIKEv2(l2tpagent.NewIPsecSystem(log), ikeFiles, log))
+	ocFiles, _, err := l2tpagent.OpenFiles(dataDir, l2tpconf.ProtocolOpenConnect)
+	must(err)
+	agents = append(agents, l2tpagent.NewOpenConnect(l2tpagent.NewOCSystem(log), ocFiles, log))
 	// The agent ends when no tunnel is described; wui-l2tp.path starts it
 	// again when one is (PathExists on each state.json). This does the same.
 	states := []string{
 		l2tpconf.PathsFor(dataDir, l2tpconf.ProtocolL2TP).State(),
 		l2tpconf.PathsFor(dataDir, l2tpconf.ProtocolPPTP).State(),
 		l2tpconf.PathsFor(dataDir, l2tpconf.ProtocolIKEv2).State(),
+		l2tpconf.PathsFor(dataDir, l2tpconf.ProtocolOpenConnect).State(),
 	}
 	go func() {
 		for {

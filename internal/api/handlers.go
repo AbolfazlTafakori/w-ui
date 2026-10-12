@@ -149,6 +149,14 @@ func redactKeys(iface model.Interface) model.Interface {
 		k.CAKey, k.ServerKey = "", ""
 		iface.IKEv2 = model.JSON(k)
 	}
+	// OpenConnect's server key; its certificate is what every device is
+	// shown anyway.
+	if iface.Protocol == model.ProtocolOpenConnect {
+		k := iface.OpenConnect.V
+		iface.Configured = k.Key != "" && k.Cert != ""
+		k.Key = ""
+		iface.OpenConnect = model.JSON(k)
+	}
 
 	// The WireGuard private key is already hidden by its struct tag; cleared
 	// here as well so this function is the one place to look.

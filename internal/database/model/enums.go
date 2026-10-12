@@ -22,12 +22,17 @@ const (
 	// MSCHAPv2), by a key of its own (PSK), or by a certificate (RSA or
 	// EAP-TLS), whichever the tunnel allows.
 	ProtocolIKEv2 Protocol = "ikev2"
+	// ProtocolOpenConnect is OpenConnect, what Cisco's AnyConnect client --
+	// now Cisco Secure Client -- speaks: a VPN inside TLS on TCP, its traffic
+	// over DTLS on UDP once signed in, served by ocserv. A username and
+	// password per device; the Cisco app is in every store.
+	ProtocolOpenConnect Protocol = "openconnect"
 )
 
 // Valid reports whether p is a protocol the panel knows how to serve.
 func (p Protocol) Valid() bool {
 	switch p {
-	case ProtocolWireGuard, ProtocolOpenVPN, ProtocolL2TP, ProtocolPPTP, ProtocolIKEv2:
+	case ProtocolWireGuard, ProtocolOpenVPN, ProtocolL2TP, ProtocolPPTP, ProtocolIKEv2, ProtocolOpenConnect:
 		return true
 	}
 	return false
@@ -36,7 +41,7 @@ func (p Protocol) Valid() bool {
 // UsesCredentials reports whether a device on this protocol signs in with a
 // username and password, held on its account, rather than carrying a key.
 func (p Protocol) UsesCredentials() bool {
-	return p == ProtocolOpenVPN || p == ProtocolL2TP || p == ProtocolPPTP || p == ProtocolIKEv2
+	return p == ProtocolOpenVPN || p == ProtocolL2TP || p == ProtocolPPTP || p == ProtocolIKEv2 || p == ProtocolOpenConnect
 }
 
 // IsPPP reports whether a protocol's sessions are pppd's, run by the root
@@ -44,9 +49,11 @@ func (p Protocol) UsesCredentials() bool {
 func (p Protocol) IsPPP() bool { return p == ProtocolL2TP || p == ProtocolPPTP }
 
 // ByAgent reports whether a protocol's tunnel is carried by the root agent
-// rather than by the panel itself: L2TP and PPTP (pppd), and IKEv2
-// (strongSwan). Its port is the system's, so a server has one of each.
-func (p Protocol) ByAgent() bool { return p.IsPPP() || p == ProtocolIKEv2 }
+// rather than by the panel itself: L2TP and PPTP (pppd), IKEv2 (strongSwan)
+// and OpenConnect (ocserv). A server has one of each.
+func (p Protocol) ByAgent() bool {
+	return p.IsPPP() || p == ProtocolIKEv2 || p == ProtocolOpenConnect
+}
 
 func (p Protocol) String() string { return string(p) }
 
