@@ -320,16 +320,16 @@ func NewPaths(dataDir string) l2tpconf.Paths {
 // The files the agent writes, in Dir (ConfDir), all root's and the
 // key and RADIUS secret readable by root only.
 const (
-	ConfDir      = "/etc/wui-ocserv"
-	ConfFile     = "ocserv.conf"
-	RadcliFile   = "radiusclient.conf"
-	CertFile     = "server-cert.pem"
-	KeyFile      = "server-key.pem"
-	SocketFile   = "/run/wui-ocserv.socket"
-	OcctlSocket  = "/run/wui-occtl.socket"
-	PIDFile      = "/run/wui-ocserv.pid"
-	DeviceName   = "vpns"
-	radcliDict   = "/etc/radcli/dictionary"
+	ConfDir     = "/etc/wui-ocserv"
+	ConfFile    = "ocserv.conf"
+	RadcliFile  = "radiusclient.conf"
+	CertFile    = "server-cert.pem"
+	KeyFile     = "server-key.pem"
+	SocketFile  = "/run/wui-ocserv.socket"
+	OcctlSocket = "/run/wui-occtl.socket"
+	PIDFile     = "/run/wui-ocserv.pid"
+	DeviceName  = "vpns"
+	radcliDict  = "/etc/radcli/dictionary"
 )
 
 // File is one file the agent writes.

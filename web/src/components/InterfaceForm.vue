@@ -38,6 +38,8 @@ const defaults = {
   pptp: { name: 'pptp0', listenPort: 1723, subnet: '10.78.0.0/16', mtu: 1400 },
   // UDP 500 and 4500, fixed as well.
   ikev2: { name: 'ike0', listenPort: 500, subnet: '10.79.0.0/16', mtu: 1400 },
+  // Any port; 443, where it looks like the web, unless something holds it.
+  openconnect: { name: 'oc0', listenPort: 443, subnet: '10.81.0.0/16', mtu: 1400 },
 }
 
 // The four ways into an IKEv2 tunnel, each a type in a device's own VPN
@@ -68,6 +70,12 @@ const form = ref(
         psk: props.iface.l2tp?.psk || '',
         l2tpPlain: !!props.iface.l2tp?.allowPlain,
         ikev2Modes: ikeModesOf(props.iface.ikev2),
+        oc: {
+          dtls: props.iface.openconnect ? !!props.iface.openconnect.dtls : true,
+          camouflage: props.iface.openconnect ? !!props.iface.openconnect.camouflage : true,
+          camouflageSecret: props.iface.openconnect?.camouflageSecret || '',
+          usePanelCert: props.iface.openconnect ? !!props.iface.openconnect.usePanelCert : true,
+        },
         // A copy to edit; what is sent is compared with the tunnel's own.
         awg: { ...(props.iface.awg || {}) },
         awgLevel: usesAwg2(props.iface.awg) ? 'modern' : 'classic',
@@ -85,6 +93,10 @@ const form = ref(
         psk: '',
         l2tpPlain: false,
         ikev2Modes: [...IKE_MODES],
+        // OpenConnect's own: DTLS for speed, camouflage against scanners
+        // (its secret drawn by the server unless one is typed), and the
+        // panel's own certificate when it covers the address.
+        oc: { dtls: true, camouflage: true, camouflageSecret: '', usePanelCert: true },
         // Drawn by the panel for this server the moment AmneziaWG is chosen.
         awg: null,
         awgLevel: 'modern',
@@ -96,7 +108,7 @@ const busy = ref(false)
 
 // The protocols in the order they are usually chosen, whatever order the
 // server lists them in; one it adds later goes at the end.
-const ORDER = ['wireguard', 'openvpn', 'ikev2', 'l2tp', 'pptp']
+const ORDER = ['wireguard', 'openvpn', 'openconnect', 'ikev2', 'l2tp', 'pptp']
 const rank = (p) => (ORDER.includes(p) ? ORDER.indexOf(p) : ORDER.length)
 const protocols = computed(() => [...(store.meta?.protocols || ['wireguard'])].sort((a, b) => rank(a) - rank(b)))
 
@@ -108,6 +120,13 @@ const isOpenVPN = computed(() => form.value.protocol === 'openvpn')
 const isL2TP = computed(() => form.value.protocol === 'l2tp')
 const isPPTP = computed(() => form.value.protocol === 'pptp')
 const isIKEv2 = computed(() => form.value.protocol === 'ikev2')
+const isOC = computed(() => form.value.protocol === 'openconnect')
+// A camouflage secret drawn here, from the same alphabet the server draws
+// from: letters and digits.
+function drawCamouflage() {
+  form.value.oc.camouflageSecret = randomPSK(16)
+  clearError('openconnect.camouflageSecret')
+}
 // A port the clients cannot be told to change.
 const fixedPort = computed(() => isL2TP.value || isPPTP.value || isIKEv2.value)
 
@@ -550,6 +569,51 @@ defineExpose({ showError })
             </div>
           </section>
 
+          <!-- OpenConnect: what Cisco Secure Client dials. -->
+          <section v-if="isOC" class="l2tp-box" aria-labelledby="if-oc">
+            <div id="if-oc" class="l2tp-head"><AntIcon name="SafetyCertificateOutlined" />{{ t('interface.ocSection') }}</div>
+            <div class="aform-item">
+              <div class="opt-card" :class="{ on: form.oc.dtls }">
+                <div class="opt-text">
+                  <div class="opt-title">DTLS</div>
+                  <div class="opt-desc">{{ t('interface.ocDtlsDesc') }}</div>
+                </div>
+                <Toggle v-model="form.oc.dtls" label="DTLS" @update:model-value="clearError('listenPort')" />
+              </div>
+            </div>
+            <div class="aform-item">
+              <div class="opt-card" :class="{ on: form.oc.camouflage }">
+                <div class="opt-text">
+                  <div class="opt-title">{{ t('interface.ocCamouflage') }} <HelpTip :text="t('interface.ocCamouflageHint')" /></div>
+                  <div class="opt-desc">{{ t('interface.ocCamouflageDesc') }}</div>
+                </div>
+                <Toggle v-model="form.oc.camouflage" :label="t('interface.ocCamouflage')" />
+              </div>
+              <Transition name="reveal">
+                <div v-if="form.oc.camouflage" class="acompact oc-secret">
+                  <label class="ainput block" :class="{ invalid: fieldName === 'openconnect.camouflageSecret' }">
+                    <input v-model="form.oc.camouflageSecret" data-field="openconnect.camouflageSecret" class="mono ltr" autocomplete="off" spellcheck="false" maxlength="64" :placeholder="t('interface.ocSecretAuto')" @input="clearError('openconnect.camouflageSecret')" />
+                  </label>
+                  <button type="button" class="abtn icon" :title="t('client.generate')" :aria-label="t('client.generate')" @click="drawCamouflage"><AntIcon name="ReloadOutlined" /></button>
+                </div>
+              </Transition>
+              <p v-if="fieldName === 'openconnect.camouflageSecret'" class="field-error" role="alert">{{ fieldError }}</p>
+            </div>
+            <div class="aform-item">
+              <div class="opt-card" :class="{ on: form.oc.usePanelCert }">
+                <div class="opt-text">
+                  <div class="opt-title">{{ t('interface.ocPanelCert') }}</div>
+                  <div class="opt-desc">{{ t('interface.ocPanelCertDesc') }}</div>
+                </div>
+                <Toggle v-model="form.oc.usePanelCert" :label="t('interface.ocPanelCert')" />
+              </div>
+              <div v-if="editing && props.iface.openconnect?.certSource" class="aalert slim" :class="props.iface.openconnect.certSource === 'panel' ? 'success' : 'info'">
+                <AntIcon :name="props.iface.openconnect.certSource === 'panel' ? 'CheckCircleOutlined' : 'InfoCircleOutlined'" />
+                <span>{{ t(props.iface.openconnect.certSource === 'panel' ? 'interface.ocCertPanel' : 'interface.ocCertOwn') }}</span>
+              </div>
+            </div>
+          </section>
+
           <!-- IKEv2: the ways a device may sign in, each a type in its own
                VPN settings. -->
           <section v-if="isIKEv2" class="l2tp-box" aria-labelledby="if-ikev2">
@@ -657,6 +721,7 @@ defineExpose({ showError })
 .aalert.slim > .anticon { margin-top: 3px; line-height: 1; }
 .pptp-warn { margin: 0 0 24px; }
 .ike-mode { margin-bottom: 8px; }
+.oc-secret { margin-top: 8px; }
 .awg-wait { display: flex; align-items: center; gap: 8px; margin: 0 0 24px; color: var(--muted); }
 .awg-wait .spin { animation: awg-wait-spin 0.8s linear infinite; }
 @keyframes awg-wait-spin { to { transform: rotate(360deg); } }

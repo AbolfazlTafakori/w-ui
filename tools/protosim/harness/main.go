@@ -31,12 +31,14 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/occdriver"
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpagent"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/occonf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -52,6 +54,8 @@ func main() {
 	protocol := flag.String("protocol", "", "wireguard, openvpn, l2tp, pptp or ikev2")
 	plain := flag.Bool("plain", false, "l2tp: also accept routers without IPsec")
 	transport := flag.String("transport", "udp", "openvpn: udp or tcp")
+	camouflage := flag.Bool("camouflage", false, "openconnect: hide the server behind a secret in its address")
+	noDTLS := flag.Bool("no-dtls", false, "openconnect: TLS over TCP only")
 	extra := flag.Int("extra", 0, "wireguard: this many more devices on the tunnel besides the clients, to see it carry a server's worth")
 	awg := flag.String("awg", "", "wireguard: an AmneziaWG profile -- classic (Jc to H4, as the panel draws one) or awg2 (identifier ranges and I1-I2 from the form's ready packets)")
 	endpoint := flag.String("endpoint", "", "the address clients dial")
@@ -120,6 +124,20 @@ func main() {
 		l2tpdriver.DataRoot = "/var/lib/wui"
 		// The panel's data directory, which the installer makes.
 		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
+		startAgent(ctx, log, l2tpdriver.DataRoot)
+	case model.ProtocolOpenConnect:
+		// The tunnel's own certificate, DTLS, and camouflage when asked for,
+		// as the panel makes them (service.newOpenConnectParams).
+		cert, key, err := occonf.NewServerCert([]string{*endpoint})
+		must(err)
+		iface.Name, iface.ListenPort, iface.MTU = "oc0", 443, occonf.DefaultMTU
+		iface.OpenConnect = model.JSON(model.OpenConnectParams{DTLS: !*noDTLS, Camouflage: *camouflage,
+			CamouflageSecret: "Hidden42Door", Cert: cert, Key: key, CertSource: "own"})
+		l2tpdriver.DataRoot = "/var/lib/wui"
+		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
+		d := occdriver.New()
+		d.SetLogger(log)
+		drv = d
 		startAgent(ctx, log, l2tpdriver.DataRoot)
 	case model.ProtocolIKEv2:
 		// All four ways in, an authority and the server's certificate, as
@@ -332,6 +350,14 @@ func openTunnel(ctx context.Context, drv backend.Backend, iface *model.Interface
 // writeSignIn writes what an L2TP or PPTP device is set up with, from the
 // same values the customer's page shows: server, key, username, password.
 func writeSignIn(dir, name string, a *model.Account, iface *model.Interface) {
+	if iface.Protocol == model.ProtocolOpenConnect {
+		// What the customer's page shows: the address to dial, the
+		// certificate's pin, the sign-in.
+		v := occdriver.GuideValues(a, iface)
+		env := fmt.Sprintf("URL=%s\nPIN=%s\nUSER=%s\nPASS=%s\n", v.OC.URL, v.OC.Pin, v.Username, v.Password)
+		must(os.WriteFile(filepath.Join(dir, name+".env"), []byte(env), 0o644))
+		return
+	}
 	if iface.Protocol == model.ProtocolIKEv2 {
 		// The page's values, and the files it hands out: the tunnel's
 		// authority and the device's own certificate.

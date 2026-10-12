@@ -35,6 +35,9 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$work/bin/harness" ./tools/pr
 cp "$here/Dockerfile" "$here/client.sh" "$here/systemctl" "$work/context/"
 cp "$here/../l2tpsim/client.sh" "$work/context/pppclient.sh"
 docker build -q -t "$img" "$work/context" >/dev/null
+# A server with a newer ocserv, for camouflage.
+cp "$here/Dockerfile.trixie" "$work/context/"
+docker build -q -t "$img-trixie" -f "$work/context/Dockerfile.trixie" "$work/context" >/dev/null
 # Whatever an interrupted run left behind.
 docker rm -f protosim-server protosim-inet-host protosim-hold >/dev/null 2>&1 || true
 docker network rm protosim protosim-inet >/dev/null 2>&1 || true
@@ -50,7 +53,7 @@ start_server() { # harness flags...
 	MSYS_NO_PATHCONV=1 docker create --name protosim-server --privileged \
 		--sysctl net.ipv4.ip_forward=1 --network protosim --ip "$SERVER" \
 		-v "$(hostpath "$work/bin"):/sim/bin:ro" -v "$(hostpath "$work/out"):/out" \
-		"$img" /sim/bin/harness -endpoint "$SERVER" "$@" >/dev/null
+		"${SERVER_IMG:-$img}" /sim/bin/harness -endpoint "$SERVER" "$@" >/dev/null
 	docker network connect --ip 172.31.88.10 protosim-inet protosim-server
 	docker start protosim-server >/dev/null
 	for _ in $(seq 1 600); do
@@ -198,6 +201,28 @@ OLDFILE=1 suite "OpenVPN over TCP, a file from before" openvpn -protocol openvpn
 suite "L2TP/IPsec" l2tp -protocol l2tp
 suite "L2TP without IPsec" l2tp-plain -protocol l2tp -plain
 suite "PPTP" pptp -protocol pptp
+# OpenConnect, as Cisco Secure Client and openconnect dial it: over DTLS,
+# and over TLS alone.
+suite "OpenConnect" openconnect -protocol openconnect
+suite "OpenConnect over TLS only" openconnect-nodtls -protocol openconnect -no-dtls
+# Camouflage, on an ocserv that has it: the address with its secret gets in,
+# the same server without the secret is nothing to whoever asks.
+SERVER_IMG="$img-trixie" suite "OpenConnect with camouflage" openconnect -protocol openconnect -camouflage
+# only LABEL: whether ONLY lets a suite of this label run.
+only() { case "$1" in *"${ONLY:-}"*) return 0 ;; esac; return 1; }
+if only "OpenConnect with camouflage"; then
+	client "OpenConnect with camouflage: without the secret, as a scanner asks" openconnect-wrongurl dev01 fail
+fi
+# And on one that has not: devices still get in, and the operator is told.
+suite "OpenConnect asking camouflage of an old ocserv" openconnect -protocol openconnect -camouflage
+if only "OpenConnect asking camouflage of an old ocserv"; then
+	if MSYS_NO_PATHCONV=1 docker exec protosim-server cat /var/lib/wui/openconnect/report.json 2>/dev/null |
+		grep -q '"notice": *"[^"]*older than 1.2'; then
+		verdict PASS "OpenConnect asking camouflage of an old ocserv: the operator is told"
+	else
+		verdict FAIL "OpenConnect asking camouflage of an old ocserv: no notice in the report"
+	fi
+fi
 # One IKEv2 tunnel, entered every way a phone or a computer has built in.
 suite "IKEv2 by password (MSCHAPv2)" ikev2-mschapv2 -protocol ikev2
 suite "IKEv2 by key (PSK)" ikev2-psk -protocol ikev2

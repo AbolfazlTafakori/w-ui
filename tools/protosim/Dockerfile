@@ -20,6 +20,7 @@ RUN apt-get update -qq \
       strongswan-charon strongswan-swanctl libstrongswan-extra-plugins \
       libstrongswan-standard-plugins libcharon-extra-plugins libcharon-extauth-plugins \
       xl2tpd pptpd pptp-linux ppp busybox tcpdump python3 \
+      ocserv openconnect netbase \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=awg /out/ /
 COPY systemctl /usr/local/bin/systemctl

@@ -14,6 +14,25 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 import { useIsMobile } from '../lib/mobile.js'
 
+// What a tunnel carries its traffic over, as the table tags it: OpenVPN's
+// choice, PPTP's TCP (its data is GRE), OpenConnect's TLS on TCP with DTLS
+// on UDP beside it, and UDP for the rest.
+function transportTag(i) {
+  if (i.protocol === 'openvpn') return (i.openvpn?.transport || 'udp').toUpperCase()
+  if (i.protocol === 'pptp') return 'TCP'
+  if (i.protocol === 'openconnect') return i.openconnect?.dtls ? 'TCP + UDP' : 'TCP'
+  return 'UDP'
+}
+
+// What an OpenConnect tunnel's form sends: a secret left empty is drawn by
+// the server.
+function ocPayload(oc) {
+  if (!oc) return undefined
+  const out = { dtls: !!oc.dtls, camouflage: !!oc.camouflage, usePanelCert: !!oc.usePanelCert }
+  if ((oc.camouflageSecret || '').trim()) out.camouflageSecret = oc.camouflageSecret.trim()
+  return out
+}
+
 const interfaces = ref([])
 // The servers a tunnel can be put on. An install that never added one has
 // only its own, and the form then says so instead of offering a choice of one.
@@ -787,6 +806,7 @@ async function submitForm(input) {
         // The same for routers without IPsec: a change restarts the tunnel.
         ...(input.protocol === 'l2tp' && input.l2tpPlain !== !!formFor.value.iface.l2tp?.allowPlain ? { l2tpPlain: input.l2tpPlain } : {}),
         ...(input.protocol === 'ikev2' ? { ikev2Modes: input.ikev2Modes } : {}),
+        ...(input.protocol === 'openconnect' ? { openconnect: ocPayload(input.oc) } : {}),
         // Only when it moved: a new profile means new files for everyone.
         ...(input.mode === 'amnezia' && input.awg && JSON.stringify(input.awg) !== JSON.stringify(formFor.value.iface.awg || {}) ? { awg: input.awg } : {}),
       })
@@ -795,7 +815,7 @@ async function submitForm(input) {
       // transport is OpenVPN's alone and the server refuses it elsewhere, so
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
-      const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, ...rest } = input
+      const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, ...rest } = input
       await api.createInterface({
         ...rest,
         listenPort: Number(input.listenPort),
@@ -804,6 +824,7 @@ async function submitForm(input) {
         ...(input.protocol === 'l2tp' && psk ? { psk } : {}),
         ...(input.protocol === 'l2tp' && l2tpPlain ? { l2tpPlain: true } : {}),
         ...(input.protocol === 'ikev2' ? { ikev2Modes } : {}),
+        ...(input.protocol === 'openconnect' ? { openconnect: ocPayload(oc) } : {}),
         // The profile the form shows, as drawn for this server and perhaps
         // changed: what is created is what the operator saw.
         ...(input.protocol === 'wireguard' && input.mode === 'amnezia' ? (awg ? { awg } : { awgLevel }) : {}),
@@ -922,7 +943,7 @@ async function submitForm(input) {
               <div class="stat-row">
                 <span class="stat-label">{{ t('client.protocol') }}</span>
                 <span class="atag purple">{{ i.protocol }}</span>
-                <span class="atag green">{{ i.protocol === 'openvpn' ? (i.openvpn?.transport || 'udp').toUpperCase() : 'UDP' }}</span>
+                <span class="atag green">{{ transportTag(i) }}</span>
                 <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
               </div>
               <div class="stat-row">
@@ -1024,7 +1045,7 @@ async function submitForm(input) {
               <td>
                 <div class="protocol-tags">
                   <span class="atag purple">{{ i.protocol }}</span>
-                  <span class="atag green">{{ i.protocol === 'openvpn' ? (i.openvpn?.transport || 'udp').toUpperCase() : 'UDP' }}</span>
+                  <span class="atag green">{{ transportTag(i) }}</span>
                   <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
                 </div>
               </td>

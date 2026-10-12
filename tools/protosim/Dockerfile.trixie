@@ -1,0 +1,10 @@
+# The server for what needs a newer ocserv than Debian 12's 1.1.6:
+# camouflage, from 1.2. Only the server runs on it; the clients are the
+# main image's.
+FROM debian:13
+RUN apt-get update -qq \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+      ocserv netbase iproute2 iputils-ping nftables procps python3 \
+ && rm -rf /var/lib/apt/lists/*
+COPY systemctl /usr/local/bin/systemctl
+RUN chmod +x /usr/local/bin/systemctl

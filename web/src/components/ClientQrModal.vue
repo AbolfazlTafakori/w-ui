@@ -182,11 +182,11 @@ async function copy(text) {
             <!-- An OpenVPN or L2TP user's login, read off here for passing on. -->
             <dl v-if="entry.username" class="qr-login">
               <div>
-                <dt>{{ (current.protocol === 'l2tp' || current.protocol === 'pptp' || current.protocol === 'ikev2') ? t('client.loginUsername') : t('client.openvpnUsername') }}</dt>
+                <dt>{{ (current.protocol === 'l2tp' || current.protocol === 'pptp' || current.protocol === 'ikev2' || current.protocol === 'openconnect') ? t('client.loginUsername') : t('client.openvpnUsername') }}</dt>
                 <dd><code class="ltr">{{ entry.username }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(entry.username)"><AntIcon name="CopyOutlined" /></button></dd>
               </div>
               <div>
-                <dt>{{ (current.protocol === 'l2tp' || current.protocol === 'pptp' || current.protocol === 'ikev2') ? t('client.loginPassword') : t('client.openvpnPassword') }}</dt>
+                <dt>{{ (current.protocol === 'l2tp' || current.protocol === 'pptp' || current.protocol === 'ikev2' || current.protocol === 'openconnect') ? t('client.loginPassword') : t('client.openvpnPassword') }}</dt>
                 <dd><code class="ltr">{{ entry.password }}</code><button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(entry.password)"><AntIcon name="CopyOutlined" /></button></dd>
               </div>
             </dl>

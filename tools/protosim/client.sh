@@ -60,6 +60,7 @@ hold() {
 		openvpn) kill -0 "$(cat /tmp/ovpn.pid 2>/dev/null)" 2>/dev/null || gone=1 ;;
 		wireguard|amneziawg) ;;
 		ikev2-*) swanctl --list-sas 2>/dev/null | grep -q ESTABLISHED || gone=1 ;;
+		openconnect*) { kill -0 "$(cat /tmp/oc.pid 2>/dev/null)" 2>/dev/null && ip link show tun0 >/dev/null 2>&1; } || gone=1 ;;
 		*) ip link show ppp0 >/dev/null 2>&1 || gone=1 ;;
 		esac
 		# A UDP OpenVPN client is not told its session was replaced; that
@@ -163,6 +164,34 @@ if cur: pkts.append(bytes.fromhex(''.join(cur)))
 payloads = [p[28:] for p in pkts]
 sys.exit(0 if any(len(p) == 1250 and p[:6] == bytes.fromhex('c30000000108') for p in payloads) else 1)
 " && check specials yes || check specials no
+	fi
+	;;
+openconnect|openconnect-nodtls|openconnect-wrongurl)
+	# OpenConnect as the customer's page gives it: the address to dial
+	# (with the camouflage secret in it), the certificate's pin, and the
+	# sign-in typed when it connects.
+	dev=tun0
+	# shellcheck disable=SC1090
+	. "/out/$DEVICE.env"
+	url=$URL
+	# A scanner, or a device given the address without its secret: the
+	# server has to look like nothing at all to it.
+	[ "$PROTOCOL" = openconnect-wrongurl ] && url=${URL%%/\?*}
+	printf '%s\n' "$PASS" | openconnect --protocol=anyconnect --user="$USER" --passwd-on-stdin \
+		--servercert "$PIN" --non-inter --pid-file=/tmp/oc.pid -b "$url" >/tmp/client.log 2>&1
+	i=0
+	while [ "$i" -lt 20 ]; do
+		ip -4 -o addr show dev tun0 2>/dev/null | grep -q inet && break
+		grep -q -e "Failed to complete authentication" -e "Cookie was rejected" -e "Failed to open HTTPS" /tmp/client.log && break
+		i=$((i + 1)); sleep 1
+	done
+	if ! ip -4 -o addr show dev tun0 2>/dev/null | grep -q inet; then
+		check connect no; finish fail
+	fi
+	check connect yes
+	sleep 2
+	if [ "$PROTOCOL" = openconnect ]; then
+		grep -q -e "Established DTLS" -e "DTLS connected" /tmp/client.log && check dtls yes || check dtls no
 	fi
 	;;
 openvpn)
@@ -308,7 +337,7 @@ ping -c 2 -W 3 -I "$src" "$GATEWAY" >/dev/null 2>&1 && check gateway yes || chec
 ping -c 2 -W 3 -I "$src" "$INTERNET" >/dev/null 2>&1 && check internet yes || check internet no
 
 case "$PROTOCOL" in
-wireguard|amneziawg|openvpn)
+wireguard|amneziawg|openvpn|openconnect*)
 	# Where a packet for anywhere would go.
 	via=$(ip route get 8.8.8.8 2>/dev/null | grep -o "dev [^ ]*" | awk '{print $2}')
 	[ "$via" = "$dev" ] && check route yes || check "route(via=$via)" no
@@ -331,6 +360,9 @@ openvpn)
 	;;
 ikev2-*)
 	grep -q "DNS.*$DNS\|$DNS.*DNS" /tmp/sim/charon.log /tmp/client.log 2>/dev/null && check dns yes || check dns no
+	;;
+openconnect*)
+	grep -q "nameserver $DNS" /etc/resolv.conf && check dns yes || check dns no
 	;;
 *)
 	grep -q "primary   DNS address $DNS" /tmp/sim/syslog && check dns yes || check dns no

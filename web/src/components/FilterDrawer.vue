@@ -48,6 +48,7 @@ const protocolOptions = [
   { value: 'l2tp', label: t('protocol.l2tp') },
   { value: 'pptp', label: t('protocol.pptp') },
   { value: 'ikev2', label: t('protocol.ikev2') },
+  { value: 'openconnect', label: t('protocol.openconnect') },
 ]
 
 // Three-state rows: All, then the two answers. Their Radio.Group with

@@ -32,6 +32,19 @@ const serverConfig = computed(() => {
       '# One line per device in /etc/ppp/chap-secrets, with its own address.',
     ].join('\n')
   }
+  if (f.protocol === 'openconnect') {
+    // ocserv, run by the same agent, its sign-ins checked by the agent.
+    const p = f.openconnect || {}
+    return [
+      `# ocserv: TLS on TCP ${f.listenPort}${p.dtls ? `, DTLS on UDP ${f.listenPort}` : ''}`,
+      `auth = radius (the agent: one session per sign-in, the device's own address)`,
+      `ipv4-network = ${f.subnet}`,
+      `dns = ${f.dns || '1.1.1.1'}`,
+      `mtu = ${f.mtu}`,
+      `camouflage = ${p.camouflage ? 'true' : 'false'}`,
+      `# certificate: ${p.certSource === 'panel' ? "the panel's" : "the tunnel's own"}`,
+    ].join('\n')
+  }
   if (f.protocol === 'ikev2') {
     // strongSwan, the same as L2TP's, run by the same agent.
     const p = f.ikev2 || {}

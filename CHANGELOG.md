@@ -7,6 +7,14 @@ All notable changes to W-UI are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **OpenConnect (Cisco AnyConnect)**, what Cisco Secure Client and openconnect dial. It is a VPN in TLS on any port, 443 by default, with DTLS on UDP.
+  - ocserv is run by the panel's agent, and every sign-in is checked by the agent's own RADIUS server. That gives each device its own address, which is how the kernel counts its traffic. One sign-in is one connection: a second device takes the connection over, the first's address is freed for it, and an ended session cannot come back on its cookie.
+  - Speed limits follow each session's own device.
+  - Camouflage hides the server from anything without its secret where ocserv has it (1.2 and later); on an older ocserv the panel says so instead of claiming it.
+  - The panel's own certificate goes on the tunnel when it covers the address; otherwise the tunnel makes one and renews it.
+  - Device guides for Cisco Secure Client on Windows, macOS, iPhone, Android and ChromeOS, NetworkManager on Linux, and OpenWrt. The sign-in is withheld on the customer's page as for L2TP.
+  - Tested end to end against ocserv 1.1 and 1.3 with real openconnect clients: DTLS, TLS only, camouflage, and one sign-in on two devices.
+- The tunnels table tags PPTP as TCP, not UDP, and OpenConnect as TCP + UDP.
 - **A pasted OpenVPN profile is recognised.** The outbound form's paste box was one line high, and a browser drops the line breaks of anything pasted into one: a whole .ovpn became one long line no reader knew. It now keeps every line, grows as text is pasted, and still imports a link with Enter. A profile with Windows or old-Mac line endings is read too, and its tag starts as its server's name.
 - **OpenVPN connects better**, without touching the one-sign-in rule:
   - Windows keeps to the tunnel's DNS (`block-outside-dns`), so a filtered name is not answered by the ISP's resolver.

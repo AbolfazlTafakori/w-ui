@@ -105,6 +105,17 @@ An interface that still has customers cannot be deleted. The panel says how many
 | **Egress interface** | `eth0` | The server's network card customer traffic leaves through, to the internet. | A device name, up to 15 characters. |
 | **Mode** | Standard | WireGuard only. **AmneziaWG** pads and disguises the handshake so it does not look like WireGuard to a filter; its obfuscation parameters are generated for you. Customers need an AmneziaWG-capable app (see [Client apps](/guide/client-apps)). | Needs AmneziaWG installed on the server. |
 
+### OpenConnect (Cisco AnyConnect)
+
+An OpenConnect tunnel is what Cisco Secure Client (formerly AnyConnect) dials, and the openconnect client on Linux and OpenWrt. It is a VPN inside TLS on TCP, and once a device is in, DTLS on UDP on the same port, which is faster. 443 is the default, where it looks like any website; any free port works. One per server, on this server for now (not on a node).
+
+- **Sign-in:** a username and password per device, as on OpenVPN and L2TP. The server checks each sign-in with the panel's agent. The agent knows each device's password and address, and it ends a device's other session before it lets the new one in, so a second device on one sign-in takes the connection over. A device that was cut off cannot come back on its old session either.
+- **DTLS:** on by default. Off sends everything over TLS on TCP.
+- **Camouflage:** on by default. The server answers like an ordinary website unless the address carries its secret, so a scanner or a filter that probes it sees nothing to block. Customers dial the address with `/?secret` on it, and their page gives it whole. It needs ocserv 1.2 or later (Ubuntu 24.04, Debian 13). On an older one the tunnel runs without camouflage, and the panel says so in its log.
+- **Certificate:** when the panel has a certificate for the tunnel's address, the tunnel uses it, and devices trust it as they are. Otherwise the tunnel makes one of its own and renews it. In that case Cisco Secure Client has to be told to accept it (Block Untrusted Servers off), and the customer's page says how.
+
+ocserv is installed the first time a tunnel is made, run by the panel's agent from its own files, and left running across the panel's updates.
+
 ### AmneziaWG obfuscation
 
 Choosing AmneziaWG opens the obfuscation values in the form, already filled in. The panel draws them for the server the tunnel is on: valid as AmneziaWG checks them, fitted to the tunnel's MTU, and unlike every other AmneziaWG tunnel on that server, with no shared identifier, no shared handshake padding and, while there are kinds left, a different packet before the handshake. They are kept small enough to cost a busy tunnel little: a few junk packets of at most 250 bytes, data padding of at most 20. Change any of them before creating, or later with **Edit**.

@@ -363,12 +363,12 @@ func ciscoPhone(path string) Setup {
 			{Label: "Password", Source: Password},
 		},
 		Notes: []Text{Text{
-		EN: "The username and password are asked for when it connects.",
-		FA: "نام کاربری و رمز موقع اتصال پرسیده می‌شود.",
-	}, Text{
-		EN: "If it says the server is untrusted: Settings > Block Untrusted Servers off, then connect again. The server's certificate is its own, not one a public authority signed.",
-		FA: "اگر گفت سرور نامعتبر است: تنظیمات > Block Untrusted Servers را خاموش کنید و دوباره وصل شوید. گواهی سرور مال خودش است، نه گواهی یک مرجع عمومی.",
-	}},
+			EN: "The username and password are asked for when it connects.",
+			FA: "نام کاربری و رمز موقع اتصال پرسیده می‌شود.",
+		}, Text{
+			EN: "If it says the server is untrusted: Settings > Block Untrusted Servers off, then connect again. The server's certificate is its own, not one a public authority signed.",
+			FA: "اگر گفت سرور نامعتبر است: تنظیمات > Block Untrusted Servers را خاموش کنید و دوباره وصل شوید. گواهی سرور مال خودش است، نه گواهی یک مرجع عمومی.",
+		}},
 	}
 }
 
@@ -384,12 +384,12 @@ func ciscoDesktop() Setup {
 			{Label: "Password", Source: Password},
 		},
 		Notes: []Text{Text{
-		EN: "The username and password are asked for when it connects.",
-		FA: "نام کاربری و رمز موقع اتصال پرسیده می‌شود.",
-	}, Text{
-		EN: "If it says the server is untrusted: the gear > Preferences > clear Block connections to untrusted servers, then connect again. The server's certificate is its own, not one a public authority signed.",
-		FA: "اگر گفت سرور نامعتبر است: چرخ‌دنده > Preferences > تیک Block connections to untrusted servers را بردارید و دوباره وصل شوید. گواهی سرور مال خودش است، نه گواهی یک مرجع عمومی.",
-	}},
+			EN: "The username and password are asked for when it connects.",
+			FA: "نام کاربری و رمز موقع اتصال پرسیده می‌شود.",
+		}, Text{
+			EN: "If it says the server is untrusted: the gear > Preferences > clear Block connections to untrusted servers, then connect again. The server's certificate is its own, not one a public authority signed.",
+			FA: "اگر گفت سرور نامعتبر است: چرخ‌دنده > Preferences > تیک Block connections to untrusted servers را بردارید و دوباره وصل شوید. گواهی سرور مال خودش است، نه گواهی یک مرجع عمومی.",
+		}},
 	}
 }
 

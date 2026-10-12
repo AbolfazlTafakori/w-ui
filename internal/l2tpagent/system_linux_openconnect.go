@@ -69,8 +69,10 @@ func (s *linuxSystem) RadiusSecret() string {
 	return ""
 }
 
-// ocservPID is the agent's ocserv, when it is running: the pid in its pid
-// file, alive, and an ocserv started from the agent's configuration.
+// ocservPID is the agent's ocserv, when it is running: the pid in its own
+// pid file, alive, and an ocserv. Its command line is no help -- ocserv
+// renames its main process "ocserv-main" -- so it is known by its program,
+// and by its pid file and occtl socket, which are the agent's alone.
 func ocservPID() int {
 	raw, err := os.ReadFile(occonf.PIDFile)
 	if err != nil {
@@ -80,8 +82,8 @@ func ocservPID() int {
 	if err != nil || pid <= 1 {
 		return 0
 	}
-	cmd, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil || !bytes.Contains(cmd, []byte(ocPath(occonf.ConfFile))) {
+	exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil || filepath.Base(strings.TrimSuffix(exe, " (deleted)")) != "ocserv" {
 		return 0
 	}
 	return pid
@@ -207,17 +209,9 @@ func (s *linuxSystem) Disconnect(ctx context.Context, id int) error {
 	return err
 }
 
-var ocservVersion = regexp.MustCompile(`ocserv (\d+)\.(\d+)`)
-
 func (s *linuxSystem) Camouflage(ctx context.Context) bool {
 	out, _ := s.run(ctx, cmdTimeout, "", "ocserv", "--version")
-	m := ocservVersion.FindSubmatch(out)
-	if m == nil {
-		return false
-	}
-	major, _ := strconv.Atoi(string(m[1]))
-	minor, _ := strconv.Atoi(string(m[2]))
-	return major > 1 || major == 1 && minor >= 2
+	return camouflageIn(string(out))
 }
 
 func (s *linuxSystem) ServeOCRadius(secret string, lookup radiusd.Lookup, onAccept radiusd.OnAccept) error {
