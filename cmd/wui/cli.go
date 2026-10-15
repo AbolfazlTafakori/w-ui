@@ -61,6 +61,8 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, applyUpdateCommand(args[1:])
 	case "l2tp-agent":
 		return true, l2tpAgentCommand(args[1:])
+	case "pptpd":
+		return true, pptpdCommand(args[1:])
 	case "version", "-v", "--version":
 		fmt.Println(version)
 		return true, nil
@@ -104,6 +106,8 @@ Usage:
   wui l2tp-agent DATA_DIR          serve the L2TP/IPsec tunnel the panel
                                    describes in DATA_DIR/l2tp; run as root by
                                    wui-l2tp.service while one exists
+  wui pptpd CONF                   the PPTP tunnel's server; started by the
+                                   agent with the tunnel's configuration
 
 Flags for "setting set":
   --listen ADDR      the address to bind (0.0.0.0 for every address)

@@ -571,11 +571,13 @@ func PPPOptions(s *State) string {
 	return b.String()
 }
 
-// PPTPD renders pptpd's configuration.
+// PPTPD renders the PPTP server's configuration. The panel's own server
+// reads it, in the format pptpd read, so a pptpd an earlier version left
+// running and the server that replaces it read the same file.
 //
-// pptpd hands out no addresses: "delegate" leaves that to pppd, which takes
-// each device's from its secrets line -- the address its usage is counted by,
-// as on L2TP.
+// Neither hands out addresses: pppd takes each device's from its secrets
+// line -- the address its usage is counted by, as on L2TP. "delegate" says
+// so to a pptpd.
 func PPTPD(s *State) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "option %s\n", RunFile("pptp-options"))

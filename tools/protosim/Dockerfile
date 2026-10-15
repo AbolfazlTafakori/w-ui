@@ -19,7 +19,7 @@ RUN apt-get update -qq \
       wireguard-tools openvpn openresolv iproute2 iputils-ping nftables procps \
       strongswan-charon strongswan-swanctl libstrongswan-extra-plugins \
       libstrongswan-standard-plugins libcharon-extra-plugins libcharon-extauth-plugins \
-      xl2tpd pptpd pptp-linux ppp busybox tcpdump python3 \
+      xl2tpd pptp-linux ppp busybox tcpdump python3 \
       ocserv openconnect netbase \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=awg /out/ /

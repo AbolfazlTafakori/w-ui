@@ -15,6 +15,10 @@ SERVER=172.31.77.10
 img=wui-l2tpsim
 
 docker build -q -t "$img" "$here" >/dev/null
+# The panel's binary, for its PPTP server.
+bin=$(mktemp -d)
+trap 'docker rm -f l2tpsim-server >/dev/null 2>&1 || true; docker network rm l2tpsim >/dev/null 2>&1 || true; rm -rf "$work" "$bin"' EXIT
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$bin/wui" ./cmd/wui
 docker network rm l2tpsim >/dev/null 2>&1 || true
 docker network create --subnet 172.31.77.0/24 l2tpsim >/dev/null
 
@@ -26,7 +30,7 @@ start_server() {
 	rm -f "$work"/*
 	go run ./tools/l2tpsim/render -out "$work" -psk "$PSK" $1
 	MSYS_NO_PATHCONV=1 docker run -d --name l2tpsim-server --privileged --network l2tpsim --ip "$SERVER" \
-		-v "$(hostpath "$work"):/conf:ro" "$img" /sim/server.sh >/dev/null
+		-v "$(hostpath "$work"):/conf:ro" -v "$(hostpath "$bin"):/opt/wui:ro" "$img" sh -c 'ln -sf /opt/wui/wui /bin/wui && exec /sim/server.sh' >/dev/null
 	for _ in $(seq 1 50); do
 		docker logs l2tpsim-server 2>&1 | grep -q "server ready" && return 0
 		sleep 0.2

@@ -2,7 +2,7 @@
 # A container has no systemd. The PPP agent asks it for one thing -- to run
 # strongSwan's charon while an L2TP tunnel exists -- and to leave packaged
 # units it did not install alone. This answers those the way systemd would,
-# and nothing else; xl2tpd and pptpd the agent starts itself.
+# and nothing else; xl2tpd and the PPTP server the agent starts itself.
 cmd=$1; shift
 [ "${1:-}" = "--quiet" ] && shift
 [ "${1:-}" = "--now" ] && shift

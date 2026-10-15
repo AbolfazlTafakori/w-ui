@@ -14,6 +14,9 @@ All notable changes to W-UI are recorded here. The format follows
   - The panel's own certificate goes on the tunnel when it covers the address; otherwise the tunnel makes one and renews it.
   - Device guides for Cisco Secure Client on Windows, macOS, iPhone, Android and ChromeOS, NetworkManager on Linux, and OpenWrt. The sign-in is withheld on the customer's page as for L2TP.
   - Tested end to end against ocserv 1.1 and 1.3 with real openconnect clients: DTLS, TLS only, camouflage, and one sign-in on two devices.
+- **PPTP works on Ubuntu 24.04 and later, and on every other system with pppd.** The distributions stopped shipping pptpd, so a PPTP tunnel there could not start. The panel now has its own PPTP server: the control connection on TCP 1723 and the GRE of each call. pppd still does everything PPP, so devices, sign-ins, MPPE and addresses are unchanged, and only `ppp` is installed for it.
+  - A pptpd an earlier version started keeps its calls through the update, and is replaced the next time the tunnel restarts.
+  - Tested on Ubuntu 26.04 (pppd 2.5), Ubuntu 24.04 and Debian 12: Windows, TP-Link, D-Link and MikroTik settings connect with 128-bit MPPE, a device without encryption is refused, one sign-in holds one device, and 30 MB arrives byte for byte.
 - The tunnels table tags PPTP as TCP, not UDP, and OpenConnect as TCP + UDP.
 - **A pasted OpenVPN profile is recognised.** The outbound form's paste box was one line high, and a browser drops the line breaks of anything pasted into one: a whole .ovpn became one long line no reader knew. It now keeps every line, grows as text is pasted, and still imports a link with Enter. A profile with Windows or old-Mac line endings is read too, and its tag starts as its server's name.
 - **OpenVPN connects better**, without touching the one-sign-in rule:

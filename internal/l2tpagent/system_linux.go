@@ -99,7 +99,8 @@ func (s *linuxSystem) missing(protocol string) []string {
 	bins := []string{"xl2tpd", "pppd", "swanctl"}
 	switch protocol {
 	case l2tpconf.ProtocolPPTP:
-		bins = []string{"pptpd", "pppd"}
+		// The server is the panel's own; pppd is all it needs of the system.
+		bins = []string{"pppd"}
 	case l2tpconf.ProtocolIKEv2:
 		bins = []string{"swanctl"}
 		for _, p := range ikev2Plugins {
@@ -158,7 +159,7 @@ func servicesKnowRadius() bool {
 func packages(protocol, family string) []string {
 	switch {
 	case protocol == l2tpconf.ProtocolPPTP:
-		return []string{"pptpd", "ppp"}
+		return []string{"ppp"}
 	case protocol == l2tpconf.ProtocolOpenConnect && family == "debian":
 		return []string{"ocserv", "netbase"}
 	case protocol == l2tpconf.ProtocolOpenConnect:
@@ -176,7 +177,8 @@ func packages(protocol, family string) []string {
 }
 
 // EnsurePackages installs what a protocol's tunnel needs when any of it is
-// missing: strongSwan, xl2tpd and pppd for L2TP; pptpd and pppd for PPTP.
+// missing: strongSwan, xl2tpd and pppd for L2TP; pppd for PPTP, whose server
+// is the panel's own.
 //
 // The installer and the update script install L2TP's too; this is for a panel
 // updated from its own button, or a machine where that install failed, and
@@ -423,7 +425,11 @@ func (s *linuxSystem) ApplyFirewall(ctx context.Context, script string) error {
 
 // daemon is how one tunnel's daemon is run.
 type daemon struct {
-	bin  string
+	bin  string // the program the daemon runs as
+	path string // where it is, when it is not found by name
+	// also are programs a daemon of the agent's may be running as instead:
+	// one an earlier version started, adopted until it is next restarted.
+	also []string
 	conf string // its configuration, which also tells the agent's own apart
 	pid  string
 	log  string
@@ -432,14 +438,15 @@ type daemon struct {
 
 func daemonOf(protocol string) daemon {
 	if protocol == l2tpconf.ProtocolPPTP {
+		// The panel's own PPTP server, run from this binary: the
+		// distributions no longer ship pptpd. A pptpd an earlier version
+		// started reads the same file and is left carrying its calls.
+		exe, _ := os.Executable()
 		return daemon{
-			bin: "pptpd", conf: l2tpconf.RunFile("pptpd.conf"),
-			pid: l2tpconf.RunFile("pptpd.pid"), log: l2tpconf.RunFile("pptpd.log"),
-			// -f: in the foreground, so the pid the agent records is the one
-			// that runs.
-			args: func() []string {
-				return []string{"-f", "-c", l2tpconf.RunFile("pptpd.conf"), "-p", l2tpconf.RunFile("pptpd.pid")}
-			},
+			bin: filepath.Base(exe), path: exe, also: []string{"pptpd"},
+			conf: l2tpconf.RunFile("pptpd.conf"),
+			pid:  l2tpconf.RunFile("pptpd.pid"), log: l2tpconf.RunFile("pptpd.log"),
+			args: func() []string { return []string{"pptpd", l2tpconf.RunFile("pptpd.conf")} },
 		}
 	}
 	return daemon{
@@ -470,10 +477,22 @@ func (d daemon) running() (int, bool) {
 		return pid, false
 	}
 	args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
-	if len(args) == 0 || filepath.Base(args[0]) != d.bin || !strings.Contains(string(cmdline), d.conf) {
+	if len(args) == 0 || !d.runsAs(filepath.Base(args[0])) || !strings.Contains(string(cmdline), d.conf) {
 		return pid, false
 	}
 	return pid, true
+}
+
+func (d daemon) runsAs(name string) bool {
+	if name == d.bin {
+		return true
+	}
+	for _, a := range d.also {
+		if name == a {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *linuxSystem) Running(protocol string) bool {
@@ -487,9 +506,12 @@ func (s *linuxSystem) Start(ctx context.Context, protocol string) error {
 		s.log.Info("adopted the running "+d.bin, "pid", pid)
 		return nil
 	}
-	bin, err := exec.LookPath(d.bin)
-	if err != nil {
-		return fmt.Errorf("%s is not installed", d.bin)
+	bin := d.path
+	if bin == "" {
+		var err error
+		if bin, err = exec.LookPath(d.bin); err != nil {
+			return fmt.Errorf("%s is not installed", d.bin)
+		}
 	}
 	_ = os.Remove(d.pid)
 	logf, err := os.OpenFile(d.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

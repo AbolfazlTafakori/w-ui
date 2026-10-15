@@ -127,3 +127,20 @@ func TestFilesRefuseALinkedDirectory(t *testing.T) {
 		t.Fatalf("no directory read as a state: %v %v", ok, err)
 	}
 }
+
+// PPTP is served by the panel's own binary, from the tunnel's file; a pptpd
+// an earlier version started from the same file is still the agent's, and
+// is adopted rather than fought over the port.
+func TestThePPTPServerIsThePanelsOwn(t *testing.T) {
+	d := daemonOf(l2tpconf.ProtocolPPTP)
+	exe, _ := os.Executable()
+	if d.path != exe || d.args()[0] != "pptpd" || d.args()[1] != l2tpconf.RunFile("pptpd.conf") {
+		t.Fatalf("runs %s %v", d.path, d.args())
+	}
+	if !d.runsAs(filepath.Base(exe)) || !d.runsAs("pptpd") || d.runsAs("xl2tpd") {
+		t.Fatal("which programs are the agent's PPTP server")
+	}
+	if got := packages(l2tpconf.ProtocolPPTP, "debian"); len(got) != 1 || got[0] != "ppp" {
+		t.Fatalf("PPTP installs %v", got)
+	}
+}

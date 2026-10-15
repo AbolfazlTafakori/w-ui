@@ -9,7 +9,8 @@
 //
 // L2TP, PPTP and IKEv2 run as they do on a customer's server: the panel's driver
 // describes the tunnel, and the root agent -- run here in the same process,
-// as `wui l2tp-agent` runs it -- brings up strongSwan, xl2tpd or pptpd and
+// as `wui l2tp-agent` runs it -- brings up strongSwan, xl2tpd or the PPTP
+// server (this binary again, as `wui pptpd` is the panel's) and
 // ends the sessions that should not exist.
 //
 // Writing ctl/drop takes the last device away (a Sync without it), as the
@@ -40,6 +41,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/occonf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
+	"github.com/abolfazl/w-ui/internal/pptpd"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/wgconf"
@@ -51,6 +53,19 @@ import (
 const devices = 3
 
 func main() {
+	// The agent starts the PPTP server from its own binary, which here is
+	// this one.
+	if len(os.Args) == 3 && os.Args[1] == "pptpd" {
+		cfg, err := pptpd.ReadConfig(os.Args[2])
+		if err == nil {
+			err = pptpd.Run(context.Background(), cfg, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	protocol := flag.String("protocol", "", "wireguard, openvpn, l2tp, pptp or ikev2")
 	plain := flag.Bool("plain", false, "l2tp: also accept routers without IPsec")
 	transport := flag.String("transport", "udp", "openvpn: udp or tcp")
