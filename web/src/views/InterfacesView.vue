@@ -62,10 +62,41 @@ const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
 // Their search box beside the buttons: name, port, protocol.
 const search = ref('')
+
+// The servers the tunnels are on, as tabs over the list: All, this server,
+// then each node by the name it was given when it was added. Two nodes can
+// each have a tunnel on 443 or one called wg0; the tab tells them apart.
+const SERVER_KEY = 'wui.interfaces.server'
+const server = ref(readServer())
+function readServer() {
+  try { return localStorage.getItem(SERVER_KEY) || 'all' } catch { return 'all' }
+}
+watch(server, (v) => {
+  page.value = 1
+  try { localStorage.setItem(SERVER_KEY, v) } catch { /* private window */ }
+})
+const servers = computed(() => {
+  const by = new Map()
+  for (const i of interfaces.value) {
+    const id = String(i.nodeId)
+    if (!by.has(id)) by.set(id, { id, local: !!i.nodeLocal, name: i.nodeName, up: i.nodeUp !== false, count: 0 })
+    by.get(id).count++
+  }
+  return [...by.values()].sort((a, b) => (a.local !== b.local ? (a.local ? -1 : 1) : cmpText(a.name, b.name)))
+})
+const serverLabel = (s) => (s.local ? t('iface.server.local') : s.name || `#${s.id}`)
+// A node removed while its tab was picked leaves nothing to show; go back to All.
+watch(servers, (list) => {
+  if (server.value !== 'all' && !list.some((s) => s.id === server.value)) server.value = 'all'
+})
+const onServer = computed(() =>
+  server.value === 'all' ? interfaces.value : interfaces.value.filter((i) => String(i.nodeId) === server.value),
+)
+
 const visible = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return interfaces.value
-  return interfaces.value.filter((i) =>
+  if (!q) return onServer.value
+  return onServer.value.filter((i) =>
     [i.name, String(i.listenPort), i.protocol, i.endpointHost, i.nodeName].some((v) => String(v || '').toLowerCase().includes(q)),
   )
 })
@@ -910,6 +941,15 @@ async function submitForm(input) {
     </div>
 
     <div class="acard-body">
+      <div v-if="hasNodes" class="atabs-nav server-tabs"><div class="atabs-list" role="tablist">
+        <button class="atab" role="tab" :class="{ active: server === 'all' }" :aria-selected="server === 'all'" @click="server = 'all'">
+          <AntIcon name="BarsOutlined" /><span>{{ t('iface.server.all') }}</span><span class="atag count">{{ nf(interfaces.length) }}</span>
+        </button>
+        <button v-for="s in servers" :key="s.id" class="atab" role="tab" :class="{ active: server === s.id }" :aria-selected="server === s.id" @click="server = s.id">
+          <AntIcon :name="s.local ? 'DesktopOutlined' : 'CloudServerOutlined'" /><span>{{ serverLabel(s) }}</span>
+          <span class="atag count" :class="{ red: !s.up }">{{ nf(s.count) }}</span>
+        </button>
+      </div></div>
       <ErrorState v-if="loadError" :error="loadError" @retry="load()" />
 
       <PageSpin v-else-if="showSkeleton" />
@@ -1284,6 +1324,7 @@ async function submitForm(input) {
 .w-enable { width: 80px; }
 .w-remark { width: 90px; }
 .w-node { width: 130px; }
+.server-tabs .atag.count { margin-inline-start: 6px; }
 .w-port { width: 80px; }
 .w-proto { width: 190px; }
 .w-clients { width: 200px; }

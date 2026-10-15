@@ -1302,6 +1302,8 @@
   "iface.col.menu": "منو",
   "iface.col.remark": "نام",
   "iface.col.node": "نود",
+  "iface.server.all": "همه",
+  "iface.server.local": "همین سرور",
   "iface.col.localPanel": "پنل لوکال",
   "iface.col.duration": "مدت زمان",
   "iface.menu.info": "اطلاعات اینترفیس",

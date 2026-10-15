@@ -1302,6 +1302,8 @@
   "iface.col.menu": "Menu",
   "iface.col.remark": "Remark",
   "iface.col.node": "Node",
+  "iface.server.all": "All",
+  "iface.server.local": "This server",
   "iface.col.localPanel": "Local panel",
   "iface.col.duration": "Duration",
   "iface.menu.info": "Interface Information",
