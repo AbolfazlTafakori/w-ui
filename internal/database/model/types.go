@@ -249,3 +249,41 @@ type OpenVPNParams struct {
 
 	ManagementSocket string `json:"managementSocket,omitempty"`
 }
+
+// XUIInbound is an inbound on a 3x-ui node, as that panel reports it.
+type XUIInbound struct {
+	// RemoteID is the inbound's id on the 3x-ui panel.
+	RemoteID int    `json:"remoteId"`
+	Tag      string `json:"tag"`
+	Remark   string `json:"remark"`
+	// Kind is the xray protocol: vless, vmess, trojan, shadowsocks,
+	// hysteria, or another the panel can read but not add clients to.
+	Kind     string `json:"kind"`
+	Network  string `json:"network"`
+	Security string `json:"security"`
+	// Method is a Shadowsocks inbound's cipher, which decides the shape of
+	// a client's key.
+	Method string `json:"method,omitempty"`
+	// Flow is the VLESS flow a client on it is given (xtls-rprx-vision on
+	// a Reality or TLS inbound over TCP), empty otherwise.
+	Flow string `json:"flow,omitempty"`
+	// Enabled is the switch on the 3x-ui panel; Gone is an inbound removed
+	// there that still has customers here.
+	Enabled bool `json:"enabled"`
+	Gone    bool `json:"gone,omitempty"`
+	// Clients and Up/Down are the inbound's own totals there, every client
+	// on it counted, ours or not.
+	Clients int    `json:"clients"`
+	Up      uint64 `json:"up"`
+	Down    uint64 `json:"down"`
+}
+
+// XUISupported reports whether this panel can add its customers to an
+// inbound of this kind.
+func XUISupported(kind string) bool {
+	switch kind {
+	case "vless", "vmess", "trojan", "shadowsocks", "hysteria", "hysteria2":
+		return true
+	}
+	return false
+}

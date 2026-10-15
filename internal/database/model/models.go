@@ -174,6 +174,9 @@ type Interface struct {
 	// camouflage.
 	OpenConnect JSONField[OpenConnectParams] `gorm:"type:text;column:openconnect" json:"openconnect,omitzero"`
 
+	// XUI is the 3x-ui inbound this tunnel is, on a 3x-ui node.
+	XUI JSONField[XUIInbound] `gorm:"type:text;column:xui" json:"xui,omitzero"`
+
 	// Configured is set on the way out of the API, not stored. It lets a page
 	// say that certificates exist without being handed them.
 	Configured bool `gorm:"-" json:"configured"`
@@ -395,6 +398,14 @@ type Account struct {
 	// charged only with what crossed it.
 	UpBytes   uint64 `gorm:"not null;default:0" json:"upBytes"`
 	DownBytes uint64 `gorm:"not null;default:0" json:"downBytes"`
+
+	// On a 3x-ui node: the link that panel makes for this client, and the
+	// counters it last reported for it. Its counters only grow, so what a
+	// client spent since the last read is the difference; a smaller number
+	// is a counter reset there, and all of it is new.
+	XUILink string `gorm:"type:text;column:xui_link" json:"-"`
+	XUIUp   uint64 `gorm:"column:xui_up;not null;default:0" json:"-"`
+	XUIDown uint64 `gorm:"column:xui_down;not null;default:0" json:"-"`
 
 	// OriginID is this account's id on the panel that owns it.
 	//

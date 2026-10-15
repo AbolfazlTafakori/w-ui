@@ -119,6 +119,9 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	if err != nil {
 		return nil, err
 	}
+	if node.Kind == model.KindXUI {
+		return nil, invalidField("nodeId", "%s is a 3x-ui panel: make the inbound there, and it appears here within a minute", node.Name)
+	}
 	// A port check asks this machine what is listening on it. That answer says
 	// nothing about another server, so on a remote node it is skipped rather
 	// than being a check that looks like one and is not.
@@ -746,6 +749,10 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	if err != nil {
 		return nil, err
 	}
+	if iface.Protocol == model.ProtocolXray {
+		return nil, fmt.Errorf("%w: %q is an inbound of a 3x-ui panel; change it there, and it is read here within a minute",
+			ErrInvalid, iface.Name)
+	}
 
 	fields := map[string]any{}
 	if in.Enabled != nil {
@@ -1208,6 +1215,9 @@ func (s *Interfaces) Delete(ctx context.Context, id uint) error {
 	if accounts > 0 {
 		return fmt.Errorf("%w: %d device(s) still use %q; remove those clients first",
 			ErrInvalid, accounts, iface.Name)
+	}
+	if iface.Protocol == model.ProtocolXray && !iface.XUI.V.Gone {
+		return fmt.Errorf("%w: %q is an inbound of a 3x-ui panel; remove it there", ErrInvalid, iface.Name)
 	}
 
 	if s.Teardown != nil {

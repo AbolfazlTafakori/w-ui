@@ -17,7 +17,16 @@ import { useIsMobile } from '../lib/mobile.js'
 // What a tunnel carries its traffic over, as the table tags it: OpenVPN's
 // choice, PPTP's TCP (its data is GRE), OpenConnect's TLS on TCP with DTLS
 // on UDP beside it, and UDP for the rest.
+// A 3x-ui inbound shows what it is there: VLESS over TCP with Reality, say.
+function protoTag(i) {
+  return i.protocol === 'xray' ? (i.xui?.kind || 'xray') : i.protocol
+}
 function transportTag(i) {
+  if (i.protocol === 'xray') {
+    const net = (i.xui?.network || 'tcp').toUpperCase()
+    const sec = i.xui?.security && i.xui.security !== 'none' ? ' · ' + i.xui.security : ''
+    return net + sec
+  }
   if (i.protocol === 'openvpn') return (i.openvpn?.transport || 'udp').toUpperCase()
   if (i.protocol === 'pptp') return 'TCP'
   if (i.protocol === 'openconnect') return i.openconnect?.dtls ? 'TCP + UDP' : 'TCP'
@@ -220,6 +229,13 @@ function rowItems(i) {
     items.push({ divider: true })
   }
   items.push({ key: 'delete', icon: 'DeleteOutlined', label: t('action.delete'), danger: true })
+  // A 3x-ui inbound is changed on its own panel: here it only holds customers,
+  // and is deleted only once it is gone there.
+  if (i.protocol === 'xray') {
+    const keep = new Set(['urls', 'attachExisting', 'attachTo', 'detach', 'group', 'delAll'])
+    if (i.xui?.gone) keep.add('delete')
+    return items.filter((m) => m.divider || keep.has(m.key))
+  }
   return items
 }
 function pickRow(i, key) {
@@ -982,7 +998,7 @@ async function submitForm(input) {
             <div v-if="cardOpen.has(i.id)" class="card-stats">
               <div class="stat-row">
                 <span class="stat-label">{{ t('client.protocol') }}</span>
-                <span class="atag purple">{{ i.protocol }}</span>
+                <span class="atag purple">{{ protoTag(i) }}</span>
                 <span class="atag green">{{ transportTag(i) }}</span>
                 <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
               </div>
@@ -1074,7 +1090,7 @@ async function submitForm(input) {
                 </div>
               </td>
               <td class="center">
-                <Toggle :model-value="i.enabled" :label="i.name" :loading="isPending(i.id)" @update:model-value="(v) => setEnabled(i, v)" />
+                <Toggle :model-value="i.enabled" :label="i.name" :loading="isPending(i.id)" :disabled="i.protocol === 'xray'" @update:model-value="(v) => setEnabled(i, v)" />
               </td>
               <td class="center">{{ i.name }}</td>
               <td v-if="hasNodes" class="center">
@@ -1084,7 +1100,7 @@ async function submitForm(input) {
               <td class="center">{{ i.listenPort }}</td>
               <td>
                 <div class="protocol-tags">
-                  <span class="atag purple">{{ i.protocol }}</span>
+                  <span class="atag purple">{{ protoTag(i) }}</span>
                   <span class="atag green">{{ transportTag(i) }}</span>
                   <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
                 </div>

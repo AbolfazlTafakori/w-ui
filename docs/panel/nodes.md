@@ -120,6 +120,24 @@ The plan's **Users** — connections at once — are the customer's, not a serve
 
 If a node cannot be reached, its last report is believed for 30 seconds and then not counted — a customer's device on an unreachable node cannot be held through it either. On the node's side, once it has not heard from its panel for 45 seconds it holds customers to the limit on its own, with only what it can see, so a network blip between the servers is not a way past the limit. Both need this release or newer.
 
+## A 3x-ui panel as a node
+
+A server running 3x-ui (version 3 or later) can be a node without installing W-UI on it.
+
+1. On the 3x-ui panel, make an API token: **Settings → API tokens**. Make the inbounds you want to sell there too: VLESS (with or without Reality), VMess, Trojan, Shadowsocks or Hysteria2.
+2. Here, **Add node**, choose the type **3x-ui panel**, and give its access URL with the secret path (`https://IP:port/path`, as 3x-ui prints it) and the token.
+3. Within twenty seconds each inbound appears on the Interfaces page under the node's tab, with its protocol, port and transport. Put customers on them as on any tunnel.
+
+What happens then:
+
+- **Each file is a client on the 3x-ui panel**, called `wui-` and a number. Clients the 3x-ui panel's own operator made are never touched.
+- **Usage is read from the 3x-ui counters every twenty seconds** and added to the customer's one total, at the node's usage multiplier.
+- **Allowance and expiry are this panel's.** The client there has no limit of its own; when the customer runs out or expires here, it is switched off there, and on again when topped up.
+- **One user per file** is the client's IP limit there (1), enforced by 3x-ui. A customer with no device limit has none there either.
+- **The links are the ones 3x-ui makes** for the client, with its address, keys and transport, and go into the customer's one subscription. When the inbound changes there, the links follow within a round.
+- **Inbounds are changed on the 3x-ui panel.** Here they cannot be edited; an inbound removed there is shown as gone, leaves the subscription, and its tunnel goes once no customer is on it.
+- **Speed limits do not apply** on a 3x-ui node: xray has no per-user rate.
+
 ## Certificate check
 
 The token lets this panel read every customer's keys on that node, so *who answers* at the address matters. Three modes:

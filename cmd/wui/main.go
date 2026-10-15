@@ -492,6 +492,7 @@ func run() error {
 	// node at once and again with every push.
 	syncer.Sessions = rec.SetRemoteSessions
 	syncer.Holds = rec.Holds
+	syncer.XUIMirror = ifaceSvc.MirrorXUI
 	rec.OnHold = syncer.PushHold
 	service.ConnectionsNow = rec.ConnectionsNow
 	service.LiveClients = rec.LiveClients

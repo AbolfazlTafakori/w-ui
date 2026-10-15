@@ -87,7 +87,7 @@ const totals = computed(() => ({
 
 function openAdd() {
   form.value = {
-    name: '', address: '', token: '', note: '',
+    kind: 'remote', name: '', address: '', token: '', note: '',
     usageCoefficient: 1, dataLimitGB: '', resetDay: '',
     tlsMode: 'verify', tlsPin: '', tlsServerName: '', allowPrivateAddress: false,
   }
@@ -98,6 +98,7 @@ function openEdit(n) {
   // The token is deliberately blank: it is stored as given and never sent back,
   // so the field means "replace it" rather than "here is what it is".
   form.value = {
+    kind: n.kind,
     name: n.name,
     address: n.address,
     token: '',
@@ -429,6 +430,7 @@ function latencyTone(ms) {
           <i class="abadge-dot" :class="n.kind === 'local' || n.reachable ? 'green' : !n.enabled ? '' : 'red'"></i>
           <span class="node-name">{{ n.name }}</span>
           <span v-if="n.kind === 'local'" class="tag grey">{{ t('node.thisPanel') }}</span>
+          <span v-else-if="n.kind === 'xui'" class="tag blue">3x-ui</span>
           <div class="card-actions" @click.stop>
             <input type="checkbox" class="acheck" :checked="n.enabled" :disabled="n.kind === 'local' || isPending(n.id)" :aria-label="n.name" @change="toggle(n, $event.target.checked)" />
             <button v-if="n.kind !== 'local'" type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="nodeMenu?.node?.id === n.id" @click="openNodeMenu(n, $event)"><AntIcon name="MoreOutlined" /></button>
@@ -544,6 +546,7 @@ function latencyTone(ms) {
             <!-- The panel's own row is marked, because everything else on it
                  behaves differently and an operator should not wonder why. -->
             <span v-if="n.kind === 'local'" class="tag grey">{{ t('node.thisPanel') }}</span>
+          <span v-else-if="n.kind === 'xui'" class="tag blue">3x-ui</span>
             <!-- Shown only when it is not 1. An operator looking at a customer
                  whose usage climbed faster than their traffic should be able to
                  see the reason here rather than open every node in turn. -->
@@ -628,14 +631,24 @@ function latencyTone(ms) {
           <template v-else>
             <div class="nf-section">{{ t('node.sectionServer') }}</div>
             <div class="hrow">
+              <label for="n-kind">{{ t('node.kind') }}</label>
+              <div class="hctl">
+                <label class="aselect"><select id="n-kind" v-model="form.kind" :disabled="dialog.kind === 'edit'">
+                  <option value="remote">{{ t('node.kindWui') }}</option>
+                  <option value="xui">{{ t('node.kindXui') }}</option>
+                </select></label>
+                <p v-if="form.kind === 'xui'" class="hint">{{ t('node.kindXuiHint') }}</p>
+              </div>
+            </div>
+            <div class="hrow">
               <label class="req" for="n-name">{{ t('node.name') }}</label>
               <div class="hctl"><label class="ainput block"><input id="n-name" v-model="form.name" required autofocus maxlength="64" /></label></div>
             </div>
             <div class="hrow">
               <label class="req" for="n-addr">{{ t('node.address') }}</label>
               <div class="hctl">
-                <label class="ainput block"><input id="n-addr" v-model="form.address" required placeholder="https://vpn2.example.com:2096" class="ltr" /></label>
-                <p class="hint">{{ t('node.addressHint') }}</p>
+                <label class="ainput block"><input id="n-addr" v-model="form.address" required :placeholder="form.kind === 'xui' ? 'https://vpn2.example.com:2053/secretpath' : 'https://vpn2.example.com:2096'" class="ltr" /></label>
+                <p class="hint">{{ form.kind === 'xui' ? t('node.addressHintXui') : t('node.addressHint') }}</p>
                 <label class="acheckbox nf-check"><input v-model="form.allowPrivateAddress" type="checkbox" /><span>{{ t('node.allowPrivate') }}</span></label>
                 <p v-if="form.allowPrivateAddress" class="hint">{{ t('node.allowPrivateHint') }}</p>
               </div>
@@ -650,8 +663,8 @@ function latencyTone(ms) {
               <label :class="{ req: dialog.kind === 'add' }" for="n-token">{{ t('node.token') }}</label>
               <div class="hctl">
                 <label class="ainput block"><input id="n-token" v-model="form.token" type="password" class="ltr" autocomplete="off"
-                       :required="dialog.kind === 'add'" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : 'wui_…'" /></label>
-                <p class="hint">{{ t('node.tokenHint') }}</p>
+                       :required="dialog.kind === 'add'" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : (form.kind === 'xui' ? '' : 'wui_…')" /></label>
+                <p class="hint">{{ form.kind === 'xui' ? t('node.tokenHintXui') : t('node.tokenHint') }}</p>
               </div>
             </div>
             <div class="hrow">
@@ -660,7 +673,7 @@ function latencyTone(ms) {
                 <label class="aselect"><select id="n-tls" v-model="form.tlsMode">
                   <option value="verify">{{ t('node.tlsVerify') }}</option>
                   <option value="pin">{{ t('node.tlsPin') }}</option>
-                  <option value="mtls">{{ t('node.tlsMutual') }}</option>
+                  <option v-if="form.kind !== 'xui'" value="mtls">{{ t('node.tlsMutual') }}</option>
                   <option value="skip">{{ t('node.tlsSkip') }}</option>
                 </select></label>
                 <p v-if="form.tlsMode === 'verify'" class="hint">{{ t('node.tlsModeHint') }}</p>

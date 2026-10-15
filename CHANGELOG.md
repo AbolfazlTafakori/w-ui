@@ -7,6 +7,8 @@ All notable changes to W-UI are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **A 3x-ui panel can be a node.** Choose the type 3x-ui panel when adding a node and give its access URL and an API token made there. Its inbounds -- VLESS with or without Reality, VMess, Trojan, Shadowsocks 2022 and Hysteria2 -- appear as tunnels under the node's tab within twenty seconds, and customers are put on them as on any tunnel. Each file is a client there named `wui-` and a number; the 3x-ui operator's own clients are never touched. Usage is read from its counters and matches them to the byte; the allowance and expiry are this panel's, and a customer who runs out is switched off there. One user per file is the client's IP limit there. The links are the ones 3x-ui makes, in the customer's one subscription, and follow the inbound when it changes. Tested against 3x-ui 3.10.2 with a real client on every kind.
+- **Tunnels are grouped by server.** Tabs over the list: All, this server, and each node by its name.
 - **OpenConnect (Cisco AnyConnect)**, what Cisco Secure Client and openconnect dial. It is a VPN in TLS on any port, 443 by default, with DTLS on UDP.
   - ocserv is run by the panel's agent, and every sign-in is checked by the agent's own RADIUS server. That gives each device its own address, which is how the kernel counts its traffic. One sign-in is one connection: a second device takes the connection over, the first's address is freed for it, and an ended session cannot come back on its cookie.
   - Speed limits follow each session's own device.

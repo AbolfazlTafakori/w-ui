@@ -35,7 +35,10 @@ func NewNodes(db *gorm.DB, log *slog.Logger) *Nodes {
 
 // NodeInput is what the form collects.
 type NodeInput struct {
-	Name    string `json:"name"`
+	// Kind is what the node is: another W-UI panel (remote, the default)
+	// or a 3x-ui panel (xui). Read when the node is added and fixed after.
+	Kind    model.NodeKind `json:"kind"`
+	Name    string         `json:"name"`
 	Address string `json:"address"`
 	Token   string `json:"token"`
 	Note    string `json:"note"`
@@ -116,7 +119,7 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		TLSPin:              strings.TrimSpace(deref(in.TLSPin)),
 		TLSServerName:       strings.TrimSpace(deref(in.TLSServerName)),
 		AllowPrivateAddress: deref(in.AllowPrivateAddress),
-		Kind:                model.KindRemote,
+		Kind:                kindOr(in.Kind),
 		Address:             in.Address,
 		Token:               in.Token,
 		Note:                in.Note,
@@ -277,7 +280,16 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 			"node", in.Name, "address", in.Address)
 	}
 
+	switch in.Kind {
+	case "", model.KindRemote, model.KindXUI:
+	default:
+		return invalidField("kind", "a node is a W-UI panel or a 3x-ui panel")
+	}
 	if needToken && in.Token == "" {
+		if in.Kind == model.KindXUI {
+			return invalidField("token", "a 3x-ui node needs an API token. Make one on that "+
+				"panel under Settings, API tokens, then paste it here")
+		}
 		return invalidField("token", "a node needs an access token. Create one on that "+
 			"panel under Settings, then paste it here")
 	}
@@ -420,6 +432,14 @@ func hashToken(secret string) string {
 
 // tlsModeOr reads an optional mode, defaulting for a node created before this
 // existed or by a caller that did not mention it.
+// kindOr is the kind a new node is made as.
+func kindOr(k model.NodeKind) model.NodeKind {
+	if k == model.KindXUI {
+		return model.KindXUI
+	}
+	return model.KindRemote
+}
+
 func tlsModeOr(p *model.NodeTLSMode, fallback model.NodeTLSMode) model.NodeTLSMode {
 	if p == nil || *p == "" {
 		return fallback

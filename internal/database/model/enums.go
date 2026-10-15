@@ -27,6 +27,11 @@ const (
 	// over DTLS on UDP once signed in, served by ocserv. A username and
 	// password per device; the Cisco app is in every store.
 	ProtocolOpenConnect Protocol = "openconnect"
+	// ProtocolXray is an inbound of a 3x-ui panel added as a node: VLESS,
+	// VMess, Trojan, Shadowsocks or Hysteria, served by that panel's own
+	// xray. It is never made here: the inbound is read from the node, and
+	// what the panel adds is its customers, as that panel's clients.
+	ProtocolXray Protocol = "xray"
 )
 
 // Valid reports whether p is a protocol the panel knows how to serve.
@@ -109,6 +114,9 @@ type NodeKind string
 const (
 	KindLocal  NodeKind = "local"
 	KindRemote NodeKind = "remote"
+	// KindXUI is a 3x-ui panel used as a node: its inbounds are this panel's
+	// tunnels there, and this panel's customers are made its clients.
+	KindXUI NodeKind = "xui"
 )
 
 // NodeTLSMode is how this panel checks a node's certificate.

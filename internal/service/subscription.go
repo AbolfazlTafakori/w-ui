@@ -584,6 +584,21 @@ func (s *Subscriptions) renderDevicesFor(
 		if !ok {
 			continue
 		}
+		if iface.Protocol == model.ProtocolXray {
+			// The links the 3x-ui panel makes for this client, as it makes
+			// them: its own address, its Reality keys, its transport. Left
+			// out while that panel has made none yet, or the tunnel is off
+			// there.
+			if acc.XUILink == "" || !iface.Enabled || iface.XUI.V.Gone {
+				continue
+			}
+			out = append(out, RenderedDevice{Account: acc, Profile: backend.ClientProfile{
+				Filename: clientFilename(c.Name, acc.DeviceName, safeFilename(iface.Name)+".txt", single),
+				MIMEType: "text/plain",
+				Body:     []byte(acc.XUILink),
+			}})
+			continue
+		}
 		drv, err := s.renderer(acc.InterfaceID, iface.Protocol)
 		if err != nil {
 			s.log.Warn("no driver could render a configuration",

@@ -68,6 +68,12 @@ type Syncer struct {
 	Sessions func(nodeID uint, sessions []service.NodeSession)
 	Holds    func() map[uint]time.Time
 
+	// XUIMirror holds a 3x-ui node's inbounds as this panel's tunnels
+	// there (service.Interfaces.MirrorXUI).
+	XUIMirror func(ctx context.Context, nodeID uint, host string, seen []service.XUIInboundSeen) error
+	// xuiRounds counts each 3x-ui node's rounds, for rereading its links.
+	xuiRounds map[uint]int
+
 	mu sync.Mutex
 	// lastErr is the failure already reported per node, so an unreachable node
 	// does not write the same line to the log three times a minute forever.
@@ -174,7 +180,7 @@ func (s *Syncer) PushHold(nodeID uint, hold service.NodeHold) {
 func (s *Syncer) Round(ctx context.Context) {
 	var remotes []model.Node
 	if err := s.db.WithContext(ctx).
-		Where("kind = ? AND enabled = ?", model.KindRemote, true).
+		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI}, true).
 		Find(&remotes).Error; err != nil {
 		s.log.Error("could not list nodes to sync", "error", err)
 		return
@@ -189,6 +195,10 @@ func (s *Syncer) Round(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if node.Kind == model.KindXUI {
+				s.xuiOne(ctx, node)
+				return
+			}
 			s.one(ctx, node)
 		}()
 	}

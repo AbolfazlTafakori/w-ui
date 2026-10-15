@@ -333,6 +333,14 @@ func (s *Clients) loadInterfaces(ctx context.Context, ids []uint) ([]*model.Inte
 		if err != nil {
 			return nil, err
 		}
+		if iface.Protocol == model.ProtocolXray {
+			switch v := iface.XUI.V; {
+			case v.Gone:
+				return nil, invalidField("interfaceIds", "the inbound %q was removed on its 3x-ui panel", iface.Name)
+			case !model.XUISupported(v.Kind):
+				return nil, invalidField("interfaceIds", "customers cannot be added to a %s inbound (%q) of a 3x-ui panel", v.Kind, iface.Name)
+			}
+		}
 		out = append(out, iface)
 	}
 	return out, nil
@@ -451,6 +459,15 @@ func (s *Clients) buildAccount(client *model.Client, iface *model.Interface, nam
 		// which identifies sessions by common name, maps a live session back to
 		// a customer without a lookup.
 		acc.Username = fmt.Sprintf("s%d-%s", client.ID, slug(name))
+		acc.Secret = secret
+
+	case model.ProtocolXray:
+		// The client's credential on the 3x-ui panel; its email there is
+		// made from the account's id once it has one.
+		secret, err := xuiSecret(iface.XUI.V)
+		if err != nil {
+			return nil, err
+		}
 		acc.Secret = secret
 	}
 	return acc, nil
