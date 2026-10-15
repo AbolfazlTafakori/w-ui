@@ -84,6 +84,7 @@ All notable changes to W-UI are recorded here. The format follows
 
 ### Fixed
 - **Outbounds, tested on real servers with every kind of link and file:**
+  - A WireGuard outbound to a server elsewhere carried nothing: its own encrypted packets had the mark that routes traffic into it, so after the handshake they went round inside the tunnel. They now have a mark of their own.
   - A Trojan, VLESS, VMess or Hysteria2 link that skips the certificate check (`allowInsecure=1`, `insecure=1`) reached nothing: xray no longer skips it. The hop now pins the certificate the server shows when it starts; Hysteria2, whose certificate comes over QUIC, is carried by sing-box, which still skips it.
   - An OpenVPN profile with its sign-in inline, in an `<auth-user-pass>` block, never signed in. The sign-in is read into the form, and from the profile for outbounds saved before.
   - While a hop was down, what was routed to it left from this server's own address. It is now refused until the hop is up.

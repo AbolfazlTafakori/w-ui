@@ -21,9 +21,8 @@ import (
 type HopSpec struct {
 	// Device is the interface name, derived from the outbound's id.
 	Device string
-	// Mark is used twice: to steer customer traffic into this hop, and as the
-	// hop's own fwmark so its encrypted packets are not caught by its own
-	// routing rule and looped back into itself.
+	// Mark steers customer traffic into this hop. The hop's own encrypted
+	// packets carry a mark of their own, ownMark, which no rule sends back in.
 	Mark uint32
 
 	PrivateKey   string
@@ -228,15 +227,16 @@ func (m *HopManager) Teardown(ctx context.Context) {
 // everything sent into it should go. The routing rule decides what is sent,
 // not this; narrowing it is for an upstream that only serves some prefixes.
 //
-// FwMark is the hop's own mark. Without it the encrypted packets this interface
-// emits would match the very routing rule that steers traffic into it, and the
-// tunnel would try to carry itself.
+// FwMark is what the hop's encrypted packets are marked with. It must not be
+// Mark: the rule for Mark sends what carries it into this hop, so the tunnel
+// would carry its own packets -- a handshake goes through, then every packet
+// after it circles inside the device and nothing comes back.
 func (s HopSpec) wgQuickConf() string {
 	var b strings.Builder
 	b.WriteString("[Interface]\n")
 	fmt.Fprintf(&b, "PrivateKey = %s\n", s.PrivateKey)
 	if s.Mark != 0 {
-		fmt.Fprintf(&b, "FwMark = 0x%08x\n", s.Mark)
+		fmt.Fprintf(&b, "FwMark = 0x%08x\n", ownMark(s.Mark))
 	}
 	b.WriteString("\n[Peer]\n")
 	fmt.Fprintf(&b, "PublicKey = %s\n", s.PeerPubKey)
@@ -283,3 +283,8 @@ func (s HopSpec) fingerprint() string {
 		fmt.Sprint(len(s.PrivateKey), len(s.PresharedKey)),
 	}, "|")
 }
+
+// ownMark is the mark of a hop's own encrypted packets: the hop's mark with a
+// bit outside the marks the panel steers by, so no rule matches it and the
+// packets go out by the main table, to the hop's endpoint.
+func ownMark(mark uint32) uint32 { return mark | 0x80000000 }
