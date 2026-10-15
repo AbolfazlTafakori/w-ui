@@ -76,6 +76,9 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 
 	format := r.URL.Query().Get("format")
+	if format == "" && proxyApp(r.UserAgent()) {
+		format = "links"
+	}
 	bundle, err := s.subs.Serve(r.Context(), token, format)
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
@@ -285,4 +288,20 @@ func (s *Server) handleSecurityWarnings(w http.ResponseWriter, r *http.Request) 
 		warnings = []service.Warning{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"warnings": warnings})
+}
+
+// proxyApp reports whether a subscription is being fetched by an app that
+// reads a list of links -- v2rayNG, v2rayN, Hiddify, NekoBox and the like --
+// and so is served links alone (service.linkParts).
+func proxyApp(ua string) bool {
+	ua = strings.ToLower(ua)
+	for _, app := range []string{
+		"v2rayng", "v2rayn", "v2raytun", "hiddify", "nekobox", "nekoray", "streisand", "v2box",
+		"shadowrocket", "foxray", "happ", "karing", "sing-box", "singbox", "npvtunnel", "defyx",
+	} {
+		if strings.Contains(ua, app) {
+			return true
+		}
+	}
+	return false
 }

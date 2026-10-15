@@ -759,7 +759,7 @@ func bundleFormatName(format string) string {
 	switch strings.ToLower(format) {
 	case "zip":
 		return "zip"
-	case "base64":
+	case "base64", "links":
 		return "base64"
 	default:
 		return "conf"
@@ -1022,6 +1022,9 @@ func (s *Subscriptions) byToken(ctx context.Context, token string) (*model.Clien
 // all the customer has, when the text is at least something a person can
 // read. An archive holds each as a file of its own and carries them all.
 func bundleParts(rendered []RenderedDevice, byID map[uint]model.Interface, format string) []backend.ClientProfile {
+	if strings.EqualFold(format, "links") {
+		return linkParts(rendered, byID)
+	}
 	all := make([]backend.ClientProfile, 0, len(rendered))
 	importable := make([]backend.ClientProfile, 0, len(rendered))
 	for _, d := range rendered {
@@ -1049,6 +1052,13 @@ func encodeBundle(parts []backend.ClientProfile, format string) (body []byte, co
 		// OpenVPN Connect and most WireGuard subscription clients fetch that URL
 		// expecting text and reject an archive outright.
 		return zipBundle(parts), "application/zip"
+	case "links":
+		// One link a line, as every proxy app reads them.
+		lines := make([]string, 0, len(parts))
+		for _, p := range parts {
+			lines = append(lines, strings.TrimSpace(string(p.Body)))
+		}
+		return []byte(base64.StdEncoding.EncodeToString([]byte(strings.Join(lines, "\n")))), "text/plain; charset=utf-8"
 	case "base64":
 		// What most subscription clients expect. Standard encoding rather than
 		// URL-safe: the body is not a URL, and clients decode it as standard.
