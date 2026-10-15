@@ -281,14 +281,18 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	}
 
 	switch in.Kind {
-	case "", model.KindRemote, model.KindXUI:
+	case "", model.KindRemote, model.KindXUI, model.KindPG:
 	default:
-		return invalidField("kind", "a node is a W-UI panel or a 3x-ui panel")
+		return invalidField("kind", "a node is a W-UI, 3x-ui or Pasarguard panel")
 	}
 	if needToken && in.Token == "" {
 		if in.Kind == model.KindXUI {
 			return invalidField("token", "a 3x-ui node needs an API token. Make one on that "+
 				"panel under Settings, API tokens, then paste it here")
+		}
+		if in.Kind == model.KindPG {
+			return invalidField("token", "a Pasarguard node needs an API key. Make one on that "+
+				"panel under API keys, then paste it here")
 		}
 		return invalidField("token", "a node needs an access token. Create one on that "+
 			"panel under Settings, then paste it here")
@@ -434,8 +438,8 @@ func hashToken(secret string) string {
 // existed or by a caller that did not mention it.
 // kindOr is the kind a new node is made as.
 func kindOr(k model.NodeKind) model.NodeKind {
-	if k == model.KindXUI {
-		return model.KindXUI
+	if k == model.KindXUI || k == model.KindPG {
+		return k
 	}
 	return model.KindRemote
 }

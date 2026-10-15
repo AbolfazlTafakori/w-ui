@@ -75,7 +75,7 @@ func (p *Prober) Start(ctx context.Context) {
 func (p *Prober) Round(ctx context.Context) {
 	var list []model.Node
 	err := p.db.WithContext(ctx).
-		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI}, true).Find(&list).Error
+		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI, model.KindPG}, true).Find(&list).Error
 	if err != nil {
 		p.log.Warn("could not read the node list", "error", err)
 		return
@@ -166,8 +166,11 @@ func (p *Prober) ProbeOne(ctx context.Context, node model.Node) Snapshot {
 
 func (p *Prober) ask(ctx context.Context, node model.Node) (Snapshot, error) {
 	var snap Snapshot
-	if node.Kind == model.KindXUI {
+	switch node.Kind {
+	case model.KindXUI:
 		return askXUI(ctx, node)
+	case model.KindPG:
+		return askPG(ctx, node)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)

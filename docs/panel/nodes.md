@@ -138,6 +138,21 @@ What happens then:
 - **Inbounds are changed on the 3x-ui panel.** Here they cannot be edited; an inbound removed there is shown as gone, leaves the subscription, and its tunnel goes once no customer is on it.
 - **Speed limits do not apply** on a 3x-ui node: xray has no per-user rate.
 
+## A Pasarguard panel as a node
+
+A Pasarguard panel (version 5 or later), with a node of its own connected, can be a node the same way.
+
+1. On the Pasarguard panel, make an API key (**API keys**), and the inbounds you want to sell in its core: VLESS (with or without Reality), VMess, Trojan or Shadowsocks.
+2. Here, **Add node**, choose the type **Pasarguard panel**, and give its address (`https://IP-or-domain:port`) and the key.
+3. Within twenty seconds each inbound appears on the Interfaces page under the node's tab.
+
+What happens then is as for 3x-ui, with Pasarguard's own way of doing it:
+
+- **Each file is a user** there called `wui_` and a number, in a group this panel keeps for that inbound alone (`wui <inbound>`). Users the Pasarguard panel's own operator made are never touched.
+- **Their credentials are Pasarguard's**, and the links are the ones its subscription gives for the user.
+- **Usage is its users' used traffic**, read every twenty seconds; the allowance and expiry are this panel's, and a user is disabled there when the customer runs out here.
+- **Pasarguard has no IP limit of its own**, so one user per file is not enforced on such a node.
+
 ## Certificate check
 
 The token lets this panel read every customer's keys on that node, so *who answers* at the address matters. Three modes:

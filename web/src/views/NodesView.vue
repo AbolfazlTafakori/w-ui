@@ -431,6 +431,7 @@ function latencyTone(ms) {
           <span class="node-name">{{ n.name }}</span>
           <span v-if="n.kind === 'local'" class="tag grey">{{ t('node.thisPanel') }}</span>
           <span v-else-if="n.kind === 'xui'" class="tag blue">3x-ui</span>
+          <span v-else-if="n.kind === 'pasarguard'" class="tag blue">Pasarguard</span>
           <div class="card-actions" @click.stop>
             <input type="checkbox" class="acheck" :checked="n.enabled" :disabled="n.kind === 'local' || isPending(n.id)" :aria-label="n.name" @change="toggle(n, $event.target.checked)" />
             <button v-if="n.kind !== 'local'" type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="nodeMenu?.node?.id === n.id" @click="openNodeMenu(n, $event)"><AntIcon name="MoreOutlined" /></button>
@@ -547,6 +548,7 @@ function latencyTone(ms) {
                  behaves differently and an operator should not wonder why. -->
             <span v-if="n.kind === 'local'" class="tag grey">{{ t('node.thisPanel') }}</span>
           <span v-else-if="n.kind === 'xui'" class="tag blue">3x-ui</span>
+          <span v-else-if="n.kind === 'pasarguard'" class="tag blue">Pasarguard</span>
             <!-- Shown only when it is not 1. An operator looking at a customer
                  whose usage climbed faster than their traffic should be able to
                  see the reason here rather than open every node in turn. -->
@@ -636,8 +638,10 @@ function latencyTone(ms) {
                 <label class="aselect"><select id="n-kind" v-model="form.kind" :disabled="dialog.kind === 'edit'">
                   <option value="remote">{{ t('node.kindWui') }}</option>
                   <option value="xui">{{ t('node.kindXui') }}</option>
+                  <option value="pasarguard">{{ t('node.kindPg') }}</option>
                 </select></label>
                 <p v-if="form.kind === 'xui'" class="hint">{{ t('node.kindXuiHint') }}</p>
+                <p v-else-if="form.kind === 'pasarguard'" class="hint">{{ t('node.kindPgHint') }}</p>
               </div>
             </div>
             <div class="hrow">
@@ -647,8 +651,8 @@ function latencyTone(ms) {
             <div class="hrow">
               <label class="req" for="n-addr">{{ t('node.address') }}</label>
               <div class="hctl">
-                <label class="ainput block"><input id="n-addr" v-model="form.address" required :placeholder="form.kind === 'xui' ? 'https://vpn2.example.com:2053/secretpath' : 'https://vpn2.example.com:2096'" class="ltr" /></label>
-                <p class="hint">{{ form.kind === 'xui' ? t('node.addressHintXui') : t('node.addressHint') }}</p>
+                <label class="ainput block"><input id="n-addr" v-model="form.address" required :placeholder="form.kind === 'xui' ? 'https://vpn2.example.com:2053/secretpath' : form.kind === 'pasarguard' ? 'https://vpn2.example.com:8000' : 'https://vpn2.example.com:2096'" class="ltr" /></label>
+                <p class="hint">{{ form.kind === 'xui' ? t('node.addressHintXui') : form.kind === 'pasarguard' ? t('node.addressHintPg') : t('node.addressHint') }}</p>
                 <label class="acheckbox nf-check"><input v-model="form.allowPrivateAddress" type="checkbox" /><span>{{ t('node.allowPrivate') }}</span></label>
                 <p v-if="form.allowPrivateAddress" class="hint">{{ t('node.allowPrivateHint') }}</p>
               </div>
@@ -663,8 +667,8 @@ function latencyTone(ms) {
               <label :class="{ req: dialog.kind === 'add' }" for="n-token">{{ t('node.token') }}</label>
               <div class="hctl">
                 <label class="ainput block"><input id="n-token" v-model="form.token" type="password" class="ltr" autocomplete="off"
-                       :required="dialog.kind === 'add'" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : (form.kind === 'xui' ? '' : 'wui_…')" /></label>
-                <p class="hint">{{ form.kind === 'xui' ? t('node.tokenHintXui') : t('node.tokenHint') }}</p>
+                       :required="dialog.kind === 'add'" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : (form.kind === 'remote' ? 'wui_…' : '')" /></label>
+                <p class="hint">{{ form.kind === 'xui' ? t('node.tokenHintXui') : form.kind === 'pasarguard' ? t('node.tokenHintPg') : t('node.tokenHint') }}</p>
               </div>
             </div>
             <div class="hrow">
@@ -673,7 +677,7 @@ function latencyTone(ms) {
                 <label class="aselect"><select id="n-tls" v-model="form.tlsMode">
                   <option value="verify">{{ t('node.tlsVerify') }}</option>
                   <option value="pin">{{ t('node.tlsPin') }}</option>
-                  <option v-if="form.kind !== 'xui'" value="mtls">{{ t('node.tlsMutual') }}</option>
+                  <option v-if="form.kind === 'remote'" value="mtls">{{ t('node.tlsMutual') }}</option>
                   <option value="skip">{{ t('node.tlsSkip') }}</option>
                 </select></label>
                 <p v-if="form.tlsMode === 'verify'" class="hint">{{ t('node.tlsModeHint') }}</p>

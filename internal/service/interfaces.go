@@ -114,13 +114,21 @@ type CreateInterfaceInput struct {
 
 // Create validates and stores a new interface, generating the server key pair
 // for WireGuard and an obfuscation profile when the mode calls for one.
+// panelName is what a node of another panel is called to an operator.
+func panelName(k model.NodeKind) string {
+	if k == model.KindPG {
+		return "Pasarguard"
+	}
+	return "3x-ui"
+}
+
 func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*model.Interface, error) {
 	node, err := s.resolveNode(ctx, in.NodeID)
 	if err != nil {
 		return nil, err
 	}
-	if node.Kind == model.KindXUI {
-		return nil, invalidField("nodeId", "%s is a 3x-ui panel: make the inbound there, and it appears here within a minute", node.Name)
+	if node.Kind == model.KindXUI || node.Kind == model.KindPG {
+		return nil, invalidField("nodeId", "%s is a %s panel: make the inbound there, and it appears here within a minute", node.Name, panelName(node.Kind))
 	}
 	// A port check asks this machine what is listening on it. That answer says
 	// nothing about another server, so on a remote node it is skipped rather

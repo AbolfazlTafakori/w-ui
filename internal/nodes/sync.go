@@ -180,7 +180,7 @@ func (s *Syncer) PushHold(nodeID uint, hold service.NodeHold) {
 func (s *Syncer) Round(ctx context.Context) {
 	var remotes []model.Node
 	if err := s.db.WithContext(ctx).
-		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI}, true).
+		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI, model.KindPG}, true).
 		Find(&remotes).Error; err != nil {
 		s.log.Error("could not list nodes to sync", "error", err)
 		return
@@ -195,8 +195,12 @@ func (s *Syncer) Round(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if node.Kind == model.KindXUI {
+			switch node.Kind {
+			case model.KindXUI:
 				s.xuiOne(ctx, node)
+				return
+			case model.KindPG:
+				s.pgOne(ctx, node)
 				return
 			}
 			s.one(ctx, node)

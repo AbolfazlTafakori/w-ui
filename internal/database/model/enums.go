@@ -117,6 +117,8 @@ const (
 	// KindXUI is a 3x-ui panel used as a node: its inbounds are this panel's
 	// tunnels there, and this panel's customers are made its clients.
 	KindXUI NodeKind = "xui"
+	// KindPG is a Pasarguard panel used as a node, the same way.
+	KindPG NodeKind = "pasarguard"
 )
 
 // NodeTLSMode is how this panel checks a node's certificate.
