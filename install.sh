@@ -588,11 +588,19 @@ amnezia_build_go() {
     }
   fi
 
-  git clone --depth 1 -b "$AMNEZIA_GO_TAG" https://github.com/amnezia-vpn/amneziawg-go.git \
-    "$tmp/go-src" >/dev/null 2>&1 || {
-    warn "could not fetch amneziawg-go"
-    return 1
-  }
+  # Three tries: GitHub drops a connection now and then from some
+  # countries, and one dropped clone is no reason to go without it.
+  local try
+  for try in 1 2 3; do
+    rm -rf "$tmp/go-src"
+    git clone --depth 1 -b "$AMNEZIA_GO_TAG" https://github.com/amnezia-vpn/amneziawg-go.git \
+      "$tmp/go-src" >"$tmp/clone.log" 2>&1 && break
+    if [[ "$try" == 3 ]]; then
+      warn "could not fetch amneziawg-go: $(tail -1 "$tmp/clone.log" 2>/dev/null)"
+      return 1
+    fi
+    sleep 5
+  done
 
   ( cd "$tmp/go-src" \
     && GOFLAGS=-mod=mod GOPATH="$tmp/gopath" GOCACHE="$tmp/gocache" CGO_ENABLED=0 \
@@ -620,17 +628,39 @@ go_is_recent_enough() {
 }
 
 # amnezia_fetch_go unpacks an official toolchain into tmp and prints its path.
+#
+# From go.dev first, then from mirrors of it: Google's servers answer 404 to
+# some countries -- Iran's among them -- where a mirror still serves the same
+# file. Whichever it came from, the archive is checked against the checksum
+# go.dev publishes for it, so a mirror can only hand over the real toolchain
+# or nothing.
 amnezia_fetch_go() {
-  local tmp="$1" arch
+  local tmp="$1" arch sum
   case "$(uname -m)" in
     x86_64)  arch=amd64 ;;
     aarch64) arch=arm64 ;;
     armv7l)  arch=armv6l ;;
     *) return 1 ;;
   esac
+  case "$GO_BOOTSTRAP_VERSION/$arch" in
+    1.25.1/amd64)  sum=7716a0d940a0f6ae8e1f3b3f4f36299dc53e31b16840dbd171254312c41ca12e ;;
+    1.25.1/arm64)  sum=65a3e34fb2126f55b34e1edfc709121660e1be2dee6bdf405fc399a63a95a87d ;;
+    1.25.1/armv6l) sum=eb949be683e82a99e9861dafd7057e31ea40b161eae6c4cd18fdc0e8c4ae6225 ;;
+    *) return 1 ;;
+  esac
 
-  local url="https://go.dev/dl/go${GO_BOOTSTRAP_VERSION}.linux-${arch}.tar.gz"
-  curl -fsSL --max-time 300 "$url" -o "$tmp/go.tgz" 2>/dev/null || return 1
+  local file="go${GO_BOOTSTRAP_VERSION}.linux-${arch}.tar.gz" url got=0
+  for url in "https://go.dev/dl/$file" \
+             "https://mirrors.aliyun.com/golang/$file" \
+             "https://mirror.nju.edu.cn/golang/$file"; do
+    rm -f "$tmp/go.tgz"
+    curl -fsSL --max-time 300 "$url" -o "$tmp/go.tgz" 2>/dev/null || continue
+    if [[ "$(sha256sum "$tmp/go.tgz" | cut -d' ' -f1)" == "$sum" ]]; then
+      got=1
+      break
+    fi
+  done
+  [[ "$got" == 1 ]] || return 1
   tar -xzf "$tmp/go.tgz" -C "$tmp" 2>/dev/null || return 1
   [[ -x "$tmp/go/bin/go" ]] || return 1
   printf '%s' "$tmp/go/bin/go"
@@ -883,7 +913,10 @@ install_l2tp() {
   if have_systemd; then
     for u in "${L2TP_UNITS[@]}"; do
       [[ "$theirs" == *" $u "* ]] && continue
+      # And stopped on its own: a service from an init script -- Ubuntu's
+      # xl2tpd -- is disabled by --now but left running, on L2TP's port.
       systemctl disable --now "$u" >/dev/null 2>&1 || true
+      systemctl stop "$u" >/dev/null 2>&1 || true
     done
   fi
   if [[ "$installed" == 1 ]] && have xl2tpd && have pppd && have swanctl; then

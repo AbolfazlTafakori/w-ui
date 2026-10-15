@@ -233,7 +233,11 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error
 	// is never the one used, and strongSwan is the agent's to start.
 	for _, unit := range packagedUnits {
 		if !theirs[unit] {
+			// Stopped on its own besides: a service from an init script --
+			// Ubuntu's xl2tpd -- is disabled by --now but left running,
+			// holding the port the agent's own needs.
 			_, _ = s.run(ctx, cmdTimeout, "", "systemctl", "disable", "--now", unit)
+			_, _ = s.run(ctx, cmdTimeout, "", "systemctl", "stop", unit)
 		}
 	}
 	if left := s.missing(protocol); len(left) > 0 {

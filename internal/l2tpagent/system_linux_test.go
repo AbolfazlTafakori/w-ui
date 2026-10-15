@@ -144,3 +144,21 @@ func TestThePPTPServerIsThePanelsOwn(t *testing.T) {
 		t.Fatalf("PPTP installs %v", got)
 	}
 }
+
+// A strongSwan that came up before IKEv2's plugins did is told apart by what
+// it says it loaded, and only plugins that are installed count.
+func TestAStrongSwanWithoutIKEv2sPluginsIsFound(t *testing.T) {
+	stats := "uptime: 18 minutes\nworker threads: 16 total\nloaded plugins: charon-systemd aes sha2 eap-mschapv2 xauth-generic\n"
+	all := func(string) bool { return true }
+	if got := notLoaded(stats, ikev2Plugins, all); strings.Join(got, ",") != "eap-tls,eap-identity,eap-radius" {
+		t.Fatalf("%v", got)
+	}
+	none := func(string) bool { return false }
+	if got := notLoaded(stats, ikev2Plugins, none); len(got) != 0 {
+		t.Fatalf("plugins not installed counted: %v", got)
+	}
+	full := stats[:len(stats)-1] + " eap-tls eap-identity eap-radius\n"
+	if got := notLoaded(full, ikev2Plugins, all); len(got) != 0 {
+		t.Fatalf("%v", got)
+	}
+}

@@ -161,9 +161,26 @@ func (s *linuxSystem) StopRadius() {
 
 // ensureCharon starts strongSwan when it is not running, noting that the
 // agent did, so the last tunnel to leave stops it again.
+//
+// A strongSwan that is running but started before IKEv2's plugins were
+// installed -- by an L2TP tunnel made first, on a fresh server -- has not
+// loaded them, and refuses every sign-in by password ("loading EAP_RADIUS
+// method failed"). It is restarted once to load them; L2TP's sessions, if
+// any, reconnect.
 func (s *linuxSystem) ensureCharon(ctx context.Context) error {
 	unit := strongswanUnit()
 	if s.active(ctx, unit) {
+		out, err := s.run(ctx, cmdTimeout, "", "swanctl", "--stats")
+		if err != nil {
+			return nil // asked again on the next pass
+		}
+		if missing := notLoaded(string(out), ikev2Plugins, havePlugin); len(missing) > 0 {
+			s.log.Warn("strongSwan started before IKEv2's plugins were installed; restarting it to load them",
+				"plugins", strings.Join(missing, ", "))
+			if _, err := s.run(ctx, cmdTimeout, "", "systemctl", "restart", unit); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	if _, err := s.run(ctx, cmdTimeout, "", "systemctl", "start", unit); err != nil {
@@ -249,4 +266,25 @@ func (s *linuxSystem) Terminate(ctx context.Context, id uint) error {
 		return fmt.Errorf("ending session %d: %w", id, err)
 	}
 	return nil
+}
+
+// notLoaded are the plugins installed on disk that the running strongSwan
+// has not loaded, read from `swanctl --stats` ("loaded plugins: ...").
+func notLoaded(stats string, want []string, installed func(string) bool) []string {
+	loaded := map[string]bool{}
+	for _, line := range strings.Split(stats, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "loaded plugins:"); ok {
+			for _, p := range strings.Fields(rest) {
+				loaded[p] = true
+			}
+		}
+	}
+	var out []string
+	for _, p := range want {
+		if installed(p) && !loaded[p] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
