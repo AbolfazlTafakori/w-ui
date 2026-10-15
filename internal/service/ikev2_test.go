@@ -13,6 +13,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/routing"
 )
 
 func createIKEv2(t *testing.T, svc *Interfaces, in CreateInterfaceInput) (*model.Interface, error) {
@@ -49,7 +50,7 @@ func parseCert(t *testing.T, p string) *x509.Certificate {
 func TestAnIKEv2TunnelIsMadeWithItsCertificates(t *testing.T) {
 	db, _ := seeded(t)
 	svc := NewInterfaces(db, ipam.NewPools(), quietLog())
-	got, err := createIKEv2(t, svc, CreateInterfaceInput{ListenPort: 4242})
+	got, err := createIKEv2(t, svc, CreateInterfaceInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,19 @@ func TestIKEv2InputIsChecked(t *testing.T) {
 	ctx := context.Background()
 	port := 4500
 	_, err = svc.Update(ctx, got.ID, UpdateInterfaceInput{ListenPort: &port})
-	check(t, "port", err, wantErr{"listenPort", "500 and 4500"})
+	check(t, "port", err, wantErr{"listenPort", "held by IPsec, L2TP or PPTP"})
+	// A port of its own is redirected to 4500, where a client on any port
+	// but 500 is answered.
+	port = 41500
+	moved, err := svc.Update(ctx, got.ID, UpdateInterfaceInput{ListenPort: &port})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := PortRedirects(*moved)
+	if len(rs) != 2 || rs[0] != (routing.PortRedirect{Proto: "udp", From: 41500, To: 500}) ||
+		rs[1] != (routing.PortRedirect{Proto: "udp", From: 41500, To: 4500, Marked: true}) {
+		t.Fatalf("redirects %+v", rs)
+	}
 	modes := []string{"rsa", "eap-tls"}
 	up, err := svc.Update(ctx, got.ID, UpdateInterfaceInput{IKEv2Modes: &modes})
 	if err != nil {

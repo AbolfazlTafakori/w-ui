@@ -23,7 +23,7 @@ func nets(t *testing.T, in ...string) []netip.Prefix {
 // nothing — which looks like a broken tunnel and is the most common way a
 // working VPN appears not to work.
 func TestCustomerTrafficIsTranslatedOnTheWayOut(t *testing.T) {
-	got := BuildNAT(nets(t, "10.99.0.0/24", "10.77.0.0/24"), []string{"wgir", "wgtest"})
+	got := BuildNAT(nets(t, "10.99.0.0/24", "10.77.0.0/24"), []string{"wgir", "wgtest"}, nil)
 
 	if !strings.Contains(got, "masquerade") {
 		t.Fatalf("nothing rewrites the source address:\n%s", got)
@@ -41,7 +41,7 @@ func TestCustomerTrafficIsTranslatedOnTheWayOut(t *testing.T) {
 // One customer's packets must not arrive at another as though the server sent
 // them. The per-peer address filter exists to stop exactly that.
 func TestTrafficBackIntoATunnelIsLeftAlone(t *testing.T) {
-	got := BuildNAT(nets(t, "10.99.0.0/24"), []string{"wgir", "wgtest"})
+	got := BuildNAT(nets(t, "10.99.0.0/24"), []string{"wgir", "wgtest"}, nil)
 
 	ret := strings.Index(got, "return")
 	masq := strings.Index(got, "masquerade")
@@ -59,7 +59,7 @@ func TestTrafficBackIntoATunnelIsLeftAlone(t *testing.T) {
 // Applying it twice must leave the same thing behind, and a subnet that was
 // removed must go away rather than linger.
 func TestTheProgramReplacesWhateverWasThere(t *testing.T) {
-	got := BuildNAT(nets(t, "10.99.0.0/24"), nil)
+	got := BuildNAT(nets(t, "10.99.0.0/24"), nil, nil)
 
 	add := strings.Index(got, "add table ip "+NATTableName)
 	del := strings.Index(got, "delete table ip "+NATTableName)
@@ -76,7 +76,7 @@ func TestTheProgramReplacesWhateverWasThere(t *testing.T) {
 // A fresh install has no tunnels. It must still produce a table, so the next
 // apply replaces it rather than adding to whatever a previous run left.
 func TestNoTunnelsStillLeavesAnEmptyTable(t *testing.T) {
-	got := BuildNAT(nil, nil)
+	got := BuildNAT(nil, nil, nil)
 
 	if !strings.Contains(got, "table ip "+NATTableName) {
 		t.Errorf("no table at all:\n%s", got)
@@ -89,8 +89,8 @@ func TestNoTunnelsStillLeavesAnEmptyTable(t *testing.T) {
 // The program must only change when the tunnels do, or every tick rewrites the
 // kernel's rules and resets the counters.
 func TestTheProgramIsStable(t *testing.T) {
-	a := BuildNAT(nets(t, "10.99.0.0/24", "10.77.0.0/24"), []string{"b", "a"})
-	b := BuildNAT(nets(t, "10.77.0.0/24", "10.99.0.0/24"), []string{"a", "b"})
+	a := BuildNAT(nets(t, "10.99.0.0/24", "10.77.0.0/24"), []string{"b", "a"}, nil)
+	b := BuildNAT(nets(t, "10.77.0.0/24", "10.99.0.0/24"), []string{"a", "b"}, nil)
 	if a != b {
 		t.Errorf("the same tunnels in another order gave a different program:\n%s\n---\n%s", a, b)
 	}
@@ -99,10 +99,45 @@ func TestTheProgramIsStable(t *testing.T) {
 // Traffic to another customer is left alone by its destination too: an L2TP
 // customer is reached through a PPP device that is never a tunnel's name.
 func TestTrafficToACustomerIsLeftAloneByAddress(t *testing.T) {
-	got := BuildNAT(nets(t, "10.99.0.0/24", "10.77.0.0/24"), []string{"wg0"})
+	got := BuildNAT(nets(t, "10.99.0.0/24", "10.77.0.0/24"), []string{"wg0"}, nil)
 	ret := strings.Index(got, "ip daddr { 10.77.0.0/24, 10.99.0.0/24 } return")
 	masq := strings.Index(got, "masquerade")
 	if ret < 0 || ret > masq {
 		t.Fatalf("customer-bound traffic is not excluded by address before the masquerade:\n%s", got)
+	}
+}
+
+// A tunnel's own port is redirected to its daemon's, for what is addressed
+// to this server only; a redirect to itself or of no transport is left out.
+func TestPortsOfTheirOwnAreRedirected(t *testing.T) {
+	got := BuildNAT(nets(t, "10.99.0.0/24"), []string{"ike0"}, []PortRedirect{
+		{Proto: "udp", From: 41500, To: 500},
+		{Proto: "udp", From: 41500, To: 4500, Marked: true},
+		{Proto: "tcp", From: 41723, To: 1723},
+		{Proto: "udp", From: 1701, To: 1701},
+		{Proto: "sctp", From: 9, To: 10},
+	})
+	for _, want := range []string{
+		"type nat hook prerouting priority dstnat;",
+		"fib daddr type local tcp dport 41723 counter redirect to :1723",
+		"fib daddr type local udp dport 41500 @th,64,32 0 counter redirect to :4500\n\t\tfib daddr type local udp dport 41500 counter redirect to :500",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "dport 1701") || strings.Contains(got, "sctp") {
+		t.Fatalf("a redirect that should be left out:\n%s", got)
+	}
+	if strings.Contains(BuildNAT(nets(t, "10.99.0.0/24"), nil, nil), "prerouting") {
+		t.Fatal("a prerouting chain with nothing to redirect")
+	}
+}
+
+// Without fib, a redirect is told from a customer's own traffic by source.
+func TestRedirectsWithoutFibSpareTheCustomers(t *testing.T) {
+	got := BuildNATWithoutFib(nets(t, "10.99.0.0/24"), nil, []PortRedirect{{Proto: "udp", From: 41500, To: 4500}})
+	if !strings.Contains(got, "ip saddr != { 10.99.0.0/24 } udp dport 41500 counter redirect to :4500") || strings.Contains(got, "fib") {
+		t.Fatalf("%s", got)
 	}
 }

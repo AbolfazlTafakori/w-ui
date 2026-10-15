@@ -42,12 +42,12 @@ func createL2TP(t *testing.T, svc *Interfaces, in CreateInterfaceInput) (*model.
 	return svc.Create(context.Background(), in)
 }
 
-// The port is not the operator's to choose, a key is made when none is
+// The standard port when none is asked for, a key made when none is
 // given, and the MTU leaves room for L2TP and IPsec.
 func TestAnL2TPTunnelIsMadeWithWhatItsClientsExpect(t *testing.T) {
 	db, _ := seeded(t)
 	svc := NewInterfaces(db, ipam.NewPools(), quietLog())
-	got, err := createL2TP(t, svc, CreateInterfaceInput{ListenPort: 4242})
+	got, err := createL2TP(t, svc, CreateInterfaceInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestL2TPInputIsChecked(t *testing.T) {
 	check(t, "psk on wireguard", err, wantErr{"psk", "applies to L2TP tunnels only"})
 }
 
-func TestAnL2TPTunnelsKeyCanBeChangedButNotItsPort(t *testing.T) {
+func TestAnL2TPTunnelsKeyAndPortCanBeChanged(t *testing.T) {
 	db, _ := seeded(t)
 	svc := NewInterfaces(db, ipam.NewPools(), quietLog())
 	iface, err := createL2TP(t, svc, CreateInterfaceInput{PSK: "FirstKey123"})
@@ -106,9 +106,25 @@ func TestAnL2TPTunnelsKeyCanBeChangedButNotItsPort(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	port := 1702
+	if rs := PortRedirects(*iface); len(rs) != 0 {
+		t.Fatal("a tunnel on its standard port redirected")
+	}
+	port := 4500
 	_, err = svc.Update(ctx, iface.ID, UpdateInterfaceInput{ListenPort: &port})
-	check(t, "port", err, wantErr{"listenPort", "always on UDP 1701"})
+	check(t, "IPsec's port", err, wantErr{"listenPort", "held by IPsec, L2TP or PPTP"})
+	port = freeUDPPort(t)
+	moved, err := svc.Update(ctx, iface.ID, UpdateInterfaceInput{ListenPort: &port})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs := PortRedirects(*moved); len(rs) != 1 || rs[0].Proto != "udp" || int(rs[0].From) != port || rs[0].To != 1701 {
+		t.Fatalf("redirects %+v", rs)
+	}
+	// Another tunnel cannot take the port the redirect holds, though
+	// nothing listens on it.
+	_, err = svc.Create(ctx, CreateInterfaceInput{Name: "wg7", Protocol: model.ProtocolWireGuard, ListenPort: port,
+		Subnet: "10.97.0.0/24", EndpointHost: "h"})
+	check(t, "clash", err, wantErr{"listenPort", "already the port of the tunnel"})
 
 	bad := "no spaces allowed"
 	_, err = svc.Update(ctx, iface.ID, UpdateInterfaceInput{PSK: &bad})

@@ -128,3 +128,19 @@ func TestEachSessionsLinkCarriesItsCustomersRate(t *testing.T) {
 		t.Fatal("an ended session's link is still remembered")
 	}
 }
+
+// A tunnel's own device is shaped where its customers' traffic leaves by it:
+// WireGuard's, and IKEv2's xfrm device; never L2TP's, PPTP's or
+// OpenConnect's placeholders, whose sessions have devices of their own.
+func TestTheShapedDevicesAreTheTunnelsThatCarryTraffic(t *testing.T) {
+	got := shapedDevices([]model.Interface{
+		{Name: "wg0", Protocol: model.ProtocolWireGuard},
+		{Name: "ike0", Protocol: model.ProtocolIKEv2},
+		{Name: "l2tp0", Protocol: model.ProtocolL2TP},
+		{Name: "pptp0", Protocol: model.ProtocolPPTP},
+		{Name: "oc0", Protocol: model.ProtocolOpenConnect},
+	})
+	if strings.Join(got, ",") != "ike0,wg0" {
+		t.Fatalf("shaped %v", got)
+	}
+}

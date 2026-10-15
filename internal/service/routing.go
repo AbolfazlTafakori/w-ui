@@ -589,10 +589,17 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	if err := db.Where("enabled = ?", true).Find(&ifaces).Error; err != nil {
 		return p, fmt.Errorf("service: read interfaces: %w", err)
 	}
+	// A port of a tunnel's own is redirected on the server that runs it, and
+	// only there.
+	var local model.Node
+	haveLocal := db.Where("kind = ?", model.KindLocal).First(&local).Error == nil
 	for _, i := range ifaces {
 		if pfx, err := netip.ParsePrefix(i.Subnet); err == nil {
 			p.CustomerNets = append(p.CustomerNets, pfx)
 			p.TunnelDevices = append(p.TunnelDevices, i.Name)
+		}
+		if haveLocal && i.NodeID == local.ID {
+			p.PortRedirects = append(p.PortRedirects, PortRedirects(i)...)
 		}
 	}
 

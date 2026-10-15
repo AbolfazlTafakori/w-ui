@@ -200,6 +200,7 @@ func run() error {
 	// whole of the panel's state stays in one place and one backup.
 	ovpndriver.DataRoot = cfg.DataDir
 	l2tpdriver.DataRoot = cfg.DataDir
+	reconciler.FirewallDir = cfg.DataDir
 
 	// An OpenConnect tunnel that dials the panel's own name is given the
 	// panel's certificate, which devices trust as they are.

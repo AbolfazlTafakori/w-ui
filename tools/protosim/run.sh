@@ -41,7 +41,7 @@ docker build -q -t "$img-trixie" -f "$work/context/Dockerfile.trixie" "$work/con
 # Whatever an interrupted run left behind.
 docker rm -f protosim-server protosim-inet-host protosim-hold >/dev/null 2>&1 || true
 docker network rm protosim protosim-inet >/dev/null 2>&1 || true
-docker network create --subnet 172.31.66.0/24 protosim >/dev/null
+docker network create --subnet 172.31.64.0/20 protosim >/dev/null
 docker network create --subnet 172.31.88.0/24 protosim-inet >/dev/null
 
 # The internet: a host the clients cannot reach except through the server.
@@ -83,10 +83,10 @@ verdict() { # PASS|FAIL line
 # own address on the network, and what it is.
 client_args() {
 	n=$((n + 1))
-	CLIENT=(--privileged --network protosim --ip "172.31.66.$((100 + n))"
+	CLIENT=(--privileged --network protosim --ip "172.31.$((72 + n / 250)).$((n % 250 + 2))"
 		-e NAME="$1" -e PROTOCOL="$2" -e DEVICE="$3" -e EXPECT="$4"
 		-e GATEWAY=10.66.0.1 -e INTERNET="$INTERNET" -e DNS=1.1.1.1 -e MTU=1420 -e SERVER_IP="$SERVER" -e SPECIALS="${SPECIALS:-}" -e OLDFILE="${OLDFILE:-}"
-		-e VERBOSE="${VERBOSE:-}")
+		-e VERBOSE="${VERBOSE:-}" -e PORT="${PORT:-}" -e ENCAP="${ENCAP:-}")
 }
 # client NAME PROTOCOL DEVICE EXPECT
 client() {
@@ -228,6 +228,31 @@ suite "IKEv2 by password (MSCHAPv2)" ikev2-mschapv2 -protocol ikev2
 suite "IKEv2 by key (PSK)" ikev2-psk -protocol ikev2
 suite "IKEv2 by certificate (RSA)" ikev2-rsa -protocol ikev2
 suite "IKEv2 by certificate in EAP (EAP-TLS)" ikev2-eap-tls -protocol ikev2
+
+# A port of the tunnel's own, for where the standard one is blocked: the
+# strongSwan app dials it directly; a client that cannot be given a port is
+# pointed at it, as a router forwarding a port would. The panel redirects it
+# to the daemon's own, and the redirect has to be what carried them.
+redirected() { # LABEL
+	local label=$1 n
+	only "$label" || return 0
+	n=$(MSYS_NO_PATHCONV=1 docker exec protosim-server nft list chain ip wui_nat prerouting 2>/dev/null |
+		grep -o 'packets [0-9]*' | awk '{s+=$2} END {print s+0}')
+	if [ "${n:-0}" -gt 0 ]; then
+		verdict PASS "$label: came in by the tunnel's own port ($n packets redirected)"
+	else
+		verdict FAIL "$label: nothing came in by the tunnel's own port"
+	fi
+}
+PORT=41500 suite "IKEv2 on a port of its own" ikev2-mschapv2 -protocol ikev2 -port 41500
+redirected "IKEv2 on a port of its own"
+# A phone behind its carrier's NAT: IKE with the marker and ESP in UDP.
+ENCAP=yes PORT=41500 suite "IKEv2 on a port of its own, behind NAT" ikev2-mschapv2 -protocol ikev2 -port 41500
+redirected "IKEv2 on a port of its own, behind NAT"
+PORT=41723 suite "PPTP on a port of its own" pptp -protocol pptp -port 41723
+redirected "PPTP on a port of its own"
+PORT=41701 suite "L2TP without IPsec on a port of its own" l2tp-plain -protocol l2tp -plain -port 41701
+redirected "L2TP without IPsec on a port of its own"
 
 echo
 echo "$pass passed, $fail failed"

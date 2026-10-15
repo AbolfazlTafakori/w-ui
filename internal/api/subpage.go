@@ -483,6 +483,11 @@ func l2tpSignIn(v devguide.Values) []devguide.Row {
 	if v.Protocol == "ikev2" && v.ServerID != "" && v.ServerID != v.Server {
 		rows = append(rows, devguide.Row{Label: "Remote ID", Value: v.ServerID, Copy: true})
 	}
+	if v.OwnPort != 0 {
+		// Only for a client with a port setting; the built-in ones dial
+		// the standard port, which stays open.
+		rows = append(rows, devguide.Row{Label: "Port (apps with a port setting)", Value: strconv.Itoa(v.OwnPort), Copy: true})
+	}
 	// PPTP has no key of its own: the sign-in is all there is. The rest is
 	// masked: the page copies it on a click, and never carries it.
 	if v.PSK != "" {

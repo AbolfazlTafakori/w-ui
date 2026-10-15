@@ -138,7 +138,11 @@ func (s *TC) applyDevice(ctx context.Context, device string, want desired) error
 		return err
 	}
 
-	d := computeDiff(want, have)
+	leaves, err := s.leaves(ctx, device)
+	if err != nil {
+		return err
+	}
+	d := computeDiff(want, have).withLeaves(want, have, leaves)
 	if d.empty() {
 		// Nothing changed. Not touching the device is the point of the diff:
 		// rewriting the hierarchy every tick would reset every customer's
@@ -261,12 +265,8 @@ func (s *TC) currentClasses(ctx context.Context, device string) (map[uint16]uint
 		return nil, err
 	}
 
-	var raw []struct {
-		Handle string `json:"handle"`
-		Kind   string `json:"kind"`
-		Rate   any    `json:"rate"`
-	}
-	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+	have, err := classesFromJSON([]byte(out))
+	if err != nil {
 		// An iproute2 old enough not to speak JSON for classes -- Debian
 		// 12's 6.1 among them -- prints the plain listing despite -j. Read
 		// that instead of leaving the device unshaped forever.
@@ -276,21 +276,26 @@ func (s *TC) currentClasses(ctx context.Context, device string) (map[uint16]uint
 		}
 		return have, nil
 	}
+	return have, nil
+}
 
-	have := make(map[uint16]uint64, len(raw))
-	for _, c := range raw {
-		if c.Kind != "htb" {
-			continue
+// leaves are the classes that have a queue of their own under them.
+func (s *TC) leaves(ctx context.Context, device string) (map[uint16]bool, error) {
+	out, err := s.run(ctx, "-j", "qdisc", "show", "dev", device)
+	if err != nil {
+		return nil, err
+	}
+	var qs []struct {
+		Parent string `json:"parent"`
+	}
+	if err := json.Unmarshal([]byte(out), &qs); err != nil {
+		return nil, fmt.Errorf("shaper: reading qdiscs on %s: %w", device, err)
+	}
+	have := map[uint16]bool{}
+	for _, q := range qs {
+		if minor, ok := parseMinor(q.Parent); ok && strings.HasPrefix(q.Parent, fmt.Sprintf("%d:", major)) {
+			have[minor] = true
 		}
-		minor, ok := parseMinor(c.Handle)
-		if !ok {
-			continue
-		}
-		rate, ok := parseRate(c.Rate)
-		if !ok {
-			continue
-		}
-		have[minor] = rate
 	}
 	return have, nil
 }

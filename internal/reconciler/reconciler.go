@@ -132,6 +132,9 @@ type Reconciler struct {
 	// kernel cannot shape would otherwise log the same line every couple of
 	// seconds for as long as it runs, which buries everything else.
 	lastShapeErr string
+	// firewallWritten is the ports file last written for the firewall
+	// helper, so it is written only when the ports change.
+	firewallWritten []byte
 	// sessions is what has been laid on each session's own link.
 	sessions sessionShapes
 	// lastPrune is when stale connection addresses were last swept.
@@ -551,6 +554,7 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	}
 
 	r.shapeSessions(ctx, d)
+	r.keepFirewall(d.interfaces)
 
 	// Routing comes after enforcement and before the drivers.
 	//
@@ -899,8 +903,10 @@ func shapedDevices(interfaces []model.Interface) []string {
 	for _, iface := range interfaces {
 		// An L2TP or PPTP tunnel's own device is a placeholder that carries
 		// nothing; its customers' traffic leaves by each session's link,
-		// which is shaped on its own (see shapeSessions).
-		if iface.Protocol.ByAgent() {
+		// which is shaped on its own (see shapeSessions). OpenConnect's
+		// likewise. IKEv2's is an xfrm device every session is tied to, so
+		// what its customers are sent leaves by it, as by WireGuard's.
+		if iface.Protocol.ByAgent() && iface.Protocol != model.ProtocolIKEv2 {
 			continue
 		}
 		// Only the tunnel devices, which this panel created and nothing else

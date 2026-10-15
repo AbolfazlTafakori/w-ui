@@ -51,7 +51,12 @@ type Driver struct {
 	iface   *model.Interface
 	paths   l2tpconf.Paths
 	written time.Time
+	ifID    uint32 // the tunnel device's, which every session is tied to
 }
+
+// noXfrmTold is the tunnels the operator was told their kernel cannot shape:
+// once each, not on every open.
+var noXfrmTold sync.Map
 
 // New builds an unopened driver.
 func New() *Driver { return &Driver{log: slog.Default()} }
@@ -109,12 +114,20 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	if err := os.MkdirAll(paths.KickDir(), 0o750); err != nil {
 		return fmt.Errorf("ikev2driver: %w", err)
 	}
-	if err := l2tpdriver.EnsureDevice(ctx, iface); err != nil {
+	ifID, err := ensureDevice(ctx, iface)
+	if err != nil {
 		return err
+	}
+	if ifID == 0 {
+		if _, told := noXfrmTold.LoadOrStore(iface.Name, true); !told {
+			d.log.Warn("this kernel has no xfrm interfaces: IKEv2 runs, but its speed limits cannot be applied",
+				"interface", iface.Name)
+		}
 	}
 	d.mu.Lock()
 	d.iface = iface
 	d.paths = paths
+	d.ifID = ifID
 	d.mu.Unlock()
 
 	var kept []ikev2conf.Account
@@ -128,7 +141,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 }
 
 // state builds what the agent is told.
-func state(iface *model.Interface, accounts []ikev2conf.Account) (*ikev2conf.State, error) {
+func state(iface *model.Interface, ifID uint32, accounts []ikev2conf.Account) (*ikev2conf.State, error) {
 	gw, err := l2tpdriver.Gateway(iface.Subnet)
 	if err != nil {
 		return nil, err
@@ -149,6 +162,7 @@ func state(iface *model.Interface, accounts []ikev2conf.Account) (*ikev2conf.Sta
 			ServerCert: p.ServerCert,
 			ServerKey:  p.ServerKey,
 			Accounts:   accounts,
+			IfID:       ifID,
 		},
 	}, nil
 }
@@ -157,9 +171,9 @@ func state(iface *model.Interface, accounts []ikev2conf.Account) (*ikev2conf.Sta
 // carried before.
 func (d *Driver) write(iface *model.Interface, accounts []ikev2conf.Account) ([]ikev2conf.Account, error) {
 	d.mu.Lock()
-	paths := d.paths
+	paths, ifID := d.paths, d.ifID
 	d.mu.Unlock()
-	st, err := state(iface, accounts)
+	st, err := state(iface, ifID, accounts)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +385,7 @@ func Remove(ctx context.Context, iface *model.Interface) error {
 	if err := os.Remove(paths.State()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("ikev2driver: %w", err)
 	}
-	return l2tpdriver.RemoveDevice(ctx, iface)
+	return removeDevice(ctx, iface)
 }
 
 func readState(p l2tpconf.Paths) (*ikev2conf.State, error) {

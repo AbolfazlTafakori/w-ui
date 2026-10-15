@@ -166,7 +166,7 @@ func (a *Applier) pruneRules(ctx context.Context, hops []Hop) {
 // connect, handshake, and reach nothing, which is indistinguishable from a
 // tunnel that is simply broken.
 func (a *Applier) applyNAT(ctx context.Context, p Policy) error {
-	script := BuildNAT(p.CustomerNets, p.TunnelDevices)
+	script := BuildNAT(p.CustomerNets, p.TunnelDevices, p.PortRedirects)
 
 	a.mu.Lock()
 	same := script == a.appliedNAT
@@ -181,8 +181,19 @@ func (a *Applier) applyNAT(ctx context.Context, p Policy) error {
 	}
 
 	if _, err := a.runNFT(ctx, script, "-f", "-"); err != nil {
-		return fmt.Errorf("routing: customers cannot reach anything outside the "+
-			"tunnel until this is applied: %w", err)
+		// A kernel without the fib expression refuses the redirects of
+		// tunnels on ports of their own, and the whole table with them;
+		// told apart by source instead, they still load.
+		plain := BuildNATWithoutFib(p.CustomerNets, p.TunnelDevices, p.PortRedirects)
+		if len(p.PortRedirects) == 0 || plain == script {
+			return fmt.Errorf("routing: customers cannot reach anything outside the "+
+				"tunnel until this is applied: %w", err)
+		}
+		if _, err2 := a.runNFT(ctx, plain, "-f", "-"); err2 != nil {
+			return fmt.Errorf("routing: customers cannot reach anything outside the "+
+				"tunnel until this is applied: %w", err)
+		}
+		a.log.Info("this kernel has no nftables fib; tunnels on ports of their own are redirected by source instead")
 	}
 
 	a.mu.Lock()

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/fwsync"
 	"github.com/abolfazl/w-ui/internal/l2tpagent"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/update"
@@ -21,7 +22,9 @@ import (
 // agent's units. Set for the helper's run and for a panel that is root
 // already and does it itself.
 func init() {
-	update.Setup = func(dataDir, binary string) error { return l2tpagent.InstallUnits(binary, dataDir) }
+	update.Setup = func(dataDir, binary string) error {
+		return errors.Join(l2tpagent.InstallUnits(binary, dataDir), fwsync.InstallUnits(binary, dataDir))
+	}
 }
 
 // l2tpAgentInterval is how often the agent looks at what the panel asked for
@@ -100,7 +103,7 @@ func ensureL2TPUnits(ctx context.Context, log *slog.Logger, dataDir string) {
 	if dir, err := filepath.Abs(dataDir); err == nil {
 		dataDir = dir
 	}
-	if l2tpagent.UnitsInPlace(self, dataDir) {
+	if l2tpagent.UnitsInPlace(self, dataDir) && fwsync.UnitsInPlace("/etc/systemd/system", self, dataDir) {
 		return
 	}
 	if err := update.RequestSetup(ctx, dataDir); err != nil {

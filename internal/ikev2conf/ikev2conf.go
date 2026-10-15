@@ -103,6 +103,19 @@ type Iface struct {
 	ServerCert string    `json:"serverCert"`
 	ServerKey  string    `json:"serverKey"`
 	Accounts   []Account `json:"accounts"`
+	// IfID ties every session to the tunnel's own device: what is sent to a
+	// device is routed into it and encrypted there, and what a device sends
+	// comes out of it. That is where its speed is limited, as on every other
+	// tunnel. Zero on a kernel without the device; the sessions then run on
+	// policies alone, unshaped.
+	IfID uint32 `json:"ifId,omitempty"`
+}
+
+// ifID ties a session's SAs to the tunnel's device, when it has one.
+func ifID(b *strings.Builder, f *Iface) {
+	if f.IfID != 0 {
+		fmt.Fprintf(b, "        if_id_in = %d\n        if_id_out = %d\n", f.IfID, f.IfID)
+	}
 }
 
 // Account is one device: the identity it announces (its username), the
@@ -583,6 +596,7 @@ func radiusConn(b *strings.Builder, f *Iface) {
 	b.WriteString("        local_ts = 0.0.0.0/0\n")
 	fmt.Fprintf(b, "        esp_proposals = %s\n", strings.Join(espProposals, ","))
 	b.WriteString("        dpd_action = clear\n")
+	ifID(b, f)
 	b.WriteString("      }\n")
 	b.WriteString("    }\n")
 	b.WriteString("  }\n")
@@ -646,6 +660,7 @@ func conn(b *strings.Builder, f *Iface, a Account, mode string) {
 	b.WriteString("        local_ts = 0.0.0.0/0\n")
 	fmt.Fprintf(b, "        esp_proposals = %s\n", strings.Join(espProposals, ","))
 	b.WriteString("        dpd_action = clear\n")
+	ifID(b, f)
 	b.WriteString("      }\n")
 	b.WriteString("    }\n")
 	b.WriteString("  }\n")

@@ -139,6 +139,22 @@ type Policy struct {
 	// TunnelDevices are the interface names those subnets live on. Used only
 	// to keep customer-to-customer traffic out of the masquerade: see nat.go.
 	TunnelDevices []string
+
+	// PortRedirects send a tunnel's own port to the fixed one its daemon
+	// holds: an L2TP, PPTP or IKEv2 tunnel given a port of its own.
+	PortRedirects []PortRedirect
+}
+
+// PortRedirect sends what arrives for this server on From to To, on the same
+// transport. The reply goes back from From.
+type PortRedirect struct {
+	Proto    string // "tcp" or "udp"
+	From, To uint16
+	// Marked takes only the flows whose first packet starts with IKE's
+	// non-ESP marker, four zero bytes: IKE as it is spoken behind NAT, and
+	// the ESP that follows it in the same UDP. Rendered before the
+	// unmarked redirect of the same port, which takes the rest.
+	Marked bool
 }
 
 // PortRange is an inclusive range. A single port has From == To.

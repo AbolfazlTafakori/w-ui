@@ -12,6 +12,7 @@ package shaper
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -126,6 +127,7 @@ type diff struct {
 	add    []uint16
 	change []uint16
 	remove []uint16
+	leaf   []uint16 // classes that exist without their fq_codel
 }
 
 func computeDiff(want desired, have map[uint16]uint64) diff {
@@ -164,7 +166,19 @@ func sortMinors(s []uint16) {
 }
 
 func (d diff) empty() bool {
-	return len(d.add) == 0 && len(d.change) == 0 && len(d.remove) == 0
+	return len(d.add) == 0 && len(d.change) == 0 && len(d.remove) == 0 && len(d.leaf) == 0
+}
+
+// withLeaves adds to d the wanted classes that are there already but have no
+// queue of their own.
+func (d diff) withLeaves(want desired, have map[uint16]uint64, leaves map[uint16]bool) diff {
+	for minor := range want {
+		if _, exists := have[minor]; exists && !leaves[minor] {
+			d.leaf = append(d.leaf, minor)
+		}
+	}
+	sortMinors(d.leaf)
+	return d
 }
 
 // BuildScript renders the tc batch that applies a diff to one device.
@@ -183,8 +197,17 @@ func BuildScript(device string, want desired, d diff) string {
 		// their ceiling accumulates a queue deep enough to make interactive
 		// traffic unusable while a download runs. fq_codel keeps the latency of
 		// a saturated class close to an idle one.
-		fmt.Fprintf(&b, "qdisc add dev %s parent %s handle %x: fq_codel\n",
-			device, ClassID(minor), minor)
+		//
+		// Its handle is the kernel's to pick. Named after the client it took
+		// the client's id, and the first customer's, 1, is the root's own:
+		// the kernel refused it, the whole batch with it, and nobody on the
+		// device was shaped.
+		fmt.Fprintf(&b, "qdisc add dev %s parent %s fq_codel\n", device, ClassID(minor))
+	}
+
+	for _, minor := range d.leaf {
+		// A class left without its queue by a batch that failed halfway.
+		fmt.Fprintf(&b, "qdisc add dev %s parent %s fq_codel\n", device, ClassID(minor))
 	}
 
 	for _, minor := range d.change {
@@ -239,14 +262,47 @@ func parseMinor(handle string) (uint16, bool) {
 	return uint16(n), true
 }
 
+// classesFromJSON reads `tc -j class show`: each htb class's minor and the
+// rate it carries, in bits.
+func classesFromJSON(out []byte) (map[uint16]uint64, error) {
+	var raw []struct {
+		Handle string `json:"handle"`
+		// The class's kind: "kind" in older iproute2, "class" in 6.19.
+		Kind  string `json:"kind"`
+		Class string `json:"class"`
+		Rate  any    `json:"rate"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, err
+	}
+	have := make(map[uint16]uint64, len(raw))
+	for _, c := range raw {
+		if c.Kind != "htb" && c.Class != "htb" {
+			continue
+		}
+		minor, ok := parseMinor(c.Handle)
+		if !ok {
+			continue
+		}
+		rate, ok := parseRate(c.Rate)
+		if !ok {
+			continue
+		}
+		have[minor] = rate
+	}
+	return have, nil
+}
+
 // parseRate normalises what tc reports as a rate.
 //
 // Its JSON gives a number on some versions and a string like "1Mbit" on others,
 // so both are accepted rather than assuming whichever this host happens to ship.
+// The number is in bytes per second -- iproute2 6.19 prints 2500000 for a
+// 20Mbit class -- and the string in bits; the answer is in bits.
 func parseRate(v any) (uint64, bool) {
 	switch t := v.(type) {
 	case float64:
-		return uint64(t), true
+		return uint64(t) * 8, true
 	case string:
 		return parseRateString(t)
 	default:

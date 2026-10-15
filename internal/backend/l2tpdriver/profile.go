@@ -11,6 +11,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
+	"github.com/abolfazl/w-ui/internal/l2tpconf"
 )
 
 // Servers is every address a customer can dial for this tunnel: the
@@ -64,6 +65,9 @@ func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
 		Username:   acc.Username,
 		Password:   acc.Secret,
 		AllowPlain: iface.L2TP.V.AllowPlain,
+	}
+	if std := standardPort(iface.Protocol); iface.ListenPort != 0 && iface.ListenPort != std {
+		v.OwnPort = iface.ListenPort
 	}
 	servers := Servers(iface)
 	if len(servers) > 0 {
@@ -131,3 +135,11 @@ var ipCache = struct {
 	mu sync.Mutex
 	by map[string]ipEntry
 }{by: map[string]ipEntry{}}
+
+// standardPort is the port the protocol's daemon holds.
+func standardPort(p model.Protocol) int {
+	if p == model.ProtocolPPTP {
+		return l2tpconf.PortPPTP
+	}
+	return l2tpconf.PortL2TP
+}

@@ -132,8 +132,43 @@ func TestScriptGivesEveryClassALeafQueue(t *testing.T) {
 	}
 	// Without this the class queues in a plain FIFO and a customer at their
 	// ceiling builds a queue deep enough to make everything else unusable.
-	if !strings.Contains(got, "qdisc add dev wg0 parent 1:5 handle 5: fq_codel") {
+	if !strings.Contains(got, "qdisc add dev wg0 parent 1:5 fq_codel\n") {
 		t.Errorf("class has no leaf qdisc:\n%s", got)
+	}
+}
+
+// The first customer's class is 1:1, and its queue is never given the
+// root's handle, 1: -- which the kernel refused, and every class on the
+// device with it.
+func TestTheFirstCustomersQueueIsNotTheRoot(t *testing.T) {
+	want := desired{1: 20_000_000, 2: 5_000_000}
+	got := BuildScript("wg0", want, computeDiff(want, map[uint16]uint64{}))
+	if strings.Contains(got, "handle 1:") || !strings.Contains(got, "qdisc add dev wg0 parent 1:1 fq_codel") {
+		t.Fatalf("%s", got)
+	}
+}
+
+// What iproute2 6.19 prints -- the kind under "class", the rate in bytes a
+// second -- is read as the classes it is, so a class already there is not
+// added again, and a rate already right is not changed every pass.
+func TestClassesAsIproute2_6_19PrintsThem(t *testing.T) {
+	out := `[{"class":"htb","handle":"1:ffff","root":true,"prio":0,"rate":1250000000,"ceil":1250000000},` +
+		`{"class":"htb","handle":"1:1","root":true,"prio":0,"rate":2500000,"ceil":2500000}]`
+	have, err := classesFromJSON([]byte(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if have[1] != 20_000_000 || have[defaultMinor] != 10_000_000_000 {
+		t.Fatalf("%v", have)
+	}
+	want := desired{1: 20_000_000}
+	if d := computeDiff(want, have).withLeaves(want, have, map[uint16]bool{1: true}); !d.empty() {
+		t.Fatalf("a hierarchy already right is changed: %+v", d)
+	}
+	// A class a failed batch left without its queue gets one.
+	d := computeDiff(want, have).withLeaves(want, have, map[uint16]bool{})
+	if s := BuildScript("wg0", want, d); s != "qdisc add dev wg0 parent 1:1 fq_codel\n" {
+		t.Fatalf("%q", s)
 	}
 }
 
@@ -197,14 +232,15 @@ func TestPlainClassListingIsRead(t *testing.T) {
 	}
 }
 
-// A rate as tc prints it, in JSON as a number of bits or as text with a unit.
+// A rate as tc prints it: in JSON a number of bytes a second, or text with a
+// unit in bits.
 func TestParseRate(t *testing.T) {
 	for _, c := range []struct {
 		in   any
 		want uint64
 		ok   bool
 	}{
-		{float64(1_000_000), 1_000_000, true},
+		{float64(125_000), 1_000_000, true},
 		{"10Gbit", 10_000_000_000, true},
 		{"2.5mbit", 2_500_000, true},
 		{" 800 Kbit ", 800_000, true},

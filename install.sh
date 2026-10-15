@@ -307,6 +307,16 @@ do_uninstall() {
   # With the panel stopped, and before the binary goes: the agent is part of
   # it, and is what takes an L2TP tunnel down.
   remove_l2tp_agent
+  # What the firewall helper opened is closed, while the binary that knows
+  # which rules are its own is still here; the operator's rules stay.
+  if have_systemd && [[ -f /etc/systemd/system/wui-firewall.service ]]; then
+    systemctl disable --now wui-firewall.path >/dev/null 2>&1 || true
+    rm -f "$DATA_DIR/firewall/ports.json"
+    [[ -x "$BIN_PATH" ]] && "$BIN_PATH" firewall-sync "$DATA_DIR" >/dev/null 2>&1 || true
+    systemctl disable wui-firewall.service >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/wui-firewall.service /etc/systemd/system/wui-firewall.path
+    rm -rf /var/lib/wui-firewall
+  fi
   have_systemd && systemctl disable --now wui-update.path >/dev/null 2>&1 || true
   have_systemd && systemctl disable wui-amnezia-kmod.service >/dev/null 2>&1 || true
   rm -f "$UNIT" /etc/systemd/system/wui-update.path /etc/systemd/system/wui-update.service \
@@ -344,6 +354,41 @@ do_uninstall() {
 # returns non-zero if any single source failed, including one this installer
 # added itself on an earlier run. That is how an install could end at the first
 # step with nothing done.
+# keep_dkms_from_breaking_apt: on Ubuntu 24.10 and later, a DKMS module that
+# does not build for a newly installed kernel fails that kernel's package, and
+# dpkg is left half-configured: every apt install after it fails, the panel's
+# and the server's own updates alike. The AmneziaWG module does not build for
+# every kernel the day it comes out, so it would do that on a customer's
+# server at the next unattended upgrade. This file is DKMS's own switch for
+# it: a module that fails is reported and the kernel installs. For that
+# kernel, wui-amnezia-kmod tries the module again at boot, and the tunnels run
+# on amneziawg-go until one builds.
+keep_dkms_from_breaking_apt() {
+  [[ "$FAMILY" == debian ]] || return 0
+  install -d -m 0755 /etc/dkms 2>/dev/null || return 0
+  [[ -f /etc/dkms/no-autoinstall-errors ]] && return 0
+  printf '%s\n' "# W-UI: a DKMS module that does not build for a new kernel must not leave" \
+    "# dpkg broken; the AmneziaWG module is rebuilt at boot by wui-amnezia-kmod." \
+    > /etc/dkms/no-autoinstall-errors
+}
+
+# repair_dpkg finishes what a failed run left half-configured -- a kernel
+# whose DKMS module did not build, most often -- so the installs below can
+# work. Nothing is removed.
+repair_dpkg() {
+  [[ "$FAMILY" == debian ]] || return 0
+  [[ -z "$(dpkg --audit 2>/dev/null)" ]] && return 0
+  warn "dpkg has packages left half-installed; finishing them"
+  if [[ -d /var/lib/dkms/amneziawg ]]; then
+    keep_dkms_from_breaking_apt
+  fi
+  if DEBIAN_FRONTEND=noninteractive dpkg --configure -a >/tmp/wui-dpkg.log 2>&1; then
+    ok "dpkg is consistent again"
+  else
+    warn "dpkg could not finish them; see /tmp/wui-dpkg.log"
+  fi
+}
+
 pkg_refresh() {
   case "$FAMILY" in
     debian)
@@ -418,6 +463,7 @@ install_base() {
   # Before anything else: if an earlier run left a repository behind that this
   # release has no packages in, apt is broken and nothing below would work.
   repair_amnezia_ppa
+  repair_dpkg
   pkg_refresh
 
   local base
@@ -619,6 +665,7 @@ install_amnezia() {
         return 0
       fi
       pkg_refresh
+      keep_dkms_from_breaking_apt
       if ! pkg_install amneziawg; then
         warn "amneziawg failed to build against kernel $KERNEL"
         install_amnezia_userspace
@@ -879,8 +926,45 @@ l2tp_ports_note() {
 # tunnel there is none, and nothing runs. A panel updated from its own button
 # writes the same units through the update helper; a test holds the two to
 # the same text.
+# The firewall helper: with ufw or firewalld on, a tunnel's port is dropped
+# there whatever the panel's own tables say, and the tunnel reaches nobody.
+# The panel writes the ports its tunnels need to $DATA_DIR/firewall/ports.json;
+# this runs, as root, on every change of it and lets them through -- and
+# closes only what it opened itself. A test holds these units to the panel's.
+write_firewall_helper() {
+  have_systemd || return 0
+  cat >/etc/systemd/system/wui-firewall.service <<HELPER
+[Unit]
+Description=W-UI — let the tunnels' ports through ufw or firewalld
+After=network-online.target ufw.service firewalld.service
+
+[Service]
+Type=oneshot
+ExecStart=$BIN_PATH firewall-sync $DATA_DIR
+
+[Install]
+WantedBy=multi-user.target
+HELPER
+  cat >/etc/systemd/system/wui-firewall.path <<HELPER
+[Unit]
+Description=W-UI — let the tunnels' ports through the firewall whenever they change
+
+[Path]
+PathChanged=$DATA_DIR/firewall/ports.json
+Unit=wui-firewall.service
+
+[Install]
+WantedBy=multi-user.target
+HELPER
+  systemctl daemon-reload
+  systemctl enable --now wui-firewall.path >/dev/null 2>&1 || { warn "could not enable wui-firewall.path; open the tunnels' ports in the firewall yourself"; return 0; }
+  systemctl enable wui-firewall.service >/dev/null 2>&1 || true
+  systemctl start --no-block wui-firewall.service >/dev/null 2>&1 || true
+}
+
 write_l2tp_agent() {
   have_systemd || return 0
+  write_firewall_helper
   cat >/etc/systemd/system/wui-l2tp.service <<HELPER
 [Unit]
 Description=W-UI — PPP agent: runs the L2TP and PPTP tunnels the panel describes
@@ -2313,11 +2397,28 @@ apply_admin() {
   fi
 }
 
+# local_bin_fits says whether a binary is an ELF program for this machine:
+# its e_machine, bytes 18-19, little-endian. One for another machine would
+# be installed, fail to run, and be read by the shell as a script, with an
+# error that says nothing about why.
+local_bin_fits() {
+  local magic machine
+  magic="$(od -An -tx1 -N4 "$1" 2>/dev/null | tr -d ' \n')"
+  [[ "$magic" == "7f454c46" ]] || return 1
+  machine="$(od -An -tx1 -j18 -N2 "$1" 2>/dev/null | tr -d ' \n')"
+  case "$ARCH" in
+    amd64) [[ "$machine" == "3e00" ]] ;;
+    arm64) [[ "$machine" == "b700" ]] ;;
+    *) return 0 ;;
+  esac
+}
+
 install_binary() {
   step "Installing the panel"
 
   if [[ -n "$LOCAL_BIN" ]]; then
     [[ -f "$LOCAL_BIN" ]] || die "no such file: $LOCAL_BIN"
+    local_bin_fits "$LOCAL_BIN" || die "$LOCAL_BIN is not a Linux $ARCH program; build it for this server (GOARCH=$ARCH)"
     install -m 0755 "$LOCAL_BIN" "$BIN_PATH"
     ok "installed from $LOCAL_BIN"
 

@@ -32,6 +32,9 @@ func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
 	if p.MSCHAPv2 || p.ByCertificate() {
 		v.IKEv2.CAFile = CAFileName(iface)
 	}
+	if iface.ListenPort != 0 && iface.ListenPort != 500 {
+		v.OwnPort = iface.ListenPort
+	}
 	if p.ByCertificate() {
 		v.IKEv2.CertFile = CertFileName(acc)
 	}

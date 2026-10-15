@@ -148,6 +148,10 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 			return nil, err
 		}
 	}
+	dtls := in.OpenConnect == nil || in.OpenConnect.DTLS == nil || *in.OpenConnect.DTLS
+	if err := s.checkPortClash(ctx, nodeID, 0, in.ListenPort, transportsOf(in.Protocol, in.Transport, dtls)); err != nil {
+		return nil, err
+	}
 
 	iface := model.Interface{
 		Name:         in.Name,
@@ -275,6 +279,7 @@ func (s *Interfaces) resolveNode(ctx context.Context, id uint) (*model.Node, err
 }
 
 func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
+	local := checkPort
 	in.Name = strings.TrimSpace(in.Name)
 	in.EndpointHost = strings.TrimSpace(in.EndpointHost)
 
@@ -288,10 +293,12 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 		return invalidField("protocol", "no driver available for %q on this server", in.Protocol)
 	}
 	if in.Protocol == model.ProtocolL2TP {
-		// L2TP's ports are not the operator's to choose: the clients built
-		// into Windows, macOS and iOS use 1701 inside IPsec on 500 and 4500,
-		// with no setting for any of them.
-		in.ListenPort = l2tpconf.PortL2TP
+		// The clients built into Windows, macOS and iOS use 1701 inside
+		// IPsec on 500 and 4500, with no setting for any of them; another
+		// port is redirected to it, for the routers that take one.
+		if in.ListenPort == 0 {
+			in.ListenPort = l2tpconf.PortL2TP
+		}
 		if in.PSK != "" {
 			if err := l2tpconf.CheckPSK(in.PSK); err != nil {
 				return invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
@@ -303,19 +310,24 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 			}
 		}
 	} else if in.Protocol == model.ProtocolPPTP {
-		// PPTP's port is not the operator's to choose either: every client
-		// built into a router or a computer dials TCP 1723.
-		in.ListenPort = l2tpconf.PortPPTP
+		// Every client built into a router or a computer dials TCP 1723;
+		// another port is redirected to it, for those that take one.
+		if in.ListenPort == 0 {
+			in.ListenPort = l2tpconf.PortPPTP
+		}
 		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
 			if err := checkL2TPSubnet(p); err != nil {
 				return err
 			}
 		}
 	} else if in.Protocol == model.ProtocolIKEv2 {
-		// IKE's ports are fixed too: UDP 500 and 4500, the same strongSwan
-		// an L2TP tunnel on this server uses, so they are not checked as
-		// free -- strongSwan holding them is how it should be.
-		in.ListenPort = 500
+		// IKE is on UDP 500 and 4500, in the same strongSwan an L2TP tunnel
+		// on this server uses, so they are not checked as free --
+		// strongSwan holding them is how it should be. Another port is
+		// redirected to 4500, for the strongSwan app, which takes one.
+		if in.ListenPort == 0 {
+			in.ListenPort = l2tpconf.PortIKE
+		}
 		checkPort = false
 		if _, err := ikev2Modes(in.IKEv2Modes); err != nil {
 			return err
@@ -387,8 +399,22 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 			return &FieldError{Field: "listenPort", Err: fmt.Errorf("%w; OpenConnect's DTLS needs UDP %d too, or turn DTLS off", err, in.ListenPort)}
 		}
 	}
-	if checkPort {
+	if err := checkAlternatePort(in.Protocol, in.ListenPort); err != nil {
+		return err
+	}
+	if std, ok := StandardPort(in.Protocol); ok && in.ListenPort != std && local {
+		// The tunnel's own port, which nothing may hold: the daemon's
+		// standard one is checked below as it always was.
 		if err := checkPortFree(in.ListenPort, proto); err != nil {
+			return &FieldError{Field: "listenPort", Err: err}
+		}
+	}
+	if checkPort {
+		port := in.ListenPort
+		if std, ok := StandardPort(in.Protocol); ok {
+			port = std
+		}
+		if err := checkPortFree(port, proto); err != nil {
 			if in.Protocol == model.ProtocolL2TP {
 				return &FieldError{Field: "listenPort", Err: fmt.Errorf(
 					"%w; L2TP needs UDP 1701 and nothing else can hold it -- an xl2tpd already running on this server would", err)}
@@ -741,24 +767,25 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		fields["name"] = name
 	}
 	if in.ListenPort != nil && *in.ListenPort != iface.ListenPort {
-		if iface.Protocol == model.ProtocolL2TP {
-			return nil, invalidField("listenPort", "L2TP is always on UDP 1701; the clients have no setting for another port")
-		}
-		if iface.Protocol == model.ProtocolPPTP {
-			return nil, invalidField("listenPort", "PPTP is always on TCP 1723; the clients have no setting for another port")
-		}
-		if iface.Protocol == model.ProtocolIKEv2 {
-			return nil, invalidField("listenPort", "IKEv2 is always on UDP 500 and 4500; the clients have no setting for another port")
-		}
 		port := *in.ListenPort
 		if port < 1 || port > 65535 {
 			return nil, invalidField("listenPort", "listen port %d is out of range", port)
 		}
+		if err := checkAlternatePort(iface.Protocol, port); err != nil {
+			return nil, err
+		}
+		if err := s.checkPortClash(ctx, iface.NodeID, iface.ID, port, ifaceTransports(*iface)); err != nil {
+			return nil, err
+		}
 		proto := "udp"
-		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" || iface.Protocol == model.ProtocolOpenConnect {
+		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" ||
+			iface.Protocol == model.ProtocolOpenConnect || iface.Protocol == model.ProtocolPPTP {
 			proto = "tcp"
 		}
-		if local, err := s.isLocal(ctx, iface.NodeID); err == nil && local {
+		// A daemon's standard port is its own to hold; only a port of the
+		// tunnel's own is asked about.
+		std, fixed := StandardPort(iface.Protocol)
+		if local, err := s.isLocal(ctx, iface.NodeID); err == nil && local && (!fixed || port != std) {
 			if err := checkPortFree(port, proto); err != nil {
 				return nil, &FieldError{Field: "listenPort", Err: err}
 			}

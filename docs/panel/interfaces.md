@@ -139,8 +139,10 @@ The installer keeps the AmneziaWG kernel module working across kernel upgrades. 
 ### IKEv2
 
 An IKEv2 tunnel is the VPN built into Android 12 and newer, iPhone, Mac and
-Windows. It is always on UDP 500 and 4500, one per server, and shares
-strongSwan with an L2TP tunnel on the same server. Choose the ways a device
+Windows. It is on UDP 500 and 4500 (and on a port of its own if given one,
+see below), one per server, and shares strongSwan with an L2TP tunnel on the
+same server. Every session runs through the tunnel's own device, so speed
+limits apply to it as to every other tunnel. Choose the ways a device
 may sign in; all four are on by default:
 
 | Way | Devices | What the device needs |
@@ -155,6 +157,29 @@ certificate, issues each device its own, and renews them. The customer's
 page offers the server's certificate and the device's `.p12`, which opens
 only with the device's password. IKEv2 runs on this server only for now,
 not on a node.
+
+### Ports of their own: L2TP, PPTP and IKEv2
+
+These three have standard ports: UDP 1701 inside IPsec for L2TP, TCP 1723
+for PPTP, UDP 500 and 4500 for IKEv2. The VPN built into Windows, iPhone,
+macOS and Android has nowhere to type another, so the standard port always
+stays open.
+
+A tunnel can still be given a port of its own, for where the standard one
+is blocked. The panel redirects it to the standard one, so both work. Only
+clients that take a port use it: the strongSwan app for IKEv2, Linux, and
+routers with a port setting. The form says so when the port is not the
+standard one, and the customer's page shows it as **Port (apps with a port
+setting)**. Another tunnel on the server cannot take that port.
+
+### The server's firewall
+
+With ufw or firewalld on, a tunnel's port is dropped there whatever the
+panel's own rules say. The panel lets each tunnel's ports through it: every
+change of the tunnels is written for `wui-firewall.service`, which opens what
+is new and closes what it opened before and no tunnel uses now. A rule that
+was there before, yours, is never closed. With neither on, nothing is
+changed. PPTP's GRE and IPsec's ESP are let through as well.
 
 ### Changing an interface later
 

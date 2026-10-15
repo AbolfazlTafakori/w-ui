@@ -32,9 +32,10 @@ function usesAwg2(p) {
 const defaults = {
   wireguard: { name: 'wg0', listenPort: 51820, subnet: '10.66.0.0/16', mtu: 1420 },
   openvpn: { name: 'ovpn0', listenPort: 1194, subnet: '10.8.0.0/16', mtu: 1500 },
-  // The port is not a choice: the clients built into the devices use 1701.
+  // The standard port, which the clients built into the devices use; another
+  // is redirected to it.
   l2tp: { name: 'l2tp0', listenPort: 1701, subnet: '10.77.0.0/16', mtu: 1400 },
-  // TCP 1723, for the same reason: every client has it fixed.
+  // TCP 1723, which every built-in client dials.
   pptp: { name: 'pptp0', listenPort: 1723, subnet: '10.78.0.0/16', mtu: 1400 },
   // UDP 500 and 4500, fixed as well.
   ikev2: { name: 'ike0', listenPort: 500, subnet: '10.79.0.0/16', mtu: 1400 },
@@ -129,6 +130,9 @@ function drawCamouflage() {
 }
 // A port the clients cannot be told to change.
 const fixedPort = computed(() => isL2TP.value || isPPTP.value || isIKEv2.value)
+// The port a fixed-port protocol's daemon holds; another is redirected to it.
+const standardPort = computed(() => (isL2TP.value ? 1701 : isPPTP.value ? 1723 : isIKEv2.value ? 500 : 0))
+const ownPort = computed(() => fixedPort.value && Number(form.value.listenPort) > 0 && Number(form.value.listenPort) !== standardPort.value)
 
 // The AmneziaWG profile is drawn by the panel, for the server the tunnel is
 // on and unlike its other tunnels there: when AmneziaWG is chosen, when the
@@ -385,11 +389,11 @@ defineExpose({ showError })
             <div class="acol6">
               <div class="aform-item">
                 <label class="aform-label required" for="if-port">{{ t('interface.port') }} <HelpTip v-if="fixedPort" :text="t(isPPTP ? 'interface.pptpPortHint' : isIKEv2 ? 'interface.ikev2PortHint' : 'interface.l2tpPortHint')" /></label>
-                <label class="ainput number" :class="{ invalid: fieldName === 'listenPort', disabled: fixedPort }">
-                  <input id="if-port" v-model="form.listenPort" data-field="listenPort" type="number" min="1" max="65535" class="ltr" :readonly="fixedPort" required @input="clearError('listenPort')" />
-                  <AntIcon v-if="fixedPort" name="LockOutlined" class="ainput-suffix" />
+                <label class="ainput number" :class="{ invalid: fieldName === 'listenPort' }">
+                  <input id="if-port" v-model="form.listenPort" data-field="listenPort" type="number" min="1" max="65535" class="ltr" required @input="clearError('listenPort')" />
                 </label>
                 <p v-if="fieldName === 'listenPort'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else-if="ownPort" class="aalert warning slim port-own"><AntIcon name="WarningOutlined" /><span>{{ t('interface.portNotStandard', { port: form.listenPort, std: standardPort }) }}</span></p>
               </div>
             </div>
             <div class="acol6">

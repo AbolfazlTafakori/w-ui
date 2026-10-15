@@ -74,6 +74,7 @@ func main() {
 	extra := flag.Int("extra", 0, "wireguard: this many more devices on the tunnel besides the clients, to see it carry a server's worth")
 	awg := flag.String("awg", "", "wireguard: an AmneziaWG profile -- classic (Jc to H4, as the panel draws one) or awg2 (identifier ranges and I1-I2 from the form's ready packets)")
 	endpoint := flag.String("endpoint", "", "the address clients dial")
+	ownPort := flag.Int("port", 0, "l2tp, pptp, ikev2: a port of the tunnel's own, redirected to the standard one as the panel does")
 	out := flag.String("out", "/out", "where device files are written")
 	flag.Parse()
 
@@ -278,11 +279,23 @@ func main() {
 	writeSignIn(*out, "stranger", &stranger, iface)
 
 	// Customers out to the internet, as the panel's routing does it.
-	nat := routing.BuildNAT([]netip.Prefix{netip.MustParsePrefix(iface.Subnet)}, []string{iface.Name})
+	// And a port of the tunnel's own, as the panel redirects it.
+	var redirects []routing.PortRedirect
+	if *ownPort != 0 {
+		iface.ListenPort = *ownPort
+		redirects = service.PortRedirects(*iface)
+	}
+	nets := []netip.Prefix{netip.MustParsePrefix(iface.Subnet)}
+	nat := routing.BuildNAT(nets, []string{iface.Name}, redirects)
 	cmd := exec.Command("nft", "-f", "-")
 	cmd.Stdin = strings.NewReader(nat)
 	if b, err := cmd.CombinedOutput(); err != nil {
-		fail("nft: %v: %s", err, b)
+		// As the panel's applier does on a kernel without fib.
+		cmd = exec.Command("nft", "-f", "-")
+		cmd.Stdin = strings.NewReader(routing.BuildNATWithoutFib(nets, []string{iface.Name}, redirects))
+		if b2, err2 := cmd.CombinedOutput(); err2 != nil {
+			fail("nft: %v: %s; without fib: %v: %s", err, b, err2, b2)
+		}
 	}
 
 	must(drv.Health(ctx))

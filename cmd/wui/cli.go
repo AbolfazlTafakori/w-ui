@@ -63,6 +63,8 @@ func dispatch(args []string) (handled bool, err error) {
 		return true, l2tpAgentCommand(args[1:])
 	case "pptpd":
 		return true, pptpdCommand(args[1:])
+	case "firewall-sync":
+		return true, firewallSyncCommand(args[1:])
 	case "version", "-v", "--version":
 		fmt.Println(version)
 		return true, nil
@@ -108,6 +110,8 @@ Usage:
                                    wui-l2tp.service while one exists
   wui pptpd CONF                   the PPTP tunnel's server; started by the
                                    agent with the tunnel's configuration
+  wui firewall-sync DATA_DIR       let the tunnels' ports through ufw or
+                                   firewalld; run as root by wui-firewall.service
 
 Flags for "setting set":
   --listen ADDR      the address to bind (0.0.0.0 for every address)

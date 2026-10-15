@@ -252,3 +252,21 @@ func TestTheServerCertificateIsRenewedWhenItMust(t *testing.T) {
 		t.Error("no certificate is not renewed")
 	}
 }
+
+// Every session -- by password, key or certificate -- is tied to the
+// tunnel's device when it has one, and none is when the kernel gave it none.
+func TestSessionsAreTiedToTheTunnelsDevice(t *testing.T) {
+	s := tunnel(t)
+	if strings.Contains(Swanctl(s), "if_id") {
+		t.Fatal("tied to a device the tunnel does not have")
+	}
+	s.Interface.IfID = 0x57550003
+	conf := Swanctl(s)
+	children := strings.Count(conf, "esp_proposals =")
+	if got := strings.Count(conf, "if_id_in = 1465188355\n        if_id_out = 1465188355\n"); got != children || children < 4 {
+		t.Fatalf("%d of %d children tied", got, children)
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

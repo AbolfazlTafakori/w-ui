@@ -75,6 +75,10 @@ type Values struct {
 	Others   []string
 	ServerIP string
 	Port     int
+	// OwnPort is an L2TP, PPTP or IKEv2 tunnel's port of its own, beside
+	// the standard one: for the clients that can be given a port, where the
+	// standard one is blocked. Zero when the tunnel has none.
+	OwnPort int
 	// PSK is the L2TP tunnel's pre-shared key; AllowPlain whether the tunnel
 	// also accepts L2TP without IPsec.
 	PSK        string
@@ -630,6 +634,9 @@ func PlainText(v Values) string {
 	}
 	if v.ServerIP != "" {
 		fmt.Fprintf(&b, "Server IP:       %s (for a router that takes no name)\n", v.ServerIP)
+	}
+	if v.OwnPort != 0 {
+		fmt.Fprintf(&b, "Port:            %d (only for an app or router with a port setting; the VPN built into phones and computers uses the standard one)\n", v.OwnPort)
 	}
 	if oc {
 		if v.OC.Pin != "" {

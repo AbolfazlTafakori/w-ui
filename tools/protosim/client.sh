@@ -54,7 +54,7 @@ hold() {
 	: > "/state/${HOLD_KEY:-hold}.up"
 	i=0
 	misses=0
-	while [ "$i" -lt 90 ]; do
+	while [ "$i" -lt "${HOLD_SECS:-90}" ]; do
 		gone=0
 		case "$PROTOCOL" in
 		openvpn) kill -0 "$(cat /tmp/ovpn.pid 2>/dev/null)" 2>/dev/null || gone=1 ;;
@@ -238,6 +238,13 @@ l2tp|l2tp-plain|pptp)
 	pptp)
 		export PSK="" IKE="" ESP="" PPTP=1 PPPOPTS='require-mppe-128\nrefuse-pap\nrefuse-eap\nrefuse-chap\nrefuse-mschap' ;;
 	esac
+	if [ -n "${PORT:-}" ]; then
+		# A tunnel on a port of its own; this client has no setting for one.
+		case "$PROTOCOL" in pptp) tp=tcp std=1723 ;; *) tp=udp std=1701 ;; esac
+		nft add table ip simport
+		nft add chain ip simport out '{ type nat hook output priority -100; }'
+		nft add rule ip simport out ip daddr "$SERVER" $tp dport $std dnat to "$SERVER:$PORT"
+	fi
 	if ! /sim/pppclient.sh 2>/tmp/client.log; then
 		check connect no; finish fail
 	fi
@@ -286,6 +293,8 @@ connections {
   c {
     version = 2
     remote_addrs = $SERVER
+    remote_port = ${PORT:-500}
+    encap = ${ENCAP:-no}
     vips = 0.0.0.0
     local {
       $local
