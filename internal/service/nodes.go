@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -50,6 +51,9 @@ type NodeInput struct {
 	// to accept when pinning. Absent leaves both as they are.
 	TLSMode *model.NodeTLSMode `json:"tlsMode"`
 	TLSPin  *string            `json:"tlsPin"`
+	// TLSServerName is the name given in the TLS handshake; see
+	// model.Node.TLSServerName.
+	TLSServerName *string `json:"tlsServerName"`
 
 	// AllowPrivateAddress permits an address inside this server's own network,
 	// which is off unless the operator says so for that node.
@@ -110,6 +114,7 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		ResetDay:            deref(in.ResetDay),
 		TLSMode:             tlsModeOr(in.TLSMode, model.TLSVerify),
 		TLSPin:              strings.TrimSpace(deref(in.TLSPin)),
+		TLSServerName:       strings.TrimSpace(deref(in.TLSServerName)),
 		AllowPrivateAddress: deref(in.AllowPrivateAddress),
 		Kind:                model.KindRemote,
 		Address:             in.Address,
@@ -177,6 +182,9 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 	if in.TLSPin != nil {
 		updates["tls_pin"] = strings.TrimSpace(*in.TLSPin)
 	}
+	if in.TLSServerName != nil {
+		updates["tls_server_name"] = strings.TrimSpace(*in.TLSServerName)
+	}
 	if in.AllowPrivateAddress != nil {
 		updates["allow_private_address"] = *in.AllowPrivateAddress
 	}
@@ -231,6 +239,11 @@ func (s *Nodes) Delete(ctx context.Context, id uint) error {
 }
 
 func (s *Nodes) validate(in *NodeInput, needToken bool) error {
+	if in.TLSServerName != nil {
+		if n := strings.TrimSpace(*in.TLSServerName); n != "" && !validServerName(n) {
+			return invalidField("tlsServerName", "the TLS name is a host name: letters, digits, dots and hyphens, up to 253")
+		}
+	}
 	in.Name = strings.TrimSpace(in.Name)
 	in.Address = strings.TrimSpace(in.Address)
 	in.Token = strings.TrimSpace(in.Token)
@@ -412,4 +425,23 @@ func tlsModeOr(p *model.NodeTLSMode, fallback model.NodeTLSMode) model.NodeTLSMo
 		return fallback
 	}
 	return *p
+}
+
+// validServerName is a name a TLS handshake can carry: a host name, not an
+// address and not a URL.
+func validServerName(n string) bool {
+	if len(n) > 253 || net.ParseIP(n) != nil {
+		return false
+	}
+	for _, label := range strings.Split(n, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }

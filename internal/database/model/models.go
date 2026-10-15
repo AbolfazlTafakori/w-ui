@@ -48,6 +48,13 @@ type Node struct {
 	// be wrong.
 	TLSMode NodeTLSMode `gorm:"size:16;not null;default:verify" json:"tlsMode"`
 	TLSPin  string      `gorm:"size:128" json:"tlsPin"`
+	// TLSServerName is the name this panel gives in the TLS handshake (SNI)
+	// when it talks to the node. A node reached by bare address sends none,
+	// and some networks reset a TLS connection that names nothing -- Iran's
+	// does, between a server inside and one abroad. With a pinned
+	// certificate any name will do: the pin, not the name, is what is
+	// checked. With verification the node's certificate has to be for it.
+	TLSServerName string `gorm:"size:253" json:"tlsServerName"`
 
 	// AllowPrivateAddress lets this node be reached at an address inside the
 	// server's own network.

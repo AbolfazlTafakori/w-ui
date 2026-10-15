@@ -99,7 +99,9 @@ func deviceCertStale(certPEM, username string, ca *x509.Certificate, now time.Ti
 // issued when it has to be.
 func EnsureIKEv2Certs(ctx context.Context, db *gorm.DB, nodeID uint, now time.Time) error {
 	var ifaces []model.Interface
-	if err := db.WithContext(ctx).Where("protocol = ? AND node_id = ?", model.ProtocolIKEv2, nodeID).
+	// Not a tunnel a panel manages here: its authority stays with that
+	// panel, and what it needs arrives with it.
+	if err := db.WithContext(ctx).Where("protocol = ? AND node_id = ? AND managed = ?", model.ProtocolIKEv2, nodeID, false).
 		Find(&ifaces).Error; err != nil {
 		return fmt.Errorf("service: load IKEv2 tunnels: %w", err)
 	}

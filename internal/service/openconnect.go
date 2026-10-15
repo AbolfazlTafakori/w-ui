@@ -81,8 +81,10 @@ func applyOpenConnect(p *model.OpenConnectParams, in *OpenConnectInput) error {
 }
 
 // newOpenConnectParams is a new tunnel's settings, with its certificate.
-func newOpenConnectParams(host string, in *OpenConnectInput) (model.OpenConnectParams, error) {
-	p := model.OpenConnectParams{DTLS: true, Camouflage: true, UsePanelCert: true}
+// local is whether the tunnel is on this server: a node's never takes this
+// panel's certificate, whose key would have to go to the node with it.
+func newOpenConnectParams(host string, in *OpenConnectInput, local bool) (model.OpenConnectParams, error) {
+	p := model.OpenConnectParams{DTLS: true, Camouflage: true, UsePanelCert: local}
 	if err := applyOpenConnect(&p, in); err != nil {
 		return p, err
 	}
@@ -144,13 +146,21 @@ func panelCertFor(host string, now time.Time) (cert, key string, ok bool) {
 // renewed, or the tunnel's own, renewed before it ends.
 func EnsureOpenConnectCerts(ctx context.Context, db *gorm.DB, nodeID uint, now time.Time) error {
 	var ifaces []model.Interface
-	if err := db.WithContext(ctx).Where("protocol = ? AND node_id = ?", model.ProtocolOpenConnect, nodeID).
+	// A tunnel a panel manages here is that panel's to keep: its
+	// certificate arrives with it, and one made here would be overwritten
+	// on the next round and served to nobody it was made for.
+	if err := db.WithContext(ctx).Where("protocol = ? AND node_id = ? AND managed = ?", model.ProtocolOpenConnect, nodeID, false).
 		Find(&ifaces).Error; err != nil {
 		return fmt.Errorf("service: load OpenConnect tunnels: %w", err)
 	}
+	var node model.Node
+	local := db.WithContext(ctx).First(&node, nodeID).Error == nil && node.Kind == model.KindLocal
 	for i := range ifaces {
 		f := &ifaces[i]
 		p := f.OpenConnect.V
+		if !local {
+			p.UsePanelCert = false
+		}
 		changed, err := ocCertFor(&p, f.EndpointHost, now)
 		if err != nil {
 			return err

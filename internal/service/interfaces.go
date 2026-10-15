@@ -201,7 +201,7 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	} else if in.Protocol == model.ProtocolOpenConnect {
 		// The certificate is made or taken here, so the tunnel opens with
 		// one; the reconciler's pass keeps it current.
-		p, err := newOpenConnectParams(in.EndpointHost, in.OpenConnect)
+		p, err := newOpenConnectParams(in.EndpointHost, in.OpenConnect, node.Kind == model.KindLocal)
 		if err != nil {
 			return nil, err
 		}
@@ -1511,15 +1511,10 @@ func (s *Interfaces) checkPPPPlace(ctx context.Context, node *model.Node, p mode
 	if n > 0 {
 		return invalidField("protocol", "%s already has an %s tunnel; a server carries one, because the clients use fixed ports", node.Name, name)
 	}
-	// An IKEv2 tunnel's certificates are made and renewed by the panel that
-	// runs it; one this panel shows a customer has to be the one the node
-	// serves, and nothing carries them across yet.
-	if p == model.ProtocolIKEv2 && node.Kind != model.KindLocal {
-		return invalidField("nodeId", "an IKEv2 tunnel runs on this server only for now, not on a node")
-	}
-	if p == model.ProtocolOpenConnect && node.Kind != model.KindLocal {
-		return invalidField("nodeId", "an OpenConnect tunnel runs on this server only for now, not on a node")
-	}
+	// IKEv2's and OpenConnect's certificates are made and renewed here, for
+	// a node's tunnel as for this server's, and carried to the node with
+	// the tunnel (package nodes): what a customer is shown is what the node
+	// serves.
 	if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
 		v := node.Version
 		if v == "" {

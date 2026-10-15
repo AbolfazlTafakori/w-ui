@@ -891,6 +891,84 @@ l2tp_packages() {
   esac
 }
 
+# The proxy outbounds -- VLESS, VMess, Trojan, Shadowsocks, Hysteria, SOCKS,
+# HTTP -- are run by xray, joined to the routing by sing-box. Both are
+# installed here, at versions this release was tested with, from their own
+# GitHub releases (reachable where Google's servers are not), and each
+# download is checked against its published SHA-256 before it is installed.
+# A server that has them at these versions already is left as it is.
+XRAY_VERSION="v26.3.27"
+SINGBOX_VERSION="1.14.1"
+
+install_proxy_cores() {
+  step "Installing xray and sing-box (for proxy outbounds)"
+  local xa sa xsum ssum tmp
+  case "$ARCH" in
+    amd64)
+      xa=Xray-linux-64.zip
+      xsum=23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae
+      sa="sing-box-${SINGBOX_VERSION}-linux-amd64"
+      ssum=12cb2816b52febb356f6a885b740cc8758c3f30b8ae0ca8edba80f0d2d35343f ;;
+    arm64)
+      xa=Xray-linux-arm64-v8a.zip
+      xsum=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c
+      sa="sing-box-${SINGBOX_VERSION}-linux-arm64"
+      ssum=6060b42fa84c5dcaeae1799af7f61b0f1ae4855d9d5ddc9e02baba17154b3ae2 ;;
+    *) warn "no xray or sing-box for $ARCH; proxy outbounds will not come up"; return 0 ;;
+  esac
+  tmp="$(mktemp -d)" || return 0
+
+  if have xray && xray version 2>/dev/null | head -1 | grep -q "Xray ${XRAY_VERSION#v} "; then
+    ok "xray ${XRAY_VERSION} already here"
+  elif fetch_checked "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xa}" "$xsum" "$tmp/xray.zip" &&
+       unpack_zip_file "$tmp/xray.zip" xray "$tmp/xray" &&
+       install -m 0755 "$tmp/xray" /usr/local/bin/xray; then
+    ok "xray ${XRAY_VERSION}"
+  else
+    warn "xray could not be installed; proxy outbounds will not come up until it is"
+  fi
+
+  if have sing-box && sing-box version 2>/dev/null | head -1 | grep -q "version ${SINGBOX_VERSION}$"; then
+    ok "sing-box ${SINGBOX_VERSION} already here"
+  elif fetch_checked "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/${sa}.tar.gz" "$ssum" "$tmp/sb.tgz" &&
+       tar -xzf "$tmp/sb.tgz" -C "$tmp" "${sa}/sing-box" &&
+       install -m 0755 "$tmp/${sa}/sing-box" /usr/local/bin/sing-box; then
+    ok "sing-box ${SINGBOX_VERSION}"
+  else
+    warn "sing-box could not be installed; proxy outbounds will not come up until it is"
+  fi
+  rm -rf "$tmp"
+}
+
+# fetch_checked downloads a file and keeps it only if its SHA-256 is the one
+# given. Three tries: a dropped connection is no reason to go without it.
+fetch_checked() {
+  local url="$1" sum="$2" out="$3" try
+  for try in 1 2 3; do
+    if curl -fsSL --max-time 300 "$url" -o "$out" 2>/dev/null &&
+       [[ "$(sha256sum "$out" | cut -d' ' -f1)" == "$sum" ]]; then
+      return 0
+    fi
+    rm -f "$out"
+    [[ "$try" == 3 ]] || sleep 5
+  done
+  return 1
+}
+
+# unpack_zip_file takes one file out of a zip, with unzip where there is one
+# and python3's zipfile where there is not.
+unpack_zip_file() {
+  local zip="$1" name="$2" out="$3"
+  if have unzip; then
+    unzip -p "$zip" "$name" > "$out" 2>/dev/null && [[ -s "$out" ]] && return 0
+  fi
+  have python3 && python3 - "$zip" "$name" "$out" <<'PYZ'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z, open(sys.argv[3], "wb") as f:
+    f.write(z.read(sys.argv[2]))
+PYZ
+}
+
 install_l2tp() {
   step "Installing L2TP/IPsec (off until a tunnel uses it)"
   local u theirs=" " installed=1
@@ -2978,6 +3056,7 @@ install_wireguard
 if [[ "$WANT_AMNEZIA" == 1 ]]; then install_amnezia; else info "AmneziaWG skipped (--no-amnezia)"; fi
 if [[ "$WANT_OPENVPN" == 1 ]]; then install_openvpn; else info "OpenVPN skipped (--no-openvpn)"; fi
 if [[ "$WANT_L2TP" == 1 ]]; then install_l2tp; else info "L2TP/IPsec skipped (--no-l2tp)"; fi
+install_proxy_cores
 enable_forwarding
 check_nftables
 install_binary

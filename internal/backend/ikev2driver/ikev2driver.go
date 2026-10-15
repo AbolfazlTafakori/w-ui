@@ -107,7 +107,9 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	if !p.AnyMode() {
 		return ErrNoModes
 	}
-	if (p.MSCHAPv2 || p.ByCertificate()) && (p.CAKey == "" || p.ServerKey == "") {
+	// The authority's certificate and the server's own are what a tunnel runs
+	// on; the authority's key only issues, and a node is never given it.
+	if (p.MSCHAPv2 || p.ByCertificate()) && (p.CACert == "" || p.ServerCert == "" || p.ServerKey == "") {
 		return ErrNoCerts
 	}
 	paths := ikev2conf.NewPaths(l2tpdriver.DataRoot)

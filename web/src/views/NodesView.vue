@@ -89,7 +89,7 @@ function openAdd() {
   form.value = {
     name: '', address: '', token: '', note: '',
     usageCoefficient: 1, dataLimitGB: '', resetDay: '',
-    tlsMode: 'verify', tlsPin: '', allowPrivateAddress: false,
+    tlsMode: 'verify', tlsPin: '', tlsServerName: '', allowPrivateAddress: false,
   }
   dialog.value = { kind: 'add' }
 }
@@ -106,6 +106,7 @@ function openEdit(n) {
     tlsMode: n.tlsMode || 'verify',
     allowPrivateAddress: !!n.allowPrivateAddress,
     tlsPin: n.tlsPin || '',
+    tlsServerName: n.tlsServerName || '',
     dataLimitGB: bytesToGigabytes(n.dataLimitBytes),
     resetDay: n.resetDay || '',
   }
@@ -191,6 +192,7 @@ async function fetchPin() {
     const res = await api.post('/api/nodes/fetch-pin', {
       address,
       allowPrivateAddress: !!form.value.allowPrivateAddress,
+      tlsServerName: (form.value.tlsServerName || '').trim(),
     })
     form.value.tlsPin = res?.tlsPin || ''
     notify(t('node.pinFetched'), 'ok')
@@ -210,6 +212,7 @@ async function submit() {
       tlsMode: form.value.tlsMode || 'verify',
       allowPrivateAddress: !!form.value.allowPrivateAddress,
       tlsPin: (form.value.tlsPin || '').trim(),
+      tlsServerName: (form.value.tlsServerName || '').trim(),
       dataLimitBytes: gigabytesToBytes(form.value.dataLimitGB),
       resetDay: Number(form.value.resetDay) || 0,
       dataLimitGB: undefined,
@@ -677,6 +680,13 @@ function latencyTone(ms) {
                   </button>
                 </div>
                 <p class="hint">{{ t('node.fetchPinHint') }}</p>
+              </div>
+            </div>
+            <div class="hrow">
+              <label for="n-sni">{{ t('node.tlsServerName') }}</label>
+              <div class="hctl">
+                <label class="ainput block"><input id="n-sni" v-model="form.tlsServerName" class="ltr mono" placeholder="www.example.com" /></label>
+                <p class="hint">{{ t('node.tlsServerNameHint') }}</p>
               </div>
             </div>
             <div v-if="form.tlsMode === 'mtls'" class="hrow">

@@ -81,8 +81,14 @@ func TestIKEv2InputIsChecked(t *testing.T) {
 	if err := db.Create(&remote).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err = createIKEv2(t, svc, CreateInterfaceInput{NodeID: remote.ID})
-	check(t, "node", err, wantErr{"nodeId", "this server only"})
+	// On a node too: its certificates are made here, for the node's address.
+	onNode, err := createIKEv2(t, svc, CreateInterfaceInput{NodeID: remote.ID, Name: "ike9", Subnet: "10.88.0.0/24", EndpointHost: "node.example.com"})
+	if err != nil {
+		t.Fatalf("on a node: %v", err)
+	}
+	if p := onNode.IKEv2.V; p.CAKey == "" || p.ServerCert == "" {
+		t.Fatal("a node's IKEv2 tunnel has no certificates")
+	}
 
 	got, err := createIKEv2(t, svc, CreateInterfaceInput{IKEv2Modes: []string{"psk"}})
 	if err != nil {

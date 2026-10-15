@@ -279,6 +279,16 @@ func (s *Syncer) customersOf(ctx context.Context, devices []service.NodeDeviceUs
 func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]service.NodeState, error) {
 	db := s.db.WithContext(ctx)
 
+	// The node's IKEv2 and OpenConnect certificates are this panel's to make
+	// and renew, as for its own tunnels; done before they are read, so a
+	// device added since the last round goes with its certificate.
+	if err := service.EnsureIKEv2Certs(ctx, s.db, nodeID, time.Now()); err != nil {
+		s.log.Warn("IKEv2 certificates for a node", "node", nodeID, "error", err)
+	}
+	if err := service.EnsureOpenConnectCerts(ctx, s.db, nodeID, time.Now()); err != nil {
+		s.log.Warn("OpenConnect certificates for a node", "node", nodeID, "error", err)
+	}
+
 	var interfaces []model.Interface
 	if err := db.Where("node_id = ?", nodeID).Find(&interfaces).Error; err != nil {
 		return nil, fmt.Errorf("load interfaces: %w", err)
@@ -341,6 +351,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 				PresharedKey: a.PresharedKey,
 				Username:     a.Username,
 				Secret:       a.Secret,
+				CertPEM:      a.CertPEM,
 			}
 			if until, held := holds[a.ID]; held {
 				u := until
@@ -406,6 +417,15 @@ func interfaceState(iface model.Interface) service.NodeInterface {
 	if iface.Protocol == model.ProtocolL2TP {
 		v := iface.L2TP.V
 		out.L2TP = &v
+	}
+	if iface.Protocol == model.ProtocolIKEv2 {
+		v := iface.IKEv2.V
+		v.CAKey = "" // the authority's key stays with the panel that issues
+		out.IKEv2 = &v
+	}
+	if iface.Protocol == model.ProtocolOpenConnect {
+		v := iface.OpenConnect.V
+		out.OpenConnect = &v
 	}
 	return out
 }

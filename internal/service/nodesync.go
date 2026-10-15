@@ -50,6 +50,10 @@ type NodeInterface struct {
 	AWG          *model.AWGParams     `json:"awg,omitempty"`
 	OpenVPN      *model.OpenVPNParams `json:"openvpn,omitempty"`
 	L2TP         *model.L2TPParams    `json:"l2tp,omitempty"`
+	// IKEv2's certificates, without its authority's key, which stays with
+	// the panel that issues; and OpenConnect's certificate and camouflage.
+	IKEv2       *model.IKEv2Params       `json:"ikev2,omitempty"`
+	OpenConnect *model.OpenConnectParams `json:"openconnect,omitempty"`
 }
 
 // NodeClient is one customer's presence on this node.
@@ -81,6 +85,9 @@ type NodeAccount struct {
 	PresharedKey string `json:"presharedKey,omitempty"`
 	Username     string `json:"username,omitempty"`
 	Secret       string `json:"secret,omitempty"`
+	// CertPEM is an IKEv2 device's certificate, which the node pins the
+	// device to; its key stays with the panel, in the device's file.
+	CertPEM string `json:"certPem,omitempty"`
 	// HeldUntil, when set, is a device the panel has decided is over its
 	// plan's connections at once: the node keeps it off until then. Carried
 	// in every push as well as by the immediate call, so a node that missed
@@ -218,6 +225,26 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 		}
 		iface.L2TP = model.JSON(*in.L2TP)
 	}
+	if in.Protocol == model.ProtocolIKEv2 {
+		if in.IKEv2 == nil || in.IKEv2.ServerCert == "" || in.IKEv2.ServerKey == "" {
+			return nil, invalidField("interface.ikev2", "an IKEv2 tunnel arrived without its certificates")
+		}
+		if err := s.oneOf(tx, nodeID, in, "an IKEv2"); err != nil {
+			return nil, err
+		}
+		v := *in.IKEv2
+		v.CAKey = ""
+		iface.IKEv2 = model.JSON(v)
+	}
+	if in.Protocol == model.ProtocolOpenConnect {
+		if in.OpenConnect == nil || in.OpenConnect.Cert == "" || in.OpenConnect.Key == "" {
+			return nil, invalidField("interface.openconnect", "an OpenConnect tunnel arrived without its certificate")
+		}
+		if err := s.oneOf(tx, nodeID, in, "an OpenConnect"); err != nil {
+			return nil, err
+		}
+		iface.OpenConnect = model.JSON(*in.OpenConnect)
+	}
 	if in.Protocol == model.ProtocolPPTP {
 		// One PPTP tunnel a server, for the same reason: TCP 1723 is fixed.
 		var other int64
@@ -236,6 +263,21 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 		return nil, fmt.Errorf("store managed interface: %w", err)
 	}
 	return &iface, nil
+}
+
+// oneOf refuses a second tunnel of a protocol a server carries one of.
+func (s *NodeSync) oneOf(tx *gorm.DB, nodeID uint, in NodeInterface, what string) error {
+	var other int64
+	if err := tx.Model(&model.Interface{}).
+		Where("node_id = ? AND protocol = ? AND NOT (managed = ? AND origin_id = ?)",
+			nodeID, in.Protocol, true, in.OriginID).
+		Count(&other).Error; err != nil {
+		return fmt.Errorf("count %s tunnels: %w", in.Protocol, err)
+	}
+	if other > 0 {
+		return invalidField("interface.protocol", "this server already carries %s tunnel; it can carry one", what)
+	}
+	return nil
 }
 
 func (s *NodeSync) upsertClients(tx *gorm.DB, iface *model.Interface, want []NodeClient) error {
@@ -351,6 +393,7 @@ func (s *NodeSync) upsertAccounts(
 		a.PresharedKey = wa.PresharedKey
 		a.Username = wa.Username
 		a.Secret = wa.Secret
+		a.CertPEM = wa.CertPEM
 		if err := tx.Save(a).Error; err != nil {
 			return fmt.Errorf("store managed account %d: %w", wa.OriginID, err)
 		}

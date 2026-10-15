@@ -76,7 +76,7 @@ On a phone the table becomes cards with the same information.
 
 A stored secret is shown as *(unchanged)*: leave it to keep it.
 
-**What carries each kind.** A WireGuard hop is a network device the kernel runs. An OpenVPN hop needs `openvpn` on the server (the installer adds it with OpenVPN). The VLESS, VMess, Trojan, Shadowsocks, Hysteria, SOCKS and HTTP kinds are run by an **`xray`** process, joined to the routing by **`sing-box`**; both must be installed on the server, which the installer does not do. Without them the hop stays down, and its check says *xray is not installed on this server*.
+**What carries each kind.** A WireGuard hop is a network device the kernel runs. An OpenVPN hop needs `openvpn` on the server (the installer adds it with OpenVPN). The VLESS, VMess, Trojan, Shadowsocks, Hysteria, SOCKS and HTTP kinds are run by an **`xray`** process, joined to the routing by **`sing-box`**; the installer and the update script put both on the server, at versions W-UI was tested with, each checked against its published checksum. Without them the hop stays down, and its check says *xray is not installed on this server*.
 
 ## WARP, NordVPN and PIA
 

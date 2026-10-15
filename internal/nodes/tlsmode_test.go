@@ -191,7 +191,7 @@ func TestTheFingerprintCanBeReadFromTheNode(t *testing.T) {
 	node, stop := nodeServing(t, cert, model.TLSSkip, "")
 	defer stop()
 
-	got, err := FetchPin(node.Address, 5*time.Second, true)
+	got, err := FetchPin(node.Address, 5*time.Second, true, "")
 	if err != nil {
 		t.Fatalf("FetchPin: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestTheFingerprintCanBeReadFromTheNode(t *testing.T) {
 // There is nothing to read from a plain-HTTP address, and saying so beats a
 // connection error an operator has to interpret.
 func TestFetchingFromAPlainAddressSaysWhy(t *testing.T) {
-	_, err := FetchPin("http://node.example:2096", time.Second, true)
+	_, err := FetchPin("http://node.example:2096", time.Second, true, "")
 	if err == nil {
 		t.Fatal("fetching a certificate from a plain HTTP address was accepted")
 	}
@@ -271,6 +271,22 @@ func TestTheAddressesThatAreRefused(t *testing.T) {
 	for _, s := range []string{"1.1.1.1", "8.8.8.8", "203.0.113.9", "2001:4860:4860::8888"} {
 		if blocked(net.ParseIP(s)) {
 			t.Errorf("%s is refused but is an ordinary public address", s)
+		}
+	}
+}
+
+// A node with a name for the handshake is asked by it, whatever the mode;
+// one without is asked by its address, as before.
+func TestTheHandshakeCarriesTheNodesName(t *testing.T) {
+	for _, mode := range []model.NodeTLSMode{model.TLSPin, model.TLSSkip, model.TLSVerify} {
+		n := model.Node{TLSMode: mode, TLSPin: "sha256/AAAA", TLSServerName: "www.example.com"}
+		cfg, err := tlsConfigFor(n, nil)
+		if err != nil || cfg.ServerName != "www.example.com" {
+			t.Fatalf("%s: %q %v", mode, cfg.ServerName, err)
+		}
+		n.TLSServerName = ""
+		if cfg, _ := tlsConfigFor(n, nil); cfg.ServerName != "" {
+			t.Fatalf("%s: a name with none set", mode)
 		}
 	}
 }

@@ -234,6 +234,8 @@
   "node.tlsPin": "Accept one certificate only",
   "node.tlsPinned": "pinned",
   "node.tlsPinnedHint": "This panel accepts only one certificate from this node, whoever signed it.",
+  "node.tlsServerName": "TLS name (SNI)",
+  "node.tlsServerNameHint": "Optional. The name this panel gives when it connects. A node reached by bare address gives none, and some networks reset a connection that names nothing; Iran's does, between a server inside and one abroad. With \"Accept one certificate only\" any common name works, since the pin is what is checked. With \"Verify normally\" it has to be the name on the node's certificate.",
   "node.tlsSkip": "Do not check at all",
   "node.tlsSkipWarning": "Anyone able to sit between this panel and the node can read and change everything it sends, including the access token. Only defensible on a private link.",
   "node.tlsUnchecked": "certificate unchecked",

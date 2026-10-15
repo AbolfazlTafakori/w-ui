@@ -83,6 +83,14 @@ func clientFor(node model.Node, timeout time.Duration, id *Identity) (*http.Clie
 }
 
 func tlsConfigFor(node model.Node, id *Identity) (*tls.Config, error) {
+	cfg, err := tlsConfigForMode(node, id)
+	if cfg != nil && node.TLSServerName != "" {
+		cfg.ServerName = node.TLSServerName
+	}
+	return cfg, err
+}
+
+func tlsConfigForMode(node model.Node, id *Identity) (*tls.Config, error) {
 	switch node.TLSMode {
 	case model.TLSMutual:
 		// The node's own certificate is still verified normally: presenting one
@@ -160,7 +168,9 @@ func verifyPin(want string) func([][]byte, [][]*x509.Certificate) error {
 // because the alternative — an operator running openssl and copying a hash by
 // hand — is how verification ends up switched off instead, but the page that
 // offers it has to say what it is.
-func FetchPin(address string, timeout time.Duration, allowPrivate bool) (string, error) {
+// serverName, when set, is given in the handshake, as the node's own
+// requests will give it.
+func FetchPin(address string, timeout time.Duration, allowPrivate bool, serverName string) (string, error) {
 	host, err := hostPort(address)
 	if err != nil {
 		return "", err
@@ -168,7 +178,7 @@ func FetchPin(address string, timeout time.Duration, allowPrivate bool) (string,
 
 	dialer := &tls.Dialer{
 		NetDialer: &net.Dialer{Timeout: timeout},
-		Config:    &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12},
+		Config:    &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12, ServerName: serverName},
 	}
 	// The same guard as a real request. Reading a fingerprint is a connection
 	// like any other, and an operator who has typed a private address by

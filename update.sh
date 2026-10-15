@@ -120,6 +120,7 @@ write_update_helper
 # tunnel is made -- for a release that has one.
 if ! release_before_l2tp "$RELEASE_TAG"; then
   install_l2tp
+  install_proxy_cores
   write_l2tp_agent
 fi
 if have_systemd; then

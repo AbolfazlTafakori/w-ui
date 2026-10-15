@@ -25,12 +25,14 @@ func (s *Server) handleFetchPin(w http.ResponseWriter, r *http.Request) {
 		// fingerprint from a node on a private network is possible exactly when
 		// talking to it would be.
 		AllowPrivateAddress bool `json:"allowPrivateAddress"`
+		// TLSServerName, from the same form, is given in the handshake.
+		TLSServerName string `json:"tlsServerName"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
 
-	pin, err := nodes.FetchPin(in.Address, fetchPinTimeout, in.AllowPrivateAddress)
+	pin, err := nodes.FetchPin(in.Address, fetchPinTimeout, in.AllowPrivateAddress, strings.TrimSpace(in.TLSServerName))
 	if err != nil {
 		// A refusal with a reason, not a fault: an unreachable address or a
 		// plain-HTTP one is something the operator can act on.
