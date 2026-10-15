@@ -83,6 +83,11 @@ All notable changes to W-UI are recorded here. The format follows
   page and in the panel.
 
 ### Fixed
+- **Outbounds, tested on real servers with every kind of link and file:**
+  - A Trojan, VLESS, VMess or Hysteria2 link that skips the certificate check (`allowInsecure=1`, `insecure=1`) reached nothing: xray no longer skips it. The hop now pins the certificate the server shows when it starts; Hysteria2, whose certificate comes over QUIC, is carried by sing-box, which still skips it.
+  - An OpenVPN profile with its sign-in inline, in an `<auth-user-pass>` block, never signed in. The sign-in is read into the form, and from the profile for outbounds saved before.
+  - While a hop was down, what was routed to it left from this server's own address. It is now refused until the hop is up.
+  - An OpenVPN hop slow to connect was stopped after 20 seconds and started over, so on a slow link it never came up. It is kept while its process runs.
 - **The sharing notice is sent.** Telegram and mail offered a *sharing*
   notice that nothing ever sent. It now goes once, when a file first shows
   on the list.

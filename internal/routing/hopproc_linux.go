@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strconv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -252,8 +253,15 @@ func (m *HopManager) bringOpenVPN(ctx context.Context, s HopSpec) error {
 		"--connect-retry", "5", "30",
 		"--verb", "3",
 	}
-	if s.Username != "" {
-		if err := os.WriteFile(filepath.Join(dir, "auth.txt"), []byte(s.Username+"\n"+s.Password+"\n"), 0o600); err != nil {
+	user, pass := s.Username, s.Password
+	if user == "" {
+		// Saved from a profile that carries its sign-in inline, before the
+		// form read it out: the block is not copied into the file openvpn
+		// runs with, so it is handed over here.
+		user, pass, _ = InlineAuthUserPass(s.Config)
+	}
+	if user != "" {
+		if err := os.WriteFile(filepath.Join(dir, "auth.txt"), []byte(user+"\n"+pass+"\n"), 0o600); err != nil {
 			return err
 		}
 		args = append(args, "--auth-user-pass", "auth.txt")
@@ -263,6 +271,17 @@ func (m *HopManager) bringOpenVPN(ctx context.Context, s HopSpec) error {
 		return fmt.Errorf("routing: start openvpn for %s: %w", s.Device, err)
 	}
 	if err := waitDevice(ctx, s.Device, 20*time.Second); err != nil {
+		// openvpn makes the device only once the server has let it in, and
+		// over a slow or filtered link that takes longer than this wait.
+		// Killed here, it would be started again and killed again forever,
+		// never getting in. Still running, it is kept: the device comes
+		// when it does, its route goes in on the pass after, and until then
+		// the table's floor holds what is marked for it.
+		if ctx.Err() == nil && !exited(cmd) {
+			m.setProc(s.Device, &hopProc{kind: "openvpn", cmds: []*exec.Cmd{cmd}, dir: dir, since: time.Now()})
+			m.log.Info("outbound hop is still connecting", "device", s.Device, "kind", "openvpn", "endpoint", s.Endpoint)
+			return nil
+		}
 		stopProc(cmd)
 		if last := lastLogLine(dir, "openvpn.log"); last != "" {
 			return fmt.Errorf("routing: openvpn for %s: %s", s.Device, last)
@@ -304,7 +323,8 @@ func xrayConfig(s HopSpec) ([]byte, error) {
 
 // singboxConfig is the tun that feeds the SOCKS port: no routes of its own,
 // no DNS hijack, just a device the policy can send packets into.
-func singboxConfig(s HopSpec) ([]byte, error) {
+// With proxy set, sing-box carries the traffic out itself instead.
+func singboxConfig(s HopSpec, proxy map[string]any) ([]byte, error) {
 	mtu := s.MTU
 	if mtu <= 0 {
 		mtu = 1400
@@ -337,7 +357,50 @@ func singboxConfig(s HopSpec) ([]byte, error) {
 	out := cfg["outbounds"].([]any)[0].(map[string]any)
 	delete(out, "network")
 	delete(out, "domain_resolver")
+	if proxy != nil {
+		cfg["outbounds"] = []any{proxy}
+		// The loopback SOCKS port xray would have served, which the
+		// panel's own test of the outbound goes through.
+		cfg["inbounds"] = append(cfg["inbounds"].([]any), map[string]any{
+			"type": "socks", "tag": "socks", "listen": "127.0.0.1", "listen_port": s.SocksPort,
+		})
+	}
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// bringHysteria runs a Hysteria2 hop that skips the certificate check in
+// sing-box alone: xray has no way to skip it, and a pin cannot be read over
+// TCP from a server that speaks QUIC.
+func (m *HopManager) bringHysteria(ctx context.Context, s HopSpec, ob map[string]any, sbin, dir string) error {
+	proxy, err := hysteriaForSingbox(ob)
+	if err != nil {
+		return fmt.Errorf("routing: %s: %w", s.Device, err)
+	}
+	sc, err := singboxConfig(s, proxy)
+	if err != nil {
+		return err
+	}
+	os.Remove(filepath.Join(dir, "xray.json"))
+	if err := os.WriteFile(filepath.Join(dir, "sing-box.json"), sc, 0o600); err != nil {
+		return err
+	}
+	if out, err := run(ctx, sbin, "", "check", "-c", filepath.Join(dir, "sing-box.json")); err != nil {
+		return fmt.Errorf("routing: sing-box refused the outbound for %s: %s", s.Device, strings.TrimSpace(string(out)))
+	}
+	scmd, err := startProc(dir, "sing-box.log", sbin, "run", "-c", "sing-box.json", "-D", dir)
+	if err != nil {
+		return fmt.Errorf("routing: start sing-box for %s: %w", s.Device, err)
+	}
+	if err := waitDevice(ctx, s.Device, 10*time.Second); err != nil {
+		stopProc(scmd)
+		if last := lastLogLine(dir, "sing-box.log"); last != "" {
+			return fmt.Errorf("routing: sing-box for %s: %s", s.Device, last)
+		}
+		return err
+	}
+	m.setProc(s.Device, &hopProc{kind: "xray", cmds: []*exec.Cmd{scmd}, dir: dir, since: time.Now()})
+	m.log.Info("outbound hop is up", "device", s.Device, "kind", "hysteria2", "endpoint", s.Endpoint)
+	return nil
 }
 
 func (m *HopManager) bringXray(ctx context.Context, s HopSpec) error {
@@ -353,11 +416,26 @@ func (m *HopManager) bringXray(ctx context.Context, s HopSpec) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	var ob map[string]any
+	if err := json.Unmarshal([]byte(s.Config), &ob); err != nil {
+		return fmt.Errorf("routing: %s: the outbound is not valid JSON: %w", s.Device, err)
+	}
+	if _, skip := skipsVerify(ob); skip && isHysteria(ob) {
+		return m.bringHysteria(ctx, s, ob, sbin, dir)
+	}
+	if host, port, err := net.SplitHostPort(s.Endpoint); err == nil {
+		n, _ := strconv.Atoi(port)
+		if err := pinFirstCert(ctx, ob, host, n); err != nil {
+			return fmt.Errorf("routing: %s: %w", s.Device, err)
+		}
+		raw, _ := json.Marshal(ob)
+		s.Config = string(raw)
+	}
 	xc, err := xrayConfig(s)
 	if err != nil {
 		return fmt.Errorf("routing: %s: %w", s.Device, err)
 	}
-	sc, err := singboxConfig(s)
+	sc, err := singboxConfig(s, nil)
 	if err != nil {
 		return err
 	}

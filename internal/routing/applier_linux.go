@@ -110,8 +110,13 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 	for _, s := range plan.Remove {
 		_, _ = a.runIP(ctx, s.Args...)
 	}
+	down := false
 	for _, s := range plan.Add {
 		if _, err := a.runIP(ctx, s.Args...); err != nil {
+			if s.Tolerant {
+				down = true
+				continue
+			}
 			a.mu.Lock()
 			a.lastErr = err
 			a.appliedP = "" // force a full re-apply next tick
@@ -122,6 +127,10 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 
 	a.mu.Lock()
 	a.appliedP = fp
+	if down {
+		// A hop not up yet: its route goes in on a later pass.
+		a.appliedP = ""
+	}
 	a.ready = true
 	a.lastErr = nil
 	a.mu.Unlock()

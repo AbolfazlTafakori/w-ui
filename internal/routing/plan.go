@@ -48,6 +48,10 @@ type Statement struct {
 	Args []string
 	// Describe is what to say if this one fails, in an operator's terms.
 	Describe string
+	// Tolerant is a statement whose failure is a hop that is down, not a
+	// fault: the rest still goes in, and the plan is tried again on the
+	// next pass, by when the hop may be up.
+	Tolerant bool
 }
 
 // Plan is the full set of routing statements for the current outbounds.
@@ -100,6 +104,17 @@ func BuildPlan(hops []Hop) Plan {
 			continue
 		}
 
+		// The table's floor, under the hop's own route: while the hop is
+		// down -- its process has not started, its device has gone -- what
+		// is marked for it is refused here. Without it the lookup finds
+		// nothing in the table and goes on to the main one, and a customer
+		// sent through an exit abroad leaves from this server's own address
+		// with nothing to say so.
+		p.Add = append(p.Add, Statement{
+			Args:     []string{"route", "replace", "unreachable", "default", "metric", "4294967295", "table", tableArg},
+			Describe: fmt.Sprintf("keep %q's traffic in it while it is down", h.Tag),
+		})
+
 		// The table comes before the next hops: iproute2 reads everything
 		// after the first "nexthop" as hop attributes.
 		routeArgs := []string{"route", "replace", "default", "table", tableArg}
@@ -122,6 +137,9 @@ func BuildPlan(hops []Hop) Plan {
 			Statement{
 				Args:     routeArgs,
 				Describe: fmt.Sprintf("point %q at %s", h.Tag, where),
+				// A hop's device is there once it is up; until then the
+				// floor above holds its traffic.
+				Tolerant: true,
 			},
 			Statement{
 				// The priority keeps our rules together and below the kernel's

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/routing"
 	"net"
 	"net/url"
 	"strconv"
@@ -206,6 +207,9 @@ func applySecurity(st map[string]any, q url.Values) {
 		tls["echConfigList"] = q.Get("ech")
 		tls["verifyPeerCertByName"] = q.Get("vcn")
 		tls["pinnedPeerCertSha256"] = q.Get("pcs")
+		if askedInsecure(q) {
+			tls["allowInsecure"] = true
+		}
 	case "reality":
 		r := st["realitySettings"].(map[string]any)
 		r["serverName"] = q.Get("sni")
@@ -451,6 +455,9 @@ func parseHysteria2(link string) (*OutboundInput, error) {
 			"pinnedPeerCertSha256": q.Get("pinSHA256"),
 		},
 	}
+	if askedInsecure(q) {
+		st["tlsSettings"].(map[string]any)["allowInsecure"] = true
+	}
 	if obfs := strings.ToLower(q.Get("obfs")); obfs == "salamander" || obfs == "gecko" {
 		if pw := firstParam(q, "obfs-password", "obfs_password", "obfsPassword"); pw != "" {
 			st["finalmask"] = map[string]any{"udp": []any{map[string]any{"type": "salamander", "settings": map[string]any{"password": pw}}}}
@@ -605,6 +612,12 @@ func parseOpenVPNProfile(text string) (*OutboundInput, error) {
 	if in.Address == "" {
 		return nil, invalidField("text", "the OpenVPN profile has no remote line")
 	}
+	// A sign-in carried in the profile goes into the form's fields, where
+	// it is seen and can be changed; without it the tunnel has no way to
+	// sign in and never comes up.
+	if u, p, ok := routing.InlineAuthUserPass(text); ok {
+		in.Username, in.Password = u, p
+	}
 	return in, nil
 }
 
@@ -701,4 +714,12 @@ func xrayConfigValid(kind model.OutboundKind, config string) (string, error) {
 	}
 	raw, err := json.MarshalIndent(ob, "", "  ")
 	return string(raw), err
+}
+
+// askedInsecure is a link that says not to check the server's certificate,
+// as links to self-signed servers do. The hop pins the certificate the server
+// shows when it starts, since xray no longer skips the check.
+func askedInsecure(q url.Values) bool {
+	v := strings.ToLower(firstParam(q, "allowInsecure", "insecure", "allow_insecure"))
+	return v == "1" || v == "true"
 }

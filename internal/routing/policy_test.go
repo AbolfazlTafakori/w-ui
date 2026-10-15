@@ -426,3 +426,30 @@ func TestARuleOnASubnetTunnelMatchesItsSources(t *testing.T) {
 		}
 	}
 }
+
+// A hop that is on keeps its traffic while it is down: an unreachable floor
+// in its table, laid before its own route, which is let fail while the
+// device is not there yet. Without it the lookup goes on to the main table
+// and the traffic leaves from the server's own address.
+func TestAHopThatIsDownKeepsItsTraffic(t *testing.T) {
+	plan := BuildPlan([]Hop{{Tag: "abroad", Mark: 0xa70003, Table: TableBase + 3, Device: "wuih3", Enabled: true}})
+	floor, route := -1, -1
+	for i, s := range plan.Add {
+		args := strings.Join(s.Args, " ")
+		if strings.HasPrefix(args, "route replace unreachable default metric 4294967295") {
+			floor = i
+			if s.Tolerant {
+				t.Fatal("the floor may not be let fail")
+			}
+		}
+		if strings.HasPrefix(args, "route replace default") && strings.Contains(args, "dev wuih3") {
+			route = i
+			if !s.Tolerant {
+				t.Fatal("a hop's device route failing stopped the whole plan")
+			}
+		}
+	}
+	if floor < 0 || route < 0 || floor > route {
+		t.Fatalf("floor %d, route %d in %+v", floor, route, plan.Add)
+	}
+}
