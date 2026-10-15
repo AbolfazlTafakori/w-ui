@@ -71,12 +71,13 @@ On server A's panel: **Nodes** → **Add node**.
 | Field | What to enter |
 |---|---|
 | **Name** | Anything you like — `Frankfurt`, `node-2`. It appears in the tunnel list and on the customers' config names. |
-| **Address** | The node's Access URL as you would open it in a browser: `https://203.0.113.9:41873/`. The path after the port is not needed; the port is. |
+| **Address** | The node's Access URL as you would open it in a browser: `https://203.0.113.9:41873/Xk3pQ9vL2mT8/`, port and secret path both included. Without the path the node answers with *not found* and shows as not a panel. |
 | **Access token** | The token from step 2. |
 | **Certificate check** | Leave on **Verify normally** when the node has a real certificate (Let's Encrypt for its IP or domain — the installer's default). See [the three modes](#certificate-check) below for the others. |
 | **Usage multiplier** | `1`, unless this server should cost customers more or less — see [below](#usage-multiplier). |
 | **Transfer allowance** | Only if the host caps the node's monthly traffic — see [below](#transfer-allowance). |
 | **Allow an address inside this server's network** | Off by default. Every request to a node carries a token with full access to a panel, so an address typed by mistake that points inside this server's own network is refused. Turn it on only when the node really is on a private network you control. |
+| **TLS name** | Optional. The name to ask for in the TLS handshake (SNI) when the address is an IP. Set it when the node's certificate is for a domain, or when the network between the servers resets TLS connections that carry no name, as some filtered networks do. |
 
 Save. Within a few seconds the row shows **Online**, the node's version, uptime, CPU, RAM and latency. **Check now** probes it on demand.
 
