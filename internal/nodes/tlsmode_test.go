@@ -290,3 +290,22 @@ func TestTheHandshakeCarriesTheNodesName(t *testing.T) {
 		}
 	}
 }
+
+// A name given for the handshake alone: the certificate is still checked
+// against the node's address, and refused for any other.
+func TestVerifyForTheAddressNotTheName(t *testing.T) {
+	srv := httptest.NewTLSServer(nil)
+	defer srv.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+	for host, ok := range map[string]bool{"127.0.0.1": true, "10.9.9.9": false} {
+		cfg := &tls.Config{InsecureSkipVerify: true, ServerName: "www.example.org", VerifyConnection: verifyFor(host, roots)}
+		c, err := tls.Dial("tcp", srv.Listener.Addr().String(), cfg)
+		if c != nil {
+			c.Close()
+		}
+		if (err == nil) != ok {
+			t.Errorf("host %s: err %v, want ok=%v", host, err, ok)
+		}
+	}
+}

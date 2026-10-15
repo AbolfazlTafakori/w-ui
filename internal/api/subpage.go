@@ -79,11 +79,8 @@ type subPageView struct {
 	LastOnline string
 	SubQR      template.URL
 	Strings    template.JS // the two dictionaries, for the language button
-	// Setup is the card that sets up a device: the customer's device, then
-	// the connection of their plan it can dial, and that device's fields --
-	// for WireGuard and OpenVPN; an L2TP or PPTP block has its own (subGroup).
-	// AnySetup is whether the page has a card anywhere.
-	Setup    *setupCard
+	// AnySetup is whether any file on the page has its setup card; each is
+	// in the file's own row (subPageDevice.Setup).
 	AnySetup bool
 	Lang     string
 	Icons    map[string]template.HTML
@@ -401,20 +398,12 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	v.Groups = groupDevices(v.Devices, page.Name)
 	v.Usage = usageTable(v.Devices, page.Name)
 	detected := devguide.Detect(userAgent)
-	var rest []subPageDevice
-	for _, d := range v.Devices {
-		if !d.PPP {
-			rest = append(rest, d)
-		}
-	}
-	v.Setup = newSetupCard(rest, detected, v.Icons["CopyOutlined"])
-	v.AnySetup = v.Setup != nil
+	// Each file's own guide, in its own row: the device, then that
+	// device's steps for this file. One card under every file, rather than
+	// one at the foot of the page asking which file again.
 	for i := range v.Groups {
 		for j := range v.Groups[i].Devices {
 			d := &v.Groups[i].Devices[j]
-			if !d.PPP {
-				continue
-			}
 			if d.Setup = newSetupCard([]subPageDevice{*d}, detected, v.Icons["CopyOutlined"]); d.Setup != nil {
 				v.AnySetup = true
 			}
@@ -733,7 +722,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "Remaining", "lastOnline": "Last Online", "expiry": "Expiry", "noExpiry": "No expiry",
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
-		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "usageSince": "Split by user since", "total": "Total", "allUsers": "All users", "tunnel": "Tunnel",
+		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "xrayConfig": "V2Ray link", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "usageSince": "Split by user since", "total": "Total", "allUsers": "All users", "tunnel": "Tunnel",
 		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close", "amneziaKeyHint": "For the AmneziaVPN app: copy the key, or scan it.",
 	},
@@ -744,7 +733,7 @@ var subPageStrings = map[string]map[string]string{
 		"remained": "باقی‌مانده", "lastOnline": "آخرین فعالیت", "expiry": "انقضا", "noExpiry": "بدون انقضا",
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
-		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "usageSince": "تفکیک کاربرها از", "total": "جمع", "allUsers": "همهٔ کاربران", "tunnel": "تانل",
+		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "xrayConfig": "لینک V2Ray", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "usageSince": "تفکیک کاربرها از", "total": "جمع", "allUsers": "همهٔ کاربران", "tunnel": "تانل",
 		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید", "amneziaKeyHint": "برای اپ AmneziaVPN: کلید را کپی کنید یا اسکن کنید.",
 	},
@@ -1546,13 +1535,13 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
         <div class="cfg cfg-group{{ if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") (eq .Protocol "openconnect") }} open{{ end }}">
           <div class="cfg-head">
             <span class="anticon caret">{{ index $.Icons "RightOutlined" }}</span>
-            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") (eq .Protocol "openconnect") }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else if eq .Protocol "pptp" }}pptpConfig{{ else if eq .Protocol "ikev2" }}ikev2Config{{ else if eq .Protocol "openconnect" }}ocConfig{{ else }}config{{ end }}">Config</span>
+            <span class="tag tag-config {{ if eq .Protocol "openvpn" }}orange{{ else if or (eq .Protocol "l2tp") (eq .Protocol "pptp") (eq .Protocol "ikev2") (eq .Protocol "openconnect") }}purple{{ else }}cyan{{ end }}" data-i="{{ if eq .Protocol "openvpn" }}ovpnConfig{{ else if eq .Protocol "l2tp" }}l2tpConfig{{ else if eq .Protocol "pptp" }}pptpConfig{{ else if eq .Protocol "ikev2" }}ikev2Config{{ else if eq .Protocol "openconnect" }}ocConfig{{ else if eq .Protocol "xray" }}xrayConfig{{ else }}config{{ end }}">Config</span>
             {{ if .Tunnel }}<span class="cfg-meta">{{ .Tunnel }}</span>{{ end }}
             <span class="cfg-count">{{ if gt (len .Devices) 1 }}<span dir="ltr">{{ len .Devices }}</span> <span data-i="users">users</span>{{ else }}<span data-i="oneUser">1 user</span>{{ end }}</span>
           </div>
           <div class="cfg-body cfg-users">
             {{ range .Devices }}
-            <div class="cfg-user{{ if or .SignIn .Setup }} open{{ end }}">
+            <div class="cfg-user{{ if or .SignIn (and .PPP .Setup) }} open{{ end }}">
               <div class="cfg-user-head">
                 <span class="cfg-user-name">{{ if .User }}<span data-i="user">User</span> <span dir="ltr">{{ .User }}</span>{{ else }}{{ .Row }}{{ end }}{{ if .HostName }} · {{ .HostName }}{{ end }}{{ if and (eq .Protocol "openvpn") .Username }} <span class="cfg-user-login" dir="ltr">{{ .Username }}</span>{{ end }}</span>
                 <div class="row-actions">
@@ -1563,19 +1552,13 @@ code.secret { letter-spacing: 2px; color: var(--muted); user-select: none; }
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body">{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ else if not .PPP }}<code class="cfg-text">{{ .Config }}</code>{{ end }}{{ if .AmneziaKey }}<div class="awg-key"><span class="tag" dir="ltr">AmneziaVPN</span><span class="awg-key-text" data-i="amneziaKeyHint">For the AmneziaVPN app: copy the key, or scan it.</span><button class="btn sm copy" type="button" data-text="{{ .AmneziaKey }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>{{ if .AmneziaQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button><div class="pop"><div class="pop-card"><span class="tag qr-tag" dir="ltr">AmneziaVPN</span><img src="{{ .AmneziaQR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}</div>{{ end }}{{ with .Files }}<div class="ike-files">{{ range . }}<a class="btn sm" href="{{ .Href }}" download="{{ .Name }}" dir="ltr">{{ .Name }}</a>{{ end }}</div>{{ end }}</div>
+              <div class="cfg-user-body">{{ if .PPP }}{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ end }}{{ else }}<code class="cfg-text">{{ .Config }}</code>{{ if .Setup }}<div class="divider"><span data-i="dgSetup">Set up a device</span></div>{{ template "setup" .Setup }}{{ end }}{{ end }}{{ if .AmneziaKey }}<div class="awg-key"><span class="tag" dir="ltr">AmneziaVPN</span><span class="awg-key-text" data-i="amneziaKeyHint">For the AmneziaVPN app: copy the key, or scan it.</span><button class="btn sm copy" type="button" data-text="{{ .AmneziaKey }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>{{ if .AmneziaQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button><div class="pop"><div class="pop-card"><span class="tag qr-tag" dir="ltr">AmneziaVPN</span><img src="{{ .AmneziaQR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}</div>{{ end }}{{ with .Files }}<div class="ike-files">{{ range . }}<a class="btn sm" href="{{ .Href }}" download="{{ .Name }}" dir="ltr">{{ .Name }}</a>{{ end }}</div>{{ end }}</div>
             </div>
             {{ end }}
           </div>
         </div>
         {{ end }}
       </div>
-      {{ end }}
-      {{ if .Setup }}
-      <!-- One device's steps: the customer picks their phone, computer or
-           router, then the connection of their plan it can dial. -->
-      <div class="divider"><span data-i="dgSetup">Set up a device</span></div>
-      <div class="links setup-card">{{ template "setup" .Setup }}</div>
       {{ end }}
 
       <!-- The apps only: the files are handed out per user in the rows

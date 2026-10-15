@@ -85,6 +85,8 @@ All notable changes to W-UI are recorded here. The format follows
   page and in the panel.
 
 ### Fixed
+- **A node abroad is reached from a panel in Iran over HTTPS.** Go now offers a post-quantum key exchange first, which makes its TLS hello too big for one packet, and Iran's network drops a split hello between a server inside and one abroad: every call to the node hung and ended in EOF while curl went through. The panel offers the long-standing key exchanges to its nodes. With a TLS name set to get past the filter, a node with a certificate for its IP (Let's Encrypt issues them) is still verified against that IP.
+- **Each file's setup guide is in its own row** on the customer's page, under the file, instead of one card at the foot of the page asking again which file.
 - **Outbounds, tested on real servers with every kind of link and file:**
   - A WireGuard outbound to a server elsewhere carried nothing: its own encrypted packets had the mark that routes traffic into it, so after the handshake they went round inside the tunnel. They now have a mark of their own.
   - A Trojan, VLESS, VMess or Hysteria2 link that skips the certificate check (`allowInsecure=1`, `insecure=1`) reached nothing: xray no longer skips it. The hop now pins the certificate the server shows when it starts; Hysteria2, whose certificate comes over QUIC, is carried by sing-box, which still skips it.

@@ -84,10 +84,56 @@ func clientFor(node model.Node, timeout time.Duration, id *Identity) (*http.Clie
 
 func tlsConfigFor(node model.Node, id *Identity) (*tls.Config, error) {
 	cfg, err := tlsConfigForMode(node, id)
+	if cfg != nil {
+		// The key exchanges every TLS stack has offered for years, without
+		// the post-quantum one Go now offers first. That one makes the
+		// ClientHello too big for one packet, and Iran's network drops a
+		// split ClientHello between a server inside and one abroad: the
+		// connection hangs and ends in EOF, while the same request from
+		// curl goes through.
+		cfg.CurvePreferences = []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384}
+	}
 	if cfg != nil && node.TLSServerName != "" {
 		cfg.ServerName = node.TLSServerName
+		// A node reached by its address, with a certificate for that
+		// address -- Let's Encrypt issues them for IPs -- and a name given
+		// only to get past a network that resets TLS naming nothing: the
+		// name goes in the handshake, and the certificate is still checked
+		// against the address the operator typed.
+		if !cfg.InsecureSkipVerify {
+			if host := addressHost(node.Address); host != "" && net.ParseIP(host) != nil {
+				cfg.InsecureSkipVerify = true
+				cfg.VerifyConnection = verifyFor(host, nil)
+			}
+		}
 	}
 	return cfg, err
+}
+
+// addressHost is the host of a node's address.
+func addressHost(address string) string {
+	u, err := url.Parse(address)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// verifyFor checks the chain a server presented, against the system's roots,
+// for host rather than for the name the handshake carried; nil roots are
+// the system's.
+func verifyFor(host string, roots *x509.CertPool) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) == 0 {
+			return fmt.Errorf("the node presented no certificate at all")
+		}
+		inter := x509.NewCertPool()
+		for _, c := range cs.PeerCertificates[1:] {
+			inter.AddCert(c)
+		}
+		_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{DNSName: host, Intermediates: inter, Roots: roots})
+		return err
+	}
 }
 
 func tlsConfigForMode(node model.Node, id *Identity) (*tls.Config, error) {

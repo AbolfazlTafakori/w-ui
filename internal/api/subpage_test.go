@@ -406,11 +406,13 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 	}
 
 	v, html := render(false, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)")
-	if v.Setup == nil {
-		t.Fatal("no setup card")
+	// Every file's guide is in its own row: the WireGuard file's here.
+	if len(v.Groups) != 2 || len(v.Groups[1].Devices) != 1 || v.Groups[1].Devices[0].Setup == nil {
+		t.Fatal("the WireGuard row has no setup card")
 	}
+	wg := v.Groups[1].Devices[0].Setup
 	var selected []string
-	for _, d := range v.Setup.Devices {
+	for _, d := range wg.Devices {
 		if d.Selected {
 			selected = append(selected, d.ID)
 		}
@@ -441,8 +443,8 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 		t.Fatalf("groups %+v", v.Groups)
 	}
 	l2tp := v.Groups[0].Devices[0]
-	if l2tp.Setup == nil || v.Groups[1].Devices[0].Setup != nil {
-		t.Fatal("the L2TP row has no guide, or the WireGuard row has one")
+	if l2tp.Setup == nil {
+		t.Fatal("the L2TP row has no guide")
 	}
 	for _, view := range l2tp.Setup.Views {
 		if view.Protocol != "l2tp" {
@@ -460,13 +462,13 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 		}
 		return false
 	}
-	if listed(l2tp.Setup, "android12") || !listed(v.Setup, "android12") {
+	if listed(l2tp.Setup, "android12") || !listed(wg, "android12") {
 		t.Error("Android 12 is offered on the L2TP row, or not on WireGuard")
 	}
 	if !listed(l2tp.Setup, "android") || !listed(l2tp.Setup, "tplink-w9960") {
 		t.Error("a device that dials L2TP, or a model with no client, is missing from the L2TP row")
 	}
-	for _, view := range v.Setup.Views {
+	for _, view := range wg.Views {
 		if view.Protocol != "wireguard" {
 			t.Fatalf("the page's card has a %s guide", view.Protocol)
 		}
@@ -509,7 +511,7 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 // as before there was one.
 func TestSubPageWithoutFilesHasNoCard(t *testing.T) {
 	v := newSubView(&service.SubPage{Name: "Ali", Status: "active"}, "token", false, "")
-	if v.Setup != nil || strings.Contains(string(v.Strings), "dgSetup") {
+	if v.AnySetup || strings.Contains(string(v.Strings), "dgSetup") {
 		t.Fatal("a page with no files was given a setup card")
 	}
 }
