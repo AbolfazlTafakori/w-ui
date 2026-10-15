@@ -109,7 +109,9 @@ func parseLinkInfo(ipJSON []byte) (string, uint32) {
 		LinkInfo struct {
 			Kind string `json:"info_kind"`
 			Data struct {
-				IfID uint32 `json:"if_id"`
+				// A number in some versions of ip, a hex string
+				// ("0x57550007") in others.
+				IfID any `json:"if_id"`
 			} `json:"info_data"`
 		} `json:"linkinfo"`
 	}
@@ -120,7 +122,20 @@ func parseLinkInfo(ipJSON []byte) (string, uint32) {
 	if k == "" {
 		k = "other"
 	}
-	return k, links[0].LinkInfo.Data.IfID
+	return k, ifIDOf(links[0].LinkInfo.Data.IfID)
+}
+
+func ifIDOf(v any) uint32 {
+	switch t := v.(type) {
+	case float64:
+		return uint32(t)
+	case string:
+		n, err := strconv.ParseUint(t, 0, 32)
+		if err == nil {
+			return uint32(n)
+		}
+	}
+	return 0
 }
 
 func run(ctx context.Context, name string, args ...string) error {

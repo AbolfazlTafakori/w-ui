@@ -559,7 +559,9 @@ func PPPOptions(s *State) string {
 	b.WriteString("noccp\n")
 	b.WriteString("nodefaultroute\n")
 	b.WriteString("noipdefault\n")
-	b.WriteString("lock\n")
+	// No "lock": it locks a serial line, which a session does not have,
+	// and the pppd of Ubuntu 24.04 does not know it: every session failed
+	// there before it began.
 	fmt.Fprintf(&b, "mtu %d\nmru %d\n", f.MTU, f.MTU)
 	for _, d := range f.DNS {
 		fmt.Fprintf(&b, "ms-dns %s\n", d)
@@ -604,7 +606,9 @@ func PPTPOptions(s *State) string {
 	b.WriteString("nobsdcomp\nnodeflate\n")
 	b.WriteString("nodefaultroute\n")
 	b.WriteString("noipdefault\n")
-	b.WriteString("lock\n")
+	// No "lock": it locks a serial line, which a session does not have,
+	// and the pppd of Ubuntu 24.04 does not know it: every session failed
+	// there before it began.
 	fmt.Fprintf(&b, "mtu %d\nmru %d\n", f.MTU, f.MTU)
 	for _, d := range f.DNS {
 		fmt.Fprintf(&b, "ms-dns %s\n", d)

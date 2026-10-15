@@ -240,3 +240,16 @@ func TestTheTunnelSecretIsTheKey(t *testing.T) {
 		}
 	}
 }
+
+// pppd is never given "lock": Ubuntu 24.04's refuses it, and with it every
+// L2TP and PPTP session.
+func TestNoSessionIsGivenLock(t *testing.T) {
+	s := &State{Interface: Iface{Gateway: "10.77.0.1", MTU: 1400, DNS: []string{"10.77.0.1"}}}
+	for name, opts := range map[string]string{"L2TP": PPPOptions(s), "PPTP": PPTPOptions(s)} {
+		for _, line := range strings.Split(opts, "\n") {
+			if strings.TrimSpace(line) == "lock" {
+				t.Fatalf("%s's options lock the line:\n%s", name, opts)
+			}
+		}
+	}
+}

@@ -172,6 +172,16 @@ routers with a port setting. The form says so when the port is not the
 standard one, and the customer's page shows it as **Port (apps with a port
 setting)**. Another tunnel on the server cannot take that port.
 
+### L2TP/IPsec: two devices behind one address
+
+L2TP/IPsec cannot carry two devices that reach the server from the same
+public address at once, such as two phones on one home Wi-Fi or on one
+mobile carrier's shared address. Both run IPsec in transport mode on the
+same port, and the Linux kernel cannot tell the two apart, so only one of
+them works. This holds for every Linux L2TP server, not only this panel.
+Where it matters, give those customers IKEv2, WireGuard or OpenConnect,
+which have no such limit.
+
 ### The server's firewall
 
 With ufw or firewalld on, a tunnel's port is dropped there whatever the

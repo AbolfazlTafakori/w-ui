@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/net/ipv4"
 	"golang.org/x/sys/unix"
 )
 
@@ -89,6 +90,11 @@ type Server struct {
 	cfg Config
 	log *slog.Logger
 	gre *net.IPConn
+	// out writes a call's GRE from the address its device dialed: a server
+	// with more than one -- a floating address, a second one -- would
+	// otherwise answer from whichever the route picks, and the device drops
+	// what does not come from the server it called.
+	out *ipv4.PacketConn
 
 	mu    sync.Mutex
 	calls map[uint16]*call
@@ -120,7 +126,7 @@ func Run(ctx context.Context, cfg Config, log *slog.Logger) error {
 		return fmt.Errorf("opening GRE: %w", err)
 	}
 	defer gre.Close()
-	s := &Server{cfg: cfg, log: log, gre: gre, calls: map[uint16]*call{}}
+	s := &Server{cfg: cfg, log: log, gre: gre, out: ipv4.NewPacketConn(gre), calls: map[uint16]*call{}}
 	go s.readGRE()
 
 	var wg sync.WaitGroup
@@ -237,7 +243,8 @@ func (c *control) send(b []byte) error {
 func (s *Server) serve(nc net.Conn) {
 	defer nc.Close()
 	peer := nc.RemoteAddr().(*net.TCPAddr).IP.To4()
-	if peer == nil {
+	local := nc.LocalAddr().(*net.TCPAddr).IP.To4()
+	if peer == nil || local == nil {
 		return // GRE here is IPv4's
 	}
 	if tc, ok := nc.(*net.TCPConn); ok {
@@ -359,7 +366,7 @@ func (s *Server) serve(nc net.Conn) {
 					_ = c.send(outCallReply(0, oc.peerCallID, callResultRefused, recvWindow))
 					continue
 				}
-				newCall, err := s.startCall(peer, oc, log, func(gone *call) {
+				newCall, err := s.startCall(peer, local, oc, log, func(gone *call) {
 					select {
 					case ended <- gone:
 					default:
@@ -404,6 +411,7 @@ type call struct {
 	id     uint16 // ours: the device's GRE packets carry it
 	peerID uint16 // the device's: ours carry it
 	peer   net.IP
+	local  net.IP // the server's address the device dialed, which its GRE comes from
 	master *os.File
 	slave  *os.File // held open for the call: the master reads nothing but EIO while no slave is
 	cmd    *exec.Cmd
@@ -420,7 +428,7 @@ type call struct {
 }
 
 // startCall opens a terminal, starts pppd on it, and relays.
-func (s *Server) startCall(peer net.IP, oc outCall, log *slog.Logger, onEnd func(*call)) (*call, error) {
+func (s *Server) startCall(peer, local net.IP, oc outCall, log *slog.Logger, onEnd func(*call)) (*call, error) {
 	master, slave, err := openPTY()
 	if err != nil {
 		return nil, err
@@ -428,7 +436,7 @@ func (s *Server) startCall(peer net.IP, oc outCall, log *slog.Logger, onEnd func
 	slavePath := slave.Name()
 	id := s.newCallID()
 	cl := &call{
-		s: s, id: id, peerID: oc.peerCallID, peer: peer, master: master, slave: slave,
+		s: s, id: id, peerID: oc.peerCallID, peer: peer, local: local, master: master, slave: slave,
 		log: log.With("call", id), done: make(chan struct{}),
 	}
 	// The device's address goes to pppd as ipparam: the panel finds a
@@ -483,9 +491,14 @@ func (cl *call) fromPPPD() {
 			}
 			cl.mu.Unlock()
 			out = appendGRE(out[:0], p)
-			_, _ = cl.s.gre.WriteToIP(out, dst)
+			cl.send(out, dst)
 		})
 	}
+}
+
+// send writes a GRE packet to the device, from the address it dialed.
+func (cl *call) send(b []byte, dst *net.IPAddr) {
+	_, _ = cl.s.out.WriteTo(b, &ipv4.ControlMessage{Src: cl.local}, dst)
 }
 
 // received takes one GRE packet from the device: its frame to pppd, and its
@@ -531,7 +544,7 @@ func (cl *call) acker() {
 		cl.ackPending = false
 		cl.mu.Unlock()
 		buf = appendGRE(buf[:0], p)
-		_, _ = cl.s.gre.WriteToIP(buf, dst)
+		cl.send(buf, dst)
 	}
 }
 

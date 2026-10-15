@@ -11,6 +11,11 @@ func TestTheDeviceIsReadFromIP(t *testing.T) {
 	if k, id := parseLinkInfo([]byte(xfrm)); k != "xfrm" || id != 1465188355 {
 		t.Fatalf("%s %d", k, id)
 	}
+	// As Ubuntu 24.04's ip prints it.
+	hex := `[{"ifname":"ike0","linkinfo":{"info_kind":"xfrm","info_data":{"if_id":"0x57550007"}}}]`
+	if k, id := parseLinkInfo([]byte(hex)); k != "xfrm" || id != 0x57550007 {
+		t.Fatalf("hex: %s %#x", k, id)
+	}
 	if k, _ := parseLinkInfo([]byte(`[{"ifname":"ike0","linkinfo":{"info_kind":"dummy"}}]`)); k != "dummy" {
 		t.Fatal(k)
 	}
