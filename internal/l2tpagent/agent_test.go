@@ -348,3 +348,39 @@ func TestANewRunAdoptsTheRunningXl2tpd(t *testing.T) {
 		t.Fatalf("calls %v", sys.calls)
 	}
 }
+
+// xl2tpd answers from the endpoint that is this server's own address, when
+// exactly one is; with none or several it listens on every address.
+func TestXl2tpdAnswersFromTheAddressDevicesDial(t *testing.T) {
+	local := []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("10.0.0.5"),
+		netip.MustParseAddr("203.0.113.7"), netip.MustParseAddr("203.0.113.8")}
+	names := map[string][]netip.Addr{
+		"vpn.example.com": {netip.MustParseAddr("203.0.113.7")},
+		"other.example":   {netip.MustParseAddr("198.51.100.1")},
+	}
+	lookup := func(h string) []netip.Addr { return names[h] }
+	for _, c := range []struct {
+		endpoints []string
+		want      string
+	}{
+		{[]string{"vpn.example.com"}, "203.0.113.7"},
+		{[]string{"203.0.113.8"}, "203.0.113.8"},
+		{[]string{"vpn.example.com", "203.0.113.7"}, "203.0.113.7"},
+		{[]string{"vpn.example.com", "203.0.113.8"}, ""},
+		{[]string{"other.example"}, ""},
+		{[]string{"127.0.0.1"}, ""},
+		{nil, ""},
+	} {
+		if got := pickListen(c.endpoints, local, lookup); got != c.want {
+			t.Errorf("%v: %q, want %q", c.endpoints, got, c.want)
+		}
+	}
+	s := &l2tpconf.State{Interface: l2tpconf.Iface{ListenAddr: "203.0.113.7"}}
+	if !strings.Contains(l2tpconf.XL2TPD(s), "listen-addr = 203.0.113.7\n") {
+		t.Fatal("xl2tpd is not bound to it")
+	}
+	s.Interface.ListenAddr = ""
+	if strings.Contains(l2tpconf.XL2TPD(s), "listen-addr") {
+		t.Fatal("bound with no address")
+	}
+}

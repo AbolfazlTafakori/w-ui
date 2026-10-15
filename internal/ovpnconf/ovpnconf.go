@@ -313,6 +313,11 @@ func RenderServer(iface *model.Interface, l Layout) (string, error) {
 		// A restart of the server tells every UDP client at once, which
 		// reconnects then rather than after its keepalive runs out.
 		b.WriteString("explicit-exit-notify 1\n")
+		// Each reply goes from the address its client sent to. Without it a
+		// server with more than one -- a floating address, a second one --
+		// answers from whichever the route picks, and the client drops
+		// every reply as coming from a stranger.
+		b.WriteString("multihome\n")
 	}
 
 	b.WriteString("\npush \"redirect-gateway def1 bypass-dhcp\"\n")

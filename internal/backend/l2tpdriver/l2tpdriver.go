@@ -157,6 +157,7 @@ func state(iface *model.Interface, accounts []l2tpconf.Account) (*l2tpconf.State
 	} else {
 		st.Interface.PSK = iface.L2TP.V.PSK
 		st.Interface.AllowPlain = iface.L2TP.V.AllowPlain
+		st.Interface.Endpoints = Servers(iface)
 	}
 	return st, nil
 }

@@ -95,3 +95,21 @@ func TestTheProfileNameIsKeptToOneLine(t *testing.T) {
 		t.Fatal("an empty name was written")
 	}
 }
+
+// A UDP server answers from the address it was sent to; TCP has its
+// connection, and needs nothing.
+func TestAUDPServerAnswersFromTheAddressItWasSentTo(t *testing.T) {
+	for _, tr := range []string{"udp", "tcp"} {
+		i := testIface(t)
+		p := i.OpenVPN.V
+		p.Transport = tr
+		i.OpenVPN = model.JSON(p)
+		conf, err := RenderServer(i, testLayout())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(conf, "\nmultihome\n"); got != (tr == "udp") {
+			t.Fatalf("%s: multihome %v", tr, got)
+		}
+	}
+}

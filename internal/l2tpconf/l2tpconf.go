@@ -143,6 +143,15 @@ type Iface struct {
 	// Those sessions are not encrypted.
 	AllowPlain bool      `json:"allowPlain,omitempty"`
 	Accounts   []Account `json:"accounts"`
+	// Endpoints are the addresses and names devices dial the tunnel at.
+	Endpoints []string `json:"endpoints,omitempty"`
+	// ListenAddr is the one of this server's addresses xl2tpd answers
+	// from, when exactly one of the endpoints is on this server: bound to
+	// 0.0.0.0 it answers from whichever address the route picks, and a
+	// device that dialed another -- a floating address, a second one --
+	// matches no IPsec policy with the answer and drops it. Set by the
+	// agent, which runs on the server; never read from the file.
+	ListenAddr string `json:"-"`
 }
 
 // Account is one device: the credentials it signs in with and the address it
@@ -489,6 +498,9 @@ func XL2TPD(s *State) string {
 	var b strings.Builder
 	b.WriteString("[global]\n")
 	fmt.Fprintf(&b, "port = %d\n", PortL2TP)
+	if a, err := netip.ParseAddr(s.Interface.ListenAddr); err == nil && a.Is4() {
+		fmt.Fprintf(&b, "listen-addr = %s\n", a)
+	}
 	b.WriteString("access control = no\n")
 	fmt.Fprintf(&b, "auth file = %s\n", RunFile("l2tp-secrets"))
 	b.WriteString("\n[lns default]\n")

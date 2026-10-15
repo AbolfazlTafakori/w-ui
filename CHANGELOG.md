@@ -30,7 +30,10 @@ All notable changes to W-UI are recorded here. The format follows
   - Every L2TP and PPTP session failed on Ubuntu 24.04: its pppd does not know the `lock` option the panel gave it. The option is gone; a session has no serial line to lock.
   - An IKEv2 tunnel signed in nobody on a server where `ip` gives an xfrm device's id as a hex string: the panel took its own device for a stranger's, the tunnel never opened, and its devices were never handed to strongSwan. Both forms are read.
   - IKEv2 refused every password on a fresh server where an L2TP tunnel had started strongSwan before IKEv2's plugins were installed. The agent now restarts a strongSwan that has not loaded them.
-  - PPTP answered from the wrong address on a server with more than one: each call's GRE now comes from the address the device dialed.
+  - On a server with more than one address -- a floating address, a second one -- tunnels answered from whichever address the route picked, and a device that dialed another dropped every answer:
+    - PPTP's GRE now comes from the address the device dialed.
+    - OpenVPN over UDP answers from the address it was sent to (`multihome`).
+    - L2TP's xl2tpd answers from the tunnel's address when it is one of this server's; its unencrypted answers had matched no IPsec policy.
   - The distribution's own xl2tpd, from an init script, was left running on L2TP's port by the installer and the agent; it is stopped now, not only disabled.
   - amneziawg-go, the fallback for kernels the AmneziaWG module does not build for, could not be built in Iran: Google's servers refuse it. Go now comes from go.dev or a mirror of it, checked against go.dev's own checksum, and the source clone is retried.
   - Tested on both servers: WireGuard, AmneziaWG, OpenVPN over UDP and TCP, OpenConnect, IKEv2, L2TP and PPTP each connect, reach the internet from the server's address, are held to the customer's speed limit, have what they move counted, and a second device on the same sign-in takes the first one's place.

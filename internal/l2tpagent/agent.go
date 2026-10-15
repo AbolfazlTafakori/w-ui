@@ -107,6 +107,8 @@ type Agent struct {
 	files    Files
 	log      *slog.Logger
 	now      func() time.Time
+	// listen picks the address xl2tpd answers from.
+	listen listenAddr
 
 	// installed is whether this run has already made sure of the packages.
 	installed bool
@@ -180,6 +182,9 @@ func (a *Agent) Step(ctx context.Context) error {
 		a.installed = true
 	}
 
+	if !a.pptp() {
+		want.Interface.ListenAddr = a.listen.addr(want.Interface.Endpoints)
+	}
 	if err := a.apply(ctx, want); err != nil {
 		return a.fail(err)
 	}
