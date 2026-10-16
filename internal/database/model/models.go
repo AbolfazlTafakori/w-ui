@@ -413,6 +413,16 @@ type Account struct {
 	XUIUp   uint64 `gorm:"column:xui_up;not null;default:0" json:"-"`
 	XUIDown uint64 `gorm:"column:xui_down;not null;default:0" json:"-"`
 
+	// Adopted is, for a user brought in from a 3x-ui or Pasarguard node, who
+	// it is there: its email on 3x-ui, its username on Pasarguard. Such a
+	// user is never made again or removed there -- its links and the
+	// subscription its owner already gave it keep working -- only switched
+	// on and off, its own limits cleared since the allowance is this panel's.
+	// XUIOn is what this panel last left it: one found off that was left on
+	// was switched off there by hand, which this panel then keeps.
+	Adopted string `gorm:"size:128;index;column:adopted" json:"adopted,omitempty"`
+	XUIOn   bool   `gorm:"column:xui_on;not null;default:true" json:"-"`
+
 	// OriginID is this account's id on the panel that owns it.
 	//
 	// Only set on a node, where it is what usage is reported against: the

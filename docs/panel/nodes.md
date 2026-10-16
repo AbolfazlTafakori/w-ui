@@ -156,6 +156,16 @@ What happens then is as for 3x-ui, with Pasarguard's own way of doing it:
 
 Names made on a node carry this installation's six-letter tag (`wui-<tag>-<n>` on 3x-ui, `wui_<tag>_<n>` on Pasarguard), so two W-UI panels on one node never remove each other's.
 
+## Bringing in a panel's own users
+
+A 3x-ui or Pasarguard panel usually has users before it becomes a node. Right after it is added, and any time later from **Bring in users** on its row, its users are listed with their traffic, expiry and inbounds; bring in all of them or the ones ticked. Its inbounds must already be shown under its tab, which takes up to twenty seconds after adding it.
+
+- **Nothing changes for the user.** Its credentials, links and the subscription its owner gave it stay as they are and keep working, with no interruption. The customer's subscription here carries the same links, with whatever else they are sold.
+- **Its allowance, usage, expiry and IP limit come with it** and are this panel's from then on. Its own limits on that panel are cleared, so that panel never ends it on numbers this one no longer keeps; it is switched off there when it runs out here, and on again when it is renewed.
+- **Switched off there by hand, it stays off,** here too. **Removed here, it is left there** as it was.
+- On **3x-ui**, the clients sharing one subscription id are one customer. On **Pasarguard**, a user is one customer; its groups stay its owner's, and its links carry every inbound in them.
+- Users made there later are not taken over on their own: bring them in again from the same button. Users a W-UI panel made are never offered.
+
 ## Making an inbound on a 3x-ui or Pasarguard node
 
 On the Interfaces page, **Add**, and choose the server first. The protocol list then holds what that panel has at its version:

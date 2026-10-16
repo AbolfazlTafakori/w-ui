@@ -9,6 +9,7 @@ import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 import AntIcon from '../components/AntIcon.vue'
+import NodeImportDialog from '../components/NodeImportDialog.vue'
 import { useIsMobile } from '../lib/mobile.js'
 
 const nodes = ref([])
@@ -35,7 +36,12 @@ function nodeAction(key) {
   else if (key === 'update') askNodeUpdate(n)
   else if (key === 'edit') openEdit(n)
   else if (key === 'delete') remove(n)
+  else if (key === 'import') importing.value = n
 }
+
+// A 3x-ui or Pasarguard node whose own users are being brought in.
+const importing = ref(null)
+const takesImport = (n) => n.kind === 'xui' || n.kind === 'pasarguard'
 function closeNodeMenu(e) {
   if (nodeMenu.value && !e.target.closest?.('.rowmenu')) nodeMenu.value = null
 }
@@ -220,10 +226,13 @@ async function submit() {
       resetDay: Number(form.value.resetDay) || 0,
       dataLimitGB: undefined,
     }
-    if (dialog.value.kind === 'add') await api.post('/api/nodes', body)
+    let made = null
+    if (dialog.value.kind === 'add') made = await api.post('/api/nodes', body)
     else await api.patch(`/api/nodes/${dialog.value.node.id}`, body)
     dialog.value = null
     await load()
+    // A panel with users of its own: offered to bring them in at once.
+    if (made && takesImport(made)) importing.value = made
   } catch (e) {
     notify(e.message, 'error')
   } finally {
@@ -459,6 +468,7 @@ function latencyTone(ms) {
         <div v-if="nodeMenu" v-fit="nodeMenu.rect" class="rowmenu" role="menu" :style="{ top: nodeMenu.y + 'px', left: nodeMenu.x + 'px' }">
           <button class="menu-item" role="menuitem" @click="nodeAction('probe')"><AntIcon name="ThunderboltOutlined" />{{ t('node.probe') }}</button>
           <button class="menu-item" role="menuitem" @click="nodeAction('update')"><AntIcon name="DownloadOutlined" />{{ t('update.askNode') }}</button>
+          <button v-if="takesImport(nodeMenu.node)" class="menu-item" role="menuitem" @click="nodeAction('import')"><AntIcon name="ImportOutlined" />{{ t('nodeImport.action') }}</button>
           <button class="menu-item" role="menuitem" @click="nodeAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>
           <button class="menu-item danger" role="menuitem" @click="nodeAction('delete')"><AntIcon name="DeleteOutlined" />{{ t('action.delete') }}</button>
         </div>
@@ -514,6 +524,14 @@ function latencyTone(ms) {
                 @click="askNodeUpdate(n)"
               >
                 <Icon name="download" :size="16" />
+              </button>
+              <button
+                v-if="takesImport(n)"
+                class="act"
+                :title="t('nodeImport.action')"
+                @click="importing = n"
+              >
+                <AntIcon name="ImportOutlined" />
               </button>
               <button
                 class="act"
@@ -768,6 +786,8 @@ function latencyTone(ms) {
       </div>
     </div>
   </div>
+
+  <NodeImportDialog v-if="importing" :node="importing" @close="importing = null" />
 
   <!-- A freshly issued token, shown once. -->
   <div v-if="issued" class="amodal-backdrop" @click.self="issued = null">

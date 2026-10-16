@@ -1042,6 +1042,46 @@ func (s *Server) handleNodeInboundKinds(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// handleNodeUsers lists a node's own users that can be brought in.
+func (s *Server) handleNodeUsers(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	users, err := s.clients.NodeUsers(r.Context(), id)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if users == nil {
+		users = []service.ImportCandidate{}
+	}
+	writeJSON(w, http.StatusOK, users)
+}
+
+// handleImportNodeUsers brings a node's own users in as customers.
+func (s *Server) handleImportNodeUsers(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var in struct {
+		Keys []string `json:"keys"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	res, err := s.clients.ImportNodeUsers(r.Context(), id, in.Keys)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if res == nil {
+		res = []service.ImportResult{}
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (s *Server) handleXrayKeys(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Kind   string `json:"kind"`

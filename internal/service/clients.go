@@ -119,6 +119,12 @@ type CreateInput struct {
 	// and a fact in an import, and only the importer may say which.
 	Historical bool `json:"-"`
 
+	// Adopt, by tunnel, is the user on another panel each file there takes
+	// over rather than being made anew; UsedBytes what that user had spent.
+	// Set only by an import from a 3x-ui or Pasarguard node.
+	Adopt     map[uint]AdoptedAccount `json:"-"`
+	UsedBytes uint64                  `json:"-"`
+
 	// SubID is the secret in the customer's subscription link, when the
 	// operator wants to choose it -- a reseller carrying customers over from
 	// another panel keeps their links working by keeping their ids. Left
@@ -193,6 +199,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 
 		StartOnFirstUse: in.StartOnFirstUse,
 		DurationDays:    in.DurationDays,
+		UsedBytes:       in.UsedBytes,
 	}
 	if in.Enabled != nil && !*in.Enabled {
 		client.Status = model.StatusDisabled
@@ -264,8 +271,18 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 					return err
 				}
 				creds.apply(acc, f, i)
+				if a, ok := in.Adopt[f.ID]; ok && i == 0 {
+					acc.Adopted, acc.Secret, acc.XUIUp, acc.XUIDown = a.Remote, a.Secret, a.Up, a.Down
+					acc.XUIOn = a.On
+				}
 				if err := tx.Create(acc).Error; err != nil {
 					return fmt.Errorf("create device %q on %s: %w", name, f.Name, err)
+				}
+				// A false is the column's default to gorm, which writes true.
+				if acc.Adopted != "" && !acc.XUIOn {
+					if err := tx.Model(acc).Update("xui_on", false).Error; err != nil {
+						return err
+					}
 				}
 				if err := tx.Create(&model.IPLease{
 					AccountID: acc.ID,

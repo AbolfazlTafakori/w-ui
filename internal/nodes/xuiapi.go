@@ -374,6 +374,14 @@ type xuiInboundClient struct {
 	Method     string `json:"method"`
 	Enable     bool   `json:"enable"`
 	LimitIP    int    `json:"limitIp"`
+	// What a client brought in from that panel carries of its own, read so
+	// it is imported, and kept as it is when the client is switched.
+	TotalGB    int64           `json:"totalGB"`
+	ExpiryTime int64           `json:"expiryTime"`
+	SubID      string          `json:"subId"`
+	Comment    string          `json:"comment"`
+	TgID       json.RawMessage `json:"tgId"`
+	Reset      int             `json:"reset"`
 }
 
 type xuiSettings struct {
@@ -435,12 +443,15 @@ type xuiClient struct {
 	Enable     bool   `json:"enable"`
 	SubID      string `json:"subId"`
 	Comment    string `json:"comment"`
+	// A brought-in client's own, sent back as it was.
+	TgID  json.RawMessage `json:"tgId,omitempty"`
+	Reset int             `json:"reset,omitempty"`
 }
 
 // inClients is a client as the older API takes it: inside an inbound's
 // settings, written as a string.
-func inClients(inboundID int, c xuiClient) map[string]any {
-	raw, _ := json.Marshal(map[string]any{"clients": []xuiClient{c}})
+func inClients(inboundID int, c any) map[string]any {
+	raw, _ := json.Marshal(map[string]any{"clients": []any{c}})
 	return map[string]any{"id": inboundID, "settings": string(raw)}
 }
 
@@ -459,6 +470,16 @@ func (x *xuiAPI) updateClient(ctx context.Context, inboundID int, key string, c 
 		return x.do(ctx, http.MethodPost, "inbounds/updateClient/"+url.PathEscape(key), inClients(inboundID, c), nil)
 	}
 	return x.do(ctx, http.MethodPost, "clients/update/"+url.PathEscape(c.Email), c, nil)
+}
+
+// updateRawClient sends a client back as that panel wrote it, with only
+// what this panel changed in it: a brought-in client keeps every field of
+// its own, those this panel does not know of too.
+func (x *xuiAPI) updateRawClient(ctx context.Context, inboundID int, key, email string, c map[string]any) error {
+	if x.gen != xuiGenNew {
+		return x.do(ctx, http.MethodPost, "inbounds/updateClient/"+url.PathEscape(key), inClients(inboundID, c), nil)
+	}
+	return x.do(ctx, http.MethodPost, "clients/update/"+url.PathEscape(email), c, nil)
 }
 
 // deleteClient removes a client: by its credential (key) before 2.8, and by
@@ -482,11 +503,68 @@ func (x *xuiAPI) links(ctx context.Context, email string) ([]string, error) {
 		err := x.do(ctx, http.MethodGet, "clients/links/"+url.PathEscape(email), nil, &out)
 		return out, err
 	}
+	return x.subLinks(ctx, email)
+}
+
+// adoptedLinks are the links of a client brought in from that panel, whose
+// subscription id is its own and may be shared by its other clients: from
+// 3.1 by its email, and before it the links of its subscription that carry
+// its credential.
+func (x *xuiAPI) adoptedLinks(ctx context.Context, email, subID, cred string) ([]string, error) {
+	if x.gen == xuiGenNew {
+		return x.links(ctx, email)
+	}
+	if subID == "" {
+		return nil, errors.New("it has no subscription id there, so that panel gives it no links")
+	}
+	all, err := x.subLinks(ctx, subID)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, l := range all {
+		if linkCarries(l, cred) {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+// linkCarries reports whether a link holds a credential, written plainly or
+// inside the base64 some schemes wrap it in (vmess, shadowsocks).
+func linkCarries(link, cred string) bool {
+	if cred == "" {
+		return false
+	}
+	if strings.Contains(link, cred) || strings.Contains(link, url.QueryEscape(cred)) || strings.Contains(link, url.PathEscape(cred)) {
+		return true
+	}
+	_, rest, _ := strings.Cut(link, "://")
+	// The whole of it (vmess is one base64 JSON, which may hold a '/'), and
+	// then each part around the address (shadowsocks' userinfo).
+	whole, _, _ := strings.Cut(rest, "#")
+	parts := append([]string{whole}, strings.FieldsFunc(rest, func(r rune) bool { return r == '@' || r == '#' || r == '?' || r == '/' })...)
+	for _, part := range parts {
+		if p, err := url.PathUnescape(part); err == nil {
+			part = p
+		}
+		for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+			if dec, err := enc.DecodeString(part); err == nil && strings.Contains(string(dec), cred) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// subLinks are the links that panel's subscription service gives for a
+// subscription id.
+func (x *xuiAPI) subLinks(ctx context.Context, subID string) ([]string, error) {
 	sub, err := x.subURL(ctx)
 	if err != nil {
 		return nil, err
 	}
-	body, err := x.fetch(ctx, sub+url.PathEscape(email))
+	body, err := x.fetch(ctx, sub+url.PathEscape(subID))
 	if err != nil {
 		return nil, fmt.Errorf("its subscription service: %w", err)
 	}

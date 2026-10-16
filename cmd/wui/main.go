@@ -494,6 +494,7 @@ func run() error {
 	syncer.Holds = rec.Holds
 	syncer.XUIMirror = ifaceSvc.MirrorXUI
 	service.CreateXrayInbound = nodes.CreateXrayInbound
+	service.ImportCandidates = nodes.ImportCandidates
 	rec.OnHold = syncer.PushHold
 	service.ConnectionsNow = rec.ConnectionsNow
 	service.LiveClients = rec.LiveClients

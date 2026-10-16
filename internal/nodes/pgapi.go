@@ -263,10 +263,22 @@ type pgUser struct {
 	UsedTraffic     uint64 `json:"used_traffic"`
 	GroupIDs        []int  `json:"group_ids"`
 	SubscriptionURL string `json:"subscription_url"`
+	// What a user brought in from that panel has of its own.
+	DataLimit            *uint64        `json:"data_limit"`
+	Expire               any            `json:"expire"`
+	OnHoldExpireDuration int64          `json:"on_hold_expire_duration"`
+	Note                 string         `json:"note"`
+	ProxySettings        map[string]any `json:"proxy_settings"`
 }
 
 // ourUsers is every user this panel made there, read a page at a time.
 func (p *pgAPI) ourUsers(ctx context.Context) ([]pgUser, error) {
+	return p.users(ctx, "wui_")
+}
+
+// users are the users whose names hold search, every one when it is empty,
+// read a page at a time.
+func (p *pgAPI) users(ctx context.Context, search string) ([]pgUser, error) {
 	var all []pgUser
 	const page = 500
 	for offset := 0; ; offset += page {
@@ -274,7 +286,10 @@ func (p *pgAPI) ourUsers(ctx context.Context) ([]pgUser, error) {
 			Users []pgUser `json:"users"`
 			Total int      `json:"total"`
 		}
-		q := url.Values{"search": {"wui_"}, "offset": {fmt.Sprint(offset)}, "limit": {fmt.Sprint(page)}}
+		q := url.Values{"offset": {fmt.Sprint(offset)}, "limit": {fmt.Sprint(page)}}
+		if search != "" {
+			q.Set("search", search)
+		}
 		if err := p.do(ctx, http.MethodGet, "/api/users?"+q.Encode(), nil, &out); err != nil {
 			return nil, err
 		}
@@ -304,6 +319,14 @@ func (p *pgAPI) user(ctx context.Context, username string) (pgUser, error) {
 func (p *pgAPI) modifyUser(ctx context.Context, username, status string, group int) error {
 	return p.do(ctx, http.MethodPut, "/api/user/"+url.PathEscape(username), map[string]any{
 		"status": status, "group_ids": []int{group},
+	}, nil)
+}
+
+// releaseUser switches a brought-in user and clears its own allowance and
+// expiry, which are this panel's now; its groups are left as they are.
+func (p *pgAPI) releaseUser(ctx context.Context, username, status string) error {
+	return p.do(ctx, http.MethodPut, "/api/user/"+url.PathEscape(username), map[string]any{
+		"status": status, "data_limit": 0, "expire": 0,
 	}, nil)
 }
 

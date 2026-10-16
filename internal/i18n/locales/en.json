@@ -2112,5 +2112,17 @@
   "xt.applySubtract": "Take back",
   "xt.doneAdded": "{amount} added for {n} customers.",
   "xt.doneTaken": "{amount} taken back from {n} customers.",
-  "xt.selectFirst": "Select customers first: tick them, or tick the header to select all."
+  "xt.selectFirst": "Select customers first: tick them, or tick the header to select all.",
+  "nodeImport.title": "Bring in its users",
+  "nodeImport.action": "Bring in users",
+  "nodeImport.explain": "Each user becomes a customer here and keeps its credentials, its links and the subscription it already has there; this panel’s subscription carries the same links, beside whatever else the customer is sold. Its allowance, usage and expiry come with it and are kept here from then on; its own limits there are cleared. A user switched off there by hand stays off here.",
+  "nodeImport.reload": "Read again",
+  "nodeImport.none": "It has no users of its own. Its inbounds appear here within twenty seconds of adding it; read again then.",
+  "nodeImport.expiry": "Expiry",
+  "nodeImport.inbounds": "Inbounds",
+  "nodeImport.already": "already a customer here",
+  "nodeImport.off": "switched off there",
+  "nodeImport.firstUse": "{n} days from first use",
+  "nodeImport.run": "Bring in {n}",
+  "nodeImport.done": "{n} brought in"
 }

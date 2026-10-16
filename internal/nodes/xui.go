@@ -61,6 +61,10 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 		var st xuiStream
 		_ = objectOrString(r.Settings, &set)
 		_ = objectOrString(r.Stream, &st)
+		var raw struct {
+			Clients []map[string]any `json:"clients"`
+		}
+		_ = objectOrString(r.Settings, &raw)
 		in := model.XUIInbound{
 			RemoteID: r.ID,
 			Tag:      r.Tag,
@@ -82,8 +86,12 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 			in.Flow = "xtls-rprx-vision"
 		}
 		seen = append(seen, service.XUIInboundSeen{XUIInbound: in, Port: r.Port})
-		for _, c := range set.Clients {
-			remote[c.Email] = &remoteXUIClient{inbound: r.ID, cfg: c}
+		for i, c := range set.Clients {
+			rc := &remoteXUIClient{inbound: r.ID, kind: r.Protocol, cfg: c}
+			if i < len(raw.Clients) {
+				rc.raw = raw.Clients[i]
+			}
+			remote[c.Email] = rc
 		}
 		for _, cs := range r.ClientStats {
 			if rc, ok := remote[cs.Email]; ok && rc.inbound == r.ID {
@@ -156,6 +164,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 
 	var failures []string
 	touched := false
+	marks := map[uint]adoptedMark{}
 	want := map[string]bool{}
 	var usage []service.XUIUsage
 	links := map[uint]string{}
@@ -166,6 +175,21 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 		}
 		c, ok := clients[acc.ClientID]
 		if !ok {
+			continue
+		}
+		if acc.Adopted != "" {
+			on := !node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled
+			changed, u, link, err := s.xuiAdopted(ctx, api, &acc, remote[acc.Adopted], on, refreshLinks || moved[acc.InterfaceID], marks)
+			if err != nil {
+				failures = append(failures, err.Error())
+			}
+			if u != nil {
+				usage = append(usage, *u)
+			}
+			if link != "" {
+				links[acc.ID] = link
+			}
+			touched = touched || changed
 			continue
 		}
 		email := service.XUIEmail(tag, &acc)
@@ -253,6 +277,9 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 		return fmt.Errorf("could not keep its counters: %w", err)
 	}
 	s.chargeXUI(ctx, node, usage)
+	if err := s.saveMarks(ctx, marks); err != nil {
+		failures = append(failures, err.Error())
+	}
 
 	// This panel's outbound, for its customers there.
 	if err := s.xuiEgress(ctx, api, node); err != nil {
@@ -290,7 +317,9 @@ func xuiShape(in model.XUIInbound) model.XUIInbound {
 // settings and its counters.
 type remoteXUIClient struct {
 	inbound int
+	kind    string
 	cfg     xuiInboundClient
+	raw     map[string]any // as that panel wrote it
 	stat    xuiClientStat
 	hasStat bool
 }
@@ -437,7 +466,8 @@ func xuiDiffers(have xuiInboundClient, want xuiClient) bool {
 	return have.Enable != want.Enable || have.LimitIP != want.LimitIP ||
 		have.ID != want.ID || have.Password != want.Password || have.Auth != want.Auth ||
 		have.Flow != want.Flow || have.Method != want.Method ||
-		have.Secret != want.Secret || have.PrivateKey != want.PrivateKey
+		have.Secret != want.Secret || have.PrivateKey != want.PrivateKey ||
+		have.TotalGB != want.TotalGB || have.ExpiryTime != want.ExpiryTime
 }
 
 // xuiHost is the address a 3x-ui node's customers dial: its panel's host.

@@ -144,12 +144,25 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 		}
 	}
 
-	users, err := api.ourUsers(ctx)
+	// Every user is read when some were brought in from there; only this
+	// panel's own otherwise.
+	adopted := false
+	for _, a := range accounts {
+		adopted = adopted || a.Adopted != ""
+	}
+	var users []pgUser
+	if adopted {
+		users, err = api.users(ctx, "")
+	} else {
+		users, err = api.ourUsers(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("reading its users: %w", err)
 	}
 	remote := make(map[string]pgUser, len(users))
-	for _, u := range users {
+	everyone := make(map[string]*pgUser, len(users))
+	for i, u := range users {
+		everyone[u.Username] = &users[i]
 		if service.PGOwns(tag, u.Username) {
 			remote[u.Username] = u
 		}
@@ -164,6 +177,7 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 	s.mu.Unlock()
 
 	var failures []string
+	marks := map[uint]adoptedMark{}
 	want := map[string]bool{}
 	var usage []service.XUIUsage
 	links := map[uint]string{}
@@ -174,6 +188,20 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 		}
 		c, ok := clients[acc.ClientID]
 		if !ok {
+			continue
+		}
+		if acc.Adopted != "" {
+			on := !node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled
+			u, link, err := s.pgAdopted(ctx, api, &acc, everyone[acc.Adopted], on, refreshLinks || moved[acc.InterfaceID], marks)
+			if err != nil {
+				failures = append(failures, err.Error())
+			}
+			if u != nil {
+				usage = append(usage, *u)
+			}
+			if link != "" {
+				links[acc.ID] = link
+			}
 			continue
 		}
 		name := service.PGUsername(tag, &acc)
@@ -252,6 +280,9 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 		return fmt.Errorf("could not keep its counters: %w", err)
 	}
 	s.chargeXUI(ctx, node, usage)
+	if err := s.saveMarks(ctx, marks); err != nil {
+		failures = append(failures, err.Error())
+	}
 
 	if len(failures) > 0 {
 		if len(failures) > 3 {
