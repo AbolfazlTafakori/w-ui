@@ -41,6 +41,10 @@ type NodeInput struct {
 	Name    string         `json:"name"`
 	Address string `json:"address"`
 	Token   string `json:"token"`
+	// Username and Password sign in to a 3x-ui or Pasarguard node without
+	// a token. An empty password on an edit keeps the one stored.
+	Username *string `json:"username"`
+	Password string  `json:"password"`
 	Note    string `json:"note"`
 	Enabled *bool  `json:"enabled"`
 
@@ -122,6 +126,8 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		Kind:                kindOr(in.Kind),
 		Address:             in.Address,
 		Token:               in.Token,
+		Username:            strings.TrimSpace(deref(in.Username)),
+		Password:            in.Password,
 		Note:                in.Note,
 		Enabled:             in.Enabled == nil || *in.Enabled,
 		OwnerID:             deref(in.OwnerID),
@@ -161,6 +167,12 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 	// one, so submitting the page unchanged must not wipe it.
 	if strings.TrimSpace(in.Token) != "" {
 		updates["token"] = in.Token
+	}
+	if in.Username != nil {
+		updates["username"] = strings.TrimSpace(*in.Username)
+	}
+	if in.Password != "" {
+		updates["password"] = in.Password
 	}
 	// Zero is refused rather than stored: a node that charged nothing would
 	// serve traffic that never appears on any customer's total, which is the
@@ -284,6 +296,10 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	case "", model.KindRemote, model.KindXUI, model.KindPG:
 	default:
 		return invalidField("kind", "a node is a W-UI, 3x-ui or Pasarguard panel")
+	}
+	signsIn := strings.TrimSpace(deref(in.Username)) != "" && in.Password != ""
+	if (in.Kind == model.KindXUI || in.Kind == model.KindPG) && signsIn {
+		needToken = false
 	}
 	if needToken && in.Token == "" {
 		if in.Kind == model.KindXUI {

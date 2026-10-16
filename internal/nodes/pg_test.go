@@ -69,7 +69,7 @@ func TestPGAPI(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	api, err := newPGAPI(model.Node{Address: srv.URL, Token: "k3y", TLSMode: model.TLSSkip, AllowPrivateAddress: true})
+	api, err := newPGAPI(context.Background(), model.Node{Address: srv.URL, Token: "k3y", TLSMode: model.TLSSkip, AllowPrivateAddress: true})
 	if err != nil {
 		t.Fatal(err)
 	}

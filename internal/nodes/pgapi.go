@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -31,16 +32,69 @@ type pgAPI struct {
 	base   string
 }
 
-func newPGAPI(node model.Node) (*pgAPI, error) {
+func newPGAPI(ctx context.Context, node model.Node) (*pgAPI, error) {
 	c, err := clientFor(node, pgTimeout, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &pgAPI{node: node, client: c, base: strings.TrimRight(node.Address, "/")}, nil
+	p := &pgAPI{node: node, client: c, base: strings.TrimRight(node.Address, "/")}
+	if node.Token == "" && node.Username != "" {
+		if _, ok := pgSessions.Load(pgSessionKey(node)); !ok {
+			if err := p.login(ctx); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return p, nil
 }
 
 func (p *pgAPI) do(ctx context.Context, method, path string, body, into any) error {
-	return p.raw(ctx, method, p.base+path, body, into, true)
+	err := p.raw(ctx, method, p.base+path, body, into, true)
+	// A kept sign-in that has lapsed: sign in again, once.
+	if p.node.Token == "" && errors.Is(err, errPGRefused) {
+		pgSessions.Delete(pgSessionKey(p.node))
+		if lerr := p.login(ctx); lerr != nil {
+			return lerr
+		}
+		err = p.raw(ctx, method, p.base+path, body, into, true)
+	}
+	return err
+}
+
+var errPGRefused = errors.New("the API key was refused; make a new one on that Pasarguard panel under API keys")
+
+// pgSessions holds each signed-in Pasarguard node's access token, by node and
+// the sign-in it was made with.
+var pgSessions sync.Map
+
+func pgSessionKey(node model.Node) string {
+	return fmt.Sprintf("%d|%s|%s|%s", node.ID, node.Address, node.Username, node.Password)
+}
+
+// login signs in as an administrator, for a Pasarguard reached without an
+// API key, and keeps the access token it is given.
+func (p *pgAPI) login(ctx context.Context) error {
+	form := url.Values{"username": {p.node.Username}, "password": {p.node.Password}, "grant_type": {"password"}}
+	ctx, cancel := context.WithTimeout(ctx, pgTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.base+"/api/admin/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("bad address: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("could not reach it: %w", err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		AccessToken string `json:"access_token"`
+	}
+	if resp.StatusCode >= 300 || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out) != nil || out.AccessToken == "" {
+		return errors.New("the username or password was refused by the Pasarguard panel")
+	}
+	pgSessions.Store(pgSessionKey(p.node), out.AccessToken)
+	return nil
 }
 
 func (p *pgAPI) raw(ctx context.Context, method, target string, body, into any, auth bool) error {
@@ -59,7 +113,11 @@ func (p *pgAPI) raw(ctx context.Context, method, target string, body, into any, 
 		return fmt.Errorf("bad address: %w", err)
 	}
 	if auth {
-		req.Header.Set("X-Api-Key", p.node.Token)
+		if p.node.Token != "" {
+			req.Header.Set("X-Api-Key", p.node.Token)
+		} else if tok, ok := pgSessions.Load(pgSessionKey(p.node)); ok {
+			req.Header.Set("Authorization", "Bearer "+tok.(string))
+		}
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
@@ -73,7 +131,7 @@ func (p *pgAPI) raw(ctx context.Context, method, target string, body, into any, 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return errors.New("the API key was refused; make a new one on that Pasarguard panel under API keys")
+		return errPGRefused
 	case resp.StatusCode == http.StatusNotFound && into == nil && method == http.MethodDelete:
 		return nil // already gone
 	case resp.StatusCode >= 300:
@@ -233,6 +291,13 @@ func (p *pgAPI) createUser(ctx context.Context, username, status, note string, g
 		"username": username, "status": status, "group_ids": []int{group},
 		"proxy_settings": map[string]any{}, "data_limit": 0, "expire": nil, "note": note,
 	}, &u)
+	return u, err
+}
+
+// user reads one user, with what the list leaves out: its subscription link.
+func (p *pgAPI) user(ctx context.Context, username string) (pgUser, error) {
+	var u pgUser
+	err := p.do(ctx, http.MethodGet, "/api/user/"+url.PathEscape(username), nil, &u)
 	return u, err
 }
 

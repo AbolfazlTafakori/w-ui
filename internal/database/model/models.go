@@ -28,6 +28,12 @@ type Node struct {
 	// Never returned by the API: it is a bearer credential for a whole panel.
 	Token string `gorm:"size:128" json:"-"`
 
+	// Username and Password sign in to a 3x-ui or Pasarguard node that is
+	// reached without a token: 3x-ui before version 3 has none, nor does an
+	// older Pasarguard. The password, like the token, is never returned.
+	Username string `gorm:"size:128" json:"username"`
+	Password string `gorm:"size:256" json:"-"`
+
 	// What the last probe found. Held on the row rather than in memory so the
 	// page has something to show immediately after a restart instead of an
 	// empty table that fills in a few seconds later.

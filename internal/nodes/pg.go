@@ -63,7 +63,7 @@ func (s *Syncer) pgOne(ctx context.Context, node model.Node) {
 }
 
 func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
-	api, err := newPGAPI(node)
+	api, err := newPGAPI(ctx, node)
 	if err != nil {
 		return err
 	}
@@ -231,6 +231,12 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 			})
 		}
 		if status == "active" && (changed || refreshLinks || moved[acc.InterfaceID] || acc.XUILink == "") {
+			// The list of users leaves their subscription link out.
+			if u.SubscriptionURL == "" {
+				if full, err := api.user(ctx, name); err == nil {
+					u.SubscriptionURL = full.SubscriptionURL
+				}
+			}
 			got, err := api.links(ctx, u.SubscriptionURL)
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("reading the links of %s: %v", name, err))
@@ -273,7 +279,7 @@ func sameGroups(have []int, want int) bool {
 // whether a node of its own is connected to carry anything.
 func askPG(ctx context.Context, node model.Node) (Snapshot, error) {
 	var snap Snapshot
-	api, err := newPGAPI(node)
+	api, err := newPGAPI(ctx, node)
 	if err != nil {
 		return snap, err
 	}

@@ -87,7 +87,7 @@ const totals = computed(() => ({
 
 function openAdd() {
   form.value = {
-    kind: 'remote', name: '', address: '', token: '', note: '',
+    kind: 'remote', name: '', address: '', token: '', note: '', username: '', password: '',
     usageCoefficient: 1, dataLimitGB: '', resetDay: '',
     tlsMode: 'verify', tlsPin: '', tlsServerName: '', allowPrivateAddress: false,
   }
@@ -99,6 +99,8 @@ function openEdit(n) {
   // so the field means "replace it" rather than "here is what it is".
   form.value = {
     kind: n.kind,
+    username: n.username || '',
+    password: '',
     name: n.name,
     address: n.address,
     token: '',
@@ -667,10 +669,23 @@ function latencyTone(ms) {
               <label :class="{ req: dialog.kind === 'add' }" for="n-token">{{ t('node.token') }}</label>
               <div class="hctl">
                 <label class="ainput block"><input id="n-token" v-model="form.token" type="password" class="ltr" autocomplete="off"
-                       :required="dialog.kind === 'add'" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : (form.kind === 'remote' ? 'wui_…' : '')" /></label>
+                       :required="dialog.kind === 'add' && !(form.kind !== 'remote' && form.username && form.password)" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : (form.kind === 'remote' ? 'wui_…' : '')" /></label>
                 <p class="hint">{{ form.kind === 'xui' ? t('node.tokenHintXui') : form.kind === 'pasarguard' ? t('node.tokenHintPg') : t('node.tokenHint') }}</p>
               </div>
             </div>
+            <template v-if="form.kind !== 'remote'">
+              <div class="hrow">
+                <label for="n-user">{{ t('node.signInUser') }}</label>
+                <div class="hctl">
+                  <label class="ainput block"><input id="n-user" v-model="form.username" class="ltr" autocomplete="off" /></label>
+                  <p class="hint">{{ t('node.signInHint') }}</p>
+                </div>
+              </div>
+              <div class="hrow">
+                <label for="n-pass">{{ t('node.signInPassword') }}</label>
+                <div class="hctl"><label class="ainput block"><input id="n-pass" v-model="form.password" type="password" class="ltr" autocomplete="new-password" :placeholder="dialog.kind === 'edit' ? t('node.tokenKeep') : ''" /></label></div>
+              </div>
+            </template>
             <div class="hrow">
               <label for="n-tls">{{ t('node.tlsMode') }}</label>
               <div class="hctl">

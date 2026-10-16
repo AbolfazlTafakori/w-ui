@@ -1,0 +1,263 @@
+package nodes
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"reflect"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/abolfazl/w-ui/internal/database/model"
+)
+
+// This panel's outbound, for its customers on a 3x-ui node.
+//
+// A customer on one of this panel's own servers leaves by the outbound at the
+// top of the list. A customer on a 3x-ui node is carried by that panel's
+// xray, which knows nothing of the list; so the outbound is put in that xray
+// as one of its own, tagged wui-out, with a rule that sends this panel's
+// clients -- their emails are wui- and a number -- into it, and nobody
+// else's. The 3x-ui operator's own users leave as they always did. The rule
+// matches by pattern, so it is written once and not again for every customer;
+// it changes only when the outbound does, and the outbound at the top being
+// direct takes both away.
+//
+// Nothing of that panel's is left broken: the config is changed, xray is
+// restarted, and if it does not come back running the config as it was is
+// put back.
+
+const (
+	xuiEgressTag  = "wui-out"
+	xuiEgressRule = `regexp:^wui-[0-9]+$`
+)
+
+// egressFor is the outbound customers on an xray node leave by, as an xray
+// outbound: nil for direct, and an error for a kind xray cannot carry.
+func egressFor(ctx context.Context, db *gorm.DB) (map[string]any, string, error) {
+	var ob model.Outbound
+	if err := db.WithContext(ctx).Order("position, id").Limit(1).Find(&ob).Error; err != nil {
+		return nil, "", err
+	}
+	if ob.ID == 0 || ob.Kind == model.OutboundDirect {
+		return nil, "direct", nil
+	}
+	if !ob.Enabled || ob.Kind == model.OutboundBlock {
+		// Off, or blocked: nothing leaves, as on this panel's own servers.
+		return map[string]any{"protocol": "blackhole", "tag": xuiEgressTag}, ob.Tag, nil
+	}
+	var out map[string]any
+	switch ob.Kind {
+	case model.OutboundWireGuard:
+		peer := map[string]any{
+			"publicKey":  ob.PeerPubKey,
+			"endpoint":   ob.Address,
+			"allowedIPs": []string{"0.0.0.0/0", "::/0"},
+		}
+		if ob.PresharedKey != "" {
+			peer["preSharedKey"] = ob.PresharedKey
+		}
+		if ob.Keepalive > 0 {
+			peer["keepAlive"] = ob.Keepalive
+		}
+		settings := map[string]any{"secretKey": ob.PrivateKey, "peers": []any{peer}}
+		if ob.HopAddress != "" {
+			var addrs []string
+			for _, a := range strings.Split(ob.HopAddress, ",") {
+				if a = strings.TrimSpace(a); a != "" {
+					addrs = append(addrs, a)
+				}
+			}
+			settings["address"] = addrs
+		}
+		if ob.HopMTU > 0 {
+			settings["mtu"] = ob.HopMTU
+		}
+		out = map[string]any{"protocol": "wireguard", "settings": settings}
+	case model.OutboundOpenVPN:
+		return nil, ob.Tag, fmt.Errorf("the outbound at the top, %s, is OpenVPN, which xray cannot carry; its customers on this node leave from the node itself", ob.Tag)
+	default:
+		if err := json.Unmarshal([]byte(ob.Config), &out); err != nil || out == nil {
+			return nil, ob.Tag, fmt.Errorf("the outbound %s could not be read for xray", ob.Tag)
+		}
+	}
+	// Keys this panel adds for its own hops are not xray's.
+	delete(out, "panelSkipVerify")
+	if st, ok := out["streamSettings"].(map[string]any); ok {
+		if ts, ok := st["tlsSettings"].(map[string]any); ok {
+			// xray refuses allowInsecure now (see routing/hopinsecure.go);
+			// a hop here pins instead, which a remote xray cannot be asked
+			// to do for us, so the check is left to verify.
+			delete(ts, "allowInsecure")
+		}
+	}
+	out["tag"] = xuiEgressTag
+	return out, ob.Tag, nil
+}
+
+// xrayTemplate is the xray config a 3x-ui panel runs, as JSON.
+func (x *xuiAPI) xrayTemplate(ctx context.Context) (map[string]any, error) {
+	path := "xray/"
+	var raw json.RawMessage
+	if x.legacy {
+		if err := x.post(ctx, x.root+"panel/xray/", &raw); err != nil {
+			return nil, err
+		}
+	} else if err := x.do(ctx, http.MethodPost, path, nil, &raw); err != nil {
+		return nil, err
+	}
+	var wrap struct {
+		XraySetting json.RawMessage `json:"xraySetting"`
+	}
+	if err := objectOrString(raw, &wrap); err != nil {
+		return nil, fmt.Errorf("its xray settings could not be read: %w", err)
+	}
+	var cfg map[string]any
+	if err := objectOrString(wrap.XraySetting, &cfg); err != nil || cfg == nil {
+		return nil, errors.New("its xray settings could not be read")
+	}
+	return cfg, nil
+}
+
+func (x *xuiAPI) saveXrayTemplate(ctx context.Context, cfg map[string]any) error {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	form := url.Values{"xraySetting": {string(raw)}}
+	target := x.base + "xray/update"
+	if x.legacy {
+		target = x.root + "panel/xray/update"
+	}
+	if err := x.form(ctx, target, form); err != nil {
+		return err
+	}
+	return x.do(ctx, http.MethodPost, "server/restartXrayService", nil, nil)
+}
+
+// form posts a form to a route that answers the usual envelope.
+func (x *xuiAPI) form(ctx context.Context, target string, form url.Values) error {
+	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if !x.session {
+		req.Header.Set("Authorization", "Bearer "+x.node.Token)
+	}
+	resp, err := x.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("could not reach it: %w", err)
+	}
+	defer resp.Body.Close()
+	var env xuiEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		return fmt.Errorf("it answered %s", resp.Status)
+	}
+	if !env.Success {
+		return fmt.Errorf("it refused the xray settings: %s", env.Msg)
+	}
+	return nil
+}
+
+// withEgress is cfg with this panel's outbound and rule as they should be:
+// added or replaced when there is an outbound, taken away when there is none.
+// The rest of the config is the 3x-ui operator's and is left as it is.
+func withEgress(cfg map[string]any, egress map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range cfg {
+		out[k] = v
+	}
+	var obs []any
+	if list, ok := cfg["outbounds"].([]any); ok {
+		for _, o := range list {
+			if m, ok := o.(map[string]any); ok && m["tag"] == xuiEgressTag {
+				continue
+			}
+			obs = append(obs, o)
+		}
+	}
+	routing, _ := cfg["routing"].(map[string]any)
+	r := map[string]any{}
+	for k, v := range routing {
+		r[k] = v
+	}
+	var rules []any
+	if list, ok := r["rules"].([]any); ok {
+		for _, rule := range list {
+			if m, ok := rule.(map[string]any); ok && m["outboundTag"] == xuiEgressTag {
+				continue
+			}
+			rules = append(rules, rule)
+		}
+	}
+	if egress != nil {
+		obs = append(obs, egress)
+		ours := map[string]any{"type": "field", "user": []any{xuiEgressRule}, "outboundTag": xuiEgressTag}
+		// After the panel's own api rule, which has to see its traffic
+		// first, and before everything else.
+		at := 0
+		for i, rule := range rules {
+			if m, ok := rule.(map[string]any); ok && m["outboundTag"] == "api" {
+				at = i + 1
+			}
+		}
+		rules = append(rules[:at], append([]any{ours}, rules[at:]...)...)
+	}
+	out["outbounds"] = obs
+	r["rules"] = rules
+	out["routing"] = r
+	return out
+}
+
+// xuiEgress puts the outbound in a 3x-ui node's xray when it is not there as
+// it should be, and checks xray came back. A config whose xray does not run
+// is replaced by the one before.
+func (s *Syncer) xuiEgress(ctx context.Context, api *xuiAPI, node model.Node) error {
+	egress, tag, egressErr := egressFor(ctx, s.db)
+	cfg, err := api.xrayTemplate(ctx)
+	if err != nil {
+		return fmt.Errorf("reading its xray settings: %w", err)
+	}
+	if egressErr != nil {
+		egress = nil // left to leave directly, and said so below
+	}
+	next := withEgress(cfg, egress)
+	if reflect.DeepEqual(normalJSON(next), normalJSON(cfg)) {
+		return egressErr
+	}
+	if err := api.saveXrayTemplate(ctx, next); err != nil {
+		return fmt.Errorf("putting the outbound in its xray: %w", err)
+	}
+	// Restarting takes a moment; it is given a few to come back.
+	var st xuiStatus
+	for i := 0; i < 10; i++ {
+		time.Sleep(time.Second)
+		if st, err = api.status(ctx); err == nil && st.Xray.State == "running" {
+			s.log.Info("the outbound is in a 3x-ui node's xray", "node", node.Name, "outbound", tag)
+			return egressErr
+		}
+	}
+	// Put back as it was: that panel's own users must not lose their service
+	// because of ours.
+	if rerr := api.saveXrayTemplate(ctx, cfg); rerr != nil {
+		s.log.Error("a 3x-ui node's xray stopped with this panel's outbound, and could not be put back", "node", node.Name, "error", rerr)
+	}
+	return fmt.Errorf("its xray did not run with the outbound %s (%s); its settings were put back as they were", tag, st.Xray.Error)
+}
+
+// normalJSON is v through JSON, so a config read back compares equal to the
+// same config built here.
+func normalJSON(v any) any {
+	raw, _ := json.Marshal(v)
+	var out any
+	_ = json.Unmarshal(raw, &out)
+	return out
+}

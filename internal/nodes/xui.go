@@ -38,7 +38,7 @@ func (s *Syncer) xuiOne(ctx context.Context, node model.Node) {
 }
 
 func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
-	api, err := newXUIAPI(node)
+	api, err := newXUIAPI(ctx, node)
 	if err != nil {
 		return err
 	}
@@ -153,6 +153,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 	s.mu.Unlock()
 
 	var failures []string
+	touched := false
 	want := map[string]bool{}
 	var usage []service.XUIUsage
 	links := map[uint]string{}
@@ -182,7 +183,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 		case rc.inbound != iface.XUI.V.RemoteID:
 			// On another inbound there than the one it belongs to here:
 			// moved by hand on that panel. Put back where it belongs.
-			if err := api.deleteClient(ctx, email); err != nil {
+			if err := api.deleteClient(ctx, rc.inbound, email); err != nil {
 				failures = append(failures, fmt.Sprintf("moving %s: %v", email, err))
 				continue
 			}
@@ -192,7 +193,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 			}
 			changed = true
 		case xuiDiffers(rc.cfg, desired):
-			if err := api.updateClient(ctx, desired); err != nil {
+			if err := api.updateClient(ctx, iface.XUI.V.RemoteID, xuiKey(iface.XUI.V.Kind, rc.cfg), desired); err != nil {
 				failures = append(failures, fmt.Sprintf("updating %s: %v", email, err))
 				continue
 			}
@@ -208,6 +209,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 			}
 		}
 
+		touched = touched || changed
 		if changed || refreshLinks || moved[acc.InterfaceID] || acc.XUILink == "" {
 			got, err := api.links(ctx, email)
 			if err != nil {
@@ -220,11 +222,12 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 
 	// Ours there and no longer anybody's here: a file removed, a customer
 	// deleted, a tunnel taken away.
-	for email := range remote {
+	for email, rc := range remote {
 		if want[email] || !service.XUIOwns(email) {
 			continue
 		}
-		if err := api.deleteClient(ctx, email); err != nil {
+		touched = true
+		if err := api.deleteClient(ctx, rc.inbound, email); err != nil {
 			failures = append(failures, fmt.Sprintf("removing %s: %v", email, err))
 		}
 	}
@@ -233,6 +236,22 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 		return fmt.Errorf("could not keep its counters: %w", err)
 	}
 	s.chargeXUI(ctx, node, usage)
+
+	// This panel's outbound, for its customers there.
+	if err := s.xuiEgress(ctx, api, node); err != nil {
+		failures = append(failures, err.Error())
+	}
+
+	// A change of ours there must not stop that panel's xray: every one of
+	// its inbounds, its own operator's users with them, would stop. Said
+	// loudly when it has, with xray's own reason.
+	if touched {
+		if st, err := api.status(ctx); err == nil && st.Xray.State != "" && st.Xray.State != "running" {
+			s.log.Error("a 3x-ui node's xray is not running after this panel changed its clients",
+				"node", node.Name, "state", st.Xray.State, "error", st.Xray.Error)
+			failures = append([]string{"its xray is not running: " + st.Xray.Error}, failures...)
+		}
+	}
 
 	if len(failures) > 0 {
 		if len(failures) > 3 {
@@ -315,17 +334,36 @@ func xuiClientFor(acc *model.Account, in model.XUIInbound, c model.Client, enabl
 		out.ID = acc.Secret
 	case "hysteria", "hysteria2":
 		out.Auth = acc.Secret
+	case "shadowsocks":
+		out.Password = acc.Secret
+		if !strings.HasPrefix(in.Method, "2022-") {
+			out.Method = in.Method
+		}
 	default:
 		out.Password = acc.Secret
 	}
 	return out
 }
 
+// xuiKey is the credential the older 3x-ui API finds a client by, as its
+// inbound's protocol names it.
+func xuiKey(kind string, c xuiInboundClient) string {
+	switch kind {
+	case "trojan":
+		return c.Password
+	case "shadowsocks":
+		return c.Email
+	case "hysteria", "hysteria2":
+		return c.Auth
+	}
+	return c.ID
+}
+
 // xuiDiffers reports whether a client there is not as this panel wants it.
 func xuiDiffers(have xuiInboundClient, want xuiClient) bool {
 	return have.Enable != want.Enable || have.LimitIP != want.LimitIP ||
 		have.ID != want.ID || have.Password != want.Password || have.Auth != want.Auth ||
-		have.Flow != want.Flow
+		have.Flow != want.Flow || have.Method != want.Method
 }
 
 // xuiHost is the address a 3x-ui node's customers dial: its panel's host.
@@ -340,17 +378,20 @@ func xuiHost(address string) string {
 // askXUI is the prober's question to a 3x-ui node.
 func askXUI(ctx context.Context, node model.Node) (Snapshot, error) {
 	var snap Snapshot
-	api, err := newXUIAPI(node)
+	start := time.Now()
+	api, err := newXUIAPI(ctx, node)
 	if err != nil {
 		return snap, err
 	}
-	start := time.Now()
 	st, err := api.status(ctx)
 	snap.LatencyMS = int(time.Since(start).Milliseconds())
 	if err != nil {
 		return snap, err
 	}
 	snap.Version = "3x-ui " + st.PanelVersion
+	if st.PanelVersion == "" {
+		snap.Version = "3x-ui (before 3)"
+	}
 	snap.UptimeSec = st.Uptime
 	snap.CPUPercent = st.CPU
 	if st.Mem.Total > 0 {
