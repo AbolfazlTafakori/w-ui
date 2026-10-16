@@ -40,7 +40,9 @@ async function loadKinds() {
     const r = await api.get(`/api/nodes/${props.node.id}/inbound-kinds`)
     kinds.value = r.kinds || []
     version.value = r.version || ''
-    if (!kinds.value.some((k) => k.protocol === x.protocol) && kinds.value.length) choose(kinds.value[0].protocol)
+    // Chosen even when it is already the protocol, so the name and port
+    // are its own and not those the form held for this panel's tunnels.
+    if (kinds.value.length) choose(kinds.value.some((k) => k.protocol === x.protocol) ? x.protocol : kinds.value[0].protocol)
   } catch (e) {
     loadError.value = e.message
   }

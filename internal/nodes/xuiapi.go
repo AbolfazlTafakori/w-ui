@@ -58,6 +58,9 @@ type xuiAPI struct {
 	// for the routes still outside the API.
 	token   bool
 	session bool
+	// csrf is the token a signed-in panel asks every changing request to
+	// carry, from 3x-ui's own login page onwards (3.10 and later).
+	csrf    string
 	gen     xuiGen
 	version string
 }
@@ -99,10 +102,15 @@ func newXUIAPI(ctx context.Context, node model.Node) (*xuiAPI, error) {
 		return nil, errors.New("give it an API token, or a username and password")
 	}
 	if x.session {
-		if jar, ok := xuiSessions.Load(xuiSessionKey(node)); ok {
-			c.Jar = jar.(http.CookieJar)
+		if kept, ok := xuiSessions.Load(xuiSessionKey(node)); ok {
+			c.Jar, x.csrf = kept.(xuiSession).jar, kept.(xuiSession).csrf
 		} else if err := x.signIn(ctx); err != nil {
-			return nil, err
+			// With a token as well, the panel is still reached; only what
+			// needs the sign-in (see SupportedPanelVersions) is not.
+			if !x.token {
+				return nil, err
+			}
+			x.session = false
 		}
 	}
 	if info, ok := xuiInfos.Load(xuiInfoKey(node)); ok {
@@ -175,10 +183,43 @@ func versionBelow(v string, major, minor int) bool {
 	return ma < major || ma == major && mi < minor
 }
 
+// xuiSession is a kept sign-in: its cookies and its CSRF token.
+type xuiSession struct {
+	jar  http.CookieJar
+	csrf string
+}
+
+// csrfToken asks the panel for the CSRF token of the session in the jar:
+// 3x-ui 3.10 and later refuse a sign-in, and then every changing request,
+// without it; an older one has no such page, and needs none.
+func (x *xuiAPI) csrfToken(ctx context.Context) string {
+	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, x.root+"csrf-token", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := x.client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var env struct {
+		Success bool   `json:"success"`
+		Obj     string `json:"obj"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&env) != nil || !env.Success {
+		return ""
+	}
+	return env.Obj
+}
+
 // signIn signs in with the node's username and password and keeps the cookie.
 func (x *xuiAPI) signIn(ctx context.Context) error {
 	jar, _ := cookiejar.New(nil)
 	x.client.Jar = jar
+	x.csrf = x.csrfToken(ctx)
 	form := url.Values{"username": {x.node.Username}, "password": {x.node.Password}}
 	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
 	defer cancel()
@@ -187,6 +228,9 @@ func (x *xuiAPI) signIn(ctx context.Context) error {
 		return fmt.Errorf("bad address: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if x.csrf != "" {
+		req.Header.Set("X-CSRF-Token", x.csrf)
+	}
 	resp, err := x.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("could not reach it: %w", err)
@@ -195,6 +239,9 @@ func (x *xuiAPI) signIn(ctx context.Context) error {
 	if resp.StatusCode == http.StatusNotFound {
 		return errNotThere
 	}
+	if resp.StatusCode == http.StatusForbidden {
+		return errors.New("it refused the sign-in itself (403); check the address and that this panel's address may sign in there")
+	}
 	var env xuiEnvelope
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&env); err != nil {
 		return errors.New("it answered, but not like a 3x-ui panel")
@@ -202,7 +249,11 @@ func (x *xuiAPI) signIn(ctx context.Context) error {
 	if !env.Success {
 		return errors.New("the username or password was refused (a panel with two-factor sign-in needs an API token instead)")
 	}
-	xuiSessions.Store(xuiSessionKey(x.node), http.CookieJar(jar))
+	// The session may be a new one after signing in, with a token of its own.
+	if t := x.csrfToken(ctx); t != "" {
+		x.csrf = t
+	}
+	xuiSessions.Store(xuiSessionKey(x.node), xuiSession{jar: jar, csrf: x.csrf})
 	return nil
 }
 
@@ -261,6 +312,9 @@ func (x *xuiAPI) once(ctx context.Context, method, target string, body, into any
 	// What a browser sends; the older panels answer an unsigned request to
 	// their API with a page rather than 404 without it.
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	if x.session && x.csrf != "" && method != http.MethodGet {
+		req.Header.Set("X-CSRF-Token", x.csrf)
+	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
