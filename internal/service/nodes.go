@@ -39,14 +39,14 @@ type NodeInput struct {
 	// or a 3x-ui panel (xui). Read when the node is added and fixed after.
 	Kind    model.NodeKind `json:"kind"`
 	Name    string         `json:"name"`
-	Address string `json:"address"`
-	Token   string `json:"token"`
+	Address string         `json:"address"`
+	Token   string         `json:"token"`
 	// Username and Password sign in to a 3x-ui or Pasarguard node without
 	// a token. An empty password on an edit keeps the one stored.
 	Username *string `json:"username"`
 	Password string  `json:"password"`
-	Note    string `json:"note"`
-	Enabled *bool  `json:"enabled"`
+	Note     string  `json:"note"`
+	Enabled  *bool   `json:"enabled"`
 
 	// UsageCoefficient multiplies what this node reports before it is charged
 	// against a customer's allowance. Absent leaves it as it is; zero is read

@@ -280,4 +280,3 @@ type XUIInbound struct {
 	Up      uint64 `json:"up"`
 	Down    uint64 `json:"down"`
 }
-

@@ -42,7 +42,7 @@ func TestATunnelIsRefusedARangeAlreadyOnThisServer(t *testing.T) {
 		{"203.0.113.0/24", "eth0"},
 	} {
 		_, err := svc.Create(t.Context(), CreateInterfaceInput{
-			Name: "wg9", Protocol: model.ProtocolWireGuard, ListenPort: 51899, Subnet: c.subnet,
+			Name: "wg9", Protocol: model.ProtocolWireGuard, ListenPort: freeUDPPorts(t, 1)[0], Subnet: c.subnet,
 			EndpointHost: "vpn.example.com", NATInterface: "eth0",
 		})
 		if err == nil {
@@ -56,7 +56,7 @@ func TestATunnelIsRefusedARangeAlreadyOnThisServer(t *testing.T) {
 
 	// A range nothing on the machine uses is fine.
 	if _, err := svc.Create(t.Context(), CreateInterfaceInput{
-		Name: "wg9", Protocol: model.ProtocolWireGuard, ListenPort: 51899, Subnet: "10.99.0.0/16",
+		Name: "wg9", Protocol: model.ProtocolWireGuard, ListenPort: freeUDPPorts(t, 1)[0], Subnet: "10.99.0.0/16",
 		EndpointHost: "vpn.example.com", NATInterface: "eth0",
 	}); err != nil {
 		t.Fatalf("a free range was refused: %v", err)
@@ -69,7 +69,7 @@ func TestATunnelIsRefusedARangeAlreadyOnThisServer(t *testing.T) {
 func TestATunnelsOwnDeviceIsNotAnotherProgram(t *testing.T) {
 	svc := newInterfaces(t, testDB(t))
 	created, err := svc.Create(t.Context(), CreateInterfaceInput{
-		Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: 51820, Subnet: "10.66.0.0/16",
+		Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: freeUDPPorts(t, 1)[0], Subnet: "10.66.0.0/16",
 		EndpointHost: "vpn.example.com", NATInterface: "eth0",
 	})
 	if err != nil {

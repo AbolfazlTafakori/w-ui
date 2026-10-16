@@ -92,6 +92,30 @@ func freeUDPPort(t *testing.T) int {
 	return port
 }
 
+// freeUDPPorts is n ports nothing holds on this machine, all different: held
+// open together until every one is drawn, so the system cannot hand the same
+// one out twice. A test that names a port outright fails wherever that port
+// is taken or reserved, as Windows reserves whole ranges for Hyper-V.
+func freeUDPPorts(t *testing.T, n int) []int {
+	t.Helper()
+	var held []net.PacketConn
+	defer func() {
+		for _, pc := range held {
+			pc.Close()
+		}
+	}()
+	out := make([]int, 0, n)
+	for len(out) < n {
+		pc, err := net.ListenPacket("udp", ":0")
+		if err != nil {
+			t.Skip("no UDP port can be bound here")
+		}
+		held = append(held, pc)
+		out = append(out, pc.LocalAddr().(*net.UDPAddr).Port)
+	}
+	return out
+}
+
 func TestInterfaceInputErrors(t *testing.T) {
 	ctx := context.Background()
 	db, _ := seeded(t)

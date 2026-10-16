@@ -37,7 +37,6 @@ func pgGroupName(tag string) string {
 	return name
 }
 
-
 func (s *Syncer) pgOne(ctx context.Context, node model.Node) {
 	if err := s.pgRound(ctx, node); err != nil {
 		s.report(node, err)

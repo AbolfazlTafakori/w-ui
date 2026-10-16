@@ -23,15 +23,16 @@ func newInterfaces(t *testing.T, db *gorm.DB) *Interfaces {
 }
 
 // seedAmnezia makes the kind of tunnel worth copying: obfuscated, with a dozen
-// settings nobody wants to retype.
-func seedAmnezia(t *testing.T, db *gorm.DB) (*Interfaces, *model.Interface) {
+// settings nobody wants to retype; and gives a free port for its copy.
+func seedAmnezia(t *testing.T, db *gorm.DB) (*Interfaces, *model.Interface, int) {
 	t.Helper()
+	ports := freeUDPPorts(t, 2)
 
 	svc := newInterfaces(t, db)
 	iface, err := svc.Create(context.Background(), CreateInterfaceInput{
 		Name:         "wg0",
 		Protocol:     model.ProtocolWireGuard,
-		ListenPort:   51820,
+		ListenPort:   ports[0],
 		Subnet:       "10.66.0.0/24",
 		EndpointHost: "vpn.example.com",
 		MTU:          1380,
@@ -42,7 +43,7 @@ func seedAmnezia(t *testing.T, db *gorm.DB) (*Interfaces, *model.Interface) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	return svc, iface
+	return svc, iface, ports[1]
 }
 
 // The point of copying: the settings that make the tunnel behave as it does
@@ -50,10 +51,10 @@ func seedAmnezia(t *testing.T, db *gorm.DB) (*Interfaces, *model.Interface) {
 // found later by a customer who cannot connect.
 func TestACopyKeepsHowTheTunnelBehaves(t *testing.T) {
 	db := testDB(t)
-	svc, src := seedAmnezia(t, db)
+	svc, src, copyPort := seedAmnezia(t, db)
 
 	copy, err := svc.Clone(context.Background(), src.ID, CloneInput{
-		Name: "wg1", ListenPort: 51821, Subnet: "10.67.0.0/24",
+		Name: "wg1", ListenPort: copyPort, Subnet: "10.67.0.0/24",
 	})
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
@@ -86,10 +87,10 @@ func TestACopyKeepsHowTheTunnelBehaves(t *testing.T) {
 // same address to two people.
 func TestACopyGetsItsOwnIdentity(t *testing.T) {
 	db := testDB(t)
-	svc, src := seedAmnezia(t, db)
+	svc, src, copyPort := seedAmnezia(t, db)
 
 	copy, err := svc.Clone(context.Background(), src.ID, CloneInput{
-		Name: "wg1", ListenPort: 51821, Subnet: "10.67.0.0/24",
+		Name: "wg1", ListenPort: copyPort, Subnet: "10.67.0.0/24",
 	})
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
@@ -120,10 +121,10 @@ func TestACopyGetsItsOwnIdentity(t *testing.T) {
 // means both blocked by the same rule on the same day.
 func TestACopyIsNotBlockedByTheSameRuleAsTheOriginal(t *testing.T) {
 	db := testDB(t)
-	svc, src := seedAmnezia(t, db)
+	svc, src, copyPort := seedAmnezia(t, db)
 
 	copy, err := svc.Clone(context.Background(), src.ID, CloneInput{
-		Name: "wg1", ListenPort: 51821, Subnet: "10.67.0.0/24",
+		Name: "wg1", ListenPort: copyPort, Subnet: "10.67.0.0/24",
 	})
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
@@ -144,10 +145,10 @@ func TestACopyIsNotBlockedByTheSameRuleAsTheOriginal(t *testing.T) {
 // without anybody asking.
 func TestACopyStartsEmpty(t *testing.T) {
 	db := testDB(t)
-	svc, src := seedAmnezia(t, db)
+	svc, src, copyPort := seedAmnezia(t, db)
 
 	copy, err := svc.Clone(context.Background(), src.ID, CloneInput{
-		Name: "wg1", ListenPort: 51821, Subnet: "10.67.0.0/24",
+		Name: "wg1", ListenPort: copyPort, Subnet: "10.67.0.0/24",
 	})
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
@@ -191,7 +192,7 @@ func TestATunnelBelongingToAnotherPanelIsNotCopied(t *testing.T) {
 // standing are not what was wrong.
 func TestResettingATunnelClearsUsageAndNothingElse(t *testing.T) {
 	db := testDB(t)
-	svc, src := seedAmnezia(t, db)
+	svc, src, _ := seedAmnezia(t, db)
 
 	expires := time.Now().Add(72 * time.Hour).UTC()
 	c := model.Client{
@@ -238,7 +239,7 @@ func TestResettingATunnelClearsUsageAndNothingElse(t *testing.T) {
 // A tunnel nobody is on resets to nothing rather than failing.
 func TestResettingAnEmptyTunnelIsNotAnError(t *testing.T) {
 	db := testDB(t)
-	svc, src := seedAmnezia(t, db)
+	svc, src, _ := seedAmnezia(t, db)
 
 	n, err := svc.ResetTunnelUsage(context.Background(), src.ID)
 	if err != nil {
@@ -255,7 +256,7 @@ func TestResettingAnEmptyTunnelIsNotAnError(t *testing.T) {
 // passed, or who was switched off, stays as they are.
 func TestResettingATunnelBringsBackWhoRanOut(t *testing.T) {
 	db := testDB(t)
-	svc, src := seedAmnezia(t, db)
+	svc, src, _ := seedAmnezia(t, db)
 
 	past := time.Now().Add(-time.Hour).UTC()
 	out := model.Client{Name: "out", Protocol: model.ProtocolWireGuard, Status: model.StatusExhausted, QuotaBytes: 1 << 30, UsedBytes: 1 << 30}

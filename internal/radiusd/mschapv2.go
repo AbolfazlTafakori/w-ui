@@ -7,7 +7,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"golang.org/x/crypto/md4" //nolint:staticcheck // MS-CHAPv2 is defined on MD4.
+	//lint:ignore SA1019 MS-CHAPv2 (RFC 2759) is defined on MD4; there is no other way to speak it.
+	"golang.org/x/crypto/md4"
 )
 
 // MS-CHAPv2 (RFC 2759) and the keys it yields (RFC 3079): what a device

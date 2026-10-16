@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -322,7 +323,7 @@ func TestTheNewestFixtureHoldsEverySetting(t *testing.T) {
 		} `json:"interface"`
 	}
 	if err := c.Do(ctx, "POST", "api/interfaces", map[string]any{"name": "keys-wg", "protocol": "wireguard",
-		"listenPort": 51991, "subnet": "10.91.0.0/24", "endpointHost": "vpn.example.test"}, &iface); err != nil {
+		"listenPort": freeUDPPort(t), "subnet": "10.91.0.0/24", "endpointHost": "vpn.example.test"}, &iface); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := upgradecheck.SeedSettings(ctx, c, iface.Interface.ID); err != nil {
@@ -348,4 +349,17 @@ func TestTheNewestFixtureHoldsEverySetting(t *testing.T) {
 			t.Errorf("%s is listed as new in %s, but the newest fixture holds it: remove the entry", k, release)
 		}
 	}
+}
+
+// freeUDPPort is a UDP port nothing holds on this machine. A test that names
+// one outright fails wherever it is taken or reserved, as Windows reserves
+// whole ranges of them for Hyper-V.
+func freeUDPPort(t *testing.T) int {
+	t.Helper()
+	pc, err := net.ListenPacket("udp", ":0")
+	if err != nil {
+		t.Skip("no UDP port can be bound here")
+	}
+	defer pc.Close()
+	return pc.LocalAddr().(*net.UDPAddr).Port
 }

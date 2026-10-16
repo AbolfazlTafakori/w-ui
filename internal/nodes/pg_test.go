@@ -12,7 +12,9 @@ import (
 )
 
 func TestPGNames(t *testing.T) {
-	if pgRemoteID("VLESS TCP") != pgRemoteID("VLESS TCP") || pgRemoteID("a") == pgRemoteID("b") || pgRemoteID("x") < 0 {
+	// Asked twice, as two rounds do, the same tag is the same number.
+	first, again := pgRemoteID("VLESS TCP"), pgRemoteID("VLESS "+"TCP")
+	if first != again || pgRemoteID("a") == pgRemoteID("b") || pgRemoteID("x") < 0 {
 		t.Fatal("inbound numbers are not stable and distinct")
 	}
 	long := strings.Repeat("x", 80)
