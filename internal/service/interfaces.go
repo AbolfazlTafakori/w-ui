@@ -762,7 +762,7 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		return nil, err
 	}
 	if iface.Protocol == model.ProtocolXray {
-		return nil, fmt.Errorf("%w: %q is an inbound of a 3x-ui panel; change it there, and it is read here within a minute",
+		return nil, fmt.Errorf("%w: %q is an inbound of a 3x-ui or Pasarguard node; change it on that panel, and it is read here within a minute",
 			ErrInvalid, iface.Name)
 	}
 
@@ -1229,7 +1229,7 @@ func (s *Interfaces) Delete(ctx context.Context, id uint) error {
 			ErrInvalid, accounts, iface.Name)
 	}
 	if iface.Protocol == model.ProtocolXray && !iface.XUI.V.Gone {
-		return fmt.Errorf("%w: %q is an inbound of a 3x-ui panel; remove it there", ErrInvalid, iface.Name)
+		return fmt.Errorf("%w: %q is an inbound of a 3x-ui or Pasarguard node; remove it on that panel", ErrInvalid, iface.Name)
 	}
 
 	if s.Teardown != nil {

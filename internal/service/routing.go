@@ -594,6 +594,13 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	var local model.Node
 	haveLocal := db.Where("kind = ?", model.KindLocal).First(&local).Error == nil
 	for _, i := range ifaces {
+		// A 3x-ui or Pasarguard inbound is no device here and carries no
+		// customer through this machine: its name is a remark, longer than
+		// a device name may be, and its addresses are a placeholder. Put in
+		// the ruleset, it would make nftables refuse all of it.
+		if i.Protocol == model.ProtocolXray {
+			continue
+		}
 		if pfx, err := netip.ParsePrefix(i.Subnet); err == nil {
 			p.CustomerNets = append(p.CustomerNets, pfx)
 			p.TunnelDevices = append(p.TunnelDevices, i.Name)

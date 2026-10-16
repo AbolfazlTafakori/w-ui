@@ -371,6 +371,10 @@ func (e *Engine) syncDNS(ctx context.Context, cfg EngineSettings) {
 		var ifaces []model.Interface
 		if err := e.db.WithContext(ctx).Where("enabled = ?", true).Find(&ifaces).Error; err == nil {
 			for _, i := range ifaces {
+				// A 3x-ui or Pasarguard inbound's addresses are a placeholder.
+				if i.Protocol == model.ProtocolXray {
+					continue
+				}
 				if gw, ok := gatewayOf(i.Subnet); ok {
 					addrs = append(addrs, gw)
 				}

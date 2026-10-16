@@ -36,19 +36,19 @@ func TestObjectOrString(t *testing.T) {
 func TestXUIClientFor(t *testing.T) {
 	acc := &model.Account{ID: 7, Secret: "s3cret"}
 	c := model.Client{Name: "ali", DeviceLimit: 1}
-	got := xuiClientFor(acc, model.XUIInbound{Kind: "vless", Flow: "xtls-rprx-vision"}, c, true)
-	if got.Email != "wui-7" || got.ID != "s3cret" || got.Flow != "xtls-rprx-vision" || got.LimitIP != 1 || !got.Enable ||
+	got := xuiClientFor("t1", acc, model.XUIInbound{Kind: "vless", Flow: "xtls-rprx-vision"}, c, true)
+	if got.Email != "wui-t1-7" || got.ID != "s3cret" || got.Flow != "xtls-rprx-vision" || got.LimitIP != 1 || !got.Enable ||
 		got.TotalGB != 0 || got.ExpiryTime != 0 {
 		t.Fatalf("vless: %+v", got)
 	}
-	if got := xuiClientFor(acc, model.XUIInbound{Kind: "trojan"}, c, false); got.Password != "s3cret" || got.ID != "" || got.Enable {
+	if got := xuiClientFor("t1", acc, model.XUIInbound{Kind: "trojan"}, c, false); got.Password != "s3cret" || got.ID != "" || got.Enable {
 		t.Fatalf("trojan: %+v", got)
 	}
-	if got := xuiClientFor(acc, model.XUIInbound{Kind: "hysteria"}, c, true); got.Auth != "s3cret" {
+	if got := xuiClientFor("t1", acc, model.XUIInbound{Kind: "hysteria"}, c, true); got.Auth != "s3cret" {
 		t.Fatalf("hysteria: %+v", got)
 	}
 	c.DeviceLimit = 0
-	if got := xuiClientFor(acc, model.XUIInbound{Kind: "vmess"}, c, true); got.LimitIP != 0 {
+	if got := xuiClientFor("t1", acc, model.XUIInbound{Kind: "vmess"}, c, true); got.LimitIP != 0 {
 		t.Fatalf("a customer with no limit is given one there: %+v", got)
 	}
 }

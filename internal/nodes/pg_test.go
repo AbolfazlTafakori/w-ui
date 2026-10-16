@@ -12,14 +12,6 @@ import (
 )
 
 func TestPGNames(t *testing.T) {
-	for name, want := range map[string]bool{"wui_12": true, "wui_": false, "wui_test1": false, "admin": false, "wui-3": false} {
-		if pgOwns(name) != want {
-			t.Errorf("pgOwns(%q) != %v", name, want)
-		}
-	}
-	if !pgOwns(pgUsername(&model.Account{ID: 9})) {
-		t.Fatal("a name this panel makes is not its own")
-	}
 	if pgRemoteID("VLESS TCP") != pgRemoteID("VLESS TCP") || pgRemoteID("a") == pgRemoteID("b") || pgRemoteID("x") < 0 {
 		t.Fatal("inbound numbers are not stable and distinct")
 	}

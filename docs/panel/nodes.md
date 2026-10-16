@@ -122,10 +122,10 @@ If a node cannot be reached, its last report is believed for 30 seconds and then
 
 ## A 3x-ui panel as a node
 
-A server running 3x-ui (version 3 or later) can be a node without installing W-UI on it.
+A server running 3x-ui (version 2.0 or later) can be a node without installing W-UI on it. Before 3.0 it is reached by username and password; 3.0 to 3.2 by an API token, with the username and password too for the outbound (and for links on 3.0); 3.3 and later by an API token alone.
 
-1. On the 3x-ui panel, make an API token: **Settings → API tokens**. Make the inbounds you want to sell there too: VLESS (with or without Reality), VMess, Trojan, Shadowsocks or Hysteria2.
-2. Here, **Add node**, choose the type **3x-ui panel**, and give its access URL with the secret path (`https://IP:port/path`, as 3x-ui prints it) and the token.
+1. On the 3x-ui panel (version 3 or later), make an API token: **Settings → API tokens**.
+2. Here, **Add node**, choose the type **3x-ui panel**, and give its access URL with the secret path (`https://IP:port/path`, as 3x-ui prints it) and the token, or the username and password.
 3. Within twenty seconds each inbound appears on the Interfaces page under the node's tab, with its protocol, port and transport. Put customers on them as on any tunnel.
 
 What happens then:
@@ -140,10 +140,10 @@ What happens then:
 
 ## A Pasarguard panel as a node
 
-A Pasarguard panel (version 5 or later), with a node of its own connected, can be a node the same way.
+A Pasarguard panel (version 1.0 or later), with a node of its own connected, can be a node the same way: by an administrator's username and password, or from 5.2 by an API key.
 
-1. On the Pasarguard panel, make an API key (**API keys**), and the inbounds you want to sell in its core: VLESS (with or without Reality), VMess, Trojan or Shadowsocks.
-2. Here, **Add node**, choose the type **Pasarguard panel**, and give its address (`https://IP-or-domain:port`) and the key.
+1. On the Pasarguard panel, make an API key (**API keys**), or have an administrator's username and password.
+2. Here, **Add node**, choose the type **Pasarguard panel**, and give its address (`https://IP-or-domain:port`) and the key, or the username and password.
 3. Within twenty seconds each inbound appears on the Interfaces page under the node's tab.
 
 What happens then is as for 3x-ui, with Pasarguard's own way of doing it:
@@ -152,6 +152,22 @@ What happens then is as for 3x-ui, with Pasarguard's own way of doing it:
 - **Their credentials are Pasarguard's**, and the links are the ones its subscription gives for the user.
 - **Usage is its users' used traffic**, read every twenty seconds; the allowance and expiry are this panel's, and a user is disabled there when the customer runs out here.
 - **Pasarguard has no IP limit of its own**, so one user per file is not enforced on such a node.
+- **A Shadowsocks-2022 inbound has a standing user**, `wuikeep_` and a number, whose key nobody is given. A Pasarguard node that starts such an inbound with no user takes none on it afterwards, and the sync of every user on the node fails, its operator's own included. Leave it.
+
+Names made on a node carry this installation's six-letter tag (`wui-<tag>-<n>` on 3x-ui, `wui_<tag>_<n>` on Pasarguard), so two W-UI panels on one node never remove each other's.
+
+## Making an inbound on a 3x-ui or Pasarguard node
+
+On the Interfaces page, **Add**, and choose the server first. The protocol list then holds what that panel has at its version:
+
+| Panel | Protocols |
+|---|---|
+| 3x-ui | VLESS, VMess, Trojan, Shadowsocks, HTTP (2.0); WireGuard, SOCKS, dokodemo-door (2.5); mixed and tunnel in place of those two (2.8); Hysteria2 (2.9); MTProto (3.4); TUIC, AmneziaWG (3.8); MASQUE (3.10) |
+| Pasarguard | VLESS, VMess, Trojan, Shadowsocks, Hysteria2, WireGuard, mixed, SOCKS, HTTP, tunnel, dokodemo-door |
+
+The form asks what that panel's own form does: each protocol's settings, the transport (TCP, WebSocket, gRPC, HTTPUpgrade, XHTTP, mKCP), TLS from a certificate file or text, Reality, fallbacks, sniffing, and on 3x-ui the inbound's own allowance, expiry and traffic reset; on Pasarguard the host its links are written from. Keys (Reality, WireGuard, Shadowsocks 2022, MTProto) are drawn here.
+
+If that panel's xray does not come back running with the new inbound, the inbound is taken out again and the reason shown, so its operator's own users never stop. SOCKS, HTTP, mixed and tunnel inbounds are made but take no customers: they have no account per user.
 
 ## Certificate check
 

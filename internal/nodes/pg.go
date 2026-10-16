@@ -37,22 +37,6 @@ func pgGroupName(tag string) string {
 	return name
 }
 
-// PGUsername is a file's user on a Pasarguard panel.
-func pgUsername(acc *model.Account) string { return fmt.Sprintf("wui_%d", acc.ID) }
-
-// pgOwns reports whether a username there is one this panel made.
-func pgOwns(name string) bool {
-	rest, ok := strings.CutPrefix(name, "wui_")
-	if !ok || rest == "" {
-		return false
-	}
-	for _, r := range rest {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
 
 func (s *Syncer) pgOne(ctx context.Context, node model.Node) {
 	if err := s.pgRound(ctx, node); err != nil {
@@ -63,6 +47,10 @@ func (s *Syncer) pgOne(ctx context.Context, node model.Node) {
 }
 
 func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
+	tag, err := service.PanelTag(ctx, s.db)
+	if err != nil {
+		return fmt.Errorf("this panel's tag: %w", err)
+	}
 	api, err := newPGAPI(ctx, node)
 	if err != nil {
 		return err
@@ -82,6 +70,9 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 			Security: in.Stream.Security,
 			Method:   in.Settings.Method,
 			Enabled:  true,
+		}
+		if k, ok := service.InboundKindFor(model.KindPG, node.Version, in.Protocol); ok {
+			x.Customers = k.Customers
 		}
 		if x.Network == "" {
 			x.Network = "tcp"
@@ -159,7 +150,7 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 	}
 	remote := make(map[string]pgUser, len(users))
 	for _, u := range users {
-		if pgOwns(u.Username) {
+		if service.PGOwns(tag, u.Username) {
 			remote[u.Username] = u
 		}
 	}
@@ -178,14 +169,14 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 	links := map[uint]string{}
 	for _, acc := range accounts {
 		iface, ok := byID[acc.InterfaceID]
-		if !ok || iface.XUI.V.Gone || !model.XUISupported(iface.XUI.V.Kind) {
+		if !ok || iface.XUI.V.Gone || !iface.XUI.V.Customers {
 			continue
 		}
 		c, ok := clients[acc.ClientID]
 		if !ok {
 			continue
 		}
-		name := pgUsername(&acc)
+		name := service.PGUsername(tag, &acc)
 		want[name] = true
 		status := "disabled"
 		if !node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled {

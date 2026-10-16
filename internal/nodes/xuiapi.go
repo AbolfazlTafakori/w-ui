@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,25 +23,68 @@ import (
 
 // Speaking to a 3x-ui panel added as a node.
 //
-// Its API answers under its own secret path, /panel/api, with an API token
-// made on that panel (Settings → API tokens) as a bearer token, and every
-// answer is the same envelope: success, a message, and the object. Only
-// what this panel needs is read: the inbounds with their clients and
-// counters, a client added, changed or removed by its email, and the links
-// that panel makes for a client.
+// Its API has changed three times, and each generation is spoken as it is:
+//
+//   - before 2.8, signed in by username and password: clients are added and
+//     changed inside their inbound's settings, removed by their credential,
+//     and the server's status and xray restart live under /server;
+//   - 2.8 to 3.0, the same with the server under /panel/api and clients
+//     removed by email, and from 3.0 an API token as a bearer;
+//   - from 3.1, with an API token: clients have an API of their own, by
+//     email, which also gives each one's links.
+//
+// The xray config is under /panel/xray, signed in, until 3.3, and under the
+// API from then. Links come from the API from 3.1, and before it from the
+// panel's own subscription service. Every answer is the same envelope:
+// success, a message, and the object.
 
-// xuiTimeout bounds one call to a 3x-ui panel.
 const xuiTimeout = 20 * time.Second
+
+type xuiGen int
+
+const (
+	xuiGenOld xuiGen = iota // before 2.8
+	xuiGenMid               // 2.8 to 3.0
+	xuiGenNew               // 3.1 and later
+)
 
 type xuiAPI struct {
 	node   model.Node
 	client *http.Client
 	root   string // the panel's address, with its secret path
 	base   string // its API, under root
-	// session is a panel signed in to by username and password rather than
-	// a token: 3x-ui before version 3, whose API is the older one (legacy).
+	// token and session are the two ways in: a bearer token, and a sign-in
+	// whose cookie is kept. A panel may be given both, which 3.0 to 3.2 need
+	// for the routes still outside the API.
+	token   bool
 	session bool
-	legacy  bool
+	gen     xuiGen
+	version string
+}
+
+// xuiInfo is what was learned of a panel: its version and API generation.
+type xuiInfo struct {
+	version string
+	gen     xuiGen
+}
+
+var (
+	// xuiSessions holds each signed-in panel's cookies, by node and the
+	// sign-in it was made with: a 3x-ui panel tells its operator of every
+	// sign-in, on Telegram among other places, and one every twenty seconds
+	// would bury them.
+	xuiSessions sync.Map
+	// xuiInfos is each panel's version, learned once and again when the
+	// panel is restarted or upgraded (see newXUIAPI).
+	xuiInfos sync.Map
+)
+
+func xuiSessionKey(node model.Node) string {
+	return fmt.Sprintf("%d|%s|%s|%s", node.ID, node.Address, node.Username, node.Password)
+}
+
+func xuiInfoKey(node model.Node) string {
+	return fmt.Sprintf("%d|%s", node.ID, node.Address)
 }
 
 func newXUIAPI(ctx context.Context, node model.Node) (*xuiAPI, error) {
@@ -48,46 +93,92 @@ func newXUIAPI(ctx context.Context, node model.Node) (*xuiAPI, error) {
 		return nil, err
 	}
 	root := strings.TrimRight(node.Address, "/") + "/"
-	x := &xuiAPI{node: node, client: c, root: root, base: root + "panel/api/"}
-	if node.Token == "" && node.Username != "" {
-		x.session = true
-		// The sign-in is kept from round to round: a 3x-ui panel tells its
-		// operator of every sign-in, on Telegram among other places, and one
-		// every twenty seconds would bury them.
-		key := xuiSessionKey(node)
-		if jar, ok := xuiSessions.Load(key); ok {
+	x := &xuiAPI{node: node, client: c, root: root, base: root + "panel/api/",
+		token: node.Token != "", session: node.Username != "" && node.Password != ""}
+	if !x.token && !x.session {
+		return nil, errors.New("give it an API token, or a username and password")
+	}
+	if x.session {
+		if jar, ok := xuiSessions.Load(xuiSessionKey(node)); ok {
 			c.Jar = jar.(http.CookieJar)
-			x.legacy = true
-			return x, nil
-		}
-		jar, _ := cookiejar.New(nil)
-		c.Jar = jar
-		if err := x.login(ctx); err != nil {
+		} else if err := x.signIn(ctx); err != nil {
 			return nil, err
 		}
-		// Version 3 has its clients API; before it, clients live in their
-		// inbounds' settings and are changed through them.
-		var probe json.RawMessage
-		if err := x.do(ctx, http.MethodGet, "clients/list", nil, &probe); err == nil {
-			return nil, errors.New("this is 3x-ui 3 or later: give it an API token (Settings, API tokens) rather than a password")
-		}
-		x.legacy = true
-		xuiSessions.Store(key, http.CookieJar(jar))
+	}
+	if info, ok := xuiInfos.Load(xuiInfoKey(node)); ok {
+		x.version, x.gen = info.(xuiInfo).version, info.(xuiInfo).gen
+	} else if err := x.learn(ctx); err != nil {
+		return nil, err
+	}
+	switch {
+	case x.gen == xuiGenOld && !x.session:
+		return nil, errors.New("3x-ui before 2.8 has no API token: give it the panel's username and password")
+	case x.gen == xuiGenNew && !x.token:
+		return nil, errors.New("3x-ui 3.1 and later is reached by API token: make one under Settings, API tokens")
 	}
 	return x, nil
 }
 
-// xuiSessions holds each signed-in 3x-ui node's cookies, by node and the
-// sign-in it was made with, so a changed password signs in again.
-var xuiSessions sync.Map
+// pageVersion reads the version a 3x-ui page carries on its assets:
+// custom.min.css?2.9.4.
+var pageVersion = regexp.MustCompile(`\.(?:css|js)\?v?(\d+\.\d+\.\d+)`)
 
-func xuiSessionKey(node model.Node) string {
-	return fmt.Sprintf("%d|%s|%s|%s", node.ID, node.Address, node.Username, node.Password)
+// learn finds the panel's version, and from it the API generation; with no
+// version to go on, the generation is found by asking.
+func (x *xuiAPI) learn(ctx context.Context) error {
+	if x.token {
+		var st xuiStatus
+		if err := x.call(ctx, http.MethodGet, x.base+"server/status", nil, &st); err == nil {
+			x.version = st.PanelVersion
+		}
+	}
+	if x.version == "" && x.session {
+		if page, err := x.fetch(ctx, x.root+"panel/"); err == nil {
+			if m := pageVersion.FindStringSubmatch(page); m != nil {
+				x.version = m[1]
+			}
+		}
+	}
+	switch {
+	case x.version != "" && !versionBelow(x.version, 3, 1):
+		x.gen = xuiGenNew
+	case x.version != "" && !versionBelow(x.version, 2, 8):
+		x.gen = xuiGenMid
+	case x.version != "":
+		x.gen = xuiGenOld
+	default:
+		var probe json.RawMessage
+		switch {
+		case x.call(ctx, http.MethodGet, x.base+"clients/list", nil, &probe) == nil:
+			x.gen = xuiGenNew
+		case x.call(ctx, http.MethodGet, x.base+"server/status", nil, &probe) == nil:
+			x.gen = xuiGenMid
+		default:
+			x.gen = xuiGenOld
+		}
+	}
+	xuiInfos.Store(xuiInfoKey(x.node), xuiInfo{version: x.version, gen: x.gen})
+	return nil
 }
 
-// login signs in with the node's username and password; the panel's cookie
-// is kept in the client's jar for the rest of the round.
-func (x *xuiAPI) login(ctx context.Context) error {
+// versionBelow reports whether v is older than major.minor.
+func versionBelow(v string, major, minor int) bool {
+	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
+	if len(parts) < 2 {
+		return false
+	}
+	ma, err1 := strconv.Atoi(parts[0])
+	mi, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return ma < major || ma == major && mi < minor
+}
+
+// signIn signs in with the node's username and password and keeps the cookie.
+func (x *xuiAPI) signIn(ctx context.Context) error {
+	jar, _ := cookiejar.New(nil)
+	x.client.Jar = jar
 	form := url.Values{"username": {x.node.Username}, "password": {x.node.Password}}
 	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
 	defer cancel()
@@ -102,7 +193,7 @@ func (x *xuiAPI) login(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return errors.New("nothing answered there; the address needs that panel's secret path, as in its access URL")
+		return errNotThere
 	}
 	var env xuiEnvelope
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&env); err != nil {
@@ -111,6 +202,7 @@ func (x *xuiAPI) login(ctx context.Context) error {
 	if !env.Success {
 		return errors.New("the username or password was refused (a panel with two-factor sign-in needs an API token instead)")
 	}
+	xuiSessions.Store(xuiSessionKey(x.node), http.CookieJar(jar))
 	return nil
 }
 
@@ -120,46 +212,57 @@ type xuiEnvelope struct {
 	Obj     json.RawMessage `json:"obj"`
 }
 
+var errNotThere = errors.New("nothing answered there; the address needs that panel's secret path, as in its access URL")
+
+// do calls the API, under /panel/api.
 func (x *xuiAPI) do(ctx context.Context, method, path string, body, into any) error {
-	err := x.once(ctx, method, path, body, into)
-	// A kept sign-in that has lapsed answers 404, as everything outside it
-	// does: sign in again, once, and try again.
+	return x.call(ctx, method, x.base+path, body, into)
+}
+
+// call sends a request to the panel and reads its envelope. A kept sign-in
+// that has lapsed answers 404, as everything outside it does: it signs in
+// again, once, and tries again.
+func (x *xuiAPI) call(ctx context.Context, method, target string, body, into any) error {
+	err := x.once(ctx, method, target, body, into)
 	if x.session && errors.Is(err, errNotThere) {
 		xuiSessions.Delete(xuiSessionKey(x.node))
-		jar, _ := cookiejar.New(nil)
-		x.client.Jar = jar
-		if lerr := x.login(ctx); lerr != nil {
+		if lerr := x.signIn(ctx); lerr != nil {
 			return lerr
 		}
-		xuiSessions.Store(xuiSessionKey(x.node), http.CookieJar(jar))
-		err = x.once(ctx, method, path, body, into)
+		err = x.once(ctx, method, target, body, into)
 	}
 	return err
 }
 
-var errNotThere = errors.New("nothing answered there; the address needs that panel's secret path, as in its access URL")
-
-func (x *xuiAPI) once(ctx context.Context, method, path string, body, into any) error {
+func (x *xuiAPI) once(ctx context.Context, method, target string, body, into any) error {
 	var rd io.Reader
-	if body != nil {
-		raw, err := json.Marshal(body)
+	contentType := ""
+	switch b := body.(type) {
+	case nil:
+	case url.Values:
+		rd, contentType = strings.NewReader(b.Encode()), "application/x-www-form-urlencoded"
+	default:
+		raw, err := json.Marshal(b)
 		if err != nil {
 			return fmt.Errorf("encode: %w", err)
 		}
-		rd = bytes.NewReader(raw)
+		rd, contentType = bytes.NewReader(raw), "application/json"
 	}
 	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, method, x.base+path, rd)
+	req, err := http.NewRequestWithContext(ctx, method, target, rd)
 	if err != nil {
 		return fmt.Errorf("bad address: %w", err)
 	}
-	if !x.session {
+	if x.token {
 		req.Header.Set("Authorization", "Bearer "+x.node.Token)
 	}
 	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	// What a browser sends; the older panels answer an unsigned request to
+	// their API with a page rather than 404 without it.
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := x.client.Do(req)
 	if err != nil {
@@ -168,9 +271,11 @@ func (x *xuiAPI) once(ctx context.Context, method, path string, body, into any) 
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return errors.New("the API token was refused; make a new one on that 3x-ui panel under Settings, API tokens")
+		if x.token {
+			return errors.New("the API token was refused; make a new one on that 3x-ui panel under Settings, API tokens")
+		}
+		return errNotThere
 	case resp.StatusCode == http.StatusNotFound:
-		// 3x-ui answers 404 to anything outside its secret path.
 		return errNotThere
 	case resp.StatusCode >= 300:
 		return fmt.Errorf("it answered %s", resp.Status)
@@ -194,7 +299,7 @@ func (x *xuiAPI) once(ctx context.Context, method, path string, body, into any) 
 	return nil
 }
 
-// xuiStatus is the part of /server/status this panel shows.
+// xuiStatus is the part of the server's status this panel shows.
 type xuiStatus struct {
 	CPU float64 `json:"cpu"`
 	Mem struct {
@@ -212,8 +317,23 @@ type xuiStatus struct {
 
 func (x *xuiAPI) status(ctx context.Context) (xuiStatus, error) {
 	var st xuiStatus
-	err := x.do(ctx, http.MethodGet, "server/status", nil, &st)
+	var err error
+	if x.gen == xuiGenOld {
+		err = x.call(ctx, http.MethodPost, x.root+"server/status", nil, &st)
+	} else {
+		err = x.do(ctx, http.MethodGet, "server/status", nil, &st)
+	}
+	if st.PanelVersion == "" {
+		st.PanelVersion = x.version
+	}
 	return st, err
+}
+
+func (x *xuiAPI) restartXray(ctx context.Context) error {
+	if x.gen == xuiGenOld {
+		return x.call(ctx, http.MethodPost, x.root+"server/restartXrayService", nil, nil)
+	}
+	return x.do(ctx, http.MethodPost, "server/restartXrayService", nil, nil)
 }
 
 // xuiClientStat is a client's counters on one inbound.
@@ -244,14 +364,16 @@ type xuiInboundRow struct {
 
 // xuiInboundClient is a client as it sits in an inbound's settings.
 type xuiInboundClient struct {
-	Email    string `json:"email"`
-	ID       string `json:"id"`
-	Password string `json:"password"`
-	Auth     string `json:"auth"`
-	Flow     string `json:"flow"`
-	Method   string `json:"method"`
-	Enable   bool   `json:"enable"`
-	LimitIP  int    `json:"limitIp"`
+	Email      string `json:"email"`
+	ID         string `json:"id"`
+	Password   string `json:"password"`
+	Auth       string `json:"auth"`
+	Secret     string `json:"secret"`
+	PrivateKey string `json:"privateKey"`
+	Flow       string `json:"flow"`
+	Method     string `json:"method"`
+	Enable     bool   `json:"enable"`
+	LimitIP    int    `json:"limitIp"`
 }
 
 type xuiSettings struct {
@@ -292,9 +414,14 @@ func (x *xuiAPI) inbounds(ctx context.Context) ([]xuiInboundRow, error) {
 
 // xuiClient is a client as this panel writes it.
 type xuiClient struct {
-	ID         string `json:"id,omitempty"`
-	Password   string `json:"password,omitempty"`
-	Auth       string `json:"auth,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Password string `json:"password,omitempty"`
+	Auth     string `json:"auth,omitempty"`
+	// Secret is an MTProto client's; PrivateKey and PublicKey a WireGuard or
+	// AmneziaWG one's, the address being given it by that panel.
+	Secret     string `json:"secret,omitempty"`
+	PrivateKey string `json:"privateKey,omitempty"`
+	PublicKey  string `json:"publicKey,omitempty"`
 	Flow       string `json:"flow,omitempty"`
 	// Method is a Shadowsocks client's cipher. An inbound on one of the
 	// older ciphers needs it on every client: without it xray refuses the
@@ -318,7 +445,7 @@ func inClients(inboundID int, c xuiClient) map[string]any {
 }
 
 func (x *xuiAPI) addClient(ctx context.Context, inboundID int, c xuiClient) error {
-	if x.legacy {
+	if x.gen != xuiGenNew {
 		return x.do(ctx, http.MethodPost, "inbounds/addClient", inClients(inboundID, c), nil)
 	}
 	body := map[string]any{"client": c, "inboundIds": []int{inboundID}}
@@ -328,24 +455,29 @@ func (x *xuiAPI) addClient(ctx context.Context, inboundID int, c xuiClient) erro
 // updateClient changes a client; the older API finds it by the credential
 // it has now (key), as its inbound's protocol names it.
 func (x *xuiAPI) updateClient(ctx context.Context, inboundID int, key string, c xuiClient) error {
-	if x.legacy {
+	if x.gen != xuiGenNew {
 		return x.do(ctx, http.MethodPost, "inbounds/updateClient/"+url.PathEscape(key), inClients(inboundID, c), nil)
 	}
 	return x.do(ctx, http.MethodPost, "clients/update/"+url.PathEscape(c.Email), c, nil)
 }
 
-func (x *xuiAPI) deleteClient(ctx context.Context, inboundID int, email string) error {
-	if x.legacy {
+// deleteClient removes a client: by its credential (key) before 2.8, and by
+// its email after.
+func (x *xuiAPI) deleteClient(ctx context.Context, inboundID int, email, key string) error {
+	switch x.gen {
+	case xuiGenOld:
+		return x.do(ctx, http.MethodPost, fmt.Sprintf("inbounds/%d/delClient/%s", inboundID, url.PathEscape(key)), nil, nil)
+	case xuiGenMid:
 		return x.do(ctx, http.MethodPost, fmt.Sprintf("inbounds/%d/delClientByEmail/%s", inboundID, url.PathEscape(email)), nil, nil)
 	}
 	return x.do(ctx, http.MethodPost, "clients/del/"+url.PathEscape(email), nil, nil)
 }
 
-// links are the links the panel makes for a client: from its API, or before
-// version 3 from its own subscription service, by the client's subscription
-// id, which this panel sets to the email.
+// links are the links the panel makes for a client: from its API from 3.1,
+// and before it from its own subscription service, by the client's
+// subscription id, which this panel sets to the email.
 func (x *xuiAPI) links(ctx context.Context, email string) ([]string, error) {
-	if !x.legacy {
+	if x.gen == xuiGenNew {
 		var out []string
 		err := x.do(ctx, http.MethodGet, "clients/links/"+url.PathEscape(email), nil, &out)
 		return out, err
@@ -370,9 +502,12 @@ func (x *xuiAPI) links(ctx context.Context, email string) ([]string, error) {
 	return out, nil
 }
 
-// subURL is where the older panel's subscription service answers, read from
-// its settings.
+// subURL is where the panel's subscription service answers, read from its
+// settings, which are reached signed in.
 func (x *xuiAPI) subURL(ctx context.Context) (string, error) {
+	if !x.session {
+		return "", errors.New("before 3.1 a client's links come from the panel's settings, read signed in: give it the panel's username and password too")
+	}
 	var set struct {
 		Enable   bool   `json:"subEnable"`
 		Port     int    `json:"subPort"`
@@ -381,7 +516,7 @@ func (x *xuiAPI) subURL(ctx context.Context) (string, error) {
 		URI      string `json:"subURI"`
 		CertFile string `json:"subCertFile"`
 	}
-	if err := x.post(ctx, x.root+"panel/setting/all", &set); err != nil {
+	if err := x.call(ctx, http.MethodPost, x.root+"panel/setting/all", nil, &set); err != nil {
 		return "", fmt.Errorf("reading its settings: %w", err)
 	}
 	if !set.Enable {
@@ -403,27 +538,7 @@ func (x *xuiAPI) subURL(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%s://%s%s", scheme, net.JoinHostPort(host, fmt.Sprint(set.Port)), path), nil
 }
 
-// post calls a route outside /panel/api that answers the usual envelope.
-func (x *xuiAPI) post(ctx context.Context, target string, into any) error {
-	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := x.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	var env xuiEnvelope
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&env); err != nil || !env.Success {
-		return fmt.Errorf("it answered %s", resp.Status)
-	}
-	return json.Unmarshal(env.Obj, into)
-}
-
-// fetch reads a page that is not the API: the subscription.
+// fetch reads a page that is not the API: a subscription, the panel's page.
 func (x *xuiAPI) fetch(ctx context.Context, target string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
 	defer cancel()

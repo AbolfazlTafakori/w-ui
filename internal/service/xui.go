@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
 // 3x-ui panels as nodes.
@@ -173,14 +175,29 @@ func xuiName(in XUIInboundSeen, taken map[string]bool) string {
 // XUIEmail is the client email a file is given on a 3x-ui panel: unique
 // there, and recognisably this panel's, so the clients the 3x-ui panel's own
 // operator made are never touched.
-func XUIEmail(acc *model.Account) string {
-	return fmt.Sprintf("wui-%d", acc.ID)
+func XUIEmail(tag string, acc *model.Account) string {
+	return fmt.Sprintf("wui-%s-%d", tag, acc.ID)
 }
 
 // XUIOwns reports whether a client email on a 3x-ui panel is one this panel
-// made.
-func XUIOwns(email string) bool {
-	rest, ok := strings.CutPrefix(email, "wui-")
+// made: its own tag, and a number. Another W-UI panel on the same 3x-ui has
+// a tag of its own, and the two never take each other's clients for theirs.
+func XUIOwns(tag, email string) bool {
+	return ownedName(email, "wui-"+tag+"-")
+}
+
+// PGUsername is a file's user on a Pasarguard panel, and PGOwns says a
+// username is one this panel made, as XUIEmail and XUIOwns.
+func PGUsername(tag string, acc *model.Account) string {
+	return fmt.Sprintf("wui_%s_%d", tag, acc.ID)
+}
+
+func PGOwns(tag, name string) bool {
+	return ownedName(name, "wui_"+tag+"_")
+}
+
+func ownedName(name, prefix string) bool {
+	rest, ok := strings.CutPrefix(name, prefix)
 	if !ok || rest == "" {
 		return false
 	}
@@ -192,6 +209,35 @@ func XUIOwns(email string) bool {
 	return true
 }
 
+const keyPanelTag = "nodes.panelTag"
+
+// PanelTag is this panel's own mark on the clients and users it makes on
+// other panels: six letters and digits, drawn once and kept.
+func PanelTag(ctx context.Context, db *gorm.DB) (string, error) {
+	var row model.Setting
+	err := db.WithContext(ctx).Where("key = ?", keyPanelTag).Limit(1).Find(&row).Error
+	if err != nil {
+		return "", err
+	}
+	if row.Value != "" {
+		return row.Value, nil
+	}
+	b := make([]byte, 3)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	row = model.Setting{Key: keyPanelTag, Value: hex.EncodeToString(b), UpdatedAt: time.Now().UTC()}
+	if err := db.WithContext(ctx).Create(&row).Error; err != nil {
+		// Made by another round meanwhile: that one is the tag.
+		var again model.Setting
+		if db.WithContext(ctx).Where("key = ?", keyPanelTag).Limit(1).Find(&again).Error == nil && again.Value != "" {
+			return again.Value, nil
+		}
+		return "", err
+	}
+	return row.Value, nil
+}
+
 // xuiSecret is a new client's credential for an inbound of this kind: an id
 // for VLESS and VMess, a key of the cipher's size for Shadowsocks 2022, and a
 // password for the rest.
@@ -199,6 +245,24 @@ func xuiSecret(in model.XUIInbound) (string, error) {
 	switch in.Kind {
 	case "vless", "vmess":
 		return newUUID()
+	case "tuic":
+		id, err := newUUID()
+		if err != nil {
+			return "", err
+		}
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		return id + "|" + hex.EncodeToString(b), nil
+	case "wireguard", "amneziawg":
+		k, err := wgkey.GeneratePrivate()
+		if err != nil {
+			return "", err
+		}
+		return k.String(), nil
+	case "mtproto":
+		return "", nil
 	case "shadowsocks":
 		size := 0
 		switch strings.ToLower(in.Method) {
@@ -263,125 +327,176 @@ func SaveXUICounters(ctx context.Context, db *gorm.DB, usage []XUIUsage, links m
 }
 
 // XrayInboundInput is an inbound the form makes on a 3x-ui or Pasarguard
-// node: what an operator decides, the keys being drawn where it is made.
+// node, as that panel's own form makes it: the protocol's settings, the
+// transport and security (streamSettings) and sniffing as xray takes them,
+// and what each panel keeps beside them -- on 3x-ui the inbound's own
+// traffic allowance, expiry and reset, on Pasarguard the host its users'
+// links are written for. Keys are drawn by /api/xray/keys and arrive here
+// filled in.
 type XrayInboundInput struct {
 	Remark string `json:"-"`
 	Port   int    `json:"-"`
-	// Kind is vless, vmess, trojan or shadowsocks.
-	Kind string `json:"kind"`
-	// Transport is tcp, ws or grpc; Path is the WebSocket path or the gRPC
-	// service name.
-	Transport string `json:"transport"`
-	Path      string `json:"path"`
-	// Security is none or reality; Reality is for VLESS over TCP, and SNI is
-	// the site it borrows its handshake from.
-	Security string `json:"security"`
-	SNI      string `json:"sni"`
-	// Method is a Shadowsocks inbound's cipher.
-	Method string `json:"method"`
+
+	Protocol string         `json:"protocol"`
+	Listen   string         `json:"listen"`
+	Settings map[string]any `json:"settings"`
+	Stream   map[string]any `json:"streamSettings,omitempty"`
+	Sniffing map[string]any `json:"sniffing,omitempty"`
+
+	// 3x-ui: the inbound's own traffic allowance in bytes (0 none), its
+	// expiry in milliseconds since the epoch (0 none), and how often its
+	// traffic starts again.
+	Total           int64  `json:"total"`
+	ExpiryTime      int64  `json:"expiryTime"`
+	TrafficReset    string `json:"trafficReset"`
+	TrafficResetDay int    `json:"trafficResetDay"`
+
+	// Pasarguard: the host its users' links are written for.
+	Host *PGHostInput `json:"host,omitempty"`
+
+	// Customers is set here from the catalog: whether the kind takes them.
+	Customers bool `json:"-"`
 }
 
-// XrayProtocols are the kinds of inbound this panel makes on a 3x-ui or
-// Pasarguard node.
-var XrayProtocols = []string{"vless", "vmess", "trojan", "shadowsocks"}
+// PGHostInput is a Pasarguard host: where an inbound's users are told to
+// connect, which may differ from where the inbound listens.
+type PGHostInput struct {
+	Address     []string `json:"address"`
+	Port        int      `json:"port"`
+	SNI         []string `json:"sni"`
+	Host        []string `json:"host"`
+	Path        string   `json:"path"`
+	Fingerprint string   `json:"fingerprint"`
+	ALPN        []string `json:"alpn"`
+}
 
 // CreateXrayInbound makes an inbound on a node of another panel; set by the
 // nodes package, which speaks to them.
 var CreateXrayInbound func(ctx context.Context, node model.Node, in XrayInboundInput) (model.XUIInbound, error)
 
-func (in *XrayInboundInput) check() error {
-	known := false
-	for _, k := range XrayProtocols {
-		known = known || in.Kind == k
-	}
-	if !known {
-		return invalidField("protocol", "an inbound here is VLESS, VMess, Trojan or Shadowsocks")
+var trafficResets = map[string]bool{"": true, "never": true, "hourly": true, "daily": true, "weekly": true, "monthly": true}
+
+// check refuses what the node cannot take, and what xray would refuse
+// there, before anything is sent: a protocol that server's version does not
+// have, a security that protocol cannot carry, a transport it does not take.
+func (in *XrayInboundInput) check(node *model.Node) error {
+	kind, ok := InboundKindFor(node.Kind, node.Version, in.Protocol)
+	if !ok {
+		return invalidField("protocol", "%s (%s) has no %s inbound", node.Name, node.Version, in.Protocol)
 	}
 	if in.Port < 1 || in.Port > 65535 {
 		return invalidField("listenPort", "a port is from 1 to 65535")
 	}
-	if in.Transport == "" {
-		in.Transport = "tcp"
+	if in.Settings == nil {
+		in.Settings = map[string]any{}
 	}
-	switch in.Transport {
-	case "tcp":
-		in.Path = ""
-	case "ws":
-		if in.Path == "" {
-			in.Path = "/"
-		}
-		if !strings.HasPrefix(in.Path, "/") {
-			in.Path = "/" + in.Path
-		}
-	case "grpc":
-		if in.Path == "" {
-			in.Path = "grpc"
-		}
-	default:
-		return invalidField("xray.transport", "the transport is TCP, WebSocket or gRPC")
+	// Clients are this panel's to add, one per file, after the inbound is made.
+	if _, has := in.Settings["clients"]; has || kind.Customers {
+		in.Settings["clients"] = []any{}
 	}
-	if in.Kind == "shadowsocks" {
-		in.Transport, in.Path = "tcp", ""
-	}
-	if in.Security == "" {
-		in.Security = "none"
-	}
-	switch in.Security {
-	case "none":
-		in.SNI = ""
-	case "reality":
-		if in.Kind != "vless" || in.Transport != "tcp" {
-			return invalidField("xray.security", "Reality is for VLESS over TCP")
-		}
-		in.SNI = strings.TrimSpace(in.SNI)
-		if in.SNI == "" {
-			in.SNI = "www.speedtest.net"
-		}
-		if !validHostName(in.SNI) {
-			return invalidField("xray.sni", "the Reality site is a host name, such as www.speedtest.net")
-		}
-	default:
-		return invalidField("xray.security", "the security is none or Reality")
-	}
-	if in.Kind == "shadowsocks" {
-		switch in.Method {
-		case "":
-			in.Method = "2022-blake3-aes-128-gcm"
-		case "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305", "chacha20-ietf-poly1305", "aes-256-gcm", "aes-128-gcm":
-		default:
-			return invalidField("xray.method", "that Shadowsocks cipher is not one xray takes")
+	if !kind.Stream {
+		// A kind with no transport takes, at most, a stream that says so:
+		// 3x-ui writes {"security": "none"} for WireGuard.
+		if len(in.Stream) != 1 || str(in.Stream["security"]) != "none" {
+			in.Stream = nil
 		}
 	} else {
-		in.Method = ""
+		if in.Stream == nil {
+			in.Stream = map[string]any{}
+		}
+		network, _ := in.Stream["network"].(string)
+		if network == "" {
+			network = "tcp"
+			in.Stream["network"] = network
+		}
+		if network == "raw" {
+			network = "tcp"
+		}
+		if len(kind.Transports) > 0 && !inList(kind.Transports, network) {
+			return invalidField("xray.network", "%s does not take the %s transport", in.Protocol, network)
+		}
+		security, _ := in.Stream["security"].(string)
+		if security == "" {
+			security = "none"
+			in.Stream["security"] = security
+		}
+		if !inList(kind.Securities, security) {
+			return invalidField("xray.security", "%s cannot have %s security", in.Protocol, security)
+		}
+		if security == "reality" {
+			if network != "tcp" && network != "grpc" && network != "xhttp" {
+				return invalidField("xray.security", "Reality is over TCP, gRPC or XHTTP")
+			}
+			rs, _ := in.Stream["realitySettings"].(map[string]any)
+			if rs == nil || str(rs["privateKey"]) == "" {
+				return invalidField("xray.reality.privateKey", "Reality needs a private key: draw one")
+			}
+			if names, _ := rs["serverNames"].([]any); len(names) == 0 {
+				return invalidField("xray.reality.serverNames", "Reality needs at least one server name")
+			}
+			if str(rs["dest"]) == "" && str(rs["target"]) == "" {
+				return invalidField("xray.reality.target", "Reality needs the site it borrows its handshake from")
+			}
+		}
+		if security == "tls" {
+			ts, _ := in.Stream["tlsSettings"].(map[string]any)
+			certs, _ := ts["certificates"].([]any)
+			ok := false
+			for _, c := range certs {
+				m, _ := c.(map[string]any)
+				if str(m["certificateFile"]) != "" || len(asList(m["certificate"])) > 0 {
+					ok = true
+				}
+			}
+			if !ok {
+				return invalidField("xray.tls.certificates", "TLS needs the server's certificate: a file on that server, or its text")
+			}
+		}
+	}
+	if !trafficResets[in.TrafficReset] {
+		return invalidField("xray.trafficReset", "the traffic resets never, hourly, daily, weekly or monthly")
+	}
+	if in.TrafficResetDay < 0 || in.TrafficResetDay > 31 {
+		return invalidField("xray.trafficResetDay", "the reset day is from 1 to 31")
+	}
+	if in.Total < 0 || in.ExpiryTime < 0 {
+		return invalidField("xray.total", "a traffic allowance or expiry cannot be negative")
 	}
 	return nil
 }
 
-func validHostName(h string) bool {
-	if len(h) == 0 || len(h) > 253 {
-		return false
-	}
-	for _, r := range h {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-') {
-			return false
+func inList(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+func str(v any) string {
+	s, _ := v.(string)
+	return strings.TrimSpace(s)
+}
+
+func asList(v any) []any {
+	l, _ := v.([]any)
+	return l
 }
 
 // createXray makes the inbound on the node and holds it here as a tunnel
 // straight away, rather than waiting for the next read to bring it.
 func (s *Interfaces) createXray(ctx context.Context, node *model.Node, in CreateInterfaceInput) (*model.Interface, error) {
 	if in.Xray == nil {
-		return nil, invalidField("protocol", "%s is a %s panel: choose VLESS, VMess, Trojan or Shadowsocks", node.Name, panelName(node.Kind))
+		return nil, invalidField("protocol", "%s is a %s panel: choose one of its protocols", node.Name, panelName(node.Kind))
 	}
 	x := *in.Xray
 	x.Remark = strings.TrimSpace(in.Name)
 	x.Port = in.ListenPort
-	// A remark on that panel, not a network device here: any text, short.
 	if x.Remark == "" {
 		return nil, invalidField("name", "an inbound needs a name")
 	}
+	// A remark on that panel, not a network device here: any text, short.
 	if err := checkText("name", x.Remark, 32); err != nil {
 		return nil, err
 	}
@@ -400,8 +515,11 @@ func (s *Interfaces) createXray(ctx context.Context, node *model.Node, in Create
 	if clash > 0 {
 		return nil, invalidField("listenPort", "port %d is already an inbound's on %s", x.Port, node.Name)
 	}
-	if err := x.check(); err != nil {
+	if err := x.check(node); err != nil {
 		return nil, err
+	}
+	if k, ok := InboundKindFor(node.Kind, node.Version, x.Protocol); ok {
+		x.Customers = k.Customers
 	}
 	if CreateXrayInbound == nil {
 		return nil, fmt.Errorf("%w: this panel cannot make inbounds on %s", ErrInvalid, node.Name)
@@ -409,6 +527,22 @@ func (s *Interfaces) createXray(ctx context.Context, node *model.Node, in Create
 	made, err := CreateXrayInbound(ctx, *node, x)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if k, ok := InboundKindFor(node.Kind, node.Version, x.Protocol); ok {
+		made.Customers = k.Customers
+	}
+	// The sync round may have read the new inbound from there before this
+	// got back: it is that tunnel, brought up to date, not a second one.
+	var already model.Interface
+	if err := s.db.WithContext(ctx).Where("node_id = ? AND protocol = ? AND name = ?", node.ID, model.ProtocolXray, x.Remark).
+		Limit(1).Find(&already).Error; err == nil && already.ID != 0 {
+		if err := s.db.WithContext(ctx).Model(&already).Updates(map[string]any{
+			"xui": model.JSONField[model.XUIInbound]{V: made}, "listen_port": x.Port, "enabled": true,
+		}).Error; err != nil {
+			return nil, fmt.Errorf("service: hold the new inbound: %w", err)
+		}
+		already.XUI = model.JSONField[model.XUIInbound]{V: made}
+		return &already, nil
 	}
 	iface := model.Interface{
 		NodeID: node.ID, Name: x.Remark, Protocol: model.ProtocolXray, Enabled: true,
@@ -423,6 +557,6 @@ func (s *Interfaces) createXray(ctx context.Context, node *model.Node, in Create
 			return nil, err
 		}
 	}
-	s.log.Info("inbound made on a node", "node", node.Name, "tunnel", iface.Name, "kind", x.Kind, "port", x.Port)
+	s.log.Info("inbound made on a node", "node", node.Name, "tunnel", iface.Name, "protocol", x.Protocol, "port", x.Port)
 	return &iface, nil
 }

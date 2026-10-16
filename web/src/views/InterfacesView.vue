@@ -863,11 +863,11 @@ async function submitForm(input) {
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
       const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, ...rest } = input
-      if (['vless', 'vmess', 'trojan', 'shadowsocks'].includes(input.protocol)) {
-        // An inbound on a 3x-ui or Pasarguard node, made there.
+      if (xray) {
+        // An inbound on a 3x-ui or Pasarguard node, made there as that
+        // panel's own form would make it.
         await api.createInterface({
-          name: input.name, nodeId: input.nodeId, protocol: 'xray', listenPort: Number(input.listenPort),
-          xray: { kind: input.protocol, ...xray },
+          name: input.name, nodeId: input.nodeId, protocol: 'xray', listenPort: Number(input.listenPort), xray,
         })
         notify(t('interface.created'), 'success')
         formFor.value = null

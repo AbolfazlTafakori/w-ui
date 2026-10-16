@@ -9,6 +9,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
 // A 3x-ui node, round by round: its inbounds read and held here as tunnels,
@@ -38,6 +39,10 @@ func (s *Syncer) xuiOne(ctx context.Context, node model.Node) {
 }
 
 func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
+	tag, err := service.PanelTag(ctx, s.db)
+	if err != nil {
+		return fmt.Errorf("this panel's tag: %w", err)
+	}
 	api, err := newXUIAPI(ctx, node)
 	if err != nil {
 		return err
@@ -49,13 +54,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 
 	// What the 3x-ui panel holds: each inbound, and every client on it by
 	// email with its settings and its counters.
-	type remoteClient struct {
-		inbound int
-		cfg     xuiInboundClient
-		stat    xuiClientStat
-		hasStat bool
-	}
-	remote := map[string]*remoteClient{}
+	remote := map[string]*remoteXUIClient{}
 	seen := make([]service.XUIInboundSeen, 0, len(rows))
 	for _, r := range rows {
 		var set xuiSettings
@@ -75,13 +74,16 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 			Up:       r.Up,
 			Down:     r.Down,
 		}
+		if k, ok := service.InboundKindFor(model.KindXUI, api.version, r.Protocol); ok {
+			in.Customers = k.Customers
+		}
 		if r.Protocol == "vless" && (st.Network == "tcp" || st.Network == "raw") &&
 			(st.Security == "reality" || st.Security == "tls") {
 			in.Flow = "xtls-rprx-vision"
 		}
 		seen = append(seen, service.XUIInboundSeen{XUIInbound: in, Port: r.Port})
 		for _, c := range set.Clients {
-			remote[c.Email] = &remoteClient{inbound: r.ID, cfg: c}
+			remote[c.Email] = &remoteXUIClient{inbound: r.ID, cfg: c}
 		}
 		for _, cs := range r.ClientStats {
 			if rc, ok := remote[cs.Email]; ok && rc.inbound == r.ID {
@@ -159,19 +161,22 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 	links := map[uint]string{}
 	for _, acc := range accounts {
 		iface, ok := byID[acc.InterfaceID]
-		if !ok || iface.XUI.V.Gone || !model.XUISupported(iface.XUI.V.Kind) {
+		if !ok || iface.XUI.V.Gone || !iface.XUI.V.Customers {
 			continue
 		}
 		c, ok := clients[acc.ClientID]
 		if !ok {
 			continue
 		}
-		email := service.XUIEmail(&acc)
+		email := service.XUIEmail(tag, &acc)
 		want[email] = true
-		desired := xuiClientFor(&acc, iface.XUI.V, c,
+		desired := xuiClientFor(tag, &acc, iface.XUI.V, c,
 			!node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled)
 
 		rc, exists := remote[email]
+		if exists {
+			keepTheirs(&desired, rc.cfg, iface.XUI.V.Kind)
+		}
 		changed := false
 		switch {
 		case !exists:
@@ -183,7 +188,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 		case rc.inbound != iface.XUI.V.RemoteID:
 			// On another inbound there than the one it belongs to here:
 			// moved by hand on that panel. Put back where it belongs.
-			if err := api.deleteClient(ctx, rc.inbound, email); err != nil {
+			if err := api.deleteClient(ctx, rc.inbound, email, xuiKey(kindOf(rows, rc.inbound), rc.cfg)); err != nil {
 				failures = append(failures, fmt.Sprintf("moving %s: %v", email, err))
 				continue
 			}
@@ -223,11 +228,23 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 	// Ours there and no longer anybody's here: a file removed, a customer
 	// deleted, a tunnel taken away.
 	for email, rc := range remote {
-		if want[email] || !service.XUIOwns(email) {
+		if want[email] || !service.XUIOwns(tag, email) {
 			continue
 		}
+		if !rc.cfg.Enable && lastOf(remote, rc.inbound, email) {
+			continue // the one left on its inbound there, already off
+		}
 		touched = true
-		if err := api.deleteClient(ctx, rc.inbound, email); err != nil {
+		if err := api.deleteClient(ctx, rc.inbound, email, xuiKey(kindOf(rows, rc.inbound), rc.cfg)); err != nil {
+			// 3x-ui before 3 keeps at least one client on an inbound: the
+			// last one is switched off instead, and left.
+			if lastOf(remote, rc.inbound, email) {
+				off := xuiClient{ID: rc.cfg.ID, Password: rc.cfg.Password, Auth: rc.cfg.Auth, Flow: rc.cfg.Flow,
+					Method: rc.cfg.Method, Email: email, SubID: email, Enable: false}
+				if uerr := api.updateClient(ctx, rc.inbound, xuiKey(kindOf(rows, rc.inbound), rc.cfg), off); uerr == nil {
+					continue
+				}
+			}
 			failures = append(failures, fmt.Sprintf("removing %s: %v", email, err))
 		}
 	}
@@ -267,6 +284,15 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 func xuiShape(in model.XUIInbound) model.XUIInbound {
 	in.Clients, in.Up, in.Down = 0, 0, 0
 	return in
+}
+
+// remoteXUIClient is a client on a 3x-ui panel: its inbound there, its
+// settings and its counters.
+type remoteXUIClient struct {
+	inbound int
+	cfg     xuiInboundClient
+	stat    xuiClientStat
+	hasStat bool
 }
 
 // since is what a counter that only grows has added since it read last; a
@@ -315,11 +341,11 @@ func (s *Syncer) chargeXUI(ctx context.Context, node model.Node, usage []service
 }
 
 // xuiClientFor is a file as a 3x-ui client.
-func xuiClientFor(acc *model.Account, in model.XUIInbound, c model.Client, enabled bool) xuiClient {
+func xuiClientFor(tag string, acc *model.Account, in model.XUIInbound, c model.Client, enabled bool) xuiClient {
 	out := xuiClient{
-		Email:   service.XUIEmail(acc),
+		Email:   service.XUIEmail(tag, acc),
 		Enable:  enabled,
-		SubID:   service.XUIEmail(acc),
+		SubID:   service.XUIEmail(tag, acc),
 		Comment: c.Name,
 	}
 	// One user per file, as everywhere on this panel; a customer sold any
@@ -334,6 +360,21 @@ func xuiClientFor(acc *model.Account, in model.XUIInbound, c model.Client, enabl
 		out.ID = acc.Secret
 	case "hysteria", "hysteria2":
 		out.Auth = acc.Secret
+	case "tuic":
+		// An id and a password, kept as one: id|password.
+		id, pass, _ := strings.Cut(acc.Secret, "|")
+		out.ID, out.Password = id, pass
+	case "wireguard", "amneziawg":
+		// The device's own key pair; its address is that panel's to give.
+		if k, err := wgkey.Parse(acc.Secret); err == nil {
+			if pub, err := k.Public(); err == nil {
+				out.PrivateKey, out.PublicKey = k.String(), pub.String()
+			}
+		}
+	case "mtproto":
+		// Made by that panel, for the inbound's own fake-TLS site.
+	case "masque":
+		out.Password = acc.Secret
 	case "shadowsocks":
 		out.Password = acc.Secret
 		if !strings.HasPrefix(in.Method, "2022-") {
@@ -343,6 +384,26 @@ func xuiClientFor(acc *model.Account, in model.XUIInbound, c model.Client, enabl
 		out.Password = acc.Secret
 	}
 	return out
+}
+
+// lastOf reports whether a client is the only one on its inbound there.
+func lastOf(remote map[string]*remoteXUIClient, inbound int, email string) bool {
+	for e, rc := range remote {
+		if e != email && rc.inbound == inbound {
+			return false
+		}
+	}
+	return true
+}
+
+// kindOf is the protocol of an inbound, by its id there.
+func kindOf(rows []xuiInboundRow, id int) string {
+	for _, r := range rows {
+		if r.ID == id {
+			return r.Protocol
+		}
+	}
+	return ""
 }
 
 // xuiKey is the credential the older 3x-ui API finds a client by, as its
@@ -355,15 +416,28 @@ func xuiKey(kind string, c xuiInboundClient) string {
 		return c.Email
 	case "hysteria", "hysteria2":
 		return c.Auth
+	case "mtproto":
+		return c.Secret
+	case "wireguard", "amneziawg":
+		return c.Email
 	}
 	return c.ID
 }
 
 // xuiDiffers reports whether a client there is not as this panel wants it.
+// keepTheirs carries over what a client has there that this panel leaves to
+// that panel: an MTProto secret it made for the inbound's site.
+func keepTheirs(want *xuiClient, have xuiInboundClient, kind string) {
+	if kind == "mtproto" {
+		want.Secret = have.Secret
+	}
+}
+
 func xuiDiffers(have xuiInboundClient, want xuiClient) bool {
 	return have.Enable != want.Enable || have.LimitIP != want.LimitIP ||
 		have.ID != want.ID || have.Password != want.Password || have.Auth != want.Auth ||
-		have.Flow != want.Flow || have.Method != want.Method
+		have.Flow != want.Flow || have.Method != want.Method ||
+		have.Secret != want.Secret || have.PrivateKey != want.PrivateKey
 }
 
 // xuiHost is the address a 3x-ui node's customers dial: its panel's host.
@@ -379,6 +453,9 @@ func xuiHost(address string) string {
 func askXUI(ctx context.Context, node model.Node) (Snapshot, error) {
 	var snap Snapshot
 	start := time.Now()
+	// The version is learned again on every probe: a panel upgraded on
+	// its own is spoken to as it now is.
+	xuiInfos.Delete(xuiInfoKey(node))
 	api, err := newXUIAPI(ctx, node)
 	if err != nil {
 		return snap, err
@@ -390,7 +467,7 @@ func askXUI(ctx context.Context, node model.Node) (Snapshot, error) {
 	}
 	snap.Version = "3x-ui " + st.PanelVersion
 	if st.PanelVersion == "" {
-		snap.Version = "3x-ui (before 3)"
+		snap.Version = "3x-ui"
 	}
 	snap.UptimeSec = st.Uptime
 	snap.CPUPercent = st.CPU

@@ -271,6 +271,9 @@ type XUIInbound struct {
 	// there that still has customers here.
 	Enabled bool `json:"enabled"`
 	Gone    bool `json:"gone,omitempty"`
+	// Customers says this panel's customers can be put on it: that panel
+	// keeps a client per user on it and counts them (service.InboundKinds).
+	Customers bool `json:"customers"`
 	// Clients and Up/Down are the inbound's own totals there, every client
 	// on it counted, ours or not.
 	Clients int    `json:"clients"`
@@ -278,12 +281,3 @@ type XUIInbound struct {
 	Down    uint64 `json:"down"`
 }
 
-// XUISupported reports whether this panel can add its customers to an
-// inbound of this kind.
-func XUISupported(kind string) bool {
-	switch kind {
-	case "vless", "vmess", "trojan", "shadowsocks", "hysteria", "hysteria2":
-		return true
-	}
-	return false
-}

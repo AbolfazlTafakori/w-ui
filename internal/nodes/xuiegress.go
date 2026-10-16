@@ -100,15 +100,26 @@ func egressFor(ctx context.Context, db *gorm.DB) (map[string]any, string, error)
 	return out, ob.Tag, nil
 }
 
+// xrayConfigPath is where the panel keeps its xray config: under the API
+// from 3.3, and before it under /panel, reached signed in.
+func (x *xuiAPI) xrayConfigPath() (string, error) {
+	if x.version != "" && !versionBelow(x.version, 3, 3) {
+		return x.base + "xray/", nil
+	}
+	if !x.session {
+		return "", errors.New("before 3.3 its xray settings are reached signed in: give it the panel's username and password too, for the outbound")
+	}
+	return x.root + "panel/xray/", nil
+}
+
 // xrayTemplate is the xray config a 3x-ui panel runs, as JSON.
 func (x *xuiAPI) xrayTemplate(ctx context.Context) (map[string]any, error) {
-	path := "xray/"
+	path, err := x.xrayConfigPath()
+	if err != nil {
+		return nil, err
+	}
 	var raw json.RawMessage
-	if x.legacy {
-		if err := x.post(ctx, x.root+"panel/xray/", &raw); err != nil {
-			return nil, err
-		}
-	} else if err := x.do(ctx, http.MethodPost, path, nil, &raw); err != nil {
+	if err := x.call(ctx, http.MethodPost, path, nil, &raw); err != nil {
 		return nil, err
 	}
 	var wrap struct {
@@ -125,46 +136,18 @@ func (x *xuiAPI) xrayTemplate(ctx context.Context) (map[string]any, error) {
 }
 
 func (x *xuiAPI) saveXrayTemplate(ctx context.Context, cfg map[string]any) error {
+	path, err := x.xrayConfigPath()
+	if err != nil {
+		return err
+	}
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	form := url.Values{"xraySetting": {string(raw)}}
-	target := x.base + "xray/update"
-	if x.legacy {
-		target = x.root + "panel/xray/update"
+	if err := x.call(ctx, http.MethodPost, path+"update", url.Values{"xraySetting": {string(raw)}}, nil); err != nil {
+		return fmt.Errorf("it refused the xray settings: %w", err)
 	}
-	if err := x.form(ctx, target, form); err != nil {
-		return err
-	}
-	return x.do(ctx, http.MethodPost, "server/restartXrayService", nil, nil)
-}
-
-// form posts a form to a route that answers the usual envelope.
-func (x *xuiAPI) form(ctx context.Context, target string, form url.Values) error {
-	ctx, cancel := context.WithTimeout(ctx, xuiTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if !x.session {
-		req.Header.Set("Authorization", "Bearer "+x.node.Token)
-	}
-	resp, err := x.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("could not reach it: %w", err)
-	}
-	defer resp.Body.Close()
-	var env xuiEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		return fmt.Errorf("it answered %s", resp.Status)
-	}
-	if !env.Success {
-		return fmt.Errorf("it refused the xray settings: %s", env.Msg)
-	}
-	return nil
+	return x.restartXray(ctx)
 }
 
 // withEgress is cfg with this panel's outbound and rule as they should be:

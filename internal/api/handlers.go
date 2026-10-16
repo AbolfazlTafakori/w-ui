@@ -1025,6 +1025,40 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, node)
 }
 
+// handleNodeInboundKinds says what a node of another panel can serve.
+func (s *Server) handleNodeInboundKinds(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var node model.Node
+	if err := s.db.WithContext(r.Context()).First(&node, id).Error; err != nil {
+		fail(w, s.log, fmt.Errorf("%w: no node %d", service.ErrNotFound, id))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"kind": node.Kind, "version": node.Version,
+		"kinds": service.InboundKinds(node.Kind, node.Version),
+	})
+}
+
+func (s *Server) handleXrayKeys(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Kind   string `json:"kind"`
+		Method string `json:"method"`
+		Domain string `json:"domain"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	keys, err := service.XrayKeys(in.Kind, in.Method, in.Domain)
+	if err != nil {
+		fail(w, s.log, fmt.Errorf("%w: %v", service.ErrInvalid, err))
+		return
+	}
+	writeJSON(w, http.StatusOK, keys)
+}
+
 func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {

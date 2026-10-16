@@ -493,6 +493,7 @@ func run() error {
 	syncer.Sessions = rec.SetRemoteSessions
 	syncer.Holds = rec.Holds
 	syncer.XUIMirror = ifaceSvc.MirrorXUI
+	service.CreateXrayInbound = nodes.CreateXrayInbound
 	rec.OnHold = syncer.PushHold
 	service.ConnectionsNow = rec.ConnectionsNow
 	service.LiveClients = rec.LiveClients

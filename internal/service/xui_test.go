@@ -10,16 +10,20 @@ import (
 
 func TestXUIOwns(t *testing.T) {
 	for email, want := range map[string]bool{
-		"wui-12": true, "wui-1": true,
-		"wui-": false, "wui-1a": false, "wtest-1": false, "user@example.com": false, "WUI-3": false,
+		"wui-a1b2c3-12": true, "wui-a1b2c3-1": true,
+		"wui-a1b2c3-": false, "wui-a1b2c3-1a": false, "wui-ffffff-12": false, "wui-12": false,
+		"wtest-1": false, "user@example.com": false,
 	} {
-		if got := XUIOwns(email); got != want {
+		if got := XUIOwns("a1b2c3", email); got != want {
 			t.Errorf("XUIOwns(%q) = %v, want %v", email, got, want)
 		}
 	}
 	acc := model.Account{ID: 42}
-	if !XUIOwns(XUIEmail(&acc)) {
-		t.Fatal("an email this panel makes is not recognised as its own")
+	if !XUIOwns("a1b2c3", XUIEmail("a1b2c3", &acc)) || XUIOwns("dddddd", XUIEmail("a1b2c3", &acc)) {
+		t.Fatal("a panel's own email is not its own, or another panel's is")
+	}
+	if !PGOwns("a1b2c3", PGUsername("a1b2c3", &acc)) || PGOwns("a1b2c3", "wui_test1") {
+		t.Fatal("Pasarguard names")
 	}
 }
 

@@ -337,7 +337,7 @@ func (s *Clients) loadInterfaces(ctx context.Context, ids []uint) ([]*model.Inte
 			switch v := iface.XUI.V; {
 			case v.Gone:
 				return nil, invalidField("interfaceIds", "the inbound %q was removed on its 3x-ui panel", iface.Name)
-			case !model.XUISupported(v.Kind):
+			case !v.Customers:
 				return nil, invalidField("interfaceIds", "customers cannot be added to a %s inbound (%q) of a 3x-ui panel", v.Kind, iface.Name)
 			}
 		}

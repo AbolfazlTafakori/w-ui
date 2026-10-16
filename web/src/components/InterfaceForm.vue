@@ -4,6 +4,7 @@
 // every field, and the settings only one protocol has gathered under that
 // protocol's own heading.
 import { computed, nextTick, ref, watch } from 'vue'
+import XrayInboundForm from './XrayInboundForm.vue'
 import { api } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
@@ -102,8 +103,6 @@ const form = ref(
         awg: null,
         awgLevel: 'modern',
         enabled: true,
-        // An inbound on a 3x-ui or Pasarguard node.
-        xray: { transport: 'tcp', path: '', security: 'reality', sni: 'www.speedtest.net', method: '2022-blake3-aes-128-gcm' },
       },
 )
 const busy = ref(false)
@@ -116,16 +115,22 @@ const rank = (p) => (ORDER.includes(p) ? ORDER.indexOf(p) : ORDER.length)
 const ownProtocols = computed(() => [...(store.meta?.protocols || ['wireguard'])].sort((a, b) => rank(a) - rank(b)))
 // A 3x-ui or Pasarguard node serves what its xray does, not what this panel
 // runs: the list is that server's, and its inbound is made there.
-const XRAY_KINDS = ['vless', 'vmess', 'trojan', 'shadowsocks']
 const chosenNode = computed(() => props.nodes.find((n) => n.id === form.value.nodeId) || props.nodes[0])
-const xrayNode = computed(() => ['xui', 'pasarguard'].includes(chosenNode.value?.kind))
-const protocols = computed(() => (xrayNode.value ? XRAY_KINDS : ownProtocols.value))
-const isXray = computed(() => XRAY_KINDS.includes(form.value.protocol))
-// A server changed to one of another kind takes the first protocol it has.
+// A 3x-ui or Pasarguard node serves what its xray does: its inbound is made
+// by XrayInboundForm, with that panel's own protocols and fields.
+const xrayNode = computed(() => !editing.value && ['xui', 'pasarguard'].includes(chosenNode.value?.kind))
+const isXray = xrayNode
+const protocols = ownProtocols
+const xin = ref(null)
+// None of this panel's own tunnel sections belongs to an xray node's
+// inbound; going back to a W-UI server starts it as a new tunnel again.
 watch(xrayNode, (x) => {
-  if (editing.value) return
-  if (x !== isXray.value) chooseProtocol(x ? 'vless' : 'wireguard')
-})
+  if (x) form.value.protocol = 'xray'
+  else if (form.value.protocol === 'xray') {
+    form.value.protocol = ''
+    chooseProtocol('wireguard')
+  }
+}, { immediate: true })
 
 // Only worth asking when there is more than one answer. A panel that has
 // never added a node would otherwise show a select with a single option.
@@ -274,13 +279,6 @@ function chooseProtocol(p) {
   if (editing.value || form.value.protocol === p) return
   form.value.protocol = p
   clearError('protocol')
-  if (XRAY_KINDS.includes(p)) {
-    form.value.name = p === 'shadowsocks' ? 'ss' : p
-    form.value.listenPort = 443
-    form.value.xray.security = p === 'vless' ? 'reality' : 'none'
-    if (p === 'shadowsocks') form.value.xray.transport = 'tcp'
-    return
-  }
   Object.assign(form.value, defaults[p])
   if (p !== 'wireguard') form.value.mode = 'standard'
 }
@@ -300,6 +298,17 @@ async function submit() {
   fieldName.value = ''
   fieldError.value = ''
   try {
+    if (xrayNode.value) {
+      let xray
+      try {
+        xray = xin.value.payload()
+      } catch (e) {
+        fieldError.value = e.message
+        return
+      }
+      await emit('submit', { name: form.value.name, nodeId: form.value.nodeId, listenPort: form.value.listenPort, xray })
+      return
+    }
     await emit('submit', { ...form.value })
   } finally {
     busy.value = false
@@ -362,7 +371,7 @@ defineExpose({ showError })
                 <p v-if="fieldName === 'nodeId'" class="field-error" role="alert">{{ fieldError }}</p>
               </div>
             </div>
-            <div :class="canChooseNode ? 'acol12' : 'acol24'">
+            <div v-if="!xrayNode" :class="canChooseNode ? 'acol12' : 'acol24'">
               <div class="aform-item">
                 <label class="aform-label required" for="if-proto">{{ t('client.protocol') }}</label>
                 <div class="aselect" :class="{ disabled: editing, invalid: fieldName === 'protocol' }">
@@ -428,60 +437,8 @@ defineExpose({ showError })
             </div>
           </div>
 
-          <!-- An inbound on a 3x-ui or Pasarguard node: its transport and
-               security. The keys are drawn where it is made. -->
-          <div v-if="isXray" class="arow16">
-            <div v-if="form.protocol !== 'shadowsocks'" class="acol12">
-              <div class="aform-item">
-                <label class="aform-label" for="if-xnet">{{ t('interface.xrayTransport') }}</label>
-                <div class="aselect">
-                  <select id="if-xnet" v-model="form.xray.transport" data-field="xray.transport" @change="form.xray.transport !== 'tcp' && (form.xray.security = 'none')">
-                    <option value="tcp">TCP</option>
-                    <option value="ws">WebSocket</option>
-                    <option value="grpc">gRPC</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div v-if="form.protocol === 'vless' && form.xray.transport === 'tcp'" class="acol12">
-              <div class="aform-item">
-                <label class="aform-label" for="if-xsec">{{ t('interface.xraySecurity') }}</label>
-                <div class="aselect">
-                  <select id="if-xsec" v-model="form.xray.security" data-field="xray.security">
-                    <option value="reality">Reality</option>
-                    <option value="none">{{ t('interface.xrayNone') }}</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div v-if="form.xray.transport !== 'tcp' && form.protocol !== 'shadowsocks'" class="acol12">
-              <div class="aform-item">
-                <label class="aform-label" for="if-xpath">{{ form.xray.transport === 'grpc' ? 'Service name' : 'Path' }}</label>
-                <label class="ainput block"><input id="if-xpath" v-model="form.xray.path" data-field="xray.path" class="ltr" :placeholder="form.xray.transport === 'grpc' ? 'grpc' : '/'" /></label>
-              </div>
-            </div>
-            <div v-if="form.protocol === 'vless' && form.xray.transport === 'tcp' && form.xray.security === 'reality'" class="acol12">
-              <div class="aform-item">
-                <label class="aform-label" for="if-xsni">{{ t('interface.xraySni') }} <HelpTip :text="t('interface.xraySniHint')" /></label>
-                <label class="ainput block" :class="{ invalid: fieldName === 'xray.sni' }"><input id="if-xsni" v-model="form.xray.sni" data-field="xray.sni" class="ltr" placeholder="www.speedtest.net" /></label>
-                <p v-if="fieldName === 'xray.sni'" class="field-error" role="alert">{{ fieldError }}</p>
-              </div>
-            </div>
-            <div v-if="form.protocol === 'shadowsocks'" class="acol12">
-              <div class="aform-item">
-                <label class="aform-label" for="if-xm">{{ t('interface.xrayMethod') }}</label>
-                <div class="aselect">
-                  <select id="if-xm" v-model="form.xray.method" data-field="xray.method">
-                    <option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</option>
-                    <option value="2022-blake3-aes-256-gcm">2022-blake3-aes-256-gcm</option>
-                    <option value="2022-blake3-chacha20-poly1305">2022-blake3-chacha20-poly1305</option>
-                    <option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</option>
-                    <option value="aes-256-gcm">aes-256-gcm</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
+          <XrayInboundForm v-if="xrayNode" ref="xin" :node="chosenNode" :port="form.listenPort"
+            @port="(v) => (form.listenPort = v)" @name="(v) => (form.name = v)" @error="(m) => (fieldError = m)" />
 
           <div v-if="!isXray" class="arow16">
             <div class="acol12">
@@ -499,7 +456,7 @@ defineExpose({ showError })
           </div>
 
           <!-- WireGuard only: AmneziaWG's disguise. -->
-          <div v-if="isWireGuard" class="arow16">
+          <div v-if="!xrayNode && isWireGuard" class="arow16">
             <div class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-mode">{{ t('interface.mode') }} <HelpTip :text="t('interface.modeHint')" /></label>
@@ -532,7 +489,7 @@ defineExpose({ showError })
           <!-- OpenVPN only: WireGuard and L2TP are UDP and have no other
                option, so offering the choice there would be offering a
                setting that does nothing. -->
-          <div v-if="isOpenVPN" class="arow16">
+          <div v-if="!xrayNode && isOpenVPN" class="arow16">
             <div class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport">{{ t('interface.transport') }} <HelpTip :text="form.transport === 'tcp' ? t('interface.transportTcpHint') : t('interface.transportUdpHint')" /></label>

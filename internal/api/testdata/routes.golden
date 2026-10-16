@@ -131,6 +131,8 @@ GET    /api/nodes                                     Nodes          auth=true  
 POST   /api/nodes                                     Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 PATCH  /api/nodes/{id}                                Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 DELETE /api/nodes/{id}                                Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
+GET    /api/nodes/{id}/inbound-kinds                  Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
+POST   /api/xray/keys                                 Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/nodes/{id}/probe                          Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/tokens                                    Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 POST   /api/tokens                                    Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes

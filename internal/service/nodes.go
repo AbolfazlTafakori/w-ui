@@ -232,6 +232,26 @@ func (s *Nodes) Delete(ctx context.Context, id uint) error {
 		return fmt.Errorf("%w: this panel's own entry cannot be removed", ErrInvalid)
 	}
 
+	// A 3x-ui or Pasarguard node's tunnels are its inbounds as read from
+	// there, not configuration held here: they go with the node, and the
+	// inbounds stay that panel's. Refused only while customers are on them,
+	// whose clients there would be left behind with nobody to remove them.
+	if node.Kind == model.KindXUI || node.Kind == model.KindPG {
+		var held int64
+		if err := s.db.WithContext(ctx).Model(&model.Account{}).
+			Where("interface_id IN (?)", s.db.Model(&model.Interface{}).Select("id").Where("node_id = ?", id)).
+			Count(&held).Error; err != nil {
+			return fmt.Errorf("service: count devices: %w", err)
+		}
+		if held > 0 {
+			return fmt.Errorf("%w: %d customer file(s) are on %s; take them off it first, so their clients there are removed",
+				ErrInvalid, held, node.Name)
+		}
+		if err := s.db.WithContext(ctx).Where("node_id = ?", id).Delete(&model.Interface{}).Error; err != nil {
+			return fmt.Errorf("service: remove its tunnels: %w", err)
+		}
+	}
+
 	// Interfaces on a node this panel no longer watches would be orphaned rows
 	// that no reconciler visits, so removal is refused while any remain rather
 	// than leaving them behind or deleting a remote server's configuration
