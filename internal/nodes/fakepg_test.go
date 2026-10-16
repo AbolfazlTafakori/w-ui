@@ -55,7 +55,9 @@ type fakePG struct {
 	// user; syncBroken that a user was given one since.
 	singleKey  map[string]bool
 	syncBroken bool
-	srv        *httptest.Server
+	// everyUser counts the listings of every user it was asked for.
+	everyUser int
+	srv       *httptest.Server
 }
 
 func newFakePG(t *testing.T) *fakePG {
@@ -283,11 +285,22 @@ func (f *fakePG) modify(u *fakePGUser, body []byte) {
 }
 
 func (f *fakePG) serveUsers(w http.ResponseWriter, q url.Values) {
+	named := map[string]bool{}
+	for _, n := range q["username"] {
+		named[n] = true
+	}
+	if q.Get("search") == "" && len(named) == 0 {
+		f.everyUser++
+	}
 	var names []string
 	for n := range f.users {
-		if s := q.Get("search"); s == "" || strings.Contains(n, s) {
-			names = append(names, n)
+		if s := q.Get("search"); s != "" && !strings.Contains(n, s) {
+			continue
 		}
+		if len(named) > 0 && !named[n] {
+			continue
+		}
+		names = append(names, n)
 	}
 	sort.Strings(names)
 	offset, _ := strconv.Atoi(q.Get("offset"))

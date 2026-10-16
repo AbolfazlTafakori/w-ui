@@ -96,8 +96,8 @@ func (p *pgPanel) read(ctx context.Context) ([]service.XUIInboundSeen, error) {
 	return seen, nil
 }
 
-// prepare reads this panel's groups there, and its users: every user when
-// some were brought in from there, only this panel's own otherwise.
+// prepare reads this panel's groups there, and its users: its own, and the
+// ones brought in from there, by name.
 func (p *pgPanel) prepare(ctx context.Context, files []xrayFile) error {
 	p.groupOf = map[string]int{}
 	if len(files) > 0 {
@@ -111,19 +111,22 @@ func (p *pgPanel) prepare(ctx context.Context, files []xrayFile) error {
 			}
 		}
 	}
-	adopted := false
-	for _, f := range files {
-		adopted = adopted || f.acc.Adopted != ""
-	}
-	var users []pgUser
-	var err error
-	if adopted {
-		users, err = p.api.users(ctx, "")
-	} else {
-		users, err = p.api.ourUsers(ctx)
-	}
+	users, err := p.api.ourUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("reading its users: %w", err)
+	}
+	var brought []string
+	for _, f := range files {
+		if f.acc.Adopted != "" {
+			brought = append(brought, f.acc.Adopted)
+		}
+	}
+	if len(brought) > 0 {
+		theirs, err := p.api.usersNamed(ctx, brought)
+		if err != nil {
+			return fmt.Errorf("reading the users brought in: %w", err)
+		}
+		users = append(users, theirs...)
 	}
 	p.ours = make(map[string]pgUser, len(users))
 	p.everyone = make(map[string]*pgUser, len(users))

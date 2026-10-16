@@ -322,6 +322,36 @@ func (p *pgAPI) modifyUser(ctx context.Context, username, status string, group i
 	}, nil)
 }
 
+// usersNamed are the users of these names, asked for by name a few dozen at
+// a time rather than by reading every user there, which a panel of thousands
+// would answer with all of them every round. A panel that does not filter by
+// name answers with more, and only the ones named are kept.
+func (p *pgAPI) usersNamed(ctx context.Context, names []string) ([]pgUser, error) {
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	var out []pgUser
+	const chunk = 50
+	for i := 0; i < len(names); i += chunk {
+		part := names[i:min(i+chunk, len(names))]
+		q := url.Values{"username": part, "limit": {fmt.Sprint(len(part))}}
+		var page struct {
+			Users []pgUser `json:"users"`
+		}
+		if err := p.do(ctx, http.MethodGet, "/api/users?"+q.Encode(), nil, &page); err != nil {
+			return nil, err
+		}
+		for _, u := range page.Users {
+			if want[u.Username] {
+				out = append(out, u)
+				delete(want, u.Username)
+			}
+		}
+	}
+	return out, nil
+}
+
 // releaseUser switches a brought-in user and clears its own allowance and
 // expiry, which are this panel's now; its groups are left as they are.
 func (p *pgAPI) releaseUser(ctx context.Context, username, status string) error {

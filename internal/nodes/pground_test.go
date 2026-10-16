@@ -154,8 +154,16 @@ func TestAPasarguardPanelsOwnUsersAreBroughtIn(t *testing.T) {
 	if res, err := r.clients.ImportNodeUsers(r.ctx, r.node.ID, nil); err != nil || len(res) != 2 || res[0].Error != "" || res[1].Error != "" {
 		t.Fatalf("brought in %+v, %v", res, err)
 	}
+	f.mu.Lock()
+	f.everyUser = 0
+	f.mu.Unlock()
 	r.round()
 	r.round()
+	// The users brought in are asked for by name, not by reading every
+	// user there each round.
+	if f.everyUser != 0 {
+		t.Fatalf("every user there read %d times in two rounds", f.everyUser)
+	}
 	d := f.get("dave")
 	if d.DataLimit != 0 || d.Expire != nil || d.Status != "active" || len(d.Groups) != 1 || d.Groups[0] != g || d.Password != "pw-dave" {
 		t.Fatalf("dave there is %+v: same user and groups, limits cleared", d)
