@@ -126,3 +126,45 @@ func flush(t *testing.T, r *Reconciler) {
 	r.writer.flush(context.Background())
 	time.Sleep(10 * time.Millisecond)
 }
+
+// A customer on a node -- another W-UI, a 3x-ui, a Pasarguard -- whose plan
+// starts on first use has it started by their traffic there: the node's own
+// handshakes never come here. Without it the plan never starts, and so never
+// ends.
+func TestTrafficOnANodeStartsAPlanThatStartsOnFirstUse(t *testing.T) {
+	db := newTestDB(t)
+	c := model.Client{Name: "Gil", Protocol: model.ProtocolXray, Status: model.StatusActive,
+		QuotaBytes: 10 << 30, StartOnFirstUse: true, DurationDays: 30}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatal(err)
+	}
+	acc := model.Account{ClientID: c.ID, InterfaceID: 9, DeviceName: "device-1", IP: "10.0.0.9", Enabled: true}
+	if err := db.Create(&acc).Error; err != nil {
+		t.Fatal(err)
+	}
+	r := newReconciler(t, db)
+
+	// Counted with nothing moved: not used.
+	r.AddNodeReport(nil, []service.NodeDeviceUsage{{OriginID: acc.ID}})
+	flush(t, r)
+	if n, err := r.activate(context.Background(), time.Now().UTC()); err != nil || n != 0 {
+		t.Fatalf("started %d plans with no traffic (%v)", n, err)
+	}
+
+	r.AddNodeReport([]service.NodeUsage{{OriginID: c.ID, Bytes: 300, Up: 100, Down: 200}},
+		[]service.NodeDeviceUsage{{OriginID: acc.ID, Up: 100, Down: 200}})
+	flush(t, r)
+	var got model.Account
+	db.First(&got, acc.ID)
+	if got.LastHandshake == nil || got.LastSeenAt == nil || got.UpBytes != 100 {
+		t.Fatalf("its file after traffic on the node: handshake %v, seen %v, up %d", got.LastHandshake, got.LastSeenAt, got.UpBytes)
+	}
+	if n, err := r.activate(context.Background(), time.Now().UTC()); err != nil || n != 1 {
+		t.Fatalf("started %d plans after traffic on the node, want 1 (%v)", n, err)
+	}
+	var check model.Client
+	db.First(&check, c.ID)
+	if check.ExpiresAt == nil {
+		t.Fatal("the plan has no end")
+	}
+}

@@ -229,7 +229,13 @@ func (r *Reconciler) AddNodeReport(usage []service.NodeUsage, devices []service.
 			continue
 		}
 		r.fileSpeed.fromNode(d.OriginID, d.Up, d.Down, NodeReportEvery, now)
-		batch = append(batch, trafficUpdate{AccountID: d.OriginID, DevUp: d.Up, DevDown: d.Down, At: now})
+		batch = append(batch,
+			trafficUpdate{AccountID: d.OriginID, DevUp: d.Up, DevDown: d.Down, At: now},
+			// A file that moved traffic on a node was used: what starts a
+			// plan that starts on first use (activation.go) and shows a
+			// customer as last online. The node's handshakes, or a 3x-ui's,
+			// do not come here; its traffic does.
+			trafficUpdate{AccountID: d.OriginID, Handshake: now, At: now})
 	}
 	r.writer.submit(batch...)
 }
