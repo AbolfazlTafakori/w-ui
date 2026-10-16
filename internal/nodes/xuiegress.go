@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,24 +23,44 @@ import (
 // A customer on one of this panel's own servers leaves by the outbound at the
 // top of the list. A customer on a 3x-ui node is carried by that panel's
 // xray, which knows nothing of the list; so the outbound is put in that xray
-// as one of its own, tagged wui-out, with a rule that sends this panel's
-// clients -- their emails are wui- and a number -- into it, and nobody
-// else's. The 3x-ui operator's own users leave as they always did. The rule
-// matches by pattern, so it is written once and not again for every customer;
-// it changes only when the outbound does, and the outbound at the top being
-// direct takes both away.
+// as one of its own, tagged wui-out- and this panel's tag, with a rule that
+// sends this panel's clients into it and nobody else's: the ones it made, by
+// the pattern of their emails (wui-<tag>-<number>), and the ones brought in
+// from that panel, by name. The 3x-ui operator's own users leave as they
+// always did, and so do another W-UI panel's on the same node, which has a
+// tag, an outbound and a rule of its own. The pattern is written once, not
+// again for every customer; the rule changes only when the outbound does or a
+// user is brought in, and the outbound at the top being direct takes both
+// away.
 //
 // Nothing of that panel's is left broken: the config is changed, xray is
 // restarted, and if it does not come back running the config as it was is
 // put back.
 
-const (
-	xuiEgressTag  = "wui-out"
-	xuiEgressRule = `regexp:^wui-[0-9]+$`
-)
+// xuiEgressLegacyTag is the outbound a panel put there before panels had
+// tags. It was this panel's, and is taken away.
+const xuiEgressLegacyTag = "wui-out"
+
+// xuiEgressRoute is this panel's outbound on one node: its tag there, and
+// the users its rule sends into it.
+type xuiEgressRoute struct {
+	tag   string
+	users []string
+}
+
+// egressRoute is the route for this panel's tag and the users brought in
+// from that panel.
+func egressRoute(panelTag string, adopted []string) xuiEgressRoute {
+	brought := append([]string(nil), adopted...)
+	// The same list every round, so the config is not rewritten for nothing.
+	sort.Strings(brought)
+	users := append([]string{"regexp:^wui-" + regexp.QuoteMeta(panelTag) + "-[0-9]+$"}, brought...)
+	return xuiEgressRoute{tag: "wui-out-" + panelTag, users: users}
+}
 
 // egressFor is the outbound customers on an xray node leave by, as an xray
-// outbound: nil for direct, and an error for a kind xray cannot carry.
+// outbound without its tag: nil for direct, and an error for a kind xray
+// cannot carry.
 func egressFor(ctx context.Context, db *gorm.DB) (map[string]any, string, error) {
 	var ob model.Outbound
 	if err := db.WithContext(ctx).Order("position, id").Limit(1).Find(&ob).Error; err != nil {
@@ -49,7 +71,7 @@ func egressFor(ctx context.Context, db *gorm.DB) (map[string]any, string, error)
 	}
 	if !ob.Enabled || ob.Kind == model.OutboundBlock {
 		// Off, or blocked: nothing leaves, as on this panel's own servers.
-		return map[string]any{"protocol": "blackhole", "tag": xuiEgressTag}, ob.Tag, nil
+		return map[string]any{"protocol": "blackhole"}, ob.Tag, nil
 	}
 	var out map[string]any
 	switch ob.Kind {
@@ -96,7 +118,6 @@ func egressFor(ctx context.Context, db *gorm.DB) (map[string]any, string, error)
 			delete(ts, "allowInsecure")
 		}
 	}
-	out["tag"] = xuiEgressTag
 	return out, ob.Tag, nil
 }
 
@@ -152,8 +173,10 @@ func (x *xuiAPI) saveXrayTemplate(ctx context.Context, cfg map[string]any) error
 
 // withEgress is cfg with this panel's outbound and rule as they should be:
 // added or replaced when there is an outbound, taken away when there is none.
-// The rest of the config is the 3x-ui operator's and is left as it is.
-func withEgress(cfg map[string]any, egress map[string]any) map[string]any {
+// The rest of the config is the 3x-ui operator's, or another panel's, and is
+// left as it is.
+func withEgress(cfg map[string]any, egress map[string]any, route xuiEgressRoute) map[string]any {
+	ours := func(tag any) bool { return tag == route.tag || tag == xuiEgressLegacyTag }
 	out := map[string]any{}
 	for k, v := range cfg {
 		out[k] = v
@@ -161,7 +184,7 @@ func withEgress(cfg map[string]any, egress map[string]any) map[string]any {
 	var obs []any
 	if list, ok := cfg["outbounds"].([]any); ok {
 		for _, o := range list {
-			if m, ok := o.(map[string]any); ok && m["tag"] == xuiEgressTag {
+			if m, ok := o.(map[string]any); ok && ours(m["tag"]) {
 				continue
 			}
 			obs = append(obs, o)
@@ -175,24 +198,33 @@ func withEgress(cfg map[string]any, egress map[string]any) map[string]any {
 	var rules []any
 	if list, ok := r["rules"].([]any); ok {
 		for _, rule := range list {
-			if m, ok := rule.(map[string]any); ok && m["outboundTag"] == xuiEgressTag {
+			if m, ok := rule.(map[string]any); ok && ours(m["outboundTag"]) {
 				continue
 			}
 			rules = append(rules, rule)
 		}
 	}
 	if egress != nil {
-		obs = append(obs, egress)
-		ours := map[string]any{"type": "field", "user": []any{xuiEgressRule}, "outboundTag": xuiEgressTag}
+		ob := map[string]any{}
+		for k, v := range egress {
+			ob[k] = v
+		}
+		ob["tag"] = route.tag
+		obs = append(obs, ob)
+		users := make([]any, len(route.users))
+		for i, u := range route.users {
+			users[i] = u
+		}
+		rule := map[string]any{"type": "field", "user": users, "outboundTag": route.tag}
 		// After the panel's own api rule, which has to see its traffic
 		// first, and before everything else.
 		at := 0
-		for i, rule := range rules {
-			if m, ok := rule.(map[string]any); ok && m["outboundTag"] == "api" {
+		for i, existing := range rules {
+			if m, ok := existing.(map[string]any); ok && m["outboundTag"] == "api" {
 				at = i + 1
 			}
 		}
-		rules = append(rules[:at], append([]any{ours}, rules[at:]...)...)
+		rules = append(rules[:at], append([]any{rule}, rules[at:]...)...)
 	}
 	out["outbounds"] = obs
 	r["rules"] = rules
@@ -203,16 +235,21 @@ func withEgress(cfg map[string]any, egress map[string]any) map[string]any {
 // xuiEgress puts the outbound in a 3x-ui node's xray when it is not there as
 // it should be, and checks xray came back. A config whose xray does not run
 // is replaced by the one before.
-func (s *Syncer) xuiEgress(ctx context.Context, api *xuiAPI, node model.Node) error {
+func (s *Syncer) xuiEgress(ctx context.Context, api *xuiAPI, node model.Node, route xuiEgressRoute) error {
 	egress, tag, egressErr := egressFor(ctx, s.db)
-	cfg, err := api.xrayTemplate(ctx)
-	if err != nil {
-		return fmt.Errorf("reading its xray settings: %w", err)
-	}
 	if egressErr != nil {
 		egress = nil // left to leave directly, and said so below
 	}
-	next := withEgress(cfg, egress)
+	cfg, err := api.xrayTemplate(ctx)
+	if err != nil {
+		if egress == nil {
+			// Nothing to put there; a panel whose xray settings this one
+			// cannot reach (3.0 to 3.2 by token alone) is no fault then.
+			return egressErr
+		}
+		return fmt.Errorf("reading its xray settings: %w", err)
+	}
+	next := withEgress(cfg, egress, route)
 	if reflect.DeepEqual(normalJSON(next), normalJSON(cfg)) {
 		return egressErr
 	}
@@ -222,7 +259,7 @@ func (s *Syncer) xuiEgress(ctx context.Context, api *xuiAPI, node model.Node) er
 	// Restarting takes a moment; it is given a few to come back.
 	var st xuiStatus
 	for i := 0; i < 10; i++ {
-		time.Sleep(time.Second)
+		time.Sleep(xuiSettle)
 		if st, err = api.status(ctx); err == nil && st.Xray.State == "running" {
 			s.log.Info("the outbound is in a 3x-ui node's xray", "node", node.Name, "outbound", tag)
 			return egressErr
@@ -235,6 +272,10 @@ func (s *Syncer) xuiEgress(ctx context.Context, api *xuiAPI, node model.Node) er
 	}
 	return fmt.Errorf("its xray did not run with the outbound %s (%s); its settings were put back as they were", tag, st.Xray.Error)
 }
+
+// xuiSettle is how long a 3x-ui panel's xray is given between looks after a
+// restart; a variable so tests need not wait.
+var xuiSettle = time.Second
 
 // normalJSON is v through JSON, so a config read back compares equal to the
 // same config built here.

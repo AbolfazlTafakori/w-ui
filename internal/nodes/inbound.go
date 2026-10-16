@@ -80,7 +80,7 @@ func CreateXrayInbound(ctx context.Context, node model.Node, in service.XrayInbo
 func (x *xuiAPI) xrayRunsAfter(ctx context.Context) error {
 	var last xuiStatus
 	for i := 0; i < 8; i++ {
-		time.Sleep(time.Second)
+		time.Sleep(xuiSettle)
 		st, err := x.status(ctx)
 		if err == nil && (st.Xray.State == "running" || st.Xray.State == "") {
 			if i >= 2 {
@@ -101,7 +101,7 @@ func (x *xuiAPI) xrayRunsAfter(ctx context.Context) error {
 func (p *pgAPI) nodesRunAfter(ctx context.Context) error {
 	var last []pgNode
 	for i := 0; i < 15; i++ {
-		time.Sleep(2 * time.Second)
+		time.Sleep(pgSettle)
 		ns, err := p.nodes(ctx)
 		if err != nil {
 			continue
@@ -123,6 +123,172 @@ func (p *pgAPI) nodesRunAfter(ctx context.Context) error {
 		}
 	}
 	return errors.New("no node of its own answered")
+}
+
+// pgSettle is how long a Pasarguard panel's nodes are given between looks
+// after a restart; a variable so tests need not wait.
+var pgSettle = 2 * time.Second
+
+// pgCore is a Pasarguard core as its API gives and takes it.
+type pgCore struct {
+	ID     int            `json:"id"`
+	Name   string         `json:"name"`
+	Config map[string]any `json:"config"`
+}
+
+// putCore saves a core, and restarts its nodes with it when asked.
+func (p *pgAPI) putCore(ctx context.Context, core pgCore, restart bool) error {
+	name := core.Name
+	if name == "" {
+		name = "core"
+	}
+	return p.do(ctx, http.MethodPut, fmt.Sprintf("/api/core/%d?restart_nodes=%t", core.ID, restart), map[string]any{
+		"name": name, "config": core.Config, "exclude_inbound_tags": []string{}, "fallbacks_inbound_tags": []string{},
+	}, nil)
+}
+
+// addInbound puts an inbound in a Pasarguard panel's first core, restarts its
+// nodes with it, and gives it a host so its users have links.
+//
+// A Shadowsocks-2022 inbound is given a standing user before its nodes start
+// with it (pgStandingUser): the core is saved first without a restart, the
+// user made while the nodes do not run the inbound yet and so pass it by, and
+// only then are they restarted -- so it starts with a user, and no sync of
+// anyone's fails, not even once.
+func (p *pgAPI) addInbound(ctx context.Context, in service.XrayInboundInput, nodeHost string) error {
+	var cores struct {
+		Cores []pgCore `json:"cores"`
+	}
+	if err := p.do(ctx, http.MethodGet, "/api/cores", nil, &cores); err != nil {
+		return err
+	}
+	if len(cores.Cores) == 0 {
+		return errors.New("the Pasarguard panel has no core to put the inbound in")
+	}
+	core := cores.Cores[0]
+	before, _ := json.Marshal(core.Config) // to put back if its node will not run with it
+	list, _ := core.Config["inbounds"].([]any)
+	for _, o := range list {
+		m, _ := o.(map[string]any)
+		if m["tag"] == in.Remark {
+			return fmt.Errorf("an inbound tagged %q is already on that Pasarguard panel", in.Remark)
+		}
+		if fmt.Sprint(m["port"]) == fmt.Sprint(in.Port) {
+			return fmt.Errorf("port %d is already an inbound's on that Pasarguard panel", in.Port)
+		}
+	}
+	listen := in.Listen
+	if listen == "" {
+		listen = "0.0.0.0"
+	}
+	inbound := map[string]any{"tag": in.Remark, "listen": listen, "port": in.Port, "protocol": in.Protocol, "settings": in.Settings}
+	if in.Stream != nil {
+		inbound["streamSettings"] = in.Stream
+	}
+	if in.Sniffing != nil {
+		inbound["sniffing"] = in.Sniffing
+	}
+	core.Config["inbounds"] = append(list, inbound)
+
+	standing := pgNeedsStandingUser(in)
+	if err := p.putCore(ctx, core, !standing); err != nil {
+		return fmt.Errorf("the Pasarguard panel refused the inbound: %w", err)
+	}
+	putBack := func(why error) error {
+		if standing {
+			_ = p.deleteUser(ctx, pgStandingName(in.Remark))
+		}
+		var old map[string]any
+		_ = json.Unmarshal(before, &old)
+		_ = p.putCore(ctx, pgCore{ID: core.ID, Name: core.Name, Config: old}, true)
+		return fmt.Errorf("the core was put back as it was: %w", why)
+	}
+	if standing {
+		if err := p.pgStandingUser(ctx, in.Remark); err != nil {
+			return putBack(fmt.Errorf("its standing user could not be made: %w", err))
+		}
+		if err := p.putCore(ctx, core, true); err != nil {
+			return putBack(err)
+		}
+	}
+	// Its nodes restart with the core: one that does not come back would
+	// carry none of that panel's users, its operator's own included.
+	if err := p.nodesRunAfter(ctx); err != nil {
+		return putBack(fmt.Errorf("its node did not run with this inbound: %w", err))
+	}
+	// Only an inbound with users has a host: Pasarguard writes links from it.
+	if !in.Customers {
+		return nil
+	}
+	h := map[string]any{"remark": "{USERNAME} " + in.Remark, "address": []string{nodeHost}, "port": in.Port, "inbound_tag": in.Remark, "priority": 0}
+	if hi := in.Host; hi != nil {
+		if len(hi.Address) > 0 {
+			h["address"] = hi.Address
+		}
+		if hi.Port > 0 {
+			h["port"] = hi.Port
+		}
+		if len(hi.SNI) > 0 {
+			h["sni"] = hi.SNI
+		}
+		if len(hi.Host) > 0 {
+			h["host"] = hi.Host
+		}
+		if hi.Path != "" {
+			h["path"] = hi.Path
+		}
+		if hi.Fingerprint != "" {
+			h["fingerprint"] = hi.Fingerprint
+		}
+		if len(hi.ALPN) > 0 {
+			h["alpn"] = hi.ALPN
+		}
+	}
+	if err := p.do(ctx, http.MethodPost, "/api/host/", h, nil); err != nil {
+		return fmt.Errorf("the inbound is made, but its host could not be: %w", err)
+	}
+	return nil
+}
+
+// pgNeedsStandingUser says an inbound must never start without a user: a
+// Pasarguard node starts an inbound with the users it has then, and xray runs
+// a Shadowsocks-2022 one with none as a one-key server that takes no users
+// -- the first added afterwards fails, and with it that panel's sync of every
+// user on the node, its operator's own included.
+func pgNeedsStandingUser(in service.XrayInboundInput) bool {
+	m, _ := in.Settings["method"].(string)
+	return in.Protocol == "shadowsocks" && strings.HasPrefix(m, "2022-")
+}
+
+// pgStandingUser gives an inbound a user of its own for good, in the group
+// this panel keeps for it, whose key nobody is given.
+func (p *pgAPI) pgStandingUser(ctx context.Context, tag string) error {
+	gs, err := p.groups(ctx)
+	if err != nil {
+		return err
+	}
+	gid := 0
+	for _, g := range gs {
+		if len(g.InboundTags) == 1 && g.InboundTags[0] == tag && g.Name == pgGroupName(tag) {
+			gid = g.ID
+		}
+	}
+	if gid == 0 {
+		g, err := p.createGroup(ctx, pgGroupName(tag), tag)
+		if err != nil {
+			return err
+		}
+		gid = g.ID
+	}
+	_, err = p.createUser(ctx, pgStandingName(tag), "active", "Keeps the Shadowsocks-2022 inbound "+tag+" taking users; made by W-UI, holds no one", gid)
+	return err
+}
+
+// pgStandingName is an inbound's standing user. Not a name of this panel's
+// customers' (wui_<tag>_<number>), so no round takes it for one and removes
+// it.
+func pgStandingName(tag string) string {
+	return fmt.Sprintf("wuikeep_%08x", crc32.ChecksumIEEE([]byte(tag)))
 }
 
 // addInbound makes an inbound on a 3x-ui panel; its id and tag there.
@@ -163,147 +329,4 @@ func (x *xuiAPI) addInbound(ctx context.Context, in service.XrayInboundInput) (i
 		made.Tag = fmt.Sprintf("inbound-%d", in.Port)
 	}
 	return made.ID, made.Tag, nil
-}
-
-// addInbound puts an inbound in a Pasarguard panel's first core, restarts its
-// nodes with it, and gives it a host so its users have links.
-func (p *pgAPI) addInbound(ctx context.Context, in service.XrayInboundInput, nodeHost string) error {
-	var cores struct {
-		Cores []struct {
-			ID     int            `json:"id"`
-			Name   string         `json:"name"`
-			Config map[string]any `json:"config"`
-		} `json:"cores"`
-	}
-	if err := p.do(ctx, http.MethodGet, "/api/cores", nil, &cores); err != nil {
-		return err
-	}
-	if len(cores.Cores) == 0 {
-		return errors.New("the Pasarguard panel has no core to put the inbound in")
-	}
-	core := cores.Cores[0]
-	before, _ := json.Marshal(core.Config) // to put back if its node will not run with it
-	list, _ := core.Config["inbounds"].([]any)
-	for _, o := range list {
-		m, _ := o.(map[string]any)
-		if m["tag"] == in.Remark {
-			return fmt.Errorf("an inbound tagged %q is already on that Pasarguard panel", in.Remark)
-		}
-		if fmt.Sprint(m["port"]) == fmt.Sprint(in.Port) {
-			return fmt.Errorf("port %d is already an inbound's on that Pasarguard panel", in.Port)
-		}
-	}
-	listen := in.Listen
-	if listen == "" {
-		listen = "0.0.0.0"
-	}
-	inbound := map[string]any{"tag": in.Remark, "listen": listen, "port": in.Port, "protocol": in.Protocol, "settings": in.Settings}
-	if in.Stream != nil {
-		inbound["streamSettings"] = in.Stream
-	}
-	if in.Sniffing != nil {
-		inbound["sniffing"] = in.Sniffing
-	}
-	core.Config["inbounds"] = append(list, inbound)
-	name := core.Name
-	if name == "" {
-		name = "core"
-	}
-	if err := p.do(ctx, http.MethodPut, fmt.Sprintf("/api/core/%d?restart_nodes=true", core.ID), map[string]any{
-		"name": name, "config": core.Config, "exclude_inbound_tags": []string{}, "fallbacks_inbound_tags": []string{},
-	}, nil); err != nil {
-		return fmt.Errorf("the Pasarguard panel refused the inbound: %w", err)
-	}
-	// Its nodes restart with the core: one that does not come back would
-	// carry none of that panel's users, its operator's own included.
-	if err := p.nodesRunAfter(ctx); err != nil {
-		var old map[string]any
-		_ = json.Unmarshal(before, &old)
-		_ = p.do(ctx, http.MethodPut, fmt.Sprintf("/api/core/%d?restart_nodes=true", core.ID), map[string]any{
-			"name": name, "config": old, "exclude_inbound_tags": []string{}, "fallbacks_inbound_tags": []string{},
-		}, nil)
-		return fmt.Errorf("its node did not run with this inbound, so the core was put back as it was: %w", err)
-	}
-	// Only an inbound with users has a host: Pasarguard writes links from it.
-	if !in.Customers {
-		return nil
-	}
-	h := map[string]any{"remark": "{USERNAME} " + in.Remark, "address": []string{nodeHost}, "port": in.Port, "inbound_tag": in.Remark, "priority": 0}
-	if hi := in.Host; hi != nil {
-		if len(hi.Address) > 0 {
-			h["address"] = hi.Address
-		}
-		if hi.Port > 0 {
-			h["port"] = hi.Port
-		}
-		if len(hi.SNI) > 0 {
-			h["sni"] = hi.SNI
-		}
-		if len(hi.Host) > 0 {
-			h["host"] = hi.Host
-		}
-		if hi.Path != "" {
-			h["path"] = hi.Path
-		}
-		if hi.Fingerprint != "" {
-			h["fingerprint"] = hi.Fingerprint
-		}
-		if len(hi.ALPN) > 0 {
-			h["alpn"] = hi.ALPN
-		}
-	}
-	if err := p.do(ctx, http.MethodPost, "/api/host/", h, nil); err != nil {
-		return fmt.Errorf("the inbound is made, but its host could not be: %w", err)
-	}
-	if m, _ := in.Settings["method"].(string); in.Protocol == "shadowsocks" && strings.HasPrefix(m, "2022-") {
-		if err := p.keepMultiUser(ctx, core.ID, name, in.Remark); err != nil {
-			return fmt.Errorf("the inbound is made, but its standing user could not be: %w", err)
-		}
-	}
-	return nil
-}
-
-// keepMultiUser gives a Shadowsocks-2022 inbound a user of its own for good.
-// A Pasarguard node starts such an inbound with the users it has then, and
-// with none xray runs it as a one-key server that takes no users: the first
-// one added afterwards fails, and with it that panel's sync of every user on
-// the node, its operator's own included. This user, whose key nobody is
-// given, keeps the inbound one with users through every start; the node is
-// restarted once so it starts so now.
-func (p *pgAPI) keepMultiUser(ctx context.Context, coreID int, coreName, tag string) error {
-	gs, err := p.groups(ctx)
-	if err != nil {
-		return err
-	}
-	gid := 0
-	for _, g := range gs {
-		if len(g.InboundTags) == 1 && g.InboundTags[0] == tag && g.Name == pgGroupName(tag) {
-			gid = g.ID
-		}
-	}
-	if gid == 0 {
-		g, err := p.createGroup(ctx, pgGroupName(tag), tag)
-		if err != nil {
-			return err
-		}
-		gid = g.ID
-	}
-	// Not a name of this panel's customers' (wui_<tag>_<number>), so no
-	// round takes it for one and removes it.
-	name := fmt.Sprintf("wuikeep_%08x", crc32.ChecksumIEEE([]byte(tag)))
-	if _, err := p.createUser(ctx, name, "active", "Keeps the Shadowsocks-2022 inbound "+tag+" taking users; made by W-UI, holds no one", gid); err != nil {
-		return err
-	}
-	var core struct {
-		Config map[string]any `json:"config"`
-	}
-	if err := p.do(ctx, http.MethodGet, fmt.Sprintf("/api/core/%d", coreID), nil, &core); err != nil {
-		return err
-	}
-	if err := p.do(ctx, http.MethodPut, fmt.Sprintf("/api/core/%d?restart_nodes=true", coreID), map[string]any{
-		"name": coreName, "config": core.Config, "exclude_inbound_tags": []string{}, "fallbacks_inbound_tags": []string{},
-	}, nil); err != nil {
-		return err
-	}
-	return p.nodesRunAfter(ctx)
 }

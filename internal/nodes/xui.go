@@ -282,7 +282,13 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 	}
 
 	// This panel's outbound, for its customers there.
-	if err := s.xuiEgress(ctx, api, node); err != nil {
+	var brought []string
+	for _, a := range accounts {
+		if a.Adopted != "" {
+			brought = append(brought, a.Adopted)
+		}
+	}
+	if err := s.xuiEgress(ctx, api, node, egressRoute(tag, brought)); err != nil {
 		failures = append(failures, err.Error())
 	}
 
