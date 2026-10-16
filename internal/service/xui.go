@@ -261,3 +261,168 @@ func SaveXUICounters(ctx context.Context, db *gorm.DB, usage []XUIUsage, links m
 		return nil
 	})
 }
+
+// XrayInboundInput is an inbound the form makes on a 3x-ui or Pasarguard
+// node: what an operator decides, the keys being drawn where it is made.
+type XrayInboundInput struct {
+	Remark string `json:"-"`
+	Port   int    `json:"-"`
+	// Kind is vless, vmess, trojan or shadowsocks.
+	Kind string `json:"kind"`
+	// Transport is tcp, ws or grpc; Path is the WebSocket path or the gRPC
+	// service name.
+	Transport string `json:"transport"`
+	Path      string `json:"path"`
+	// Security is none or reality; Reality is for VLESS over TCP, and SNI is
+	// the site it borrows its handshake from.
+	Security string `json:"security"`
+	SNI      string `json:"sni"`
+	// Method is a Shadowsocks inbound's cipher.
+	Method string `json:"method"`
+}
+
+// XrayProtocols are the kinds of inbound this panel makes on a 3x-ui or
+// Pasarguard node.
+var XrayProtocols = []string{"vless", "vmess", "trojan", "shadowsocks"}
+
+// CreateXrayInbound makes an inbound on a node of another panel; set by the
+// nodes package, which speaks to them.
+var CreateXrayInbound func(ctx context.Context, node model.Node, in XrayInboundInput) (model.XUIInbound, error)
+
+func (in *XrayInboundInput) check() error {
+	known := false
+	for _, k := range XrayProtocols {
+		known = known || in.Kind == k
+	}
+	if !known {
+		return invalidField("protocol", "an inbound here is VLESS, VMess, Trojan or Shadowsocks")
+	}
+	if in.Port < 1 || in.Port > 65535 {
+		return invalidField("listenPort", "a port is from 1 to 65535")
+	}
+	if in.Transport == "" {
+		in.Transport = "tcp"
+	}
+	switch in.Transport {
+	case "tcp":
+		in.Path = ""
+	case "ws":
+		if in.Path == "" {
+			in.Path = "/"
+		}
+		if !strings.HasPrefix(in.Path, "/") {
+			in.Path = "/" + in.Path
+		}
+	case "grpc":
+		if in.Path == "" {
+			in.Path = "grpc"
+		}
+	default:
+		return invalidField("xray.transport", "the transport is TCP, WebSocket or gRPC")
+	}
+	if in.Kind == "shadowsocks" {
+		in.Transport, in.Path = "tcp", ""
+	}
+	if in.Security == "" {
+		in.Security = "none"
+	}
+	switch in.Security {
+	case "none":
+		in.SNI = ""
+	case "reality":
+		if in.Kind != "vless" || in.Transport != "tcp" {
+			return invalidField("xray.security", "Reality is for VLESS over TCP")
+		}
+		in.SNI = strings.TrimSpace(in.SNI)
+		if in.SNI == "" {
+			in.SNI = "www.speedtest.net"
+		}
+		if !validHostName(in.SNI) {
+			return invalidField("xray.sni", "the Reality site is a host name, such as www.speedtest.net")
+		}
+	default:
+		return invalidField("xray.security", "the security is none or Reality")
+	}
+	if in.Kind == "shadowsocks" {
+		switch in.Method {
+		case "":
+			in.Method = "2022-blake3-aes-128-gcm"
+		case "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305", "chacha20-ietf-poly1305", "aes-256-gcm", "aes-128-gcm":
+		default:
+			return invalidField("xray.method", "that Shadowsocks cipher is not one xray takes")
+		}
+	} else {
+		in.Method = ""
+	}
+	return nil
+}
+
+func validHostName(h string) bool {
+	if len(h) == 0 || len(h) > 253 {
+		return false
+	}
+	for _, r := range h {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// createXray makes the inbound on the node and holds it here as a tunnel
+// straight away, rather than waiting for the next read to bring it.
+func (s *Interfaces) createXray(ctx context.Context, node *model.Node, in CreateInterfaceInput) (*model.Interface, error) {
+	if in.Xray == nil {
+		return nil, invalidField("protocol", "%s is a %s panel: choose VLESS, VMess, Trojan or Shadowsocks", node.Name, panelName(node.Kind))
+	}
+	x := *in.Xray
+	x.Remark = strings.TrimSpace(in.Name)
+	x.Port = in.ListenPort
+	// A remark on that panel, not a network device here: any text, short.
+	if x.Remark == "" {
+		return nil, invalidField("name", "an inbound needs a name")
+	}
+	if err := checkText("name", x.Remark, 32); err != nil {
+		return nil, err
+	}
+	var clash int64
+	if err := s.db.WithContext(ctx).Model(&model.Interface{}).
+		Where("node_id = ? AND LOWER(name) = LOWER(?)", node.ID, x.Remark).Count(&clash).Error; err != nil {
+		return nil, fmt.Errorf("service: check interface name: %w", err)
+	}
+	if clash > 0 {
+		return nil, invalidField("name", "a tunnel called %q already exists on %s", x.Remark, node.Name)
+	}
+	if err := s.db.WithContext(ctx).Model(&model.Interface{}).
+		Where("node_id = ? AND listen_port = ?", node.ID, x.Port).Count(&clash).Error; err != nil {
+		return nil, fmt.Errorf("service: check port: %w", err)
+	}
+	if clash > 0 {
+		return nil, invalidField("listenPort", "port %d is already an inbound's on %s", x.Port, node.Name)
+	}
+	if err := x.check(); err != nil {
+		return nil, err
+	}
+	if CreateXrayInbound == nil {
+		return nil, fmt.Errorf("%w: this panel cannot make inbounds on %s", ErrInvalid, node.Name)
+	}
+	made, err := CreateXrayInbound(ctx, *node, x)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	iface := model.Interface{
+		NodeID: node.ID, Name: x.Remark, Protocol: model.ProtocolXray, Enabled: true,
+		ListenPort: x.Port, Subnet: xuiSubnet, EndpointHost: hostOf(node.Address),
+		XUI: model.JSONField[model.XUIInbound]{V: made},
+	}
+	if err := s.db.WithContext(ctx).Create(&iface).Error; err != nil {
+		return nil, fmt.Errorf("service: hold the new inbound: %w", err)
+	}
+	if s.pools != nil {
+		if _, err := s.pools.Add(iface.ID, iface.Subnet); err != nil {
+			return nil, err
+		}
+	}
+	s.log.Info("inbound made on a node", "node", node.Name, "tunnel", iface.Name, "kind", x.Kind, "port", x.Port)
+	return &iface, nil
+}

@@ -862,7 +862,18 @@ async function submitForm(input) {
       // transport is OpenVPN's alone and the server refuses it elsewhere, so
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
-      const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, ...rest } = input
+      const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, ...rest } = input
+      if (['vless', 'vmess', 'trojan', 'shadowsocks'].includes(input.protocol)) {
+        // An inbound on a 3x-ui or Pasarguard node, made there.
+        await api.createInterface({
+          name: input.name, nodeId: input.nodeId, protocol: 'xray', listenPort: Number(input.listenPort),
+          xray: { kind: input.protocol, ...xray },
+        })
+        notify(t('interface.created'), 'success')
+        formFor.value = null
+        await load()
+        return
+      }
       await api.createInterface({
         ...rest,
         listenPort: Number(input.listenPort),

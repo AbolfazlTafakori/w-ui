@@ -58,6 +58,10 @@ func NewInterfaces(db *gorm.DB, pools *ipam.Pools, log *slog.Logger) *Interfaces
 
 // CreateInterfaceInput describes a new interface.
 type CreateInterfaceInput struct {
+	// Xray is the inbound to make on a 3x-ui or Pasarguard node, which is
+	// all a tunnel on one of those is.
+	Xray *XrayInboundInput `json:"xray,omitempty"`
+
 	Name         string              `json:"name"`
 	Protocol     model.Protocol      `json:"protocol"`
 	ListenPort   int                 `json:"listenPort"`
@@ -128,7 +132,7 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		return nil, err
 	}
 	if node.Kind == model.KindXUI || node.Kind == model.KindPG {
-		return nil, invalidField("nodeId", "%s is a %s panel: make the inbound there, and it appears here within a minute", node.Name, panelName(node.Kind))
+		return s.createXray(ctx, node, in)
 	}
 	// A port check asks this machine what is listening on it. That answer says
 	// nothing about another server, so on a remote node it is skipped rather
