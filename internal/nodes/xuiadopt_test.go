@@ -1,7 +1,9 @@
 package nodes
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -137,5 +139,34 @@ func TestA3xuiPanelsOwnUsersAreBroughtIn(t *testing.T) {
 				t.Fatal("a user removed here was removed there")
 			}
 		})
+	}
+}
+
+// Two asked to bring the same users in at once -- a button pressed twice --
+// bring each in once.
+func TestUsersAskedInTwiceAtOnceAreBroughtInOnce(t *testing.T) {
+	f := newFakeXUI(t, "3.10.2")
+	in := f.addInbound("vless-in", "vless", 31401, map[string]any{"decryption": "none"}, nil)
+	for i := 0; i < 5; i++ {
+		f.addOwnClient(in.ID, map[string]any{"id": fmt.Sprintf("00000000-0000-4000-8000-00000000000%d", i), "email": fmt.Sprintf("u%d", i),
+			"enable": true, "subId": fmt.Sprintf("sub%d", i)})
+	}
+	r := newRig(t, xuiNode(f, true, false))
+	r.round()
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := r.clients.ImportNodeUsers(r.ctx, r.node.ID, nil); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	var n int64
+	r.db.Model(&model.Client{}).Count(&n)
+	if n != 5 {
+		t.Fatalf("%d customers for 5 users", n)
 	}
 }

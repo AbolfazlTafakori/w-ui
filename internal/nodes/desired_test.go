@@ -28,6 +28,13 @@ func testDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	// An in-memory database is one per connection: one connection, so every
+	// goroutine of a test sees the same one.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(model.AllModels()...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

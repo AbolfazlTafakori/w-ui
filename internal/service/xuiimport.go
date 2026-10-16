@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -63,6 +64,9 @@ type ImportCandidate struct {
 // package, which speaks to those panels.
 var ImportCandidates func(ctx context.Context, node model.Node, tunnels []model.Interface) ([]ImportCandidate, error)
 
+// importing keeps imports one at a time (ImportNodeUsers).
+var importing sync.Mutex
+
 // ImportResult is what became of one user asked for.
 type ImportResult struct {
 	Key      string `json:"key"`
@@ -120,6 +124,10 @@ func (s *Clients) NodeUsers(ctx context.Context, nodeID uint) ([]ImportCandidate
 // ImportNodeUsers brings in the users asked for by key, or every one not
 // yet brought in when none is named.
 func (s *Clients) ImportNodeUsers(ctx context.Context, nodeID uint, keys []string) ([]ImportResult, error) {
+	// One at a time: two asked at once -- a button pressed twice -- would
+	// each find a user not yet brought in, and bring it in twice.
+	importing.Lock()
+	defer importing.Unlock()
 	cands, err := s.NodeUsers(ctx, nodeID)
 	if err != nil {
 		return nil, err
