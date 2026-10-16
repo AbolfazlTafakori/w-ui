@@ -13,12 +13,12 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // Speaking to a 3x-ui panel added as a node.
@@ -148,9 +148,9 @@ func (x *xuiAPI) learn(ctx context.Context) error {
 		}
 	}
 	switch {
-	case x.version != "" && !versionBelow(x.version, 3, 1):
+	case x.version != "" && !service.VersionBelow(x.version, 3, 1):
 		x.gen = xuiGenNew
-	case x.version != "" && !versionBelow(x.version, 2, 8):
+	case x.version != "" && !service.VersionBelow(x.version, 2, 8):
 		x.gen = xuiGenMid
 	case x.version != "":
 		x.gen = xuiGenOld
@@ -167,20 +167,6 @@ func (x *xuiAPI) learn(ctx context.Context) error {
 	}
 	xuiInfos.Store(xuiInfoKey(x.node), xuiInfo{version: x.version, gen: x.gen})
 	return nil
-}
-
-// versionBelow reports whether v is older than major.minor.
-func versionBelow(v string, major, minor int) bool {
-	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
-	if len(parts) < 2 {
-		return false
-	}
-	ma, err1 := strconv.Atoi(parts[0])
-	mi, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	return ma < major || ma == major && mi < minor
 }
 
 // xuiSession is a kept sign-in: its cookies and its CSRF token.

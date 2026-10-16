@@ -38,11 +38,7 @@ func pgGroupName(tag string) string {
 }
 
 func (s *Syncer) pgOne(ctx context.Context, node model.Node) {
-	if err := s.pgRound(ctx, node); err != nil {
-		s.report(node, err)
-		return
-	}
-	s.report(node, nil)
+	s.report(node, s.pgRound(ctx, node))
 }
 
 func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
@@ -54,9 +50,28 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 	if err != nil {
 		return err
 	}
-	inbounds, err := api.inbounds(ctx)
+	return s.xrayRound(ctx, node, &pgPanel{s: s, node: node, tag: tag, api: api})
+}
+
+// pgPanel is a Pasarguard node for one round.
+type pgPanel struct {
+	s    *Syncer
+	node model.Node
+	tag  string
+	api  *pgAPI
+
+	// groupOf is this panel's group for each inbound, by its tag.
+	groupOf map[string]int
+	// ours are the users this panel made there; everyone every user, read
+	// only when some were brought in from there.
+	ours     map[string]pgUser
+	everyone map[string]*pgUser
+}
+
+func (p *pgPanel) read(ctx context.Context) ([]service.XUIInboundSeen, error) {
+	inbounds, err := p.api.inbounds(ctx)
 	if err != nil {
-		return fmt.Errorf("reading its inbounds: %w", err)
+		return nil, fmt.Errorf("reading its inbounds: %w", err)
 	}
 	seen := make([]service.XUIInboundSeen, 0, len(inbounds))
 	for _, in := range inbounds {
@@ -70,7 +85,7 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 			Method:   in.Settings.Method,
 			Enabled:  true,
 		}
-		if k, ok := service.InboundKindFor(model.KindPG, node.Version, in.Protocol); ok {
+		if k, ok := service.InboundKindFor(model.KindPG, p.node.Version, in.Protocol); ok {
 			x.Customers = k.Customers
 		}
 		if x.Network == "" {
@@ -78,219 +93,130 @@ func (s *Syncer) pgRound(ctx context.Context, node model.Node) error {
 		}
 		seen = append(seen, service.XUIInboundSeen{XUIInbound: x, Port: in.portOf()})
 	}
-	if s.XUIMirror == nil {
-		return fmt.Errorf("this panel cannot hold a Pasarguard node's inbounds")
-	}
-	db := s.db.WithContext(ctx)
-	var before []model.Interface
-	if err := db.Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolXray).Find(&before).Error; err != nil {
-		return fmt.Errorf("load its tunnels: %w", err)
-	}
-	was := make(map[uint]model.Interface, len(before))
-	for _, f := range before {
-		was[f.ID] = f
-	}
-	if err := s.XUIMirror(ctx, node.ID, xuiHost(node.Address), seen); err != nil {
-		return err
-	}
+	return seen, nil
+}
 
-	var ifaces []model.Interface
-	if err := db.Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolXray).Find(&ifaces).Error; err != nil {
-		return fmt.Errorf("load its tunnels: %w", err)
-	}
-	byID := make(map[uint]model.Interface, len(ifaces))
-	ids := make([]uint, 0, len(ifaces))
-	moved := map[uint]bool{}
-	for _, f := range ifaces {
-		byID[f.ID] = f
-		ids = append(ids, f.ID)
-		if w, ok := was[f.ID]; ok && (w.ListenPort != f.ListenPort || xuiShape(w.XUI.V) != xuiShape(f.XUI.V)) {
-			moved[f.ID] = true
-		}
-	}
-	var accounts []model.Account
-	if len(ids) > 0 {
-		if err := db.Where("interface_id IN ?", ids).Find(&accounts).Error; err != nil {
-			return fmt.Errorf("load accounts: %w", err)
-		}
-	}
-	clients := map[uint]model.Client{}
-	if len(accounts) > 0 {
-		cids := make([]uint, 0, len(accounts))
-		for _, a := range accounts {
-			cids = append(cids, a.ClientID)
-		}
-		var rows []model.Client
-		if err := db.Where("id IN ?", cids).Find(&rows).Error; err != nil {
-			return fmt.Errorf("load clients: %w", err)
-		}
-		for _, c := range rows {
-			clients[c.ID] = c
-		}
-	}
-
-	// The groups: one per inbound that has files on it, made when missing.
-	groupOf := map[string]int{}
-	if len(accounts) > 0 {
-		gs, err := api.groups(ctx)
+// prepare reads this panel's groups there, and its users: every user when
+// some were brought in from there, only this panel's own otherwise.
+func (p *pgPanel) prepare(ctx context.Context, files []xrayFile) error {
+	p.groupOf = map[string]int{}
+	if len(files) > 0 {
+		gs, err := p.api.groups(ctx)
 		if err != nil {
 			return fmt.Errorf("reading its groups: %w", err)
 		}
 		for _, g := range gs {
 			if len(g.InboundTags) == 1 && g.Name == pgGroupName(g.InboundTags[0]) {
-				groupOf[g.InboundTags[0]] = g.ID
+				p.groupOf[g.InboundTags[0]] = g.ID
 			}
 		}
 	}
-
-	// Every user is read when some were brought in from there; only this
-	// panel's own otherwise.
 	adopted := false
-	for _, a := range accounts {
-		adopted = adopted || a.Adopted != ""
+	for _, f := range files {
+		adopted = adopted || f.acc.Adopted != ""
 	}
 	var users []pgUser
+	var err error
 	if adopted {
-		users, err = api.users(ctx, "")
+		users, err = p.api.users(ctx, "")
 	} else {
-		users, err = api.ourUsers(ctx)
+		users, err = p.api.ourUsers(ctx)
 	}
 	if err != nil {
 		return fmt.Errorf("reading its users: %w", err)
 	}
-	remote := make(map[string]pgUser, len(users))
-	everyone := make(map[string]*pgUser, len(users))
+	p.ours = make(map[string]pgUser, len(users))
+	p.everyone = make(map[string]*pgUser, len(users))
 	for i, u := range users {
-		everyone[u.Username] = &users[i]
-		if service.PGOwns(tag, u.Username) {
-			remote[u.Username] = u
+		p.everyone[u.Username] = &users[i]
+		if service.PGOwns(p.tag, u.Username) {
+			p.ours[u.Username] = u
 		}
-	}
-
-	s.mu.Lock()
-	if s.xuiRounds == nil {
-		s.xuiRounds = map[uint]int{}
-	}
-	s.xuiRounds[node.ID]++
-	refreshLinks := s.xuiRounds[node.ID]%xuiLinksEvery == 1
-	s.mu.Unlock()
-
-	var failures []string
-	marks := map[uint]adoptedMark{}
-	want := map[string]bool{}
-	var usage []service.XUIUsage
-	links := map[uint]string{}
-	for _, acc := range accounts {
-		iface, ok := byID[acc.InterfaceID]
-		if !ok || iface.XUI.V.Gone || !iface.XUI.V.Customers {
-			continue
-		}
-		c, ok := clients[acc.ClientID]
-		if !ok {
-			continue
-		}
-		if acc.Adopted != "" {
-			on := !node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled
-			u, link, err := s.pgAdopted(ctx, api, &acc, everyone[acc.Adopted], on, refreshLinks || moved[acc.InterfaceID], marks)
-			if err != nil {
-				failures = append(failures, err.Error())
-			}
-			if u != nil {
-				usage = append(usage, *u)
-			}
-			if link != "" {
-				links[acc.ID] = link
-			}
-			continue
-		}
-		name := service.PGUsername(tag, &acc)
-		want[name] = true
-		status := "disabled"
-		if !node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled {
-			status = "active"
-		}
-		tag := iface.XUI.V.Tag
-		gid, ok := groupOf[tag]
-		if !ok {
-			g, err := api.createGroup(ctx, pgGroupName(tag), tag)
-			if err != nil {
-				failures = append(failures, fmt.Sprintf("making the group for %s: %v", tag, err))
-				continue
-			}
-			gid = g.ID
-			groupOf[tag] = gid
-		}
-
-		u, exists := remote[name]
-		changed := false
-		switch {
-		case !exists:
-			made, err := api.createUser(ctx, name, status, c.Name, gid)
-			if err != nil {
-				failures = append(failures, fmt.Sprintf("adding %s: %v", name, err))
-				continue
-			}
-			u, changed = made, true
-		case u.Status != status || !sameGroups(u.GroupIDs, gid):
-			// Active or disabled, the two states it is told: a user there is
-			// limited or expired only by limits this panel never sets.
-			if err := api.modifyUser(ctx, name, status, gid); err != nil {
-				failures = append(failures, fmt.Sprintf("updating %s: %v", name, err))
-				continue
-			}
-			changed = true
-		}
-
-		if exists {
-			usage = append(usage, service.XUIUsage{
-				AccountID: acc.ID, ClientID: acc.ClientID,
-				Down:   since(u.UsedTraffic, acc.XUIUp),
-				SeenUp: u.UsedTraffic,
-			})
-		}
-		if status == "active" && (changed || refreshLinks || moved[acc.InterfaceID] || acc.XUILink == "") {
-			// The list of users leaves their subscription link out.
-			if u.SubscriptionURL == "" {
-				if full, err := api.user(ctx, name); err == nil {
-					u.SubscriptionURL = full.SubscriptionURL
-				}
-			}
-			got, err := api.links(ctx, u.SubscriptionURL)
-			if err != nil {
-				failures = append(failures, fmt.Sprintf("reading the links of %s: %v", name, err))
-			} else if joined := strings.Join(got, "\n"); joined != acc.XUILink && joined != "" {
-				links[acc.ID] = joined
-			}
-		}
-	}
-
-	for name := range remote {
-		if want[name] {
-			continue
-		}
-		if err := api.deleteUser(ctx, name); err != nil {
-			failures = append(failures, fmt.Sprintf("removing %s: %v", name, err))
-		}
-	}
-
-	// Its usage is one number a user, used_traffic, kept in the counter that
-	// holds a 3x-ui client's upload; it is charged as download.
-	if err := service.SaveXUICounters(ctx, s.db, usage, links); err != nil {
-		return fmt.Errorf("could not keep its counters: %w", err)
-	}
-	s.chargeXUI(ctx, node, usage)
-	if err := s.saveMarks(ctx, marks); err != nil {
-		failures = append(failures, err.Error())
-	}
-
-	if len(failures) > 0 {
-		if len(failures) > 3 {
-			failures = append(failures[:3], fmt.Sprintf("and %d more", len(failures)-3))
-		}
-		return fmt.Errorf("%s", strings.Join(failures, "; "))
 	}
 	return nil
 }
+
+func (p *pgPanel) own(ctx context.Context, f xrayFile) xrayResult {
+	name := service.PGUsername(p.tag, &f.acc)
+	res := xrayResult{name: name}
+	status := "disabled"
+	if f.on {
+		status = "active"
+	}
+	inbound := f.iface.XUI.V.Tag
+	gid, ok := p.groupOf[inbound]
+	if !ok {
+		g, err := p.api.createGroup(ctx, pgGroupName(inbound), inbound)
+		if err != nil {
+			res.err = fmt.Errorf("making the group for %s: %v", inbound, err)
+			return res
+		}
+		gid = g.ID
+		p.groupOf[inbound] = gid
+	}
+	u, exists := p.ours[name]
+	switch {
+	case !exists:
+		made, err := p.api.createUser(ctx, name, status, f.client.Name, gid)
+		if err != nil {
+			res.err = fmt.Errorf("adding %s: %v", name, err)
+			return res
+		}
+		u, res.changed = made, true
+	case u.Status != status || !sameGroups(u.GroupIDs, gid):
+		// Active or disabled, the two states it is told: a user there is
+		// limited or expired only by limits this panel never sets.
+		if err := p.api.modifyUser(ctx, name, status, gid); err != nil {
+			res.err = fmt.Errorf("updating %s: %v", name, err)
+			return res
+		}
+		res.changed = true
+	}
+	// Its usage is one number a user, used_traffic, kept in the counter that
+	// holds a 3x-ui client's upload; it is charged as download.
+	if exists {
+		res.usage = &service.XUIUsage{AccountID: f.acc.ID, ClientID: f.acc.ClientID,
+			Down: since(u.UsedTraffic, f.acc.XUIUp), SeenUp: u.UsedTraffic}
+	}
+	if f.on && (res.changed || f.links) {
+		// The list of users leaves their subscription link out.
+		if u.SubscriptionURL == "" {
+			if full, err := p.api.user(ctx, name); err == nil {
+				u.SubscriptionURL = full.SubscriptionURL
+			}
+		}
+		got, err := p.api.links(ctx, u.SubscriptionURL)
+		if err != nil {
+			res.err = fmt.Errorf("reading the links of %s: %v", name, err)
+		} else if joined := strings.Join(got, "\n"); joined != f.acc.XUILink && joined != "" {
+			res.link = joined
+		}
+	}
+	return res
+}
+
+func (p *pgPanel) adopt(ctx context.Context, f xrayFile, marks map[uint]adoptedMark) xrayResult {
+	u, link, err := p.s.pgAdopted(ctx, p.api, &f.acc, p.everyone[f.acc.Adopted], f.on, f.links, marks)
+	return xrayResult{usage: u, link: link, err: err}
+}
+
+// sweep takes away the users that are this panel's there and no file's here.
+func (p *pgPanel) sweep(ctx context.Context, wanted map[string]bool) (bool, []string) {
+	changed := false
+	var failures []string
+	for name := range p.ours {
+		if wanted[name] {
+			continue
+		}
+		changed = true
+		if err := p.api.deleteUser(ctx, name); err != nil {
+			failures = append(failures, fmt.Sprintf("removing %s: %v", name, err))
+		}
+	}
+	return changed, failures
+}
+
+func (p *pgPanel) finish(context.Context, bool, []xrayFile) []string { return nil }
 
 func sameGroups(have []int, want int) bool {
 	return len(have) == 1 && have[0] == want

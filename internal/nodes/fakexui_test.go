@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // A 3x-ui panel, as far as this panel speaks to it, kept in memory: its
@@ -78,7 +80,9 @@ func newFakeXUI(t *testing.T, version string) *fakeXUI {
 
 func (f *fakeXUI) address() string { return f.srv.URL + fakeXUIPath }
 
-func (f *fakeXUI) atLeast(major, minor int) bool { return !versionBelow(f.version, major, minor) }
+func (f *fakeXUI) atLeast(major, minor int) bool {
+	return !service.VersionBelow(f.version, major, minor)
+}
 
 // addInbound puts an inbound there as its own operator would.
 func (f *fakeXUI) addInbound(remark, protocol string, port int, extra, stream map[string]any) *fakeXUIInbound {

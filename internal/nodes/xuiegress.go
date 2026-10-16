@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // This panel's outbound, for its customers on a 3x-ui node.
@@ -124,7 +125,7 @@ func egressFor(ctx context.Context, db *gorm.DB) (map[string]any, string, error)
 // xrayConfigPath is where the panel keeps its xray config: under the API
 // from 3.3, and before it under /panel, reached signed in.
 func (x *xuiAPI) xrayConfigPath() (string, error) {
-	if x.version != "" && !versionBelow(x.version, 3, 3) {
+	if x.version != "" && !service.VersionBelow(x.version, 3, 3) {
 		return x.base + "xray/", nil
 	}
 	if !x.session {

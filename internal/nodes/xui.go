@@ -12,9 +12,10 @@ import (
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
-// A 3x-ui node, round by round: its inbounds read and held here as tunnels,
-// this panel's customers on them made its clients -- added, switched on or
-// off, and removed -- and what each spent read from its counters.
+// A 3x-ui node, round by round (xrayround.go): its inbounds read and held
+// here as tunnels, this panel's customers on them made its clients -- added,
+// switched on or off, and removed -- and what each spent read from its
+// counters.
 //
 // The 3x-ui panel is never asked to enforce anything of its own. A client
 // is made with no traffic limit and no expiry there: the allowance is one
@@ -24,18 +25,9 @@ import (
 // use a client at once, its IP limit, which is the customer's one user per
 // file.
 
-// xuiLinksEvery is how many rounds go by between rereading every client's
-// links, which change when the inbound does: its port, its address, its
-// Reality keys.
-const xuiLinksEvery = 15
-
 // xuiOne runs one round against a 3x-ui node.
 func (s *Syncer) xuiOne(ctx context.Context, node model.Node) {
-	if err := s.xuiRound(ctx, node); err != nil {
-		s.report(node, err)
-		return
-	}
-	s.report(node, nil)
+	s.report(node, s.xuiRound(ctx, node))
 }
 
 func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
@@ -47,20 +39,37 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 	if err != nil {
 		return err
 	}
-	rows, err := api.inbounds(ctx)
-	if err != nil {
-		return fmt.Errorf("reading its inbounds: %w", err)
-	}
+	return s.xrayRound(ctx, node, &xuiPanel{s: s, node: node, tag: tag, api: api})
+}
 
-	// What the 3x-ui panel holds: each inbound, and every client on it by
-	// email with its settings and its counters.
-	remote := map[string]*remoteXUIClient{}
+// xuiPanel is a 3x-ui node for one round.
+type xuiPanel struct {
+	s    *Syncer
+	node model.Node
+	tag  string
+	api  *xuiAPI
+
+	rows []xuiInboundRow
+	// remote is every client there by email, with its settings and its
+	// counters.
+	remote map[string]*remoteXUIClient
+}
+
+func (p *xuiPanel) read(ctx context.Context) ([]service.XUIInboundSeen, error) {
+	rows, err := p.api.inbounds(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading its inbounds: %w", err)
+	}
+	p.rows = rows
+	p.remote = map[string]*remoteXUIClient{}
 	seen := make([]service.XUIInboundSeen, 0, len(rows))
 	for _, r := range rows {
 		var set xuiSettings
 		var st xuiStream
 		_ = objectOrString(r.Settings, &set)
 		_ = objectOrString(r.Stream, &st)
+		// The clients as that panel wrote them too, to send one back with
+		// every field of its own.
 		var raw struct {
 			Clients []map[string]any `json:"clients"`
 		}
@@ -78,7 +87,7 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 			Up:       r.Up,
 			Down:     r.Down,
 		}
-		if k, ok := service.InboundKindFor(model.KindXUI, api.version, r.Protocol); ok {
+		if k, ok := service.InboundKindFor(model.KindXUI, p.api.version, r.Protocol); ok {
 			in.Customers = k.Customers
 		}
 		if r.Protocol == "vless" && (st.Network == "tcp" || st.Network == "raw") &&
@@ -91,232 +100,130 @@ func (s *Syncer) xuiRound(ctx context.Context, node model.Node) error {
 			if i < len(raw.Clients) {
 				rc.raw = raw.Clients[i]
 			}
-			remote[c.Email] = rc
+			p.remote[c.Email] = rc
 		}
 		for _, cs := range r.ClientStats {
-			if rc, ok := remote[cs.Email]; ok && rc.inbound == r.ID {
+			if rc, ok := p.remote[cs.Email]; ok && rc.inbound == r.ID {
 				rc.stat, rc.hasStat = cs, true
 			}
 		}
 	}
+	return seen, nil
+}
 
-	if s.XUIMirror == nil {
-		return fmt.Errorf("this panel cannot hold a 3x-ui node's inbounds")
-	}
-	db := s.db.WithContext(ctx)
-	// What the tunnels were before this read, so a client whose inbound
-	// changed there -- its port, its keys -- is given its new links now
-	// rather than at the next periodic reread.
-	var before []model.Interface
-	if err := db.Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolXray).Find(&before).Error; err != nil {
-		return fmt.Errorf("load its tunnels: %w", err)
-	}
-	was := make(map[uint]model.Interface, len(before))
-	for _, f := range before {
-		was[f.ID] = f
-	}
-	if err := s.XUIMirror(ctx, node.ID, xuiHost(node.Address), seen); err != nil {
-		return err
-	}
+func (p *xuiPanel) prepare(context.Context, []xrayFile) error { return nil }
 
-	var ifaces []model.Interface
-	if err := db.Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolXray).Find(&ifaces).Error; err != nil {
-		return fmt.Errorf("load its tunnels: %w", err)
+func (p *xuiPanel) own(ctx context.Context, f xrayFile) xrayResult {
+	email := service.XUIEmail(p.tag, &f.acc)
+	res := xrayResult{name: email}
+	in := f.iface.XUI.V
+	desired := xuiClientFor(p.tag, &f.acc, in, f.client, f.on)
+	rc, exists := p.remote[email]
+	if exists {
+		keepTheirs(&desired, rc.cfg, in.Kind)
 	}
-	byID := make(map[uint]model.Interface, len(ifaces))
-	ids := make([]uint, 0, len(ifaces))
-	moved := map[uint]bool{}
-	for _, f := range ifaces {
-		byID[f.ID] = f
-		ids = append(ids, f.ID)
-		if w, ok := was[f.ID]; ok && (w.ListenPort != f.ListenPort || w.EndpointHost != f.EndpointHost || xuiShape(w.XUI.V) != xuiShape(f.XUI.V)) {
-			moved[f.ID] = true
+	switch {
+	case !exists:
+		if err := p.api.addClient(ctx, in.RemoteID, desired); err != nil {
+			res.err = fmt.Errorf("adding %s to %s: %v", email, f.iface.Name, err)
+			return res
+		}
+		res.changed = true
+	case rc.inbound != in.RemoteID:
+		// On another inbound there than the one it belongs to here: moved
+		// by hand on that panel. Put back where it belongs.
+		if err := p.api.deleteClient(ctx, rc.inbound, email, xuiKey(rc.kind, rc.cfg)); err != nil {
+			res.err = fmt.Errorf("moving %s: %v", email, err)
+			return res
+		}
+		if err := p.api.addClient(ctx, in.RemoteID, desired); err != nil {
+			res.err = fmt.Errorf("moving %s: %v", email, err)
+			return res
+		}
+		res.changed = true
+	case xuiDiffers(rc.cfg, desired):
+		if err := p.api.updateClient(ctx, in.RemoteID, xuiKey(in.Kind, rc.cfg), desired); err != nil {
+			res.err = fmt.Errorf("updating %s: %v", email, err)
+			return res
+		}
+		res.changed = true
+	}
+	if exists && rc.hasStat {
+		u := service.XUIUsage{AccountID: f.acc.ID, ClientID: f.acc.ClientID, SeenUp: rc.stat.Up, SeenDown: rc.stat.Down,
+			Up: since(rc.stat.Up, f.acc.XUIUp), Down: since(rc.stat.Down, f.acc.XUIDown)}
+		if u.Up > 0 || u.Down > 0 || u.SeenUp != f.acc.XUIUp || u.SeenDown != f.acc.XUIDown {
+			res.usage = &u
 		}
 	}
-	var accounts []model.Account
-	if len(ids) > 0 {
-		if err := db.Where("interface_id IN ?", ids).Find(&accounts).Error; err != nil {
-			return fmt.Errorf("load accounts: %w", err)
+	if res.changed || f.links {
+		got, err := p.api.links(ctx, email)
+		if err != nil {
+			res.err = fmt.Errorf("reading the links of %s: %v", email, err)
+		} else if joined := strings.Join(got, "\n"); joined != f.acc.XUILink {
+			res.link = joined
 		}
 	}
-	clients := map[uint]model.Client{}
-	if len(accounts) > 0 {
-		cids := make([]uint, 0, len(accounts))
-		for _, a := range accounts {
-			cids = append(cids, a.ClientID)
-		}
-		var rowsC []model.Client
-		if err := db.Where("id IN ?", cids).Find(&rowsC).Error; err != nil {
-			return fmt.Errorf("load clients: %w", err)
-		}
-		for _, c := range rowsC {
-			clients[c.ID] = c
-		}
-	}
+	return res
+}
 
-	s.mu.Lock()
-	if s.xuiRounds == nil {
-		s.xuiRounds = map[uint]int{}
-	}
-	s.xuiRounds[node.ID]++
-	refreshLinks := s.xuiRounds[node.ID]%xuiLinksEvery == 1
-	s.mu.Unlock()
+func (p *xuiPanel) adopt(ctx context.Context, f xrayFile, marks map[uint]adoptedMark) xrayResult {
+	changed, u, link, err := p.s.xuiAdopted(ctx, p.api, &f.acc, p.remote[f.acc.Adopted], f.on, f.links, marks)
+	return xrayResult{usage: u, link: link, changed: changed, err: err}
+}
 
+// sweep takes away the clients that are this panel's there and no file's
+// here: a file removed, a customer deleted, a tunnel taken away.
+func (p *xuiPanel) sweep(ctx context.Context, wanted map[string]bool) (bool, []string) {
+	changed := false
 	var failures []string
-	touched := false
-	marks := map[uint]adoptedMark{}
-	want := map[string]bool{}
-	var usage []service.XUIUsage
-	links := map[uint]string{}
-	for _, acc := range accounts {
-		iface, ok := byID[acc.InterfaceID]
-		if !ok || iface.XUI.V.Gone || !iface.XUI.V.Customers {
+	for email, rc := range p.remote {
+		if wanted[email] || !service.XUIOwns(p.tag, email) {
 			continue
 		}
-		c, ok := clients[acc.ClientID]
-		if !ok {
-			continue
-		}
-		if acc.Adopted != "" {
-			on := !node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled
-			changed, u, link, err := s.xuiAdopted(ctx, api, &acc, remote[acc.Adopted], on, refreshLinks || moved[acc.InterfaceID], marks)
-			if err != nil {
-				failures = append(failures, err.Error())
-			}
-			if u != nil {
-				usage = append(usage, *u)
-			}
-			if link != "" {
-				links[acc.ID] = link
-			}
-			touched = touched || changed
-			continue
-		}
-		email := service.XUIEmail(tag, &acc)
-		want[email] = true
-		desired := xuiClientFor(tag, &acc, iface.XUI.V, c,
-			!node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled)
-
-		rc, exists := remote[email]
-		if exists {
-			keepTheirs(&desired, rc.cfg, iface.XUI.V.Kind)
-		}
-		changed := false
-		switch {
-		case !exists:
-			if err := api.addClient(ctx, iface.XUI.V.RemoteID, desired); err != nil {
-				failures = append(failures, fmt.Sprintf("adding %s to %s: %v", email, iface.Name, err))
-				continue
-			}
-			changed = true
-		case rc.inbound != iface.XUI.V.RemoteID:
-			// On another inbound there than the one it belongs to here:
-			// moved by hand on that panel. Put back where it belongs.
-			if err := api.deleteClient(ctx, rc.inbound, email, xuiKey(kindOf(rows, rc.inbound), rc.cfg)); err != nil {
-				failures = append(failures, fmt.Sprintf("moving %s: %v", email, err))
-				continue
-			}
-			if err := api.addClient(ctx, iface.XUI.V.RemoteID, desired); err != nil {
-				failures = append(failures, fmt.Sprintf("moving %s: %v", email, err))
-				continue
-			}
-			changed = true
-		case xuiDiffers(rc.cfg, desired):
-			if err := api.updateClient(ctx, iface.XUI.V.RemoteID, xuiKey(iface.XUI.V.Kind, rc.cfg), desired); err != nil {
-				failures = append(failures, fmt.Sprintf("updating %s: %v", email, err))
-				continue
-			}
-			changed = true
-		}
-
-		if exists && rc.hasStat {
-			u := service.XUIUsage{AccountID: acc.ID, ClientID: acc.ClientID, SeenUp: rc.stat.Up, SeenDown: rc.stat.Down}
-			u.Up = since(rc.stat.Up, acc.XUIUp)
-			u.Down = since(rc.stat.Down, acc.XUIDown)
-			if u.Up > 0 || u.Down > 0 || u.SeenUp != acc.XUIUp || u.SeenDown != acc.XUIDown {
-				usage = append(usage, u)
-			}
-		}
-
-		touched = touched || changed
-		if changed || refreshLinks || moved[acc.InterfaceID] || acc.XUILink == "" {
-			got, err := api.links(ctx, email)
-			if err != nil {
-				failures = append(failures, fmt.Sprintf("reading the links of %s: %v", email, err))
-			} else if joined := strings.Join(got, "\n"); joined != acc.XUILink {
-				links[acc.ID] = joined
-			}
-		}
-	}
-
-	// Ours there and no longer anybody's here: a file removed, a customer
-	// deleted, a tunnel taken away.
-	for email, rc := range remote {
-		if want[email] || !service.XUIOwns(tag, email) {
-			continue
-		}
-		if !rc.cfg.Enable && lastOf(remote, rc.inbound, email) {
+		if !rc.cfg.Enable && lastOf(p.remote, rc.inbound, email) {
 			continue // the one left on its inbound there, already off
 		}
-		touched = true
-		if err := api.deleteClient(ctx, rc.inbound, email, xuiKey(kindOf(rows, rc.inbound), rc.cfg)); err != nil {
+		changed = true
+		if err := p.api.deleteClient(ctx, rc.inbound, email, xuiKey(rc.kind, rc.cfg)); err != nil {
 			// 3x-ui before 3 keeps at least one client on an inbound: the
 			// last one is switched off instead, and left.
-			if lastOf(remote, rc.inbound, email) {
+			if lastOf(p.remote, rc.inbound, email) {
 				off := xuiClient{ID: rc.cfg.ID, Password: rc.cfg.Password, Auth: rc.cfg.Auth, Flow: rc.cfg.Flow,
 					Method: rc.cfg.Method, Email: email, SubID: email, Enable: false}
-				if uerr := api.updateClient(ctx, rc.inbound, xuiKey(kindOf(rows, rc.inbound), rc.cfg), off); uerr == nil {
+				if uerr := p.api.updateClient(ctx, rc.inbound, xuiKey(rc.kind, rc.cfg), off); uerr == nil {
 					continue
 				}
 			}
 			failures = append(failures, fmt.Sprintf("removing %s: %v", email, err))
 		}
 	}
+	return changed, failures
+}
 
-	if err := service.SaveXUICounters(ctx, s.db, usage, links); err != nil {
-		return fmt.Errorf("could not keep its counters: %w", err)
-	}
-	s.chargeXUI(ctx, node, usage)
-	if err := s.saveMarks(ctx, marks); err != nil {
-		failures = append(failures, err.Error())
-	}
-
-	// This panel's outbound, for its customers there.
-	var brought []string
-	for _, a := range accounts {
-		if a.Adopted != "" {
-			brought = append(brought, a.Adopted)
-		}
-	}
-	if err := s.xuiEgress(ctx, api, node, egressRoute(tag, brought)); err != nil {
-		failures = append(failures, err.Error())
-	}
-
+// finish checks that panel's xray still runs after a change of ours, and
+// puts this panel's outbound there for its customers.
+func (p *xuiPanel) finish(ctx context.Context, touched bool, files []xrayFile) []string {
+	var failures []string
 	// A change of ours there must not stop that panel's xray: every one of
 	// its inbounds, its own operator's users with them, would stop. Said
 	// loudly when it has, with xray's own reason.
 	if touched {
-		if st, err := api.status(ctx); err == nil && st.Xray.State != "" && st.Xray.State != "running" {
-			s.log.Error("a 3x-ui node's xray is not running after this panel changed its clients",
-				"node", node.Name, "state", st.Xray.State, "error", st.Xray.Error)
-			failures = append([]string{"its xray is not running: " + st.Xray.Error}, failures...)
+		if st, err := p.api.status(ctx); err == nil && st.Xray.State != "" && st.Xray.State != "running" {
+			p.s.log.Error("a 3x-ui node's xray is not running after this panel changed its clients",
+				"node", p.node.Name, "state", st.Xray.State, "error", st.Xray.Error)
+			failures = append(failures, "its xray is not running: "+st.Xray.Error)
 		}
 	}
-
-	if len(failures) > 0 {
-		if len(failures) > 3 {
-			failures = append(failures[:3], fmt.Sprintf("and %d more", len(failures)-3))
+	var brought []string
+	for _, f := range files {
+		if f.acc.Adopted != "" {
+			brought = append(brought, f.acc.Adopted)
 		}
-		return fmt.Errorf("%s", strings.Join(failures, "; "))
 	}
-	return nil
-}
-
-// xuiShape is what of an inbound goes into its links; its counters and
-// client count change every round and do not.
-func xuiShape(in model.XUIInbound) model.XUIInbound {
-	in.Clients, in.Up, in.Down = 0, 0, 0
-	return in
+	if err := p.s.xuiEgress(ctx, p.api, p.node, egressRoute(p.tag, brought)); err != nil {
+		failures = append(failures, err.Error())
+	}
+	return failures
 }
 
 // remoteXUIClient is a client on a 3x-ui panel: its inbound there, its
@@ -429,16 +336,6 @@ func lastOf(remote map[string]*remoteXUIClient, inbound int, email string) bool 
 		}
 	}
 	return true
-}
-
-// kindOf is the protocol of an inbound, by its id there.
-func kindOf(rows []xuiInboundRow, id int) string {
-	for _, r := range rows {
-		if r.ID == id {
-			return r.Protocol
-		}
-	}
-	return ""
 }
 
 // xuiKey is the credential the older 3x-ui API finds a client by, as its

@@ -39,7 +39,7 @@ func InboundKinds(panel model.NodeKind, version string) []InboundKind {
 	if i := strings.LastIndex(v, " "); i >= 0 {
 		v = v[i+1:]
 	}
-	at := func(major, minor int) bool { return v == "" || !olderThan(v, major, minor) }
+	at := func(major, minor int) bool { return v == "" || !VersionBelow(v, major, minor) }
 	full := []string{"none", "tls", "reality"}
 	noReality := []string{"none", "tls"}
 	switch panel {
@@ -107,8 +107,11 @@ func InboundKindFor(panel model.NodeKind, version, protocol string) (InboundKind
 	return InboundKind{}, false
 }
 
-// olderThan reports whether version v is older than major.minor.
-func olderThan(v string, major, minor int) bool {
+// VersionBelow reports whether a panel's version is older than major.minor:
+// numbers compared as numbers, so 3.10 is newer than 3.9, with a leading v and
+// a suffix (3.10-beta) taken as the version they mark. A version it cannot
+// read is not older.
+func VersionBelow(v string, major, minor int) bool {
 	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
 	if len(parts) < 2 {
 		return false
