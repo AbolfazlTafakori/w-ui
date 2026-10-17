@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
@@ -745,4 +746,32 @@ func uintOr(raw string, fallback uint64) uint64 {
 		return fallback
 	}
 	return n
+}
+
+// Counts is how many tunnels, customers and devices the panel holds, for
+// the settings page's summary.
+type Counts struct {
+	Interfaces, Clients, Accounts int64
+}
+
+// Count counts them.
+func (s *Settings) Count(ctx context.Context) (Counts, error) {
+	var c Counts
+	db := s.db.WithContext(ctx)
+	for _, q := range []struct {
+		m any
+		n *int64
+	}{{&model.Interface{}, &c.Interfaces}, {&model.Client{}, &c.Clients}, {&model.Account{}, &c.Accounts}} {
+		if err := db.Model(q.m).Count(q.n).Error; err != nil {
+			return Counts{}, fmt.Errorf("service: count: %w", err)
+		}
+	}
+	return c, nil
+}
+
+// LocalAddresses is where this machine says it can be reached, kept across a
+// restore: always how the panel is reached, and with keepAddresses what
+// customers are handed as well.
+func (s *Settings) LocalAddresses(ctx context.Context, keepAddresses bool) (*backup.LocalAddresses, error) {
+	return backup.ReadLocalAddresses(s.db.WithContext(ctx), keepAddresses)
 }

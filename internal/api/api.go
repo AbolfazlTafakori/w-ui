@@ -30,7 +30,6 @@ import (
 
 // Server holds the API's dependencies.
 type Server struct {
-	db        *gorm.DB
 	clients   *service.Clients
 	ifaces    *service.Interfaces
 	catalog   *i18n.Catalog
@@ -72,6 +71,10 @@ type Server struct {
 	admins    *service.Admins
 	pool      *backend.Pool
 	nodeSync  *service.NodeSync
+	// dataPlane is every tunnel on this server at once; nodeCtl what is
+	// done about nodes beyond their rows.
+	dataPlane *service.DataPlane
+	nodeCtl   *nodes.Control
 	// localNodeID is which node this panel is, for the state another panel
 	// pushes here.
 	localNodeID uint
@@ -133,7 +136,6 @@ type Options struct {
 // New builds the API server.
 func New(o Options) *Server {
 	srv := &Server{
-		db:        o.DB,
 		clients:   o.Clients,
 		ifaces:    o.Interfaces,
 		catalog:   o.Catalog,
@@ -170,6 +172,8 @@ func New(o Options) *Server {
 		// Falls back to the first node, which is this one on every install that
 		// has never added a second.
 		localNodeID: maxUint(o.LocalNodeID, 1),
+		dataPlane:   service.NewDataPlane(o.DB, o.Pool, maxUint(o.LocalNodeID, 1), o.Logger),
+		nodeCtl:     nodes.NewControl(o.DB),
 		restart:     o.Restart,
 		engine:      o.Engine,
 		template:    o.Template,

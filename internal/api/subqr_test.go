@@ -76,7 +76,7 @@ func TestAQRIsInThePageAsItsPattern(t *testing.T) {
 	s, _ := revealServer(t)
 	s.subMiss = newSubMisses()
 	for k, v := range map[string]string{"sub.enabled": "true", "sub.path": "/sub/"} {
-		if err := database.PutSetting(s.db, k, v); err != nil {
+		if err := database.PutSetting(dbOf(s), k, v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -84,14 +84,14 @@ func TestAQRIsInThePageAsItsPattern(t *testing.T) {
 	wg := model.Interface{Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: 51820, Enabled: true,
 		Subnet: "10.66.0.0/24", EndpointHost: "vpn.example.com", NodeID: 1, MTU: 1420,
 		PublicKey: "Q2VydGFpbmx5IG5vdCBhIHJlYWwga2V5IGF0IGFsbCE=", PrivateKey: "c2VydmVyIHByaXZhdGUga2V5IGZvciB0aGUgdGVzdHM="}
-	if err := s.db.Create(&wg).Error; err != nil {
+	if err := dbOf(s).Create(&wg).Error; err != nil {
 		t.Fatal(err)
 	}
 	var c model.Client
-	s.db.Where("sub_token = ?", revealToken).First(&c)
+	dbOf(s).Where("sub_token = ?", revealToken).First(&c)
 	acc := model.Account{ClientID: c.ID, InterfaceID: wg.ID, NodeID: 1, DeviceName: "device-1", IP: "10.66.0.2", Enabled: true,
 		PrivateKey: "YWNjb3VudCBwcml2YXRlIGtleSBmb3IgdGhlIHRlc3Q=", PublicKey: "YWNjb3VudCBwdWJsaWMga2V5IGZvciB0aGUgdGVzdHM="}
-	if err := s.db.Create(&acc).Error; err != nil {
+	if err := dbOf(s).Create(&acc).Error; err != nil {
 		t.Fatal(err)
 	}
 	router := s.SubscriptionRouter(http.NotFoundHandler())
@@ -120,7 +120,7 @@ func TestAQRIsInThePageAsItsPattern(t *testing.T) {
 	}
 
 	// New keys, a new QR.
-	if err := s.db.Model(&acc).Update("private_key", "bmV3IGFjY291bnQgcHJpdmF0ZSBrZXkgZm9yIHRlc3Q=").Error; err != nil {
+	if err := dbOf(s).Model(&acc).Update("private_key", "bmV3IGFjY291bnQgcHJpdmF0ZSBrZXkgZm9yIHRlc3Q=").Error; err != nil {
 		t.Fatal(err)
 	}
 	again := qrAttr.FindAllStringSubmatch(open(), -1)

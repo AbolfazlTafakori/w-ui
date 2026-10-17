@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -138,6 +139,18 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 	}
 	node.Enabled = enabled
 	s.log.Info("node added", "node", node.Name, "address", node.Address)
+	return &node, nil
+}
+
+// Get is one node as it is stored now.
+func (s *Nodes) Get(ctx context.Context, id uint) (*model.Node, error) {
+	var node model.Node
+	if err := s.db.WithContext(ctx).First(&node, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: no node %d", ErrNotFound, id)
+		}
+		return nil, fmt.Errorf("service: load node: %w", err)
+	}
 	return &node, nil
 }
 

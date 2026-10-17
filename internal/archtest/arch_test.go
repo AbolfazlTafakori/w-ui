@@ -165,3 +165,43 @@ func TestNoDriverImportsAnother(t *testing.T) {
 		}
 	}
 }
+
+// The HTTP layer asks the services; it does not query the database.
+//
+// A handler reads the request, asks a service and writes the answer. A rule
+// written in a handler -- a reseller's term starting at sign-in, every
+// tunnel switched off -- is a rule the bot, the CLI and the node sync do not
+// keep, and a query written there is one the scope rules were not reviewed
+// for. Only api.go names the database, to hand it to the services it builds.
+func TestTheAPIDoesNotQueryTheDatabase(t *testing.T) {
+	banned := map[string]bool{
+		"gorm.io/gorm": true,
+		"github.com/abolfazl/w-ui/internal/database": true,
+	}
+	for _, f := range sources(t, "internal/api") {
+		if f.rel == "internal/api/api.go" {
+			continue
+		}
+		for _, imp := range f.ast.Imports {
+			if path := strings.Trim(imp.Path.Value, `"`); banned[path] {
+				t.Errorf("%s imports %s; ask a service instead", f.rel, path)
+			}
+		}
+	}
+	for _, f := range sources(t, "internal/api") {
+		ast.Inspect(f.ast, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSpec)
+			if !ok || ts.Name.Name != "Server" {
+				return true
+			}
+			for _, field := range ts.Type.(*ast.StructType).Fields.List {
+				if star, ok := field.Type.(*ast.StarExpr); ok {
+					if sel, ok := star.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "DB" {
+						t.Errorf("%s: the Server holds a database; give it to a service", f.rel)
+					}
+				}
+			}
+			return false
+		})
+	}
+}

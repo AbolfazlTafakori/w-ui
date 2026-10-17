@@ -32,7 +32,7 @@ func TestThePanelsPortAnswersALinkWithTheServiceOnItsOwn(t *testing.T) {
 	s, _ := revealServer(t)
 	s.subMiss = newSubMisses()
 	for k, v := range map[string]string{"sub.enabled": "true", "sub.path": "/subscribe/", "sub.port": "44600"} {
-		if err := database.PutSetting(s.db, k, v); err != nil {
+		if err := database.PutSetting(dbOf(s), k, v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -50,7 +50,7 @@ func TestAPathTheServiceHadBeforeStillAnswers(t *testing.T) {
 	s, _ := revealServer(t)
 	s.subMiss = newSubMisses()
 	for k, v := range map[string]string{"sub.enabled": "true", "sub.path": "/sub/"} {
-		if err := database.PutSetting(s.db, k, v); err != nil {
+		if err := database.PutSetting(dbOf(s), k, v); err != nil {
 			t.Fatal(err)
 		}
 	}

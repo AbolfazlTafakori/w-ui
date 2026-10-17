@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/nodes"
 )
 
@@ -52,7 +51,7 @@ func (s *Server) handleFetchPin(w http.ResponseWriter, r *http.Request) {
 // The public half only: the key stays here, which is the whole reason a
 // certificate is worth more than a token.
 func (s *Server) handleMTLSIdentity(w http.ResponseWriter, r *http.Request) {
-	id, err := nodes.EnsureIdentity(s.db)
+	id, err := s.nodeCtl.Identity()
 	if err != nil {
 		fail(w, s.log, err)
 		return
@@ -84,7 +83,7 @@ func (s *Server) handleSetMTLSTrust(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := database.PutSetting(s.db, nodes.KeyMTLSTrustCA, in.CACert); err != nil {
+	if err := s.nodeCtl.SetTrust(in.CACert); err != nil {
 		fail(w, s.log, err)
 		return
 	}

@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/nodes"
 )
 
@@ -116,8 +115,8 @@ func (e errNoCert) Error() string { return string(e) }
 // should have it take effect without a restart, and this runs on a request that
 // arrives every twenty seconds rather than on a hot path.
 func (s *Server) nodeTrust() *x509.CertPool {
-	pemText, ok, err := database.GetSetting(s.db, nodes.KeyMTLSTrustCA)
-	if err != nil || !ok || strings.TrimSpace(pemText) == "" {
+	pemText, err := s.nodeCtl.Trust()
+	if err != nil || strings.TrimSpace(pemText) == "" {
 		return nil
 	}
 	pool, err := nodes.TrustPool(pemText)

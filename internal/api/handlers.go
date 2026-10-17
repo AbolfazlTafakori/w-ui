@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -999,7 +1000,7 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 	// refused token now rather than in half a minute.
 	if s.prober != nil {
 		s.prober.ProbeOne(r.Context(), *node)
-		_ = s.db.WithContext(r.Context()).First(node, node.ID).Error
+		node = s.reloadNode(r.Context(), node)
 	}
 	writeJSON(w, http.StatusCreated, node)
 }
@@ -1020,9 +1021,18 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.prober != nil {
 		s.prober.ProbeOne(r.Context(), *node)
-		_ = s.db.WithContext(r.Context()).First(node, node.ID).Error
+		node = s.reloadNode(r.Context(), node)
 	}
 	writeJSON(w, http.StatusOK, node)
+}
+
+// reloadNode is the node as the probe just left it, or as it was when it
+// cannot be read again.
+func (s *Server) reloadNode(ctx context.Context, node *model.Node) *model.Node {
+	if fresh, err := s.nodes.Get(ctx, node.ID); err == nil {
+		return fresh
+	}
+	return node
 }
 
 // handleNodeInboundKinds says what a node of another panel can serve.
@@ -1031,9 +1041,9 @@ func (s *Server) handleNodeInboundKinds(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	var node model.Node
-	if err := s.db.WithContext(r.Context()).First(&node, id).Error; err != nil {
-		fail(w, s.log, fmt.Errorf("%w: no node %d", service.ErrNotFound, id))
+	node, err := s.nodes.Get(r.Context(), id)
+	if err != nil {
+		fail(w, s.log, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1117,8 +1127,8 @@ func (s *Server) handleProbeNode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var node model.Node
-	if err := s.db.WithContext(r.Context()).First(&node, id).Error; err != nil {
+	node, err := s.nodes.Get(r.Context(), id)
+	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -1127,9 +1137,8 @@ func (s *Server) handleProbeNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.prober.ProbeOne(r.Context(), node)
-	_ = s.db.WithContext(r.Context()).First(&node, id).Error
-	writeJSON(w, http.StatusOK, node)
+	s.prober.ProbeOne(r.Context(), *node)
+	writeJSON(w, http.StatusOK, s.reloadNode(r.Context(), node))
 }
 
 func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
@@ -1200,8 +1209,8 @@ func (s *Server) handleRestartInterface(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var iface model.Interface
-	if err := s.db.WithContext(r.Context()).First(&iface, id).Error; err != nil {
+	iface, err := s.ifaces.Get(r.Context(), id)
+	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -1210,7 +1219,7 @@ func (s *Server) handleRestartInterface(w http.ResponseWriter, r *http.Request) 
 	// use. Building a driver here and keeping it to ourselves is what the old
 	// version did, and it left the interface looking restarted while nothing
 	// was actually pushing peers to it.
-	if err := s.pool.Open(r.Context(), &iface); err != nil {
+	if err := s.pool.Open(r.Context(), iface); err != nil {
 		// Reported rather than hidden: the reason a tunnel will not come up is
 		// the whole content of this request.
 		s.log.Warn("interface restart failed", "interface", iface.Name, "error", err)

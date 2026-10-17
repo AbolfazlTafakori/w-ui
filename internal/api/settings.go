@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backup"
@@ -94,19 +93,12 @@ func (s *Server) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 		info.MemPercent = snap.Memory.Percent
 	}
 
-	db := s.db.WithContext(r.Context())
-	if err := db.Model(&model.Interface{}).Count(&info.Interfaces).Error; err != nil {
+	counts, err := s.settings.Count(r.Context())
+	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	if err := db.Model(&model.Client{}).Count(&info.Clients).Error; err != nil {
-		fail(w, s.log, err)
-		return
-	}
-	if err := db.Model(&model.Account{}).Count(&info.Accounts).Error; err != nil {
-		fail(w, s.log, err)
-		return
-	}
+	info.Interfaces, info.Clients, info.Accounts = counts.Interfaces, counts.Clients, counts.Accounts
 
 	writeJSON(w, http.StatusOK, info)
 }
@@ -213,27 +205,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	s.throttle.succeed(key)
 
-	updates := map[string]any{"session_epoch": gorm.Expr("session_epoch + 1")}
-	if req.NewUsername != "" {
-		updates["username"] = req.NewUsername
-	}
-	if req.NewPassword != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
-		if err != nil {
-			fail(w, s.log, fmt.Errorf("hash password: %w", err))
-			return
-		}
-		updates["password_hash"] = string(hash)
-	}
-	// The generation moves with the password. Somebody changes it because they
-	// think a session is not theirs, and a signed token that outlives the change
-	// means the intruder keeps working for the rest of the day while the
-	// operator believes they have just shut the door.
-	//
-	// Written in one statement with the hash, so a failure cannot leave the
-	// password changed and the old sessions alive.
-	if err := s.db.WithContext(r.Context()).Model(admin).Updates(updates).Error; err != nil {
-		fail(w, s.log, fmt.Errorf("store credentials: %w", err))
+	// Every session ends with the change (see ChangeCredentials).
+	if err := s.admins.ChangeCredentials(r.Context(), admin, req.NewUsername, req.NewPassword); err != nil {
+		fail(w, s.log, err)
 		return
 	}
 
@@ -273,12 +247,10 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.WithContext(r.Context()).Model(admin).
-		Update("locale", locale).Error; err != nil {
-		fail(w, s.log, fmt.Errorf("store locale: %w", err))
+	if err := s.admins.SetLocale(r.Context(), admin, locale); err != nil {
+		fail(w, s.log, err)
 		return
 	}
-	admin.Locale = locale
 	// The same operator /me answers with. The bare record carries the label
 	// the owner files a reseller's customers under, which is kept from them.
 	writeJSON(w, http.StatusOK, s.adminView(r.Context(), admin))

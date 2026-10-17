@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/update"
 )
 
@@ -150,7 +149,7 @@ func (s *Server) handleUpgradeNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := nodes.AskToUpdate(r.Context(), s.db, id)
+	res, err := s.nodeCtl.AskToUpdate(r.Context(), id)
 	if err != nil {
 		fail(w, s.log, err)
 		return

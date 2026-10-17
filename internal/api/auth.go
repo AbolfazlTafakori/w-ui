@@ -12,7 +12,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
@@ -78,15 +77,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var admin model.Admin
-	err := s.db.WithContext(r.Context()).
-		Where("username = ?", strings.TrimSpace(req.Username)).
-		First(&admin).Error
+	admin, err := s.admins.ByUsername(r.Context(), strings.TrimSpace(req.Username))
 
 	// A wrong username and a wrong password give the same answer, and the hash
 	// comparison runs either way, so response timing does not reveal which
 	// usernames exist.
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(err, service.ErrNotFound) {
 		bcrypt.CompareHashAndPassword([]byte("$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi"), []byte(req.Password))
 		s.throttle.fail(ipKey, now)
 		s.throttle.fail(userKey, now)
@@ -112,7 +108,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// with no point. A reseller whose term ran out or whose allowance is
 	// spent is let in, read-only, to see why and pay: that is a lapse, and
 	// this is a decision.
-	if refusal := signInRefusal(&admin, time.Now().UTC()); refusal != "" {
+	if refusal := signInRefusal(admin, time.Now().UTC()); refusal != "" {
 		s.log.Warn("sign-in refused: account switched off",
 			"username", admin.Username, "ip", clientIP(r))
 		writeError(w, http.StatusForbidden, refusal)
@@ -143,7 +139,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expires := time.Now().Add(s.sessionTTL(r.Context()))
-	token, err := s.issueToken(w, r, &admin, expires)
+	token, err := s.issueToken(w, r, admin, expires)
 	if err != nil {
 		fail(w, s.log, err)
 		return
@@ -152,27 +148,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.throttle.succeed(ipKey)
 	s.throttle.succeed(userKey)
 
-	// A term on hold starts now. Written with a condition on the row, so two
-	// sign-ins racing each other cannot both start the clock.
-	if admin.Role.Capped() && admin.ExpiresAt == nil && admin.DurationDays > 0 {
-		ends := time.Now().UTC().Add(time.Duration(admin.DurationDays) * 24 * time.Hour)
-		res := s.db.WithContext(r.Context()).Model(&model.Admin{}).
-			Where("id = ? AND expires_at IS NULL AND duration_days > 0", admin.ID).
-			Updates(map[string]any{"expires_at": ends, "duration_days": 0})
-		if res.Error != nil {
-			s.log.Error("start a reseller's term", "username", admin.Username, "error", res.Error)
-		} else if res.RowsAffected > 0 {
-			s.log.Info("reseller's term started on first sign-in",
-				"username", admin.Username, "days", admin.DurationDays, "until", ends)
-			admin.ExpiresAt, admin.DurationDays = &ends, 0
-		}
-	}
-
+	// When and from where, and a reseller's term on hold starts now.
 	ip := clientIP(r)
-	if err := s.db.WithContext(r.Context()).Model(&admin).
-		Updates(map[string]any{"last_login_at": time.Now().UTC(), "last_login_ip": ip}).Error; err != nil {
-		s.log.Error("record sign-in", "error", err)
-	}
+	s.admins.SignedIn(r.Context(), admin, ip, time.Now())
 
 	s.log.Info("admin signed in", "username", admin.Username, "ip", ip)
 	if s.notifier != nil {
@@ -183,7 +161,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, loginResponse{
-		Token: token, ExpiresAt: expires, Admin: s.adminView(r.Context(), &admin)})
+		Token: token, ExpiresAt: expires, Admin: s.adminView(r.Context(), admin)})
 }
 
 // issueToken mints a session and the cookie half that has to come with it.
@@ -256,17 +234,17 @@ func (s *Server) authenticate(r *http.Request) (admin *model.Admin, machine bool
 		return nil, false, "your session has ended; sign in again", false
 	}
 
-	var a model.Admin
-	if err := s.db.WithContext(r.Context()).First(&a, claims.Subject).Error; err != nil {
+	a, err := s.admins.ForSession(r.Context(), claims.Subject)
+	if err != nil {
 		return nil, false, "your session has ended; sign in again", false
 	}
 
 	// Signed out everywhere since this was issued — by a password change, or
 	// deliberately.
-	if !epochHolds(&a, claims) {
+	if !epochHolds(a, claims) {
 		return nil, false, "you were signed out everywhere; sign in again", true
 	}
-	return &a, false, "", false
+	return a, false, "", false
 }
 
 // signedIn is authenticate for a handler that serves everyone and says a
@@ -442,9 +420,7 @@ func (s *Server) adminView(ctx context.Context, admin *model.Admin) *adminView {
 		view.Admin = &clone
 	}
 	if admin.Role.Capped() {
-		var held int64
-		if err := s.db.WithContext(ctx).Model(&model.Client{}).
-			Where("owner_id = ?", admin.ID).Count(&held).Error; err == nil {
+		if held, err := s.admins.Held(ctx, admin.ID); err == nil {
 			view.Admin.Clients = held
 		}
 	}
@@ -519,9 +495,7 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.db.WithContext(r.Context()).Model(&model.Admin{}).
-		Where("id = ?", admin.ID).Update("totp_secret", req.Secret).Error
-	if err != nil {
+	if err := s.admins.SetSecondFactor(r.Context(), admin.ID, req.Secret); err != nil {
 		fail(w, s.log, fmt.Errorf("store second factor: %w", err))
 		return
 	}
@@ -550,8 +524,8 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	// The password is asked for again. Otherwise a borrowed open session -
 	// which is exactly what the second factor exists to survive - could remove
 	// it in one click.
-	var stored model.Admin
-	if err := s.db.WithContext(r.Context()).First(&stored, admin.ID).Error; err != nil {
+	stored, err := s.admins.ForSession(r.Context(), fmt.Sprint(admin.ID))
+	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
@@ -580,9 +554,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	}
 	s.throttle.succeed(key)
 
-	err := s.db.WithContext(r.Context()).Model(&model.Admin{}).
-		Where("id = ?", admin.ID).Update("totp_secret", "").Error
-	if err != nil {
+	if err := s.admins.SetSecondFactor(r.Context(), admin.ID, ""); err != nil {
 		fail(w, s.log, fmt.Errorf("remove second factor: %w", err))
 		return
 	}

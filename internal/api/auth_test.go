@@ -35,7 +35,7 @@ func authServer(t *testing.T) (*Server, *gorm.DB) {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return &Server{db: db, log: log, throttle: newThrottle(), jwtSecret: []byte("a test session key, 32 bytes!!!"),
+	return &Server{log: log, throttle: newThrottle(), jwtSecret: []byte("a test session key, 32 bytes!!!"),
 		admins: service.NewAdmins(db, log)}, db
 }
 

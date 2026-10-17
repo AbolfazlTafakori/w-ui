@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"os"
 	"time"
-
-	"github.com/abolfazl/w-ui/internal/backup"
 )
 
 // Restoring a backup, and taking one in from outside.
@@ -95,7 +93,7 @@ func (s *Server) handleRestoreBackup(w http.ResponseWriter, r *http.Request) {
 
 	// Read whether or not the addresses are kept: how this panel is reached
 	// is carried across every restore.
-	keep, err := backup.ReadLocalAddresses(s.db.WithContext(r.Context()), keepAddresses)
+	keep, err := s.settings.LocalAddresses(r.Context(), keepAddresses)
 	if err != nil {
 		fail(w, s.log, err)
 		return

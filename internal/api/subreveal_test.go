@@ -61,8 +61,8 @@ func revealServer(t *testing.T) (*Server, string) {
 	must(db.Create(&model.Account{ClientID: client.ID, InterfaceID: iface.ID, NodeID: 1, DeviceName: "device-1",
 		IP: "10.77.0.2", Enabled: true, Username: revealUser, Secret: revealPass}).Error)
 
-	s := &Server{db: db, log: log, reveals: newSubReveals(),
-		subs: service.NewSubscriptions(db, backend.NewPool(log), service.NewHosts(db, log), log)}
+	s := withDB(&Server{log: log, reveals: newSubReveals(),
+		subs: service.NewSubscriptions(db, backend.NewPool(log), service.NewHosts(db, log), log)}, db)
 
 	req := httptest.NewRequest(http.MethodGet, "/sub/"+revealToken, nil)
 	req.Header.Set("Accept", "text/html")
@@ -255,8 +255,8 @@ func TestTheRouterLetsOnlyTheCopyButtonPost(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(database.PutSetting(s.db, "sub.enabled", "true"))
-	must(database.PutSetting(s.db, "sub.path", "/sub/"))
+	must(database.PutSetting(dbOf(s), "sub.enabled", "true"))
+	must(database.PutSetting(dbOf(s), "sub.path", "/sub/"))
 	reachedPanel := false
 	router := s.SubscriptionRouter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reachedPanel = true
