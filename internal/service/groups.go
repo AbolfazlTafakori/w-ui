@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/scope"
 )
 
 // groupsOf is the list form of what was sent: the list, or the one label
@@ -73,11 +74,19 @@ func setGroups(ctx context.Context, db *gorm.DB, clientID uint, groups []string)
 
 // syncGroupLabel keeps the one-label column on each customer equal to the
 // first of their groups, for anything that still reads it.
+//
+// Vouched for (scope.Vouch): every caller's ids are already the operator's
+// -- a customer read through the narrowed Get or Create, members read
+// through callerMembers, or the owner acting on a reseller.
 func syncGroupLabel(db *gorm.DB, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	return db.Exec(`UPDATE clients SET "group" = COALESCE((SELECT MIN(name) FROM client_groups g WHERE g.client_id = clients.id), '') WHERE id IN ?`, ids).Error
+	ctx := db.Statement.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return db.WithContext(scope.Vouch(ctx)).Exec(`UPDATE clients SET "group" = COALESCE((SELECT MIN(name) FROM client_groups g WHERE g.client_id = clients.id), '') WHERE id IN ?`, ids).Error
 }
 
 // fillGroups reads each customer's groups, in one query for the lot. The
@@ -241,7 +250,9 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 	hidden, hiddenArgs := hiddenCond(ctx, "g.name")
 	args := append([]any{model.StatusActive}, ownerArgs...)
 	args = append(args, hiddenArgs...)
-	err := db.Raw(`
+	// Narrowed by ownerCond and hiddenCond, so vouched for (scope.Vouch).
+	narrowed := db.WithContext(scope.Vouch(ctx))
+	err := narrowed.Raw(`
 		SELECT g.name AS name,
 		       COUNT(*) AS clients,
 		       SUM(CASE WHEN c.status = ? THEN 1 ELSE 0 END) AS active,
@@ -266,7 +277,7 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 		Devices int64
 	}
 	devArgs := append(append([]any{}, ownerArgs...), hiddenArgs...)
-	err = db.Raw(`
+	err = narrowed.Raw(`
 		SELECT g.name AS name, COUNT(*) AS devices
 		FROM accounts a
 		JOIN client_groups g ON g.client_id = a.client_id
@@ -343,7 +354,7 @@ func (s *Clients) Groups(ctx context.Context) (*GroupsResult, error) {
 	notHidden, notHiddenArgs := hiddenCond(ctx, "g.name")
 	ownClients, ownClientsArgs := ownerCond(ctx, "clients")
 	ungroupedArgs := append(append([]any{}, notHiddenArgs...), ownClientsArgs...)
-	if err := db.Raw(
+	if err := narrowed.Raw(
 		`SELECT COUNT(*) FROM clients WHERE NOT EXISTS (
 			SELECT 1 FROM client_groups g WHERE g.client_id = clients.id`+notHidden+`)`+ownClients,
 		ungroupedArgs...).
@@ -385,7 +396,8 @@ func (s *Clients) ListGroupNames(ctx context.Context) ([]string, error) {
 		WHERE COALESCE(g, '') <> ''
 		ORDER BY g ASC`
 	}
-	err := s.db.WithContext(ctx).Raw(q, args...).Scan(&names).Error
+	// The restricted query narrows itself by owner_id: vouched for.
+	err := s.db.WithContext(scope.Vouch(ctx)).Raw(q, args...).Scan(&names).Error
 	if err != nil {
 		return nil, fmt.Errorf("service: list group names: %w", err)
 	}
@@ -430,7 +442,8 @@ func (s *Clients) RenameGroup(ctx context.Context, from, to string) (int64, erro
 		}
 		moved = res.RowsAffected
 		label, labelArgs := ownerCond(ctx, "clients")
-		if err := tx.Exec(`UPDATE clients SET "group" = ? WHERE "group" = ?`+label,
+		// Narrowed by ownerCond: vouched for.
+		if err := tx.WithContext(scope.Vouch(ctx)).Exec(`UPDATE clients SET "group" = ? WHERE "group" = ?`+label,
 			append([]any{to, from}, labelArgs...)...).Error; err != nil {
 			return fmt.Errorf("rename label: %w", err)
 		}

@@ -339,6 +339,11 @@ func (s *Server) answer(p *packet, now time.Time) []byte {
 		}
 		ss.user, ss.nt, ss.peer, ss.succeeded = name, append([]byte(nil), nt...), append([]byte(nil), peer...), true
 		ss.eapID = eapID + 1
+		// Each state is used once: the one this answer came with is retired
+		// before the next is handed out. Left in place it named a session
+		// whose password was proved, and a success sent with it was let in
+		// again, without the password, until it expired.
+		s.forget(p)
 		ok2 := []byte(authenticatorResponse(u.Password, nt, peer, ss.challenge, name) + " M=OK")
 		sm := []byte{opSuccess, ms[1], 0, 0}
 		sm = append(sm, ok2...)

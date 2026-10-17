@@ -51,12 +51,15 @@ func builtPage(t *testing.T, page string) string {
 // carried as data, never as markup.
 func TestAPartIsWrittenOnce(t *testing.T) {
 	var s subShared
-	a := s.put(`<p>` + subSlot(0) + `</p>`)
-	if b := s.put(`<p>` + subSlot(0) + `</p>`); a != b || len(s.Parts) != 1 {
+	a := s.put("deviceNotes", []setupDevice{{ID: "ios"}})
+	if b := s.put("deviceNotes", []setupDevice{{ID: "ios"}}); a != b || len(s.Parts) != 1 {
 		t.Fatalf("the same part twice: %d %d, %d kept", a, b, len(s.Parts))
 	}
-	if c := s.put(`<i></i>`); c == a || len(s.Parts) != 2 {
-		t.Fatal("another part is another id")
+	if c := s.put("deviceNotes", []setupDevice{{ID: "android"}}); c == a || len(s.Parts) != 2 {
+		t.Fatal("other data is another part")
+	}
+	if d := s.put("deviceList", []setupDevice{{ID: "ios"}}); d == a || len(s.Parts) != 3 {
+		t.Fatal("another kind is another part")
 	}
 	if subSlots(nil) != "" {
 		t.Fatal("a stub with no values carries none")

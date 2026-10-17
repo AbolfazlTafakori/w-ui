@@ -684,15 +684,8 @@ func newSetupCard(devices []subPageDevice, detected string, icon template.HTML, 
 // parts of the page's: the same on every card, and each guide the same for
 // every file but for the file's own values, which stay with its stub.
 func (card *setupCard) share(shared *subShared) {
-	part := func(name string, data any) int {
-		var b strings.Builder
-		if err := subPageTemplate.ExecuteTemplate(&b, name, data); err != nil {
-			panic(fmt.Sprintf("subscription page: the %s part: %v", name, err))
-		}
-		return shared.put(b.String())
-	}
-	card.DeviceList = part("deviceList", card.Devices)
-	card.Notes = part("deviceNotes", card.Devices)
+	card.DeviceList = shared.put("deviceList", card.Devices)
+	card.Notes = shared.put("deviceNotes", card.Devices)
 	for i := range card.Views {
 		v := &card.Views[i]
 		mold := *v
@@ -709,7 +702,7 @@ func (card *setupCard) share(shared *subShared) {
 			mold.Command = subSlot(len(vals) - 1)
 		}
 		mold.File = 0
-		v.From = part("guide", guideMold{setupView: mold, CopyIcon: card.CopyIcon})
+		v.From = shared.put("guide", guideMold{setupView: mold, CopyIcon: card.CopyIcon})
 		v.Vals = subSlots(vals)
 	}
 }
@@ -898,7 +891,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
 <link rel="stylesheet" href="{{ .CSSPath }}">
 </head>
 <body>
-{{ .Sprite }}{{ with .Shared }}{{ range .Parts }}<template id="part-{{ .ID }}">{{ .HTML }}</template>{{ end }}{{ end }}
+{{ .Sprite }}{{ with .Shared }}{{ range .Parts }}<template id="part-{{ .ID }}">{{ if eq .Kind "guide" }}{{ template "guide" .Data }}{{ else if eq .Kind "deviceList" }}{{ template "deviceList" .Data }}{{ else if eq .Kind "deviceNotes" }}{{ template "deviceNotes" .Data }}{{ end }}</template>{{ end }}{{ end }}
 {{ if .Preview }}<div class="preview-bar">Preview — {{ .Template }} — sample figures, not a customer</div>{{ end }}
 <div class="live-bg" aria-hidden="true"><span class="orb one"></span><span class="orb two"></span><span class="orb three"></span><span class="wave one"></span><span class="wave two"></span><span class="grid"></span><canvas id="net"></canvas></div>
 <div class="content"><div class="col">

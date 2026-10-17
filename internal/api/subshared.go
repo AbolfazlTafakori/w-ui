@@ -23,28 +23,41 @@ import (
 // or an attribute, put there as text: a value is never markup.
 
 // subShared is a page's parts, each kept once however often it is used.
+// A part is kept as what it is written from, and written once, by the page's
+// own template: nothing is rendered before the page is, so a part that cannot
+// be written fails the page the way anything else in it does.
 type subShared struct {
 	ids   map[string]int
 	Parts []subPart
 }
 
-// subPart is one part, as the page writes it: <template id="part-ID">.
+// subPart is one part, as the page writes it: <template id="part-ID">, from
+// the template named Kind with Data.
 type subPart struct {
 	ID   int
-	HTML template.HTML
+	Kind string
+	Data any
 }
 
-// put keeps html as a part, and is its id: the same html is the same part.
-func (s *subShared) put(html string) int {
+// put keeps a part to be written from template kind with data, and is its
+// id: the same kind with the same data is the same part.
+func (s *subShared) put(kind string, data any) int {
 	if s.ids == nil {
 		s.ids = map[string]int{}
 	}
-	if id, ok := s.ids[html]; ok {
+	key, err := json.Marshal(data)
+	if err != nil {
+		// Unshared rather than wrongly shared: a part with a key of its own,
+		// which no JSON can be.
+		key = []byte("unkeyed:" + strconv.Itoa(len(s.Parts)))
+	}
+	k := kind + "|" + string(key)
+	if id, ok := s.ids[k]; ok {
 		return id
 	}
 	id := len(s.Parts)
-	s.ids[html] = id
-	s.Parts = append(s.Parts, subPart{ID: id, HTML: template.HTML(html)})
+	s.ids[k] = id
+	s.Parts = append(s.Parts, subPart{ID: id, Kind: kind, Data: data})
 	return id
 }
 

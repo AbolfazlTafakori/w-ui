@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // update is one thing Telegram reports.
@@ -182,26 +183,105 @@ func (b *Bot) sendPhoto(ctx context.Context, chat int64, name string, png []byte
 	return b.upload(ctx, "sendPhoto", "photo", name, png, map[string]string{"chat_id": fmt.Sprint(chat), "caption": caption, "parse_mode": "HTML"})
 }
 
-// pages splits a long message on blank lines the way the classic panel's bot does, so
-// nothing is cut mid-line by Telegram's limit.
+// pages splits a long message to fit Telegram's limit: at blank lines where
+// it can, at line ends where a part is still too long -- a list of every
+// customer has no blank line in it -- and between characters only for one
+// line longer than a page. A page that ends inside <b>, <i>, <code> or <pre>
+// closes it, and the next opens it again: Telegram refuses a message whose
+// HTML does not balance, and a long report used never to arrive at all.
 func pages(text string, limit int) []string {
 	if len(text) <= limit {
 		return []string{text}
 	}
+	// What the tags a page has to close and reopen can take, at most.
+	room := limit - 64
+	var pieces []string
+	for i, block := range strings.Split(text, "\n\n") {
+		sep := "\n\n"
+		if i == 0 {
+			sep = ""
+		}
+		for j, line := range splitLong(block, "\n", room) {
+			if j > 0 {
+				sep = "\n"
+			}
+			pieces = append(pieces, sep+line)
+		}
+	}
 	var out []string
 	cur := ""
-	for _, block := range strings.Split(text, "\n\n") {
-		if cur != "" && len(cur)+2+len(block) > limit {
+	for _, p := range pieces {
+		if cur != "" && len(cur)+len(p) > room {
 			out = append(out, cur)
+			p = strings.TrimLeft(p, "\n")
 			cur = ""
 		}
-		if cur != "" {
-			cur += "\n\n"
-		}
-		cur += block
+		cur += p
 	}
 	if strings.TrimSpace(cur) != "" {
 		out = append(out, cur)
 	}
+	return balance(out)
+}
+
+// splitLong is s in parts at sep, each at most limit bytes; a part with no
+// sep in it is cut between characters.
+func splitLong(s, sep string, limit int) []string {
+	if len(s) <= limit {
+		return []string{s}
+	}
+	var out []string
+	for _, part := range strings.Split(s, sep) {
+		for len(part) > limit {
+			cut := limit
+			for cut > 0 && !utf8.RuneStart(part[cut]) {
+				cut--
+			}
+			out = append(out, part[:cut])
+			part = part[cut:]
+		}
+		out = append(out, part)
+	}
 	return out
+}
+
+// pagedTags are the tags the bot's messages use.
+var pagedTags = []string{"b", "i", "code", "pre"}
+
+// balance closes, at the end of each page, the tags still open there, and
+// opens them again at the start of the next.
+func balance(ps []string) []string {
+	var open []string
+	for i, p := range ps {
+		reopen := ""
+		for _, t := range open {
+			reopen += "<" + t + ">"
+		}
+		p = reopen + p
+		open = openTags(p)
+		for j := len(open) - 1; j >= 0; j-- {
+			p += "</" + open[j] + ">"
+		}
+		ps[i] = p
+	}
+	return ps
+}
+
+// openTags are the paged tags opened in s and not closed, outermost first.
+func openTags(s string) []string {
+	var stack []string
+	for i := 0; i < len(s); i++ {
+		if s[i] != '<' {
+			continue
+		}
+		for _, t := range pagedTags {
+			switch {
+			case strings.HasPrefix(s[i:], "<"+t+">"):
+				stack = append(stack, t)
+			case strings.HasPrefix(s[i:], "</"+t+">") && len(stack) > 0 && stack[len(stack)-1] == t:
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	return stack
 }

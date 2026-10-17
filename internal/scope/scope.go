@@ -14,6 +14,7 @@ package scope
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"gorm.io/gorm"
@@ -162,5 +163,81 @@ func Register(db *gorm.DB) error {
 		Register("wui:scope_delete", narrow); err != nil {
 		return err
 	}
+
+	// SQL written by hand is past narrowing: the condition above is a clause,
+	// and a statement already written has no clauses to add it to. For an
+	// operator who is restricted, such a statement on the customers' tables
+	// is refused unless the code says it narrows itself (Vouch). One added
+	// later that forgets fails, in its tests and in use, instead of handing
+	// a reseller another reseller's customers.
+	guard := func(tx *gorm.DB) {
+		if tx.Statement == nil || tx.Statement.Context == nil || tx.Statement.SQL.Len() == 0 {
+			return
+		}
+		if s := Of(tx.Statement.Context); !s.Restricted || vouched(tx.Statement.Context) {
+			return
+		}
+		if namesTenantTable(tx.Statement.SQL.String()) {
+			_ = tx.AddError(ErrUnscopedSQL)
+		}
+	}
+	if err := db.Callback().Query().Before("gorm:query").
+		Register("wui:scope_guard_query", guard); err != nil {
+		return err
+	}
+	if err := db.Callback().Row().Before("gorm:row").
+		Register("wui:scope_guard_row", guard); err != nil {
+		return err
+	}
+	if err := db.Callback().Raw().Before("gorm:raw").
+		Register("wui:scope_guard_raw", guard); err != nil {
+		return err
+	}
 	return nil
+}
+
+// ErrUnscopedSQL is SQL written by hand on the customers' tables, run for a
+// restricted operator without saying it narrows itself.
+var ErrUnscopedSQL = errors.New("scope: SQL on customers' tables for a restricted operator must narrow itself (scope.Vouch)")
+
+type vouchKey struct{}
+
+// Vouch marks a context whose hand-written SQL narrows itself to the
+// operator -- with Narrow's condition, or by ids already narrowed. Used at
+// the one statement that does, never passed further down.
+func Vouch(ctx context.Context) context.Context {
+	return context.WithValue(ctx, vouchKey{}, true)
+}
+
+func vouched(ctx context.Context) bool {
+	v, _ := ctx.Value(vouchKey{}).(bool)
+	return v
+}
+
+// tenantTables are the tables whose rows belong to an operator's customers.
+var tenantTables = []string{"clients", "accounts", "client_groups"}
+
+// namesTenantTable reports whether sql names one of them as a word.
+func namesTenantTable(sql string) bool {
+	lower := strings.ToLower(sql)
+	for _, t := range tenantTables {
+		for i := 0; ; {
+			j := strings.Index(lower[i:], t)
+			if j < 0 {
+				break
+			}
+			at := i + j
+			before := at == 0 || !isWordByte(lower[at-1])
+			after := at+len(t) == len(lower) || !isWordByte(lower[at+len(t)])
+			if before && after {
+				return true
+			}
+			i = at + len(t)
+		}
+	}
+	return false
+}
+
+func isWordByte(b byte) bool {
+	return b == '_' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9'
 }
