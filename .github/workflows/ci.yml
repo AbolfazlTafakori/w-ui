@@ -235,6 +235,11 @@ jobs:
           # From before resellers, the update helper and most of today's
           # schema: the oldest install still worth carrying forward.
           - { method: installer, old: v1.1.0 }
+          # What most panels run when 3.0 comes out: every setting and every
+          # customer's file must come through it byte for byte.
+          - { method: installer, old: v2.6.4 }
+          - { method: panel, old: v2.6.4 }
+          - { method: menu, old: v2.6.4 }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -265,6 +270,8 @@ jobs:
           # a node of v2.0.0 to v2.6.0 refuses every managing panel's token,
           # and is put right only by updating the node itself.
           - { old: v2.5.2, directions: old-panel }
+          # A 3.0 panel with 2.6 nodes, and a 2.6 panel with 3.0 nodes.
+          - { old: v2.6.4, directions: both }
     steps:
       - uses: actions/checkout@v4
         with:
