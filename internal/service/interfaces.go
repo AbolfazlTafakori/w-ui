@@ -315,6 +315,27 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	if !backend.Supports(in.Protocol) {
 		return invalidField("protocol", "no driver available for %q on this server", in.Protocol)
 	}
+	shared, err := checkProtocolSettings(in)
+	if err != nil {
+		return err
+	}
+	if shared {
+		checkPort = false
+	}
+	if err := checkListenPort(in, checkPort, local); err != nil {
+		return err
+	}
+	if err := checkAddressing(in); err != nil {
+		return err
+	}
+	return checkMode(in)
+}
+
+// checkProtocolSettings checks what belongs to one protocol -- its standard
+// port, its key, its subnet, its ways of signing in -- and that nothing of
+// one is set on another. shared is a protocol whose ports are held on
+// purpose by a daemon the panel already runs, so not checked as free.
+func checkProtocolSettings(in *CreateInterfaceInput) (shared bool, err error) {
 	if in.Protocol == model.ProtocolL2TP {
 		// The clients built into Windows, macOS and iOS use 1701 inside
 		// IPsec on 500 and 4500, with no setting for any of them; another
@@ -324,12 +345,12 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 		}
 		if in.PSK != "" {
 			if err := l2tpconf.CheckPSK(in.PSK); err != nil {
-				return invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
+				return false, invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
 			}
 		}
 		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
 			if err := checkL2TPSubnet(p); err != nil {
-				return err
+				return false, err
 			}
 		}
 	} else if in.Protocol == model.ProtocolPPTP {
@@ -340,7 +361,7 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 		}
 		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
 			if err := checkL2TPSubnet(p); err != nil {
-				return err
+				return false, err
 			}
 		}
 	} else if in.Protocol == model.ProtocolIKEv2 {
@@ -351,13 +372,13 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 		if in.ListenPort == 0 {
 			in.ListenPort = l2tpconf.PortIKE
 		}
-		checkPort = false
+		shared = true
 		if _, err := ikev2Modes(in.IKEv2Modes); err != nil {
-			return err
+			return false, err
 		}
 		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
 			if err := checkL2TPSubnet(p); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
@@ -369,27 +390,33 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 		}
 		if p, err := netip.ParsePrefix(in.Subnet); err == nil {
 			if err := checkL2TPSubnet(p); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if in.OpenConnect != nil && in.OpenConnect.CamouflageSecret != nil {
 			if s := strings.TrimSpace(*in.OpenConnect.CamouflageSecret); s != "" {
 				if err := occonf.CheckCamouflage(s); err != nil {
-					return invalidField("openconnect.camouflageSecret", "the camouflage secret is %d to %d letters and digits", occonf.MinCamouflage, occonf.MaxCamouflage)
+					return false, invalidField("openconnect.camouflageSecret", "the camouflage secret is %d to %d letters and digits", occonf.MinCamouflage, occonf.MaxCamouflage)
 				}
 			}
 		}
 	} else if in.OpenConnect != nil {
-		return invalidField("openconnect", "these settings apply to OpenConnect tunnels only")
+		return false, invalidField("openconnect", "these settings apply to OpenConnect tunnels only")
 	}
 	if in.Protocol != model.ProtocolIKEv2 && len(in.IKEv2Modes) > 0 {
-		return invalidField("ikev2Modes", "ways of signing in apply to IKEv2 tunnels only")
+		return false, invalidField("ikev2Modes", "ways of signing in apply to IKEv2 tunnels only")
 	}
 	if in.Protocol != model.ProtocolL2TP && in.PSK != "" {
-		return invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
+		return false, invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
 	} else if in.Protocol != model.ProtocolL2TP && in.L2TPPlain {
-		return invalidField("l2tpPlain", "L2TP without IPsec applies to L2TP tunnels only")
+		return false, invalidField("l2tpPlain", "L2TP without IPsec applies to L2TP tunnels only")
 	}
+	return shared, nil
+}
+
+// checkListenPort checks the tunnel's port and transport, and, on this
+// server, that nothing else holds them.
+func checkListenPort(in *CreateInterfaceInput, checkPort, local bool) error {
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
 		return invalidField("listenPort", "listen port %d is out of range", in.ListenPort)
 	}
@@ -449,6 +476,12 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 			return &FieldError{Field: "listenPort", Err: err}
 		}
 	}
+	return nil
+}
+
+// checkAddressing checks where clients dial and what the tunnel hands them,
+// and fills in the defaults.
+func checkAddressing(in *CreateInterfaceInput) error {
 	if in.EndpointHost == "" {
 		return invalidField("endpointHost", "endpoint host is required; it is what clients dial")
 	}
@@ -482,6 +515,11 @@ func (s *Interfaces) validate(in *CreateInterfaceInput, checkPort bool) error {
 	if in.NATInterface == "" {
 		in.NATInterface = "eth0"
 	}
+	return nil
+}
+
+// checkMode checks the WireGuard flavour.
+func checkMode(in *CreateInterfaceInput) error {
 	switch in.Mode {
 	case "":
 		in.Mode = model.ModeStandard
@@ -777,234 +815,36 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	if in.Enabled != nil {
 		fields["enabled"] = *in.Enabled
 	}
-	if in.Name != nil && strings.TrimSpace(*in.Name) != iface.Name {
-		name := strings.TrimSpace(*in.Name)
-		if err := checkIfaceName(name); err != nil {
-			return nil, err
-		}
-		var clash int64
-		if err := s.db.WithContext(ctx).Model(&model.Interface{}).
-			Where("node_id = ? AND name = ? AND id <> ?", iface.NodeID, name, id).Count(&clash).Error; err != nil {
-			return nil, fmt.Errorf("service: check interface name: %w", err)
-		}
-		if clash > 0 {
-			return nil, invalidField("name", "a tunnel called %q already exists on this server", name)
-		}
-		fields["name"] = name
+	if err := s.updateName(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	if in.ListenPort != nil && *in.ListenPort != iface.ListenPort {
-		port := *in.ListenPort
-		if port < 1 || port > 65535 {
-			return nil, invalidField("listenPort", "listen port %d is out of range", port)
-		}
-		if err := checkAlternatePort(iface.Protocol, port); err != nil {
-			return nil, err
-		}
-		if err := s.checkPortClash(ctx, iface.NodeID, iface.ID, port, ifaceTransports(*iface)); err != nil {
-			return nil, err
-		}
-		proto := "udp"
-		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" ||
-			iface.Protocol == model.ProtocolOpenConnect || iface.Protocol == model.ProtocolPPTP {
-			proto = "tcp"
-		}
-		// A daemon's standard port is its own to hold; only a port of the
-		// tunnel's own is asked about.
-		std, fixed := StandardPort(iface.Protocol)
-		if local, err := s.isLocal(ctx, iface.NodeID); err == nil && local && (!fixed || port != std) {
-			if err := checkPortFree(port, proto); err != nil {
-				return nil, &FieldError{Field: "listenPort", Err: err}
-			}
-			if iface.Protocol == model.ProtocolOpenConnect && iface.OpenConnect.V.DTLS {
-				if err := checkPortFree(port, "udp"); err != nil {
-					return nil, &FieldError{Field: "listenPort", Err: fmt.Errorf("%w; OpenConnect's DTLS needs UDP %d too", err, port)}
-				}
-			}
-		}
-		fields["listen_port"] = port
+	if err := s.updatePort(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	if in.Mode != nil && *in.Mode != iface.Mode {
-		mode := *in.Mode
-		if mode == "" {
-			mode = model.ModeStandard
-		}
-		switch mode {
-		case model.ModeStandard, model.ModeAmnezia:
-		default:
-			return nil, invalidField("mode", "unknown mode %q", mode)
-		}
-		if mode == model.ModeAmnezia && iface.Protocol != model.ProtocolWireGuard {
-			return nil, invalidField("mode", "AmneziaWG mode applies to WireGuard only")
-		}
-		if mode == model.ModeAmnezia && iface.AWG.V.Jc == 0 && in.AWG == nil {
-			mtu := iface.MTU
-			if in.MTU != nil {
-				mtu = *in.MTU
-			}
-			p, err := s.DrawAWG(ctx, iface.NodeID, iface.ID, mtu, AWGModern)
-			if err != nil {
-				return nil, err
-			}
-			fields["awg"] = model.JSON(p)
-		}
-		fields["mode"] = mode
-		s.log.Warn("tunnel mode changed; every customer needs their configuration again",
-			"interface", iface.Name, "from", iface.Mode, "to", mode)
+	if err := s.updateMode(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	var newSubnet string
-	if in.Subnet != nil && strings.TrimSpace(*in.Subnet) != iface.Subnet {
-		newSubnet = strings.TrimSpace(*in.Subnet)
-		pfx, err := netip.ParsePrefix(newSubnet)
-		if err != nil {
-			return nil, invalidField("subnet", "subnet %q: %v", newSubnet, err)
-		}
-		if iface.Protocol.ByAgent() {
-			if err := checkL2TPSubnet(pfx); err != nil {
-				return nil, err
-			}
-		}
-		if err := s.checkSubnetFree(ctx, iface.NodeID, id, newSubnet); err != nil {
-			return nil, err
-		}
-		fields["subnet"] = newSubnet
+	newSubnet, err := s.updateSubnet(ctx, iface, in, fields)
+	if err != nil {
+		return nil, err
 	}
-	if in.EndpointHost != nil {
-		host := strings.TrimSpace(*in.EndpointHost)
-		if host == "" {
-			return nil, invalidField("endpointHost", "endpoint host is required")
-		}
-		if err := checkEndpointHost(host); err != nil {
-			return nil, err
-		}
-		fields["endpoint_host"] = host
+	if err := s.updateLink(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	if in.MTU != nil {
-		if err := checkMTU(iface.Protocol, *in.MTU); err != nil {
-			return nil, err
-		}
-		fields["mtu"] = *in.MTU
+	if err := s.updateL2TP(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	if in.AWG != nil || in.RegenerateAWG {
-		if err := s.updateAWG(ctx, iface, in, fields); err != nil {
-			return nil, err
-		}
-	} else if in.MTU != nil && iface.Mode == model.ModeAmnezia && iface.AWG.V.S4 > awgMaxS4(*in.MTU) {
-		// A larger MTU leaves less room for the data packets' padding.
-		return nil, invalidField("mtu", "with S4 = %d an MTU of %d makes every data packet too big for the link; at most %d, or lower S4 first",
-			iface.AWG.V.S4, *in.MTU, awgPacketLimit-awgDataOverhead-iface.AWG.V.S4)
+	if err := s.updateOpenConnect(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	// The key and whether plain L2TP is accepted live together; each change
-	// is made to what is there, so changing one keeps the other.
-	l2tp := iface.L2TP.V
-	l2tpChanged := false
-	if in.PSK != nil && *in.PSK != l2tp.PSK {
-		if iface.Protocol != model.ProtocolL2TP {
-			return nil, invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
-		}
-		if err := l2tpconf.CheckPSK(*in.PSK); err != nil {
-			return nil, invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
-		}
-		l2tp.PSK = *in.PSK
-		l2tpChanged = true
-		s.log.Warn("L2TP pre-shared key changed; every customer on the tunnel needs the new one",
-			"interface", iface.Name)
+	if err := s.updateIKEv2(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	if in.L2TPPlain != nil && *in.L2TPPlain != l2tp.AllowPlain {
-		if iface.Protocol != model.ProtocolL2TP {
-			return nil, invalidField("l2tpPlain", "L2TP without IPsec applies to L2TP tunnels only")
-		}
-		l2tp.AllowPlain = *in.L2TPPlain
-		l2tpChanged = true
-		if l2tp.AllowPlain {
-			s.log.Warn("L2TP without IPsec is now accepted on this tunnel; those sessions are not encrypted",
-				"interface", iface.Name)
-		} else {
-			s.log.Info("L2TP without IPsec is no longer accepted on this tunnel", "interface", iface.Name)
-		}
+	if err := s.updateNetwork(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
-	if l2tpChanged {
-		fields["l2tp"] = model.JSON(l2tp)
-	}
-	if in.OpenConnect != nil && iface.Protocol != model.ProtocolOpenConnect {
-		return nil, invalidField("openconnect", "these settings apply to OpenConnect tunnels only")
-	}
-	if iface.Protocol == model.ProtocolOpenConnect {
-		// A new address needs a certificate for it now, not at the next pass:
-		// devices dialling it would be refused until then.
-		host := iface.EndpointHost
-		if h, ok := fields["endpoint_host"].(string); ok {
-			host = h
-		}
-		p := iface.OpenConnect.V
-		if err := applyOpenConnect(&p, in.OpenConnect); err != nil {
-			return nil, err
-		}
-		if _, err := ocCertFor(&p, host, s.panelCert, time.Now()); err != nil {
-			return nil, err
-		}
-		if p != iface.OpenConnect.V {
-			fields["openconnect"] = model.JSON(p)
-			s.log.Info("OpenConnect settings changed", "interface", iface.Name)
-		}
-	}
-	if in.IKEv2Modes != nil {
-		if iface.Protocol != model.ProtocolIKEv2 {
-			return nil, invalidField("ikev2Modes", "ways of signing in apply to IKEv2 tunnels only")
-		}
-		want, err := ikev2Modes(*in.IKEv2Modes)
-		if err != nil {
-			return nil, err
-		}
-		p := iface.IKEv2.V
-		if p.MSCHAPv2 != want.MSCHAPv2 || p.PSK != want.PSK || p.RSA != want.RSA || p.EAPTLS != want.EAPTLS {
-			p.MSCHAPv2, p.PSK, p.RSA, p.EAPTLS = want.MSCHAPv2, want.PSK, want.RSA, want.EAPTLS
-			fields["ikev2"] = model.JSON(p)
-			s.log.Info("IKEv2 ways of signing in changed", "interface", iface.Name)
-		}
-	}
-	if in.DNS != nil {
-		if err := checkDNSList(strings.TrimSpace(*in.DNS)); err != nil {
-			return nil, err
-		}
-		fields["dns"] = strings.TrimSpace(*in.DNS)
-	}
-	if in.NATInterface != nil {
-		if err := checkNetDevice(strings.TrimSpace(*in.NATInterface)); err != nil {
-			return nil, err
-		}
-		fields["nat_interface"] = strings.TrimSpace(*in.NATInterface)
-	}
-
-	// Switching an OpenVPN tunnel between UDP and TCP.
-	//
-	// It rewrites both halves of the configuration — the server's proto line
-	// and every customer's — so a customer whose file still says udp cannot
-	// connect afterwards. Said plainly in the log rather than left for the
-	// operator to work out from support messages.
-	if in.Transport != nil {
-		want := strings.ToLower(strings.TrimSpace(*in.Transport))
-		switch want {
-		case "udp", "tcp":
-		default:
-			return nil, invalidField("transport", "transport must be udp or tcp, not %q", want)
-		}
-		if iface.Protocol != model.ProtocolOpenVPN {
-			return nil, invalidField("transport",
-				"only OpenVPN has a choice of transport; WireGuard is always UDP")
-		}
-		params := iface.OpenVPN.V
-		if params.Transport != want {
-			// The port has to be free on the transport being moved to. UDP 443
-			// being ours says nothing about TCP 443, where a web server usually
-			// already is.
-			if err := checkPortFree(iface.ListenPort, want); err != nil {
-				return nil, &FieldError{Field: "transport", Err: err}
-			}
-			params.Transport = want
-			fields["open_vpn"] = model.JSON(params)
-			s.log.Warn("openvpn transport changed; every customer needs their configuration again",
-				"interface", iface.Name, "from", iface.OpenVPN.V.Transport, "to", want)
-		}
+	if err := s.updateTransport(ctx, iface, in, fields); err != nil {
+		return nil, err
 	}
 
 	if len(fields) == 0 {
@@ -1030,6 +870,285 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 	}
 	s.log.Info("interface updated", "id", id, "name", iface.Name, "fields", len(fields))
 	return s.Get(ctx, id)
+}
+
+// updateName takes the name, which no other tunnel on its server may have.
+func (s *Interfaces) updateName(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	if in.Name != nil && strings.TrimSpace(*in.Name) != iface.Name {
+		name := strings.TrimSpace(*in.Name)
+		if err := checkIfaceName(name); err != nil {
+			return err
+		}
+		var clash int64
+		if err := s.db.WithContext(ctx).Model(&model.Interface{}).
+			Where("node_id = ? AND name = ? AND id <> ?", iface.NodeID, name, iface.ID).Count(&clash).Error; err != nil {
+			return fmt.Errorf("service: check interface name: %w", err)
+		}
+		if clash > 0 {
+			return invalidField("name", "a tunnel called %q already exists on this server", name)
+		}
+		fields["name"] = name
+	}
+	return nil
+}
+
+// updatePort takes the port, which nothing else on its server may hold.
+func (s *Interfaces) updatePort(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	if in.ListenPort != nil && *in.ListenPort != iface.ListenPort {
+		port := *in.ListenPort
+		if port < 1 || port > 65535 {
+			return invalidField("listenPort", "listen port %d is out of range", port)
+		}
+		if err := checkAlternatePort(iface.Protocol, port); err != nil {
+			return err
+		}
+		if err := s.checkPortClash(ctx, iface.NodeID, iface.ID, port, ifaceTransports(*iface)); err != nil {
+			return err
+		}
+		proto := "udp"
+		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" ||
+			iface.Protocol == model.ProtocolOpenConnect || iface.Protocol == model.ProtocolPPTP {
+			proto = "tcp"
+		}
+		// A daemon's standard port is its own to hold; only a port of the
+		// tunnel's own is asked about.
+		std, fixed := StandardPort(iface.Protocol)
+		if local, err := s.isLocal(ctx, iface.NodeID); err == nil && local && (!fixed || port != std) {
+			if err := checkPortFree(port, proto); err != nil {
+				return &FieldError{Field: "listenPort", Err: err}
+			}
+			if iface.Protocol == model.ProtocolOpenConnect && iface.OpenConnect.V.DTLS {
+				if err := checkPortFree(port, "udp"); err != nil {
+					return &FieldError{Field: "listenPort", Err: fmt.Errorf("%w; OpenConnect's DTLS needs UDP %d too", err, port)}
+				}
+			}
+		}
+		fields["listen_port"] = port
+	}
+	return nil
+}
+
+// updateMode takes WireGuard's flavour, drawing AmneziaWG's parameters when it has none.
+func (s *Interfaces) updateMode(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	if in.Mode != nil && *in.Mode != iface.Mode {
+		mode := *in.Mode
+		if mode == "" {
+			mode = model.ModeStandard
+		}
+		switch mode {
+		case model.ModeStandard, model.ModeAmnezia:
+		default:
+			return invalidField("mode", "unknown mode %q", mode)
+		}
+		if mode == model.ModeAmnezia && iface.Protocol != model.ProtocolWireGuard {
+			return invalidField("mode", "AmneziaWG mode applies to WireGuard only")
+		}
+		if mode == model.ModeAmnezia && iface.AWG.V.Jc == 0 && in.AWG == nil {
+			mtu := iface.MTU
+			if in.MTU != nil {
+				mtu = *in.MTU
+			}
+			p, err := s.DrawAWG(ctx, iface.NodeID, iface.ID, mtu, AWGModern)
+			if err != nil {
+				return err
+			}
+			fields["awg"] = model.JSON(p)
+		}
+		fields["mode"] = mode
+		s.log.Warn("tunnel mode changed; every customer needs their configuration again",
+			"interface", iface.Name, "from", iface.Mode, "to", mode)
+	}
+	return nil
+}
+
+// updateSubnet takes a new subnet, which no other tunnel on its server may
+// overlap; it is the new one, or "" for none.
+func (s *Interfaces) updateSubnet(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) (string, error) {
+	var newSubnet string
+	if in.Subnet != nil && strings.TrimSpace(*in.Subnet) != iface.Subnet {
+		newSubnet = strings.TrimSpace(*in.Subnet)
+		pfx, err := netip.ParsePrefix(newSubnet)
+		if err != nil {
+			return "", invalidField("subnet", "subnet %q: %v", newSubnet, err)
+		}
+		if iface.Protocol.ByAgent() {
+			if err := checkL2TPSubnet(pfx); err != nil {
+				return "", err
+			}
+		}
+		if err := s.checkSubnetFree(ctx, iface.NodeID, iface.ID, newSubnet); err != nil {
+			return "", err
+		}
+		fields["subnet"] = newSubnet
+	}
+	return newSubnet, nil
+}
+
+// updateLink takes where clients dial, the MTU, and AmneziaWG's parameters.
+func (s *Interfaces) updateLink(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	if in.EndpointHost != nil {
+		host := strings.TrimSpace(*in.EndpointHost)
+		if host == "" {
+			return invalidField("endpointHost", "endpoint host is required")
+		}
+		if err := checkEndpointHost(host); err != nil {
+			return err
+		}
+		fields["endpoint_host"] = host
+	}
+	if in.MTU != nil {
+		if err := checkMTU(iface.Protocol, *in.MTU); err != nil {
+			return err
+		}
+		fields["mtu"] = *in.MTU
+	}
+	if in.AWG != nil || in.RegenerateAWG {
+		if err := s.updateAWG(ctx, iface, in, fields); err != nil {
+			return err
+		}
+	} else if in.MTU != nil && iface.Mode == model.ModeAmnezia && iface.AWG.V.S4 > awgMaxS4(*in.MTU) {
+		// A larger MTU leaves less room for the data packets' padding.
+		return invalidField("mtu", "with S4 = %d an MTU of %d makes every data packet too big for the link; at most %d, or lower S4 first",
+			iface.AWG.V.S4, *in.MTU, awgPacketLimit-awgDataOverhead-iface.AWG.V.S4)
+	}
+	return nil
+}
+
+// updateL2TP takes L2TP's key and whether plain L2TP is accepted.
+func (s *Interfaces) updateL2TP(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	// The key and whether plain L2TP is accepted live together; each change
+	// is made to what is there, so changing one keeps the other.
+	l2tp := iface.L2TP.V
+	l2tpChanged := false
+	if in.PSK != nil && *in.PSK != l2tp.PSK {
+		if iface.Protocol != model.ProtocolL2TP {
+			return invalidField("psk", "a pre-shared key applies to L2TP tunnels only")
+		}
+		if err := l2tpconf.CheckPSK(*in.PSK); err != nil {
+			return invalidField("psk", "the pre-shared key is %d to %d printable characters, with no spaces, quotes, # or backslash", l2tpconf.MinPSK, l2tpconf.MaxPSK)
+		}
+		l2tp.PSK = *in.PSK
+		l2tpChanged = true
+		s.log.Warn("L2TP pre-shared key changed; every customer on the tunnel needs the new one",
+			"interface", iface.Name)
+	}
+	if in.L2TPPlain != nil && *in.L2TPPlain != l2tp.AllowPlain {
+		if iface.Protocol != model.ProtocolL2TP {
+			return invalidField("l2tpPlain", "L2TP without IPsec applies to L2TP tunnels only")
+		}
+		l2tp.AllowPlain = *in.L2TPPlain
+		l2tpChanged = true
+		if l2tp.AllowPlain {
+			s.log.Warn("L2TP without IPsec is now accepted on this tunnel; those sessions are not encrypted",
+				"interface", iface.Name)
+		} else {
+			s.log.Info("L2TP without IPsec is no longer accepted on this tunnel", "interface", iface.Name)
+		}
+	}
+	if l2tpChanged {
+		fields["l2tp"] = model.JSON(l2tp)
+	}
+	return nil
+}
+
+// updateOpenConnect takes OpenConnect's settings, and a certificate for a new address.
+func (s *Interfaces) updateOpenConnect(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	if in.OpenConnect != nil && iface.Protocol != model.ProtocolOpenConnect {
+		return invalidField("openconnect", "these settings apply to OpenConnect tunnels only")
+	}
+	if iface.Protocol == model.ProtocolOpenConnect {
+		// A new address needs a certificate for it now, not at the next pass:
+		// devices dialling it would be refused until then.
+		host := iface.EndpointHost
+		if h, ok := fields["endpoint_host"].(string); ok {
+			host = h
+		}
+		p := iface.OpenConnect.V
+		if err := applyOpenConnect(&p, in.OpenConnect); err != nil {
+			return err
+		}
+		if _, err := ocCertFor(&p, host, s.panelCert, time.Now()); err != nil {
+			return err
+		}
+		if p != iface.OpenConnect.V {
+			fields["openconnect"] = model.JSON(p)
+			s.log.Info("OpenConnect settings changed", "interface", iface.Name)
+		}
+	}
+	return nil
+}
+
+// updateIKEv2 takes IKEv2's ways of signing in.
+func (s *Interfaces) updateIKEv2(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	if in.IKEv2Modes != nil {
+		if iface.Protocol != model.ProtocolIKEv2 {
+			return invalidField("ikev2Modes", "ways of signing in apply to IKEv2 tunnels only")
+		}
+		want, err := ikev2Modes(*in.IKEv2Modes)
+		if err != nil {
+			return err
+		}
+		p := iface.IKEv2.V
+		if p.MSCHAPv2 != want.MSCHAPv2 || p.PSK != want.PSK || p.RSA != want.RSA || p.EAPTLS != want.EAPTLS {
+			p.MSCHAPv2, p.PSK, p.RSA, p.EAPTLS = want.MSCHAPv2, want.PSK, want.RSA, want.EAPTLS
+			fields["ikev2"] = model.JSON(p)
+			s.log.Info("IKEv2 ways of signing in changed", "interface", iface.Name)
+		}
+	}
+	return nil
+}
+
+// updateNetwork takes the resolvers handed out and the device traffic leaves by.
+func (s *Interfaces) updateNetwork(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	if in.DNS != nil {
+		if err := checkDNSList(strings.TrimSpace(*in.DNS)); err != nil {
+			return err
+		}
+		fields["dns"] = strings.TrimSpace(*in.DNS)
+	}
+	if in.NATInterface != nil {
+		if err := checkNetDevice(strings.TrimSpace(*in.NATInterface)); err != nil {
+			return err
+		}
+		fields["nat_interface"] = strings.TrimSpace(*in.NATInterface)
+	}
+	return nil
+}
+
+// updateTransport takes OpenVPN's transport.
+func (s *Interfaces) updateTransport(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
+	// Switching an OpenVPN tunnel between UDP and TCP.
+	//
+	// It rewrites both halves of the configuration — the server's proto line
+	// and every customer's — so a customer whose file still says udp cannot
+	// connect afterwards. Said plainly in the log rather than left for the
+	// operator to work out from support messages.
+	if in.Transport != nil {
+		want := strings.ToLower(strings.TrimSpace(*in.Transport))
+		switch want {
+		case "udp", "tcp":
+		default:
+			return invalidField("transport", "transport must be udp or tcp, not %q", want)
+		}
+		if iface.Protocol != model.ProtocolOpenVPN {
+			return invalidField("transport",
+				"only OpenVPN has a choice of transport; WireGuard is always UDP")
+		}
+		params := iface.OpenVPN.V
+		if params.Transport != want {
+			// The port has to be free on the transport being moved to. UDP 443
+			// being ours says nothing about TCP 443, where a web server usually
+			// already is.
+			if err := checkPortFree(iface.ListenPort, want); err != nil {
+				return &FieldError{Field: "transport", Err: err}
+			}
+			params.Transport = want
+			fields["open_vpn"] = model.JSON(params)
+			s.log.Warn("openvpn transport changed; every customer needs their configuration again",
+				"interface", iface.Name, "from", iface.OpenVPN.V.Transport, "to", want)
+		}
+	}
+	return nil
 }
 
 // readdress moves a tunnel to a new subnet: every account on it gets a fresh

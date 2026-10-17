@@ -11,12 +11,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -52,7 +50,6 @@ import (
 	"github.com/abolfazl/w-ui/internal/shaper"
 	"github.com/abolfazl/w-ui/internal/single"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
-	"github.com/abolfazl/w-ui/internal/tgbot"
 	"github.com/abolfazl/w-ui/internal/update"
 	"github.com/abolfazl/w-ui/internal/web"
 )
@@ -109,52 +106,9 @@ func run() error {
 	}
 	reportLocaleDrift(catalog, log)
 
-	// Before the database is opened, and that is the point: a restore replaces
-	// the file it would be opened against, and SQLite's write-ahead log belongs
-	// to whichever file was open when it was written. Applying a restore under
-	// a running process means the log is checkpointed back over it and the
-	// restore quietly undoes itself.
-	dbFile := ""
-	if cfg.DBDriver == config.DriverSQLite {
-		dbFile = filepath.Base(cfg.DBSource)
-	}
-	restoredFrom, keepAddresses, restored := backup.ApplyPending(cfg.DataDir, dbFile, log)
-
-	db, err := database.Open(cfg, log)
+	db, err := openPanelDatabase(cfg, log)
 	if err != nil {
 		return err
-	}
-
-	// A restore that crossed engines, or came from a panel on the other one:
-	// the archive's portable dump is loaded now that the schema is current.
-	if pending := filepath.Join(cfg.DataDir, backup.PendingImportFile); fileExists(pending) {
-		if err := importPending(db, cfg, pending, log); err != nil {
-			log.Error("the restored backup could not be loaded into the database; the panel is running on the data it had",
-				"error", err, "kept", pending+".failed")
-			_ = os.Rename(pending, pending+".failed")
-		} else {
-			_ = os.Remove(pending)
-			restored = true
-		}
-	}
-
-	if restored {
-		log.Info("this panel is running on data restored from a backup", "archive", restoredFrom)
-		// After the database is open, because this is a change to the restored
-		// data: the addresses in the archive name the server it was taken on,
-		// and this puts back the ones that name this one.
-		if kept, unknown, err := backup.ApplyLocalAddresses(db, keepAddresses); err != nil {
-			log.Error("restored, but this server's own addresses could not be put back",
-				"error", err,
-				"consequence", "customers may be handed the address of the server the backup came from")
-		} else if keepAddresses != nil {
-			log.Info("kept this server's own addresses over the ones in the backup",
-				"interfaces", kept, "notOnThisServer", unknown)
-			if unknown > 0 {
-				log.Warn("some tunnels in the backup are not on this server and kept their old address",
-					"count", unknown, "fix", "check the endpoint of each interface on the Interfaces page")
-			}
-		}
 	}
 
 	password, err := database.Bootstrap(db, cfg.DefaultLocale, log)
@@ -167,29 +121,7 @@ func run() error {
 	// change nothing, which is how a fresh install keeps running on its
 	// environment alone.
 	settings := service.NewSettings(db, cfg.DefaultLocale)
-	if ov := settings.Overrides(context.Background()); ov != (service.Overrides{}) {
-		if ov.ListenHost != "" || ov.ListenPort > 0 {
-			cfg.Listen = service.MergeListen(cfg.Listen, ov.ListenHost, ov.ListenPort)
-		}
-		if ov.BasePath != "" {
-			cfg.BasePath = ov.BasePath
-		}
-		if ov.TLSCert != "" && ov.TLSKey != "" {
-			cfg.TLSCert, cfg.TLSKey = ov.TLSCert, ov.TLSKey
-		}
-		if ov.TrustedProxies != "" {
-			cfg.TrustedProxies = ov.TrustedProxies
-		}
-		if ov.TimeLocation != "" {
-			if loc, err := time.LoadLocation(ov.TimeLocation); err == nil {
-				time.Local = loc
-			} else {
-				log.Warn("ignoring the saved time zone", "zone", ov.TimeLocation, "error", err)
-			}
-		}
-		log.Info("settings from the panel applied over the environment",
-			"listen", cfg.Listen, "basePath", cfg.BasePath, "tls", cfg.TLS())
-	}
+	applySavedSettings(&cfg, settings, log)
 	if password != "" {
 		printFirstRunCredentials(password)
 	}
@@ -336,146 +268,23 @@ func run() error {
 	// Outbound subscriptions are fetched on their own intervals.
 	go egress.NewOutboundSubs(db, outbounds, log).Run(ctx)
 
-	if err := shp.Health(ctx); err != nil {
-		log.Warn("rate limiting inactive: speed limits are recorded but not applied", "reason", err)
-	} else {
-		log.Info("rate limiting active", "engine", "tc/htb")
-	}
-
-	if err := router.Health(ctx); err != nil {
-		// Said once, plainly. Without this an operator can configure a foreign
-		// exit, see it listed, and never learn that every customer is still
-		// leaving through the server's own address.
-		log.Warn("traffic routing inactive: outbounds and routing rules are stored but not applied",
-			"reason", err)
-	} else {
-		log.Info("traffic routing active", "engine", "nftables/fwmark")
-	}
-
-	if err := enforcer.Health(ctx); err != nil {
-		// Quota enforcement is the panel's core promise. Saying this once, at
-		// warn level, is better than letting an operator sell a 50 GB plan that
-		// silently has no ceiling.
-		log.Warn("quota enforcement inactive: limits are recorded but not applied",
-			"reason", err)
-	} else {
-		log.Info("quota enforcement active", "engine", "nftables")
-	}
-	if !web.Built() {
-		log.Warn("frontend placeholder embedded; run npm run build in web/ and rebuild")
-	}
+	reportEnforcement(ctx, shp, router, enforcer, log)
 
 	if err := reportReadiness(ctx, db, pools, log); err != nil {
 		return err
 	}
 
-	sys := sysinfo.New(cfg.DataDir, cfg.CollectInterval, log)
-
-	// The long history: exact for the last hour, averaged out to a week, and
-	// kept on disk so a restart does not erase the very thing somebody restarted
-	// the panel to go and look at.
-	history := sysinfo.NewStore(filepath.Join(cfg.DataDir, "history.gob"))
-	if err := history.Load(); err != nil {
-		// Starting without it is a much smaller problem than not starting.
-		log.Warn("could not read the stored history; starting a new one", "error", err)
-	}
-	sys.UseStore(history)
-	sys.Start(ctx)
-
-	// Written periodically, because a panel does not always get to shut down
-	// tidily — and the run that ends in a kill is the one whose history is
-	// worth having. The shutdown write is done below, in the shutdown path
-	// itself: a goroutine woken by ctx.Done() races the process exiting and
-	// loses it about as often as it wins.
-	go func() {
-		t := time.NewTicker(historySaveInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if err := history.Save(); err != nil {
-					log.Warn("could not write the history", "error", err)
-				}
-			}
-		}
-	}()
+	sys, history := startReadings(ctx, cfg, log)
 
 	notifier.Start(ctx)
 
 	// Every tunnel brought up again from its stored configuration: what
 	// the classic panel's "restart xray" is here. The bot offers it, and so does
 	// `systemctl reload wui`, which sends SIGHUP.
-	restartTunnels := func(ctx context.Context) error {
-		var ifaces []model.Interface
-		if err := db.WithContext(ctx).Where("enabled = ? AND node_id = ?", true, local.ID).Find(&ifaces).Error; err != nil {
-			return err
-		}
-		var failed []string
-		for i := range ifaces {
-			if err := pool.Open(ctx, &ifaces[i]); err != nil {
-				failed = append(failed, ifaces[i].Name+": "+err.Error())
-			}
-		}
-		if len(failed) > 0 {
-			return errors.New(strings.Join(failed, "; "))
-		}
-		return nil
-	}
-	go func() {
-		hup := make(chan os.Signal, 1)
-		signal.Notify(hup, syscall.SIGHUP)
-		defer signal.Stop(hup)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-hup:
-				log.Info("reload requested: restarting every tunnel")
-				if err := restartTunnels(ctx); err != nil {
-					log.Error("tunnel restart", "error", err)
-				} else {
-					log.Info("every tunnel restarted")
-				}
-			}
-		}
-	}()
+	restartTunnels := tunnelRestarter(service.NewDataPlane(db, pool, local.ID, log))
+	go reloadOnHangup(ctx, restartTunnels, log)
 
-	// The Telegram bot: the same chat the notifications go to answers
-	// questions and takes orders, as the classic panel's bot does.
-	go tgbot.New(tgbot.Deps{
-		Config:   notifier.Config,
-		Clients:  clientsSvc,
-		Subs:     subs,
-		Ifaces:   ifaceSvc,
-		Settings: settings,
-		Sys:      sys.Snapshot,
-		Version:  version,
-		Backup: func(ctx context.Context) (string, []byte, error) {
-			a, err := backups.Create(ctx)
-			if err != nil {
-				return "", nil, err
-			}
-			f, _, err := backups.Open(a.Name)
-			if err != nil {
-				return "", nil, err
-			}
-			defer f.Close()
-			data, err := io.ReadAll(f)
-			return a.Name, data, err
-		},
-		Restart: restartTunnels,
-		LoginFailures: func() []string {
-			var out []string
-			for _, e := range logger.Recent.Recent(200, "warn", "request") {
-				if p, _ := e.Fields["path"].(string); strings.HasSuffix(p, "/auth/login") {
-					out = append(out, fmt.Sprintf("%s  %v  %v", e.Time.Local().Format("01-02 15:04"), e.Fields["ip"], e.Fields["status"]))
-				}
-			}
-			return out
-		},
-	}, log).Run(ctx)
+	startBot(ctx, notifier, clientsSvc, subs, ifaceSvc, settings, sys, backups, restartTunnels, log)
 
 	// The host's own load, for the CPU and memory events.
 	notifier.RunSystemMonitor(ctx, func() (float64, float64) {
@@ -490,62 +299,9 @@ func run() error {
 	// Traffic handed to an outside system, when one is configured.
 	oversight.NewInformer(db, settings, log).Run(ctx, cfg.CollectInterval)
 
-	// Watching the other servers. Started before the HTTP listener so the nodes
-	// page has answers the first time it is opened rather than an empty table.
-	prober := nodes.New(db, log)
-	prober.OnChange = func(node model.Node, reachable bool, detail string) {
-		kind, title := notify.KindNodeDown, "Node unreachable"
-		if reachable {
-			kind, title = notify.KindNodeUp, "Node reachable"
-		}
-		notifier.Send(notify.Event{Kind: kind, Title: title, Body: node.Name + " — " + detail})
-	}
-	prober.Start(ctx)
+	prober := startNodes(ctx, db, rec, ifaceSvc, clientsSvc, notifier, log)
 
-	// Carrying this panel's decisions out to the servers that terminate tunnels,
-	// and bringing back what they counted. A node's traffic lands in the same
-	// per-customer total the local kernel feeds, which is what makes one
-	// allowance span every server the customer reaches.
-	syncer := nodes.NewSyncer(db, rec.AddNodeReport, log)
-	// The connections limit spans every server: what is live on each node
-	// comes back here every few seconds, the reconciler counts it with what
-	// this kernel sees, and a device it holds off on a node is told to that
-	// node at once and again with every push.
-	syncer.Sessions = rec.SetRemoteSessions
-	syncer.Holds = rec.Holds
-	syncer.XUIMirror = ifaceSvc.MirrorXUI
-	ifaceSvc.SetRemote(nodes.Remote{})
-	clientsSvc.SetRemote(nodes.Remote{})
-	rec.OnHold = syncer.PushHold
-	clientsSvc.SetLive(rec)
-	ifaceSvc.SetLive(rec)
-	syncer.Start(ctx)
-
-	// Re-read on every check rather than captured here, so changing either on
-	// the settings page takes effect without a restart.
-	scheduler := backup.NewScheduler(backups)
-	scheduler.Every = func() time.Duration {
-		got, err := settings.Get(ctx)
-		if err != nil {
-			return 0
-		}
-		return time.Duration(got.BackupEveryHours) * time.Hour
-	}
-	scheduler.Keep = func() int {
-		got, err := settings.Get(ctx)
-		if err != nil {
-			return 7
-		}
-		return got.BackupKeep
-	}
-	scheduler.OnBackup = func(a backup.Archive) {
-		notifier.Send(notify.Event{
-			Kind:  notify.KindBackup,
-			Title: "Backup taken",
-			Body:  fmt.Sprintf("%s (%d bytes)", a.Name, a.Size),
-		})
-	}
-	scheduler.Start(ctx)
+	startBackupSchedule(ctx, backups, settings, notifier)
 
 	notifier.Send(notify.Event{
 		Kind:  notify.KindPanel,
@@ -563,82 +319,7 @@ func run() error {
 		return err
 	}
 
-	errc := make(chan error, 1)
-
-	// The subscription service on its own address, when the settings ask
-	// for one that is not the panel's, and on every address it had before
-	// and still answers (SubSettings.Former): a link handed out on one of
-	// those is a customer's only link.
-	var subSrvs []*http.Server
-	if sc, err := subs.Settings(ctx); err == nil {
-		taken := map[string]bool{cfg.Listen: true}
-		if sc.Port > 0 {
-			addr := net.JoinHostPort(sc.Listen, strconv.Itoa(sc.Port))
-			if !taken[addr] {
-				taken[addr] = true
-				subSrvs = append(subSrvs, startSubListener(addr, sc.CertFile, sc.KeyFile, subOnly, log))
-			}
-		}
-		for _, f := range sc.Former {
-			addr := net.JoinHostPort(sc.Listen, strconv.Itoa(f.Port))
-			if f.Port == 0 || taken[addr] {
-				continue // the panel's own, or one already answered
-			}
-			taken[addr] = true
-			certFile, keyFile := "", ""
-			if f.TLS {
-				certFile, keyFile = sc.CertFile, sc.KeyFile
-			}
-			subSrvs = append(subSrvs, startSubListener(addr, certFile, keyFile, subOnly, log))
-		}
-	}
-	go func() {
-		log.Info("listening",
-			"address", cfg.Listen,
-			"url", cfg.Scheme()+"://"+cfg.Listen+cfg.BasePath,
-			"tls", cfg.TLS())
-		var err error
-		if cfg.TLS() {
-			// The certificate is read from its files again whenever they
-			// change, so a renewal is served without a restart.
-			err = srv.ListenAndServeTLS("", "")
-		} else {
-			// Worth saying once. An administrator's password crosses this
-			// listener in the clear, and a panel that never mentions it is how
-			// that goes unnoticed for a year.
-			log.Warn("serving plain HTTP: sign-in credentials are not encrypted",
-				"advice", "set WUI_TLS_CERT and WUI_TLS_KEY, or put a TLS-terminating proxy in front")
-			err = srv.ListenAndServe()
-		}
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errc <- err
-		}
-	}()
-
-	select {
-	case err := <-errc:
-		return fmt.Errorf("http server: %w", err)
-	case <-ctx.Done():
-		log.Info("shutting down")
-	}
-
-	// Before the server is asked to stop, and on this goroutine rather than
-	// another: an hour of readings is what somebody restarted the panel to go
-	// and look at, and losing it on every tidy shutdown would make the whole
-	// store worth only as much as the few minutes held in memory.
-	if err := history.Save(); err != nil {
-		log.Warn("could not write the history on the way out", "error", err)
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	for _, s := range subSrvs {
-		_ = s.Shutdown(shutdownCtx)
-	}
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
-	}
-	return nil
+	return serve(ctx, cfg, srv, subs, subOnly, history, log)
 }
 
 // startSubListener serves the subscription service on one address, over
