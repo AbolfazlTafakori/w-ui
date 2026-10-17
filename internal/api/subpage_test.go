@@ -153,7 +153,7 @@ func TestSubPageLoadsNothingExternal(t *testing.T) {
 			SubURL: "https://example.com/subscribe/tok",
 		},
 		Nonce: "abc", Lang: "en", HasQuota: true, StatusKey: "active", Used: "250 B", Total: "1000 B",
-		Strings: "{}", Icons: map[string]template.HTML{},
+		Icons:   map[string]template.HTML{},
 		Devices: devices,
 		Groups:  groupDevices(devices, "Ali"),
 	})
@@ -190,7 +190,7 @@ func TestSubPageEscapesWhatPeopleTyped(t *testing.T) {
 			Name:  `"><img src=x onerror=alert(1)>`,
 		},
 		Nonce: "n", Lang: "en", StatusKey: "active",
-		Strings: "{}", Icons: map[string]template.HTML{},
+		Icons: map[string]template.HTML{},
 		Devices: []subPageDevice{{
 			SubPageDevice: service.SubPageDevice{
 				ID: 1, Name: `<b>bold</b>`, Config: `</textarea><script>x</script>`,
@@ -217,9 +217,10 @@ func TestSubPageEscapesWhatPeopleTyped(t *testing.T) {
 	if strings.Contains(html, "<b>bold</b>") {
 		t.Error("a device name containing markup was rendered as markup")
 	}
-	// The one script tag on the page is ours, and it carries the nonce.
-	if n := strings.Count(html, "<script"); n != 1 {
-		t.Errorf("found %d script tags, want exactly the one we wrote", n)
+	// The two script tags on the page are ours -- its words, and its code --
+	// and each carries the nonce.
+	if n, signed := strings.Count(html, "<script"), strings.Count(html, `<script nonce="n"`); n != 2 || signed != 2 {
+		t.Errorf("found %d script tags, %d with the nonce; want exactly the two we wrote", n, signed)
 	}
 }
 
@@ -360,10 +361,16 @@ func TestSubPageShowsAnL2TPSignIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := buf.String()
-	for _, want := range []string{`data-i="l2tpConfig"`, `tag tag-config purple`,
-		`L2TP/IPsec sign-in`, `ورود L2TP/IPsec`, `class="cfg cfg-group open"`} {
+	for _, want := range []string{`data-i="l2tpConfig"`, `tag tag-config purple`, `class="cfg cfg-group open"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the page is missing %s", want)
+		}
+	}
+	// Its words are in the words the page loads, in both languages.
+	words, _ := subAssets.Load(v.StringsPath)
+	for _, want := range []string{`L2TP/IPsec sign-in`, `ورود L2TP/IPsec`} {
+		if words == nil || !strings.Contains(string(words.(*subAsset).body), want) {
+			t.Errorf("the page's words are missing %s", want)
 		}
 	}
 	// The sign-in is not on the line, and the line's whole text -- which
@@ -494,7 +501,8 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 		t.Error("the commands do not show the mask")
 	}
 	// Its words are in the page's Persian dictionary.
-	if !strings.Contains(string(v.Strings), "dg.android12") || !strings.Contains(string(v.Strings), "دستگاه شما") {
+	words, _ := subAssets.Load(v.StringsPath)
+	if words == nil || !strings.Contains(string(words.(*subAsset).body), "dg.android12") || !strings.Contains(string(words.(*subAsset).body), "دستگاه شما") {
 		t.Error("the guide's words are not in the dictionary")
 	}
 
@@ -511,7 +519,8 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 // as before there was one.
 func TestSubPageWithoutFilesHasNoCard(t *testing.T) {
 	v := newSubView(&service.SubPage{Name: "Ali", Status: "active"}, "token", false, "")
-	if v.AnySetup || strings.Contains(string(v.Strings), "dgSetup") {
+	words, _ := subAssets.Load(v.StringsPath)
+	if v.AnySetup || words == nil || strings.Contains(string(words.(*subAsset).body), "dgSetup") {
 		t.Fatal("a page with no files was given a setup card")
 	}
 }

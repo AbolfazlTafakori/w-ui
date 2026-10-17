@@ -38,7 +38,7 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := strings.TrimPrefix(r.URL.Path, cfg.Path)
+	token, _ := subToken(cfg, r.URL.Path)
 	// A token with a slash in it is a path traversal attempt or a broken link;
 	// either way it is not one we issued.
 	if token == "" || strings.ContainsAny(token, "/\\") {
@@ -204,13 +204,12 @@ func (s *Server) handleRotateSubscription(w http.ResponseWriter, r *http.Request
 // Checking here costs one string comparison per request and lets the change
 // take effect on the next one.
 //
-// own says this router is the subscription service's own listener. When
-// the service has one, the panel's listener no longer answers
-// subscriptions at all -- as the classic panel's does not -- so a link
-// that names the panel's port stops working the day the service moves to
-// its own, rather than quietly keeping two doors open. The page previews
-// and the font stay on the panel, where the settings page opens them.
-func (s *Server) SubscriptionRouter(next http.Handler, own bool) http.Handler {
+// It answers on the panel's listener too, with the service on a listener of
+// its own: a link handed out while the service was on the panel's port is
+// still a customer's only link, and that listener is also what answers when
+// the service's own cannot start. The token is the whole of the secret on
+// either door, so a second door gives a stranger nothing.
+func (s *Server) SubscriptionRouter(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only GET and HEAD. A subscription is a read, and answering a POST
 		// here would give a cross-site form somewhere a way to reach it. The
@@ -230,7 +229,7 @@ func (s *Server) SubscriptionRouter(next http.Handler, own bool) http.Handler {
 
 		// The Persian face the page links to, and a template preview the
 		// settings page just asked for.
-		if serveSubFont(w, r) || s.serveSubPreview(w, r) {
+		if serveSubFont(w, r) || serveSubAsset(w, r) || s.serveSubPreview(w, r) {
 			return
 		}
 
@@ -239,13 +238,7 @@ func (s *Server) SubscriptionRouter(next http.Handler, own bool) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !strings.HasPrefix(r.URL.Path, cfg.Path) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if !own && s.subOwnListener.Load() {
-			// The service answers on its own port now; the panel's says
-			// nothing about it, as it says nothing about any other path.
+		if _, ok := subToken(cfg, r.URL.Path); !ok {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -263,8 +256,26 @@ func (s *Server) SubscriptionRouter(next http.Handler, own bool) http.Handler {
 			}
 		}
 
-		s.handleSubscription(w, r)
+		gw, done := subGzip(w, r)
+		defer done()
+		s.handleSubscription(gw, r)
 	})
+}
+
+// subToken is the token a request path names, under the service's own path
+// or one it answered on before (SubSettings.Former), the longest that fits;
+// ok says the path is the service's at all.
+func subToken(cfg service.SubSettings, path string) (token string, ok bool) {
+	best := ""
+	for _, p := range cfg.Paths() {
+		if p != "" && p != "/" && strings.HasPrefix(path, p) && len(p) > len(best) {
+			best = p
+		}
+	}
+	if best == "" {
+		return "", false
+	}
+	return strings.TrimPrefix(path, best), true
 }
 
 // b64 encodes a header value that may contain any script.

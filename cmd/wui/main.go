@@ -547,44 +547,30 @@ func run() error {
 	errc := make(chan error, 1)
 
 	// The subscription service on its own address, when the settings ask
-	// for one that is not the panel's. Customers' apps then never touch the
-	// panel's listener at all.
-	var subSrv *http.Server
-	if sc, err := subs.Settings(ctx); err == nil && sc.Port > 0 {
-		addr := net.JoinHostPort(sc.Listen, strconv.Itoa(sc.Port))
-		if addr != cfg.Listen {
-			subTLS := &tls.Config{MinVersion: tls.VersionTLS12}
-			if sc.CertFile != "" && sc.KeyFile != "" {
-				if ld, err := certfile.New(sc.CertFile, sc.KeyFile); err == nil {
-					subTLS.GetCertificate = ld.GetCertificate
-				} else {
-					log.Error("subscription certificate is unusable; serving it plain", "error", err)
-					sc.CertFile, sc.KeyFile = "", ""
-				}
+	// for one that is not the panel's, and on every address it had before
+	// and still answers (SubSettings.Former): a link handed out on one of
+	// those is a customer's only link.
+	var subSrvs []*http.Server
+	if sc, err := subs.Settings(ctx); err == nil {
+		taken := map[string]bool{cfg.Listen: true}
+		if sc.Port > 0 {
+			addr := net.JoinHostPort(sc.Listen, strconv.Itoa(sc.Port))
+			if !taken[addr] {
+				taken[addr] = true
+				subSrvs = append(subSrvs, startSubListener(addr, sc.CertFile, sc.KeyFile, subOnly, log))
 			}
-			subSrv = &http.Server{
-				Addr:              addr,
-				TLSConfig:         subTLS,
-				Handler:           subOnly,
-				ReadHeaderTimeout: 10 * time.Second,
-				ReadTimeout:       30 * time.Second,
-				WriteTimeout:      60 * time.Second,
-				IdleTimeout:       120 * time.Second,
+		}
+		for _, f := range sc.Former {
+			addr := net.JoinHostPort(sc.Listen, strconv.Itoa(f.Port))
+			if f.Port == 0 || taken[addr] {
+				continue // the panel's own, or one already answered
 			}
-			go func() {
-				log.Info("subscription service listening", "address", addr, "tls", sc.CertFile != "")
-				var err error
-				if sc.CertFile != "" && sc.KeyFile != "" {
-					err = subSrv.ListenAndServeTLS("", "")
-				} else {
-					err = subSrv.ListenAndServe()
-				}
-				if err != nil && !errors.Is(err, http.ErrServerClosed) {
-					// Its own failure is logged, not fatal: the panel still
-					// serves subscriptions on its own listener.
-					log.Error("subscription listener failed", "address", addr, "error", err)
-				}
-			}()
+			taken[addr] = true
+			certFile, keyFile := "", ""
+			if f.TLS {
+				certFile, keyFile = sc.CertFile, sc.KeyFile
+			}
+			subSrvs = append(subSrvs, startSubListener(addr, certFile, keyFile, subOnly, log))
 		}
 	}
 	go func() {
@@ -627,13 +613,50 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if subSrv != nil {
-		_ = subSrv.Shutdown(shutdownCtx)
+	for _, s := range subSrvs {
+		_ = s.Shutdown(shutdownCtx)
 	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
+}
+
+// startSubListener serves the subscription service on one address, over
+// HTTPS when given a certificate. Its failure is logged, not fatal: the
+// panel's own listener answers the same links (api.SubscriptionRouter).
+func startSubListener(addr, certFile, keyFile string, handler http.Handler, log *slog.Logger) *http.Server {
+	conf := &tls.Config{MinVersion: tls.VersionTLS12}
+	if certFile != "" && keyFile != "" {
+		if ld, err := certfile.New(certFile, keyFile); err == nil {
+			conf.GetCertificate = ld.GetCertificate
+		} else {
+			log.Error("subscription certificate is unusable; serving it plain", "address", addr, "error", err)
+			certFile, keyFile = "", ""
+		}
+	}
+	srv := &http.Server{
+		Addr:              addr,
+		TLSConfig:         conf,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	go func() {
+		log.Info("subscription service listening", "address", addr, "tls", certFile != "")
+		var err error
+		if certFile != "" {
+			err = srv.ListenAndServeTLS("", "")
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("subscription listener failed", "address", addr, "error", err)
+		}
+	}()
+	return srv
 }
 
 // buildServer wires the services, the API and the embedded frontend into one
@@ -726,16 +749,10 @@ func buildServer(
 	// The subscription service sits ahead of the frontend so it can answer on
 	// whatever path the operator configured, and is checked before the
 	// single-page fallback swallows the request as a route.
-	// With the service on a listener of its own, the panel's leaves
-	// subscriptions to it -- the same condition run() starts it on.
-	if sc, err := subs.Settings(context.Background()); err == nil && sc.Port > 0 &&
-		net.JoinHostPort(sc.Listen, strconv.Itoa(sc.Port)) != cfg.Listen {
-		apiSrv.SubscriptionOnOwnListener(true)
-	}
-	handler := apiSrv.SubscriptionRouter(app, false)
+	handler := apiSrv.SubscriptionRouter(app)
 
 	// The subscription service alone, for a listener of its own.
-	subOnly := api.LogRequests(log, api.SecureHeaders(apiSrv.SubscriptionRouter(http.NotFoundHandler(), true)))
+	subOnly := api.LogRequests(log, api.SecureHeaders(apiSrv.SubscriptionRouter(http.NotFoundHandler())))
 
 	// Nothing below TLS 1.2 is offered. The clients that need less are
 	// older than any browser an operator will be signing in from.

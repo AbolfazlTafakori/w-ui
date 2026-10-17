@@ -261,7 +261,7 @@ func TestTheRouterLetsOnlyTheCopyButtonPost(t *testing.T) {
 	router := s.SubscriptionRouter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reachedPanel = true
 		w.WriteHeader(http.StatusTeapot)
-	}), true)
+	}))
 
 	raw, _ := json.Marshal(map[string]string{"mark": markOf(t, page), "ref": "1.0", "what": "password"})
 	req := httptest.NewRequest(http.MethodPost, "/sub/"+revealToken+"?view=reveal", strings.NewReader(string(raw)))

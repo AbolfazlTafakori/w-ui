@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -46,6 +47,7 @@ const (
 	keySubProfile  = "sub.profileUrl"
 	keySubAnnounce = "sub.announce"
 	keySubTemplate = "sub.template"
+	keySubFormer   = "sub.former"
 )
 
 // DefaultSubPath is where the subscription service answers when nothing else
@@ -121,6 +123,39 @@ type SubSettings struct {
 	// Template is the look of the page a customer sees in a browser: one of
 	// SubTemplates. The owner picks it; every customer's page follows.
 	Template string `json:"template"`
+	// Former are addresses the service had before, still answered: a link
+	// handed out before the port, the encryption or the path changed keeps
+	// working, as its customer cannot be told it moved. Each change of them
+	// adds the one it leaves; the operator closes one when it is no longer
+	// asked for, or names one this panel never recorded.
+	Former []SubAddress `json:"former,omitempty"`
+}
+
+// SubAddress is one address the subscription service answers on: a port of
+// its own (0 being the panel's), whether it is HTTPS, and its path.
+type SubAddress struct {
+	Port int    `json:"port"`
+	TLS  bool   `json:"tls"`
+	Path string `json:"path"`
+}
+
+// maxFormerSub is how many former addresses are kept answering.
+const maxFormerSub = 5
+
+// Paths are every path the service answers on, its own first.
+func (c SubSettings) Paths() []string {
+	out := []string{c.Path}
+	for _, f := range c.Former {
+		if !inList(out, f.Path) {
+			out = append(out, f.Path)
+		}
+	}
+	return out
+}
+
+// address is where the service answers now.
+func (c SubSettings) address() SubAddress {
+	return SubAddress{Port: c.Port, TLS: c.Port > 0 && c.CertFile != "", Path: c.Path}
 }
 
 // SubTemplates are the looks the subscription page can wear.
@@ -185,7 +220,42 @@ func (s *Subscriptions) Settings(ctx context.Context) (SubSettings, error) {
 	if v := strings.TrimSpace(stored[keySubTemplate]); validSubTemplate(v) {
 		out.Template = v
 	}
+	if v := stored[keySubFormer]; v != "" {
+		_ = json.Unmarshal([]byte(v), &out.Former)
+	}
 	return out, nil
+}
+
+// formerAfter is the former addresses once the service moves from was to
+// now: the operator's list, with the address it leaves added, the one it
+// takes up dropped, each once, the newest kept.
+func formerAfter(was, now SubSettings, listed []SubAddress) []SubAddress {
+	var out []SubAddress
+	add := func(a SubAddress) {
+		a.Path = normalisePath(a.Path)
+		if a.Port == 0 {
+			a.TLS = false // the panel's own listener, whatever it is
+		}
+		if a == now.address() || checkSubPath(a.Path) != nil || a.Port < 0 || a.Port > 65535 {
+			return
+		}
+		for _, have := range out {
+			if have == a {
+				return
+			}
+		}
+		out = append(out, a)
+	}
+	if was.Enabled && was.address() != now.address() {
+		add(was.address())
+	}
+	for _, a := range listed {
+		add(a)
+	}
+	if len(out) > maxFormerSub {
+		out = out[:maxFormerSub]
+	}
+	return out
 }
 
 // SaveSettings validates and stores them.
@@ -232,8 +302,27 @@ func (s *Subscriptions) SaveSettings(ctx context.Context, in SubSettings) (SubSe
 	if len(in.Announce) > 1000 {
 		return SubSettings{}, invalidField("announce", "that notice is too long")
 	}
+	for _, a := range in.Former {
+		if a.Port < 0 || a.Port > 65535 {
+			return SubSettings{}, invalidField("former", "port %d is out of range", a.Port)
+		}
+		if err := checkSubPath(normalisePath(a.Path)); err != nil {
+			return SubSettings{}, invalidField("former", "%q is not a path the service can answer on", a.Path)
+		}
+	}
+	was, err := s.Settings(ctx)
+	if err != nil {
+		return SubSettings{}, err
+	}
+	in.Former = formerAfter(was, in, in.Former)
+	former := ""
+	if len(in.Former) > 0 {
+		b, _ := json.Marshal(in.Former)
+		former = string(b)
+	}
 
 	writes := map[string]string{
+		keySubFormer:   former,
 		keySubEnabled:  strconv.FormatBool(in.Enabled),
 		keySubPath:     in.Path,
 		keySubHost:     strings.TrimSpace(in.Host),

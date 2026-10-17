@@ -1226,6 +1226,24 @@ const uptime = computed(() => {
                 <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subURI') }}</div><div class="setting-list-description">{{ t('set.subURIDesc') }}</div></div></div>
                 <div class="acol"><label class="ainput block"><input v-model="sub.reverseProxyUri" class="ltr" placeholder="(http|https)://domain[:port]/path/" /></label><p v-if="subError.reverseProxyUri" class="field-error">{{ subError.reverseProxyUri }}</p></div>
               </div></div>
+              <!-- Addresses the service had before, still answered so links
+                   already handed out keep working. Added on their own when
+                   the port, the certificate or the path changes. -->
+              <div class="setting-list-item"><div class="arow">
+                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subFormer') }}</div><div class="setting-list-description">{{ t('set.subFormerDesc') }}</div></div></div>
+                <div class="acol">
+                  <p v-if="!(sub.former || []).length" class="setting-list-description">{{ t('set.subFormerNone') }}</p>
+                  <div v-for="(f, i) in sub.former || []" :key="i" class="sub-former-row">
+                    <label class="ainput number"><input v-model.number="f.port" type="number" min="0" max="65535" class="ltr" :aria-label="t('set.subPort')" /></label>
+                    <label class="acheckbox"><input v-model="f.tls" type="checkbox" :disabled="!f.port" /><span>HTTPS</span></label>
+                    <label class="ainput block"><input :value="f.path" class="ltr" placeholder="/sub/" :aria-label="t('set.subPath')" @input="f.path = sanitizePath($event.target.value)" /></label>
+                    <span v-if="!f.port" class="atag">{{ t('set.subFormerPanel') }}</span>
+                    <button type="button" class="abtn small danger" :aria-label="t('action.delete')" @click="sub.former.splice(i, 1)"><AntIcon name="DeleteOutlined" /></button>
+                  </div>
+                  <button type="button" class="abtn small" @click="(sub.former ||= []).push({ port: 0, tls: false, path: sub.path })"><AntIcon name="PlusOutlined" /><span>{{ t('set.subFormerAdd') }}</span></button>
+                  <p v-if="subError.former" class="field-error">{{ subError.former }}</p>
+                </div>
+              </div></div>
             </template>
 
             <template v-else-if="inner.subscription === '2'">
@@ -1561,6 +1579,11 @@ const uptime = computed(() => {
 .log-view { padding: 10px 20px; }
 
 /* The template picker: a card per look, its swatch a small drawing of it. */
+.sub-former-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.sub-former-row .atag { white-space: nowrap; }
+@media (max-width: 600px) { .sub-former-row { flex-wrap: wrap; } }
+.sub-former-row .ainput.number { width: 96px; flex: none; }
+.sub-former-row .ainput.block { flex: 1; min-width: 0; }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 10px 20px; }
 .tpl-card { position: relative; display: flex; gap: 12px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-2); cursor: pointer; transition: border-color .2s, box-shadow .2s; }
 .tpl-card:hover { border-color: var(--accent-hover); }

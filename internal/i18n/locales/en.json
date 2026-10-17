@@ -2124,5 +2124,10 @@
   "nodeImport.off": "switched off there",
   "nodeImport.firstUse": "{n} days from first use",
   "nodeImport.run": "Bring in {n}",
-  "nodeImport.done": "{n} brought in"
+  "nodeImport.done": "{n} brought in",
+  "set.subFormer": "Old addresses still answered",
+  "set.subFormerDesc": "Links already handed out keep working after the port, the certificate or the path changes: each address the service leaves is added here and still answered. Remove one once no customer asks for it; add one this panel never recorded (port 0 is the panel's own).",
+  "set.subFormerNone": "None. Moving the service adds the address it leaves.",
+  "set.subFormerPanel": "panel's port",
+  "set.subFormerAdd": "Add an address"
 }

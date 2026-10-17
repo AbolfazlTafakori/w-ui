@@ -276,7 +276,10 @@ func postgresDB(t *testing.T, dsn string) *gorm.DB {
 // fixture does not hold yet, each with the release that added it. A key added
 // before a release is listed here; once that release ships, its fixture is
 // added (scripts/upgrade/make-fixtures.sh) and the entry is removed.
-var newSinceNewestFixture = map[string]string{}
+var newSinceNewestFixture = map[string]string{
+	// The addresses the subscription service answered on before.
+	"sub.former": "3.0.0",
+}
 
 // runtimeKeys are kept by the panel for itself, not set by an operator.
 var runtimeKeys = map[string]bool{
