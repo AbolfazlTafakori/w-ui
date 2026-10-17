@@ -204,9 +204,7 @@ func (s *Clients) Extend(ctx context.Context, in ExtendInput) (*ExtendResult, er
 			"kind", in.Kind, "subtract", in.Subtract, "amount", res.Amount,
 			"changed", res.Changed, "skipped", res.Skipped,
 			"revived", res.Revived, "ended", res.Ended)
-		if SubscriptionsChanged != nil {
-			SubscriptionsChanged()
-		}
+		s.changes.Notify()
 	}
 	return res, nil
 }

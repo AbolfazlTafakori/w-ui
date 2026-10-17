@@ -158,7 +158,5 @@ func (s *Server) handleResetAdminUsage(w http.ResponseWriter, r *http.Request) {
 // tunnels now, not in a minute.
 func (s *Server) reconcileNow() {
 	s.tickNow()
-	if service.SubscriptionsChanged != nil {
-		service.SubscriptionsChanged()
-	}
+	s.subHub.Broadcast()
 }

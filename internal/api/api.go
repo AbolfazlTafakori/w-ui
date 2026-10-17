@@ -117,6 +117,10 @@ type Options struct {
 	Engine   *service.Engine
 	Template *service.Template
 
+	// Changes is what the rest of the panel says when something a customer
+	// sees changed; the open subscription pages listen to it.
+	Changes *service.Changes
+
 	// What the process is running with, so the settings page can show the
 	// effective listen address, path and certificates when nothing has been
 	// saved over them.
@@ -180,7 +184,10 @@ func New(o Options) *Server {
 	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, o.TLSCert, srv.engineHealth, srv.backupExposure)
 	// What the reconciler changes on its own -- a plan ended, one started
 	// on first use -- reaches the open pages the same way an edit does.
-	service.SubscriptionsChanged = srv.subHub.Broadcast
+	// Open customers' pages refresh when the panel says something changed.
+	if o.Changes != nil {
+		o.Changes.Listen(srv.subHub.Broadcast)
+	}
 	return srv
 }
 

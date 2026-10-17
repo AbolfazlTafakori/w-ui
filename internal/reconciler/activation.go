@@ -10,7 +10,6 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
-	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // Starting a plan when the customer first uses it.
@@ -73,9 +72,7 @@ func (r *Reconciler) activate(ctx context.Context, now time.Time) (int64, error)
 
 	if started > 0 {
 		r.log.Info("clients started their plan on first use", "count", started, "clients", strings.Join(names, ", "))
-		if service.SubscriptionsChanged != nil {
-			service.SubscriptionsChanged()
-		}
+		r.changes.Notify()
 		r.announce(notify.KindPanel, "Plan started", names,
 			"connected for the first time; their time now runs")
 	}

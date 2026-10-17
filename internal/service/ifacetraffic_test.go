@@ -58,16 +58,14 @@ func TestEachTunnelHasTheSpeedOfItsOwnFiles(t *testing.T) {
 	if err := db.Create(&accounts).Error; err != nil {
 		t.Fatal(err)
 	}
-	FileSpeedNow = func() map[uint]model.Speed {
-		return map[uint]model.Speed{
-			accounts[0].ID: {Up: 100, Down: 1000},
-			accounts[1].ID: {Up: 10, Down: 20},
-			accounts[2].ID: {Up: 7, Down: 70},
-		}
-	}
-	t.Cleanup(func() { FileSpeedNow = nil })
+	ifaces := NewInterfaces(db, ipam.NewPools(), quietLog())
+	ifaces.SetLive(fakeLive{files: map[uint]model.Speed{
+		accounts[0].ID: {Up: 100, Down: 1000},
+		accounts[1].ID: {Up: 10, Down: 20},
+		accounts[2].ID: {Up: 7, Down: 70},
+	}})
 
-	loads, err := NewInterfaces(db, ipam.NewPools(), quietLog()).Loads(context.Background())
+	loads, err := ifaces.Loads(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,3 +79,16 @@ func TestEachTunnelHasTheSpeedOfItsOwnFiles(t *testing.T) {
 		t.Errorf("a tunnel moving nothing has a speed: %+v", sp)
 	}
 }
+
+// fakeLive is what the reconciler would say is happening now.
+type fakeLive struct {
+	files  map[uint]model.Speed
+	speeds map[uint]model.Speed
+	conns  map[uint]int
+	online []uint
+}
+
+func (f fakeLive) ConnectionsNow([]uint) map[uint]int { return f.conns }
+func (f fakeLive) Speeds([]uint) map[uint]model.Speed { return f.speeds }
+func (f fakeLive) LiveClients() []uint                { return f.online }
+func (f fakeLive) FileSpeeds() map[uint]model.Speed   { return f.files }

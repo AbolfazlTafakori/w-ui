@@ -49,6 +49,9 @@ type Interfaces struct {
 	// or a test that has no data plane leaves it nil.
 	Teardown func(ctx context.Context, iface *model.Interface)
 	log      *slog.Logger
+
+	// live is what each file is moving now (SetLive); nil for a CLI.
+	live Live
 }
 
 // NewInterfaces builds the interface service.
@@ -565,10 +568,9 @@ type Load struct {
 	Speed *model.Speed `json:"speed"`
 }
 
-// FileSpeedNow, when set, answers what each file is moving right now, by
-// account id. Set by the panel from its reconciler; nil leaves the
-// interfaces without a speed.
-var FileSpeedNow func() map[uint]model.Speed
+// SetLive gives the tunnels' list what each file is moving now; without it
+// they are listed without a speed.
+func (s *Interfaces) SetLive(l Live) { s.live = l }
 
 // Loads returns per-interface totals, keyed by interface id.
 //
@@ -667,10 +669,10 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 // fillSpeeds adds up, per tunnel, what its files are moving right now. Only
 // the files moving something are looked up, so a quiet panel asks nothing.
 func (s *Interfaces) fillSpeeds(ctx context.Context, out map[uint]Load) error {
-	if FileSpeedNow == nil {
+	if s.live == nil {
 		return nil
 	}
-	speeds := FileSpeedNow()
+	speeds := s.live.FileSpeeds()
 	if len(speeds) == 0 {
 		return nil
 	}

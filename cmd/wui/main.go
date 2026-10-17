@@ -232,7 +232,13 @@ func run() error {
 
 	outbounds := service.NewOutbounds(db, log)
 	routes := service.NewRouting(db, log)
+	// One of each for the whole process: the API, the bot, the reports and
+	// the node syncer all read and change the same customers and tunnels,
+	// through the same live counts.
 	ifaceSvc := service.NewInterfaces(db, pools, log)
+	clientsSvc := service.NewClients(db, pools, log)
+	changes := service.NewChanges()
+	clientsSvc.SetChanges(changes)
 	// The engine page's settings. The ones that only take at start are
 	// read now, before anything that uses them is built.
 	engine := service.NewEngine(db, routes, dnsproxy.New(log), log)
@@ -274,6 +280,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Deleting a tunnel, or changing what reaches the kernel, takes the live
+	// device down; the reconciler brings the new one up.
+	ifaceSvc.Teardown = pool.Destroy
 	defer pool.CloseAll()
 
 	subs := service.NewSubscriptions(db, pool, service.NewHosts(db, log), log)
@@ -310,6 +319,7 @@ func run() error {
 		Interval:    cfg.CollectInterval,
 		Log:         log,
 		LocalNodeID: local.ID,
+		Changes:     changes,
 	})
 	rec.Start(ctx)
 	// The sharing record begins with this release; what earlier ones logged
@@ -429,7 +439,7 @@ func run() error {
 	// questions and takes orders, as the classic panel's bot does.
 	go tgbot.New(tgbot.Deps{
 		Config:   notifier.Config,
-		Clients:  service.NewClients(db, pools, log),
+		Clients:  clientsSvc,
 		Subs:     subs,
 		Ifaces:   ifaceSvc,
 		Settings: settings,
@@ -466,7 +476,6 @@ func run() error {
 		return snap.CPU.Percent, snap.Memory.Percent
 	})
 	// The periodic report, on the schedule the Telegram page sets.
-	clientsSvc := service.NewClients(db, pools, log)
 	reporter := service.NewReporter(db, clientsSvc, settings, backups, version)
 	notifier.RunReports(ctx, reporter.Build)
 	// The automatic backup to the chat, on its own schedule.
@@ -501,10 +510,8 @@ func run() error {
 	service.CreateXrayInbound = nodes.CreateXrayInbound
 	service.ImportCandidates = nodes.ImportCandidates
 	rec.OnHold = syncer.PushHold
-	service.ConnectionsNow = rec.ConnectionsNow
-	service.LiveClients = rec.LiveClients
-	service.SpeedNow = rec.Speeds
-	service.FileSpeedNow = rec.FileSpeeds
+	clientsSvc.SetLive(rec)
+	ifaceSvc.SetLive(rec)
 	reconciler.NodeReportEvery = nodes.SyncInterval
 	syncer.Start(ctx)
 
@@ -542,6 +549,7 @@ func run() error {
 
 	srv, subOnly, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
 		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, local.ID, log,
+		clientsSvc, ifaceSvc, changes,
 		// Restart is a tidy stop: the service manager is set to bring the
 		// panel back, and this run's history is saved on the way out.
 		func() { stop() }, engine, balancers)
@@ -687,6 +695,9 @@ func buildServer(
 	pool *backend.Pool,
 	localNodeID uint,
 	log *slog.Logger,
+	clientsSvc *service.Clients,
+	ifaceSvc *service.Interfaces,
+	changes *service.Changes,
 	restart func(),
 	engine *service.Engine,
 	balancers *service.Balancers,
@@ -698,15 +709,12 @@ func buildServer(
 			"entries", strings.Join(bad, " "))
 	}
 
-	ifaceSvc := service.NewInterfaces(db, pools, log)
-	// Deleting a tunnel, or changing what reaches the kernel, takes the live
-	// device down; the reconciler brings the new one up.
-	ifaceSvc.Teardown = pool.Destroy
 	apiSrv := api.New(api.Options{
+		Changes:        changes,
 		Engine:         engine,
 		Template:       service.NewTemplate(db, ifaceSvc, outbounds, routes, balancers, engine, log),
 		DB:             db,
-		Clients:        service.NewClients(db, pools, log),
+		Clients:        clientsSvc,
 		Interfaces:     ifaceSvc,
 		Catalog:        catalog,
 		Enforcer:       enforcer,

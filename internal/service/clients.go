@@ -29,6 +29,12 @@ type Clients struct {
 	pools *ipam.Pools
 	log   *slog.Logger
 
+	// live is what is happening now, and changes is told when something a
+	// customer sees changes: both set once the panel's data plane is up
+	// (SetLive, SetChanges), nil for a CLI.
+	live    Live
+	changes *Changes
+
 	// subClashes counts, per reseller, the subscription ids refused as
 	// taken. See checkSubID.
 	subClashes clashCounter
@@ -836,7 +842,7 @@ func onlineWithin() time.Duration { return time.Duration(OnlineWithin.Load()) * 
 // through their allowance to be worth offering a renewal to, and "online" is a
 // fact about their devices rather than about them -- which is why it reaches
 // into accounts instead of comparing a column.
-func bucketWhere(bucket string) (string, []any) {
+func (s *Clients) bucketWhere(bucket string) (string, []any) {
 	switch bucket {
 	case "active":
 		return "status = ?", []any{model.StatusActive}
@@ -850,8 +856,8 @@ func bucketWhere(bucket string) (string, []any) {
 		return "status = ? AND quota_bytes > 0 AND used_bytes * 100 >= quota_bytes * ?",
 			[]any{model.StatusActive, depletingPercent}
 	case "online":
-		if LiveClients != nil {
-			ids := LiveClients()
+		if s.live != nil {
+			ids := s.live.LiveClients()
 			if len(ids) == 0 {
 				return "1 = 0", nil
 			}
@@ -968,7 +974,7 @@ func (s *Clients) filtered(ctx context.Context, f ListFilter) *gorm.DB {
 		any := s.db.Session(&gorm.Session{NewDB: true})
 		matched := false
 		for _, b := range f.Buckets {
-			where, args := bucketWhere(b)
+			where, args := s.bucketWhere(b)
 			if where == "" {
 				continue // an unknown bucket narrows nothing rather than erroring
 			}
@@ -1035,25 +1041,13 @@ func (s *Clients) MatchingIDs(ctx context.Context, f ListFilter) ([]uint, error)
 	return ids, nil
 }
 
-// SubscriptionsChanged, when set, tells every open subscription page that
-// something changed on the panel. Set by the API server; the reconciler
-// calls it when it ends or starts plans on its own.
-var SubscriptionsChanged func()
+// SetLive gives the list, the overview and the online filter what is
+// happening now. Without it they fall back to the addresses and handshakes
+// on record.
+func (s *Clients) SetLive(l Live) { s.live = l }
 
-// ConnectionsNow, when set, answers how many connections each of these
-// customers has right now across every server -- the same count the limit is
-// enforced on. Set by the panel from its reconciler; a CLI leaves it nil and
-// the list falls back to the addresses on record.
-var ConnectionsNow func(clientIDs []uint) map[uint]int
-
-// SpeedNow, when set, answers what each of these customers is moving right
-// now. Set by the panel from its reconciler; nil leaves the list without it.
-var SpeedNow func(clientIDs []uint) map[uint]model.Speed
-
-// LiveClients, when set, lists the customers connected right now, by the
-// same reckoning; the overview counter and the online filter use it so
-// they agree with the list. Nil falls back to recent handshakes.
-var LiveClients func() []uint
+// SetChanges is what bulk changes to plans are told to.
+func (s *Clients) SetChanges(c *Changes) { s.changes = c }
 
 // fillOnlineNow counts, for each listed customer, the connections in use:
 // one per device with traffic moving, or more when one file is on two
@@ -1068,16 +1062,16 @@ func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error
 	for i := range items {
 		ids[i] = items[i].ID
 	}
-	if SpeedNow != nil {
-		speeds := SpeedNow(ids)
+	if s.live != nil {
+		speeds := s.live.Speeds(ids)
 		for i := range items {
 			if sp, ok := speeds[items[i].ID]; ok {
 				items[i].Speed = &sp
 			}
 		}
 	}
-	if ConnectionsNow != nil {
-		live := ConnectionsNow(ids)
+	if s.live != nil {
+		live := s.live.ConnectionsNow(ids)
 		for i := range items {
 			items[i].OnlineNow = live[items[i].ID]
 		}
@@ -1958,8 +1952,8 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 		if err := online.Count(&o.Online).Error; err != nil {
 			return nil, err
 		}
-	case LiveClients != nil:
-		o.Online = int64(len(LiveClients()))
+	case s.live != nil:
+		o.Online = int64(len(s.live.LiveClients()))
 	default:
 		if err := count(&o.Online, &model.Account{}, "last_handshake > ?", cutoff); err != nil {
 			return nil, err

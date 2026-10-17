@@ -73,6 +73,10 @@ type Options struct {
 	// untouched. The panel that runs there is sent the same desired state and
 	// applies it with its own reconciler.
 	LocalNodeID uint
+
+	// Changes is told when the reconciler ends or starts a plan on its own,
+	// so an open subscription page shows it at once. Nil tells nobody.
+	Changes *service.Changes
 }
 
 // Stats is what the last tick did, for the settings page and the logs.
@@ -143,6 +147,9 @@ type Reconciler struct {
 	lastHistory time.Time
 	// lastRenew is when plans that renew by the period were last looked at.
 	lastRenew time.Time
+
+	// changes is told when a plan ends or starts here.
+	changes *service.Changes
 }
 
 // New builds a reconciler.
@@ -171,6 +178,7 @@ func New(o Options) *Reconciler {
 		// empty kernel, so it falls back to the first node, which is this one on
 		// every install that has never added a second.
 		localNodeID: max64(o.LocalNodeID, 1),
+		changes:     o.Changes,
 	}
 }
 
@@ -441,9 +449,7 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	}
 	if res.RowsAffected > 0 {
 		r.log.Info("clients cut off for reaching their allowance", "count", res.RowsAffected, "clients", strings.Join(exhaustedNames, ", "))
-		if service.SubscriptionsChanged != nil {
-			service.SubscriptionsChanged()
-		}
+		r.changes.Notify()
 		r.announce(notify.KindExhausted, "Allowance used up", exhaustedNames,
 			"stopped: their data allowance is gone")
 	}
@@ -463,9 +469,7 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	}
 	if res2.RowsAffected > 0 {
 		r.log.Info("clients expired", "count", res2.RowsAffected, "clients", strings.Join(expiredNames, ", "))
-		if service.SubscriptionsChanged != nil {
-			service.SubscriptionsChanged()
-		}
+		r.changes.Notify()
 		r.announce(notify.KindExpired, "Access expired", expiredNames,
 			"stopped: their time is up")
 	}
