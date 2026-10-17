@@ -86,6 +86,11 @@ type subPageView struct {
 	AnySetup bool
 	Lang     string
 	Icons    map[string]template.HTML
+	// Sprite is every icon, drawn once for the page's icons to point at;
+	// Shared is what the page writes once and uses in many places
+	// (subshared.go).
+	Sprite template.HTML
+	Shared *subShared
 	// Template is the look, one of service.SubTemplates; Preview marks a
 	// page rendered from sample figures for the settings page.
 	Template string
@@ -290,22 +295,15 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		HasQuota: page.QuotaBytes > 0,
 		Used:     humanBytes(page.UsedBytes),
 		Lang:     page.Locale,
-		Icons:    map[string]template.HTML{},
+		Icons:    subIcons,
+		Sprite:   subSprite,
+		Shared:   &subShared{},
 	}
 	if v.Lang != "fa" {
 		v.Lang = "en"
 	}
 	if v.Template == "" {
 		v.Template = "classic"
-	}
-	for name, paths := range antIconPaths {
-		var b strings.Builder
-		b.WriteString(`<svg viewBox="64 64 896 896" width="1em" height="1em" fill="currentColor" focusable="false" aria-hidden="true">`)
-		for _, d := range paths {
-			b.WriteString(`<path d="` + d + `"/>`)
-		}
-		b.WriteString(`</svg>`)
-		v.Icons[name] = template.HTML(b.String())
 	}
 	v.Unlimited = page.QuotaBytes == 0 && page.ExpiresAt == nil
 	v.Active = page.Status == "active" &&
@@ -391,7 +389,7 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	for i := range v.Groups {
 		for j := range v.Groups[i].Devices {
 			d := &v.Groups[i].Devices[j]
-			if d.Setup = newSetupCard([]subPageDevice{*d}, detected, v.Icons["CopyOutlined"]); d.Setup != nil {
+			if d.Setup = newSetupCard([]subPageDevice{*d}, detected, v.Icons["CopyOutlined"], v.Shared); d.Setup != nil {
 				v.AnySetup = true
 			}
 		}
@@ -510,12 +508,17 @@ func maskRows(rows []devguide.Row) []devguide.Row {
 	return out
 }
 
-// setupCard is the device picker and every guide it can show.
+// setupCard is the device picker and every guide it can show. The device
+// list, each device's notes and each guide are parts of the page's own
+// (subshared.go), named here by the stubs that take them.
 type setupCard struct {
 	Devices  []setupDevice
 	Files    []setupFile
 	Views    []setupView
 	CopyIcon template.HTML
+	// DeviceList and Notes are the parts that are the device picker's
+	// options and every device's notes.
+	DeviceList, Notes int
 }
 
 // setupDevice is one device in the picker.
@@ -558,6 +561,10 @@ type setupView struct {
 	Rows     []devguide.Row
 	Notes    []guideNote
 	Command  string
+	// From is the part that is this guide, Vals its values for the part's
+	// slots: the file it is for, each field's value and the command.
+	From int
+	Vals string
 }
 
 type guideNote struct{ Key, Text string }
@@ -565,7 +572,7 @@ type guideNote struct{ Key, Text string }
 // newSetupCard is the card for a page's files: nothing for a page with none.
 // The device the browser is opens it, or Windows where the browser is a
 // device the catalogue does not list.
-func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) *setupCard {
+func newSetupCard(devices []subPageDevice, detected string, icon template.HTML, shared *subShared) *setupCard {
 	if len(devices) == 0 {
 		return nil
 	}
@@ -669,36 +676,93 @@ func newSetupCard(devices []subPageDevice, detected string, icon template.HTML) 
 		}
 		card.Devices = append(card.Devices, d)
 	}
+	card.share(shared)
 	return card
 }
 
+// share writes the card's device list, its devices' notes and its guides as
+// parts of the page's: the same on every card, and each guide the same for
+// every file but for the file's own values, which stay with its stub.
+func (card *setupCard) share(shared *subShared) {
+	part := func(name string, data any) int {
+		var b strings.Builder
+		if err := subPageTemplate.ExecuteTemplate(&b, name, data); err != nil {
+			panic(fmt.Sprintf("subscription page: the %s part: %v", name, err))
+		}
+		return shared.put(b.String())
+	}
+	card.DeviceList = part("deviceList", card.Devices)
+	card.Notes = part("deviceNotes", card.Devices)
+	for i := range card.Views {
+		v := &card.Views[i]
+		mold := *v
+		mold.Rows = make([]devguide.Row, len(v.Rows))
+		vals := []string{v.Ref}
+		mold.Ref = subSlot(0)
+		for n, r := range v.Rows {
+			vals = append(vals, r.Value)
+			r.Value = subSlot(len(vals) - 1)
+			mold.Rows[n] = r
+		}
+		if v.Command != "" {
+			vals = append(vals, v.Command)
+			mold.Command = subSlot(len(vals) - 1)
+		}
+		mold.File = 0
+		v.From = part("guide", guideMold{setupView: mold, CopyIcon: card.CopyIcon})
+		v.Vals = subSlots(vals)
+	}
+}
+
+// guideMold is what a guide's part is written from.
+type guideMold struct {
+	setupView
+	CopyIcon template.HTML
+}
+
 // setupTemplate is the card: the two pickers, and every guide, one shown.
-const setupTemplate = `{{ $icon := .CopyIcon }}<div class="setup">
+// Its device list, notes and guides are stubs for the page's parts
+// (subshared.go), written from the three templates after it.
+const setupTemplate = `<div class="setup">
 <label class="guide-pick"><span data-i="dgDevice">Your device</span>
-<select class="guide-select setup-device" dir="ltr">{{ range .Devices }}{{ if .Head }}<option disabled data-i="{{ .Head }}" data-en="{{ .HeadText }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}" data-en="{{ .Name }}">{{ .Name }}</option>{{ end }}</select>
+<select class="guide-select setup-device" dir="ltr" data-from="{{ .DeviceList }}"></select>
 </label>
 <label class="guide-pick setup-file-pick"><span data-i="dgProtocol">Connection</span>
 <select class="guide-select setup-file"></select>
 </label>
 <div class="setup-files" hidden>{{ range .Files }}<span data-file="{{ .Index }}" data-protocol="{{ .ProtocolKey }}" data-key="{{ .Key }}" data-suffix="{{ .Suffix }}" data-others="{{ .Others }}">{{ .Name }}</span>{{ end }}</div>
 <div class="guide-others" hidden><span data-i="dgOthers">If it does not answer, use instead</span>: <span class="others" dir="ltr"></span></div>
-{{ range .Devices }}<div class="setup-device-notes" data-device="{{ .ID }}" hidden>{{ range .Notes }}<p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Supports }}<div class="setup-none"><p class="guide-note" data-i="dgNoneOfPlan">This device can dial none of the connections on your plan. It can dial:</p><p class="guide-note setup-supports">{{ range $i, $p := .Supports }}{{ if $i }} · {{ end }}<span data-i="{{ $p.Key }}">{{ $p.Name }}</span>{{ end }}</p></div>{{ end }}</div>{{ end }}
-{{ range .Views }}{{ $ref := .Ref }}<div class="guide" data-device="{{ .Device }}" data-file="{{ .File }}" data-protocol="{{ .Protocol }}" hidden>{{ if .Weak }}
+<div class="setup-notes" data-from="{{ .Notes }}"></div>
+{{ range .Views }}<div class="guide" data-device="{{ .Device }}" data-file="{{ .File }}" data-protocol="{{ .Protocol }}" data-from="{{ .From }}" data-v="{{ .Vals }}" hidden></div>{{ end }}
+</div>`
+
+// deviceListTemplate is the device picker's options.
+const deviceListTemplate = `{{ range . }}{{ if .Head }}<option disabled data-i="{{ .Head }}" data-en="{{ .HeadText }}">{{ .HeadText }}</option>{{ end }}<option value="{{ .ID }}"{{ if .Selected }} selected{{ end }} data-i="{{ .NameKey }}" data-en="{{ .Name }}">{{ .Name }}</option>{{ end }}`
+
+// deviceNotesTemplate is each device's notes, and what it dials when the
+// plan has none of it.
+const deviceNotesTemplate = `{{ range . }}<div class="setup-device-notes" data-device="{{ .ID }}" hidden>{{ range .Notes }}<p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Supports }}<div class="setup-none"><p class="guide-note" data-i="dgNoneOfPlan">This device can dial none of the connections on your plan. It can dial:</p><p class="guide-note setup-supports">{{ range $i, $p := .Supports }}{{ if $i }} · {{ end }}<span data-i="{{ $p.Key }}">{{ $p.Name }}</span>{{ end }}</p></div>{{ end }}</div>{{ end }}`
+
+// guideTemplate is one device's steps for one kind of file, with slots for
+// the file's own values (setupCard.share).
+const guideTemplate = `{{ $icon := .CopyIcon }}{{ $ref := .Ref }}{{ if .Weak }}
 <p class="guide-warn" data-i="dgWeak">This connection is not encrypted, or only with a cipher long since broken. Use it only where nothing else will do.</p>{{ end }}{{ if .Path }}
 <div class="guide-path" dir="ltr">{{ .Path }}</div>{{ end }}{{ if .Rows }}
 <dl class="guide-fields">{{ range .Rows }}<div class="guide-row"><dt dir="ltr">{{ .Label }}</dt><dd>{{ if .Key }}<span data-i="{{ .Key }}">{{ .Value }}</span>{{ else if .Secret }}<code dir="ltr" class="secret">{{ .Value }}</code>{{ else }}<code dir="ltr">{{ .Value }}</code>{{ end }}{{ if .Secret }}<button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="{{ .Secret }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button>{{ else if .Copy }}<button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy"><span class="anticon">{{ $icon }}</span></button>{{ end }}</dd></div>{{ end }}</dl>{{ end }}{{ range .Notes }}
 <p class="guide-note" data-i="{{ .Key }}">{{ .Text }}</p>{{ end }}{{ if .Command }}
 <div class="guide-cmd"><code dir="ltr">{{ .Command }}</code>{{ if .Secret }}<button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="cmd" data-device="{{ .Device }}" data-protocol="{{ .Protocol }}" data-i-title="copy">{{ else }}<button class="btn sm copy" type="button" data-text="{{ .Command }}" data-i-title="copy">{{ end }}<span class="anticon">{{ $icon }}</span></button></div>{{ end }}
-</div>{{ end }}
-</div>`
+`
 
 // signInTemplate is an L2TP row's four values.
 const signInTemplate = `{{ $icon := .CopyIcon }}{{ $ref := .Ref }}<dl class="guide-fields">{{ range .SignIn }}<div class="guide-row"><dt>{{ .Label }}</dt><dd>{{ if .Secret }}<code dir="ltr" class="secret">{{ .Value }}</code><button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="{{ .Secret }}" data-i-title="copy">{{ else }}<code dir="ltr">{{ .Value }}</code><button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy">{{ end }}<span class="anticon">{{ $icon }}</span></button></dd></div>{{ end }}</dl>`
 
-// Both are templates of the page's own, added before it is ever run.
+// All are templates of the page's own, added before it is ever run.
 var (
 	_ = template.Must(subPageTemplate.New("setup").Parse(setupTemplate))
 	_ = template.Must(subPageTemplate.New("signIn").Parse(signInTemplate))
+	_ = template.Must(subPageTemplate.New("deviceList").Parse(deviceListTemplate))
+	_ = template.Must(subPageTemplate.New("deviceNotes").Parse(deviceNotesTemplate))
+	_ = template.Must(subPageTemplate.New("guide").Parse(guideTemplate))
 )
 
 var subPageStrings = map[string]map[string]string{
@@ -834,6 +898,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
 <link rel="stylesheet" href="{{ .CSSPath }}">
 </head>
 <body>
+{{ .Sprite }}{{ with .Shared }}{{ range .Parts }}<template id="part-{{ .ID }}">{{ .HTML }}</template>{{ end }}{{ end }}
 {{ if .Preview }}<div class="preview-bar">Preview — {{ .Template }} — sample figures, not a customer</div>{{ end }}
 <div class="live-bg" aria-hidden="true"><span class="orb one"></span><span class="orb two"></span><span class="orb three"></span><span class="wave one"></span><span class="wave two"></span><span class="grid"></span><canvas id="net"></canvas></div>
 <div class="content"><div class="col">
@@ -1038,6 +1103,25 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
 (function () {
   var S = window.__wuiStrings || { en: {} };
   window.__wuiDict = S;
+  // What the page writes once and uses in many places (subshared.go): each
+  // stub is given a copy of its part, its own values put in the part's
+  // slots as text, before anything below reads the page.
+  document.querySelectorAll('[data-from]').forEach(function (el) {
+    var part = document.getElementById('part-' + el.getAttribute('data-from'));
+    if (!part) return;
+    var vals = JSON.parse(el.getAttribute('data-v') || '[]'), copy = part.content.cloneNode(true);
+    var put = function (t) { return t.replace(/@@(\d+)@@/g, function (m, n) { return vals[+n] == null ? '' : vals[+n]; }); };
+    if (vals.length) {
+      var walk = document.createTreeWalker(copy, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+      while (walk.nextNode()) {
+        var node = walk.currentNode;
+        if (node.nodeType === 3) { if (node.nodeValue.indexOf('@@') >= 0) node.nodeValue = put(node.nodeValue); continue; }
+        for (var i = 0; i < node.attributes.length; i++) { var at = node.attributes[i]; if (at.value.indexOf('@@') >= 0) at.value = put(at.value); }
+      }
+    }
+    el.appendChild(copy);
+    el.removeAttribute('data-from'); el.removeAttribute('data-v');
+  });
   // Values the server rendered as data attributes: the page's policy allows
   // no style attributes, and setting them from here is allowed.
   document.querySelectorAll('[data-p]').forEach(function (el) { el.style.setProperty('--p', el.getAttribute('data-p')); el.style.setProperty('--c', el.getAttribute('data-c')); });

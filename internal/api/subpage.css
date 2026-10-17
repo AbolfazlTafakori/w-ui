@@ -138,6 +138,8 @@ html[lang="fa"] :is(p, .desc th, .desc td, .stat-k, .stat-s, .row-title, .cfg-us
 .row-title { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
 a.row-title:hover { text-decoration: underline; }
 .row-actions { display: flex; gap: 4px; flex-shrink: 0; position: relative; }
+/* Every icon, drawn once for the page's icons to point at. */
+.icons { position: absolute; width: 0; height: 0; overflow: hidden; }
 .pop { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.45); }
 .pop.open { display: flex; }
 .pop-card { display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(100%, 320px); padding: 16px; border-radius: 8px; background: var(--surface); box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); }
@@ -506,6 +508,8 @@ a.row-title:hover { text-decoration: underline; }
 .guide-cmd code { flex: 1; font-size: 12px; }
 .guide-others[hidden], .setup-device-notes[hidden], .setup-file-pick[hidden], .setup-none[hidden] { display: none; }
 .setup-device-notes { display: grid; gap: 6px; }
+/* Holds a card's device notes, which stay the card's own grid items. */
+.setup-notes { display: contents; }
 .cfg-user-body > .setup { display: grid; gap: 12px; }
 .ike-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .awg-key { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

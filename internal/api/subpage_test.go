@@ -409,7 +409,7 @@ func TestSubPageSetsUpADevice(t *testing.T) {
 		if err := subPageTemplate.Execute(&buf, v); err != nil {
 			t.Fatal(err)
 		}
-		return v, buf.String()
+		return v, builtPage(t, buf.String())
 	}
 
 	v, html := render(false, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)")
