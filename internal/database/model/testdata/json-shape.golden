@@ -1,0 +1,364 @@
+Node
+	id uint
+	name string
+	kind model.NodeKind
+	address string
+	enabled bool
+	note string
+	ownerId uint
+	username string
+	lastSeenAt *time.Time
+	latencyMs int
+	version string
+	reachable bool
+	lastError string
+	tlsMode model.NodeTLSMode
+	tlsPin string
+	tlsServerName string
+	allowPrivateAddress bool
+	usageCoefficient float64
+	dataLimitBytes uint64
+	usedBytes uint64
+	resetDay int
+	usageResetAt *time.Time
+	overAllowance bool (not stored)
+	cpuPercent float64
+	memPercent float64
+	uptimeSec int64
+	clients int64
+	interfaces int64
+	enforcement string
+	createdAt time.Time
+	updatedAt time.Time
+Interface
+	id uint
+	nodeId uint
+	name string
+	protocol model.Protocol
+	enabled bool
+	listenPort int
+	subnet string
+	endpointHost string
+	mtu int
+	dns string
+	natInterface string
+	publicKey string
+	mode model.InterfaceMode
+	awg model.JSONField[github.com/abolfazl/w-ui/internal/database/model.AWGParams]
+	openvpn model.JSONField[github.com/abolfazl/w-ui/internal/database/model.OpenVPNParams]
+	l2tp model.JSONField[github.com/abolfazl/w-ui/internal/database/model.L2TPParams] omitzero
+	ikev2 model.JSONField[github.com/abolfazl/w-ui/internal/database/model.IKEv2Params] omitzero
+	openconnect model.JSONField[github.com/abolfazl/w-ui/internal/database/model.OpenConnectParams] omitzero
+	xui model.JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound] omitzero
+	configured bool (not stored)
+	originId uint omitempty
+	managed bool
+	createdAt time.Time
+	updatedAt time.Time
+JSONField[github.com/abolfazl/w-ui/internal/database/model.AWGParams]
+	V model.AWGParams
+AWGParams
+	jc int
+	jmin int
+	jmax int
+	s1 int
+	s2 int
+	s3 int
+	s4 int
+	h1 uint32
+	h2 uint32
+	h3 uint32
+	h4 uint32
+	h1Max uint32 omitempty
+	h2Max uint32 omitempty
+	h3Max uint32 omitempty
+	h4Max uint32 omitempty
+	headerProtectionKey string omitempty
+	i1 string omitempty
+	i2 string omitempty
+	i3 string omitempty
+	i4 string omitempty
+	i5 string omitempty
+JSONField[github.com/abolfazl/w-ui/internal/database/model.OpenVPNParams]
+	V model.OpenVPNParams
+OpenVPNParams
+	transport string
+	cipherSuite string
+	auth string
+	caCert string omitempty
+	serverCert string omitempty
+	serverKey string omitempty
+	tlsCryptKey string omitempty
+	duplicateCN bool
+	managementSocket string omitempty
+JSONField[github.com/abolfazl/w-ui/internal/database/model.L2TPParams]
+	V model.L2TPParams
+L2TPParams
+	psk string
+	allowPlain bool
+JSONField[github.com/abolfazl/w-ui/internal/database/model.IKEv2Params]
+	V model.IKEv2Params
+IKEv2Params
+	mschapv2 bool
+	psk bool
+	rsa bool
+	eapTls bool
+	caCert string omitempty
+	caKey string omitempty
+	serverCert string omitempty
+	serverKey string omitempty
+	serverNames []string omitempty
+JSONField[github.com/abolfazl/w-ui/internal/database/model.OpenConnectParams]
+	V model.OpenConnectParams
+OpenConnectParams
+	dtls bool
+	camouflage bool
+	camouflageSecret string omitempty
+	usePanelCert bool
+	cert string omitempty
+	key string omitempty
+	certSource string omitempty
+JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound]
+	V model.XUIInbound
+XUIInbound
+	remoteId int
+	tag string
+	remark string
+	kind string
+	network string
+	security string
+	method string omitempty
+	flow string omitempty
+	enabled bool
+	gone bool omitempty
+	customers bool
+	clients int
+	up uint64
+	down uint64
+Client
+	id uint
+	name string
+	note string
+	protocol model.Protocol
+	ownerId uint
+	originId uint omitempty
+	group string
+	groups []string (not stored)
+	telegramId int64
+	quotaBytes uint64
+	usedBytes uint64
+	upBytes uint64
+	downBytes uint64
+	expiresAt *time.Time
+	startOnFirstUse bool
+	durationDays int
+	durationHours int
+	activatedAt *time.Time
+	deviceLimit int
+	onlineNow int (not stored)
+	speed *model.Speed (not stored)
+	ownerPaused string omitempty (not stored)
+	rateBitsPerSec uint64
+	resetCycle model.ResetCycle
+	lastResetAt *time.Time
+	status model.ClientStatus
+	subId string omitempty
+	accounts []model.Account omitempty
+	createdAt time.Time
+	updatedAt time.Time
+Speed
+	up uint64
+	down uint64
+Account
+	id uint
+	clientId uint
+	interfaceId uint
+	nodeId uint
+	deviceName string
+	ip string
+	publicKey string omitempty
+	username string omitempty
+	password string omitempty (not stored)
+	enabled bool
+	upBytes uint64
+	downBytes uint64
+	adopted string omitempty
+	originId uint omitempty
+	lastHandshake *time.Time
+	lastEndpoint string
+	lastSeenAt *time.Time
+	createdAt time.Time
+	updatedAt time.Time
+TrafficSample
+	id uint
+	clientId uint
+	bucketTs time.Time
+	granularity model.Granularity
+	rx uint64
+	tx uint64
+IPLease
+	id uint
+	accountId uint
+	clientId uint
+	ip string
+	publicEndpoint string
+	fromTs time.Time
+	toTs *time.Time
+Admin
+	id uint
+	username string
+	locale string
+	lastLoginAt *time.Time
+	lastLoginIp string
+	role model.AdminRole
+	note string
+	enabled bool
+	clientLimit int
+	quotaBytes uint64
+	usedBytes uint64
+	expiresAt *time.Time
+	durationDays int
+	groupName string
+	interfaceIds []uint (not stored)
+	clients int64 (not stored)
+	users int64 (not stored)
+	createdAt time.Time
+	updatedAt time.Time
+AdminInterface
+	adminId uint
+	interfaceId uint
+APIToken
+	id uint
+	name string
+	prefix string
+	disabled bool
+	lastUsedAt *time.Time
+	createdAt time.Time
+Group
+	id uint
+	ownerId uint
+	name string
+	note string
+	createdAt time.Time
+	updatedAt time.Time
+ClientGroup
+	clientId uint
+	name string
+AccountEndpoint
+	accountId uint
+	addr string
+	firstSeen time.Time
+	lastSeen time.Time
+	hits uint64
+SharingEvent
+	id uint
+	kind string
+	accountId uint
+	clientId uint
+	clientName string
+	deviceName string
+	addrs string
+	limit int
+	place string
+	source string
+	startedAt time.Time
+	lastSeen time.Time
+	deleted bool (not stored)
+Outbound
+	id uint
+	tag string
+	kind model.OutboundKind
+	builtin bool
+	enabled bool
+	position int
+	address string
+	username string
+	peerPubKey string
+	allowedIps string
+	keepalive int
+	hopAddress string
+	hopDns string
+	hopMtu int
+	mark uint32
+	note string
+	latencyMs int
+	lastCheckAt *time.Time
+	lastError string
+	egressIp string
+	egressCountry string
+	provider string
+	providerRef string
+	subId uint
+	txBytes uint64
+	rxBytes uint64
+	createdAt time.Time
+	updatedAt time.Time
+OutboundSub
+	id uint
+	remark string
+	url string
+	tagPrefix string
+	intervalMin int
+	enabled bool
+	allowPrivate bool
+	prepend bool
+	position int
+	lastFetchAt *time.Time
+	lastError string
+	count int
+	createdAt time.Time
+	updatedAt time.Time
+Balancer
+	id uint
+	tag string
+	enabled bool
+	strategy string
+	members string
+	note string
+	fallback string
+	override string
+	mark uint32
+	createdAt time.Time
+	updatedAt time.Time
+RoutingRule
+	id uint
+	name string
+	enabled bool
+	position int
+	sourceIps string
+	sourcePorts string
+	network string
+	destIps string
+	domains string
+	ports string
+	clients string
+	groups string
+	interfaces string
+	outboundTag string
+	note string
+	hits uint64
+	createdAt time.Time
+	updatedAt time.Time
+Host
+	id uint
+	interfaceId uint
+	name string
+	enabled bool
+	address string
+	port int
+	priority int
+	note string
+	groupId string
+	description string
+	tags string
+	excludeFormats string
+	shuffle bool
+	reachable bool
+	lastCheckAt *time.Time
+	lastError string
+	createdAt time.Time
+	updatedAt time.Time
+Setting
+	key string
+	value string
+	updatedAt time.Time
