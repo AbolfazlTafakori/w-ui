@@ -1454,6 +1454,13 @@ read_existing() {
   local c k
   c=$(sed -n 's/^Environment=WUI_TLS_CERT=//p' "$UNIT" | head -1)
   k=$(sed -n 's/^Environment=WUI_TLS_KEY=//p' "$UNIT" | head -1)
+  # Or in wui.env, which the unit reads too: a certificate kept there went on
+  # being served after an update, while the update said there was none.
+  if [[ -z "$c" && -r "$CONF_DIR/wui.env" ]]; then
+    c=$(sed -n 's/^WUI_TLS_CERT=//p' "$CONF_DIR/wui.env" | head -1)
+    k=$(sed -n 's/^WUI_TLS_KEY=//p' "$CONF_DIR/wui.env" | head -1)
+    c="${c//\"/}"; k="${k//\"/}"
+  fi
   if [[ -z "$TLS_MODE" && -z "$TLS_CERT" && -z "$ACME_DOMAIN" && -z "$ACME_IP" && -s "$c" && -s "$k" ]]; then
     TLS_MODE=files; TLS_CERT="$c"; TLS_KEY="$k"; TLS_KEPT=1
   fi
