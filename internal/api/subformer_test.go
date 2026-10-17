@@ -18,9 +18,11 @@ import (
 // service had before. Found on a live panel, where links handed out while
 // the service was on the panel's port, or on another, answered 404.
 
+// get fetches as a customer's app does. Not a proxy app: the customer here
+// has an L2TP file alone, which a proxy app is told it has nothing for.
 func get(router http.Handler, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
-	req.Header.Set("User-Agent", "v2rayNG/1.9")
+	req.Header.Set("User-Agent", "WireGuard/1.1.0")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec

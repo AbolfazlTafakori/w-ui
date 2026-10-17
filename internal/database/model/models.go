@@ -268,11 +268,12 @@ type Client struct {
 	QuotaBytes uint64 `gorm:"not null;default:0" json:"quotaBytes"`
 	UsedBytes  uint64 `gorm:"not null;default:0" json:"usedBytes"`
 	// UpBytes and DownBytes split the total by direction, from the customer's
-	// point of view. The quota is enforced on their sum, not on either one.
+	// point of view. The quota is enforced on UsedBytes, not on either one.
 	//
-	// They stay zero on a server whose enforcer cannot tell the directions
-	// apart — the in-memory stand-in used when nftables is unavailable — in
-	// which case only UsedBytes moves rather than the split being guessed at.
+	// What a report did not split -- a node of an older release tells the
+	// total alone -- is written as received, so the two add up to UsedBytes.
+	// A customer counted before there were two counters may still have less
+	// in them than in UsedBytes; what they are shown is UpDown.
 	UpBytes   uint64     `gorm:"not null;default:0" json:"upBytes"`
 	DownBytes uint64     `gorm:"not null;default:0" json:"downBytes"`
 	ExpiresAt *time.Time `gorm:"index" json:"expiresAt"`
@@ -767,6 +768,27 @@ func (c Client) Waiting() bool {
 // Duration is how long a waiting plan runs once it starts.
 func (c Client) Duration() time.Duration {
 	return time.Duration(c.DurationDays)*24*time.Hour + time.Duration(c.DurationHours)*time.Hour
+}
+
+// UpDown is the customer's usage by direction as they are shown it -- their
+// app adds upload and download up (subscription-userinfo) -- so that the two
+// make what they were charged, whatever was recorded of each.
+func (c Client) UpDown() (up, down uint64) {
+	return Directions(c.UsedBytes, c.UpBytes, c.DownBytes)
+}
+
+// Directions splits bytes spent into sent and received so that the two add
+// up to them, always. A share whose direction was not told goes to received,
+// which is what most of a customer's traffic is; the total is the same
+// either way, and it is the total the allowance is spent by.
+func Directions(total, up, down uint64) (uint64, uint64) {
+	if up+down == total {
+		return up, down
+	}
+	if up >= total {
+		return total, 0
+	}
+	return up, total - up
 }
 
 // Speed is bytes a second, up from the customer and down to them.

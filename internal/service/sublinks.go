@@ -19,6 +19,13 @@ import (
 // import. What has no link form -- OpenVPN, L2TP, PPTP, IKEv2, OpenConnect,
 // AmneziaWG -- stays on the customer's page and in the other formats.
 
+// ErrNoLinks is a proxy app asking for a customer none of whose files has a
+// link form. An empty list is not an answer to give it: the app takes it as
+// the subscription emptied, shows nothing and gives no reason -- and drops
+// the servers it had. An error it shows as a failed update, and keeps them.
+// A kind of ErrNotFound, so anything else that asks is told so.
+var ErrNoLinks = fmt.Errorf("%w: nothing on this subscription has a link a proxy app imports", ErrNotFound)
+
 // linkParts is the customer's files that have a link form, as links.
 func linkParts(rendered []RenderedDevice, byID map[uint]model.Interface) []backend.ClientProfile {
 	var out []backend.ClientProfile

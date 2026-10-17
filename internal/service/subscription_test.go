@@ -150,6 +150,33 @@ func TestQuotaAndExpiryReachTheCustomersApp(t *testing.T) {
 	}
 }
 
+// A customer counted before there were two counters has less in upload and
+// download than they were charged; their app adds the two up, and must show
+// what the panel charged.
+func TestTheAppIsToldWhatWasCharged(t *testing.T) {
+	db := testDB(t)
+	c := seed(t, db, 1)
+	if err := db.Model(c).UpdateColumns(map[string]any{"used_bytes": 5000, "up_bytes": 300, "down_bytes": 1200}).Error; err != nil {
+		t.Fatal(err)
+	}
+	s := newSubs(db, &fakeDriver{body: "CONFIG"})
+	token, _ := s.EnsureToken(context.Background(), c.ID)
+	b, err := s.Serve(context.Background(), token, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(b.UserInfo, "upload=300; download=4700;") {
+		t.Fatalf("the app is told %s, charged 5000", b.UserInfo)
+	}
+	page, err := s.StatusFor(context.Background(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.UpBytes+page.DownBytes != page.UsedBytes {
+		t.Fatalf("the page shows %d up and %d down of %d", page.UpBytes, page.DownBytes, page.UsedBytes)
+	}
+}
+
 func TestAnUnlimitedClientIsReportedAsUnlimitedRatherThanAsZeroLeft(t *testing.T) {
 	db := testDB(t)
 	c := seed(t, db, 1)

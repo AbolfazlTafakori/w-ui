@@ -29,9 +29,9 @@ type trafficUpdate struct {
 	Bytes uint64
 
 	// The same bytes split by direction, from the customer's point of view:
-	// Up is what they sent, Down is what they received. Zero when the enforcer
-	// could not tell the two apart, in which case only the total is recorded
-	// and the split is left alone rather than being guessed at.
+	// Up is what they sent, Down is what they received. What a report does
+	// not split -- zero for both, or less than Bytes -- is written as
+	// received (model.Directions), so the two always add up to the total.
 	Up   uint64
 	Down uint64
 
@@ -119,10 +119,17 @@ func (w *trafficWriter) start(ctx context.Context) {
 }
 
 // absorbLocked folds one update into the in-memory totals. w.mu is held.
+//
+// A customer's usage is split by direction so the two add up to the bytes
+// spent (model.Directions). Their app shows upload plus download, and a
+// share whose direction was not told -- a node of an older release reports
+// the total alone -- went into the total and not the two: the app showed
+// less than the panel charged.
 func (w *trafficWriter) absorbLocked(u trafficUpdate) {
 	if u.Key != "" && u.Bytes > 0 {
 		if id, ok := clientIDFromKey(u.Key); ok {
-			w.usage[id] = w.usage[id].add(usageDelta{Bytes: u.Bytes, Up: u.Up, Down: u.Down})
+			up, down := model.Directions(u.Bytes, u.Up, u.Down)
+			w.usage[id] = w.usage[id].add(usageDelta{Bytes: u.Bytes, Up: up, Down: down})
 		}
 	}
 	if u.AccountID == 0 {
@@ -234,13 +241,10 @@ func (w *trafficWriter) flush(ctx context.Context) {
 			}
 
 			// RX is what the customer received and TX what they sent, which is
-			// the way round their own client app reports it. An enforcer that
-			// cannot split the two puts the lot in RX, as this did for every
-			// sample before there were two counters to read.
+			// the way round their own client app reports it. What was not
+			// split is already in RX (model.Directions), as it was for every sample
+			// before there were two counters to read.
 			rx, tx2 := d.Down, d.Up
-			if rx == 0 && tx2 == 0 {
-				rx = d.Bytes
-			}
 
 			// The time series is bucketed on write, so the table grows with
 			// time rather than with the number of samples taken.

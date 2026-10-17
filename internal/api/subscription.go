@@ -81,6 +81,12 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 	bundle, err := s.subs.Serve(r.Context(), token, format)
 	if err != nil {
+		if errors.Is(err, service.ErrNoLinks) {
+			// A proxy app, for a customer whose files it cannot read --
+			// OpenVPN, OpenConnect and the like. Their page has them.
+			http.Error(w, "nothing on this subscription is for this app; open this link in a browser for your files", http.StatusNotFound)
+			return
+		}
 		if errors.Is(err, service.ErrNotFound) {
 			http.NotFound(w, r)
 			return

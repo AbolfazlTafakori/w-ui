@@ -1,13 +1,17 @@
 package api
 
 import (
-	"bytes"
+	"encoding/base64"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+
+	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/database"
@@ -15,12 +19,59 @@ import (
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
-// A file's QR is an image the page asks for when it is opened, not drawn
-// into every page; it is the same QR the page drew, and a file whose keys
-// change is a new address, so a kept image is never of old keys.
 var registerWG sync.Once
 
-func TestAQRIsAskedForWhenOpened(t *testing.T) {
+var qrAttr = regexp.MustCompile(`data-qr="([^"]*)"`)
+
+// dotsOf reads a pattern back into its rows of dots.
+func dotsOf(t *testing.T, code string) [][]bool {
+	t.Helper()
+	at := strings.IndexByte(code, ':')
+	n, err := strconv.Atoi(code[:at])
+	if err != nil || n < 21 {
+		t.Fatalf("a QR %q wide", code[:at])
+	}
+	bits, err := base64.RawURLEncoding.DecodeString(code[at+1:])
+	if err != nil || len(bits) != (n*n+7)/8 {
+		t.Fatalf("a QR of %d dots in %d bytes: %v", n*n, len(bits), err)
+	}
+	out := make([][]bool, n)
+	for y := range out {
+		out[y] = make([]bool, n)
+		for x := range out[y] {
+			i := y*n + x
+			out[y][x] = bits[i/8]&(0x80>>(i%8)) != 0
+		}
+	}
+	return out
+}
+
+// isQROf reports whether code is text's QR, dot for dot.
+func isQROf(t *testing.T, code, text string) bool {
+	t.Helper()
+	q, err := qrcode.New(text, qrcode.Low)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.DisableBorder = true
+	want, got := q.Bitmap(), dotsOf(t, code)
+	if len(want) != len(got) {
+		return false
+	}
+	for y := range want {
+		for x := range want[y] {
+			if want[y][x] != got[y][x] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// A QR is in the page as its pattern, drawn when it is opened: no image in
+// every page, and no request between the tap and the code. It is the QR of
+// what the file holds, and a file whose keys change has a new one.
+func TestAQRIsInThePageAsItsPattern(t *testing.T) {
 	registerWG.Do(wgdriver.Register)
 	s, _ := revealServer(t)
 	s.subMiss = newSubMisses()
@@ -44,56 +95,66 @@ func TestAQRIsAskedForWhenOpened(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := s.SubscriptionRouter(http.NotFoundHandler())
-	open := func(path string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+	open := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/sub/"+revealToken, nil)
 		req.Header.Set("Accept", "text/html")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-		return rec
+		return rec.Body.String()
 	}
-	page := open("/sub/" + revealToken)
-	html := page.Body.String()
-	if strings.Contains(html, "data:image/png") {
-		t.Fatalf("QR codes are still drawn into the page: %d", strings.Count(html, "data:image/png"))
+	page := open()
+	if strings.Contains(page, "data:image/png") || strings.Contains(page, "view=qr") {
+		t.Fatal("a QR is an image in the page, or one asked for when opened")
 	}
-	// Asked for only when opened: a hidden image's src is fetched anyway.
-	if strings.Contains(html, ` src="?view=qr`) {
-		t.Fatal("a QR is fetched with the page, not when opened")
+	codes := qrAttr.FindAllStringSubmatch(page, -1)
+	if len(codes) != 2 { // the link's, and the WireGuard file's; none for L2TP
+		t.Fatalf("%d QR codes on the page, want 2", len(codes))
 	}
-	srcs := regexp.MustCompile(`data-src="(\?view=qr[^"]*)"`).FindAllStringSubmatch(html, -1)
-	if len(srcs) != 2 { // the link's, and the WireGuard file's; none for L2TP
-		t.Fatalf("%d QR addresses on the page, want 2: %v", len(srcs), srcs)
+	link := regexp.MustCompile(`data-text="(http[^"]*)"`).FindStringSubmatch(page)
+	if link == nil || !isQROf(t, codes[0][1], html.UnescapeString(link[1])) {
+		t.Fatal("the link's QR is not of the link")
 	}
-	for _, m := range srcs {
-		src := strings.ReplaceAll(m[1], "&amp;", "&")
-		rec := open("/sub/" + revealToken + src)
-		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !bytes.HasPrefix(rec.Body.Bytes(), []byte("\x89PNG")) {
-			t.Fatalf("%s: %d %s", src, rec.Code, rec.Header().Get("Content-Type"))
-		}
-		if !strings.Contains(rec.Header().Get("Cache-Control"), "private") {
-			t.Fatalf("%s may be kept by others", src)
-		}
-	}
-	if rec := open("/sub/" + revealToken + "?view=qr&ref=999.0"); rec.Code != http.StatusNotFound {
-		t.Fatalf("a file that is not there: %d", rec.Code)
+	file := regexp.MustCompile(`(?s)<code class="cfg-text">(\[Interface\].*?)</code>`).FindStringSubmatch(page)
+	if file == nil || !isQROf(t, codes[1][1], html.UnescapeString(file[1])) {
+		t.Fatal("the file's QR is not of the file")
 	}
 
-	// New keys, a new address.
-	before := srcs[1][1]
+	// New keys, a new QR.
 	if err := s.db.Model(&acc).Update("private_key", "bmV3IGFjY291bnQgcHJpdmF0ZSBrZXkgZm9yIHRlc3Q=").Error; err != nil {
 		t.Fatal(err)
 	}
-	again := regexp.MustCompile(`data-src="(\?view=qr[^"]*)"`).FindAllStringSubmatch(open("/sub/"+revealToken).Body.String(), -1)
-	if len(again) != 2 || again[1][1] == before {
-		t.Fatalf("the file's keys changed and its QR's address did not: %s", before)
+	again := qrAttr.FindAllStringSubmatch(open(), -1)
+	if len(again) != 2 || again[1][1] == codes[1][1] {
+		t.Fatal("the file's keys changed and its QR did not")
 	}
 }
 
-// A preview has no link to ask with: its QR codes are drawn in.
-func TestAPreviewDrawsItsQRs(t *testing.T) {
+// A preview's QR codes are drawn by the page as a customer's are.
+func TestAPreviewCarriesItsQRs(t *testing.T) {
+	cfg := "[Interface]\nPrivateKey = x\n"
 	v := newSubView(&service.SubPage{Name: "A", Status: "active", SubURL: "https://example.com/sub/x",
-		Devices: []service.SubPageDevice{{ID: 1, Protocol: "wireguard", Config: "[Interface]\nPrivateKey = x\n"}}}, "", true, "")
-	if !strings.HasPrefix(string(v.SubQR), "data:image/png") || !strings.HasPrefix(string(v.Devices[0].QR), "data:image/png") {
-		t.Fatalf("a preview's QR codes: %q %q", v.SubQR[:20], v.Devices[0].QR)
+		Devices: []service.SubPageDevice{{ID: 1, Protocol: "wireguard", Config: cfg}}}, "", true, "")
+	if !isQROf(t, v.SubQR, "https://example.com/sub/x") || !isQROf(t, v.Devices[0].QR, cfg) {
+		t.Fatal("a preview's QR codes")
+	}
+}
+
+// A pattern is worked out once and kept, and the keeping is bounded.
+func TestAQRIsWorkedOutOnce(t *testing.T) {
+	if subQR("") != "" {
+		t.Fatal("nothing to scan has a QR")
+	}
+	a := subQR("wireguard://kept-once")
+	if b := subQR("wireguard://kept-once"); a != b {
+		t.Fatal("the same text, two QR codes")
+	}
+	for i := 0; i < subQRKept+10; i++ {
+		subQR("vless://" + strconv.Itoa(i))
+	}
+	subQRs.Lock()
+	n := len(subQRs.kept)
+	subQRs.Unlock()
+	if n > subQRKept {
+		t.Fatalf("%d kept, more than %d", n, subQRKept)
 	}
 }

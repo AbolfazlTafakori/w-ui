@@ -143,7 +143,7 @@ func TestSubPageLoadsNothingExternal(t *testing.T) {
 			ID: 1, Name: "phone", Address: "10.0.0.2", Filename: "phone.conf",
 			Config: "[Interface]",
 		},
-		QR: "data:image/png;base64,AAAA",
+		QR: "21:AAAA",
 	}}
 	var buf strings.Builder
 	err := subPageTemplate.Execute(&buf, subPageView{
@@ -167,10 +167,10 @@ func TestSubPageLoadsNothingExternal(t *testing.T) {
 			t.Errorf("the page reaches out to %q", bad)
 		}
 	}
-	// src= and href= may only be the data: QR, a query-only link, or the
-	// customer's own subscription URL shown as text.
+	// A QR is its pattern, drawn by the page; href= may only be a
+	// query-only link, or the customer's own subscription URL shown as text.
 	for _, want := range []string{
-		`src="data:image/png;base64,`,
+		`data-qr="21:AAAA"`,
 		`href="?device=1"`,
 		`nonce="abc"`,
 	} {

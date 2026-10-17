@@ -549,7 +549,11 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 	if err != nil {
 		return nil, err
 	}
-	body, ctype := encodeBundle(bundleParts(rendered, byID, format), format)
+	parts := bundleParts(rendered, byID, format)
+	if len(parts) == 0 && strings.EqualFold(format, "links") {
+		return nil, fmt.Errorf("%w: %s", ErrNoLinks, c.Name)
+	}
+	body, ctype := encodeBundle(parts, format)
 
 	return &Bundle{
 		Body:        body,
@@ -918,10 +922,9 @@ func (s *Subscriptions) StatusFor(ctx context.Context, token string) (*SubPage, 
 		UpdatedAt:  time.Now().UTC(),
 		QuotaBytes: c.QuotaBytes,
 		UsedBytes:  c.UsedBytes,
-		UpBytes:    c.UpBytes,
-		DownBytes:  c.DownBytes,
 		ExpiresAt:  c.ExpiresAt,
 	}
+	page.UpBytes, page.DownBytes = c.UpDown()
 	for _, a := range c.Accounts {
 		if hs := a.LastHandshake; hs != nil && (page.LastOnline == nil || hs.After(*page.LastOnline)) {
 			t := *hs
@@ -968,12 +971,11 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		UpdatedAt:  time.Now().UTC(),
 		QuotaBytes: c.QuotaBytes,
 		UsedBytes:  c.UsedBytes,
-		UpBytes:    c.UpBytes,
-		DownBytes:  c.DownBytes,
 		ExpiresAt:  c.ExpiresAt,
 		SubURL:     subURL,
 		FilesSince: s.filesSince(ctx, c),
 	}
+	page.UpBytes, page.DownBytes = c.UpDown()
 	several := len(deviceNames(c.Accounts)) > 1
 	nth := map[uint]int{}
 	for _, d := range rendered {
@@ -1231,8 +1233,9 @@ func userInfo(c *model.Client) string {
 	if c.ExpiresAt != nil {
 		expire = c.ExpiresAt.Unix()
 	}
+	up, down := c.UpDown()
 	return fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d",
-		c.UpBytes, c.DownBytes, c.QuotaBytes, expire)
+		up, down, c.QuotaBytes, expire)
 }
 
 // safeFilename keeps a customer's name out of the response headers as anything

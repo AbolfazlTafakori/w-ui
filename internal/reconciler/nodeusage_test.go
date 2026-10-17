@@ -168,3 +168,30 @@ func TestTrafficOnANodeStartsAPlanThatStartsOnFirstUse(t *testing.T) {
 		t.Fatal("the plan has no end")
 	}
 }
+
+// What a customer's app shows -- upload plus download -- is what they were
+// charged, to the byte, whatever a report told of directions: a node of an
+// older release tells the total alone.
+func TestTheAppsFiguresAddUpToWhatWasCharged(t *testing.T) {
+	db := newTestDB(t)
+	c := model.Client{Name: "Sara", Protocol: model.ProtocolWireGuard, Status: model.StatusActive, QuotaBytes: 10 << 30}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatal(err)
+	}
+	r := newReconciler(t, db)
+	r.AddNodeReport([]service.NodeUsage{
+		{OriginID: c.ID, Bytes: 1000},                    // no direction told
+		{OriginID: c.ID, Bytes: 500, Up: 100},            // part of it told
+		{OriginID: c.ID, Bytes: 300, Up: 120, Down: 180}, // all of it told
+		{OriginID: c.ID, Bytes: 10, Up: 7, Down: 7},      // told more than spent
+	}, nil)
+	flush(t, r)
+	var got model.Client
+	db.First(&got, c.ID)
+	if got.UsedBytes != 1810 || got.UpBytes+got.DownBytes != got.UsedBytes {
+		t.Fatalf("charged %d, the app shows %d (up %d, down %d)", got.UsedBytes, got.UpBytes+got.DownBytes, got.UpBytes, got.DownBytes)
+	}
+	if got.UpBytes != 100+120+7 {
+		t.Fatalf("up %d: what was told sent is kept as sent", got.UpBytes)
+	}
+}
