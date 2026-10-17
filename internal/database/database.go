@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -56,6 +57,7 @@ func Open(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 		if err := tuneSQLite(db); err != nil {
 			return nil, err
 		}
+		keepPrivate(cfg.DBSource, log)
 	}
 	// Registered before anything can run a statement, so there is no window
 	// in which a scoped request reaches an unguarded handle.
@@ -185,4 +187,26 @@ func gormLogger(cfg config.Config) gormlogger.Interface {
 		return gormlogger.Discard
 	}
 	return gormlogger.Default.LogMode(gormlogger.Info)
+}
+
+// keepPrivate makes the SQLite file, its write-ahead log and its shared
+// memory the panel's user's alone. They hold every customer's keys and
+// every administrator's second factor, and SQLite made them readable by
+// everyone (0644); only the data directory's own mode stood between them
+// and any other account on the server. SQLite gives the journals it makes
+// later the file's own mode, so the file is what matters.
+func keepPrivate(source string, log *slog.Logger) {
+	path := strings.TrimPrefix(source, "file:")
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		info, err := os.Stat(p)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 == 0 {
+			continue
+		}
+		if err := os.Chmod(p, info.Mode().Perm()&0o700); err != nil {
+			log.Warn("could not make the database file private", "file", p, "error", err)
+		}
+	}
 }

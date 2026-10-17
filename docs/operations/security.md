@@ -18,6 +18,14 @@ description: "What the panel does to protect itself and what you should do on to
 - **A word before the certificate runs out.** The security warnings at the top of Settings say when the certificate the panel or the subscription service is served with has less than two weeks left, and says so louder once it has passed. Renewal is still the installer's and acme.sh's job; this is the panel making sure an expiry is not something you hear about from a customer.
 - **Signed releases.** A panel built with the project's public key refuses an update whose signature does not match.
 
+## Where the secrets are
+
+Every customer's keys, every administrator's password hash and second factor, and the credentials of the panels used as nodes are in the database. What keeps them:
+
+- **On the server**, the database is `/var/lib/wui/wui.db`, readable by the panel's own user alone (`0600`, in a `0750` directory owned by that user). Since 3.0 the panel makes the file private when it starts, as earlier releases left it readable by everyone.
+- **In a backup**, the archive is encrypted with the backup password when one is set ([Backup and restore](/operations/backup-restore#encryption)). The key sessions are signed with is never in a backup, so a backup cannot be used to sign in to its panel.
+- **Not column by column.** Encrypting the second factor and the nodes' credentials inside the database with a key kept off the backup would make them unreadable after a restore on another server: the owner could not sign in to their own panel. The file's permissions and the backup's encryption protect the same secrets without that failure.
+
 ## What you should do
 
 - Keep the firewall to the panel port, the tunnel ports, port 80 for renewals, and SSH.
