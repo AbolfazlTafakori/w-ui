@@ -569,3 +569,13 @@ func (s *Interfaces) createXray(ctx context.Context, node *model.Node, in Create
 	s.log.Info("inbound made on a node", "node", node.Name, "tunnel", iface.Name, "protocol", x.Protocol, "port", x.Port)
 	return &iface, nil
 }
+
+// hostOf is the host of an address that may carry a scheme, a port or a
+// path.
+func hostOf(addr string) string {
+	addr = strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
+	if i := strings.IndexAny(addr, "/:"); i > 0 {
+		addr = addr[:i]
+	}
+	return addr
+}

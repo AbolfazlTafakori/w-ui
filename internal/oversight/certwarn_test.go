@@ -1,4 +1,4 @@
-package service
+package oversight
 
 import (
 	"crypto/ecdsa"
@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"github.com/abolfazl/w-ui/internal/service"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -59,7 +60,7 @@ func TestCertificateWarningsComeInTime(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			db := testDB(t)
-			a := NewAudit(db, NewSubscriptions(db, nil, nil, quietLog()),
+			a := NewAudit(db, service.NewSubscriptions(db, nil, nil, quietLog()),
 				"127.0.0.1:2096", writeCert(t, "panel.example.com", tc.ends), nil, nil)
 			var got *Warning
 			for _, w := range a.checkCertificates(t.Context()) {
@@ -92,7 +93,7 @@ func TestCertificateWarningsComeInTime(t *testing.T) {
 	if err := os.WriteFile(junk, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a := NewAudit(db, NewSubscriptions(db, nil, nil, quietLog()), "127.0.0.1:2096", junk, nil, nil)
+	a := NewAudit(db, service.NewSubscriptions(db, nil, nil, quietLog()), "127.0.0.1:2096", junk, nil, nil)
 	if got := a.checkCertificates(t.Context()); len(got) != 0 {
 		t.Fatalf("an unreadable certificate warned: %+v", got)
 	}

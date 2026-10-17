@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/egress"
+	"github.com/abolfazl/w-ui/internal/oversight"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
 )
@@ -227,7 +228,7 @@ func (s *Server) handleGetRouting(w http.ResponseWriter, r *http.Request) {
 			// Cleaned the same way the security panel cleans it. The two sit on
 			// screen together, and one of them showing a Go error while the
 			// other shows a sentence makes the panel look half-finished.
-			health = service.PlainReason(err.Error())
+			health = oversight.PlainReason(err.Error())
 		}
 	}
 

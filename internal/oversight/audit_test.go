@@ -1,4 +1,4 @@
-package service
+package oversight
 
 import "testing"
 

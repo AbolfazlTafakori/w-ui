@@ -1,4 +1,4 @@
-package service
+package oversight
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // Warning is one thing about this installation that is worth saying out loud.
@@ -39,7 +40,7 @@ type Warning struct {
 // else's. Nothing here changes anything: it says what is true and where to go.
 type Audit struct {
 	db     *gorm.DB
-	subs   *Subscriptions
+	subs   *service.Subscriptions
 	listen string
 	// tlsCert is the certificate the panel itself is served with, read for
 	// how long it has left; empty when the panel is not serving TLS.
@@ -53,7 +54,7 @@ type Audit struct {
 }
 
 func NewAudit(
-	db *gorm.DB, subs *Subscriptions, listen, tlsCert string,
+	db *gorm.DB, subs *service.Subscriptions, listen, tlsCert string,
 	engines func(context.Context) map[string]string,
 	backups BackupExposure,
 ) *Audit {
@@ -430,4 +431,8 @@ func hostOf(addr string) string {
 		addr = addr[:i]
 	}
 	return addr
+}
+
+func isLoopback(host string) bool {
+	return host == "localhost" || strings.HasPrefix(host, "127.") || host == "::1"
 }

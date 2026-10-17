@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/oversight"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -302,7 +303,7 @@ func (s *Server) handleSecurityWarnings(w http.ResponseWriter, r *http.Request) 
 	}
 	warnings := s.audit.Run(r.Context())
 	if warnings == nil {
-		warnings = []service.Warning{}
+		warnings = []oversight.Warning{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"warnings": warnings})
 }

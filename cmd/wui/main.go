@@ -45,6 +45,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/oversight"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -482,12 +483,12 @@ func run() error {
 		return snap.CPU.Percent, snap.Memory.Percent
 	})
 	// The periodic report, on the schedule the Telegram page sets.
-	reporter := service.NewReporter(db, clientsSvc, settings, backups, version)
+	reporter := oversight.NewReporter(db, clientsSvc, settings, backups, version)
 	notifier.RunReports(ctx, reporter.Build)
 	// The automatic backup to the chat, on its own schedule.
 	notifier.RunBackups(ctx, reporter.Backup, settings)
 	// Traffic handed to an outside system, when one is configured.
-	service.NewInformer(db, settings, log).Run(ctx, cfg.CollectInterval)
+	oversight.NewInformer(db, settings, log).Run(ctx, cfg.CollectInterval)
 
 	// Watching the other servers. Started before the HTTP listener so the nodes
 	// page has answers the first time it is opened rather than an empty table.

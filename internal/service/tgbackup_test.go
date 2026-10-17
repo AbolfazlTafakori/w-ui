@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database"
-	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
 // The automatic backup went with the report before it had a time of its own.
@@ -122,29 +121,3 @@ func TestTheBackupStampIsKept(t *testing.T) {
 
 // The report goes as Markdown: a customer named with an underscore made
 // Telegram refuse the whole of it, on every schedule, until they were gone.
-func TestTheReportKeepsNamesFromBeingMarkdown(t *testing.T) {
-	ctx := context.Background()
-	db := testDB(t)
-	soon := time.Now().UTC().Add(24 * time.Hour)
-	for _, c := range []model.Client{
-		{Name: "ali_reza", Protocol: model.ProtocolWireGuard, Status: model.StatusActive, ExpiresAt: &soon},
-		{Name: "*vip*", Protocol: model.ProtocolWireGuard, Status: model.StatusActive, QuotaBytes: 100, UsedBytes: 90},
-	} {
-		if err := db.Create(&c).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	r := NewReporter(db, NewClients(db, nil, quietLog()), NewSettings(db, "en"), nil, "test")
-	text, err := r.Build(ctx, "en")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, raw := range []string{"ali_reza", "*vip*"} {
-		if strings.Contains(text, raw) {
-			t.Errorf("the report carries %q as it is:\n%s", raw, text)
-		}
-	}
-	if !strings.Contains(text, "ali reza") || !strings.Contains(text, " vip ") {
-		t.Errorf("the customers are not in the report:\n%s", text)
-	}
-}

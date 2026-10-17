@@ -22,6 +22,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/oversight"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -68,7 +69,7 @@ type Server struct {
 	obSubs    *egress.OutboundSubs
 	balancers *egress.Balancers
 	providers *egress.Providers
-	audit     *service.Audit
+	audit     *oversight.Audit
 	admins    *service.Admins
 	pool      *backend.Pool
 	nodeSync  *service.NodeSync
@@ -188,7 +189,7 @@ func New(o Options) *Server {
 
 	// Built last because it asks the server which engines are running, and that
 	// question needs the enforcer, shaper and router the server was just given.
-	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, o.TLSCert, srv.engineHealth, srv.backupExposure)
+	srv.audit = oversight.NewAudit(o.DB, o.Subs, o.Listen, o.TLSCert, srv.engineHealth, srv.backupExposure)
 	// What the reconciler changes on its own -- a plan ended, one started
 	// on first use -- reaches the open pages the same way an edit does.
 	// Open customers' pages refresh when the panel says something changed.

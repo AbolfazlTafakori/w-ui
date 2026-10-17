@@ -223,3 +223,16 @@ func TestLowerLayersDoNotImportTheServices(t *testing.T) {
 		}
 	}
 }
+
+// What tells the operator about the panel -- the security audit, the daily
+// report, the reminders -- reads the services; the services never call it.
+func TestTheServicesDoNotReportOnThemselves(t *testing.T) {
+	const above = "github.com/abolfazl/w-ui/internal/oversight"
+	for _, f := range sources(t, "internal/service", "internal/egress") {
+		for _, imp := range f.ast.Imports {
+			if strings.Trim(imp.Path.Value, `"`) == above {
+				t.Errorf("%s imports %s, which is built on the services", f.rel, above)
+			}
+		}
+	}
+}
