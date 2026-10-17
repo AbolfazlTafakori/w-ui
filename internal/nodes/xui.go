@@ -55,15 +55,17 @@ type xuiPanel struct {
 	remote map[string]*remoteXUIClient
 }
 
-func (p *xuiPanel) read(ctx context.Context) ([]service.XUIInboundSeen, error) {
+func (p *xuiPanel) read(ctx context.Context) ([]service.XUIInboundSeen, map[int]string, error) {
 	rows, err := p.api.inbounds(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("reading its inbounds: %w", err)
+		return nil, nil, fmt.Errorf("reading its inbounds: %w", err)
 	}
 	p.rows = rows
 	p.remote = map[string]*remoteXUIClient{}
 	seen := make([]service.XUIInboundSeen, 0, len(rows))
+	prints := make(map[int]string, len(rows))
 	for _, r := range rows {
+		prints[r.ID] = inboundPrint(r.Protocol, r.Port, r.Remark, r.Settings, r.Stream)
 		var set xuiSettings
 		var st xuiStream
 		_ = objectOrString(r.Settings, &set)
@@ -108,7 +110,7 @@ func (p *xuiPanel) read(ctx context.Context) ([]service.XUIInboundSeen, error) {
 			}
 		}
 	}
-	return seen, nil
+	return seen, prints, nil
 }
 
 func (p *xuiPanel) prepare(context.Context, []xrayFile) error { return nil }

@@ -54,6 +54,8 @@ type fakeXUI struct {
 	inboundFails func(ins []*fakeXUIInbound) bool
 	restarts     int
 	logins       int
+	// linkReads counts the links it was asked for, by API or subscription.
+	linkReads int
 	// sessions are the cookies it gave, signed in or not, and each one's
 	// CSRF token.
 	sessions map[string]*fakeXUISession
@@ -402,6 +404,7 @@ func (f *fakeXUI) serveAPI(w http.ResponseWriter, r *http.Request, api string, b
 		}
 		ok200(w, nil)
 	case strings.HasPrefix(api, "clients/links/") && f.atLeast(3, 1):
+		f.linkReads++
 		email := strings.TrimPrefix(api, "clients/links/")
 		var out []string
 		for _, in := range f.inbounds {
@@ -475,6 +478,7 @@ func (f *fakeXUI) xrayConfig() map[string]any {
 
 // serveSub is its subscription service: every client with that id's links.
 func (f *fakeXUI) serveSub(w http.ResponseWriter, subID string) {
+	f.linkReads++
 	var out []string
 	for _, in := range f.inbounds {
 		for _, c := range in.Clients {
@@ -537,6 +541,10 @@ func credential(protocol string, c map[string]any) string {
 
 func fakeXUILink(in *fakeXUIInbound, c map[string]any) string {
 	name := url.PathEscape(in.Remark + "-" + fmt.Sprint(c["email"]))
+	// What else of the inbound a link carries: its Reality name.
+	if sni, ok := in.Stream["sni"].(string); ok {
+		name += "-" + sni
+	}
 	switch in.Protocol {
 	case "vmess":
 		j, _ := json.Marshal(map[string]any{"v": "2", "ps": in.Remark, "add": "127.0.0.1", "port": in.Port, "id": c["id"]})

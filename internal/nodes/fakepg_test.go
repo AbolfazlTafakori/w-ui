@@ -57,6 +57,7 @@ type fakePG struct {
 	syncBroken bool
 	// everyUser counts the listings of every user it was asked for.
 	everyUser int
+	linkReads int // the subscriptions read
 	srv       *httptest.Server
 }
 
@@ -210,6 +211,12 @@ func (f *fakePG) serve(w http.ResponseWriter, r *http.Request) {
 		g.ID = f.id()
 		f.groups[g.ID] = &g
 		writeJSONBody(w, g)
+	case path == "/api/hosts":
+		list := make([]any, len(f.hosts))
+		for i, h := range f.hosts {
+			list[i] = h
+		}
+		writeJSONBody(w, list)
 	case path == "/api/host/" && r.Method == http.MethodPost:
 		var h map[string]any
 		_ = json.Unmarshal(body, &h)
@@ -351,6 +358,7 @@ func (f *fakePG) core() map[string]any {
 
 // serveSub is a user's links: one for every inbound its groups reach.
 func (f *fakePG) serveSub(w http.ResponseWriter, r *http.Request) {
+	f.linkReads++
 	name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/sub/"), "/links")
 	u, ok := f.users[name]
 	if !ok {
@@ -361,7 +369,7 @@ func (f *fakePG) serveSub(w http.ResponseWriter, r *http.Request) {
 	for _, gid := range u.Groups {
 		if g := f.groups[gid]; g != nil {
 			for _, tag := range g.InboundTags {
-				lines = append(lines, fmt.Sprintf("vless://%s@127.0.0.1:443#%s", u.Password, url.PathEscape(u.Username+" "+tag)))
+				lines = append(lines, fmt.Sprintf("vless://%s@%s:443#%s", u.Password, f.hostOf(tag), url.PathEscape(u.Username+" "+tag)))
 			}
 		}
 	}
@@ -375,4 +383,16 @@ func containsTag(tags []string, tag string) bool {
 		}
 	}
 	return false
+}
+
+// hostOf is the address the host of an inbound gives its links.
+func (f *fakePG) hostOf(tag string) string {
+	for _, h := range f.hosts {
+		if h["inbound_tag"] == tag {
+			if a, ok := h["address"].([]any); ok && len(a) > 0 {
+				return fmt.Sprint(a[0])
+			}
+		}
+	}
+	return "127.0.0.1"
 }

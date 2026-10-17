@@ -2,6 +2,9 @@ package nodes
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -18,15 +21,67 @@ import (
 // there -- is the panel's own (xrayPanel), in xui.go and pg.go.
 
 // xrayLinksEvery is how many rounds go by between rereading every file's
-// links, which change when the inbound does: its port, its address, its
-// Reality keys.
-const xrayLinksEvery = 15
+// links regardless: two hours. They change when the inbound does -- its port,
+// its address, its Reality keys, its host -- and that is seen every round by
+// the inbound's fingerprint (inboundPrint), so a file's links are read again
+// the round its inbound changes; this is only the net under that.
+const xrayLinksEvery = 360
+
+// inboundPrint is a fingerprint of what of an inbound goes into its links:
+// all of it but its clients, which change with every customer and not the
+// links of the rest.
+func inboundPrint(parts ...any) string {
+	h := sha256.New()
+	for _, p := range parts {
+		var v any
+		switch x := p.(type) {
+		case json.RawMessage:
+			_ = objectOrString(x, &v)
+		default:
+			v = x
+		}
+		if m, ok := v.(map[string]any); ok {
+			delete(m, "clients")
+			if set, ok := m["settings"].(map[string]any); ok {
+				delete(set, "clients")
+			}
+		}
+		b, _ := json.Marshal(v) // a map's keys in order, so the same inbound prints the same
+		h.Write(b)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil)[:12])
+}
+
+// changedInbounds is which of a node's inbounds, by their id there, print
+// otherwise than the round before; none on the first round, which rereads
+// everything anyway.
+func (s *Syncer) changedInbounds(nodeID uint, prints map[int]string) map[int]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inboundPrints == nil {
+		s.inboundPrints = map[uint]map[int]string{}
+	}
+	before, had := s.inboundPrints[nodeID]
+	s.inboundPrints[nodeID] = prints
+	changed := map[int]bool{}
+	if !had {
+		return changed
+	}
+	for id, p := range prints {
+		if before[id] != p {
+			changed[id] = true
+		}
+	}
+	return changed
+}
 
 // xrayPanel is one node of another panel, for one round.
 type xrayPanel interface {
-	// read is what it holds now: its inbounds, as this panel holds them, and
-	// whatever of its users the round needs, kept for the calls after.
-	read(ctx context.Context) ([]service.XUIInboundSeen, error)
+	// read is what it holds now: its inbounds, as this panel holds them, with
+	// each one's fingerprint by its id there (inboundPrint), and whatever of
+	// its users the round needs, kept for the calls after.
+	read(ctx context.Context) ([]service.XUIInboundSeen, map[int]string, error)
 	// prepare is told the files on it before they are gone through.
 	prepare(ctx context.Context, files []xrayFile) error
 	// own puts one of this panel's files there as it should be; adopt does
@@ -66,10 +121,11 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 	if s.XUIMirror == nil {
 		return fmt.Errorf("this panel cannot hold another panel's inbounds")
 	}
-	seen, err := p.read(ctx)
+	seen, prints, err := p.read(ctx)
 	if err != nil {
 		return err
 	}
+	reprinted := s.changedInbounds(node.ID, prints)
 	db := s.db.WithContext(ctx)
 	// What the tunnels were before this read, so a file whose inbound
 	// changed there -- its port, its keys -- is given its new links now
@@ -96,6 +152,9 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 		byID[f.ID] = f
 		ids = append(ids, f.ID)
 		if w, ok := was[f.ID]; ok && (w.ListenPort != f.ListenPort || w.EndpointHost != f.EndpointHost || xuiShape(w.XUI.V) != xuiShape(f.XUI.V)) {
+			moved[f.ID] = true
+		}
+		if reprinted[f.XUI.V.RemoteID] {
 			moved[f.ID] = true
 		}
 	}

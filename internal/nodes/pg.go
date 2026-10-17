@@ -62,19 +62,26 @@ type pgPanel struct {
 
 	// groupOf is this panel's group for each inbound, by its tag.
 	groupOf map[string]int
-	// ours are the users this panel made there; everyone every user, read
-	// only when some were brought in from there.
+	// ours are the users this panel made there; everyone those and the ones
+	// brought in from there, by name.
 	ours     map[string]pgUser
 	everyone map[string]*pgUser
 }
 
-func (p *pgPanel) read(ctx context.Context) ([]service.XUIInboundSeen, error) {
+func (p *pgPanel) read(ctx context.Context) ([]service.XUIInboundSeen, map[int]string, error) {
 	inbounds, err := p.api.inbounds(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("reading its inbounds: %w", err)
+		return nil, nil, fmt.Errorf("reading its inbounds: %w", err)
+	}
+	// Its links are written from its hosts as much as from the inbound.
+	hosts, err := p.api.hosts(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading its hosts: %w", err)
 	}
 	seen := make([]service.XUIInboundSeen, 0, len(inbounds))
+	prints := make(map[int]string, len(inbounds))
 	for _, in := range inbounds {
+		prints[pgRemoteID(in.Tag)] = inboundPrint(in.Raw, hosts[in.Tag])
 		x := model.XUIInbound{
 			RemoteID: pgRemoteID(in.Tag),
 			Tag:      in.Tag,
@@ -93,7 +100,7 @@ func (p *pgPanel) read(ctx context.Context) ([]service.XUIInboundSeen, error) {
 		}
 		seen = append(seen, service.XUIInboundSeen{XUIInbound: x, Port: in.portOf()})
 	}
-	return seen, nil
+	return seen, prints, nil
 }
 
 // prepare reads this panel's groups there, and its users: its own, and the

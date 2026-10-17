@@ -196,6 +196,8 @@ type pgInbound struct {
 		Network  string `json:"network"`
 		Security string `json:"security"`
 	} `json:"streamSettings"`
+	// Raw is the inbound as the core has it, all of it.
+	Raw json.RawMessage `json:"-"`
 }
 
 // portOf reads an inbound's port, which xray takes as a number or a string.
@@ -215,7 +217,7 @@ func (p *pgAPI) inbounds(ctx context.Context) ([]pgInbound, error) {
 	var cores struct {
 		Cores []struct {
 			Config struct {
-				Inbounds []pgInbound `json:"inbounds"`
+				Inbounds []json.RawMessage `json:"inbounds"`
 			} `json:"config"`
 		} `json:"cores"`
 	}
@@ -225,12 +227,32 @@ func (p *pgAPI) inbounds(ctx context.Context) ([]pgInbound, error) {
 	var out []pgInbound
 	seen := map[string]bool{}
 	for _, c := range cores.Cores {
-		for _, in := range c.Config.Inbounds {
-			if in.Tag == "" || seen[in.Tag] {
+		for _, raw := range c.Config.Inbounds {
+			var in pgInbound
+			if json.Unmarshal(raw, &in) != nil || in.Tag == "" || seen[in.Tag] {
 				continue
 			}
 			seen[in.Tag] = true
+			in.Raw = raw
 			out = append(out, in)
+		}
+	}
+	return out, nil
+}
+
+// hosts are the panel's hosts, raw, by the inbound each writes links for.
+func (p *pgAPI) hosts(ctx context.Context) (map[string][]json.RawMessage, error) {
+	var list []json.RawMessage
+	if err := p.do(ctx, http.MethodGet, "/api/hosts", nil, &list); err != nil {
+		return nil, err
+	}
+	out := map[string][]json.RawMessage{}
+	for _, raw := range list {
+		var h struct {
+			InboundTag string `json:"inbound_tag"`
+		}
+		if json.Unmarshal(raw, &h) == nil && h.InboundTag != "" {
+			out[h.InboundTag] = append(out[h.InboundTag], raw)
 		}
 	}
 	return out, nil

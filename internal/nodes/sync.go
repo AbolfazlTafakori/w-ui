@@ -71,8 +71,11 @@ type Syncer struct {
 	// XUIMirror holds a 3x-ui node's inbounds as this panel's tunnels
 	// there (service.Interfaces.MirrorXUI).
 	XUIMirror func(ctx context.Context, nodeID uint, host string, seen []service.XUIInboundSeen) error
-	// xuiRounds counts each 3x-ui node's rounds, for rereading its links.
-	xuiRounds map[uint]int
+	// xuiRounds counts each 3x-ui or Pasarguard node's rounds, for
+	// rereading its links; inboundPrints is each one's inbounds' fingerprints
+	// the round before (xrayround.go).
+	xuiRounds     map[uint]int
+	inboundPrints map[uint]map[int]string
 
 	mu sync.Mutex
 	// lastErr is the failure already reported per node, so an unreachable node
