@@ -1,10 +1,11 @@
-package service
+package egress
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/listfield"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -29,8 +30,9 @@ const (
 
 // Outbounds manages the ways out of this server.
 type Outbounds struct {
-	db  *gorm.DB
-	log *slog.Logger
+	db     *gorm.DB
+	log    *slog.Logger
+	tuning *Tuning
 
 	// OnStatus is told when an outbound is judged down or back up; nil
 	// means nobody is listening. DownThreshold is the share of the last ten
@@ -95,8 +97,8 @@ func (s *Outbounds) noteProbe(ob *model.Outbound, ok bool, detail string) {
 	}
 }
 
-func NewOutbounds(db *gorm.DB, log *slog.Logger) *Outbounds {
-	return &Outbounds{db: db, log: log}
+func NewOutbounds(db *gorm.DB, tuning *Tuning, log *slog.Logger) *Outbounds {
+	return &Outbounds{db: db, log: log, tuning: tuning}
 }
 
 // EnsureBuiltins creates the two outbounds the panel cannot work without.
@@ -349,7 +351,7 @@ func (s *Outbounds) Delete(ctx context.Context, id uint) error {
 	var balancers []model.Balancer
 	if err := db.Find(&balancers).Error; err == nil {
 		for _, b := range balancers {
-			for _, m := range splitList(b.Members) {
+			for _, m := range listfield.Split(b.Members) {
 				if m == ob.Tag {
 					return fmt.Errorf("%w: balancer %q still includes %q; remove it from the balancer first",
 						ErrInvalid, b.Tag, ob.Tag)
@@ -425,11 +427,11 @@ func (s *Outbounds) Check(ctx context.Context, id uint, mode string) (*CheckResu
 		return res, nil
 	case model.OutboundDirect:
 		if mode != ModeTCP {
-			return s.finishProbe(ctx, ob, res, probeThrough(ctx, ob, mode)), nil
+			return s.finishProbe(ctx, ob, res, probeThrough(ctx, ob, mode, s.tuning)), nil
 		}
 		// Times the server's own path to the internet, which is the thing
 		// `direct` actually uses.
-		d, err := dialLatency(ctx, "1.1.1.1:443")
+		d, err := Dial(ctx, "1.1.1.1:443")
 		return s.finishCheck(ctx, ob, res, d, err), nil
 	}
 
@@ -439,7 +441,7 @@ func (s *Outbounds) Check(ctx context.Context, id uint, mode string) (*CheckResu
 		return res, nil
 	}
 	if mode != ModeTCP {
-		return s.finishProbe(ctx, ob, res, probeThrough(ctx, ob, mode)), nil
+		return s.finishProbe(ctx, ob, res, probeThrough(ctx, ob, mode, s.tuning)), nil
 	}
 	// A WireGuard or OpenVPN endpoint is UDP and will not answer a TCP
 	// connect, so what is measured is whether the host is routable at all
@@ -452,7 +454,7 @@ func (s *Outbounds) Check(ctx context.Context, id uint, mode string) (*CheckResu
 		}
 	}
 
-	d, err := dialLatency(ctx, target)
+	d, err := Dial(ctx, target)
 	return s.finishCheck(ctx, ob, res, d, err), nil
 }
 
@@ -465,7 +467,7 @@ func (s *Outbounds) CheckAll(ctx context.Context, mode string) ([]CheckResult, e
 
 	out := make([]CheckResult, len(list))
 	width := 8 // a hop that hangs must not hold up the rest
-	if !ProbeConcurrency.Load() {
+	if !s.tuning.ProbeTogether() {
 		width = 1 // one at a time, so probes do not share the bandwidth
 	}
 	sem := make(chan struct{}, width)
@@ -494,7 +496,7 @@ func (s *Outbounds) finishCheck(
 ) *CheckResult {
 	if err != nil {
 		res.OK = false
-		res.Error = friendlyDialError(err)
+		res.Error = DialError(err)
 		s.recordCheck(ctx, ob.ID, 0, res.Error)
 		return res
 	}
@@ -509,7 +511,7 @@ func (s *Outbounds) finishProbe(
 ) *CheckResult {
 	if p.err != nil {
 		res.OK = false
-		res.Error = friendlyDialError(p.err)
+		res.Error = DialError(p.err)
 		s.recordCheck(ctx, ob.ID, 0, res.Error)
 		s.noteProbe(ob, false, res.Error)
 		return res
@@ -869,8 +871,8 @@ func checkHostPort(addr string) error {
 	return nil
 }
 
-// dialLatency times a TCP connection.
-func dialLatency(ctx context.Context, addr string) (time.Duration, error) {
+// Dial times a TCP connection.
+func Dial(ctx context.Context, addr string) (time.Duration, error) {
 	timeout := 5 * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -886,10 +888,10 @@ func dialLatency(ctx context.Context, addr string) (time.Duration, error) {
 	return elapsed, nil
 }
 
-// friendlyDialError turns a Go network error into something an operator can act
+// DialError turns a Go network error into something an operator can act
 // on. The raw text names Go's own types and repeats the address twice, which
 // tells nobody what to change.
-func friendlyDialError(err error) string {
+func DialError(err error) string {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		return fmt.Sprintf("the name %q does not resolve", dnsErr.Name)
@@ -947,7 +949,7 @@ func (s *Outbounds) HopSpecs(ctx context.Context) ([]routing.HopSpec, error) {
 			spec.PeerPubKey = o.PeerPubKey
 			spec.PresharedKey = o.PresharedKey
 			spec.Address = o.HopAddress
-			spec.AllowedIPs = splitList(o.AllowedIPs)
+			spec.AllowedIPs = listfield.Split(o.AllowedIPs)
 			spec.Keepalive = o.Keepalive
 		case o.Kind == model.OutboundOpenVPN:
 			if o.Config == "" {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backup"
+	"github.com/abolfazl/w-ui/internal/egress"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/nodes"
@@ -53,8 +54,8 @@ type Server struct {
 	dbSource  string
 	sys       *sysinfo.Collector
 	rec       *reconciler.Reconciler
-	outbounds *service.Outbounds
-	routing   *service.Routing
+	outbounds *egress.Outbounds
+	routing   *egress.Routing
 	hosts     *service.Hosts
 	router    *routing.Applier
 	subs      *service.Subscriptions
@@ -64,9 +65,9 @@ type Server struct {
 	totpMu    sync.Mutex
 	totpUsed  map[uint]usedCode
 	previews  subPreviews
-	obSubs    *service.OutboundSubs
-	balancers *service.Balancers
-	providers *service.Providers
+	obSubs    *egress.OutboundSubs
+	balancers *egress.Balancers
+	providers *egress.Providers
 	audit     *service.Audit
 	admins    *service.Admins
 	pool      *backend.Pool
@@ -104,11 +105,14 @@ type Options struct {
 	DBSource   string
 	SysInfo    *sysinfo.Collector
 	Reconciler *reconciler.Reconciler
-	Outbounds  *service.Outbounds
-	Routing    *service.Routing
-	Router     *routing.Applier
-	Subs       *service.Subscriptions
-	Pool       *backend.Pool
+	Outbounds  *egress.Outbounds
+	// Balancers is the process's one, the same that runs the checks; nil
+	// builds one for the API alone.
+	Balancers *egress.Balancers
+	Routing   *egress.Routing
+	Router    *routing.Applier
+	Subs      *service.Subscriptions
+	Pool      *backend.Pool
 	// LocalNodeID is this panel's own node row, used when another panel is
 	// driving this one as a node.
 	LocalNodeID uint
@@ -164,9 +168,8 @@ func New(o Options) *Server {
 		subMiss:   newSubMisses(),
 		reveals:   newSubReveals(),
 		subHub:    newSubHub(),
-		obSubs:    service.NewOutboundSubs(o.DB, o.Outbounds, o.Logger),
-		balancers: service.NewBalancers(o.DB, o.Logger),
-		providers: service.NewProviders(o.DB, o.Outbounds, o.Logger),
+		obSubs:    egress.NewOutboundSubs(o.DB, o.Outbounds, o.Logger),
+		providers: egress.NewProviders(o.DB, o.Outbounds, o.Logger),
 		pool:      o.Pool,
 		nodeSync:  newNodeSync(o),
 		// Falls back to the first node, which is this one on every install that
@@ -189,6 +192,10 @@ func New(o Options) *Server {
 	// What the reconciler changes on its own -- a plan ended, one started
 	// on first use -- reaches the open pages the same way an edit does.
 	// Open customers' pages refresh when the panel says something changed.
+	srv.balancers = o.Balancers
+	if srv.balancers == nil {
+		srv.balancers = egress.NewBalancers(o.DB, o.Logger)
+	}
 	if o.Changes != nil {
 		o.Changes.Listen(srv.subHub.Broadcast)
 	}

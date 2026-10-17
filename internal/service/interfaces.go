@@ -24,6 +24,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/occonf"
@@ -33,8 +34,8 @@ import (
 
 // Validation errors. The API maps these to 400 rather than 500.
 var (
-	ErrInvalid       = errors.New("service: invalid input")
-	ErrNotFound      = errors.New("service: not found")
+	ErrInvalid       = fault.ErrInvalid
+	ErrNotFound      = fault.ErrNotFound
 	ErrDeviceLimit   = errors.New("service: device limit reached")
 	ErrPoolExhausted = errors.New("service: no addresses left on this interface")
 )

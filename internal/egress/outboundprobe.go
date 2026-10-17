@@ -1,4 +1,4 @@
-package service
+package egress
 
 import (
 	"bufio"
@@ -35,7 +35,7 @@ type probeResult struct {
 // probeThrough fetches the trace through the outbound and times it the way
 // the mode asks: Real is connect plus request, HTTP is the request alone once
 // a connection exists.
-func probeThrough(ctx context.Context, ob *model.Outbound, mode string) probeResult {
+func probeThrough(ctx context.Context, ob *model.Outbound, mode string, tuning *Tuning) probeResult {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
@@ -45,10 +45,7 @@ func probeThrough(ctx context.Context, ob *model.Outbound, mode string) probeRes
 	}
 	defer tr.CloseIdleConnections()
 
-	target, _ := ProbeURL.Load().(string)
-	if target == "" {
-		target = traceURL
-	}
+	target := tuning.ProbeURL()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return probeResult{err: err}

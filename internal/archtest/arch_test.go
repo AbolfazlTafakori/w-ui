@@ -205,3 +205,21 @@ func TestTheAPIDoesNotQueryTheDatabase(t *testing.T) {
 		})
 	}
 }
+
+// The layers below the services do not reach up into them.
+//
+// The outbound side (egress), the kinds of failure (fault), and the small
+// shared pieces are what the services are built from; a dependency back up
+// would tie them into the one package this split took them out of.
+func TestLowerLayersDoNotImportTheServices(t *testing.T) {
+	const svc = "github.com/abolfazl/w-ui/internal/service"
+	for _, dir := range []string{"internal/egress", "internal/fault", "internal/listfield", "internal/tunnelport", "internal/backend"} {
+		for _, f := range sources(t, dir) {
+			for _, imp := range f.ast.Imports {
+				if path := strings.Trim(imp.Path.Value, `"`); path == svc || strings.HasPrefix(path, svc+"/") {
+					t.Errorf("%s imports %s; the services build on it, not the other way", f.rel, path)
+				}
+			}
+		}
+	}
+}

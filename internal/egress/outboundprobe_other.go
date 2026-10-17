@@ -1,6 +1,6 @@
 //go:build !linux
 
-package service
+package egress
 
 import (
 	"errors"

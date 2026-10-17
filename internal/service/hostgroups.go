@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/listfield"
 	"math/big"
 	"net"
 	"net/netip"
@@ -110,7 +111,7 @@ func groupHosts(rows []model.Host) []HostGroup {
 			g = &HostGroup{
 				GroupID: k, InterfaceIDs: []uint{}, Hosts: []string{}, SortOrder: h.Priority,
 				Remark: h.Name, Description: h.Description, Enabled: h.Enabled,
-				Tags: splitList(h.Tags), Port: h.Port, ExcludeFormats: splitList(h.ExcludeFormats),
+				Tags: listfield.Split(h.Tags), Port: h.Port, ExcludeFormats: listfield.Split(h.ExcludeFormats),
 				Shuffle: h.Shuffle, Reachable: true, RowIDs: []uint{},
 			}
 			byKey[k] = g
@@ -266,7 +267,7 @@ func rowsFor(groupID string, in HostGroup) []model.Host {
 			rows = append(rows, model.Host{
 				GroupID: groupID, InterfaceID: ifaceID, Name: in.Remark, Description: in.Description,
 				Enabled: in.Enabled, Address: addr, Port: port, Priority: in.SortOrder,
-				Tags: joinList(in.Tags), ExcludeFormats: joinList(in.ExcludeFormats), Shuffle: in.Shuffle,
+				Tags: listfield.Join(in.Tags), ExcludeFormats: listfield.Join(in.ExcludeFormats), Shuffle: in.Shuffle,
 				Reachable: true,
 			})
 		}
@@ -398,7 +399,7 @@ func (s *Hosts) AllTags(ctx context.Context) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range raws {
-		for _, t := range splitList(r) {
+		for _, t := range listfield.Split(r) {
 			if !seen[t] {
 				seen[t] = true
 				out = append(out, t)
@@ -499,7 +500,7 @@ func variantsFor(iface *model.Interface, format string) []HostVariant {
 	shuffle := false
 	for i := range hosts {
 		h := &hosts[i]
-		if !h.Enabled || (format != "" && containsStr(splitList(h.ExcludeFormats), format)) {
+		if !h.Enabled || (format != "" && containsStr(listfield.Split(h.ExcludeFormats), format)) {
 			continue
 		}
 		v := HostVariant{Host: h, Endpoint: h.Address, Port: h.EffectivePort(iface.ListenPort)}

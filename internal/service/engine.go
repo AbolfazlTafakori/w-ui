@@ -16,6 +16,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/dnsproxy"
+	"github.com/abolfazl/w-ui/internal/egress"
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
@@ -64,7 +65,8 @@ type EngineSettings struct {
 type Engine struct {
 	db      *gorm.DB
 	log     *slog.Logger
-	routing *Routing
+	routing *egress.Routing
+	tuning  *egress.Tuning
 	dns     *dnsproxy.Proxy
 
 	mu    sync.RWMutex
@@ -73,39 +75,31 @@ type Engine struct {
 
 // Live hooks the rest of the panel reads without a database call.
 var (
-	// ProbeURL is what outbound checks fetch. Only the trace endpoint
-	// yields an egress address and country; anything else measures alone.
-	ProbeURL atomic.Value // string
 	// OnlineWithin is how recent a handshake has to be to count as online.
 	OnlineWithin atomic.Int64 // seconds
-	// OutboundCounters switches the per-outbound kernel counters.
-	OutboundCounters atomic.Bool
 	// AccessLog and MaskAddress steer the request log.
 	AccessLog   atomic.Bool
 	MaskAddress atomic.Bool
-	// ProbeInterval and ProbeConcurrency steer the balancer checks.
-	ProbeInterval    atomic.Int64 // seconds
-	ProbeConcurrency atomic.Bool
 )
 
 func init() {
-	ProbeURL.Store(traceURL)
 	OnlineWithin.Store(180)
-	OutboundCounters.Store(true)
 	AccessLog.Store(true)
-	ProbeInterval.Store(60)
-	ProbeConcurrency.Store(true)
 }
 
-func NewEngine(db *gorm.DB, routing *Routing, dns *dnsproxy.Proxy, log *slog.Logger) *Engine {
-	return &Engine{db: db, log: log, routing: routing, dns: dns}
+// NewEngine builds it. tuning is the outbound side's, which Apply writes.
+func NewEngine(db *gorm.DB, routing *egress.Routing, tuning *egress.Tuning, dns *dnsproxy.Proxy, log *slog.Logger) *Engine {
+	if tuning == nil {
+		tuning = egress.NewTuning()
+	}
+	return &Engine{db: db, log: log, routing: routing, tuning: tuning, dns: dns}
 }
 
 // Defaults are what a fresh install behaves as if it had.
 func (e *Engine) Defaults() EngineSettings {
 	return EngineSettings{
 		DomainStrategy:   "AsIs",
-		OutboundTestURL:  traceURL,
+		OutboundTestURL:  egress.DefaultProbeURL,
 		CollectInterval:  0,
 		OutboundCounters: true,
 		OnlineWindow:     180,
@@ -202,7 +196,7 @@ func (e *Engine) validate(in *EngineSettings) error {
 	}
 	in.OutboundTestURL = strings.TrimSpace(in.OutboundTestURL)
 	if in.OutboundTestURL == "" {
-		in.OutboundTestURL = traceURL
+		in.OutboundTestURL = egress.DefaultProbeURL
 	}
 	if !strings.HasPrefix(in.OutboundTestURL, "http://") && !strings.HasPrefix(in.OutboundTestURL, "https://") {
 		return fmt.Errorf("%w: the test URL must begin with http:// or https://", ErrInvalid)
@@ -288,13 +282,11 @@ func (e *Engine) Apply(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	ProbeURL.Store(cfg.OutboundTestURL)
 	OnlineWithin.Store(int64(cfg.OnlineWindow))
-	OutboundCounters.Store(cfg.OutboundCounters)
 	AccessLog.Store(cfg.AccessLog)
 	MaskAddress.Store(cfg.MaskAddress)
-	ProbeInterval.Store(int64(cfg.ProbeInterval))
-	ProbeConcurrency.Store(cfg.ProbeConcurrency)
+	e.tuning.Set(cfg.OutboundTestURL, time.Duration(cfg.ProbeInterval)*time.Second,
+		cfg.ProbeConcurrency, cfg.OutboundCounters)
 	if cfg.LogLevel != "" {
 		logger.SetLevel(cfg.LogLevel)
 	}

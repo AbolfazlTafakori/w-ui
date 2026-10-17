@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/abolfazl/w-ui/internal/egress"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -21,7 +22,7 @@ func (s *Server) handleListOutboundSubs(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCreateOutboundSub(w http.ResponseWriter, r *http.Request) {
-	var in service.OutboundSubInput
+	var in egress.OutboundSubInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -38,7 +39,7 @@ func (s *Server) handleUpdateOutboundSub(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	var in service.OutboundSubInput
+	var in egress.OutboundSubInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -82,7 +83,7 @@ func (s *Server) handleReorderOutboundSubs(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handlePreviewOutboundSub(w http.ResponseWriter, r *http.Request) {
-	var in service.OutboundSubInput
+	var in egress.OutboundSubInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -349,7 +350,7 @@ func (s *Server) handleParseOutbound(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	out, err := service.ParseOutbound(in.Text)
+	out, err := egress.ParseOutbound(in.Text)
 	if err != nil {
 		fail(w, s.log, err)
 		return

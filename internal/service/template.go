@@ -11,6 +11,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/dnsproxy"
+	"github.com/abolfazl/w-ui/internal/egress"
 )
 
 // The whole configuration as one document -- the thing the classic panel's advanced
@@ -20,17 +21,17 @@ import (
 
 // TemplateDoc is the document.
 type TemplateDoc struct {
-	Inbounds  []json.RawMessage `json:"inbounds"`
-	Outbounds []json.RawMessage `json:"outbounds"`
-	Routing   *TemplateRouting  `json:"routing,omitempty"`
-	Balancers []BalancerInput   `json:"balancers"`
-	DNS       *dnsproxy.Config  `json:"dns,omitempty"`
+	Inbounds  []json.RawMessage      `json:"inbounds"`
+	Outbounds []json.RawMessage      `json:"outbounds"`
+	Routing   *TemplateRouting       `json:"routing,omitempty"`
+	Balancers []egress.BalancerInput `json:"balancers"`
+	DNS       *dnsproxy.Config       `json:"dns,omitempty"`
 }
 
 // TemplateRouting is the routing half: the basic page and the rule list.
 type TemplateRouting struct {
-	Basic *BasicRouting `json:"basic,omitempty"`
-	Rules []RuleInput   `json:"rules"`
+	Basic *egress.BasicRouting `json:"basic,omitempty"`
+	Rules []egress.RuleInput   `json:"rules"`
 }
 
 // TemplateResult says what applying did.
@@ -45,19 +46,19 @@ type Template struct {
 	db         *gorm.DB
 	log        *slog.Logger
 	interfaces *Interfaces
-	outbounds  *Outbounds
-	routing    *Routing
-	balancers  *Balancers
+	outbounds  *egress.Outbounds
+	routing    *egress.Routing
+	balancers  *egress.Balancers
 	engine     *Engine
 }
 
-func NewTemplate(db *gorm.DB, ifaces *Interfaces, obs *Outbounds, routing *Routing, balancers *Balancers, engine *Engine, log *slog.Logger) *Template {
+func NewTemplate(db *gorm.DB, ifaces *Interfaces, obs *egress.Outbounds, routing *egress.Routing, balancers *egress.Balancers, engine *Engine, log *slog.Logger) *Template {
 	return &Template{db: db, log: log, interfaces: ifaces, outbounds: obs, routing: routing, balancers: balancers, engine: engine}
 }
 
 // Export reads everything out.
 func (t *Template) Export(ctx context.Context) (TemplateDoc, error) {
-	doc := TemplateDoc{Inbounds: []json.RawMessage{}, Outbounds: []json.RawMessage{}, Balancers: []BalancerInput{}}
+	doc := TemplateDoc{Inbounds: []json.RawMessage{}, Outbounds: []json.RawMessage{}, Balancers: []egress.BalancerInput{}}
 
 	ifaces, err := t.interfaces.List(ctx)
 	if err != nil {
@@ -119,10 +120,10 @@ func (t *Template) Export(ctx context.Context) (TemplateDoc, error) {
 	if err != nil {
 		return doc, err
 	}
-	tr := &TemplateRouting{Basic: &basic, Rules: []RuleInput{}}
+	tr := &TemplateRouting{Basic: &basic, Rules: []egress.RuleInput{}}
 	for _, r := range rules {
 		en := r.Enabled
-		tr.Rules = append(tr.Rules, RuleInput{
+		tr.Rules = append(tr.Rules, egress.RuleInput{
 			Name: r.Name, Enabled: &en, SourceIPs: r.SourceIPs, SourcePorts: r.SourcePorts,
 			Network: r.Network, DestIPs: r.DestIPs, Domains: r.Domains, Ports: r.Ports,
 			Clients: r.Clients, Groups: r.Groups, Interfaces: r.Interfaces,
@@ -137,7 +138,7 @@ func (t *Template) Export(ctx context.Context) (TemplateDoc, error) {
 	}
 	for _, b := range bals {
 		en := b.Enabled
-		doc.Balancers = append(doc.Balancers, BalancerInput{
+		doc.Balancers = append(doc.Balancers, egress.BalancerInput{
 			Tag: b.Tag, Enabled: &en, Strategy: b.Strategy, Members: b.MemberList, Note: b.Note, Fallback: b.Fallback,
 		})
 	}
@@ -220,7 +221,7 @@ func (t *Template) Apply(ctx context.Context, doc TemplateDoc, section string) (
 			byTag[strings.ToLower(o.Tag)] = o
 		}
 		for _, raw := range doc.Outbounds {
-			var in OutboundInput
+			var in egress.OutboundInput
 			if err := json.Unmarshal(raw, &in); err != nil || strings.TrimSpace(in.Tag) == "" {
 				skip("outbound", fmt.Errorf("every outbound needs a tag"))
 				continue
@@ -247,7 +248,7 @@ func (t *Template) Apply(ctx context.Context, doc TemplateDoc, section string) (
 		if err != nil {
 			return res, err
 		}
-		byTag := map[string]BalancerView{}
+		byTag := map[string]egress.BalancerView{}
 		for _, b := range existing {
 			byTag[strings.ToLower(b.Tag)] = b
 		}

@@ -1,4 +1,4 @@
-package service
+package egress
 
 import (
 	"context"
@@ -446,7 +446,7 @@ func (s *OutboundSubs) fetch(ctx context.Context, rawURL string, allowPrivate bo
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalid, friendlyDialError(err))
+		return nil, fmt.Errorf("%w: %s", ErrInvalid, DialError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

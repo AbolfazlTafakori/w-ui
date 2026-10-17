@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/egress"
 	"log/slog"
 	"net"
 	"strings"
@@ -175,7 +176,7 @@ func (s *Hosts) Delete(ctx context.Context, id uint) error {
 }
 
 // Check tries to reach a host the way a customer would.
-func (s *Hosts) Check(ctx context.Context, id uint) (*CheckResult, error) {
+func (s *Hosts) Check(ctx context.Context, id uint) (*egress.CheckResult, error) {
 	db := s.db.WithContext(ctx)
 
 	var h model.Host
@@ -188,19 +189,19 @@ func (s *Hosts) Check(ctx context.Context, id uint) (*CheckResult, error) {
 	}
 
 	port := h.EffectivePort(iface.ListenPort)
-	res := &CheckResult{Tag: h.Name}
+	res := &egress.CheckResult{Tag: h.Name}
 
 	// A WireGuard endpoint is UDP and will not answer a TCP connect, so what
 	// this proves is that the name resolves and the host is routable — not that
 	// the tunnel is up. The message says so rather than letting a green tick be
 	// read as more than it is.
 	addr := net.JoinHostPort(h.Address, fmt.Sprint(port))
-	d, err := dialLatency(ctx, addr)
+	d, err := egress.Dial(ctx, addr)
 
 	now := time.Now().UTC()
 	if err != nil {
 		res.OK = false
-		res.Error = friendlyDialError(err)
+		res.Error = egress.DialError(err)
 		db.Model(&h).Updates(map[string]any{
 			"reachable": false, "last_check_at": now, "last_error": res.Error,
 		})

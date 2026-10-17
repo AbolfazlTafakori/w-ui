@@ -36,6 +36,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/dnsproxy"
+	"github.com/abolfazl/w-ui/internal/egress"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/geoip"
 	"github.com/abolfazl/w-ui/internal/i18n"
@@ -226,8 +227,11 @@ func run() error {
 	update.StageDir = filepath.Join(cfg.DataDir, update.StageDirName)
 	hops := routing.NewHopManager(log, filepath.Join(cfg.DataDir, "hops"))
 
-	outbounds := service.NewOutbounds(db, log)
-	routes := service.NewRouting(db, log)
+	// What the engine page steers on the outbound side, shared by the
+	// outbounds, the routing and the engine settings that write it.
+	tuning := egress.NewTuning()
+	outbounds := egress.NewOutbounds(db, tuning, log)
+	routes := egress.NewRouting(db, tuning, log)
 	// One of each for the whole process: the API, the bot, the reports and
 	// the node syncer all read and change the same customers and tunnels,
 	// through the same live counts.
@@ -239,7 +243,7 @@ func run() error {
 	clientsSvc.SetChanges(changes)
 	// The engine page's settings. The ones that only take at start are
 	// read now, before anything that uses them is built.
-	engine := service.NewEngine(db, routes, dnsproxy.New(log), log)
+	engine := service.NewEngine(db, routes, tuning, dnsproxy.New(log), log)
 	if ov := engine.Overrides(context.Background()); ov.CollectInterval > 0 {
 		cfg.CollectInterval = ov.CollectInterval
 	}
@@ -300,7 +304,7 @@ func run() error {
 	geo := geoip.New(filepath.Join(cfg.DataDir, "geoip"), log)
 	routes.SetCountries(geo)
 	go geo.Run(ctx)
-	balancers := service.NewBalancers(db, log)
+	balancers := egress.NewBalancers(db, log)
 	go balancers.RunChecks(ctx, outbounds)
 	engine.RunDNS(ctx)
 
@@ -329,7 +333,7 @@ func run() error {
 	// while, and nothing waits on it.
 	go rec.ImportSharingOnce(ctx)
 	// Outbound subscriptions are fetched on their own intervals.
-	go service.NewOutboundSubs(db, outbounds, log).Run(ctx)
+	go egress.NewOutboundSubs(db, outbounds, log).Run(ctx)
 
 	if err := shp.Health(ctx); err != nil {
 		log.Warn("rate limiting inactive: speed limits are recorded but not applied", "reason", err)
@@ -689,8 +693,8 @@ func buildServer(
 	jwtSecret []byte,
 	sys *sysinfo.Collector,
 	rec *reconciler.Reconciler,
-	outbounds *service.Outbounds,
-	routes *service.Routing,
+	outbounds *egress.Outbounds,
+	routes *egress.Routing,
 	router *routing.Applier,
 	subs *service.Subscriptions,
 	pool *backend.Pool,
@@ -701,7 +705,7 @@ func buildServer(
 	changes *service.Changes,
 	restart func(),
 	engine *service.Engine,
-	balancers *service.Balancers,
+	balancers *egress.Balancers,
 ) (*http.Server, http.Handler, error) {
 	// Who may speak for somebody else. Done before anything serves, so no
 	// request is ever handled with the wrong idea of where it came from.
@@ -712,6 +716,7 @@ func buildServer(
 
 	apiSrv := api.New(api.Options{
 		Changes:        changes,
+		Balancers:      balancers,
 		Engine:         engine,
 		Template:       service.NewTemplate(db, ifaceSvc, outbounds, routes, balancers, engine, log),
 		DB:             db,

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/abolfazl/w-ui/internal/egress"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
 )
@@ -20,7 +21,7 @@ func (s *Server) handleListOutbounds(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateOutbound(w http.ResponseWriter, r *http.Request) {
-	var in service.OutboundInput
+	var in egress.OutboundInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -37,7 +38,7 @@ func (s *Server) handleUpdateOutbound(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in service.OutboundInput
+	var in egress.OutboundInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -114,7 +115,7 @@ func (s *Server) handleListBalancers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateBalancer(w http.ResponseWriter, r *http.Request) {
-	var in service.BalancerInput
+	var in egress.BalancerInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -131,7 +132,7 @@ func (s *Server) handleUpdateBalancer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in service.BalancerInput
+	var in egress.BalancerInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -178,12 +179,12 @@ func (s *Server) handleBalancerOverride(w http.ResponseWriter, r *http.Request) 
 // a query string is not worth an error page.
 func checkMode(r *http.Request) string {
 	switch strings.ToLower(r.URL.Query().Get("mode")) {
-	case service.ModeHTTP:
-		return service.ModeHTTP
-	case service.ModeReal:
-		return service.ModeReal
+	case egress.ModeHTTP:
+		return egress.ModeHTTP
+	case egress.ModeReal:
+		return egress.ModeReal
 	}
-	return service.ModeTCP
+	return egress.ModeTCP
 }
 
 func (s *Server) handleResetOutboundTraffic(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +250,7 @@ func (s *Server) handleGetRouting(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSaveRouting(w http.ResponseWriter, r *http.Request) {
-	var in service.BasicRouting
+	var in egress.BasicRouting
 	if !decode(w, r, &in) {
 		return
 	}
@@ -262,7 +263,7 @@ func (s *Server) handleSaveRouting(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateRoutingRule(w http.ResponseWriter, r *http.Request) {
-	var in service.RuleInput
+	var in egress.RuleInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -279,7 +280,7 @@ func (s *Server) handleUpdateRoutingRule(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	var in service.RuleInput
+	var in egress.RuleInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -323,7 +324,7 @@ func (s *Server) handleReorderRoutingRules(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleTestRoute(w http.ResponseWriter, r *http.Request) {
-	var in service.RouteTest
+	var in egress.RouteTest
 	if !decode(w, r, &in) {
 		return
 	}

@@ -1,4 +1,4 @@
-package service
+package egress
 
 import (
 	"context"
@@ -16,7 +16,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/listfield"
 	"github.com/abolfazl/w-ui/internal/routing"
+	"github.com/abolfazl/w-ui/internal/tunnelport"
 )
 
 // Setting keys for the routing that is configured rather than ruled.
@@ -63,8 +65,9 @@ type BasicRouting struct {
 // Routing owns the policy: what is blocked, what is pinned, and which outbound
 // carries the rest.
 type Routing struct {
-	db  *gorm.DB
-	log *slog.Logger
+	db     *gorm.DB
+	log    *slog.Logger
+	tuning *Tuning
 
 	mu sync.RWMutex
 	// resolved caches what each name last pointed at, so a resolver that is
@@ -103,8 +106,8 @@ func (s *Routing) SetDomainStrategy(v string) {
 // SetCountries gives the routing rules their country lists.
 func (s *Routing) SetCountries(c routing.Countries) { s.countries = c }
 
-func NewRouting(db *gorm.DB, log *slog.Logger) *Routing {
-	return &Routing{db: db, log: log, resolved: map[string][]netip.Prefix{}}
+func NewRouting(db *gorm.DB, tuning *Tuning, log *slog.Logger) *Routing {
+	return &Routing{db: db, log: log, tuning: tuning, resolved: map[string][]netip.Prefix{}}
 }
 
 // Basic returns the switch-and-list routing.
@@ -129,15 +132,15 @@ func (s *Routing) Basic(ctx context.Context) (BasicRouting, error) {
 		out.BlockBitTorrent = true
 	}
 	if _, ok := stored[keyBlockIPs]; ok {
-		out.BlockIPs = splitList(stored[keyBlockIPs])
+		out.BlockIPs = listfield.Split(stored[keyBlockIPs])
 	} else {
 		out.BlockIPs = []string{"geoip:private"}
 	}
-	out.BlockDomains = splitList(stored[keyBlockDomains])
-	out.BlockPorts = splitList(stored[keyBlockPorts])
-	out.DirectIPs = splitList(stored[keyDirectIPs])
-	out.DirectDomains = splitList(stored[keyDirectDomains])
-	out.IPv4Domains = splitList(stored[keyIPv4Domains])
+	out.BlockDomains = listfield.Split(stored[keyBlockDomains])
+	out.BlockPorts = listfield.Split(stored[keyBlockPorts])
+	out.DirectIPs = listfield.Split(stored[keyDirectIPs])
+	out.DirectDomains = listfield.Split(stored[keyDirectDomains])
+	out.IPv4Domains = listfield.Split(stored[keyIPv4Domains])
 	if v, ok := stored[keyFailClosed]; ok {
 		out.FailClosed = v == "true"
 	} else {
@@ -229,12 +232,12 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 
 	writes := map[string]string{
 		keyBlockBitTorrent: strconv.FormatBool(in.BlockBitTorrent),
-		keyBlockIPs:        joinList(in.BlockIPs),
-		keyBlockDomains:    joinList(in.BlockDomains),
-		keyBlockPorts:      joinList(in.BlockPorts),
-		keyDirectIPs:       joinList(in.DirectIPs),
-		keyDirectDomains:   joinList(in.DirectDomains),
-		keyIPv4Domains:     joinList(in.IPv4Domains),
+		keyBlockIPs:        listfield.Join(in.BlockIPs),
+		keyBlockDomains:    listfield.Join(in.BlockDomains),
+		keyBlockPorts:      listfield.Join(in.BlockPorts),
+		keyDirectIPs:       listfield.Join(in.DirectIPs),
+		keyDirectDomains:   listfield.Join(in.DirectDomains),
+		keyIPv4Domains:     listfield.Join(in.IPv4Domains),
 		keyDefaultOutbound: tag,
 		keyFailClosed:      strconv.FormatBool(in.FailClosed),
 	}
@@ -451,7 +454,7 @@ func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 	in.OutboundTag = strings.TrimSpace(in.OutboundTag)
 	in.Network = strings.ToLower(strings.TrimSpace(in.Network))
 	for _, f := range []*string{&in.SourceIPs, &in.SourcePorts, &in.DestIPs, &in.Domains, &in.Ports, &in.Clients, &in.Groups, &in.Interfaces} {
-		*f = joinList(splitList(*f))
+		*f = listfield.Join(listfield.Split(*f))
 	}
 
 	if in.Name == "" {
@@ -462,16 +465,16 @@ func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 		return invalidField("destIps", "the rule matches nothing as written; fill in at least one criterion")
 	}
 
-	if _, err := routing.ParseTargets(splitList(in.SourceIPs), s.countries); err != nil {
+	if _, err := routing.ParseTargets(listfield.Split(in.SourceIPs), s.countries); err != nil {
 		return fieldWrap("sourceIps", err)
 	}
-	if _, err := routing.ParseTargets(splitList(in.DestIPs), s.countries); err != nil {
+	if _, err := routing.ParseTargets(listfield.Split(in.DestIPs), s.countries); err != nil {
 		return fieldWrap("destIps", err)
 	}
-	if _, err := routing.ParsePorts(splitList(in.SourcePorts)); err != nil {
+	if _, err := routing.ParsePorts(listfield.Split(in.SourcePorts)); err != nil {
 		return fieldWrap("sourcePorts", err)
 	}
-	if _, err := routing.ParsePorts(splitList(in.Ports)); err != nil {
+	if _, err := routing.ParsePorts(listfield.Split(in.Ports)); err != nil {
 		return fieldWrap("ports", err)
 	}
 	switch in.Network {
@@ -482,17 +485,17 @@ func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 	if in.Network == "icmp" && (in.Ports != "" || in.SourcePorts != "") {
 		return invalidField("network", "icmp has no ports; drop the ports or pick tcp or udp")
 	}
-	for _, d := range splitList(in.Domains) {
+	for _, d := range listfield.Split(in.Domains) {
 		if err := checkDomain(d); err != nil {
 			return fieldWrap("domains", err)
 		}
 	}
-	for _, c := range splitList(in.Clients) {
+	for _, c := range listfield.Split(in.Clients) {
 		if _, err := strconv.ParseUint(c, 10, 64); err != nil {
 			return invalidField("clients", "a client is named by id here, and %q is not one", c)
 		}
 	}
-	for _, g := range splitList(in.Groups) {
+	for _, g := range listfield.Split(in.Groups) {
 		// A group exists as a row of its own or as somebody's membership.
 		var n int64
 		if err := s.db.WithContext(ctx).Raw(`SELECT (SELECT COUNT(*) FROM groups WHERE name = ?) + (SELECT COUNT(*) FROM client_groups WHERE name = ?)`, g, g).Scan(&n).Error; err != nil {
@@ -502,7 +505,7 @@ func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 			return invalidField("groups", "there is no group called %q", g)
 		}
 	}
-	for _, i := range splitList(in.Interfaces) {
+	for _, i := range listfield.Split(in.Interfaces) {
 		id, err := strconv.ParseUint(i, 10, 64)
 		if err != nil {
 			return invalidField("interfaces", "an interface is named by id here, and %q is not one", i)
@@ -611,7 +614,7 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 			p.TunnelDevices = append(p.TunnelDevices, i.Name)
 		}
 		if haveLocal && i.NodeID == local.ID {
-			p.PortRedirects = append(p.PortRedirects, PortRedirects(i)...)
+			p.PortRedirects = append(p.PortRedirects, tunnelport.Redirects(i)...)
 		}
 	}
 
@@ -680,7 +683,7 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	s.defaultMark = p.DefaultMark
 	s.mu.Unlock()
 
-	p.NoCounters = !OutboundCounters.Load()
+	p.NoCounters = !s.tuning.Counters()
 
 	// The panel's own traffic. Only a hop with a device can carry it; the
 	// endpoints of every hop stay direct so no tunnel is built through itself.
@@ -782,7 +785,7 @@ func pickBalancerDevices(b model.Balancer, byOutbound map[string]model.Outbound)
 	}
 	var devs []string
 	var best *model.Outbound
-	for _, tag := range splitList(b.Members) {
+	for _, tag := range listfield.Split(b.Members) {
 		o, ok := up(tag)
 		if !ok {
 			continue
@@ -818,7 +821,7 @@ func balancerMarkID(id uint) uint { return 0x8000 + id }
 // being dropped from the conjunction and widening it.
 func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.RoutingRule, ifaces []model.Interface) bool {
 	if r.DestIPs != "" {
-		mr.Addrs, _ = routing.ParseTargets(splitList(r.DestIPs), s.countries)
+		mr.Addrs, _ = routing.ParseTargets(listfield.Split(r.DestIPs), s.countries)
 		if len(mr.Addrs) == 0 {
 			return false
 		}
@@ -826,7 +829,7 @@ func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.R
 	if r.Domains != "" {
 		s.mu.RLock()
 		var got []netip.Prefix
-		for _, d := range splitList(r.Domains) {
+		for _, d := range listfield.Split(r.Domains) {
 			got = append(got, s.resolved[d]...)
 		}
 		s.mu.RUnlock()
@@ -836,20 +839,20 @@ func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.R
 		mr.Addrs = append(mr.Addrs, got...)
 	}
 	if r.Ports != "" {
-		mr.Ports, _ = routing.ParsePorts(splitList(r.Ports))
+		mr.Ports, _ = routing.ParsePorts(listfield.Split(r.Ports))
 		if len(mr.Ports) == 0 {
 			return false
 		}
 	}
 	if r.SourcePorts != "" {
-		mr.SourcePorts, _ = routing.ParsePorts(splitList(r.SourcePorts))
+		mr.SourcePorts, _ = routing.ParsePorts(listfield.Split(r.SourcePorts))
 		if len(mr.SourcePorts) == 0 {
 			return false
 		}
 	}
 	mr.Protocol = strings.ToLower(r.Network)
 	if r.SourceIPs != "" {
-		mr.Sources, _ = routing.ParseTargets(splitList(r.SourceIPs), s.countries)
+		mr.Sources, _ = routing.ParseTargets(listfield.Split(r.SourceIPs), s.countries)
 		if len(mr.Sources) == 0 {
 			return false
 		}
@@ -868,7 +871,7 @@ func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.R
 		for _, i := range ifaces {
 			byID[strconv.FormatUint(uint64(i.ID), 10)] = i
 		}
-		for _, id := range splitList(r.Interfaces) {
+		for _, id := range listfield.Split(r.Interfaces) {
 			i, ok := byID[id]
 			if !ok || i.Name == "" {
 				continue
@@ -898,8 +901,8 @@ func (s *Routing) addressesFor(ctx context.Context, r model.RoutingRule) []netip
 		Joins("JOIN clients ON clients.id = accounts.client_id")
 
 	// Customers named directly, or through a group -- either way in.
-	ids := splitList(r.Clients)
-	groups := splitList(r.Groups)
+	ids := listfield.Split(r.Clients)
+	groups := listfield.Split(r.Groups)
 	switch {
 	case len(ids) > 0 && len(groups) > 0:
 		q = q.Where("accounts.client_id IN ? OR clients.id IN (SELECT client_id FROM client_groups WHERE name IN ?)", ids, groups)
@@ -977,7 +980,7 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 	if rules, err := s.ListRules(ctx); err == nil {
 		for _, r := range rules {
 			if r.Enabled {
-				for _, d := range splitList(r.Domains) {
+				for _, d := range listfield.Split(r.Domains) {
 					names[d] = true
 				}
 			}
@@ -1260,10 +1263,10 @@ func (s *Routing) ruleMatches(
 	if r.DestIPs != "" || r.Domains != "" {
 		var ps []netip.Prefix
 		if r.DestIPs != "" {
-			ps, _ = routing.ParseTargets(splitList(r.DestIPs), s.countries)
+			ps, _ = routing.ParseTargets(listfield.Split(r.DestIPs), s.countries)
 		}
 		s.mu.RLock()
-		for _, d := range splitList(r.Domains) {
+		for _, d := range listfield.Split(r.Domains) {
 			ps = append(ps, s.resolved[d]...)
 		}
 		s.mu.RUnlock()
@@ -1272,7 +1275,7 @@ func (s *Routing) ruleMatches(
 		}
 	}
 	if r.Ports != "" {
-		ports, _ := routing.ParsePorts(splitList(r.Ports))
+		ports, _ := routing.ParsePorts(listfield.Split(r.Ports))
 		if in.Port <= 0 || !portMatches(ports, in.Port) {
 			return false
 		}
@@ -1290,7 +1293,7 @@ func (s *Routing) ruleMatches(
 		if err != nil {
 			return false
 		}
-		ps, _ := routing.ParseTargets(splitList(r.SourceIPs), s.countries)
+		ps, _ := routing.ParseTargets(listfield.Split(r.SourceIPs), s.countries)
 		if _, hit := firstMatch([]netip.Addr{src.Unmap()}, ps); !hit {
 			return false
 		}
@@ -1300,7 +1303,7 @@ func (s *Routing) ruleMatches(
 			return false
 		}
 		ok := false
-		for _, c := range splitList(r.Clients) {
+		for _, c := range listfield.Split(r.Clients) {
 			if id, err := strconv.ParseUint(c, 10, 64); err == nil && uint(id) == in.ClientID {
 				ok = true
 			}
@@ -1308,7 +1311,7 @@ func (s *Routing) ruleMatches(
 		if !ok && r.Groups != "" {
 			var n int64
 			if err := s.db.WithContext(ctx).Model(&model.ClientGroup{}).
-				Where("client_id = ? AND name IN ?", in.ClientID, splitList(r.Groups)).Count(&n).Error; err == nil && n > 0 {
+				Where("client_id = ? AND name IN ?", in.ClientID, listfield.Split(r.Groups)).Count(&n).Error; err == nil && n > 0 {
 				ok = true
 			}
 		}
@@ -1321,7 +1324,7 @@ func (s *Routing) ruleMatches(
 			return false
 		}
 		ok := false
-		for _, i := range splitList(r.Interfaces) {
+		for _, i := range listfield.Split(r.Interfaces) {
 			if id, err := strconv.ParseUint(i, 10, 64); err == nil && uint(id) == in.InterfaceID {
 				ok = true
 			}
@@ -1366,38 +1369,6 @@ func joinAddrs(addrs []netip.Addr) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, ", ")
-}
-
-// splitList reads a stored or submitted list. Commas and newlines both
-// separate, because an operator pasting a column of addresses should not have
-// to reformat it first.
-func splitList(s string) []string {
-	f := strings.FieldsFunc(s, func(r rune) bool {
-		return r == ',' || r == '\n' || r == '\r' || r == ' ' || r == '\t'
-	})
-	out := make([]string, 0, len(f))
-	seen := map[string]bool{}
-	for _, v := range f {
-		v = strings.TrimSpace(v)
-		if v != "" && !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-func joinList(v []string) string {
-	clean := make([]string, 0, len(v))
-	seen := map[string]bool{}
-	for _, s := range v {
-		s = strings.TrimSpace(s)
-		if s != "" && !seen[s] {
-			seen[s] = true
-			clean = append(clean, s)
-		}
-	}
-	return strings.Join(clean, ",")
 }
 
 // checkDomain rejects what is plainly not a name, without trying to be a full

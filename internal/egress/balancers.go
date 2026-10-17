@@ -1,8 +1,9 @@
-package service
+package egress
 
 import (
 	"context"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/listfield"
 	"log/slog"
 	"strings"
 	"time"
@@ -52,7 +53,7 @@ type BalancerView struct {
 }
 
 func view(b model.Balancer) BalancerView {
-	return BalancerView{Balancer: b, MemberList: splitList(b.Members)}
+	return BalancerView{Balancer: b, MemberList: listfield.Split(b.Members)}
 }
 
 func (s *Balancers) List(ctx context.Context) ([]BalancerView, error) {
@@ -91,7 +92,7 @@ func (s *Balancers) SetOverride(ctx context.Context, id uint, target string) err
 	target = strings.TrimSpace(target)
 	if target != "" {
 		ok := false
-		for _, m := range splitList(b.Members) {
+		for _, m := range listfield.Split(b.Members) {
 			if m == target {
 				ok = true
 			}
@@ -193,7 +194,7 @@ func (s *Balancers) Create(ctx context.Context, in BalancerInput) (*BalancerView
 		Tag:      in.Tag,
 		Enabled:  in.Enabled == nil || *in.Enabled,
 		Strategy: in.Strategy,
-		Members:  joinList(in.Members),
+		Members:  listfield.Join(in.Members),
 		Note:     strings.TrimSpace(in.Note),
 		Fallback: in.Fallback,
 	}
@@ -223,7 +224,7 @@ func (s *Balancers) Update(ctx context.Context, id uint, in BalancerInput) (*Bal
 		return nil, err
 	}
 	updates := map[string]any{
-		"tag": in.Tag, "strategy": in.Strategy, "members": joinList(in.Members),
+		"tag": in.Tag, "strategy": in.Strategy, "members": listfield.Join(in.Members),
 		"note": strings.TrimSpace(in.Note), "fallback": in.Fallback, "updated_at": time.Now().UTC(),
 	}
 	if in.Enabled != nil {
@@ -256,7 +257,7 @@ func (s *Balancers) Update(ctx context.Context, id uint, in BalancerInput) (*Bal
 // now and not whenever somebody last pressed Test all.
 func (s *Balancers) RunChecks(ctx context.Context, outbounds *Outbounds) {
 	for {
-		every := time.Duration(ProbeInterval.Load()) * time.Second
+		every := outbounds.tuning.ProbeEvery()
 		if every < 10*time.Second {
 			every = time.Minute
 		}
