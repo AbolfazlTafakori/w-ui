@@ -81,6 +81,8 @@ type Routing struct {
 	// the first outbound's -- for anything else that should leave the way
 	// customers do.
 	defaultMark uint32
+	// countries resolves "geoip:" entries (SetCountries); nil refuses them.
+	countries routing.Countries
 }
 
 // DefaultMark is the mark of the outbound at the top of the list, or zero
@@ -97,6 +99,9 @@ func (s *Routing) SetDomainStrategy(v string) {
 	s.domainStrategy = v
 	s.mu.Unlock()
 }
+
+// SetCountries gives the routing rules their country lists.
+func (s *Routing) SetCountries(c routing.Countries) { s.countries = c }
 
 func NewRouting(db *gorm.DB, log *slog.Logger) *Routing {
 	return &Routing{db: db, log: log, resolved: map[string][]netip.Prefix{}}
@@ -193,10 +198,10 @@ func (s *Routing) makeFirst(ctx context.Context, tag string) error {
 // discarded, because the operator would have no way to tell which state they
 // are now in.
 func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting, error) {
-	if _, err := routing.ParseTargets(in.BlockIPs); err != nil {
+	if _, err := routing.ParseTargets(in.BlockIPs, s.countries); err != nil {
 		return BasicRouting{}, fieldWrap("blockIps", err)
 	}
-	if _, err := routing.ParseTargets(in.DirectIPs); err != nil {
+	if _, err := routing.ParseTargets(in.DirectIPs, s.countries); err != nil {
 		return BasicRouting{}, fieldWrap("directIps", err)
 	}
 	if _, err := routing.ParsePorts(in.BlockPorts); err != nil {
@@ -457,10 +462,10 @@ func (s *Routing) validateRule(ctx context.Context, in *RuleInput) error {
 		return invalidField("destIps", "the rule matches nothing as written; fill in at least one criterion")
 	}
 
-	if _, err := routing.ParseTargets(splitList(in.SourceIPs)); err != nil {
+	if _, err := routing.ParseTargets(splitList(in.SourceIPs), s.countries); err != nil {
 		return fieldWrap("sourceIps", err)
 	}
-	if _, err := routing.ParseTargets(splitList(in.DestIPs)); err != nil {
+	if _, err := routing.ParseTargets(splitList(in.DestIPs), s.countries); err != nil {
 		return fieldWrap("destIps", err)
 	}
 	if _, err := routing.ParsePorts(splitList(in.SourcePorts)); err != nil {
@@ -557,8 +562,8 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	// A malformed stored entry is skipped rather than fatal: it was validated
 	// when it was saved, and refusing to route at all because one row went bad
 	// would take the whole server down over a typo.
-	p.BlockAddrs, _ = routing.ParseTargets(basic.BlockIPs)
-	p.DirectAddrs, _ = routing.ParseTargets(basic.DirectIPs)
+	p.BlockAddrs, _ = routing.ParseTargets(basic.BlockIPs, s.countries)
+	p.DirectAddrs, _ = routing.ParseTargets(basic.DirectIPs, s.countries)
 	p.BlockPorts, _ = routing.ParsePorts(basic.BlockPorts)
 	p.BlockBitTorrent = basic.BlockBitTorrent
 
@@ -813,7 +818,7 @@ func balancerMarkID(id uint) uint { return 0x8000 + id }
 // being dropped from the conjunction and widening it.
 func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.RoutingRule, ifaces []model.Interface) bool {
 	if r.DestIPs != "" {
-		mr.Addrs, _ = routing.ParseTargets(splitList(r.DestIPs))
+		mr.Addrs, _ = routing.ParseTargets(splitList(r.DestIPs), s.countries)
 		if len(mr.Addrs) == 0 {
 			return false
 		}
@@ -844,7 +849,7 @@ func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.R
 	}
 	mr.Protocol = strings.ToLower(r.Network)
 	if r.SourceIPs != "" {
-		mr.Sources, _ = routing.ParseTargets(splitList(r.SourceIPs))
+		mr.Sources, _ = routing.ParseTargets(splitList(r.SourceIPs), s.countries)
 		if len(mr.Sources) == 0 {
 			return false
 		}
@@ -1152,7 +1157,7 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 	note("%s resolves to %s", target, joinAddrs(addrs))
 
 	// 1. Blocked destinations.
-	blocked, _ := routing.ParseTargets(basic.BlockIPs)
+	blocked, _ := routing.ParseTargets(basic.BlockIPs, s.countries)
 	s.mu.RLock()
 	for _, d := range basic.BlockDomains {
 		blocked = append(blocked, s.resolved[d]...)
@@ -1180,7 +1185,7 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 	}
 
 	// 3. Pinned destinations.
-	direct, _ := routing.ParseTargets(basic.DirectIPs)
+	direct, _ := routing.ParseTargets(basic.DirectIPs, s.countries)
 	s.mu.RLock()
 	for _, d := range basic.DirectDomains {
 		direct = append(direct, s.resolved[d]...)
@@ -1255,7 +1260,7 @@ func (s *Routing) ruleMatches(
 	if r.DestIPs != "" || r.Domains != "" {
 		var ps []netip.Prefix
 		if r.DestIPs != "" {
-			ps, _ = routing.ParseTargets(splitList(r.DestIPs))
+			ps, _ = routing.ParseTargets(splitList(r.DestIPs), s.countries)
 		}
 		s.mu.RLock()
 		for _, d := range splitList(r.Domains) {
@@ -1285,7 +1290,7 @@ func (s *Routing) ruleMatches(
 		if err != nil {
 			return false
 		}
-		ps, _ := routing.ParseTargets(splitList(r.SourceIPs))
+		ps, _ := routing.ParseTargets(splitList(r.SourceIPs), s.countries)
 		if _, hit := firstMatch([]netip.Addr{src.Unmap()}, ps); !hit {
 			return false
 		}

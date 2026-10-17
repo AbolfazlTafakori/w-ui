@@ -86,7 +86,7 @@ func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
 // server field takes no names -- several TP-Link models. Nothing for an
 // address already, or for a name that does not resolve in time. Remembered
 // for a while: the sheet is drawn on every view of a customer's page.
-var ServerIPv4 = func(host string) []string {
+func ServerIPv4(host string) []string {
 	if host == "" {
 		return nil
 	}
@@ -107,7 +107,7 @@ var ServerIPv4 = func(host string) []string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+	addrs, err := lookupIPv4(ctx, host)
 	var ips []string
 	if err == nil {
 		for _, a := range addrs {
@@ -119,6 +119,11 @@ var ServerIPv4 = func(host string) []string {
 	ipCache.by[host] = ipEntry{ips: ips, at: time.Now()}
 	ipCache.mu.Unlock()
 	return ips
+}
+
+// lookupIPv4 asks DNS; a test of this package asks something else.
+var lookupIPv4 = func(ctx context.Context, host string) ([]netip.Addr, error) {
+	return net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
 }
 
 const (

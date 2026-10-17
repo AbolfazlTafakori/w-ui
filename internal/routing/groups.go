@@ -92,9 +92,11 @@ func ExpandGroup(name string) ([]netip.Prefix, bool) {
 	return out, true
 }
 
-// GeoIP resolves a country code to its ranges, for "geoip:ir" entries. Set
-// by main; nil means such entries are refused.
-var GeoIP func(cc string) ([]netip.Prefix, error)
+// Countries resolves a country code to its ranges, for "geoip:ir" entries
+// (the geoip package). A panel without it refuses such entries.
+type Countries interface {
+	Prefixes(cc string) ([]netip.Prefix, error)
+}
 
 // GeoIPPrefix is what a country entry starts with, as the classic panel writes one.
 const GeoIPPrefix = "geoip:"
@@ -106,7 +108,7 @@ const GeoIPPrefix = "geoip:"
 // "1.1.1.1" without the operator having to know which form the panel wanted.
 // Anything else is reported with the text that was not understood, because
 // "invalid input" on a list of forty entries tells nobody which one to fix.
-func ParseTarget(s string) ([]netip.Prefix, error) {
+func ParseTarget(s string, countries Countries) ([]netip.Prefix, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, nil
@@ -122,10 +124,10 @@ func ParseTarget(s string) ([]netip.Prefix, error) {
 			p, _ := ExpandGroup(GroupPrivate)
 			return p, nil
 		}
-		if GeoIP == nil {
+		if countries == nil {
 			return nil, fmt.Errorf("%w: country lists are not available on this panel", ErrInvalidPolicy)
 		}
-		ps, err := GeoIP(cc)
+		ps, err := countries.Prefixes(cc)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidPolicy, err)
 		}
@@ -149,11 +151,11 @@ func ParseTarget(s string) ([]netip.Prefix, error) {
 }
 
 // ParseTargets expands a whole list, keeping the first failure.
-func ParseTargets(entries []string) ([]netip.Prefix, error) {
+func ParseTargets(entries []string, countries Countries) ([]netip.Prefix, error) {
 	var out []netip.Prefix
 	seen := map[netip.Prefix]bool{}
 	for _, e := range entries {
-		ps, err := ParseTarget(e)
+		ps, err := ParseTarget(e, countries)
 		if err != nil {
 			return nil, err
 		}

@@ -18,13 +18,11 @@ import (
 	"github.com/abolfazl/w-ui/internal/update"
 )
 
-// What a setup request to the update helper does, in this build: the L2TP
-// agent's units. Set for the helper's run and for a panel that is root
-// already and does it itself.
-func init() {
-	update.Setup = func(dataDir, binary string) error {
-		return errors.Join(l2tpagent.InstallUnits(binary, dataDir), fwsync.InstallUnits(binary, dataDir))
-	}
+// setupUnits is what a setup request to the update helper does, in this
+// build: the L2TP agent's units and the firewall helper's. Handed to the
+// helper's run and to a panel that is root already and does it itself.
+func setupUnits(dataDir, binary string) error {
+	return errors.Join(l2tpagent.InstallUnits(binary, dataDir), fwsync.InstallUnits(binary, dataDir))
 }
 
 // l2tpAgentInterval is how often the agent looks at what the panel asked for
@@ -106,7 +104,7 @@ func ensureL2TPUnits(ctx context.Context, log *slog.Logger, dataDir string) {
 	if l2tpagent.UnitsInPlace(self, dataDir) && fwsync.UnitsInPlace("/etc/systemd/system", self, dataDir) {
 		return
 	}
-	if err := update.RequestSetup(ctx, dataDir); err != nil {
+	if err := update.RequestSetup(ctx, dataDir, setupUnits); err != nil {
 		log.Warn("the L2TP agent's service is not in place; an L2TP tunnel will not start "+
 			"until the update script has been run once on this server", "error", err)
 		return

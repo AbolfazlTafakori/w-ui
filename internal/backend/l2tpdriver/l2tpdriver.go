@@ -34,9 +34,6 @@ import (
 	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
 
-// DataRoot is the panel's data directory, set by the panel at start.
-var DataRoot = "/var/lib/wui"
-
 // The device steps, replaced by tests that run where no device can be made.
 var (
 	ensureDeviceFn = ensureDevice
@@ -104,7 +101,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	if iface.Protocol == model.ProtocolL2TP && iface.L2TP.V.PSK == "" {
 		return ErrNoPSK
 	}
-	paths := l2tpconf.PathsFor(DataRoot, string(iface.Protocol))
+	paths := l2tpconf.PathsFor(backend.DataDir, string(iface.Protocol))
 	if err := os.MkdirAll(paths.KickDir(), 0o750); err != nil {
 		return fmt.Errorf("l2tpdriver: %w", err)
 	}
@@ -436,7 +433,7 @@ func (d *Driver) Destroy(ctx context.Context) error {
 // seeing no state, ends every session -- and on L2TP unloads IPsec -- and
 // stops when it carries no other tunnel.
 func Remove(ctx context.Context, iface *model.Interface) error {
-	paths := l2tpconf.PathsFor(DataRoot, string(iface.Protocol))
+	paths := l2tpconf.PathsFor(backend.DataDir, string(iface.Protocol))
 	if err := os.Remove(paths.State()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("l2tpdriver: %w", err)
 	}

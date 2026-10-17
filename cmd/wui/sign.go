@@ -135,7 +135,7 @@ func applyUpdateCommand(args []string) error {
 	if len(args) != 1 {
 		return errors.New("apply-update takes the panel's data directory")
 	}
-	installed, err := update.ApplyStaged(args[0], version)
+	installed, err := update.ApplyStaged(args[0], version, setupUnits)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "apply-update: nothing was installed: %v\n", err)
 		os.Exit(1)

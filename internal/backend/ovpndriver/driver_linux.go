@@ -35,10 +35,6 @@ const (
 	startupGrace = 5 * time.Second
 )
 
-// DataRoot is where interface directories are created. It is a variable so the
-// panel can point it at its own data directory.
-var DataRoot = "/var/lib/wui"
-
 // Driver manages one OpenVPN server process.
 type Driver struct {
 	log *slog.Logger
@@ -92,7 +88,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 		return fmt.Errorf("ovpndriver: interface %s has no certificates; recreate it", iface.Name)
 	}
 
-	layout := ovpnconf.NewLayout(DataRoot, iface.Name)
+	layout := ovpnconf.NewLayout(backend.DataDir, iface.Name)
 
 	d.mu.Lock()
 	d.iface = iface
@@ -673,7 +669,7 @@ func (d *Driver) Destroy(ctx context.Context) error {
 // StopServer ends the OpenVPN process for a tunnel by name, and removes a
 // tun device of that name if one is left behind.
 func StopServer(ctx context.Context, iface *model.Interface) error {
-	l := ovpnconf.NewLayout(DataRoot, iface.Name)
+	l := ovpnconf.NewLayout(backend.DataDir, iface.Name)
 	if pid, alive := runningPID(l.PIDFile()); alive {
 		stop(pid)
 	}

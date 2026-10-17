@@ -159,6 +159,11 @@ type SessionDevice struct {
 
 // removers is how each protocol takes a device down by name, registered by
 // the driver packages that know how. It needs no open driver.
+// DataDir is the panel's data directory, where every driver keeps what its
+// tunnels need on disk. Set once by the panel at start, before any driver
+// opens; read by the drivers alone.
+var DataDir = "/var/lib/wui"
+
 var removers = map[model.Protocol]func(context.Context, *model.Interface) error{}
 
 // RegisterRemover is called by a driver package at init.

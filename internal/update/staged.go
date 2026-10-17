@@ -55,9 +55,11 @@ const (
 // the helper was started with; of what the panel left, only the word is used.
 const setupRequest = "setup"
 
-// Setup is what a setup request does, set by the command the helper runs.
-// It is given the data directory and the installed binary's path.
-var Setup func(dataDir, binary string) error
+// Setup is what a setup request does: the units this build needs put in
+// place, given the data directory and the installed binary's path. The
+// command passes its own (cmd/wui: SetupUnits); nil is a build with nothing
+// to set up.
+type Setup func(dataDir, binary string) error
 
 // helperMu keeps one request at a time in the stage directory.
 var helperMu sync.Mutex
@@ -165,17 +167,17 @@ func handOver(ctx context.Context, binary, sig []byte, version string) error {
 // RequestSetup has root put the system's units in place: through the helper
 // when the panel runs sandboxed, by Setup itself when the panel can write its
 // own binary and so is root already.
-func RequestSetup(ctx context.Context, dataDir string) error {
+func RequestSetup(ctx context.Context, dataDir string, setup Setup) error {
 	switch mode() {
 	case installDirect:
-		if Setup == nil {
+		if setup == nil {
 			return errors.New("this build has nothing to set up")
 		}
 		self, err := installedPath()
 		if err != nil {
 			return err
 		}
-		return Setup(dataDir, self)
+		return setup(dataDir, self)
 	case installHelper:
 	default:
 		return ErrCannotInstall
@@ -261,7 +263,7 @@ func writeAtomic(path string, data []byte) error {
 // planted in place of a staged file cannot make root read, write or delete
 // anything elsewhere. What is checked is read once into memory, and what is
 // written and run afterwards is root's own copy of it.
-func ApplyStaged(dataDir, current string) (installed string, err error) {
+func ApplyStaged(dataDir, current string, setup Setup) (installed string, err error) {
 	root, err := os.OpenRoot(dataDir)
 	if err != nil {
 		return "", fmt.Errorf("opening the panel's data directory: %w", err)
@@ -278,14 +280,14 @@ func ApplyStaged(dataDir, current string) (installed string, err error) {
 	defer root.Remove(stage(stagedSignature))
 
 	if strings.TrimSpace(string(req)) == setupRequest {
-		if Setup == nil {
+		if setup == nil {
 			return "", errors.New("this build has nothing to set up")
 		}
 		self, err := installedPath()
 		if err != nil {
 			return "", err
 		}
-		return "", Setup(dataDir, self)
+		return "", setup(dataDir, self)
 	}
 
 	binary, err := readAtMost(root, stage(stagedBinary), maxBinary)

@@ -88,7 +88,7 @@ func (c *stagedCase) installedIs(t *testing.T, want string) {
 
 func TestTheHelperInstallsASignedNewerRelease(t *testing.T) {
 	c := stageRelease(t, "v2.3.2")
-	got, err := ApplyStaged(c.dataDir, "v2.3.1")
+	got, err := ApplyStaged(c.dataDir, "v2.3.1", nil)
 	if err != nil || got != "v2.3.2" {
 		t.Fatalf("ApplyStaged = %q, %v", got, err)
 	}
@@ -108,7 +108,7 @@ func TestTheHelperInstallsASignedNewerRelease(t *testing.T) {
 func TestTheHelperRefusesAStepBack(t *testing.T) {
 	for _, staged := range []string{"v2.3.1", "v2.2.9"} {
 		c := stageRelease(t, staged)
-		if _, err := ApplyStaged(c.dataDir, "v2.3.1"); err == nil {
+		if _, err := ApplyStaged(c.dataDir, "v2.3.1", nil); err == nil {
 			t.Errorf("%s over v2.3.1 was installed", staged)
 		}
 		c.installedIs(t, "old panel")
@@ -122,7 +122,7 @@ func TestTheHelperRefusesWhatTheProjectDidNotSign(t *testing.T) {
 	c := stageRelease(t, "v2.3.2")
 	// The panel's user swaps the binary after the panel checked it.
 	c.write(t, stagedBinary, []byte("something else entirely"))
-	_, err := ApplyStaged(c.dataDir, "v2.3.1")
+	_, err := ApplyStaged(c.dataDir, "v2.3.1", nil)
 	if !errors.Is(err, ErrBadSignature) {
 		t.Fatalf("a swapped binary gave %v, want a signature refusal", err)
 	}
@@ -140,7 +140,7 @@ func TestTheHelperFollowsNoLinkOutOfTheDataDirectory(t *testing.T) {
 	if err := os.Symlink(outside, link); err != nil {
 		t.Skipf("symlinks unavailable here: %v", err)
 	}
-	if _, err := ApplyStaged(c.dataDir, "v2.3.1"); err == nil {
+	if _, err := ApplyStaged(c.dataDir, "v2.3.1", nil); err == nil {
 		t.Fatal("a link out of the data directory was read")
 	}
 	c.installedIs(t, "old panel")
@@ -156,7 +156,7 @@ func TestTheHelperRefusesSomethingThatIsNotAFile(t *testing.T) {
 	if err := os.Mkdir(p, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyStaged(c.dataDir, "v2.3.1"); err == nil {
+	if _, err := ApplyStaged(c.dataDir, "v2.3.1", nil); err == nil {
 		t.Fatal("a directory in place of the release was accepted")
 	}
 	c.installedIs(t, "old panel")
@@ -236,11 +236,9 @@ func TestASetupRequestRunsSetupAndInstallsNothing(t *testing.T) {
 	c := stageRelease(t, "v9.9.9")
 	c.write(t, requestFile, []byte("setup\n"))
 	var gotDir, gotBin string
-	saved := Setup
-	Setup = func(dataDir, binary string) error { gotDir, gotBin = dataDir, binary; return nil }
-	t.Cleanup(func() { Setup = saved })
+	setup := func(dataDir, binary string) error { gotDir, gotBin = dataDir, binary; return nil }
 
-	installed, err := ApplyStaged(c.dataDir, "v1.0.0")
+	installed, err := ApplyStaged(c.dataDir, "v1.0.0", setup)
 	if err != nil || installed != "" {
 		t.Fatalf("setup: installed %q, %v", installed, err)
 	}
@@ -256,9 +254,8 @@ func TestASetupRequestRunsSetupAndInstallsNothing(t *testing.T) {
 	}
 
 	// A build with nothing to set up says so.
-	Setup = nil
 	c.write(t, requestFile, []byte("setup\n"))
-	if _, err := ApplyStaged(c.dataDir, "v1.0.0"); err == nil {
+	if _, err := ApplyStaged(c.dataDir, "v1.0.0", nil); err == nil {
 		t.Fatal("a setup request with no Setup was answered as done")
 	}
 }
@@ -283,12 +280,12 @@ func TestRequestSetupAsksTheHelper(t *testing.T) {
 		raw, _ := json.Marshal(helperResult{OK: true})
 		writeAtomic(filepath.Join(StageDir, resultFile), raw)
 	}()
-	if err := RequestSetup(context.Background(), "/var/lib/wui"); err != nil {
+	if err := RequestSetup(context.Background(), "/var/lib/wui", nil); err != nil {
 		t.Fatalf("setup through the helper: %v", err)
 	}
 
 	HelperUnit = filepath.Join(t.TempDir(), "absent.path")
-	if err := RequestSetup(context.Background(), "/var/lib/wui"); !errors.Is(err, ErrCannotInstall) {
+	if err := RequestSetup(context.Background(), "/var/lib/wui", nil); !errors.Is(err, ErrCannotInstall) {
 		t.Fatalf("no helper: %v", err)
 	}
 }

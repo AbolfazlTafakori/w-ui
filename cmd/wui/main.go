@@ -203,9 +203,7 @@ func run() error {
 
 	// OpenVPN keeps its per-interface files under the data directory, so the
 	// whole of the panel's state stays in one place and one backup.
-	ovpndriver.DataRoot = cfg.DataDir
-	l2tpdriver.DataRoot = cfg.DataDir
-	reconciler.FirewallDir = cfg.DataDir
+	backend.DataDir = cfg.DataDir
 
 	// An OpenConnect tunnel that dials the panel's own name is given the
 	// panel's certificate, which devices trust as they are.
@@ -223,11 +221,10 @@ func run() error {
 	defer shp.Close()
 
 	router := routing.NewApplier(log)
-	routing.HopWorkDir = filepath.Join(cfg.DataDir, "hops")
 	// Where a downloaded update waits for the root helper, on a server where
 	// the panel may not replace its own binary.
 	update.StageDir = filepath.Join(cfg.DataDir, update.StageDirName)
-	hops := routing.NewHopManager(log)
+	hops := routing.NewHopManager(log, filepath.Join(cfg.DataDir, "hops"))
 
 	outbounds := service.NewOutbounds(db, log)
 	routes := service.NewRouting(db, log)
@@ -301,7 +298,7 @@ func run() error {
 	routes.StartResolver(ctx)
 	// Country lists for "geoip:xx" entries, kept under the data directory.
 	geo := geoip.New(filepath.Join(cfg.DataDir, "geoip"), log)
-	routing.GeoIP = geo.Prefixes
+	routes.SetCountries(geo)
 	go geo.Run(ctx)
 	balancers := service.NewBalancers(db, log)
 	go balancers.RunChecks(ctx, outbounds)
@@ -322,6 +319,9 @@ func run() error {
 		LocalNodeID: local.ID,
 		Changes:     changes,
 		PanelCert:   panelCert,
+		DataDir:     cfg.DataDir,
+		// A node's reports are this far apart: the span their numbers cover.
+		NodeReportEvery: nodes.SyncInterval,
 	})
 	rec.Start(ctx)
 	// The sharing record begins with this release; what earlier ones logged
@@ -514,7 +514,6 @@ func run() error {
 	rec.OnHold = syncer.PushHold
 	clientsSvc.SetLive(rec)
 	ifaceSvc.SetLive(rec)
-	reconciler.NodeReportEvery = nodes.SyncInterval
 	syncer.Start(ctx)
 
 	// Re-read on every check rather than captured here, so changing either on

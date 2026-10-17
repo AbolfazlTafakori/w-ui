@@ -9,15 +9,11 @@ import (
 	"github.com/abolfazl/w-ui/internal/fwsync"
 )
 
-// FirewallDir is the panel's data directory, under which the ports its
-// tunnels need are written for the firewall helper; empty writes nothing.
-var FirewallDir string
-
 // keepFirewall writes the ports this server's tunnels need let through the
 // firewall, when they changed. The root helper opens them in ufw or
 // firewalld when one is on (package fwsync).
 func (r *Reconciler) keepFirewall(ifaces []model.Interface) {
-	if FirewallDir == "" {
+	if r.dataDir == "" {
 		return
 	}
 	body := fwsync.Encode(fwsync.ForInterfaces(ifaces))
@@ -27,7 +23,7 @@ func (r *Reconciler) keepFirewall(ifaces []model.Interface) {
 	if same {
 		return
 	}
-	file := filepath.Join(FirewallDir, fwsync.DesiredFile)
+	file := filepath.Join(r.dataDir, fwsync.DesiredFile)
 	if cur, err := os.ReadFile(file); err != nil || !bytes.Equal(cur, body) {
 		if err := writeFile(file, body); err != nil {
 			r.log.Warn("the tunnels' ports could not be written for the firewall helper; "+

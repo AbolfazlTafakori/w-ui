@@ -349,7 +349,7 @@ func TestNamedGroupsCoverWhatTheyClaim(t *testing.T) {
 
 func TestOperatorInputAcceptsEveryReasonableForm(t *testing.T) {
 	for _, in := range []string{"private", "10.0.0.0/8", "1.1.1.1", " 8.8.8.8 ", "PRIVATE"} {
-		if _, err := ParseTarget(in); err != nil {
+		if _, err := ParseTarget(in, nil); err != nil {
 			t.Errorf("%q was refused: %v", in, err)
 		}
 	}
@@ -358,7 +358,7 @@ func TestOperatorInputAcceptsEveryReasonableForm(t *testing.T) {
 func TestABadEntrySaysWhichOneItWas(t *testing.T) {
 	// A list of forty entries and a message of "invalid input" tells nobody
 	// what to fix.
-	_, err := ParseTargets([]string{"10.0.0.0/8", "not-an-address", "1.1.1.1"})
+	_, err := ParseTargets([]string{"10.0.0.0/8", "not-an-address", "1.1.1.1"}, nil)
 	if err == nil {
 		t.Fatal("a bad entry was accepted")
 	}

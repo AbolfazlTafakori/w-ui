@@ -113,7 +113,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	if (p.MSCHAPv2 || p.ByCertificate()) && (p.CACert == "" || p.ServerCert == "" || p.ServerKey == "") {
 		return ErrNoCerts
 	}
-	paths := ikev2conf.NewPaths(l2tpdriver.DataRoot)
+	paths := ikev2conf.NewPaths(backend.DataDir)
 	if err := os.MkdirAll(paths.KickDir(), 0o750); err != nil {
 		return fmt.Errorf("ikev2driver: %w", err)
 	}
@@ -384,7 +384,7 @@ func (d *Driver) Destroy(ctx context.Context) error {
 // Remove takes the tunnel down by its record: the state goes, and the agent,
 // seeing none, takes it out of strongSwan.
 func Remove(ctx context.Context, iface *model.Interface) error {
-	paths := ikev2conf.NewPaths(l2tpdriver.DataRoot)
+	paths := ikev2conf.NewPaths(backend.DataDir)
 	if err := os.Remove(paths.State()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("ikev2driver: %w", err)
 	}

@@ -37,10 +37,6 @@ var (
 	singboxBinary = "sing-box"
 )
 
-// HopWorkDir is where process-backed hops keep their config files and logs.
-// Set by main from the data directory before the manager runs.
-var HopWorkDir = "/var/lib/wui/hops"
-
 // A hop's process(es), and what they were started from.
 type hopProc struct {
 	kind  string
@@ -82,7 +78,7 @@ func waitDevice(ctx context.Context, dev string, timeout time.Duration) error {
 }
 
 func (m *HopManager) procDir(dev string) string {
-	return filepath.Join(HopWorkDir, dev)
+	return filepath.Join(m.workDir, dev)
 }
 
 // startProc launches one command for a hop with its output going to a log

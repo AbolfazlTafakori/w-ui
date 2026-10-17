@@ -75,7 +75,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	if p.Cert == "" || p.Key == "" {
 		return ErrNoCert
 	}
-	paths := occonf.NewPaths(l2tpdriver.DataRoot)
+	paths := occonf.NewPaths(backend.DataDir)
 	if err := os.MkdirAll(paths.KickDir(), 0o750); err != nil {
 		return fmt.Errorf("occdriver: %w", err)
 	}
@@ -377,7 +377,7 @@ func (d *Driver) Destroy(ctx context.Context) error {
 // Remove takes the tunnel down by its record: the state goes, and the agent,
 // seeing none, stops ocserv.
 func Remove(ctx context.Context, iface *model.Interface) error {
-	paths := occonf.NewPaths(l2tpdriver.DataRoot)
+	paths := occonf.NewPaths(backend.DataDir)
 	if err := os.Remove(paths.State()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("occdriver: %w", err)
 	}

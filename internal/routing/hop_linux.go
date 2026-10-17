@@ -54,6 +54,8 @@ type HopSpec struct {
 // HopManager brings upstream tunnels up and takes them down.
 type HopManager struct {
 	log *slog.Logger
+	// workDir is where process-backed hops keep their config files and logs.
+	workDir string
 
 	mu sync.Mutex
 	// up is what each device was last configured with, so an unchanged hop is
@@ -65,8 +67,9 @@ type HopManager struct {
 }
 
 // NewHopManager builds a manager.
-func NewHopManager(log *slog.Logger) *HopManager {
-	return &HopManager{log: log, up: map[string]string{}}
+// NewHopManager keeps hops, the process-backed ones' files under workDir.
+func NewHopManager(log *slog.Logger, workDir string) *HopManager {
+	return &HopManager{log: log, workDir: workDir, up: map[string]string{}}
 }
 
 // Sync makes the set of live hop devices match specs exactly.

@@ -121,7 +121,7 @@ func main() {
 		params.Transport = *transport
 		iface.Name, iface.ListenPort, iface.MTU = "ovpn0", 1194, 1420
 		iface.OpenVPN = model.JSON(params)
-		ovpndriver.DataRoot = "/var/lib/wui"
+		backend.DataDir = "/var/lib/wui"
 		d := ovpndriver.New()
 		d.SetLogger(log)
 		drv = d
@@ -137,10 +137,10 @@ func main() {
 			iface.Name, iface.ListenPort = "pptp0", l2tpconf.PortPPTP
 			drv = l2tpdriver.NewPPTP()
 		}
-		l2tpdriver.DataRoot = "/var/lib/wui"
+		backend.DataDir = "/var/lib/wui"
 		// The panel's data directory, which the installer makes.
-		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
-		startAgent(ctx, log, l2tpdriver.DataRoot)
+		must(os.MkdirAll(backend.DataDir, 0o750))
+		startAgent(ctx, log, backend.DataDir)
 	case model.ProtocolOpenConnect:
 		// The tunnel's own certificate, DTLS, and camouflage when asked for,
 		// as the panel makes them (service.newOpenConnectParams).
@@ -149,12 +149,12 @@ func main() {
 		iface.Name, iface.ListenPort, iface.MTU = "oc0", 443, occonf.DefaultMTU
 		iface.OpenConnect = model.JSON(model.OpenConnectParams{DTLS: !*noDTLS, Camouflage: *camouflage,
 			CamouflageSecret: "Hidden42Door", Cert: cert, Key: key, CertSource: "own"})
-		l2tpdriver.DataRoot = "/var/lib/wui"
-		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
+		backend.DataDir = "/var/lib/wui"
+		must(os.MkdirAll(backend.DataDir, 0o750))
 		d := occdriver.New()
 		d.SetLogger(log)
 		drv = d
-		startAgent(ctx, log, l2tpdriver.DataRoot)
+		startAgent(ctx, log, backend.DataDir)
 	case model.ProtocolIKEv2:
 		// All four ways in, an authority and the server's certificate, as
 		// the panel makes them (service.newIKEv2Params).
@@ -166,12 +166,12 @@ func main() {
 		iface.Name, iface.ListenPort, iface.MTU = "ike0", 500, 1400
 		iface.IKEv2 = model.JSON(model.IKEv2Params{MSCHAPv2: true, PSK: true, RSA: true, EAPTLS: true,
 			CACert: ca.Cert, CAKey: ca.Key, ServerCert: srv.Cert, ServerKey: srv.Key, ServerNames: []string{*endpoint}})
-		l2tpdriver.DataRoot = "/var/lib/wui"
-		must(os.MkdirAll(l2tpdriver.DataRoot, 0o750))
+		backend.DataDir = "/var/lib/wui"
+		must(os.MkdirAll(backend.DataDir, 0o750))
 		d := ikev2driver.New()
 		d.SetLogger(log)
 		drv = d
-		startAgent(ctx, log, l2tpdriver.DataRoot)
+		startAgent(ctx, log, backend.DataDir)
 	default:
 		fail("unknown protocol %q", *protocol)
 	}

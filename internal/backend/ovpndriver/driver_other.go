@@ -13,10 +13,6 @@ import (
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 )
 
-// DataRoot is where interface directories would be created. It exists on this
-// platform only so that configuration shared with the Linux build compiles.
-var DataRoot = "/var/lib/wui"
-
 // Driver is the non-Linux stand-in.
 //
 // The server process, its management socket and the tun device it needs are all

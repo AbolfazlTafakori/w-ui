@@ -30,7 +30,7 @@ const minSpeedWindow = 6 * time.Second
 // remoteSpeedStands is how long a node's report is taken as the speed: half
 // as long again as the time between reports, so a node that answers late does
 // not flicker its customers to nothing.
-func remoteSpeedStands() time.Duration { return NodeReportEvery * 3 / 2 }
+func (s *speedTracker) remoteSpeedStands() time.Duration { return s.nodeEvery * 3 / 2 }
 
 type speedSample struct {
 	at    time.Time
@@ -49,11 +49,15 @@ type speedTracker struct {
 	samples []speedSample // newest last, within window
 	last    time.Time     // when the previous local tick was read
 	remote  map[uint]remoteSpeed
+	// nodeEvery is how far apart a node's reports are.
+	nodeEvery time.Duration
 }
 
 // newSpeedTracker measures over a window fitted to how often traffic is read.
-func newSpeedTracker(every time.Duration) *speedTracker {
-	return &speedTracker{window: max(minSpeedWindow, 3*every), remote: map[uint]remoteSpeed{}}
+// newSpeedTracker follows speeds read every every here, and reported every
+// nodeEvery by the nodes.
+func newSpeedTracker(every, nodeEvery time.Duration) *speedTracker {
+	return &speedTracker{window: max(minSpeedWindow, 3*every), nodeEvery: nodeEvery, remote: map[uint]remoteSpeed{}}
 }
 
 // local records one tick of what this server's customers moved.
@@ -96,7 +100,7 @@ func (s *speedTracker) prune(now time.Time) {
 	}
 	s.samples = keep
 	for id, r := range s.remote {
-		if now.Sub(r.at) >= remoteSpeedStands() {
+		if now.Sub(r.at) >= s.remoteSpeedStands() {
 			delete(s.remote, id)
 		}
 	}

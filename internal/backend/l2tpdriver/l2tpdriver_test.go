@@ -18,7 +18,7 @@ import (
 
 func setup(t *testing.T) (*model.Interface, l2tpconf.Paths) {
 	t.Helper()
-	DataRoot = t.TempDir()
+	backend.DataDir = t.TempDir()
 	ensureDeviceFn = func(context.Context, *model.Interface) error { return nil }
 	removeDeviceFn = func(context.Context, *model.Interface) error { return nil }
 	t.Cleanup(func() { ensureDeviceFn, removeDeviceFn = ensureDevice, removeDevice })
@@ -28,7 +28,7 @@ func setup(t *testing.T) (*model.Interface, l2tpconf.Paths) {
 		MTU: 1400, DNS: "1.1.1.1, 9.9.9.9, 8.8.8.8",
 		L2TP: model.JSON(model.L2TPParams{PSK: "SharedKey123"}),
 	}
-	return iface, l2tpconf.NewPaths(DataRoot)
+	return iface, l2tpconf.NewPaths(backend.DataDir)
 }
 
 func agentReports(t *testing.T, p l2tpconf.Paths, r l2tpconf.Report) {
@@ -253,14 +253,14 @@ func TestGuideValuesAreTheCustomersOwn(t *testing.T) {
 		{Address: "off.example.com", Priority: 0, Enabled: false},
 		{Address: "vpn.example.com", Priority: 3, Enabled: true},
 	}
-	saved := ServerIPv4
-	ServerIPv4 = func(host string) []string {
+	saved := lookupIPv4
+	lookupIPv4 = func(_ context.Context, host string) ([]netip.Addr, error) {
 		if host == "vpn.example.com" {
-			return []string{"203.0.113.7"}
+			return []netip.Addr{netip.MustParseAddr("203.0.113.7")}, nil
 		}
-		return nil
+		return nil, errors.New("no such host")
 	}
-	t.Cleanup(func() { ServerIPv4 = saved })
+	t.Cleanup(func() { lookupIPv4 = saved })
 	v := GuideValues(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
 	if v.Server != "vpn.example.com" || strings.Join(v.Others, ",") != "a.example.com,b.example.com" ||
 		v.PSK != "SharedKey123" || v.Username != "s9-laptop" || v.Password != "Secret11" || v.Tunnel != "l2tp0" {

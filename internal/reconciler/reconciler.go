@@ -81,6 +81,14 @@ type Options struct {
 	// PanelCert is the panel's own certificate, which this server's
 	// OpenConnect tunnels take when it covers their address.
 	PanelCert service.PanelCert
+
+	// DataDir is the panel's data directory, under which the ports the
+	// tunnels need are written for the firewall helper; empty writes none.
+	DataDir string
+
+	// NodeReportEvery is how far apart a node's usage reports are (the
+	// nodes package's SyncInterval); zero is the usual twenty seconds.
+	NodeReportEvery time.Duration
 }
 
 // Stats is what the last tick did, for the settings page and the logs.
@@ -156,6 +164,10 @@ type Reconciler struct {
 	changes *service.Changes
 	// panelCert is the panel's own certificate.
 	panelCert service.PanelCert
+	// dataDir is where the firewall helper reads the tunnels' ports.
+	dataDir string
+	// nodeEvery is how far apart a node's usage reports are.
+	nodeEvery time.Duration
 }
 
 // New builds a reconciler.
@@ -164,10 +176,18 @@ func New(o Options) *Reconciler {
 	if interval < time.Second {
 		interval = 2 * time.Second
 	}
+	// How far apart a node's usage reports are, which is the span its
+	// numbers cover when they are turned into a speed.
+	nodeEvery := o.NodeReportEvery
+	if nodeEvery <= 0 {
+		nodeEvery = defaultNodeReportEvery
+	}
 	return &Reconciler{
+		nodeEvery: nodeEvery,
+		dataDir:   o.DataDir,
 		conc:      newConcurrency(),
-		speed:     newSpeedTracker(interval),
-		fileSpeed: newSpeedTracker(interval),
+		speed:     newSpeedTracker(interval, nodeEvery),
+		fileSpeed: newSpeedTracker(interval, nodeEvery),
 		db:        o.DB,
 		enforcer:  o.Enforcer,
 		shaper:    o.Shaper,
@@ -236,14 +256,14 @@ func (r *Reconciler) AddNodeReport(usage []service.NodeUsage, devices []service.
 			continue
 		}
 		// A node reports what moved since its last report, one sync apart.
-		r.speed.fromNode(u.OriginID, u.Up, u.Down, NodeReportEvery, now)
+		r.speed.fromNode(u.OriginID, u.Up, u.Down, r.nodeEvery, now)
 		batch = append(batch, trafficUpdate{Key: keyFromClientID(u.OriginID), Bytes: u.Bytes, Up: u.Up, Down: u.Down, At: now})
 	}
 	for _, d := range devices {
 		if d.OriginID == 0 || d.Up+d.Down == 0 {
 			continue
 		}
-		r.fileSpeed.fromNode(d.OriginID, d.Up, d.Down, NodeReportEvery, now)
+		r.fileSpeed.fromNode(d.OriginID, d.Up, d.Down, r.nodeEvery, now)
 		batch = append(batch,
 			trafficUpdate{AccountID: d.OriginID, DevUp: d.Up, DevDown: d.Down, At: now},
 			// A file that moved traffic on a node was used: what starts a
@@ -1072,9 +1092,9 @@ func (r *Reconciler) FileSpeeds() map[uint]model.Speed {
 	return r.fileSpeed.moving(time.Now().UTC())
 }
 
-// NodeReportEvery is how far apart a node's usage reports are, which is the
-// time the traffic in one covers. The panel sets it to the node syncer's.
-var NodeReportEvery = 20 * time.Second
+// defaultNodeReportEvery is how far apart a node's usage reports are when
+// nobody said.
+const defaultNodeReportEvery = 20 * time.Second
 
 // LiveClients is every customer connected right now, for the counters.
 func (r *Reconciler) LiveClients() []uint { return r.conc.liveClients(time.Now().UTC()) }

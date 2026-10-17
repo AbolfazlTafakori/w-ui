@@ -28,9 +28,6 @@ type HopSpec struct {
 	TunAddress   string
 }
 
-// HopWorkDir is where process-backed hops would keep their files.
-var HopWorkDir = ""
-
 // HopStatus is what an operator is shown about a process-backed hop.
 type HopStatus struct {
 	Device string
@@ -48,7 +45,7 @@ func (m *HopManager) Statuses() []HopStatus { return nil }
 type HopManager struct{ log *slog.Logger }
 
 // NewHopManager builds the inert manager for this platform.
-func NewHopManager(log *slog.Logger) *HopManager { return &HopManager{log: log} }
+func NewHopManager(log *slog.Logger, workDir string) *HopManager { return &HopManager{log: log} }
 
 func (m *HopManager) Sync(context.Context, []HopSpec) error { return nil }
 func (m *HopManager) Teardown(context.Context)              {}
