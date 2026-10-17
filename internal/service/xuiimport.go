@@ -60,9 +60,9 @@ type ImportCandidate struct {
 	Files    []ImportFile `json:"-"`
 }
 
-// ImportCandidates reads a node's users as candidates; set by the nodes
-// package, which speaks to those panels.
-var ImportCandidates func(ctx context.Context, node model.Node, tunnels []model.Interface) ([]ImportCandidate, error)
+// SetRemote gives the customers' service the panels used as nodes, whose
+// users it brings in.
+func (s *Clients) SetRemote(r RemotePanels) { s.remote = r }
 
 // importing keeps imports one at a time (ImportNodeUsers).
 var importing sync.Mutex
@@ -78,7 +78,7 @@ type ImportResult struct {
 // NodeUsers is every user a 3x-ui or Pasarguard node has, as candidates, the
 // ones already brought in marked.
 func (s *Clients) NodeUsers(ctx context.Context, nodeID uint) ([]ImportCandidate, error) {
-	if ImportCandidates == nil {
+	if s.remote == nil {
 		return nil, fmt.Errorf("%w: this panel cannot read another panel's users", ErrInvalid)
 	}
 	db := s.db.WithContext(ctx)
@@ -93,7 +93,7 @@ func (s *Clients) NodeUsers(ctx context.Context, nodeID uint) ([]ImportCandidate
 	if err := db.Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolXray).Find(&tunnels).Error; err != nil {
 		return nil, err
 	}
-	cands, err := ImportCandidates(ctx, node, tunnels)
+	cands, err := s.remote.ImportCandidates(ctx, node, tunnels)
 	if err != nil {
 		return nil, err
 	}

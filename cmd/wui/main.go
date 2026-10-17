@@ -209,7 +209,6 @@ func run() error {
 
 	// An OpenConnect tunnel that dials the panel's own name is given the
 	// panel's certificate, which devices trust as they are.
-	service.PanelCertFiles = func() (string, string) { return cfg.TLSCert, cfg.TLSKey }
 	registerBackends(log)
 
 	pools, err := loadPools(db, log)
@@ -236,6 +235,8 @@ func run() error {
 	// the node syncer all read and change the same customers and tunnels,
 	// through the same live counts.
 	ifaceSvc := service.NewInterfaces(db, pools, log)
+	panelCert := service.PanelCert{CertFile: cfg.TLSCert, KeyFile: cfg.TLSKey}
+	ifaceSvc.SetPanelCert(panelCert)
 	clientsSvc := service.NewClients(db, pools, log)
 	changes := service.NewChanges()
 	clientsSvc.SetChanges(changes)
@@ -320,6 +321,7 @@ func run() error {
 		Log:         log,
 		LocalNodeID: local.ID,
 		Changes:     changes,
+		PanelCert:   panelCert,
 	})
 	rec.Start(ctx)
 	// The sharing record begins with this release; what earlier ones logged
@@ -507,8 +509,8 @@ func run() error {
 	syncer.Sessions = rec.SetRemoteSessions
 	syncer.Holds = rec.Holds
 	syncer.XUIMirror = ifaceSvc.MirrorXUI
-	service.CreateXrayInbound = nodes.CreateXrayInbound
-	service.ImportCandidates = nodes.ImportCandidates
+	ifaceSvc.SetRemote(nodes.Remote{})
+	clientsSvc.SetRemote(nodes.Remote{})
 	rec.OnHold = syncer.PushHold
 	clientsSvc.SetLive(rec)
 	ifaceSvc.SetLive(rec)

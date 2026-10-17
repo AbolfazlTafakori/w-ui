@@ -302,7 +302,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 	if err := service.EnsureIKEv2Certs(ctx, s.db, nodeID, time.Now()); err != nil {
 		s.log.Warn("IKEv2 certificates for a node", "node", nodeID, "error", err)
 	}
-	if err := service.EnsureOpenConnectCerts(ctx, s.db, nodeID, time.Now()); err != nil {
+	if err := service.EnsureOpenConnectCerts(ctx, s.db, nodeID, service.PanelCert{}, time.Now()); err != nil {
 		s.log.Warn("OpenConnect certificates for a node", "node", nodeID, "error", err)
 	}
 

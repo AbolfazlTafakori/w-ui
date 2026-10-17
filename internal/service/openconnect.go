@@ -15,11 +15,15 @@ import (
 	"github.com/abolfazl/w-ui/internal/occonf"
 )
 
-// PanelCertFiles are where the panel's own certificate and key are, when it
-// has them (WUI_TLS_CERT, WUI_TLS_KEY): an OpenConnect tunnel that dials the
-// same name is given the panel's certificate rather than one of its own,
-// since a device trusts that without being told to. Set by the panel.
-var PanelCertFiles = func() (cert, key string) { return "", "" }
+// PanelCert is where the panel's own certificate and key are, when it has
+// them (WUI_TLS_CERT, WUI_TLS_KEY): an OpenConnect tunnel on this server that
+// dials the same name is given the panel's certificate rather than one of its
+// own, since a device trusts that without being told to. The zero value is a
+// panel with none.
+type PanelCert struct{ CertFile, KeyFile string }
+
+// SetPanelCert says where the panel's certificate is.
+func (s *Interfaces) SetPanelCert(c PanelCert) { s.panelCert = c }
 
 // OpenConnectInput is what the form says of an OpenConnect tunnel. A field
 // left out keeps what the tunnel has, or for a new tunnel, the default:
@@ -83,12 +87,12 @@ func applyOpenConnect(p *model.OpenConnectParams, in *OpenConnectInput) error {
 // newOpenConnectParams is a new tunnel's settings, with its certificate.
 // local is whether the tunnel is on this server: a node's never takes this
 // panel's certificate, whose key would have to go to the node with it.
-func newOpenConnectParams(host string, in *OpenConnectInput, local bool) (model.OpenConnectParams, error) {
+func newOpenConnectParams(host string, in *OpenConnectInput, local bool, panel PanelCert) (model.OpenConnectParams, error) {
 	p := model.OpenConnectParams{DTLS: true, Camouflage: true, UsePanelCert: local}
 	if err := applyOpenConnect(&p, in); err != nil {
 		return p, err
 	}
-	if _, err := ocCertFor(&p, host, time.Now()); err != nil {
+	if _, err := ocCertFor(&p, host, panel, time.Now()); err != nil {
 		return p, err
 	}
 	return p, nil
@@ -98,10 +102,10 @@ func newOpenConnectParams(host string, in *OpenConnectInput, local bool) (model.
 // when it is wanted and covers the address devices dial; otherwise one of
 // its own, made again when it nears its end or the address changed. It
 // reports whether anything changed.
-func ocCertFor(p *model.OpenConnectParams, host string, now time.Time) (bool, error) {
+func ocCertFor(p *model.OpenConnectParams, host string, panel PanelCert, now time.Time) (bool, error) {
 	host = strings.TrimSpace(host)
 	if p.UsePanelCert {
-		if cert, key, ok := panelCertFor(host, now); ok {
+		if cert, key, ok := panelCertFor(panel, host, now); ok {
 			if p.Cert == cert && p.Key == key && p.CertSource == "panel" {
 				return false, nil
 			}
@@ -122,8 +126,8 @@ func ocCertFor(p *model.OpenConnectParams, host string, now time.Time) (bool, er
 
 // panelCertFor is the panel's certificate, when it has one in date for a
 // name.
-func panelCertFor(host string, now time.Time) (cert, key string, ok bool) {
-	cf, kf := PanelCertFiles()
+func panelCertFor(panel PanelCert, host string, now time.Time) (cert, key string, ok bool) {
+	cf, kf := panel.CertFile, panel.KeyFile
 	if cf == "" || kf == "" {
 		return "", "", false
 	}
@@ -144,7 +148,10 @@ func panelCertFor(host string, now time.Time) (cert, key string, ok bool) {
 // EnsureOpenConnectCerts keeps this server's OpenConnect tunnels'
 // certificates current on the reconciler's pass: the panel's, as it is
 // renewed, or the tunnel's own, renewed before it ends.
-func EnsureOpenConnectCerts(ctx context.Context, db *gorm.DB, nodeID uint, now time.Time) error {
+//
+// panel is the panel's own certificate; a node's tunnels never take it, so
+// a node's pass gives the zero value.
+func EnsureOpenConnectCerts(ctx context.Context, db *gorm.DB, nodeID uint, panel PanelCert, now time.Time) error {
 	var ifaces []model.Interface
 	// A tunnel a panel manages here is that panel's to keep: its
 	// certificate arrives with it, and one made here would be overwritten
@@ -161,7 +168,7 @@ func EnsureOpenConnectCerts(ctx context.Context, db *gorm.DB, nodeID uint, now t
 		if !local {
 			p.UsePanelCert = false
 		}
-		changed, err := ocCertFor(&p, f.EndpointHost, now)
+		changed, err := ocCertFor(&p, f.EndpointHost, panel, now)
 		if err != nil {
 			return err
 		}

@@ -370,9 +370,18 @@ type PGHostInput struct {
 	ALPN        []string `json:"alpn"`
 }
 
-// CreateXrayInbound makes an inbound on a node of another panel; set by the
-// nodes package, which speaks to them.
-var CreateXrayInbound func(ctx context.Context, node model.Node, in XrayInboundInput) (model.XUIInbound, error)
+// RemotePanels speaks to the 3x-ui and Pasarguard panels used as nodes: the
+// nodes package does (nodes.Remote). A panel run without it -- a CLI -- can
+// do neither, and says so.
+type RemotePanels interface {
+	// CreateXrayInbound makes an inbound on the node and says what it is.
+	CreateXrayInbound(ctx context.Context, node model.Node, in XrayInboundInput) (model.XUIInbound, error)
+	// ImportCandidates reads the node's own users as customers to bring in.
+	ImportCandidates(ctx context.Context, node model.Node, tunnels []model.Interface) ([]ImportCandidate, error)
+}
+
+// SetRemote gives the tunnels' service the panels used as nodes.
+func (s *Interfaces) SetRemote(r RemotePanels) { s.remote = r }
 
 var trafficResets = map[string]bool{"": true, "never": true, "hourly": true, "daily": true, "weekly": true, "monthly": true}
 
@@ -521,10 +530,10 @@ func (s *Interfaces) createXray(ctx context.Context, node *model.Node, in Create
 	if k, ok := InboundKindFor(node.Kind, node.Version, x.Protocol); ok {
 		x.Customers = k.Customers
 	}
-	if CreateXrayInbound == nil {
+	if s.remote == nil {
 		return nil, fmt.Errorf("%w: this panel cannot make inbounds on %s", ErrInvalid, node.Name)
 	}
-	made, err := CreateXrayInbound(ctx, *node, x)
+	made, err := s.remote.CreateXrayInbound(ctx, *node, x)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}

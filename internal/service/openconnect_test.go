@@ -101,9 +101,7 @@ func TestTheOpenConnectCertificateFollowsTheAddress(t *testing.T) {
 	if err := os.WriteFile(kf, []byte(pk), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := PanelCertFiles
-	PanelCertFiles = func() (string, string) { return cf, kf }
-	defer func() { PanelCertFiles = old }()
+	svc.SetPanelCert(PanelCert{CertFile: cf, KeyFile: kf})
 
 	f, err := createOC(t, svc, CreateInterfaceInput{EndpointHost: "panel.example.com"})
 	if err != nil {
@@ -127,7 +125,7 @@ func TestTheOpenConnectCertificateFollowsTheAddress(t *testing.T) {
 	if err := db.Where("kind = ?", model.KindLocal).First(&local).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureOpenConnectCerts(ctx, db, local.ID, time.Now()); err != nil {
+	if err := EnsureOpenConnectCerts(ctx, db, local.ID, PanelCert{}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var again model.Interface
@@ -138,7 +136,7 @@ func TestTheOpenConnectCertificateFollowsTheAddress(t *testing.T) {
 		t.Fatal("a current certificate was made again")
 	}
 	// ...and renews one near its end.
-	if err := EnsureOpenConnectCerts(ctx, db, local.ID, time.Now().Add(800*24*time.Hour)); err != nil {
+	if err := EnsureOpenConnectCerts(ctx, db, local.ID, PanelCert{}, time.Now().Add(800*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&again, f.ID).Error; err != nil {
@@ -171,7 +169,7 @@ func TestANodeIsHandedItsIKEv2AndOpenConnectTunnels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oc, err := newOpenConnectParams("node.example.com", nil, false)
+	oc, err := newOpenConnectParams("node.example.com", nil, false, PanelCert{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +205,7 @@ func TestANodeIsHandedItsIKEv2AndOpenConnectTunnels(t *testing.T) {
 	if err := EnsureIKEv2Certs(ctx, db, 1, time.Now().Add(5000*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureOpenConnectCerts(ctx, db, 1, time.Now().Add(5000*24*time.Hour)); err != nil {
+	if err := EnsureOpenConnectCerts(ctx, db, 1, PanelCert{}, time.Now().Add(5000*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	db.First(&gotIKE, gotIKE.ID)

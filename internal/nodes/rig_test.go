@@ -58,9 +58,7 @@ func newRig(t *testing.T, node model.Node) *rig {
 		xuiInfos.Delete(xuiInfoKey(node))
 		pgSessions.Delete(pgSessionKey(node))
 	})
-	prev := service.ImportCandidates
-	service.ImportCandidates = ImportCandidates
-	t.Cleanup(func() { service.ImportCandidates = prev })
+	r.clients.SetRemote(Remote{})
 	return r
 }
 

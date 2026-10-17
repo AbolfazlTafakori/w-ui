@@ -52,6 +52,10 @@ type Interfaces struct {
 
 	// live is what each file is moving now (SetLive); nil for a CLI.
 	live Live
+	// remote is the panels used as nodes (SetRemote); nil for a CLI.
+	remote RemotePanels
+	// panelCert is the panel's own certificate (SetPanelCert).
+	panelCert PanelCert
 }
 
 // NewInterfaces builds the interface service.
@@ -219,7 +223,7 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	} else if in.Protocol == model.ProtocolOpenConnect {
 		// The certificate is made or taken here, so the tunnel opens with
 		// one; the reconciler's pass keeps it current.
-		p, err := newOpenConnectParams(in.EndpointHost, in.OpenConnect, node.Kind == model.KindLocal)
+		p, err := newOpenConnectParams(in.EndpointHost, in.OpenConnect, node.Kind == model.KindLocal, s.panelCert)
 		if err != nil {
 			return nil, err
 		}
@@ -934,7 +938,7 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		if err := applyOpenConnect(&p, in.OpenConnect); err != nil {
 			return nil, err
 		}
-		if _, err := ocCertFor(&p, host, time.Now()); err != nil {
+		if _, err := ocCertFor(&p, host, s.panelCert, time.Now()); err != nil {
 			return nil, err
 		}
 		if p != iface.OpenConnect.V {

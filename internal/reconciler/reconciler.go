@@ -77,6 +77,10 @@ type Options struct {
 	// Changes is told when the reconciler ends or starts a plan on its own,
 	// so an open subscription page shows it at once. Nil tells nobody.
 	Changes *service.Changes
+
+	// PanelCert is the panel's own certificate, which this server's
+	// OpenConnect tunnels take when it covers their address.
+	PanelCert service.PanelCert
 }
 
 // Stats is what the last tick did, for the settings page and the logs.
@@ -150,6 +154,8 @@ type Reconciler struct {
 
 	// changes is told when a plan ends or starts here.
 	changes *service.Changes
+	// panelCert is the panel's own certificate.
+	panelCert service.PanelCert
 }
 
 // New builds a reconciler.
@@ -179,6 +185,7 @@ func New(o Options) *Reconciler {
 		// every install that has never added a second.
 		localNodeID: max64(o.LocalNodeID, 1),
 		changes:     o.Changes,
+		panelCert:   o.PanelCert,
 	}
 }
 
@@ -711,7 +718,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	if err := service.EnsureIKEv2Certs(ctx, r.db, r.localNodeID, time.Now()); err != nil {
 		r.log.Error("IKEv2 certificates", "error", err)
 	}
-	if err := service.EnsureOpenConnectCerts(ctx, r.db, r.localNodeID, time.Now()); err != nil {
+	if err := service.EnsureOpenConnectCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
 		r.log.Error("OpenConnect certificates", "error", err)
 	}
 	db := r.db.WithContext(ctx)

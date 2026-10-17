@@ -38,6 +38,9 @@ type Clients struct {
 	// subClashes counts, per reseller, the subscription ids refused as
 	// taken. See checkSubID.
 	subClashes clashCounter
+	// remote is the panels used as nodes, whose users are brought in
+	// (SetRemote); nil for a CLI.
+	remote RemotePanels
 }
 
 // clashCounter is a small sliding window of refusals per operator.
