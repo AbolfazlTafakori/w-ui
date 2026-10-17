@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
@@ -40,7 +40,7 @@ func ensureDevice(ctx context.Context, iface *model.Interface) (uint32, error) {
 		fallthrough
 	case kind == "":
 		if err := createXfrm(ctx, iface, id); err != nil {
-			if err := l2tpdriver.EnsureDevice(ctx, iface); err != nil {
+			if err := agentkit.EnsureDevice(ctx, iface); err != nil {
 				return 0, err
 			}
 			return 0, nil
@@ -48,7 +48,7 @@ func ensureDevice(ctx context.Context, iface *model.Interface) (uint32, error) {
 	default:
 		return 0, fmt.Errorf("ikev2driver: a %s device called %s already exists", kind, iface.Name)
 	}
-	gw, err := l2tpdriver.Gateway(iface.Subnet)
+	gw, err := agentkit.Gateway(iface.Subnet)
 	if err != nil {
 		return 0, err
 	}
@@ -89,7 +89,7 @@ func removeDevice(ctx context.Context, iface *model.Interface) error {
 	if kind, _ := linkInfo(ctx, iface.Name); kind == "xfrm" {
 		return run(ctx, "ip", "link", "del", "dev", iface.Name)
 	}
-	return l2tpdriver.RemoveDevice(ctx, iface)
+	return agentkit.RemoveDevice(ctx, iface)
 }
 
 // linkInfo is a device's kind and, for an xfrm interface, its id; an empty

@@ -142,3 +142,26 @@ func TestOnlyTheStartWritesAnotherPackagesVariable(t *testing.T) {
 		})
 	}
 }
+
+// No tunnel driver depends on another.
+//
+// Each protocol's driver is its own: what two of them share is in
+// internal/backend/agentkit, so changing one protocol cannot break another,
+// and a driver can be taken out without the others noticing.
+func TestNoDriverImportsAnother(t *testing.T) {
+	const prefix = "github.com/abolfazl/w-ui/internal/backend/"
+	for _, f := range sources(t, "internal/backend") {
+		parts := strings.Split(f.rel, "/")
+		if len(parts) < 4 || !strings.HasSuffix(parts[2], "driver") {
+			continue
+		}
+		own := parts[2]
+		for _, imp := range f.ast.Imports {
+			path := strings.Trim(imp.Path.Value, `"`)
+			other, ok := strings.CutPrefix(path, prefix)
+			if ok && strings.HasSuffix(other, "driver") && other != own {
+				t.Errorf("%s imports %s; what drivers share goes in agentkit", f.rel, path)
+			}
+		}
+	}
+}

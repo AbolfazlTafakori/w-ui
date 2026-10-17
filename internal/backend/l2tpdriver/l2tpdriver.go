@@ -15,20 +15,19 @@ package l2tpdriver
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/netip"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/tunneldns"
@@ -36,24 +35,12 @@ import (
 
 // The device steps, replaced by tests that run where no device can be made.
 var (
-	ensureDeviceFn = ensureDevice
-	removeDeviceFn = removeDevice
+	ensureDeviceFn = agentkit.EnsureDevice
+	removeDeviceFn = agentkit.RemoveDevice
 )
 
-// reportStale is how old the agent's report may be before the agent is taken
-// to be down. It writes one every second.
-const reportStale = 20 * time.Second
-
-// startGrace is how long the agent is given to answer after the state is
-// first written: systemd starts it from the path unit, and a first install of
-// strongSwan and xl2tpd takes a while.
-const startGrace = 15 * time.Minute
-
-// Errors.
-var (
-	ErrNoAgent = errors.New("l2tpdriver: the L2TP and PPTP service (wui-l2tp) is not answering")
-	ErrNoPSK   = errors.New("l2tpdriver: the tunnel has no pre-shared key; recreate it")
-)
+// ErrNoPSK is an L2TP tunnel saved without its key.
+var ErrNoPSK = errors.New("l2tpdriver: the tunnel has no pre-shared key; recreate it")
 
 // Register makes the drivers available to the backend registry.
 func Register() {
@@ -126,7 +113,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 
 // state builds what the agent is told for this interface and these accounts.
 func state(iface *model.Interface, accounts []l2tpconf.Account) (*l2tpconf.State, error) {
-	gw, err := gateway(iface.Subnet)
+	gw, err := agentkit.Gateway(iface.Subnet)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +128,7 @@ func state(iface *model.Interface, accounts []l2tpconf.Account) (*l2tpconf.State
 			Name:     iface.Name,
 			Subnet:   mustPrefix(iface.Subnet).Masked().String(),
 			Gateway:  gw.String(),
-			DNS:      resolvers(tunneldns.For(iface)),
+			DNS:      agentkit.Resolvers(tunneldns.For(iface)),
 			MTU:      mtu,
 			Accounts: accounts,
 		},
@@ -151,7 +138,7 @@ func state(iface *model.Interface, accounts []l2tpconf.Account) (*l2tpconf.State
 	} else {
 		st.Interface.PSK = iface.L2TP.V.PSK
 		st.Interface.AllowPlain = iface.L2TP.V.AllowPlain
-		st.Interface.Endpoints = Servers(iface)
+		st.Interface.Endpoints = agentkit.Servers(iface)
 	}
 	return st, nil
 }
@@ -181,7 +168,7 @@ func (d *Driver) write(iface *model.Interface, accounts []l2tpconf.Account) ([]l
 			return before, nil
 		}
 	}
-	if err := writeAtomic(paths.State(), body, 0o640); err != nil {
+	if err := agentkit.WriteAtomic(paths.State(), body, 0o640); err != nil {
 		return nil, err
 	}
 	d.mu.Lock()
@@ -205,7 +192,7 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 		return backend.SyncReport{}, backend.ErrNotOpen
 	}
 	pfx := mustPrefix(iface.Subnet).Masked()
-	gw, _ := gateway(iface.Subnet)
+	gw, _ := agentkit.Gateway(iface.Subnet)
 
 	var want []l2tpconf.Account
 	names := map[string]bool{}
@@ -275,7 +262,7 @@ func (d *Driver) Stats(context.Context) ([]backend.Stat, error) {
 	if !open {
 		return nil, backend.ErrNotOpen
 	}
-	r, err := freshReport(paths)
+	r, err := agentkit.FreshReport(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +295,7 @@ func (d *Driver) SessionDevices(context.Context) ([]backend.SessionDevice, error
 	if !open {
 		return nil, backend.ErrNotOpen
 	}
-	r, err := freshReport(paths)
+	r, err := agentkit.FreshReport(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +336,7 @@ func (d *Driver) Kick(_ context.Context, accountID uint) error {
 	if accountID == 0 {
 		return backend.ErrUnknownAcct
 	}
-	return writeAtomic(paths.KickFile(accountID), nil, 0o640)
+	return agentkit.WriteAtomic(paths.KickFile(accountID), nil, 0o640)
 }
 
 // Render produces the customer's sign-in details.
@@ -384,17 +371,17 @@ func (d *Driver) agentError(opening bool) error {
 	written := d.written
 	d.mu.Unlock()
 
-	r, err := readReport(paths)
-	starting := !written.IsZero() && time.Since(written) < startGrace
+	r, err := agentkit.ReadReport(paths)
+	starting := !written.IsZero() && time.Since(written) < agentkit.StartGrace
 	switch {
-	case err != nil || time.Since(time.Unix(r.At, 0)) > reportStale:
+	case err != nil || time.Since(time.Unix(r.At, 0)) > agentkit.ReportStale:
 		if starting && !opening {
 			return nil
 		}
 		if starting {
-			return fmt.Errorf("%w yet; it is starting", ErrNoAgent)
+			return fmt.Errorf("%w yet; it is starting", agentkit.ErrNoAgent)
 		}
-		return fmt.Errorf("%w: check `systemctl status wui-l2tp.path wui-l2tp.service`", ErrNoAgent)
+		return fmt.Errorf("%w: check `systemctl status wui-l2tp.path wui-l2tp.service`", agentkit.ErrNoAgent)
 	case r.State == l2tpconf.AgentFailed:
 		return fmt.Errorf("l2tpdriver: %s", r.Error)
 	case r.State == l2tpconf.AgentInstalling:
@@ -448,123 +435,7 @@ func readState(p l2tpconf.Paths) (*l2tpconf.State, error) {
 	return l2tpconf.Decode(raw)
 }
 
-// freshReport is the agent's report, if the agent is still writing it.
-func freshReport(p l2tpconf.Paths) (l2tpconf.Report, error) {
-	r, err := readReport(p)
-	if err != nil {
-		return l2tpconf.Report{}, err
-	}
-	if time.Since(time.Unix(r.At, 0)) > reportStale {
-		return l2tpconf.Report{}, ErrNoAgent
-	}
-	return r, nil
-}
-
-func readReport(p l2tpconf.Paths) (l2tpconf.Report, error) {
-	var r l2tpconf.Report
-	raw, err := os.ReadFile(p.Report())
-	if err != nil {
-		return r, err
-	}
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return r, fmt.Errorf("l2tpdriver: the agent's report: %w", err)
-	}
-	return r, nil
-}
-
-// Shared with the IKEv2 driver, which talks to the same agent the same way:
-// a state file, a report, a kick per account, and a device holding the
-// tunnel's gateway.
-
-// EnsureDevice gives a tunnel its device (see ensureDevice).
-func EnsureDevice(ctx context.Context, iface *model.Interface) error {
-	return ensureDeviceFn(ctx, iface)
-}
-
-// RemoveDevice takes it away.
-func RemoveDevice(ctx context.Context, iface *model.Interface) error {
-	return removeDeviceFn(ctx, iface)
-}
-
-// Gateway is the first host of a subnet.
-func Gateway(subnet string) (netip.Addr, error) { return gateway(subnet) }
-
-// Resolvers is the IPv4 resolvers of a comma-separated list, two at most.
-func Resolvers(field string) []string { return resolvers(field) }
-
-// ReadReport is the agent's report as it is; FreshReport only while the
-// agent is still writing it.
-func ReadReport(p l2tpconf.Paths) (l2tpconf.Report, error)  { return readReport(p) }
-func FreshReport(p l2tpconf.Paths) (l2tpconf.Report, error) { return freshReport(p) }
-
-// WriteAtomic writes a file through a temporary one renamed into place.
-func WriteAtomic(path string, body []byte, mode os.FileMode) error {
-	return writeAtomic(path, body, mode)
-}
-
-// ReportStale and StartGrace are how old a report may be, and how long the
-// agent is given to answer at first.
-const (
-	ReportStale = reportStale
-	StartGrace  = startGrace
-)
-
-// gateway is the first host of the subnet: the server's end of every session.
-func gateway(subnet string) (netip.Addr, error) {
-	p, err := netip.ParsePrefix(strings.TrimSpace(subnet))
-	if err != nil || !p.Addr().Is4() {
-		return netip.Addr{}, fmt.Errorf("l2tpdriver: subnet %q is not an IPv4 network", subnet)
-	}
-	return p.Masked().Addr().Next(), nil
-}
-
 func mustPrefix(subnet string) netip.Prefix {
 	p, _ := netip.ParsePrefix(strings.TrimSpace(subnet))
 	return p
-}
-
-// resolvers splits a comma-separated list into the IPv4 addresses pppd can
-// hand out, two at most.
-func resolvers(field string) []string {
-	var out []string
-	for _, part := range strings.Split(field, ",") {
-		a, err := netip.ParseAddr(strings.TrimSpace(part))
-		if err != nil || !a.Is4() {
-			continue
-		}
-		out = append(out, a.String())
-		if len(out) == 2 {
-			break
-		}
-	}
-	return out
-}
-
-// writeAtomic writes through a temporary file renamed into place, so the
-// agent never reads half a state.
-func writeAtomic(path string, body []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("l2tpdriver: %w", err)
-	}
-	tmp, err := os.CreateTemp(dir, ".wui-*")
-	if err != nil {
-		return fmt.Errorf("l2tpdriver: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return fmt.Errorf("l2tpdriver: %w", err)
-	}
-	if _, err := tmp.Write(body); err != nil {
-		tmp.Close()
-		return fmt.Errorf("l2tpdriver: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("l2tpdriver: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("l2tpdriver: %w", err)
-	}
-	return nil
 }

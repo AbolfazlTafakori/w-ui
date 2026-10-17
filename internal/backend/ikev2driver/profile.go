@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
@@ -38,10 +38,10 @@ func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
 	if p.ByCertificate() {
 		v.IKEv2.CertFile = CertFileName(acc)
 	}
-	servers := l2tpdriver.Servers(iface)
+	servers := agentkit.Servers(iface)
 	if len(servers) > 0 {
 		v.Server, v.Others = servers[0], servers[1:]
-		if ips := l2tpdriver.ServerIPv4(v.Server); len(ips) > 0 {
+		if ips := agentkit.ServerIPv4(v.Server); len(ips) > 0 {
 			v.ServerIP = ips[0]
 		}
 	}

@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
@@ -91,7 +91,7 @@ func ServerID(iface *model.Interface) string {
 	if names := iface.IKEv2.V.ServerNames; len(names) > 0 {
 		return names[0]
 	}
-	if servers := l2tpdriver.Servers(iface); len(servers) > 0 {
+	if servers := agentkit.Servers(iface); len(servers) > 0 {
 		return servers[0]
 	}
 	return iface.EndpointHost
@@ -145,7 +145,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 
 // state builds what the agent is told.
 func state(iface *model.Interface, ifID uint32, accounts []ikev2conf.Account) (*ikev2conf.State, error) {
-	gw, err := l2tpdriver.Gateway(iface.Subnet)
+	gw, err := agentkit.Gateway(iface.Subnet)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func state(iface *model.Interface, ifID uint32, accounts []ikev2conf.Account) (*
 			Name:       iface.Name,
 			Subnet:     pfx,
 			Gateway:    gw.String(),
-			DNS:        l2tpdriver.Resolvers(tunneldns.For(iface)),
+			DNS:        agentkit.Resolvers(tunneldns.For(iface)),
 			Modes:      Modes(p),
 			ServerID:   ServerID(iface),
 			CACert:     p.CACert,
@@ -193,7 +193,7 @@ func (d *Driver) write(iface *model.Interface, accounts []ikev2conf.Account) ([]
 			return before, nil
 		}
 	}
-	if err := l2tpdriver.WriteAtomic(paths.State(), body, 0o640); err != nil {
+	if err := agentkit.WriteAtomic(paths.State(), body, 0o640); err != nil {
 		return nil, err
 	}
 	d.mu.Lock()
@@ -216,7 +216,7 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 		return backend.SyncReport{}, backend.ErrNotOpen
 	}
 	pfx, _ := netipParse(iface.Subnet)
-	gw, _ := l2tpdriver.Gateway(iface.Subnet)
+	gw, _ := agentkit.Gateway(iface.Subnet)
 	byCert := iface.IKEv2.V.ByCertificate()
 	server := ServerID(iface)
 
@@ -285,7 +285,7 @@ func (d *Driver) Stats(context.Context) ([]backend.Stat, error) {
 	if !open {
 		return nil, backend.ErrNotOpen
 	}
-	r, err := l2tpdriver.FreshReport(paths)
+	r, err := agentkit.FreshReport(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,7 @@ func (d *Driver) Kick(_ context.Context, accountID uint) error {
 	if accountID == 0 {
 		return backend.ErrUnknownAcct
 	}
-	return l2tpdriver.WriteAtomic(paths.KickFile(accountID), nil, 0o640)
+	return agentkit.WriteAtomic(paths.KickFile(accountID), nil, 0o640)
 }
 
 // Render produces the customer's sign-in, as text for a person.
@@ -341,10 +341,10 @@ func (d *Driver) agentError(opening bool) error {
 	paths := d.paths
 	written := d.written
 	d.mu.Unlock()
-	r, err := l2tpdriver.ReadReport(paths)
-	starting := !written.IsZero() && time.Since(written) < l2tpdriver.StartGrace
+	r, err := agentkit.ReadReport(paths)
+	starting := !written.IsZero() && time.Since(written) < agentkit.StartGrace
 	switch {
-	case err != nil || time.Since(time.Unix(r.At, 0)) > l2tpdriver.ReportStale:
+	case err != nil || time.Since(time.Unix(r.At, 0)) > agentkit.ReportStale:
 		if starting && !opening {
 			return nil
 		}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 )
@@ -21,7 +22,7 @@ func setup(t *testing.T) (*model.Interface, l2tpconf.Paths) {
 	backend.DataDir = t.TempDir()
 	ensureDeviceFn = func(context.Context, *model.Interface) error { return nil }
 	removeDeviceFn = func(context.Context, *model.Interface) error { return nil }
-	t.Cleanup(func() { ensureDeviceFn, removeDeviceFn = ensureDevice, removeDevice })
+	t.Cleanup(func() { ensureDeviceFn, removeDeviceFn = agentkit.EnsureDevice, agentkit.RemoveDevice })
 	iface := &model.Interface{
 		ID: 7, Name: "l2tp0", Protocol: model.ProtocolL2TP, Enabled: true,
 		ListenPort: l2tpconf.PortL2TP, Subnet: "10.77.0.0/24", EndpointHost: "vpn.example.com",
@@ -64,7 +65,7 @@ func desired(id uint, user, secret, ip string) backend.DesiredAccount {
 func TestOpenWritesTheStateAndWaitsForTheAgent(t *testing.T) {
 	iface, p := setup(t)
 	d := New()
-	if err := d.Open(context.Background(), iface); err == nil || !errors.Is(err, ErrNoAgent) {
+	if err := d.Open(context.Background(), iface); err == nil || !errors.Is(err, agentkit.ErrNoAgent) {
 		t.Fatalf("open before the agent answered: %v", err)
 	}
 	s := readStateFile(t, p)
@@ -158,7 +159,7 @@ func TestStatsComeFromTheAgentsReport(t *testing.T) {
 	}
 	// A report the agent stopped writing is no report.
 	agentReports(t, p, l2tpconf.Report{At: now - 3600, State: l2tpconf.AgentRunning})
-	if _, err := d.Stats(context.Background()); !errors.Is(err, ErrNoAgent) {
+	if _, err := d.Stats(context.Background()); !errors.Is(err, agentkit.ErrNoAgent) {
 		t.Fatalf("stale report: %v", err)
 	}
 }
@@ -227,7 +228,7 @@ func TestSessionDevicesAreTheLinksPPPNamed(t *testing.T) {
 		t.Fatalf("session devices = %+v", got)
 	}
 	agentReports(t, p, l2tpconf.Report{At: now - 3600, State: l2tpconf.AgentRunning})
-	if _, err := d.SessionDevices(context.Background()); !errors.Is(err, ErrNoAgent) {
+	if _, err := d.SessionDevices(context.Background()); !errors.Is(err, agentkit.ErrNoAgent) {
 		t.Fatalf("stale report: %v", err)
 	}
 }
@@ -253,14 +254,14 @@ func TestGuideValuesAreTheCustomersOwn(t *testing.T) {
 		{Address: "off.example.com", Priority: 0, Enabled: false},
 		{Address: "vpn.example.com", Priority: 3, Enabled: true},
 	}
-	saved := lookupIPv4
-	lookupIPv4 = func(_ context.Context, host string) ([]netip.Addr, error) {
+	saved := serverIPv4
+	serverIPv4 = func(host string) []string {
 		if host == "vpn.example.com" {
-			return []netip.Addr{netip.MustParseAddr("203.0.113.7")}, nil
+			return []string{"203.0.113.7"}
 		}
-		return nil, errors.New("no such host")
+		return nil
 	}
-	t.Cleanup(func() { lookupIPv4 = saved })
+	t.Cleanup(func() { serverIPv4 = saved })
 	v := GuideValues(&model.Account{Username: "s9-laptop", Secret: "Secret11"}, iface)
 	if v.Server != "vpn.example.com" || strings.Join(v.Others, ",") != "a.example.com,b.example.com" ||
 		v.PSK != "SharedKey123" || v.Username != "s9-laptop" || v.Password != "Secret11" || v.Tunnel != "l2tp0" {

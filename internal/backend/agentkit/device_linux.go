@@ -1,6 +1,6 @@
 //go:build linux
 
-package l2tpdriver
+package agentkit
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 
 const cmdTimeout = 10 * time.Second
 
-// ensureDevice gives the tunnel a device of its own name holding its gateway
+// EnsureDevice gives the tunnel a device of its own name holding its gateway
 // address.
 //
 // Every PPP session has the gateway as its local end, but a session's device
@@ -24,30 +24,32 @@ const cmdTimeout = 10 * time.Second
 // tunnel's gateway, and a tunnel is a named device to the rest of the panel;
 // a dummy device holding the address is both, from the moment the tunnel is
 // opened until it is removed. Linux lets the PPP devices share the address.
-func ensureDevice(ctx context.Context, iface *model.Interface) error {
-	gw, err := gateway(iface.Subnet)
+func EnsureDevice(ctx context.Context, iface *model.Interface) error {
+	gw, err := Gateway(iface.Subnet)
 	if err != nil {
 		return err
 	}
 	if run(ctx, "ip", "link", "show", "dev", iface.Name) != nil {
 		if err := run(ctx, "ip", "link", "add", "dev", iface.Name, "type", "dummy"); err != nil {
-			return fmt.Errorf("l2tpdriver: create the %s device: %w", iface.Name, err)
+			return fmt.Errorf("create the %s device: %w", iface.Name, err)
 		}
 	} else if kind := linkKind(ctx, iface.Name); kind != "dummy" {
 		// A device of that name that is something else -- another tunnel
 		// a previous protocol left -- is not taken over.
-		return fmt.Errorf("l2tpdriver: a %s device called %s already exists", kind, iface.Name)
+		return fmt.Errorf("a %s device called %s already exists", kind, iface.Name)
 	}
 	if err := run(ctx, "ip", "addr", "replace", gw.String()+"/32", "dev", iface.Name); err != nil {
-		return fmt.Errorf("l2tpdriver: address the %s device: %w", iface.Name, err)
+		return fmt.Errorf("address the %s device: %w", iface.Name, err)
 	}
 	if err := run(ctx, "ip", "link", "set", "up", "dev", iface.Name); err != nil {
-		return fmt.Errorf("l2tpdriver: bring up the %s device: %w", iface.Name, err)
+		return fmt.Errorf("bring up the %s device: %w", iface.Name, err)
 	}
 	return nil
 }
 
-func removeDevice(ctx context.Context, iface *model.Interface) error {
+// RemoveDevice takes the tunnel's device away, when it is the dummy one
+// EnsureDevice made.
+func RemoveDevice(ctx context.Context, iface *model.Interface) error {
 	if run(ctx, "ip", "link", "show", "dev", iface.Name) != nil {
 		return nil
 	}

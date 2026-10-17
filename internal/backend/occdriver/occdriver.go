@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/occonf"
@@ -79,7 +79,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	if err := os.MkdirAll(paths.KickDir(), 0o750); err != nil {
 		return fmt.Errorf("occdriver: %w", err)
 	}
-	if err := l2tpdriver.EnsureDevice(ctx, iface); err != nil {
+	if err := agentkit.EnsureDevice(ctx, iface); err != nil {
 		return err
 	}
 	d.mu.Lock()
@@ -99,7 +99,7 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 
 // state builds what the agent is told.
 func state(iface *model.Interface, accounts []occonf.Account) (*occonf.State, error) {
-	gw, err := l2tpdriver.Gateway(iface.Subnet)
+	gw, err := agentkit.Gateway(iface.Subnet)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func state(iface *model.Interface, accounts []occonf.Account) (*occonf.State, er
 			Port:             iface.ListenPort,
 			Subnet:           pfx.Masked().String(),
 			Gateway:          gw.String(),
-			DNS:              l2tpdriver.Resolvers(tunneldns.For(iface)),
+			DNS:              agentkit.Resolvers(tunneldns.For(iface)),
 			MTU:              mtu,
 			DTLS:             p.DTLS,
 			Camouflage:       p.Camouflage,
@@ -155,7 +155,7 @@ func (d *Driver) write(iface *model.Interface, accounts []occonf.Account) ([]occ
 			return before, nil
 		}
 	}
-	if err := l2tpdriver.WriteAtomic(paths.State(), body, 0o640); err != nil {
+	if err := agentkit.WriteAtomic(paths.State(), body, 0o640); err != nil {
 		return nil, err
 	}
 	d.mu.Lock()
@@ -179,7 +179,7 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 	}
 	pfx, _ := netip.ParsePrefix(strings.TrimSpace(iface.Subnet))
 	pfx = pfx.Masked()
-	gw, _ := l2tpdriver.Gateway(iface.Subnet)
+	gw, _ := agentkit.Gateway(iface.Subnet)
 
 	var want []occonf.Account
 	names := map[string]bool{}
@@ -240,7 +240,7 @@ func (d *Driver) Stats(context.Context) ([]backend.Stat, error) {
 	if !open {
 		return nil, backend.ErrNotOpen
 	}
-	r, err := l2tpdriver.FreshReport(paths)
+	r, err := agentkit.FreshReport(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (d *Driver) SessionDevices(context.Context) ([]backend.SessionDevice, error
 	if !open {
 		return nil, backend.ErrNotOpen
 	}
-	r, err := l2tpdriver.FreshReport(paths)
+	r, err := agentkit.FreshReport(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func (d *Driver) Kick(_ context.Context, accountID uint) error {
 	if accountID == 0 {
 		return backend.ErrUnknownAcct
 	}
-	return l2tpdriver.WriteAtomic(paths.KickFile(accountID), nil, 0o640)
+	return agentkit.WriteAtomic(paths.KickFile(accountID), nil, 0o640)
 }
 
 // Render produces the customer's sign-in, as text for a person.
@@ -331,10 +331,10 @@ func (d *Driver) agentError(opening bool) error {
 	paths := d.paths
 	written := d.written
 	d.mu.Unlock()
-	r, err := l2tpdriver.ReadReport(paths)
-	starting := !written.IsZero() && time.Since(written) < l2tpdriver.StartGrace
+	r, err := agentkit.ReadReport(paths)
+	starting := !written.IsZero() && time.Since(written) < agentkit.StartGrace
 	switch {
-	case err != nil || time.Since(time.Unix(r.At, 0)) > l2tpdriver.ReportStale:
+	case err != nil || time.Since(time.Unix(r.At, 0)) > agentkit.ReportStale:
 		if starting && !opening {
 			return nil
 		}
@@ -381,7 +381,7 @@ func Remove(ctx context.Context, iface *model.Interface) error {
 	if err := os.Remove(paths.State()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("occdriver: %w", err)
 	}
-	return l2tpdriver.RemoveDevice(ctx, iface)
+	return agentkit.RemoveDevice(ctx, iface)
 }
 
 func readState(p l2tpconf.Paths) (*occonf.State, error) {

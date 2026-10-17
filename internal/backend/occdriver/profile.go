@@ -1,7 +1,7 @@
 package occdriver
 
 import (
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/occonf"
@@ -18,7 +18,7 @@ func GuideValues(acc *model.Account, iface *model.Interface) devguide.Values {
 		Username: acc.Username,
 		Password: acc.Secret,
 	}
-	servers := l2tpdriver.Servers(iface)
+	servers := agentkit.Servers(iface)
 	if len(servers) > 0 {
 		v.Server = servers[0]
 		for _, s := range servers[1:] {

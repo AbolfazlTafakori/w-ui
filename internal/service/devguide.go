@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/abolfazl/w-ui/internal/backend/agentkit"
 	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/backend/occdriver"
@@ -38,7 +39,7 @@ func guideValues(acc *model.Account, iface *model.Interface, file string) devgui
 		Port:     iface.ListenPort,
 		File:     file,
 	}
-	if ips := l2tpdriver.ServerIPv4(v.Server); len(ips) > 0 {
+	if ips := agentkit.ServerIPv4(v.Server); len(ips) > 0 {
 		v.ServerIP = ips[0]
 	}
 	switch iface.Protocol {
