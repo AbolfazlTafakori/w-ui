@@ -108,7 +108,23 @@ func (r *Reporter) Backup(ctx context.Context, lang string) (*notify.Attachment,
 		caption = fmt.Sprintf("بکاپ W-UI %s · %s\n%s · %s\nبازگردانی: نمای کلی ← بکاپ و بازگردانی ← آپلود",
 			r.version, host, when, humanBytes(uint64(arch.Size)))
 	}
+	caption += "\n" + sealNote(arch.Encrypted, lang)
 	return &notify.Attachment{Name: arch.Name, Body: f, Size: arch.Size, Caption: caption}, nil
+}
+
+// sealNote says on the archive whether it is encrypted, where the owner
+// reads it every day: in the chat it was sent to.
+func sealNote(encrypted bool, lang string) string {
+	switch {
+	case encrypted && lang == "fa":
+		return "🔒 رمزنگاری‌شده با رمز بکاپ"
+	case encrypted:
+		return "🔒 Encrypted with the backup password"
+	case lang == "fa":
+		return "⚠️ رمزنگاری نشده: در تنظیمات ← بکاپ برایش رمز بگذارید"
+	default:
+		return "⚠️ Not encrypted: set a backup password under Settings → Backup"
+	}
 }
 
 func humanBytes(n uint64) string {

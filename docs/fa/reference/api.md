@@ -50,6 +50,7 @@ Authorization: Bearer wui_…
 | `GET /api/routing` · `POST /api/routing/rules/order` | قوانین |
 | `GET /api/template?section=` · `PUT` | کل پیکربندی |
 | `POST /api/backups` · `GET /api/backups/{name}` | بک‌آپ |
+| `GET /api/backups/password` · `PUT /api/backups/password` | آیا آرشیوها رمزنگاری می‌شوند؛ تنظیم رمز بک‌آپ (`{"password":"…"}`، دست‌کم ده نویسه؛ خالی یعنی توقف رمزنگاری) |
 | `GET /api/system` · `GET /api/system/history` | سرور |
 
 خطاها به شکل `{"error": "…", "field": "…"}` با status معنادار برمی‌گردند؛ خطای اعتبارسنجی فیلد را نام می‌برد.

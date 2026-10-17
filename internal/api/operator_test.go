@@ -35,6 +35,7 @@ func TestOperatorRoutesRefuseAMachineToken(t *testing.T) {
 		"GET /api/tokens": true, "POST /api/tokens": true, "PATCH /api/tokens/{id}": true, "DELETE /api/tokens/{id}": true,
 		"GET /api/backups": true, "POST /api/backups": true, "GET /api/backups/{name}": true,
 		"DELETE /api/backups/{name}": true, "POST /api/backups/upload": true, "POST /api/backups/{name}/restore": true,
+		"GET /api/backups/password": true, "PUT /api/backups/password": true,
 		"POST /api/nodes": true, "PATCH /api/nodes/{id}": true, "DELETE /api/nodes/{id}": true,
 		"POST /api/nodes/mtls/trust": true, "PUT /api/settings": true, "POST /api/panel/restart": true,
 		"GET /api/template": true, "PUT /api/template": true,

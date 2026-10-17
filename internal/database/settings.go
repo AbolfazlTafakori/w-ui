@@ -1,8 +1,6 @@
 package database
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -12,10 +10,29 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
-// Setting keys the panel manages itself.
-const (
-	KeyJWTSecret = "auth.jwt_secret"
-)
+// RetiredKeys are settings the panel stored once and stores no longer, each
+// with why. They are taken out at start (DropRetired), and the upgrade check
+// does not expect them to survive an update: every other setting must.
+var RetiredKeys = map[string]string{
+	// Since 3.0 the session key lives in keys/session.key (keyfile), out of
+	// the database and so out of every backup: whoever held a backup held
+	// the key, and could sign in to the panel it came from as its owner. A
+	// new key is made then, so a backup sent anywhere before carries a key
+	// that opens nothing.
+	"auth.jwt_secret": "the session key moved out of the database in 3.0",
+}
+
+// DropRetired removes every retired setting that is still stored.
+func DropRetired(db *gorm.DB) error {
+	keys := make([]string, 0, len(RetiredKeys))
+	for k := range RetiredKeys {
+		keys = append(keys, k)
+	}
+	if err := db.Where("key IN ?", keys).Delete(&model.Setting{}).Error; err != nil {
+		return fmt.Errorf("database: drop retired settings: %w", err)
+	}
+	return nil
+}
 
 // GetSetting reads a setting, returning ok=false when it is unset.
 //
@@ -42,30 +59,4 @@ func PutSetting(db *gorm.DB, key, value string) error {
 		return fmt.Errorf("database: write setting %q: %w", key, err)
 	}
 	return nil
-}
-
-// EnsureSecret returns the stored secret for key, generating and persisting one
-// on first use.
-//
-// Persisting it is what keeps sessions valid across a panel restart; a secret
-// regenerated at every boot would sign every operator out on every deploy.
-func EnsureSecret(db *gorm.DB, key string, nbytes int) ([]byte, error) {
-	if v, ok, err := GetSetting(db, key); err != nil {
-		return nil, err
-	} else if ok {
-		raw, derr := base64.StdEncoding.DecodeString(v)
-		if derr != nil {
-			return nil, fmt.Errorf("database: stored secret %q is malformed: %w", key, derr)
-		}
-		return raw, nil
-	}
-
-	raw := make([]byte, nbytes)
-	if _, err := rand.Read(raw); err != nil {
-		return nil, fmt.Errorf("database: generate secret %q: %w", key, err)
-	}
-	if err := PutSetting(db, key, base64.StdEncoding.EncodeToString(raw)); err != nil {
-		return nil, err
-	}
-	return raw, nil
 }

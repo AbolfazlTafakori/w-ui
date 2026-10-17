@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/abolfazl/w-ui/internal/keyfile"
 )
 
 // buildArchive writes a gzip tar of the given name/content pairs.
@@ -59,7 +61,7 @@ func TestAnArchiveCannotWriteOutsideTheDataDirectory(t *testing.T) {
 		path := filepath.Join(dir, "evil.tar.gz")
 		buildArchive(t, path, map[string]string{name: "x", "wui.db": "SQLite"})
 
-		if err := verify(path, "evil.tar.gz"); err == nil {
+		if err := unsealed(t).verify(path, "evil.tar.gz"); err == nil {
 			t.Errorf("an archive containing %q was accepted", name)
 		}
 	}
@@ -73,7 +75,7 @@ func TestSomethingThatIsNotOurBackupIsRefused(t *testing.T) {
 
 	path := filepath.Join(dir, "notours.tar.gz")
 	buildArchive(t, path, map[string]string{"readme.txt": "hello"})
-	err := verify(path, "notours.tar.gz")
+	err := unsealed(t).verify(path, "notours.tar.gz")
 	if err == nil {
 		t.Fatal("an archive with no database was accepted")
 	}
@@ -86,7 +88,7 @@ func TestSomethingThatIsNotOurBackupIsRefused(t *testing.T) {
 	if err := os.WriteFile(plain, []byte("this is just text"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := verify(plain, "plain.tar.gz"); err == nil {
+	if err := unsealed(t).verify(plain, "plain.tar.gz"); err == nil {
 		t.Error("a file that is not an archive was accepted")
 	}
 }
@@ -109,7 +111,7 @@ func TestATruncatedArchiveIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := verify(cut, "cut.tar.gz"); err == nil {
+	if err := unsealed(t).verify(cut, "cut.tar.gz"); err == nil {
 		t.Error("a truncated archive was accepted")
 	}
 }
@@ -124,7 +126,7 @@ func TestARealBackupPassesTheChecks(t *testing.T) {
 		"openvpn/ovpn443/server.conf": "dev ovpn443",
 	})
 
-	if err := verify(path, "good.tar.gz"); err != nil {
+	if err := unsealed(t).verify(path, "good.tar.gz"); err != nil {
 		t.Errorf("a real backup was refused: %v", err)
 	}
 }
@@ -260,7 +262,7 @@ func TestUnpackStaysInsideItsDirectory(t *testing.T) {
 	if err := os.MkdirAll(into, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := unpack(path, into); err == nil {
+	if _, err := unsealed(t).unpack(path, into); err == nil {
 		t.Error("unpack accepted an entry that climbs out of its directory")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "escaped.txt")); !os.IsNotExist(err) {
@@ -407,4 +409,41 @@ func TestAStaleSQLiteFileInAPostgresArchiveIsIgnored(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(data, PendingImportFile)); err != nil {
 		t.Error("the dump was not kept for import")
 	}
+}
+
+// A restore never puts keys over this server's own, whatever the archive
+// carries.
+func TestARestoreKeepsThisServersKeys(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "data")
+	mine, err := keyfile.Ensure(data, "session.key", 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staging := pendingDir(data)
+	if err := os.MkdirAll(filepath.Join(staging, keyfile.Dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"wui.db":                     "restored",
+		keyfile.Dir + "/session.key": strings.Repeat("x", 32),
+		markerFile:                   "wui-backup-20260101-000000.tar.gz",
+	} {
+		if err := os.WriteFile(filepath.Join(staging, filepath.FromSlash(name)), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, ok := ApplyPending(data, "wui.db", quiet()); !ok {
+		t.Fatal("not applied")
+	}
+	now, err := keyfile.Ensure(data, "session.key", 32)
+	if err != nil || string(now) != string(mine) {
+		t.Fatalf("the archive's key replaced this server's: %v", err)
+	}
+}
+
+// unsealed is a service with no backup password, which reads archives as
+// they were before there was one.
+func unsealed(t *testing.T) *Service {
+	t.Helper()
+	return New(Options{DataDir: t.TempDir(), Log: quiet()})
 }

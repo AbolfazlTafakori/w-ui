@@ -813,6 +813,15 @@ func (s *Server) routes() []Route {
 			handler: s.handleDownloadBackup},
 		{Method: "DELETE", Path: "/api/backups/{name}", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Delete an archive.", handler: s.handleDeleteBackup},
+		{Method: "GET", Path: "/api/backups/password", Group: "Settings", Auth: true, Operator: true,
+			Summary: "Whether archives are sealed with a backup password.",
+			handler: s.handleBackupPassword},
+		{Method: "PUT", Path: "/api/backups/password", Group: "Settings", Auth: true, Operator: true,
+			Summary: "Seal every archive from now on with a password, or stop with an empty one.",
+			Body:    `{"password":"at least ten characters"}`,
+			Note: "Kept on the server, never in the database or a backup. An archive sealed " +
+				"with it restores only where the same password is set: write it down.",
+			handler: s.handleSetBackupPassword},
 		{Method: "POST", Path: "/api/backups/upload", Group: "Settings", Auth: true, Operator: true,
 			Summary: "Upload an archive taken on another server.",
 			Note: "Sent as multipart/form-data with the archive in a field named " +

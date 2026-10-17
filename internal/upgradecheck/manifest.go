@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/abolfazl/w-ui/internal/database"
 )
 
 // Manifest is what a panel said about the set Seed put into it, written down
@@ -123,7 +125,8 @@ func (m *Manifest) Save(dir string) error {
 }
 
 // StoredSettings is the settings table as it is: every key and its value,
-// under the names the panel stores them by.
+// under the names the panel stores them by -- but for the keys retired on
+// purpose (database.RetiredKeys), which an update takes out and is right to.
 func StoredSettings(db *gorm.DB) (map[string]string, error) {
 	var rows []struct {
 		Key   string
@@ -134,6 +137,9 @@ func StoredSettings(db *gorm.DB) (map[string]string, error) {
 	}
 	out := make(map[string]string, len(rows))
 	for _, r := range rows {
+		if _, retired := database.RetiredKeys[r.Key]; retired {
+			continue
+		}
 		out[r.Key] = r.Value
 	}
 	return out, nil

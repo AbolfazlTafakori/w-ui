@@ -50,6 +50,7 @@ Before this was fixed, every update by the installer left one more full-access t
 | `GET /api/routing` · `POST /api/routing/rules/order` | rules |
 | `GET /api/template?section=` · `PUT` | the whole configuration |
 | `POST /api/backups` · `GET /api/backups/{name}` | backups |
+| `GET /api/backups/password` · `PUT /api/backups/password` | whether archives are encrypted; set the backup password (`{"password":"…"}`, at least ten characters; empty stops encrypting) |
 | `GET /api/system` · `GET /api/system/history` | the host |
 
 Errors come back as `{"error": "…", "field": "…"}` with a status that means what it says; a validation error names the field.

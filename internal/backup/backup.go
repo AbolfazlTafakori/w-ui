@@ -9,9 +9,11 @@ package backup
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -22,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/keyfile"
 )
 
 // Prefix and suffix of a backup file, used to recognise our own archives when
@@ -29,7 +33,15 @@ import (
 const (
 	filePrefix = "wui-backup-"
 	fileSuffix = ".tar.gz"
-	timeLayout = "20060102-150405"
+	// sealedSuffix follows fileSuffix on an archive sealed with the backup
+	// password (seal.go), so nobody takes it for a plain one.
+	sealedSuffix = ".enc"
+	// passwordFile is the backup password, in the data directory's keys
+	// (keyfile): never in the database, never in a backup.
+	passwordFile = "backup.password"
+	// MinPasswordLength is the shortest backup password taken.
+	MinPasswordLength = 10
+	timeLayout        = "20060102-150405"
 )
 
 // Archive is one backup on disk.
@@ -37,6 +49,8 @@ type Archive struct {
 	Name  string    `json:"name"`
 	Size  int64     `json:"size"`
 	Taken time.Time `json:"taken"`
+	// Encrypted is an archive sealed with the backup password.
+	Encrypted bool `json:"encrypted"`
 }
 
 // Options configures the service.
@@ -131,8 +145,12 @@ func (s *Service) createLocked(ctx context.Context) (Archive, error) {
 		return Archive{}, fmt.Errorf("backup: create %s: %w", s.dir, err)
 	}
 
+	password, err := s.password()
+	if err != nil {
+		return Archive{}, err
+	}
 	now := time.Now().UTC()
-	name := s.freeName(filePrefix + now.Format(timeLayout))
+	name := s.freeName(filePrefix+now.Format(timeLayout), password != "")
 	final := filepath.Join(s.dir, name)
 
 	// Written to a temporary name and renamed, so a backup interrupted halfway
@@ -162,9 +180,22 @@ func (s *Service) createLocked(ctx context.Context) (Archive, error) {
 	}
 	defer cleanup()
 
-	if err := s.writeArchive(ctx, tmp, snapshot); err != nil {
+	// Sealed as it is written when there is a password: the archive is
+	// never on disk in the clear.
+	var out io.WriteCloser = nopCloser{tmp}
+	if password != "" {
+		if out, err = newSealer(tmp, password); err != nil {
+			tmp.Close()
+			return Archive{}, fmt.Errorf("backup: seal: %w", err)
+		}
+	}
+	if err := s.writeArchive(ctx, out, snapshot); err != nil {
 		tmp.Close()
 		return Archive{}, err
+	}
+	if err := out.Close(); err != nil {
+		tmp.Close()
+		return Archive{}, fmt.Errorf("backup: seal: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return Archive{}, fmt.Errorf("backup: close archive: %w", err)
@@ -179,8 +210,74 @@ func (s *Service) createLocked(ctx context.Context) (Archive, error) {
 	}
 
 	s.prune()
-	s.log.Info("backup written", "file", name, "bytes", info.Size())
-	return Archive{Name: name, Size: info.Size(), Taken: now}, nil
+	s.log.Info("backup written", "file", name, "bytes", info.Size(), "encrypted", password != "")
+	return Archive{Name: name, Size: info.Size(), Taken: now, Encrypted: password != ""}, nil
+}
+
+// nopCloser is a writer whose Close does nothing: the file under it is
+// closed by its owner.
+type nopCloser struct{ io.Writer }
+
+func (nopCloser) Close() error { return nil }
+
+// password is the backup password, "" when none is set.
+func (s *Service) password() (string, error) {
+	b, ok, err := keyfile.Read(s.dataDir, passwordFile)
+	if err != nil || !ok {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// PasswordSet reports whether archives are sealed.
+func (s *Service) PasswordSet() bool {
+	p, err := s.password()
+	return err == nil && p != ""
+}
+
+// SetPassword seals every archive taken from now on with password, or none
+// when it is "". Archives already on disk stay as they were: a sealed one
+// still needs the password it was sealed with.
+func (s *Service) SetPassword(password string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if password == "" {
+		return keyfile.Remove(s.dataDir, passwordFile)
+	}
+	if len([]rune(password)) < MinPasswordLength {
+		return fmt.Errorf("%w: a backup password is at least %d characters", ErrInvalid, MinPasswordLength)
+	}
+	return keyfile.Write(s.dataDir, passwordFile, []byte(password))
+}
+
+// ErrInvalid is input the backup service refuses.
+var ErrInvalid = errors.New("backup: invalid")
+
+// open reads an archive as gzip, through its seal when it has one.
+func (s *Service) open(path, label string) (*gzip.Reader, io.Closer, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("backup: open %q: %w", label, err)
+	}
+	br := bufio.NewReader(f)
+	var r io.Reader = br
+	if isSealed(br) {
+		password, err := s.password()
+		if err != nil {
+			f.Close()
+			return nil, nil, err
+		}
+		if r, err = openSealed(br, password); err != nil {
+			f.Close()
+			return nil, nil, err
+		}
+	}
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		f.Close()
+		return nil, nil, fmt.Errorf("backup: %q is not a gzip archive", label)
+	}
+	return gz, f, nil
 }
 
 // snapshotDB asks the database for a consistent copy of itself.
@@ -275,6 +372,11 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		// tunnel before its panel had said a word, and a waiting request
 		// would end a session there.
 		if d.IsDir() && (clean == filepath.Join(root, l2tpStateDir) || clean == filepath.Join(root, pptpStateDir)) {
+			return filepath.SkipDir
+		}
+		// The panel's own keys (keyfile): a backup carries nothing that opens
+		// the panel it was taken on.
+		if d.IsDir() && clean == filepath.Join(root, keyfile.Dir) {
 			return filepath.SkipDir
 		}
 		// A dump waiting to be loaded is not data yet.
@@ -400,9 +502,10 @@ func (s *Service) List() ([]Archive, error) {
 			continue
 		}
 		out = append(out, Archive{
-			Name:  e.Name(),
-			Size:  info.Size(),
-			Taken: takenAt(e.Name(), info.ModTime()),
+			Name:      e.Name(),
+			Size:      info.Size(),
+			Taken:     takenAt(e.Name(), info.ModTime()),
+			Encrypted: strings.HasSuffix(e.Name(), sealedSuffix),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Taken.After(out[j].Taken) })
@@ -428,7 +531,7 @@ func (s *Service) Open(name string) (*os.File, Archive, error) {
 	if err != nil {
 		return nil, Archive{}, fmt.Errorf("backup: open %q: %w", name, err)
 	}
-	return f, Archive{Name: name, Size: info.Size(), Taken: takenAt(name, info.ModTime())}, nil
+	return f, Archive{Name: name, Size: info.Size(), Taken: takenAt(name, info.ModTime()), Encrypted: strings.HasSuffix(name, sealedSuffix)}, nil
 }
 
 // Delete removes one archive.
@@ -474,14 +577,18 @@ const pptpStateDir = "pptp"
 // freeName is base with the archive suffix, or base-2, base-3... when an
 // archive by that name exists: two taken within the same second -- a manual
 // one beside a scheduled one, a restore's safety copy beside either -- used to
-// be written over one another.
-func (s *Service) freeName(base string) string {
-	name := base + fileSuffix
+// be written over one another. A sealed archive's name says so.
+func (s *Service) freeName(base string, sealed bool) string {
+	suffix := fileSuffix
+	if sealed {
+		suffix += sealedSuffix
+	}
+	name := base + suffix
 	for n := 2; ; n++ {
 		if _, err := os.Lstat(filepath.Join(s.dir, name)); os.IsNotExist(err) {
 			return name
 		}
-		name = fmt.Sprintf("%s-%d%s", base, n, fileSuffix)
+		name = fmt.Sprintf("%s-%d%s", base, n, suffix)
 	}
 }
 
@@ -496,13 +603,14 @@ func (zeroes) Read(p []byte) (int, error) {
 }
 
 func isArchive(name string) bool {
-	return strings.HasPrefix(name, filePrefix) && strings.HasSuffix(name, fileSuffix)
+	return strings.HasPrefix(name, filePrefix) &&
+		(strings.HasSuffix(name, fileSuffix) || strings.HasSuffix(name, fileSuffix+sealedSuffix))
 }
 
 // takenAt reads the timestamp out of the filename, falling back to the file's
 // own time for an archive copied in from somewhere else.
 func takenAt(name string, fallback time.Time) time.Time {
-	stamp := strings.TrimSuffix(strings.TrimPrefix(name, filePrefix), fileSuffix)
+	stamp := strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(name, filePrefix), sealedSuffix), fileSuffix)
 	if t, err := time.Parse(timeLayout, stamp); err == nil {
 		return t.UTC()
 	}

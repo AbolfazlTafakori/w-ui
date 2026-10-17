@@ -177,7 +177,7 @@ func New(o Options) *Server {
 
 	// Built last because it asks the server which engines are running, and that
 	// question needs the enforcer, shaper and router the server was just given.
-	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, o.TLSCert, srv.engineHealth)
+	srv.audit = service.NewAudit(o.DB, o.Subs, o.Listen, o.TLSCert, srv.engineHealth, srv.backupExposure)
 	// What the reconciler changes on its own -- a plan ended, one started
 	// on first use -- reaches the open pages the same way an edit does.
 	service.SubscriptionsChanged = srv.subHub.Broadcast
@@ -188,6 +188,16 @@ func New(o Options) *Server {
 //
 // An engine that is working contributes no entry, so an empty map means the
 // kernel is doing everything the panel asked of it.
+// backupExposure is whether backups leave this server -- the Telegram bot
+// sends them -- and whether they are sealed, for the security warnings.
+func (s *Server) backupExposure() (sentAway, sealed bool) {
+	if s.notifier != nil {
+		c := s.notifier.Config()
+		sentAway = c.Enabled && c.Backup && c.BotToken != "" && c.ChatID != ""
+	}
+	return sentAway, s.backups != nil && s.backups.PasswordSet()
+}
+
 func (s *Server) engineHealth(ctx context.Context) map[string]string {
 	out := map[string]string{}
 	if s.enforcer != nil {

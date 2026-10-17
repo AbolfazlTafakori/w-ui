@@ -60,7 +60,7 @@ func TestCertificateWarningsComeInTime(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db := testDB(t)
 			a := NewAudit(db, NewSubscriptions(db, nil, nil, quietLog()),
-				"127.0.0.1:2096", writeCert(t, "panel.example.com", tc.ends), nil)
+				"127.0.0.1:2096", writeCert(t, "panel.example.com", tc.ends), nil, nil)
 			var got *Warning
 			for _, w := range a.checkCertificates(t.Context()) {
 				if strings.HasPrefix(w.ID, "certificate-") {
@@ -92,8 +92,23 @@ func TestCertificateWarningsComeInTime(t *testing.T) {
 	if err := os.WriteFile(junk, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a := NewAudit(db, NewSubscriptions(db, nil, nil, quietLog()), "127.0.0.1:2096", junk, nil)
+	a := NewAudit(db, NewSubscriptions(db, nil, nil, quietLog()), "127.0.0.1:2096", junk, nil, nil)
 	if got := a.checkCertificates(t.Context()); len(got) != 0 {
 		t.Fatalf("an unreadable certificate warned: %+v", got)
+	}
+}
+
+// Backups sent to Telegram unsealed are a warning; sealed, or kept on the
+// server, they are not.
+func TestUnsealedBackupsSentAwayAreAWarning(t *testing.T) {
+	db := testDB(t)
+	for _, tc := range []struct {
+		away, sealed, warned bool
+	}{{true, false, true}, {true, true, false}, {false, false, false}} {
+		a := NewAudit(db, nil, "127.0.0.1:2096", "", nil, func() (bool, bool) { return tc.away, tc.sealed })
+		got := a.checkBackups()
+		if (len(got) == 1 && got[0].ID == "backup-unsealed") != tc.warned {
+			t.Errorf("sent away %v, sealed %v: %+v", tc.away, tc.sealed, got)
+		}
 	}
 }

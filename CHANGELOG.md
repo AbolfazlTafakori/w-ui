@@ -103,6 +103,10 @@ All notable changes to W-UI are recorded here. The format follows
   lists -- the device, then the connection it can make -- on the customer's
   page and in the panel.
 
+### Security
+- **A backup no longer opens the panel it came from.** The key sessions are signed with was in the database, and so in every backup: whoever held one -- from a Telegram chat, a copied file -- could sign in to that panel as its owner, with no password and no second factor. It now lives in `/var/lib/wui/keys/`, which no backup carries and no restore replaces, and 3.0 makes a new one, so every backup taken before carries a key that opens nothing. Everyone signs in once more after the update.
+- **Backups can be encrypted with a password.** Set one under Settings → Backup and every archive from then on, the ones the Telegram bot sends included, is encrypted with it: named `….tar.gz.enc`, unreadable without the password, and refused whole if it was cut short or changed (AES-256-GCM in chunks bound to their place; the key is scrypt of the password). The password is kept in `/var/lib/wui/keys/`, never in the database or a backup; an encrypted archive restores where the same password is set. Until one is set, backups the bot sends are a high-severity security warning in the panel, and each one's caption in the chat says it is not encrypted.
+
 ### Fixed
 - **A subscription link keeps working when the service moves.** Found on a live panel, where some customers' links stopped loading: a link handed out before the operator changed the subscription's port, its certificate or its path answered nothing, or not found.
   - Each address the service leaves -- its port, plain or HTTPS, and its path -- is kept and still answered. Settings → Subscription lists them under *Old addresses still answered*; one is closed once nobody asks for it, and one this panel never recorded can be added.

@@ -2,8 +2,9 @@ package backup
 
 import (
 	"archive/tar"
-	"compress/gzip"
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/keyfile"
 )
 
 // Putting an archive back.
@@ -76,7 +79,7 @@ func (s *Service) Restore(ctx context.Context, name string, keep *LocalAddresses
 
 	// Read it through once before anything is staged. A truncated download or a
 	// corrupted file fails here, with nothing else having happened.
-	if err := verify(path, name); err != nil {
+	if err := s.verify(path, name); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +100,7 @@ func (s *Service) Restore(ctx context.Context, name string, keep *LocalAddresses
 		return nil, fmt.Errorf("backup: staging directory: %w", err)
 	}
 
-	files, err := unpack(path, staging)
+	files, err := s.unpack(path, staging)
 	if err != nil {
 		os.RemoveAll(staging)
 		return nil, err
@@ -226,6 +229,11 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		if rel == markerFile || rel == localAddressesFile {
 			continue
 		}
+		// This server's own keys stay its own, whatever an archive carries:
+		// none this panel writes has them, and one that does was not.
+		if strings.HasPrefix(rel, keyfile.Dir+"/") {
+			continue
+		}
 		if rel == ExportFile {
 			if byFile {
 				continue
@@ -298,17 +306,12 @@ func collectFiles(root string) ([]string, error) {
 // label is what the operator called it: an archive on disk has a name they
 // chose from a list, and an upload has none yet, so saying ".wui-upload-2650995218
 // is damaged" tells them about a file they have never seen.
-func verify(path, label string) error {
-	f, err := os.Open(path)
+func (s *Service) verify(path, label string) error {
+	gz, f, err := s.open(path, label)
 	if err != nil {
-		return fmt.Errorf("backup: open %q: %w", label, err)
+		return err
 	}
 	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return fmt.Errorf("backup: %q is not a gzip archive", label)
-	}
 	defer gz.Close()
 
 	tr := tar.NewReader(gz)
@@ -341,6 +344,9 @@ func verify(path, label string) error {
 		// Read the member out rather than skipping it: the checksum at the end
 		// of the gzip stream is only checked once the bytes have gone through.
 		if _, err := io.Copy(io.Discard, tr); err != nil {
+			if errors.Is(err, ErrWrongPassword) {
+				return err
+			}
 			return fmt.Errorf("backup: %q is damaged: %w", label, err)
 		}
 	}
@@ -352,17 +358,12 @@ func verify(path, label string) error {
 }
 
 // unpack extracts into a directory, returning the relative names written.
-func unpack(path, into string) ([]string, error) {
-	f, err := os.Open(path)
+func (s *Service) unpack(path, into string) ([]string, error) {
+	gz, f, err := s.open(path, filepath.Base(path))
 	if err != nil {
-		return nil, fmt.Errorf("backup: open %q: %w", filepath.Base(path), err)
+		return nil, err
 	}
 	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return nil, fmt.Errorf("backup: read %q: %w", filepath.Base(path), err)
-	}
 	defer gz.Close()
 
 	var written []string
@@ -506,7 +507,11 @@ func (s *Service) Accept(r io.Reader) (Archive, error) {
 		return Archive{}, fmt.Errorf("backup: the uploaded file is empty")
 	}
 
-	if err := verify(tmpName, "the uploaded file"); err != nil {
+	if err := s.verify(tmpName, "the uploaded file"); err != nil {
+		return Archive{}, err
+	}
+	sealed, err := fileIsSealed(tmpName)
+	if err != nil {
 		return Archive{}, err
 	}
 
@@ -514,15 +519,25 @@ func (s *Service) Accept(r io.Reader) (Archive, error) {
 	// The name is what every other operation matches on, and a name from
 	// outside is a name this panel did not choose.
 	now := time.Now().UTC()
-	name := s.freeName(filePrefix + now.Format(timeLayout) + "-uploaded")
+	name := s.freeName(filePrefix+now.Format(timeLayout)+"-uploaded", sealed)
 	final := filepath.Join(s.dir, name)
 
 	if err := os.Rename(tmpName, final); err != nil {
 		return Archive{}, fmt.Errorf("backup: store upload: %w", err)
 	}
 
-	s.log.Info("a backup archive was uploaded", "archive", name, "size", size)
-	return Archive{Name: name, Size: size, Taken: now}, nil
+	s.log.Info("a backup archive was uploaded", "archive", name, "size", size, "encrypted", sealed)
+	return Archive{Name: name, Size: size, Taken: now, Encrypted: sealed}, nil
+}
+
+// fileIsSealed reports whether the archive at path is sealed.
+func fileIsSealed(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	return isSealed(bufio.NewReader(f)), nil
 }
 
 // dumpDriver reads which engine a portable dump was taken on, from its

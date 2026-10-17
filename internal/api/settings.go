@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -442,6 +444,50 @@ func (s *Server) handleTestMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// backupPasswordView is whether archives are sealed, and how long a
+// password has to be.
+type backupPasswordView struct {
+	Set       bool `json:"set"`
+	MinLength int  `json:"minLength"`
+}
+
+func (s *Server) handleBackupPassword(w http.ResponseWriter, r *http.Request) {
+	if s.backups == nil {
+		writeError(w, http.StatusServiceUnavailable, "backups are not available")
+		return
+	}
+	writeJSON(w, http.StatusOK, backupPasswordView{Set: s.backups.PasswordSet(), MinLength: backup.MinPasswordLength})
+}
+
+func (s *Server) handleSetBackupPassword(w http.ResponseWriter, r *http.Request) {
+	if s.backups == nil {
+		writeError(w, http.StatusServiceUnavailable, "backups are not available")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if err := s.backups.SetPassword(req.Password); err != nil {
+		if errors.Is(err, backup.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, humanMessage(err))
+			return
+		}
+		fail(w, s.log, err)
+		return
+	}
+	// Said in the log either way, without the password: who sealed the
+	// backups, or who stopped sealing them.
+	if req.Password == "" {
+		s.log.Warn("backups are no longer encrypted", "by", adminName(r), "ip", clientIP(r))
+	} else {
+		s.log.Info("backups are encrypted with a new password", "by", adminName(r), "ip", clientIP(r))
+	}
+	writeJSON(w, http.StatusOK, backupPasswordView{Set: req.Password != "", MinLength: backup.MinPasswordLength})
 }
 
 func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {

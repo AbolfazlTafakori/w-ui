@@ -40,6 +40,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/geoip"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/keyfile"
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
@@ -191,9 +192,13 @@ func run() error {
 		printFirstRunCredentials(password)
 	}
 
-	jwtSecret, err := database.EnsureSecret(db, database.KeyJWTSecret, 32)
+	// The key sessions are signed with: a file of its own, never in a backup.
+	jwtSecret, err := keyfile.Ensure(cfg.DataDir, "session.key", 32)
 	if err != nil {
 		return err
+	}
+	if err := database.DropRetired(db); err != nil {
+		log.Warn("could not remove settings the panel no longer keeps", "error", err)
 	}
 
 	// OpenVPN keeps its per-interface files under the data directory, so the

@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/upgradecheck"
 )
 
@@ -148,14 +149,27 @@ func checkPanel(t *testing.T, when string, p *panel, m *upgradecheck.Manifest, d
 
 // checkSettings: every setting the earlier release stored is still stored,
 // with the same value. A panel that renamed or dropped one would lose an
-// operator's configuration on update.
+// operator's configuration on update. A key retired on purpose
+// (database.RetiredKeys) is the one exception, and it must be gone.
 func checkSettings(t *testing.T, when string, db *gorm.DB, m *upgradecheck.Manifest) {
 	t.Helper()
 	now, err := upgradecheck.StoredSettings(db)
 	if err != nil {
 		t.Fatal(err)
 	}
+	for k := range database.RetiredKeys {
+		var n int64
+		if err := db.Table("settings").Where("key = ?", k).Count(&n).Error; err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("%s: retired setting %s is still stored", when, k)
+		}
+	}
 	for k, was := range m.Settings {
+		if _, retired := database.RetiredKeys[k]; retired {
+			continue
+		}
 		is, ok := now[k]
 		switch {
 		case !ok:

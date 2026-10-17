@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/keyfile"
 )
 
 func quiet() *slog.Logger {
@@ -84,6 +86,24 @@ func TestArchiveCarriesWhatCannotBeRegenerated(t *testing.T) {
 	}
 	if got["openvpn/tun0/server.key"] != "a server private key" {
 		t.Error("the key was not copied faithfully")
+	}
+}
+
+// A backup carries nothing that opens the panel it was taken on: its keys
+// (keyfile) stay on the server.
+func TestABackupCarriesNoKeyOfThePanels(t *testing.T) {
+	s, data := newService(t, 0)
+	if _, err := keyfile.Ensure(data, "session.key", 32); err != nil {
+		t.Fatal(err)
+	}
+	a, err := s.Create(context.Background())
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for name := range entries(t, filepath.Join(s.Dir(), a.Name)) {
+		if strings.HasPrefix(name, keyfile.Dir+"/") {
+			t.Errorf("the archive carries %s", name)
+		}
 	}
 }
 

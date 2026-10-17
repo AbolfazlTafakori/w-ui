@@ -12,7 +12,17 @@ One `.tar.gz`, holding:
 
 - **`wui.db`** — a consistent SQLite snapshot (`VACUUM INTO`, not a raw copy that can be caught mid-write). Only in backups from a SQLite panel. If the snapshot cannot be taken, the live file is **not** archived in its place — it can lack changes still in the write-ahead log — and the dump below carries the database. A backup with neither is not written, and the failure is reported.
 - **`wui-export.json`** — every table as JSON, written through the schema. In every backup, whichever engine. This is the copy that crosses engines and versions: a column a newer panel added is left at its default, a column it dropped is ignored.
-- Everything else in `/var/lib/wui` — OpenVPN's PKI and server files, generated profiles — except the backups themselves, SQLite's write-ahead sidecars, a restore waiting to be applied and an update waiting for the update helper.
+- Everything else in `/var/lib/wui` — OpenVPN's PKI and server files, generated profiles — except the backups themselves, SQLite's write-ahead sidecars, a restore waiting to be applied, an update waiting for the update helper, and `keys/`.
+
+**Nothing in a backup opens the panel it came from.** The key sessions are signed with, and the backup password, live in `/var/lib/wui/keys/`, which is never archived and never restored over. Before 3.0 the session key was in the database, so a backup could be used to sign in to its panel as its owner; 3.0 moves it out and makes a new one, so every backup taken before carries a key that opens nothing. Everyone signs in once more after the update.
+
+## Encryption
+
+Set a **backup password** under Settings → Backup and every archive from then on is encrypted with it: named `….tar.gz.enc`, unreadable without the password, and refused whole if it was cut short or changed. The password is kept in `/var/lib/wui/keys/backup.password`, not in the database and not in any backup. Archives already taken stay as they were.
+
+- **Write the password down somewhere else.** An encrypted archive restores only where the same password is set. On a new server, set it first, then upload the archive.
+- Without a password, archives are plain `.tar.gz`. If the Telegram bot sends them, the panel's security warnings say so, and so does every archive's caption in the chat, until a password is set.
+- The format: AES-256-GCM in 64 KiB chunks, each bound to its place and to whether it is the last; the key is scrypt (N=2¹⁵, r=8, p=1) of the password and a random salt per archive.
 
 Two backups taken in the same second — a manual one beside a scheduled one, or a restore's safety copy beside either — get distinct names (`…-2.tar.gz`) instead of one overwriting the other.
 

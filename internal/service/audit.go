@@ -48,14 +48,21 @@ type Audit struct {
 	// empty when everything is working. Supplied as a function so this package
 	// does not have to know what an nftables or a tc is.
 	engines func(context.Context) map[string]string
+	// backups says where backups go and whether they are sealed.
+	backups BackupExposure
 }
 
 func NewAudit(
 	db *gorm.DB, subs *Subscriptions, listen, tlsCert string,
 	engines func(context.Context) map[string]string,
+	backups BackupExposure,
 ) *Audit {
-	return &Audit{db: db, subs: subs, listen: listen, tlsCert: tlsCert, engines: engines}
+	return &Audit{db: db, subs: subs, listen: listen, tlsCert: tlsCert, engines: engines, backups: backups}
 }
+
+// BackupExposure says whether backups are sent off the server, to Telegram,
+// and whether they are sealed with a backup password.
+type BackupExposure func() (sentAway, sealed bool)
 
 // Run collects the warnings that currently apply.
 func (a *Audit) Run(ctx context.Context) []Warning {
@@ -68,8 +75,30 @@ func (a *Audit) Run(ctx context.Context) []Warning {
 	out = append(out, a.checkCertificates(ctx)...)
 	out = append(out, a.checkTokens(ctx)...)
 	out = append(out, a.checkNodes(ctx)...)
+	out = append(out, a.checkBackups()...)
 
 	return out
+}
+
+// checkBackups reports backups that leave the server unsealed. Each one is
+// every customer's keys and the servers' own, and a chat is not a safe.
+func (a *Audit) checkBackups() []Warning {
+	if a.backups == nil {
+		return nil
+	}
+	if away, sealed := a.backups(); !away || sealed {
+		return nil
+	}
+	return []Warning{{
+		ID:       "backup-unsealed",
+		Severity: "high",
+		Title:    "Backups are sent to Telegram unencrypted",
+		Detail: "Each one holds every customer's keys and this server's own. Whoever " +
+			"can read that chat, or gets the bot's token, can run every customer's " +
+			"connection elsewhere.",
+		Fix:   "Set a backup password under Settings → Backup. Archives taken from then on are encrypted with it.",
+		Where: "/settings",
+	}}
 }
 
 // checkEngines reports the parts of the kernel that are not doing their job.
