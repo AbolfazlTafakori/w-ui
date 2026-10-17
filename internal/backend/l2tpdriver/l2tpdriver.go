@@ -31,6 +31,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
 
 // DataRoot is the panel's data directory, set by the panel at start.
@@ -41,10 +42,6 @@ var (
 	ensureDeviceFn = ensureDevice
 	removeDeviceFn = removeDevice
 )
-
-// DNSFor is the resolver handed to customers. The engine replaces it while
-// the panel's own resolver is on; by default it is the interface's.
-var DNSFor = func(iface *model.Interface) string { return iface.DNS }
 
 // reportStale is how old the agent's report may be before the agent is taken
 // to be down. It writes one every second.
@@ -147,7 +144,7 @@ func state(iface *model.Interface, accounts []l2tpconf.Account) (*l2tpconf.State
 			Name:     iface.Name,
 			Subnet:   mustPrefix(iface.Subnet).Masked().String(),
 			Gateway:  gw.String(),
-			DNS:      resolvers(DNSFor(iface)),
+			DNS:      resolvers(tunneldns.For(iface)),
 			MTU:      mtu,
 			Accounts: accounts,
 		},

@@ -78,10 +78,9 @@ func TestTheOptionsLeaveOneSignInOneSession(t *testing.T) {
 
 // A name typed on the settings page cannot break out of its line.
 func TestTheProfileNameIsKeptToOneLine(t *testing.T) {
-	old := ProfileName
-	defer func() { ProfileName = old }()
-	ProfileName = func(*model.Interface) string { return "My \"VPN\"\nremote evil.example 1\\ · آلمان" }
-	p := RenderProfile(testIface(t))
+	named := testIface(t)
+	named.ListedAs = "My \"VPN\"\nremote evil.example 1\\ · آلمان"
+	p := RenderProfile(named)
 	if strings.Contains(p, "remote evil.example") && !strings.Contains(p, "FRIENDLY_NAME \"My VPNremote evil.example 1 · آلمان\"") {
 		t.Fatalf("profile:\n%s", p)
 	}
@@ -90,8 +89,9 @@ func TestTheProfileNameIsKeptToOneLine(t *testing.T) {
 			t.Fatal("the name put a line of its own into the file")
 		}
 	}
-	ProfileName = func(*model.Interface) string { return "  " }
-	if strings.Contains(RenderProfile(testIface(t)), "FRIENDLY_NAME") {
+	blank := testIface(t)
+	blank.ListedAs, blank.Name = "  ", "  "
+	if strings.Contains(RenderProfile(blank), "FRIENDLY_NAME") {
 		t.Fatal("an empty name was written")
 	}
 }

@@ -26,7 +26,6 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
-	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
@@ -75,19 +74,7 @@ type Subscriptions struct {
 func NewSubscriptions(
 	db *gorm.DB, pool *backend.Pool, hosts *Hosts, log *slog.Logger,
 ) *Subscriptions {
-	s := &Subscriptions{db: db, pool: pool, hosts: hosts, log: log}
-	// An OpenVPN profile is listed in the customer's app under the name the
-	// seller gave their subscription page, and the tunnel's.
-	ovpnconf.ProfileName = func(iface *model.Interface) string {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		cfg, err := s.Settings(ctx)
-		if err != nil || strings.TrimSpace(cfg.Title) == "" {
-			return iface.Name
-		}
-		return strings.TrimSpace(cfg.Title) + " · " + iface.Name
-	}
-	return s
+	return &Subscriptions{db: db, pool: pool, hosts: hosts, log: log}
 }
 
 // SubSettings is what the settings page can change.
@@ -670,6 +657,13 @@ func (s *Subscriptions) renderDevicesFor(
 ) ([]RenderedDevice, error) {
 	var out []RenderedDevice
 
+	// A file is listed in the customer's app under the name the seller gave
+	// their subscription page, and the tunnel's: read once for the lot.
+	title := ""
+	if cfg, err := s.Settings(ctx); err == nil {
+		title = strings.TrimSpace(cfg.Title)
+	}
+
 	single := len(deviceNames(c.Accounts)) <= 1
 	for i := range c.Accounts {
 		acc := c.Accounts[i]
@@ -700,6 +694,9 @@ func (s *Subscriptions) renderDevicesFor(
 		}
 		for _, v := range variantsFor(&iface, format) {
 			at := withEndpoint(iface, v)
+			if title != "" {
+				at.ListedAs = title + " · " + iface.Name
+			}
 			profile, err := drv.Render(ctx, &acc, &at)
 			if err != nil {
 				s.log.Warn("could not render a configuration for a subscription",

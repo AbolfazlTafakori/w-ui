@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
 
 // DefaultKeepalive is the interval clients send keepalives at.
@@ -79,10 +80,6 @@ func HeaderValue(p model.AWGParams, n int) string {
 	return fmt.Sprintf("%d", lo)
 }
 
-// DNSFor is the resolver a customer's profile names. The engine replaces it
-// while the panel's own resolver is on; by default it is the interface's.
-var DNSFor = func(iface *model.Interface) string { return iface.DNS }
-
 // RenderClient produces the file a customer imports.
 func RenderClient(acc *model.Account, iface *model.Interface) string {
 	var b strings.Builder
@@ -94,7 +91,7 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 	// mask would make the client claim the whole tunnel subnet and blackhole
 	// every other customer's traffic on that machine.
 	fmt.Fprintf(&b, "Address = %s/32\n", acc.IP)
-	if dns := DNSFor(iface); dns != "" {
+	if dns := tunneldns.For(iface); dns != "" {
 		fmt.Fprintf(&b, "DNS = %s\n", dns)
 	}
 	if iface.MTU > 0 {

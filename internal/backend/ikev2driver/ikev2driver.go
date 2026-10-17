@@ -27,6 +27,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
 
 // Errors.
@@ -157,7 +158,7 @@ func state(iface *model.Interface, ifID uint32, accounts []ikev2conf.Account) (*
 			Name:       iface.Name,
 			Subnet:     pfx,
 			Gateway:    gw.String(),
-			DNS:        l2tpdriver.Resolvers(l2tpdriver.DNSFor(iface)),
+			DNS:        l2tpdriver.Resolvers(tunneldns.For(iface)),
 			Modes:      Modes(p),
 			ServerID:   ServerID(iface),
 			CACert:     p.CACert,

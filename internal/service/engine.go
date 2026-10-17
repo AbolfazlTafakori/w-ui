@@ -13,13 +13,11 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/abolfazl/w-ui/internal/backend/l2tpdriver"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/dnsproxy"
 	"github.com/abolfazl/w-ui/internal/logger"
-	"github.com/abolfazl/w-ui/internal/ovpnconf"
-	"github.com/abolfazl/w-ui/internal/wgconf"
+	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
 
 // The engine page: what the classic panel keeps under Xray -- the core's own knobs --
@@ -305,18 +303,7 @@ func (e *Engine) Apply(ctx context.Context) {
 	}
 	// Customers are handed the tunnel's own address as their resolver
 	// while the proxy is on; otherwise whatever the interface says.
-	dnsOn := cfg.DNS.Enabled && len(cfg.DNS.Servers) > 0
-	dnsFor := func(iface *model.Interface) string {
-		if dnsOn {
-			if gw, ok := gatewayOf(iface.Subnet); ok {
-				return gw.String()
-			}
-		}
-		return iface.DNS
-	}
-	wgconf.DNSFor = dnsFor
-	ovpnconf.DNSFor = dnsFor
-	l2tpdriver.DNSFor = dnsFor
+	tunneldns.SetProxy(cfg.DNS.Enabled && len(cfg.DNS.Servers) > 0)
 	e.syncDNS(ctx, cfg)
 }
 

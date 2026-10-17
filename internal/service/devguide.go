@@ -6,6 +6,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend/occdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
+	"github.com/abolfazl/w-ui/internal/tunneldns"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
@@ -45,7 +46,7 @@ func guideValues(acc *model.Account, iface *model.Interface, file string) devgui
 		v.WG = devguide.WGValues{
 			PrivateKey:   acc.PrivateKey,
 			Address:      acc.IP + "/32",
-			DNS:          wgconf.DNSFor(iface),
+			DNS:          tunneldns.For(iface),
 			MTU:          iface.MTU,
 			PublicKey:    iface.PublicKey,
 			PresharedKey: acc.PresharedKey,

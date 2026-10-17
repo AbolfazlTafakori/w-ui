@@ -31,6 +31,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/occonf"
+	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
 
 // Errors.
@@ -119,7 +120,7 @@ func state(iface *model.Interface, accounts []occonf.Account) (*occonf.State, er
 			Port:             iface.ListenPort,
 			Subnet:           pfx.Masked().String(),
 			Gateway:          gw.String(),
-			DNS:              l2tpdriver.Resolvers(l2tpdriver.DNSFor(iface)),
+			DNS:              l2tpdriver.Resolvers(tunneldns.For(iface)),
 			MTU:              mtu,
 			DTLS:             p.DTLS,
 			Camouflage:       p.Camouflage,

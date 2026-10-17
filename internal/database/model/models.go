@@ -214,6 +214,11 @@ type Interface struct {
 	// profile carry all of them.
 	Hosts []Host `gorm:"-" json:"-"`
 
+	// ListedAs is the name a customer's app lists this tunnel under, set by
+	// whoever renders a customer's file -- the subscription's title and the
+	// tunnel's -- and never stored. Empty is the tunnel's own name.
+	ListedAs string `gorm:"-" json:"-"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

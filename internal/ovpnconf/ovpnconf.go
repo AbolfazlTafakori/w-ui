@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/tunneldns"
 )
 
 // Account is one credential as the server should hold it.
@@ -208,7 +209,11 @@ func RenderProfile(iface *model.Interface) string {
 
 	// The name OpenVPN Connect lists the profile under, instead of an
 	// address. Other clients ignore it.
-	if name := cleanName(ProfileName(iface)); name != "" {
+	listed := iface.ListedAs
+	if listed == "" {
+		listed = iface.Name
+	}
+	if name := cleanName(listed); name != "" {
 		fmt.Fprintf(&b, "setenv FRIENDLY_NAME %q\n", name)
 	}
 	b.WriteString("verb 3\n")
@@ -321,7 +326,7 @@ func RenderServer(iface *model.Interface, l Layout) (string, error) {
 	}
 
 	b.WriteString("\npush \"redirect-gateway def1 bypass-dhcp\"\n")
-	for _, dns := range dnsServers(DNSFor(iface)) {
+	for _, dns := range dnsServers(tunneldns.For(iface)) {
 		fmt.Fprintf(&b, "push \"dhcp-option DNS %s\"\n", dns)
 	}
 
@@ -492,15 +497,6 @@ func transport(p model.OpenVPNParams) string {
 	}
 	return "udp"
 }
-
-// DNSFor is the resolver pushed to customers. The engine replaces it while
-// the panel's own resolver is on; by default it is the interface's.
-var DNSFor = func(iface *model.Interface) string { return iface.DNS }
-
-// ProfileName is the name a profile is listed under in OpenVPN Connect: the
-// panel sets it to the subscription's title and the tunnel. Cleaned by
-// cleanName, whatever it returns.
-var ProfileName = func(iface *model.Interface) string { return iface.Name }
 
 // cleanName keeps a name to what a quoted setenv value holds as it is: no
 // line breaks, quotes or backslashes, and not too long for a list.
