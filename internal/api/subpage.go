@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,9 +39,9 @@ const subPageQRLimit = 1500
 //go:embed assets/logo.png
 var subLogoPNG []byte
 
-// subLogo is the mark, inlined: the page's policy loads images from itself
-// and from data: only, and the page has no other files to speak of.
-var subLogo = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(subLogoPNG))
+// subLogo is the mark: a file of the page's own, fetched once and kept
+// (subassets.go), where it was written into every page twice.
+var subLogo = template.URL(registerSubAsset("logo", ".png", "image/png", subLogoPNG))
 
 type subPageView struct {
 	Logo  template.URL
@@ -159,6 +161,11 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		_, _ = w.Write(body)
+		return true
+	}
+	// A QR the page opened.
+	if view == "qr" {
+		s.serveSubQR(w, r, token)
 		return true
 	}
 	// The stream a page holds open to be told the moment something changed.
@@ -358,10 +365,12 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	if page.LastOnline != nil {
 		v.LastOnline = page.LastOnline.Local().Format("2006-01-02 15:04")
 	}
+	// The QR codes are images the page asks for when one is opened
+	// (serveSubQR), not drawn into it: 25 KB each, two to a file, made and
+	// sent on every visit when hardly any is ever opened. A preview has no
+	// link to ask with, and carries its few drawn in.
 	if page.SubURL != "" {
-		if png, err := qrcode.Encode(page.SubURL, qrcode.Low, 240); err == nil {
-			v.SubQR = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png))
-		}
+		v.SubQR = subQRSource(preview, page.SubURL, "")
 	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
@@ -375,17 +384,11 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		}
 		// An L2TP or PPTP sign-in is typed into the device's own settings; no app
 		// scans it, so a QR of it would only be something to puzzle over.
-		if len(d.Config) <= subPageQRLimit && !ppp {
-			if png, err := qrcode.Encode(d.Config, qrcode.Low, 220); err == nil {
-				entry.QR = template.URL("data:image/png;base64," +
-					base64.StdEncoding.EncodeToString(png))
-			}
+		if qrText(d, "") != "" {
+			entry.QR = subQRSource(preview, d.Config, entry.Ref)
 		}
-		if d.AmneziaKey != "" && len(d.AmneziaKey) <= subPageQRLimit {
-			if png, err := qrcode.Encode(d.AmneziaKey, qrcode.Low, 220); err == nil {
-				entry.AmneziaQR = template.URL("data:image/png;base64," +
-					base64.StdEncoding.EncodeToString(png))
-			}
+		if qrText(d, "amnezia") != "" {
+			entry.AmneziaQR = subQRSource(preview, d.AmneziaKey, entry.Ref+"&key=amnezia")
 		}
 		v.Devices = append(v.Devices, entry)
 		switch d.Protocol {
@@ -509,6 +512,83 @@ func ikev2Files(d service.SubPageDevice) []ikev2File {
 }
 
 // fileRef names a file to the copy buttons.
+// qrText is what a file's QR carries -- its configuration, or with key
+// "amnezia" its AmneziaVPN key -- or nothing when it has none: an L2TP, PPTP,
+// IKEv2 or OpenConnect sign-in is typed into the device and no app scans it,
+// and a configuration past subPageQRLimit is a QR no phone resolves.
+func qrText(d service.SubPageDevice, key string) string {
+	text := d.Config
+	if key == "amnezia" {
+		text = d.AmneziaKey
+	} else if d.Protocol == "l2tp" || d.Protocol == "pptp" || d.Protocol == "ikev2" || d.Protocol == "openconnect" {
+		return ""
+	}
+	if len(text) > subPageQRLimit {
+		return ""
+	}
+	return text
+}
+
+// subQRSource is where a QR's image comes from: the page's own address for a
+// customer's page, asked for when it is opened, or drawn in for a preview.
+// ref names the file ("" for the subscription link itself).
+//
+// The address carries a mark of what the QR holds, so a file whose keys are
+// rotated is a new address: the browser keeps an image for a day, and must
+// never show one of keys that no longer work.
+func subQRSource(preview bool, text, ref string) template.URL {
+	if !preview {
+		sum := sha256.Sum256([]byte(text))
+		mark := "&v=" + hex.EncodeToString(sum[:4])
+		if ref == "" {
+			return template.URL("?view=qr" + mark)
+		}
+		return template.URL("?view=qr&ref=" + ref + mark)
+	}
+	png, err := qrcode.Encode(text, qrcode.Low, 220)
+	if err != nil {
+		return ""
+	}
+	return template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png))
+}
+
+// serveSubQR answers a QR the page asks for: of the subscription link, or of
+// one file by its ref, as the page itself would have drawn it.
+func (s *Server) serveSubQR(w http.ResponseWriter, r *http.Request, token string) {
+	link, _ := s.subs.LinkFor(r.Context(), token, r.Host)
+	text, size := link, 240
+	if ref := r.URL.Query().Get("ref"); ref != "" {
+		page, err := s.subs.PageFor(r.Context(), token, link)
+		if err != nil {
+			s.subFailed(w, r, err)
+			return
+		}
+		text, size = "", 220
+		for _, d := range page.Devices {
+			if fileRef(d) == ref {
+				text = qrText(d, r.URL.Query().Get("key"))
+				break
+			}
+		}
+	}
+	if text == "" {
+		http.NotFound(w, r)
+		return
+	}
+	png, err := qrcode.Encode(text, qrcode.Low, size)
+	if err != nil {
+		s.subFailed(w, r, err)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "image/png")
+	// Kept a day by this browser alone: its address changes with what it
+	// holds (subQRSource), so a kept one is never of old keys.
+	h.Set("Cache-Control", "private, max-age=86400")
+	h.Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(png)
+}
+
 func fileRef(d service.SubPageDevice) string {
 	return strconv.FormatUint(uint64(d.ID), 10) + "." + strconv.FormatUint(uint64(d.HostID), 10)
 }
@@ -836,6 +916,16 @@ func humanBytes(n uint64) string {
 }
 
 var subPageFuncs = template.FuncMap{
+	// qrSrc is a QR image's source: drawn in (a preview's) it is shown, and
+	// one the page asks for is only asked for when its QR is opened -- a
+	// hidden image is fetched all the same.
+	"qrSrc": func(u template.URL) template.HTMLAttr {
+		attr := "data-src"
+		if strings.HasPrefix(string(u), "data:") {
+			attr = "src"
+		}
+		return template.HTMLAttr(attr + `="` + template.HTMLEscapeString(string(u)) + `"`)
+	},
 	"bytes": humanBytes,
 }
 
@@ -965,7 +1055,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
           <div class="row-actions">
             <button class="btn sm copy" type="button" data-text="{{ .Page.SubURL }}" data-i-title="copy"><span class="anticon">{{ index .Icons "CopyOutlined" }}</span></button>
             {{ if .SubQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index .Icons "QrcodeOutlined" }}</span></button>
-            <div class="pop"><div class="pop-card"><span class="tag green qr-tag" data-i="subSettings">Subscription</span><img src="{{ .SubQR }}" width="240" height="240" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
+            <div class="pop"><div class="pop-card"><span class="tag green qr-tag" data-i="subSettings">Subscription</span><img {{ qrSrc .SubQR }} width="240" height="240" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
           </div>
         </div>
       </div>
@@ -999,11 +1089,11 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
                   {{ if not .PPP }}<button class="btn sm copy" type="button" data-text="{{ .Config }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>{{ end }}
                   <a class="btn sm" href="?device={{ .ID }}{{ if .HostID }}&host={{ .HostID }}{{ end }}" download="{{ .Filename }}" data-i-title="download"><span class="anticon">{{ index $.Icons "DownloadOutlined" }}</span></a>
                   {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
-                  <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ .Label }}</span><img src="{{ .QR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
+                  <div class="pop"><div class="pop-card"><span class="tag qr-tag">{{ .Label }}</span><img {{ qrSrc .QR }} width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
                   <button class="btn sm show" type="button" data-i-title="show"><span class="anticon">{{ index $.Icons "RightOutlined" }}</span></button>
                 </div>
               </div>
-              <div class="cfg-user-body">{{ if .PPP }}{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ end }}{{ else }}<code class="cfg-text">{{ .Config }}</code>{{ if .Setup }}<div class="divider"><span data-i="dgSetup">Set up a device</span></div>{{ template "setup" .Setup }}{{ end }}{{ end }}{{ if .AmneziaKey }}<div class="awg-key"><span class="tag" dir="ltr">AmneziaVPN</span><span class="awg-key-text" data-i="amneziaKeyHint">For the AmneziaVPN app: copy the key, or scan it.</span><button class="btn sm copy" type="button" data-text="{{ .AmneziaKey }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>{{ if .AmneziaQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button><div class="pop"><div class="pop-card"><span class="tag qr-tag" dir="ltr">AmneziaVPN</span><img src="{{ .AmneziaQR }}" width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}</div>{{ end }}{{ with .Files }}<div class="ike-files">{{ range . }}<a class="btn sm" href="{{ .Href }}" download="{{ .Name }}" dir="ltr">{{ .Name }}</a>{{ end }}</div>{{ end }}</div>
+              <div class="cfg-user-body">{{ if .PPP }}{{ if .Setup }}{{ template "setup" .Setup }}{{ else if .SignIn }}{{ template "signIn" . }}{{ end }}{{ else }}<code class="cfg-text">{{ .Config }}</code>{{ if .Setup }}<div class="divider"><span data-i="dgSetup">Set up a device</span></div>{{ template "setup" .Setup }}{{ end }}{{ end }}{{ if .AmneziaKey }}<div class="awg-key"><span class="tag" dir="ltr">AmneziaVPN</span><span class="awg-key-text" data-i="amneziaKeyHint">For the AmneziaVPN app: copy the key, or scan it.</span><button class="btn sm copy" type="button" data-text="{{ .AmneziaKey }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>{{ if .AmneziaQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button><div class="pop"><div class="pop-card"><span class="tag qr-tag" dir="ltr">AmneziaVPN</span><img {{ qrSrc .AmneziaQR }} width="220" height="220" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}</div>{{ end }}{{ with .Files }}<div class="ike-files">{{ range . }}<a class="btn sm" href="{{ .Href }}" download="{{ .Name }}" dir="ltr">{{ .Name }}</a>{{ end }}</div>{{ end }}</div>
             </div>
             {{ end }}
           </div>
@@ -1171,7 +1261,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
 
   function closeMenus() { $('.menu.open, .pop.open').forEach(function (m) { m.classList.remove('open'); }); }
   $('[data-menu]').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); var m = document.getElementById('menu-' + b.getAttribute('data-menu')); var was = m.classList.contains('open'); closeMenus(); if (!was) m.classList.add('open'); }); });
-  $('button.qr').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); var p = b.nextElementSibling; var was = p.classList.contains('open'); closeMenus(); if (!was) p.classList.add('open'); }); });
+  $('button.qr').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); var p = b.nextElementSibling; var was = p.classList.contains('open'); closeMenus(); if (!was) { var img = p.querySelector('img[data-src]'); if (img) { img.src = img.getAttribute('data-src'); img.removeAttribute('data-src'); } p.classList.add('open'); } }); });
   $('.cfg-head').forEach(function (h) { h.addEventListener('click', function () { h.parentNode.classList.toggle('open'); }); });
   $('.cfg-head .row-actions').forEach(function (a) { a.addEventListener('click', function (e) { e.stopPropagation(); }); });
   $('.cfg-user .btn.show').forEach(function (b) { b.addEventListener('click', function () { b.closest('.cfg-user').classList.toggle('open'); }); });

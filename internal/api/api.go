@@ -239,7 +239,7 @@ func LogRequests(log *slog.Logger, next http.Handler) http.Handler {
 			level = slog.LevelWarn
 		}
 		attrs := []any{
-			"method", r.Method, "path", r.URL.Path,
+			"method", r.Method, "path", redactPath(r.URL.Path),
 			"status", rec.status, "duration", time.Since(start),
 		}
 		// Only when something went wrong. A refused sign-in or a scan is the
@@ -256,6 +256,31 @@ func LogRequests(log *slog.Logger, next http.Handler) http.Handler {
 		}
 		log.Log(r.Context(), level, "request", attrs...)
 	})
+}
+
+// redactPath is a request's path as a log may keep it: a part that is a
+// secret -- a customer's subscription token, the panel's own hidden path --
+// is cut to its first four characters, enough to tell one from another when
+// a customer writes in, and nothing that opens anything. A secret is told by
+// its look: twelve or more of the letters, digits, - and _ tokens are made
+// of. Every other part of a path -- /api/clients/42 -- stays as it is.
+func redactPath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, s := range parts {
+		if len(s) >= 12 && secretLooking(s) {
+			parts[i] = s[:4] + "…"
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+func secretLooking(s string) bool {
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // maskIP hides the last part of an address, the way Xray's maskAddress
