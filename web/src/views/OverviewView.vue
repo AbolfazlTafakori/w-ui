@@ -1,10 +1,9 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { RouterLink } from 'vue-router'
-import { api, saveFile, uploadBackup } from '../lib/api.js'
+import { api } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
-import { waitForRestart } from '../lib/restart.js'
-import { store, t, tn, notify } from '../lib/store.js'
+import { store, t, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Sparkline from '../components/Sparkline.vue'
 import Icon from '../components/Icon.vue'
@@ -12,8 +11,15 @@ import AntIcon from '../components/AntIcon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
+import LogsDialog from '../components/overview/LogsDialog.vue'
+import BackupDialog from '../components/overview/BackupDialog.vue'
+import HistoryDialog from '../components/overview/HistoryDialog.vue'
 
 const data = ref(null)
+// Which of the page's dialogs is open.
+const logsOpen = ref(false)
+const backupOpen = ref(false)
+const historyOpen = ref(false)
 const loading = ref(true)
 const showIp = ref(false)
 let timer = null
@@ -175,217 +181,6 @@ const poolTotals = computed(() => ({
   capacity: ifaces.value.reduce((a, i) => a + (i.capacity || 0), 0),
 }))
 
-const logs = ref(null)
-const logLevel = ref('info')
-const logLimit = ref(200)
-const logQuery = ref('')
-const logSource = ref('panel')
-const logFollow = ref(false)
-let logTimer = null
-
-// Refreshing while the operator is reading is the point of following, so it has
-// to be slow enough not to move the page under them and quick enough to be
-// worth having on. Five seconds is what the classic panel settled on and it is right.
-const followInterval = 5000
-
-// Both of these used to live a page away. When something is wrong, the log and
-// a fresh backup are the first two things wanted, and this is the page an
-// operator is already looking at.
-async function openLogs() {
-  if (!logs.value) logs.value = { loading: true, entries: [], notice: '' }
-  await loadLogs()
-}
-
-async function loadLogs() {
-  if (!logs.value) return
-  logs.value = { ...logs.value, loading: true }
-  try {
-    const params = new URLSearchParams({
-      limit: String(logLimit.value),
-      level: logLevel.value,
-      source: logSource.value,
-    })
-    // Only when there is something to search for: an empty parameter would be
-    // a needle that matches everything and is one more thing on the wire.
-    if (logQuery.value.trim()) params.set('q', logQuery.value.trim())
-
-    const res = await api.get(`/api/logs?${params}`)
-    // The endpoint wraps its rows; taking the response itself would give an
-    // object where a list is expected and render nothing at all.
-    logs.value = {
-      loading: false,
-      entries: res?.entries || [],
-      // A source this server cannot read is worth saying out loud rather than
-      // showing an empty list, which reads as "nothing happened".
-      notice: res?.notice || '',
-    }
-  } catch (e) {
-    logs.value = { loading: false, entries: [], notice: e.message }
-  }
-}
-
-// Searching on every keystroke would be a request per letter. Waiting for the
-// typing to stop is one request for the word.
-let searchTimer = null
-function onLogSearch() {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(loadLogs, 250)
-}
-
-watch(logFollow, (on) => {
-  clearInterval(logTimer)
-  if (on) logTimer = setInterval(loadLogs, followInterval)
-})
-
-// Following a log after its window has gone is a request every five seconds for
-// nothing, forever.
-watch(logs, (v) => {
-  if (!v) {
-    clearInterval(logTimer)
-    logFollow.value = false
-  }
-})
-
-onBeforeUnmount(() => {
-  clearInterval(logTimer)
-  clearTimeout(searchTimer)
-})
-
-// Always the same clock, in Latin digits, whatever language the panel is in.
-//
-// The old viewer formatted this for the locale, which in Persian produced
-// ۰۵:۱۹:۲۰ — correct as a time and wrong as a log column: it does not line up
-// with the entry beside it, does not match what is in the file on the server,
-// and cannot be searched for. A log is machine output and reads the same to
-// everybody.
-function logStamp(value) {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n) => String(n).padStart(2, '0')
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-
-// What a line looks like as text, which is what gets copied and downloaded.
-function logLine(e) {
-  const at = e.time ? new Date(e.time).toISOString() : ''
-  const fields = e.fields
-    ? Object.entries(e.fields).map(([k, v]) => `${k}=${v}`).join(' ')
-    : ''
-  return [at, e.level, e.message, fields].filter(Boolean).join(' ')
-}
-
-function logText() {
-  return (logs.value?.entries || []).map(logLine).join('\n')
-}
-
-async function copyLogs() {
-  try {
-    await navigator.clipboard.writeText(logText())
-    notify(t('logs.copied'), 'ok')
-  } catch {
-    notify(t('action.copyFailed'), 'error')
-  }
-}
-
-// Saved rather than shown, because the useful thing to do with a log is send it
-// to somebody, and selecting a thousand lines in a scrolling box is not that.
-function downloadLogs() {
-  const blob = new Blob([logText()], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `wui-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.log`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}
-
-// Backup and restore, laid out as the classic panel's dialog: two lines, each
-// one button. "Back up" takes a fresh archive and hands it to the browser in
-// the same click -- it used to take one on the server and offer the newest
-// archive as a second step, which could be an older, automatic one. "Restore"
-// picks a file, says what it is and what will happen, and only then replaces
-// anything; it follows the panel through its restart and reloads once it is
-// back, rather than after a guess of seven seconds.
-//
-// backup.step is 'choose' (the two lines), 'confirm' (a file picked),
-// 'working' (backing up, uploading or restoring) or 'failed'.
-const backup = ref(null)
-const keepAddresses = ref(true)
-const restoreInput = ref(null)
-
-function openBackup() {
-  keepAddresses.value = true
-  backup.value = { step: 'choose', line: '', share: null, file: null, error: '', done: '' }
-}
-
-function closeBackup() {
-  if (backup.value?.step === 'working') return
-  backup.value = null
-}
-
-// Fetched rather than linked: the archive holds every key on the server, and a
-// plain link carries no session.
-async function backupNow() {
-  if (!backup.value) return
-  backup.value = { ...backup.value, step: 'working', line: t('overview.backingUp'), share: null, done: '', error: '' }
-  try {
-    const a = await api.post('/api/backups')
-    backup.value.line = t('overview.preparingDownload')
-    await saveFile(`/api/backups/${encodeURIComponent(a.name)}`, a.name)
-    if (backup.value) backup.value = { ...backup.value, step: 'choose', done: t('overview.backupDownloaded').replace('{name}', a.name) }
-  } catch (e) {
-    if (backup.value) backup.value = { ...backup.value, step: 'choose', error: e.message }
-  }
-}
-
-function pickRestore() {
-  restoreInput.value?.click()
-}
-
-function restoreChosen(event) {
-  const file = event.target.files?.[0]
-  event.target.value = ''
-  if (!file || !backup.value) return
-  backup.value = { ...backup.value, step: 'confirm', file, error: '', done: '' }
-}
-
-// The upload's own message when the panel gave one; otherwise what kind of
-// failure it was.
-async function upload(file, onShare) {
-  try {
-    return await uploadBackup(file, onShare)
-  } catch (e) {
-    if (e.kind === 'network') throw new Error(t('overview.uploadCut'))
-    throw new Error(e.message || t('overview.importFailed'))
-  }
-}
-
-async function restoreNow() {
-  const file = backup.value?.file
-  if (!file) return
-  backup.value = { ...backup.value, step: 'working', line: t('overview.uploading'), share: 0, error: '' }
-  try {
-    const stored = await upload(file, (share) => {
-      if (backup.value) backup.value.share = share
-    })
-    backup.value = { ...backup.value, line: t('overview.restoring'), share: null }
-    const params = keepAddresses.value ? '' : '?keepAddresses=false'
-    await api.post(`/api/backups/${encodeURIComponent(stored.name)}/restore${params}`)
-  } catch (e) {
-    if (backup.value) backup.value = { ...backup.value, step: 'failed', error: e.message }
-    return
-  }
-  // Restored. The panel ends itself to start again on the restored files.
-  backup.value = { ...backup.value, line: t('overview.restarting') }
-  if (!(await waitForRestart()) && backup.value) {
-    backup.value = { ...backup.value, step: 'failed', error: t('overview.restoreNotBack') }
-  }
-}
-
-
 // How much of this server is actually carrying traffic, which is the state an
 // operator wants at a glance and the thing the two controls below act on.
 const tunnelsUp = computed(() => ifaces.value.filter((i) => i.enabled && i.running).length)
@@ -419,122 +214,6 @@ const startTunnels = () => tunnelAction('start', t('overview.startedAll'))
 function stopTunnels() {
   confirmStop.value = false
   return tunnelAction('stop', t('overview.stoppedAll'))
-}
-
-// The long history, which the short window on this page cannot answer.
-//
-// Was it like this last night, when did the disk start filling, was that spike
-// at the time the customers complained — none of which could be asked of the
-// panel at all before.
-const history = ref(null)
-const historyRange = ref('1h')
-
-const historyRanges = ['5m', '1h', '6h', '24h', '48h', '7d']
-
-// What each chart is and how to read it. Percentages share a 0-100 axis so a
-// quiet hour is not stretched to look like a busy one; rates and counts scale
-// to themselves, because there is no meaningful ceiling to hold them against.
-const historyCharts = [
-  {
-    key: 'cpu', title: 'history.cpu', unit: 'percent',
-    lines: [{ metric: 'cpu', color: 'var(--accent)', label: 'CPU' }],
-  },
-  {
-    key: 'mem', title: 'history.memory', unit: 'percent',
-    lines: [
-      { metric: 'memory', color: 'var(--accent)', label: 'RAM' },
-      { metric: 'swap', color: 'var(--warn)', label: 'Swap' },
-    ],
-  },
-  {
-    key: 'net', title: 'history.network', unit: 'rate',
-    lines: [
-      { metric: 'netDown', color: 'var(--ok)', label: 'history.down' },
-      { metric: 'netUp', color: 'var(--accent)', label: 'history.up' },
-    ],
-  },
-  {
-    key: 'conns', title: 'history.connections', unit: 'count',
-    lines: [
-      { metric: 'tcp', color: 'var(--accent)', label: 'TCP' },
-      { metric: 'udp', color: 'var(--warn)', label: 'UDP' },
-    ],
-  },
-  {
-    key: 'disk', title: 'history.disk', unit: 'percent',
-    lines: [{ metric: 'disk', color: 'var(--warn)', label: 'history.disk' }],
-  },
-  {
-    key: 'loadavg', title: 'history.loadAverage', unit: 'count',
-    lines: [
-      { metric: 'load1', color: 'var(--accent)', label: '1m' },
-      { metric: 'load5', color: 'var(--warn)', label: '5m' },
-      { metric: 'load15', color: 'var(--ok)', label: '15m' },
-    ],
-  },
-  {
-    key: 'panel', title: 'history.panel', unit: 'bytes',
-    lines: [{ metric: 'panelMemory', color: 'var(--accent)', label: 'history.panelMemory' }],
-  },
-]
-
-async function openHistory() {
-  if (!history.value) history.value = { loading: true, series: {}, notice: '' }
-  await loadHistory()
-}
-
-async function loadHistory() {
-  if (!history.value) return
-  history.value = { ...history.value, loading: true }
-  try {
-    const res = await api.get(`/api/system/history?range=${historyRange.value}`)
-    history.value = { loading: false, series: res?.series || {}, notice: res?.notice || '' }
-  } catch (e) {
-    history.value = { loading: false, series: {}, notice: e.message }
-  }
-}
-
-function setHistoryRange(r) {
-  historyRange.value = r
-  loadHistory()
-}
-
-// The store hands back {t, v} so the axis can be labelled; the chart wants the
-// values. Kept apart rather than flattened on the server, because the times are
-// what the ends of the axis are drawn from.
-const seriesValues = (metric) => (history.value?.series?.[metric] || []).map((p) => p.v)
-
-function historyAxis(chart) {
-  const points = history.value?.series?.[chart.lines[0].metric] || []
-  if (!points.length) return { from: '', to: '' }
-  const pad = (n) => String(n).padStart(2, '0')
-  const fmt = (sec) => {
-    const d = new Date(sec * 1000)
-    // Beyond a day the hour alone is ambiguous, so the date comes with it.
-    if (historyRange.value === '7d' || historyRange.value === '48h') {
-      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-    }
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
-  return { from: fmt(points[0].t), to: fmt(points[points.length - 1].t) }
-}
-
-function historyPeak(chart) {
-  const all = chart.lines.flatMap((l) => seriesValues(l.metric))
-  if (!all.length) return null
-  return Math.max(...all)
-}
-
-function historyFormat(unit, v) {
-  if (v == null) return '\u2014'
-  if (unit === 'percent') return `${v.toFixed(0)}%`
-  if (unit === 'rate') return rate(v)
-  if (unit === 'bytes') return bytes(v, store.locale)
-  return nf(Math.round(v))
-}
-
-function historyLabel(l) {
-  return l.label.includes('.') ? t(l.label) : l.label
 }
 
 // Whether there is a newer release, and whether this build could install it.
@@ -769,13 +448,13 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
           <Icon name="power" :size="14" /><span class="lbl">{{ t('overview.startAll') }}</span>
         </button>
 
-        <button class="btn sm ghost" :title="t('history.hint')" @click="openHistory">
+        <button class="btn sm ghost" :title="t('history.hint')" @click="historyOpen = true">
           <Icon name="clock" :size="14" /><span class="lbl">{{ t('history.title') }}</span>
         </button>
-        <button class="btn sm ghost" :title="t('overview.viewLogs')" @click="openLogs">
+        <button class="btn sm ghost" :title="t('overview.viewLogs')" @click="logsOpen = true">
           <Icon name="info" :size="14" /><span class="lbl">{{ t('settings.tab.logs') }}</span>
         </button>
-        <button class="btn sm ghost" :title="t('overview.backupRestore')" @click="openBackup">
+        <button class="btn sm ghost" :title="t('overview.backupRestore')" @click="backupOpen = true">
           <Icon name="database" :size="14" /><span class="lbl">{{ t('overview.backupRestore') }}</span>
         </button>
         <!-- The system report is reached from the page about this server. It
@@ -1136,63 +815,6 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
     </div>
   </div>
 
-  <!-- What this server has been doing, rather than what it is doing now. The
-       page itself holds a few minutes; these are the questions that need
-       last night. -->
-  <div v-if="history" class="modal-backdrop" @click.self="history = null">
-    <div class="modal hsmodal" role="dialog" aria-modal="true" aria-labelledby="hs-title">
-      <div class="card-head">
-        <h2 id="hs-title">
-          {{ t('history.title') }}
-          <span v-if="history.loading" class="spin sm"></span>
-        </h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('common.close')" @click="history = null">
-          <Icon name="close" :size="15" />
-        </button>
-      </div>
-
-      <div class="hs-ranges">
-        <button
-          v-for="r in historyRanges"
-          :key="r"
-          class="hs-range ltr"
-          :class="{ on: historyRange === r }"
-          @click="setHistoryRange(r)"
-        >
-          {{ r }}
-        </button>
-        <span class="spacer hs-note">{{ t('history.resolution') }}</span>
-      </div>
-
-      <div class="card-body hs-body">
-        <p v-if="history.notice" class="log-notice">{{ history.notice }}</p>
-        <div class="hs-grid">
-          <article v-for="chart in historyCharts" :key="chart.key" class="hs-chart">
-            <div class="hs-chart-head">
-              <span class="ov-kicker">{{ t(chart.title) }}</span>
-              <span class="hs-legend">
-                <span v-for="l in chart.lines" :key="l.metric" class="hs-legend-item">
-                  <i class="hs-swatch" :style="{ background: l.color }"></i>{{ historyLabel(l) }}
-                </span>
-              </span>
-            </div>
-            <Sparkline
-              :series="chart.lines.map((l) => ({ data: seriesValues(l.metric), color: l.color, fill: false }))"
-              :height="110"
-              :min="0"
-              :max="chart.unit === 'percent' ? 100 : null"
-            />
-            <div class="hs-chart-foot ltr">
-              <span>{{ historyAxis(chart).from }}</span>
-              <span class="hs-peak">{{ t('overview.peak') }} {{ historyFormat(chart.unit, historyPeak(chart)) }}</span>
-              <span>{{ historyAxis(chart).to }}</span>
-            </div>
-          </article>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Stopping every tunnel takes every customer offline at once, so it is
        asked for. Restarting is not: it changes no records and the worst case is
        a few seconds of reconnecting. -->
@@ -1207,196 +829,9 @@ const ipv6 = computed(() => (sys.value?.ipv6 || [])[0] || '—')
     @cancel="confirmStop = false"
   />
 
-  <!-- Backup and restore, as the classic panel's dialog: one line to back up,
-       one to restore, each a single button. -->
-  <div v-if="backup" class="modal-backdrop" @click.self="closeBackup">
-    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="bk-title">
-      <div class="card-head">
-        <h2 id="bk-title">{{ t('overview.backupRestore') }}</h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('common.close')"
-                :disabled="backup.step === 'working'" @click="closeBackup">
-          <Icon name="close" :size="15" />
-        </button>
-      </div>
-
-      <div class="card-body bk-body">
-        <template v-if="backup.step === 'choose'">
-          <p v-if="backup.done" class="bk-done" role="status">{{ backup.done }}</p>
-          <p v-if="backup.error" class="bk-error" role="alert">{{ backup.error }}</p>
-
-          <div class="bk-item">
-            <div class="bk-meta">
-              <div class="bk-title">{{ t('overview.backupLine') }}</div>
-              <p class="bk-desc">{{ t('overview.backupLineDesc') }}</p>
-            </div>
-            <button type="button" class="btn primary" @click="backupNow">
-              <Icon name="download" :size="15" /><span>{{ t('overview.backupButton') }}</span>
-            </button>
-          </div>
-
-          <div class="bk-item">
-            <div class="bk-meta">
-              <div class="bk-title">{{ t('overview.restoreLine') }}</div>
-              <p class="bk-desc">{{ t('overview.restoreLineDesc') }}</p>
-            </div>
-            <button type="button" class="btn" @click="pickRestore">
-              <Icon name="upload" :size="15" /><span>{{ t('overview.restoreButton') }}</span>
-            </button>
-            <input ref="restoreInput" type="file" class="sr-only" tabindex="-1" aria-hidden="true"
-                   accept=".gz,.tar.gz,application/gzip" @change="restoreChosen" />
-          </div>
-
-          <RouterLink to="/settings/backups" class="bk-all" @click="backup = null">
-            {{ t('overview.allBackups') }}
-          </RouterLink>
-        </template>
-
-        <!-- A file picked: what it is, what happens, and the one choice that
-             matters when a panel moves to another machine. Nothing is sent
-             until Restore is pressed. -->
-        <template v-else-if="backup.step === 'confirm'">
-          <div class="bk-file">
-            <Icon name="database" :size="16" />
-            <span class="ltr bk-file-name">{{ backup.file.name }}</span>
-            <span class="muted">{{ bytes(backup.file.size, store.locale) }}</span>
-          </div>
-          <p class="bk-warn">{{ t('overview.restoreWarn') }}</p>
-          <label class="bk-keep">
-            <input v-model="keepAddresses" type="checkbox" />
-            <span>
-              <b>{{ t('overview.keepAddresses') }}</b>
-              <span class="bk-desc">{{ t('overview.keepAddressesDesc') }}</span>
-            </span>
-          </label>
-        </template>
-
-        <template v-else-if="backup.step === 'working'">
-          <div class="update-progress" role="status" aria-live="polite">
-            <div class="update-bar" :class="{ busy: backup.share === null }" role="progressbar"
-                 aria-valuemin="0" aria-valuemax="100" :aria-valuenow="backup.share">
-              <i :style="{ width: (backup.share === null ? 100 : backup.share) + '%' }"></i>
-            </div>
-            <p class="muted small">
-              {{ backup.line }}<template v-if="backup.share !== null"> {{ backup.share }}%</template>
-            </p>
-          </div>
-        </template>
-
-        <template v-else-if="backup.step === 'failed'">
-          <p class="bk-error" role="alert">{{ backup.error }}</p>
-        </template>
-      </div>
-
-      <div v-if="backup.step === 'confirm'" class="modal-foot">
-        <button type="button" class="btn ghost" @click="backup.step = 'choose'">{{ t('action.cancel') }}</button>
-        <button type="button" class="btn danger" @click="restoreNow">{{ t('overview.restoreNow') }}</button>
-      </div>
-      <div v-else-if="backup.step === 'failed'" class="modal-foot">
-        <button type="button" class="btn ghost" @click="closeBackup">{{ t('common.close') }}</button>
-        <button type="button" class="btn" @click="backup.step = 'choose'">{{ t('update.tryAgain') }}</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- The recent log, without leaving the page or opening an SSH session. -->
-  <div v-if="logs" class="modal-backdrop" @click.self="logs = null">
-    <div class="modal logmodal" role="dialog" aria-modal="true" aria-labelledby="lg-title">
-      <div class="card-head">
-        <h2 id="lg-title">
-          {{ t('settings.tab.logs') }}
-          <span v-if="logs.loading" class="spin sm"></span>
-          <span v-else class="muted small">{{ tn('logs.count', logs.entries.length) }}</span>
-        </h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('common.close')" @click="logs = null">
-          <Icon name="close" :size="15" />
-        </button>
-      </div>
-
-      <!-- Everything an operator reaches for while reading a log, on one row,
-           because each of these was previously a reason to leave the panel and
-           open an SSH session. -->
-      <div class="log-toolbar">
-        <div class="log-search">
-          <Icon name="search" :size="14" />
-          <input
-            v-model="logQuery"
-            type="search"
-            :placeholder="t('logs.searchHint')"
-            :aria-label="t('logs.search')"
-            @input="onLogSearch"
-          />
-        </div>
-
-        <select v-model="logLevel" :aria-label="t('logs.level')" @change="loadLogs">
-          <option value="debug">{{ t('logs.all') }}</option>
-          <option value="info">{{ t('logs.info') }}</option>
-          <option value="warn">{{ t('logs.warn') }}</option>
-          <option value="error">{{ t('logs.error') }}</option>
-        </select>
-
-        <select v-model.number="logLimit" :aria-label="t('logs.rows')" class="ltr" @change="loadLogs">
-          <option :value="50">50</option>
-          <option :value="100">100</option>
-          <option :value="200">200</option>
-          <option :value="500">500</option>
-          <option :value="1000">1000</option>
-        </select>
-
-        <!-- The buffer is this process's memory and is empty after a restart,
-             which is usually the thing being asked about. The journal has it. -->
-        <select v-model="logSource" :aria-label="t('logs.source')" @change="loadLogs">
-          <option value="panel">{{ t('logs.sourcePanel') }}</option>
-          <option value="journal">{{ t('logs.sourceJournal') }}</option>
-        </select>
-
-        <label class="log-follow">
-          <input v-model="logFollow" type="checkbox" />
-          <span>{{ t('logs.follow') }}</span>
-        </label>
-
-        <div class="spacer row">
-          <button class="btn sm icon ghost" :aria-label="t('common.refresh')" @click="loadLogs">
-            <Icon name="refresh" :size="15" />
-          </button>
-          <button class="btn sm icon ghost" :aria-label="t('action.copy')"
-                  :disabled="!logs.entries.length" @click="copyLogs">
-            <Icon name="copy" :size="15" />
-          </button>
-          <button class="btn sm icon ghost" :aria-label="t('logs.download')"
-                  :disabled="!logs.entries.length" @click="downloadLogs">
-            <Icon name="download" :size="15" />
-          </button>
-        </div>
-      </div>
-
-      <!-- Machine output, so it is laid out left to right whatever the page
-           around it is doing. In a right-to-left interface the columns of a
-           log line come out in the opposite order and the punctuation inside a
-           timestamp or an address moves, which is unreadable and looks like a
-           fault in the panel rather than in the text direction. -->
-      <div class="card-body log-body ltr-block">
-        <p v-if="logs.notice" class="log-notice">{{ logs.notice }}</p>
-        <p v-if="logs.loading && !logs.entries.length" class="muted">{{ t('common.loading') }}</p>
-        <p v-else-if="!logs.entries.length && !logs.notice" class="muted">
-          {{ logQuery ? t('logs.noMatch') : t('logs.none') }}
-        </p>
-        <ol v-else class="loglist">
-          <li v-for="(e, i) in logs.entries" :key="i" :class="'lvl-' + (e.level || '').toLowerCase()">
-            <span class="log-time" :title="e.time">{{ logStamp(e.time) }}</span>
-            <span class="log-level">{{ (e.level || '').toUpperCase() }}</span>
-            <span class="log-text">
-              <span class="log-msg">{{ e.message }}</span>
-              <template v-if="e.fields">
-                <span v-for="(v, k) in e.fields" :key="k" class="log-field">
-                  <b>{{ k }}</b>={{ v }}
-                </span>
-              </template>
-            </span>
-          </li>
-        </ol>
-      </div>
-    </div>
-  </div>
+  <LogsDialog v-if="logsOpen" @close="logsOpen = false" />
+  <BackupDialog v-if="backupOpen" @close="backupOpen = false" />
+  <HistoryDialog v-if="historyOpen" @close="historyOpen = false" />
 </template>
 
 <style scoped>
