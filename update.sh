@@ -105,6 +105,12 @@ if release_before_l2tp "$RELEASE_TAG" && [[ -f /etc/systemd/system/wui-l2tp.serv
   if have_systemd; then systemctl stop wui.service || true; fi
   remove_l2tp_agent
 fi
+# Nor a firewall helper: its unit runs `wui firewall-sync`, and an older
+# binary given a subcommand it does not know starts the whole panel instead
+# -- a second one, as root, at the next boot.
+if release_before_l2tp "$RELEASE_TAG"; then
+  remove_firewall_helper
+fi
 install -m 0755 "$tmp/wui" "$BIN_PATH.new" && mv -f "$BIN_PATH.new" "$BIN_PATH"
 ok "$BIN_PATH"
 if [[ -n "${MENU_URL:-}" ]] && curl -fsSL --retry 4 --retry-all-errors --retry-delay 3 "$MENU_URL" -o "$tmp/w-ui.sh"; then

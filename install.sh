@@ -1247,6 +1247,38 @@ release_before_l2tp() {
   (( major < 3 ))
 }
 
+# binary_before_3 reports whether the panel binary just installed is from
+# before 3.0, by asking it. Every release answers `version`; a build from
+# source answers "dev", which is the newest.
+#
+# What 3.0 adds beside the panel -- the firewall helper, the L2TP agent --
+# runs that binary with a subcommand an older one does not have, and an
+# older one given a subcommand it does not know starts the whole panel
+# instead: a second panel, as root, on the same tables. So none of it is
+# written for an older binary: one installed with --local, or the release
+# this script fetched while it was newer than that release.
+binary_before_3() {
+  local v
+  v="$("$BIN_PATH" version 2>/dev/null | head -1)"
+  [[ -n "$v" ]] || return 1
+  release_before_l2tp "$v"
+}
+
+# remove_firewall_helper takes 3.0's firewall helper away, for a release from
+# before it: its unit runs `wui firewall-sync`, which an older binary does
+# not know, and starts the whole panel instead. The ports it opened stay
+# open; the tunnels on them are still there.
+remove_firewall_helper() {
+  [[ -f /etc/systemd/system/wui-firewall.service || -f /etc/systemd/system/wui-firewall.path ]] || return 0
+  if have_systemd; then
+    systemctl disable --now wui-firewall.path >/dev/null 2>&1 || true
+    systemctl disable --now wui-firewall.service >/dev/null 2>&1 || true
+  fi
+  rm -f /etc/systemd/system/wui-firewall.path /etc/systemd/system/wui-firewall.service
+  if have_systemd; then systemctl daemon-reload || true; fi
+  ok "the firewall helper removed; the release being installed has none"
+}
+
 enable_forwarding() {
   step "Enabling kernel forwarding"
 
@@ -3199,7 +3231,13 @@ setup_database
 setup_tls
 write_unit
 write_update_helper
-write_l2tp_agent
+if binary_before_3; then
+  remove_l2tp_agent
+  remove_firewall_helper
+  warn "this binary is from before 3.0: L2TP/IPsec, IKEv2, PPTP, OpenConnect and the firewall helper stay off"
+else
+  write_l2tp_agent
+fi
 apply_admin
 apply_sub_settings
 open_firewall

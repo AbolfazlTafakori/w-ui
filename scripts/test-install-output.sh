@@ -228,5 +228,35 @@ if [[ "$(uname -s)" == Linux ]]; then
   yes_ "mode=600" "$u" "mode 600"
 fi
 
+echo
+echo "── a binary from before 3.0 is not given what would start a second panel ─"
+# The firewall helper and the L2TP agent run the binary with a subcommand a
+# release before 3.0 does not know, and such a binary starts the whole panel
+# instead. The installer asks the binary it installed which release it is.
+older_than_3() { # older_than_3 "what the binary prints for version"
+  (
+    set +e
+    # shellcheck disable=SC1091
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+    BIN_PATH="$WORK/wui-fake"
+    printf '#!/usr/bin/env bash\n[[ "$1" == version ]] && printf "%%s\\n" "%s"\n' "$1" >"$BIN_PATH"
+    chmod +x "$BIN_PATH"
+    if binary_before_3; then echo older; else echo current; fi
+  )
+}
+yes_ older   "$(older_than_3 2.6.6)"  "2.6.6 is from before 3.0"
+yes_ older   "$(older_than_3 v1.1.0)" "v1.1.0 is from before 3.0"
+yes_ current "$(older_than_3 3.0.0)"  "3.0.0 has the helpers"
+yes_ current "$(older_than_3 3.1.2)"  "a later release has them"
+yes_ current "$(older_than_3 dev)"    "a build from source is the newest"
+missing=$(
+  set +e
+  # shellcheck disable=SC1091
+  WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+  BIN_PATH="$WORK/not-there"
+  if binary_before_3; then echo older; else echo current; fi
+)
+yes_ current "$missing" "a binary that does not answer is not taken for an old one"
+
 printf '\n  %d passed, %d failed\n\n' "$pass" "$fail"
 [[ "$fail" == 0 ]]
