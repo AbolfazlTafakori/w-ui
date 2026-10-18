@@ -6,6 +6,13 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-10-18
+
+### Updating
+- **An update from 2.6 keeps everything as it was.** Every setting, every customer and every configuration a customer holds is kept byte for byte, and nobody is disconnected: update from the panel's own button, with `w-ui update`, or by running the installer again, as before.
+- **Panels and nodes on 2.6.4 and 3.0 work together, in either direction,** so they can be updated in any order. A tunnel of a kind new in 3.0 -- IKEv2, L2TP, PPTP, OpenConnect, a proxy inbound -- is made only on a node that is on 3.0 too; an older node is refused with a message rather than half set up.
+- **Going back to a release before 3.0** (`w-ui` → *Legacy version*) takes down what 3.0 runs beside the panel first: the L2TP agent with any tunnel it carries, and the firewall helper. Their units run the panel's binary with a command an older binary does not know, and an older binary given one starts the whole panel instead -- a second panel on the same tables. For the same reason the installer, given a binary from before 3.0, writes neither.
+
 ### Added
 - **The installer installs every protocol.** Besides WireGuard, OpenVPN, AmneziaWG and L2TP/IPsec, a new install now brings IKEv2 (strongSwan with its EAP plugins), PPTP (`pppd`) and OpenConnect (`ocserv`), each left off until a tunnel uses it, so the first tunnel of each kind starts at once rather than after an install. The automatic install takes all of them without a question; the manual one asks *Install every protocol?* and, on a no, asks for each, xray and sing-box included. `--no-ikev2`, `--no-pptp`, `--no-openconnect` and `--no-proxy-cores` leave one out, and the panel still installs it with the first tunnel of its kind.
 - **The panel can be watched from outside.** `GET /api/health` answers `200` or `503` with no sign-in, for an uptime checker, under the panel's own path; it is not ok when the loop that applies the database to the kernel has stopped or usage is not being written. `GET /api/metrics`, signed in, gives Prometheus each tunnel up or down, the loop's last run, failed usage writes, the nodes reachable and the backups kept.
@@ -115,6 +122,11 @@ All notable changes to W-UI are recorded here. The format follows
 - **The database file is the panel's alone.** SQLite made it, and its journals, readable by everyone (`0644`); only the data directory's mode kept other accounts on the server from every customer's keys and every second factor. The panel now makes them `0600` when it starts.
 
 ### Fixed
+- **Leaving a page with an unsaved edit no longer throws it away on Cancel.** The question asked on leaving the settings or engine page had *Save and leave* and *Cancel*, and *Cancel* -- like Escape, or a click beside the dialog -- discarded the edit and left. It now has *Stay*, *Discard and leave* and *Save and leave*, and closing it any way stays.
+- **A toast that reports success reads as one,** and a warning stands out: seventeen of them, a token issued or a node updated among them, appeared in the grey of plain information.
+- **Cards, corners and a drawer look as designed.** Four colours and sizes the styles named were never defined, so the resellers' phone cards and the date picker had no border, six corners were square and the filter drawer did not slide; the cyan tag and the card washes had dark-theme colours on the light theme.
+- **An outbound can be edited from a phone.** The cards had no way to, the edit button being the table's alone.
+- **Editing a node on mutual TLS shows this panel's authority at once,** instead of an empty box until the mode was changed.
 - **The Telegram bot sends long reports.** A message is split to fit Telegram's limit, but only at blank lines, so a list of every customer, one a line, was sent whole and refused: on a large panel the reports never arrived. It is now split at line ends too, between characters for a line longer than a page, and a page that ends inside bold or code text closes it and the next opens it again.
 - **A subscription link keeps working when the service moves.** Found on a live panel, where some customers' links stopped loading: a link handed out before the operator changed the subscription's port, its certificate or its path answered nothing, or not found.
   - Each address the service leaves -- its port, plain or HTTPS, and its path -- is kept and still answered. Settings → Subscription lists them under *Old addresses still answered*; one is closed once nobody asks for it, and one this panel never recorded can be added.
@@ -984,7 +996,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.7...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.7...v3.0.0
 [2.6.7]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.6...v2.6.7
 [2.6.6]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.5...v2.6.6
 [2.6.5]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.4...v2.6.5
