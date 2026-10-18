@@ -11,13 +11,13 @@ import BulkClientForm from '../components/BulkClientForm.vue'
 import ClientQrModal from '../components/ClientQrModal.vue'
 import ClientInfoModal from '../components/ClientInfoModal.vue'
 import AntIcon from '../components/AntIcon.vue'
-import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
 import ImportDialog from '../components/clients/ImportDialog.vue'
 import SubLinksDialog from '../components/clients/SubLinksDialog.vue'
-import {
-  DEPLETING_AT, barColor, expiryTag, expiryTitle, lastOnlineTitle, remainingTag, speedActive, speedText, statusTag, usedPercent,
-} from '../lib/clientRow.js'
+import { DEPLETING_AT } from '../lib/clientRow.js'
+import ClientsTable from '../components/clients/ClientsTable.vue'
+import ClientCards from '../components/clients/ClientCards.vue'
+import Pager from '../components/Pager.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FilterDrawer, { emptyFilters, activeFilterCount } from '../components/FilterDrawer.vue'
 import PageSpin from '../components/PageSpin.vue'
@@ -56,11 +56,6 @@ const currentPage = ref(1)
 // the sizes Ant offers.
 const PAGE_SIZES = [10, 25, 50, 100, 200]
 const pageSize = ref(store.panel?.pageSize > 0 ? store.panel.pageSize : 25)
-// "25 / page", number first, in every language. Persian digits are
-// right-to-left characters, so "۲۵ / صفحه" would turn round as one run; a
-// left-to-right mark after the number keeps it in front.
-const LRM = String.fromCharCode(0x200e)
-const pageSizeLabel = (n) => `${nf(n)}${LRM} / ${t('client.perPage')}`
 function setPageSize(n) {
   pageSize.value = Number(n)
   currentPage.value = 1
@@ -70,22 +65,6 @@ function goPage(n) {
   currentPage.value = n
   load()
 }
-// The page numbers Ant shows: every one up to seven, else the ends and a
-// window around the current one with jumps between.
-const pageItems = computed(() => {
-  const total = totalPages.value
-  const cur = currentPage.value
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  const out = [1]
-  const from = Math.max(2, cur - 2)
-  const to = Math.min(total - 1, cur + 2)
-  if (from > 2) out.push('prev')
-  for (let i = from; i <= to; i++) out.push(i)
-  if (to < total - 1) out.push('next')
-  out.push(total)
-  return out
-})
-
 const formFor = ref(null)
 const shareFor = ref(null)
 const infoFor = ref(null)
@@ -96,22 +75,6 @@ const selected = ref(new Set())
 // On a phone the table becomes a list of cards, as the classic panel's clients do,
 // and each card's actions live behind one menu.
 const isMobile = useIsMobile()
-const cardMenu = ref(null)
-function openCardMenu(c, e) {
-  e.stopPropagation()
-  const r = e.currentTarget.getBoundingClientRect()
-  cardMenu.value = cardMenu.value?.client?.id === c.id ? null : { client: c, rect: r, x: Math.max(8, r.right - 180), y: r.bottom + 4 }
-}
-function cardAction(key) {
-  const c = cardMenu.value?.client
-  cardMenu.value = null
-  if (!c) return
-  if (key === 'qr') shareFor.value = c
-  else if (key === 'rotate') rotateKeysFor(c)
-  else if (key === 'reset') resetOne(c)
-  else if (key === 'edit') formFor.value = { client: c }
-  else if (key === 'delete') removeOne(c)
-}
 const moreOpen = ref(null) // { x, y }
 const busy = ref(false)
 
@@ -299,12 +262,9 @@ function onDocClick(e) {
   if (moreOpen.value && !e.target.closest?.('.rowmenu') && !e.target.closest?.('.more-btn')) {
     moreOpen.value = null
   }
-  if (cardMenu.value && !e.target.closest?.('.rowmenu') && !e.target.closest?.('.row-action-trigger')) {
-    cardMenu.value = null
-  }
 }
 function onKey(e) {
-  if (e.key === 'Escape') { moreOpen.value = null; cardMenu.value = null }
+  if (e.key === 'Escape') moreOpen.value = null
 }
 
 let searchTimer = null
@@ -320,9 +280,6 @@ watch([statusFilter, groupFilter, sort], () => {
   load()
 })
 
-const totalPages = computed(() =>
-  page.value ? Math.max(1, Math.ceil(page.value.total / page.value.perPage)) : 1,
-)
 const hasGroups = computed(() => groupNames.value.length > 0)
 
 // Their chips: one per active filter, each closable on its own.
@@ -364,18 +321,6 @@ function clearChip(chip) {
 
 // The inbounds a customer is on, as their chips: one per server, coloured
 // by protocol, three shown and the rest counted.
-const INBOUND_CHIP_LIMIT = 1
-function inboundChips(c) {
-  const names = []
-  const seen = new Set()
-  for (const a of c.accounts || []) {
-    if (seen.has(a.interfaceId)) continue
-    seen.add(a.interfaceId)
-    const i = interfaces.value.find((x) => x.id === a.interfaceId)
-    names.push({ name: i?.name || `#${a.interfaceId}`, protocol: i?.protocol || c.protocol })
-  }
-  return names
-}
 
 // Clearing every filter at once. Undoing three separately, to find out whether
 // the list is empty or merely filtered, is work the panel should do.
@@ -492,7 +437,6 @@ function release(id) {
   next.delete(id)
   pending.value = next
 }
-const isPending = (id) => pending.value.has(id)
 
 // Zeroing one customer's counters. Fast on a small panel and not fast on a
 // large one, and until it came back the button gave nothing at all — so the
@@ -1012,180 +956,24 @@ async function submitForm(input) {
       <PageSpin v-if="showSkeleton" />
       <div v-else-if="loading && !page" class="empty"></div>
 
-      <div v-else-if="isMobile" class="client-cards" :class="{ stale: refiltering }">
-        <div v-if="page && page.items.length" class="card-bulk-bar">
-          <label class="acheckbox">
-            <input type="checkbox" class="acheck" :checked="allSelected" @change="toggleAll($event.target.checked)" />
-            <span>{{ t('action.selectAll') }}</span>
-          </label>
-          <span v-if="selected.size" class="bulk-count">{{ nf(selected.size) }}</span>
-        </div>
-        <div v-if="!page || !page.items.length" class="card-empty">
-          <AntIcon name="TeamOutlined" :size="28" style="opacity: 0.5" />
-          <div>{{ t('common.nothingYet') }}</div>
-        </div>
-        <div v-if="page && page.total > pageSize" class="card-pagination">
-          <ul class="apagination small">
-            <li class="apagination-total">{{ nf(page.total) }}</li>
-            <li><button class="apage" :disabled="currentPage <= 1" :aria-label="t('action.prev')" @click="goPage(currentPage - 1)"><AntIcon name="LeftOutlined" /></button></li>
-            <li v-for="(it, i) in pageItems" :key="i">
-              <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" :aria-current="it === currentPage ? 'page' : null" @click="goPage(it)">{{ nf(it) }}</button>
-              <button v-else class="apage jump" @click="goPage(it === 'prev' ? Math.max(1, currentPage - 5) : Math.min(totalPages, currentPage + 5))">•••</button>
-            </li>
-            <li><button class="apage" :disabled="currentPage >= totalPages" :aria-label="t('action.next')" @click="goPage(currentPage + 1)"><AntIcon name="RightOutlined" /></button></li>
-          </ul>
-        </div>
-        <div v-for="c in page?.items || []" :key="c.id" class="client-card" :class="{ 'is-selected': selected.has(c.id) }">
-          <div class="card-head">
-            <input type="checkbox" class="acheck" :checked="selected.has(c.id)" :aria-label="c.name" @change="toggleOne(c.id, $event.target.checked)" />
-            <i v-if="statusTag(c).dot" class="online-dot" style="margin-inline-end: 0"></i>
-            <i v-else class="abadge-dot" :class="statusTag(c).color"></i>
-            <router-link class="tag-name" :to="`/clients/${c.id}`" :title="t('client.openPage')">{{ c.name }}</router-link>
-            <span v-if="c.status === 'exhausted' || c.status === 'expired'" class="atag red status-tag">{{ t('stat.depleted') }}</span>
-            <span v-else-if="remainingTag(c).color === 'orange' || expiryTag(c).color === 'orange'" class="atag orange status-tag">{{ t('stat.depleting') }}</span>
-            <div class="card-actions">
-              <button type="button" class="row-action-trigger" :aria-label="t('client.menu.clientInfo')" @click="infoFor = c"><AntIcon name="InfoCircleOutlined" /></button>
-              <span :title="c.ownerPaused ? statusTag(c).title : ''" class="toggle-wrap"><Toggle :model-value="c.status === 'active' && !c.ownerPaused" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted' || !!c.ownerPaused" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" /></span>
-              <button type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="cardMenu?.client?.id === c.id" @click="openCardMenu(c, $event)"><AntIcon name="MoreOutlined" /></button>
-            </div>
-          </div>
-          <span v-if="c.note" class="client-card-comment">{{ c.note }}</span>
-          <div class="client-traffic-cell is-compact" :class="{ 'is-unlimited': !c.quotaBytes }">
-            <span class="client-traffic-cell-used ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
-            <span class="aprogress client-traffic-cell-bar"><span :style="{ width: (c.quotaBytes ? Math.min(100, usedPercent(c) ?? 0) : 100) + '%', background: barColor(c) }"></span></span>
-            <span class="client-traffic-cell-limit ltr">
-              <span v-if="!c.quotaBytes" class="client-traffic-cell-infinity">∞</span>
-              <template v-else>{{ bytes(c.quotaBytes, store.locale) }}</template>
-            </span>
-          </div>
-          <div v-if="speedActive(c)" class="client-card-speed"><span class="atag blue ltr speed-num" style="margin: 0">{{ speedText(c) }}</span></div>
-        </div>
-        <Teleport to="body">
-          <div v-if="cardMenu" v-fit="cardMenu.rect" class="rowmenu" role="menu" :style="{ top: cardMenu.y + 'px', left: cardMenu.x + 'px' }">
-            <button class="menu-item" role="menuitem" @click="cardAction('qr')"><AntIcon name="QrcodeOutlined" />{{ t('client.qrCode') }}</button>
-            <button class="menu-item" role="menuitem" @click="cardAction('rotate')"><AntIcon name="KeyOutlined" />{{ t('client.rotateKeys') }}</button>
-            <button class="menu-item" role="menuitem" @click="cardAction('reset')"><AntIcon name="RetweetOutlined" />{{ t('outbound.resetTraffic') }}</button>
-            <button class="menu-item" role="menuitem" @click="cardAction('edit')"><AntIcon name="EditOutlined" />{{ t('action.edit') }}</button>
-            <button class="menu-item danger" role="menuitem" @click="cardAction('delete')"><AntIcon name="DeleteOutlined" />{{ t('action.delete') }}</button>
-          </div>
-        </Teleport>
-      </div>
+      <ClientCards
+        v-else-if="isMobile"
+        :items="page?.items || []" :selected="selected" :all-selected="allSelected" :pending="pending" :interfaces="interfaces"
+        @toggle="toggleOne" @toggle-all="toggleAll" @qr="(c) => (shareFor = c)" @info="(c) => (infoFor = c)"
+        @rotate="rotateKeysFor" @reset="resetOne" @edit="(c) => (formFor = { client: c })" @remove="removeOne"
+        @enable="setEnabled" @group="(g) => (groupFilter = g)"
+        :total="page?.total || 0" :page="currentPage" :page-size="pageSize" :stale="refiltering" @go="goPage"
+      />
 
       <template v-else>
-        <div class="atable-wrap" :class="{ stale: refiltering }" style="margin-top: 0">
-          <table class="atable small" style="min-width: 1200px">
-            <thead>
-              <tr>
-                <th class="sel"><input type="checkbox" class="acheck" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" /></th>
-                <th style="width: 236px">{{ t('table.actions') }}</th>
-                <th style="width: 80px">{{ t('table.enabled') }}</th>
-                <th style="width: 90px">{{ t('status.online') }}</th>
-                <th style="width: 220px">{{ t('client.menu.client') }}</th>
-                <th v-if="hasGroups" style="width: 130px">{{ t('client.groups') }}</th>
-                <th style="width: 170px">{{ t('client.attachedInbounds') }}</th>
-                <th style="width: 300px">{{ t('client.traffic') }}</th>
-                <th class="center" style="width: 216px">{{ t('client.speed') }}</th>
-                <th style="width: 130px">{{ t('client.remaining') }}</th>
-                <th style="width: 130px">{{ t('client.menu.duration') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="!page || !page.items.length" class="empty-row">
-                <td :colspan="hasGroups ? 11 : 10">
-                  <div class="clients-empty">
-                    <AntIcon name="TeamOutlined" :size="32" />
-                    <div>{{ t('common.nothingYet') }}</div>
-                  </div>
-                </td>
-              </tr>
-              <tr v-for="c in page.items" :key="c.id" :class="{ picked: selected.has(c.id) }">
-                <td class="sel"><input type="checkbox" class="acheck" :checked="selected.has(c.id)" :aria-label="c.name" @change="toggleOne(c.id, $event.target.checked)" /></td>
-                <td>
-                  <div class="aspace" style="gap: 4px; flex-wrap: nowrap">
-                    <button class="abtn text sm" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="shareFor = c"><AntIcon name="QrcodeOutlined" /></button>
-                    <button class="abtn text sm" :title="t('client.menu.clientInfo')" :aria-label="t('client.menu.clientInfo')" @click="infoFor = c"><AntIcon name="InfoCircleOutlined" /></button>
-                    <button class="abtn text sm" :title="t('client.rotateKeys')" :aria-label="t('client.rotateKeys')" :disabled="isPending(c.id)" @click="rotateKeysFor(c)"><AntIcon name="KeyOutlined" /></button>
-                    <button class="abtn text sm" :title="t('outbound.resetTraffic')" :aria-label="t('outbound.resetTraffic')" :disabled="isPending(c.id)" @click="resetOne(c)"><AntIcon name="RetweetOutlined" /></button>
-                    <button class="abtn text sm" :title="t('action.edit')" :aria-label="t('action.edit')" @click="formFor = { client: c }"><AntIcon name="EditOutlined" /></button>
-                    <button class="abtn text sm danger" :title="t('action.delete')" :aria-label="t('action.delete')" @click="removeOne(c)"><AntIcon name="DeleteOutlined" /></button>
-                  </div>
-                </td>
-                <td>
-                  <span :title="c.ownerPaused ? statusTag(c).title : ''" class="toggle-wrap"><Toggle :model-value="c.status === 'active' && !c.ownerPaused" :label="c.name" small :disabled="c.status === 'expired' || c.status === 'exhausted' || !!c.ownerPaused" :loading="isPending(c.id)" @update:model-value="(v) => setEnabled(c, v)" /></span>
-                </td>
-                <td>
-                  <span class="atag" :class="statusTag(c).color === 'grey' ? '' : statusTag(c).color" :title="statusTag(c).title || lastOnlineTitle(c)" style="margin: 0">
-                    <i v-if="statusTag(c).dot" class="online-dot"></i>{{ statusTag(c).label }}
-                  </span>
-                </td>
-                <td>
-                  <div class="email-cell">
-                    <!-- The name opens the customer's own page: their files one
-                         by one, each with its configuration and QR, and files
-                         added or removed beyond the one per user. -->
-                    <router-link class="email" :to="`/clients/${c.id}`" :title="t('client.openPage')">{{ c.name }}</router-link>
-                    <!-- Connections in use right now against what the plan allows at once,
-                         the way the classic panel shows its IP count: a file on two devices
-                         used one at a time is one connection; both at once is two. -->
-                    <span class="sub ltr" :class="{ over: c.deviceLimit > 0 && (c.onlineNow || 0) > c.deviceLimit }"
-                          :title="t('client.connectionsNow', { n: c.onlineNow || 0, limit: c.deviceLimit, files: c.accounts?.length ?? 0 })">
-                      {{ c.onlineNow || 0 }} / {{ c.deviceLimit || '∞' }}
-                    </span>
-                    <span v-if="c.note" class="sub" :title="c.note">{{ c.note }}</span>
-                  </div>
-                </td>
-                <td v-if="hasGroups">
-                  <!-- As the inbounds cell: the first group as a chip, the rest
-                       folded into a +N that names them on hover, so a customer
-                       in five groups is still one row high. -->
-                  <template v-if="(c.groups || []).length">
-                    <span v-for="g in c.groups.slice(0, INBOUND_CHIP_LIMIT)" :key="g" class="atag geekblue" :style="{ margin: '2px', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" :title="g" @click="groupFilter = g">{{ g }}</span>
-                    <span v-if="c.groups.length > INBOUND_CHIP_LIMIT" class="atag default" style="margin: 2px; cursor: pointer" :title="c.groups.slice(INBOUND_CHIP_LIMIT).join(', ')" @click="groupFilter = c.groups[INBOUND_CHIP_LIMIT]">+{{ c.groups.length - INBOUND_CHIP_LIMIT }}</span>
-                  </template>
-                  <span v-else class="cell-empty">—</span>
-                </td>
-                <td>
-                  <template v-if="inboundChips(c).length">
-                    <span v-for="ib in inboundChips(c).slice(0, INBOUND_CHIP_LIMIT)" :key="ib.name" class="atag" :class="{ openvpn: 'orange', l2tp: 'purple' }[ib.protocol] || 'gold'" style="margin: 2px" :title="ib.name">{{ ib.name }}</span>
-                    <span v-if="inboundChips(c).length > INBOUND_CHIP_LIMIT" class="atag default" style="margin: 2px; cursor: pointer" :title="inboundChips(c).slice(INBOUND_CHIP_LIMIT).map((x) => x.name).join(', ')">+{{ inboundChips(c).length - INBOUND_CHIP_LIMIT }}</span>
-                  </template>
-                  <span v-else class="cell-empty">—</span>
-                </td>
-                <td>
-                  <div class="client-traffic-cell" :class="{ 'is-unlimited': !c.quotaBytes }" :title="`↑ ${bytes(c.upBytes || 0, store.locale)}  ↓ ${bytes(c.downBytes || 0, store.locale)}`">
-                    <span class="client-traffic-cell-used ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
-                    <span class="aprogress client-traffic-cell-bar"><span :style="{ width: (c.quotaBytes ? Math.min(100, usedPercent(c) ?? 0) : 100) + '%', background: barColor(c) }"></span></span>
-                    <span class="client-traffic-cell-limit ltr">
-                      <span v-if="!c.quotaBytes" class="client-traffic-cell-infinity">∞</span>
-                      <template v-else>{{ bytes(c.quotaBytes, store.locale) }}</template>
-                    </span>
-                  </div>
-                </td>
-                <td class="center"><span class="atag speed-tag ltr" :class="{ blue: speedActive(c) }">{{ speedActive(c) ? speedText(c) : '—' }}</span></td>
-                <td><span class="atag ltr" :class="remainingTag(c).color" style="margin: 0">{{ remainingTag(c).label }}</span></td>
-                <td><span class="atag ltr" :class="expiryTag(c).color" :title="expiryTitle(c)" style="margin: 0">{{ expiryTag(c).label }}</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Their pagination: total, the pages, and a size changer past ten rows. -->
-        <ul v-if="page && page.total > pageSize" class="apagination">
-          <li class="apagination-total">{{ nf(page.total) }}</li>
-          <li><button class="apage" :disabled="currentPage <= 1" :aria-label="t('action.prev')" @click="goPage(currentPage - 1)"><AntIcon name="LeftOutlined" /></button></li>
-          <li v-for="(it, i) in pageItems" :key="i">
-            <button v-if="typeof it === 'number'" class="apage" :class="{ active: it === currentPage }" :aria-current="it === currentPage ? 'page' : null" @click="goPage(it)">{{ nf(it) }}</button>
-            <button v-else class="apage jump" :aria-label="it === 'prev' ? t('action.prev') : t('action.next')" @click="goPage(it === 'prev' ? Math.max(1, currentPage - 5) : Math.min(totalPages, currentPage + 5))">•••</button>
-          </li>
-          <li><button class="apage" :disabled="currentPage >= totalPages" :aria-label="t('action.next')" @click="goPage(currentPage + 1)"><AntIcon name="RightOutlined" /></button></li>
-          <!-- The label is drawn here and the select lies invisibly over it, its
-               menu and keyboard still the browser's: Chromium draws a closed
-               select's text right to left once it holds a Persian word, whatever
-               its direction and marks say. -->
-          <li v-if="page.total > 10" class="aselect apage-size"><span class="apage-size-label" dir="ltr" aria-hidden="true">{{ pageSizeLabel(pageSize) }}</span><select :value="pageSize" :aria-label="t('client.pageSize')" @change="setPageSize($event.target.value)">
-            <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ pageSizeLabel(n) }}</option>
-          </select></li>
-        </ul>
+        <ClientsTable
+          :items="page?.items || []" :selected="selected" :all-selected="allSelected" :pending="pending" :interfaces="interfaces"
+          @toggle="toggleOne" @toggle-all="toggleAll" @qr="(c) => (shareFor = c)" @info="(c) => (infoFor = c)"
+          @rotate="rotateKeysFor" @reset="resetOne" @edit="(c) => (formFor = { client: c })" @remove="removeOne"
+          @enable="setEnabled" @group="(g) => (groupFilter = g)"
+          :has-groups="hasGroups" :group-filter="groupFilter" :stale="refiltering"
+        />
+        <Pager v-if="page && page.total > pageSize" :total="page.total" :page="currentPage" :page-size="pageSize" :sizes="PAGE_SIZES" @go="goPage" @size="setPageSize" />
       </template>
     </div>
   </div>
@@ -1322,71 +1110,72 @@ async function submitForm(input) {
   />
 </template>
 
-<style scoped>
+<style>
+/* Keyed on the page's root rather than scoped, so the components it is
+   made of are styled as when their markup was the page's. */
 /* the classic panel's ClientsPage.css, measured as it is. */
-.arow.six > .acol { flex: 0 0 16.6667%; max-width: 16.6667%; }
-@media (max-width: 991px) { .arow.six > .acol { flex: 0 0 33.3333%; max-width: 33.3333%; } }
-@media (max-width: 575px) { .arow.six > .acol { flex: 0 0 50%; max-width: 50%; } }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-.dot-green { background: var(--ok); }
-.dot-blue { background: var(--accent); }
-.dot-red { background: var(--bad); }
-.dot-orange { background: var(--warn); }
-.dot-gray { background: var(--faint); }
+.clients .arow.six > .acol { flex: 0 0 16.6667%; max-width: 16.6667%; }
+@media (max-width: 991px) { .clients .arow.six > .acol { flex: 0 0 33.3333%; max-width: 33.3333%; } }
+@media (max-width: 575px) { .clients .arow.six > .acol { flex: 0 0 50%; max-width: 50%; } }
+.clients .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.clients .dot-green { background: var(--ok); }
+.clients .dot-blue { background: var(--accent); }
+.clients .dot-red { background: var(--bad); }
+.clients .dot-orange { background: var(--warn); }
+.clients .dot-gray { background: var(--faint); }
 
-.acard.small .acard-head { min-height: 38px; padding: 0 12px; }
-.acard.small .acard-body { padding: 12px; }
-.card-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; padding: 6px 0; }
-.unit-select { flex: 0 0 auto; width: auto; min-width: 72px; padding-inline: 8px; }
-.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
-.filter-count { margin-inline-start: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
-.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 6px 8px; background: var(--surface-2); border-radius: 8px; }
-.filter-chips .atag { margin: 0; }
-.abadge-wrap { position: relative; display: inline-block; }
-.abadge { position: absolute; top: 4px; inset-inline-end: 4px; transform: translate(50%, -50%); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 12px; line-height: 16px; text-align: center; box-shadow: 0 0 0 1px var(--surface); }
-.filter-bar .sort-select { width: auto; }
-.sort-select .aselect-suffix { position: absolute; inset-inline-end: 11px; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 12px; pointer-events: none; }
-.sort-select::after { display: none; }
-.sort-select select { padding-inline-end: 28px; }
+.clients .acard.small .acard-head { min-height: 38px; padding: 0 12px; }
+.clients .acard.small .acard-body { padding: 12px; }
+.clients .card-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; padding: 6px 0; }
+.clients .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.clients .filter-count { margin-inline-start: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.clients .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 6px 8px; background: var(--surface-2); border-radius: 8px; }
+.clients .filter-chips .atag { margin: 0; }
+.clients .abadge-wrap { position: relative; display: inline-block; }
+.clients .abadge { position: absolute; top: 4px; inset-inline-end: 4px; transform: translate(50%, -50%); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 12px; line-height: 16px; text-align: center; box-shadow: 0 0 0 1px var(--surface); }
+.clients .filter-bar .sort-select { width: auto; }
+.clients .sort-select .aselect-suffix { position: absolute; inset-inline-end: 11px; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 12px; pointer-events: none; }
+.clients .sort-select::after { display: none; }
+.clients .sort-select select { padding-inline-end: 28px; }
 
-.atable th.center, .atable td.center { text-align: center; }
-.atable-wrap.stale { opacity: 0.6; }
-.email-cell { display: flex; flex-direction: column; }
-.email-cell .email { font-weight: 500; color: inherit; text-decoration: none; }
-.email-cell .email:hover, a.tag-name:hover { text-decoration: underline; }
-a.tag-name { color: inherit; text-decoration: none; }
-.email-cell .sub.over { color: var(--danger, #e5484d); font-weight: 600; }
-.email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.cell-empty { color: var(--faint); }
-.toggle-wrap { display: inline-flex; }
-.online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }
-@keyframes online-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; font-variant-numeric: tabular-nums; }
+.clients .atable th.center, .clients .atable td.center { text-align: center; }
+.clients .atable-wrap.stale { opacity: 0.6; }
+.clients .email-cell { display: flex; flex-direction: column; }
+.clients .email-cell .email { font-weight: 500; color: inherit; text-decoration: none; }
+.clients .email-cell .email:hover, .clients a.tag-name:hover { text-decoration: underline; }
+.clients a.tag-name { color: inherit; text-decoration: none; }
+.clients .email-cell .sub.over { color: var(--danger, #e5484d); font-weight: 600; }
+.clients .email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.clients .cell-empty { color: var(--faint); }
+.clients .toggle-wrap { display: inline-flex; }
+.clients .online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }
+@keyframes online-blink { .clients 0%, .clients 100% { opacity: 1; } .clients 50% { opacity: 0.35; } }
+.clients .speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; font-variant-numeric: tabular-nums; }
 /* Figures of one width, so a speed that changes every few seconds does not
    shift the rest of the line. */
-.speed-num { font-variant-numeric: tabular-nums; }
+.clients .speed-num { font-variant-numeric: tabular-nums; }
 
 /* Their ClientTrafficCell: a pill with the figures either side of a bar. */
-.client-traffic-cell { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); }
-.client-traffic-cell-used, .client-traffic-cell-limit { flex: 0 0 72px; min-width: 72px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.client-traffic-cell-used { text-align: end; color: var(--ink); }
-.client-traffic-cell-limit { text-align: start; color: var(--muted); }
-.client-traffic-cell-bar { flex: 1 1 60px; min-width: 48px; }
-.client-traffic-cell.is-unlimited .client-traffic-cell-bar > span { border: 1px solid rgba(114, 46, 209, 0.55); }
-.client-traffic-cell-infinity { display: inline-flex; align-items: center; color: var(--tag-purple-ink); font-size: 14px; line-height: 1; }
+.clients .client-traffic-cell { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); }
+.clients .client-traffic-cell-used, .clients .client-traffic-cell-limit { flex: 0 0 72px; min-width: 72px; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.clients .client-traffic-cell-used { text-align: end; color: var(--ink); }
+.clients .client-traffic-cell-limit { text-align: start; color: var(--muted); }
+.clients .client-traffic-cell-bar { flex: 1 1 60px; min-width: 48px; }
+.clients .client-traffic-cell.is-unlimited .client-traffic-cell-bar > span { border: 1px solid rgba(114, 46, 209, 0.55); }
+.clients .client-traffic-cell-infinity { display: inline-flex; align-items: center; color: var(--tag-purple-ink); font-size: 14px; line-height: 1; }
 
-.account-card { margin-bottom: 16px; }
-.account-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
-.account-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
-.account-item { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
-.account-item .atag { margin: 0; }
-.account-barred { margin: 8px 0 0; color: var(--bad); font-size: 13px; }
+.clients .account-card { margin-bottom: 16px; }
+.clients .account-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
+.clients .account-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.clients .account-item { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.clients .account-item .atag { margin: 0; }
+.clients .account-barred { margin: 8px 0 0; color: var(--bad); font-size: 13px; }
 
-.clients-empty { padding: 32px 0; text-align: center; color: var(--muted); }
-.clients-empty .anticon { display: block; margin: 0 auto 8px; }
+.clients .clients-empty { padding: 32px 0; text-align: center; color: var(--muted); }
+.clients .clients-empty .anticon { display: block; margin: 0 auto 8px; }
 
 /* Every match, across the pages: offered and said in one quiet line. */
-.sel-bar {
+.clients .sel-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1399,20 +1188,25 @@ a.tag-name { color: inherit; text-decoration: none; }
   color: var(--ink);
   font-size: var(--t-sm);
 }
-.sel-bar .linkbtn {
+.clients .sel-bar .linkbtn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-weight: 600;
 }
-.apagination-total { align-items: center; height: 32px; color: var(--ink); font-size: 14px; }
-.apagination.small .apagination-total { height: 24px; }
-.apage.jump { border-color: transparent; background: transparent; letter-spacing: 2px; color: var(--faint); }
+.clients .apagination-total { align-items: center; height: 32px; color: var(--ink); font-size: 14px; }
+.clients .apagination.small .apagination-total { height: 24px; }
+.clients .apage.jump { border-color: transparent; background: transparent; letter-spacing: 2px; color: var(--faint); }
 /* The size changer is as wide as its words, 16px past the arrow as Ant's
    is -- not the full-width select a form field is. */
-.apagination > .apage-size { width: auto; margin-inline-start: 8px; }
-.apage-size { padding: 0 32px 0 11px; font-size: 14px; }
-.apage-size-label { white-space: nowrap; color: var(--ink); }
-.apage-size select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.apage .anticon { font-size: 12px; }
+.clients .apagination > .apage-size { width: auto; margin-inline-start: 8px; }
+.clients .apage-size { padding: 0 32px 0 11px; font-size: 14px; }
+.clients .apage-size-label { white-space: nowrap; color: var(--ink); }
+.clients .apage-size select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.clients .apage .anticon { font-size: 12px; }
+</style>
+
+<style scoped>
+/* In the bulk dialog, which is not under the page's root. */
+.unit-select { flex: 0 0 auto; width: auto; min-width: 72px; padding-inline: 8px; }
 </style>

@@ -112,3 +112,20 @@ export function expiryTitle(c) {
   if (c.startOnFirstUse && c.durationDays > 0) return t('client.notStartedHint')
   return t('client.neverExpires')
 }
+
+// How many of a customer's tunnels or groups a row names before the rest fold
+// into a +N, so a customer on five is still one row high.
+export const INBOUND_CHIP_LIMIT = 1
+
+// The tunnels a customer is on, each once, as the row's chips.
+export function inboundChips(c, interfaces = []) {
+  const names = []
+  const seen = new Set()
+  for (const a of c.accounts || []) {
+    if (seen.has(a.interfaceId)) continue
+    seen.add(a.interfaceId)
+    const i = interfaces.find((x) => x.id === a.interfaceId)
+    names.push({ name: i?.name || `#${a.interfaceId}`, protocol: i?.protocol || c.protocol })
+  }
+  return names
+}
