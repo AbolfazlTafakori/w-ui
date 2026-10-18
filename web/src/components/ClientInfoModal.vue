@@ -3,7 +3,7 @@
 // 13px label column, a tag per value -- then a Divider and a link row for
 // the subscription, and a Divider and a ConfigBlock per tunnel config.
 import { computed, onMounted, ref } from 'vue'
-import { api } from '../lib/api.js'
+import { api, subscriptionText } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, isOnline } from '../lib/format.js'
 import AntIcon from './AntIcon.vue'
@@ -120,9 +120,7 @@ function downloadText(text, name) {
 async function downloadSub() {
   if (!sub.value?.link) return
   try {
-    const res = await fetch(sub.value.link)
-    if (!res.ok) throw new Error(res.statusText)
-    downloadText(await res.text(), 'subscription-standard.txt')
+    downloadText(await subscriptionText(sub.value.link), 'subscription-standard.txt')
   } catch (e) {
     notify(e.message, 'error')
   }

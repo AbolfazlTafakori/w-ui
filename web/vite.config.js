@@ -17,6 +17,12 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
   },
 
+  // The unit tests run in a browser-like document, as the page does.
+  test: {
+    environment: 'jsdom',
+    include: ['src/**/*.test.js'],
+  },
+
   // In development the Vue dev server owns the page and forwards API calls to
   // the Go process, so the frontend reloads without rebuilding the binary.
   server: {

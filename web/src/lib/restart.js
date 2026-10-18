@@ -10,19 +10,10 @@
 // /api/meta needs no session: a restored archive brings its own accounts, and
 // any answer at all from the panel means it is back.
 
-import { apiURL } from './api.js'
+import { answers } from './api.js'
 
 // How long a panel may take to come back before the page says it has not.
 export const COME_BACK_MS = 3 * 60 * 1000
-
-async function answers() {
-  try {
-    const res = await fetch(apiURL('/api/meta'), { credentials: 'same-origin', cache: 'no-store' })
-    return res.status < 500
-  } catch {
-    return false
-  }
-}
 
 // waitForRestart resolves true once the panel has gone away and come back, or
 // false after COME_BACK_MS without that. reload: whether to reload the page

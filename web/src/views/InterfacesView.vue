@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { api, apiURL, getToken, saveText } from '../lib/api.js'
+import { api, saveFile, saveText } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
@@ -814,16 +814,7 @@ const downloadingProfile = ref(0)
 async function downloadProfile(iface) {
   downloadingProfile.value = iface.id
   try {
-    const res = await fetch(apiURL(`/api/interfaces/${iface.id}/profile`), {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-    if (!res.ok) throw new Error((await res.text()) || t('error.unknown'))
-    const url = URL.createObjectURL(await res.blob())
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${iface.name}.ovpn`
-    a.click()
-    URL.revokeObjectURL(url)
+    await saveFile(`/api/interfaces/${iface.id}/profile`, `${iface.name}.ovpn`)
     notify(t('interface.profileDownloaded'), 'success')
   } catch (err) {
     notify(err.message, 'error')

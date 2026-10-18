@@ -49,8 +49,12 @@ const LOGIN_PROTOCOLS = ['openvpn', 'openconnect', 'ikev2', 'l2tp', 'pptp']
 // first), from the first OpenVPN or L2TP tunnel they are on. Every user has
 // one -- issued with their file -- and the form shows it as it is, so it can
 // be read off and told to them, or typed over to change it.
+// The customer's devices as read back after a rotation; until then, the
+// ones the page handed in. Kept here rather than written into the prop,
+// which is the page's own object.
+const accountsNow = ref(null)
 function currentOpenVPNLogins() {
-  const accounts = props.client?.accounts || []
+  const accounts = accountsNow.value || props.client?.accounts || []
   const logins = (props.interfaces || []).filter((i) => LOGIN_PROTOCOLS.includes(i.protocol)).map((i) => i.id)
   const first = logins.find((id) => accounts.some((a) => a.interfaceId === id))
   if (first === undefined) return []
@@ -142,7 +146,7 @@ async function rotateUser(user, protocol) {
     // credentials are read back so what is shown is what works.
     const fresh = await api.client(props.client.id)
     if (fresh?.accounts) {
-      props.client.accounts = fresh.accounts
+      accountsNow.value = fresh.accounts
       form.value.openvpnUsers = currentOpenVPNLogins().map((u) => ({ ...u }))
     }
   } catch (e) {
@@ -223,11 +227,17 @@ function planDays() {
 
 // One login per user: the rows follow the Users count. On an edit a row
 // starts with the user's current name and password, as they are.
-const openvpnRows = computed(() => {
-  const n = Math.max(1, Number(form.value.deviceLimit) || 1)
-  while (form.value.openvpnUsers.length < n) form.value.openvpnUsers.push({ username: '', password: '' })
-  return form.value.openvpnUsers.slice(0, n)
-})
+const openvpnCount = computed(() => Math.max(1, Number(form.value.deviceLimit) || 1))
+// A row for every user the count asks for, added when it grows; a smaller
+// count shows fewer and keeps what was typed in the rest.
+watch(
+  [openvpnCount, () => form.value.openvpnUsers],
+  ([n, users]) => {
+    while (users.length < n) users.push({ username: '', password: '' })
+  },
+  { immediate: true },
+)
+const openvpnRows = computed(() => form.value.openvpnUsers.slice(0, openvpnCount.value))
 // What to send: only what differs from what the user has now, by position,
 // with blanks for the rest so positions line up.
 function openvpnChanges() {

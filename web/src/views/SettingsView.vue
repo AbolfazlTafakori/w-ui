@@ -5,7 +5,7 @@
 // Subscription -- each a row of tabs over lists of setting rows.
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
-import { api, apiURL, getToken } from '../lib/api.js'
+import { api, saveFile, uploadBackup as sendBackup } from '../lib/api.js'
 import { waitForRestart } from '../lib/restart.js'
 import { useDelayed } from '../lib/live.js'
 import { makeQR } from '../lib/qr.js'
@@ -660,19 +660,7 @@ async function removeBackup(name) {
 // session token rather than linked.
 async function downloadBackup(name) {
   try {
-    const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(name)}`), {
-      headers: { Authorization: `Bearer ${getToken()}` },
-      credentials: 'same-origin',
-    })
-    if (!res.ok) throw new Error(await res.text())
-    const url = URL.createObjectURL(await res.blob())
-    const a = document.createElement('a')
-    a.href = url
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
+    await saveFile(`/api/backups/${encodeURIComponent(name)}`, name)
   } catch (e) {
     notify(e.message, 'error')
   }
@@ -700,16 +688,11 @@ async function uploadBackup(event) {
   if (!file) return
   uploading.value = true
   try {
-    const body = new FormData()
-    body.append('archive', file)
-    const res = await fetch(apiURL('/api/backups/upload'), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}` },
-      credentials: 'same-origin',
-      body,
-    })
-    const data = await res.json().catch(() => null)
-    if (!res.ok) throw new Error(data?.error || t('settings.uploadFailed'))
+    try {
+      await sendBackup(file)
+    } catch (e) {
+      throw new Error(e.message || t('settings.uploadFailed'))
+    }
     await loadBackups()
     notify(t('settings.uploaded'), 'success')
   } catch (e) {

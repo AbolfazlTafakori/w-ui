@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeUnmount } from 'vue'
 import { RouterLink } from 'vue-router'
-import { api, apiURL, getToken } from '../lib/api.js'
+import { api, saveFile, uploadBackup } from '../lib/api.js'
 import { useDelayed } from '../lib/live.js'
 import { waitForRestart } from '../lib/restart.js'
 import { store, t, tn, notify } from '../lib/store.js'
@@ -334,19 +334,7 @@ async function backupNow() {
   try {
     const a = await api.post('/api/backups')
     backup.value.line = t('overview.preparingDownload')
-    const res = await fetch(apiURL(`/api/backups/${encodeURIComponent(a.name)}`), {
-      headers: { Authorization: `Bearer ${getToken()}` },
-      credentials: 'same-origin',
-    })
-    if (!res.ok) throw new Error((await res.text()) || res.statusText)
-    const url = URL.createObjectURL(await res.blob())
-    const link = document.createElement('a')
-    link.href = url
-    link.download = a.name
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
+    await saveFile(`/api/backups/${encodeURIComponent(a.name)}`, a.name)
     if (backup.value) backup.value = { ...backup.value, step: 'choose', done: t('overview.backupDownloaded').replace('{name}', a.name) }
   } catch (e) {
     if (backup.value) backup.value = { ...backup.value, step: 'choose', error: e.message }
@@ -364,29 +352,15 @@ function restoreChosen(event) {
   backup.value = { ...backup.value, step: 'confirm', file, error: '', done: '' }
 }
 
-// Sent with XMLHttpRequest for its upload progress, which fetch does not
-// report: an archive of a hundred megabytes over a slow link is minutes of
-// a bar that moves, or minutes of wondering.
-function upload(file, onShare) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', apiURL('/api/backups/upload'))
-    xhr.setRequestHeader('Authorization', `Bearer ${getToken()}`)
-    xhr.withCredentials = true
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onShare(Math.round((e.loaded / e.total) * 100))
-    }
-    xhr.onload = () => {
-      let body = null
-      try { body = JSON.parse(xhr.responseText) } catch { body = null }
-      if (xhr.status >= 200 && xhr.status < 300 && body?.name) resolve(body)
-      else reject(new Error(body?.error || t('overview.importFailed')))
-    }
-    xhr.onerror = () => reject(new Error(t('overview.uploadCut')))
-    const form = new FormData()
-    form.append('archive', file)
-    xhr.send(form)
-  })
+// The upload's own message when the panel gave one; otherwise what kind of
+// failure it was.
+async function upload(file, onShare) {
+  try {
+    return await uploadBackup(file, onShare)
+  } catch (e) {
+    if (e.kind === 'network') throw new Error(t('overview.uploadCut'))
+    throw new Error(e.message || t('overview.importFailed'))
+  }
 }
 
 async function restoreNow() {

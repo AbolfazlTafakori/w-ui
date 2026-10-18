@@ -249,6 +249,70 @@ function handOver(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
+// uploadBackup sends an archive to the panel and resolves with what it
+// stored ({name, ...}). Sent with XMLHttpRequest for its upload progress,
+// which fetch does not report: an archive of a hundred megabytes over a slow
+// link is minutes of a bar that moves, or minutes of wondering. onProgress,
+// when given, is told the share sent, 0 to 100.
+export function uploadBackup(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', apiURL('/api/backups/upload'))
+    const token = getToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.withCredentials = true
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      let body = null
+      try {
+        body = JSON.parse(xhr.responseText)
+      } catch {
+        body = null
+      }
+      if (xhr.status === 401) {
+        setToken(null)
+        window.dispatchEvent(new CustomEvent('wui:unauthorized'))
+        reject(new ApiError('', 401, 'session'))
+        return
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && body?.name) resolve(body)
+      else reject(new ApiError(body?.error || '', xhr.status || 0, 'server', body?.field || ''))
+    }
+    xhr.onerror = () => reject(new ApiError('', 0, 'network'))
+    const form = new FormData()
+    form.append('archive', file)
+    xhr.send(form)
+  })
+}
+
+// answers is whether the panel answers at all, signed in or not: /api/meta
+// needs no session, and any answer below 500 means the process is up. For
+// following a restart.
+export async function answers() {
+  try {
+    const res = await fetch(apiURL('/api/meta'), { credentials: 'same-origin', cache: 'no-store' })
+    return res.status < 500
+  } catch {
+    return false
+  }
+}
+
+// subscriptionText is what a customer's subscription link hands a proxy app.
+// The link is the customer's own address, not the API, so no session goes
+// with it.
+export async function subscriptionText(link) {
+  let res
+  try {
+    res = await fetch(link, { cache: 'no-store' })
+  } catch {
+    throw new ApiError('Could not reach the subscription address.', 0, 'network')
+  }
+  if (!res.ok) throw new ApiError(res.statusText || `Request failed (${res.status})`, res.status)
+  return res.text()
+}
+
 // The most customers the server serves on one page. A page asked to be larger
 // is not served at that size: it comes back with the default 25, and a list
 // read that way silently stops at the 25th customer.
@@ -374,6 +438,7 @@ export const api = {
   downloadClients: () => saveFile('/api/clients/export', 'clients.json'),
   // Every device an L2TP sign-in has a guide for, and which list it is in.
   l2tpDevices: () => request('GET', '/api/l2tp/devices'),
+  uploadBackup,
   allClients,
   subscriptionLinks,
 }

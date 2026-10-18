@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { makeQR } from '../lib/qr.js'
 import { useDelayed } from '../lib/live.js'
-import { api, apiURL, getToken } from '../lib/api.js'
+import { api, saveFile } from '../lib/api.js'
 import { store, t, tn, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -48,21 +48,8 @@ const serverCount = computed(
 async function downloadAll() {
   downloading.value = true
   try {
-    const res = await fetch(apiURL(`/api/clients/${props.id}/configs`), {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-    if (!res.ok) throw new Error((await res.text()) || t('error.unknown'))
-
-    // The server names the file after the customer; falling back to the id
-    // beats saving something called "download".
-    const disposition = res.headers.get('Content-Disposition') || ''
-    const named = /filename="([^"]+)"/.exec(disposition)
-    const url = URL.createObjectURL(await res.blob())
-    const a = document.createElement('a')
-    a.href = url
-    a.download = named ? named[1] : `client-${props.id}.zip`
-    a.click()
-    URL.revokeObjectURL(url)
+    // The server names the file after the customer; the id is the fallback.
+    await saveFile(`/api/clients/${props.id}/configs`, `client-${props.id}.zip`)
   } catch (e) {
     notify(e.message, 'error')
   } finally {

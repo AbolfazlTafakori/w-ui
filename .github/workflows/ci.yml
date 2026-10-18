@@ -22,6 +22,10 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
+      - run: npm run lint
+        working-directory: web
+      - run: npm test
+        working-directory: web
       - run: npx vite build
         working-directory: web
       # The bundle is committed so `go build` works from a plain checkout;
