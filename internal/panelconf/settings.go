@@ -1,4 +1,8 @@
-package service
+// Package panelconf is the panel's own settings as an operator changes
+// them -- where it listens, its paths and certificate, its notifications
+// and limits -- stored in the database, over the defaults it ships with
+// and what the environment pins.
+package panelconf
 
 import (
 	"context"
@@ -15,6 +19,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/notify"
 )
 
@@ -267,34 +272,34 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	// row must not stop the panel from starting.
 	str(keyWebListen, &out.WebListen)
 	str(keyWebDomain, &out.WebDomain)
-	out.WebPort = intOr(stored[keyWebPort], out.WebPort)
+	out.WebPort = IntOr(stored[keyWebPort], out.WebPort)
 	str(keyWebBasePath, &out.WebBasePath)
 	str(keyWebCertFile, &out.WebCertFile)
 	str(keyWebKeyFile, &out.WebKeyFile)
 	str(keyTrustedProxies, &out.TrustedProxyCIDRs)
 	// Minutes, or the hours a panel from before this unit had saved.
 	if _, ok := stored[keySessionMinutes]; ok {
-		out.SessionMaxAge = intOr(stored[keySessionMinutes], out.SessionMaxAge)
-	} else if h := intOr(stored[keySessionHours], 0); h > 0 {
+		out.SessionMaxAge = IntOr(stored[keySessionMinutes], out.SessionMaxAge)
+	} else if h := IntOr(stored[keySessionHours], 0); h > 0 {
 		out.SessionMaxAge = h * 60
 	}
 	if v := strings.TrimSpace(stored[keyDefaultLocale]); v != "" {
 		out.DefaultLocale = v
 	}
 	str(keyPanelOutbound, &out.PanelOutbound)
-	out.PageSize = intOr(stored[keyPageSize], out.PageSize)
+	out.PageSize = IntOr(stored[keyPageSize], out.PageSize)
 	str(keyTimeLocation, &out.TimeLocation)
 	if v := strings.TrimSpace(stored[keyDatepicker]); v != "" {
 		out.Datepicker = v
 	}
-	out.ExpireDiff = intOr(stored[keyExpireDiff], out.ExpireDiff)
-	out.TrafficDiff = intOr(stored[keyTrafficDiff], out.TrafficDiff)
+	out.ExpireDiff = IntOr(stored[keyExpireDiff], out.ExpireDiff)
+	out.TrafficDiff = IntOr(stored[keyTrafficDiff], out.TrafficDiff)
 	out.ExternalTrafficInformEnable = stored[keyInformEnable] == "true"
 	str(keyInformURI, &out.ExternalTrafficInformURI)
 
 	out.DefaultQuotaBytes = uintOr(stored[keyDefQuotaBytes], out.DefaultQuotaBytes)
-	out.DefaultExpiryDays = intOr(stored[keyDefExpiryDays], out.DefaultExpiryDays)
-	out.DefaultDeviceLimit = intOr(stored[keyDefDeviceLimit], out.DefaultDeviceLimit)
+	out.DefaultExpiryDays = IntOr(stored[keyDefExpiryDays], out.DefaultExpiryDays)
+	out.DefaultDeviceLimit = IntOr(stored[keyDefDeviceLimit], out.DefaultDeviceLimit)
 	out.DefaultRateBitsPerSec = uintOr(stored[keyDefRateBits], out.DefaultRateBitsPerSec)
 	if v := strings.TrimSpace(stored[keyDefResetCycle]); v != "" {
 		out.DefaultResetCycle = v
@@ -324,16 +329,16 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	if v := strings.TrimSpace(stored[keyNotifyBackupAt]); v != "" {
 		out.NotifyBackupTime = v
 	}
-	out.NotifyCPUThreshold = intOr(stored[keyNotifyCPU], out.NotifyCPUThreshold)
-	out.NotifyMemoryThreshold = intOr(stored[keyNotifyMemory], out.NotifyMemoryThreshold)
-	out.NotifyOutboundDownThreshold = intOr(stored[keyNotifyOutDown], out.NotifyOutboundDownThreshold)
+	out.NotifyCPUThreshold = IntOr(stored[keyNotifyCPU], out.NotifyCPUThreshold)
+	out.NotifyMemoryThreshold = IntOr(stored[keyNotifyMemory], out.NotifyMemoryThreshold)
+	out.NotifyOutboundDownThreshold = IntOr(stored[keyNotifyOutDown], out.NotifyOutboundDownThreshold)
 
-	out.BackupEveryHours = intOr(stored[keyBackupEvery], out.BackupEveryHours)
-	out.BackupKeep = intOr(stored[keyBackupKeep], out.BackupKeep)
+	out.BackupEveryHours = IntOr(stored[keyBackupEvery], out.BackupEveryHours)
+	out.BackupKeep = IntOr(stored[keyBackupKeep], out.BackupKeep)
 
 	out.MailEnabled = stored[keyMailEnabled] == "true"
 	str(keyMailHost, &out.MailHost)
-	out.MailPort = intOr(stored[keyMailPort], out.MailPort)
+	out.MailPort = IntOr(stored[keyMailPort], out.MailPort)
 	str(keyMailUsername, &out.MailUsername)
 	str(keyMailPassword, &out.MailPassword)
 	str(keyMailFrom, &out.MailFrom)
@@ -443,19 +448,19 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 func (s *Settings) validate(in *PanelSettings) error {
 	if in.SessionMaxAge <= 0 || in.SessionMaxAge > maxSessionMinutes {
 		return fmt.Errorf("%w: session duration must be between 1 and %d minutes",
-			ErrInvalid, maxSessionMinutes)
+			fault.ErrInvalid, maxSessionMinutes)
 	}
 	if in.WebPort < 0 || in.WebPort > 65535 {
-		return fmt.Errorf("%w: panel port %d is out of range", ErrInvalid, in.WebPort)
+		return fmt.Errorf("%w: panel port %d is out of range", fault.ErrInvalid, in.WebPort)
 	}
 	if v := strings.TrimSpace(in.WebListen); v != "" {
 		if _, err := netip.ParseAddr(v); err != nil {
-			return fmt.Errorf("%w: listen IP %q is not an address", ErrInvalid, v)
+			return fmt.Errorf("%w: listen IP %q is not an address", fault.ErrInvalid, v)
 		}
 	}
 	in.WebBasePath = normalizeBasePath(in.WebBasePath)
 	if inner := strings.Trim(in.WebBasePath, "/"); strings.Contains(inner, "/") {
-		return fmt.Errorf("%w: the URI path is one segment, like /panel/", ErrInvalid)
+		return fmt.Errorf("%w: the URI path is one segment, like /panel/", fault.ErrInvalid)
 	}
 	for _, e := range strings.Split(in.TrustedProxyCIDRs, ",") {
 		e = strings.TrimSpace(e)
@@ -464,103 +469,103 @@ func (s *Settings) validate(in *PanelSettings) error {
 		}
 		if _, err := netip.ParsePrefix(e); err != nil {
 			if _, err := netip.ParseAddr(e); err != nil {
-				return fmt.Errorf("%w: trusted proxy %q is not an address or a CIDR", ErrInvalid, e)
+				return fmt.Errorf("%w: trusted proxy %q is not an address or a CIDR", fault.ErrInvalid, e)
 			}
 		}
 	}
 	switch in.DefaultLocale {
 	case "en", "fa":
 	default:
-		return fmt.Errorf("%w: unknown language %q", ErrInvalid, in.DefaultLocale)
+		return fmt.Errorf("%w: unknown language %q", fault.ErrInvalid, in.DefaultLocale)
 	}
 	if in.PageSize < 0 || in.PageSize > 1000 {
-		return fmt.Errorf("%w: page size must be between 0 and 1000", ErrInvalid)
+		return fmt.Errorf("%w: page size must be between 0 and 1000", fault.ErrInvalid)
 	}
 	if v := strings.TrimSpace(in.TimeLocation); v != "" {
 		if _, err := time.LoadLocation(v); err != nil {
-			return fmt.Errorf("%w: unknown time zone %q", ErrInvalid, v)
+			return fmt.Errorf("%w: unknown time zone %q", fault.ErrInvalid, v)
 		}
 	}
 	switch in.Datepicker {
 	case "", "gregorian", "jalalian":
 	default:
-		return fmt.Errorf("%w: unknown calendar %q", ErrInvalid, in.Datepicker)
+		return fmt.Errorf("%w: unknown calendar %q", fault.ErrInvalid, in.Datepicker)
 	}
 	if in.ExpireDiff < 0 || in.TrafficDiff < 0 {
-		return fmt.Errorf("%w: notification thresholds cannot be negative", ErrInvalid)
+		return fmt.Errorf("%w: notification thresholds cannot be negative", fault.ErrInvalid)
 	}
 	if in.ExternalTrafficInformEnable {
 		u := strings.TrimSpace(in.ExternalTrafficInformURI)
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-			return fmt.Errorf("%w: the external traffic URI must begin with http:// or https://", ErrInvalid)
+			return fmt.Errorf("%w: the external traffic URI must begin with http:// or https://", fault.ErrInvalid)
 		}
 	}
 	if in.DefaultDeviceLimit < 1 || in.DefaultDeviceLimit > maxDeviceLimit {
 		return fmt.Errorf("%w: device limit must be between 1 and %d",
-			ErrInvalid, maxDeviceLimit)
+			fault.ErrInvalid, maxDeviceLimit)
 	}
 	if in.DefaultExpiryDays < 0 || in.DefaultExpiryDays > maxExpiryDays {
-		return fmt.Errorf("%w: expiry must be between 0 and %d days", ErrInvalid, maxExpiryDays)
+		return fmt.Errorf("%w: expiry must be between 0 and %d days", fault.ErrInvalid, maxExpiryDays)
 	}
 	switch model.ResetCycle(in.DefaultResetCycle) {
 	case model.ResetNone, model.ResetDaily, model.ResetWeekly, model.ResetMonthly:
 	default:
-		return fmt.Errorf("%w: unknown reset cycle %q", ErrInvalid, in.DefaultResetCycle)
+		return fmt.Errorf("%w: unknown reset cycle %q", fault.ErrInvalid, in.DefaultResetCycle)
 	}
 	switch notify.Encryption(in.MailEncryption) {
 	case "", notify.EncryptionStartTLS, notify.EncryptionTLS, notify.EncryptionNone:
 	default:
-		return fmt.Errorf("%w: unknown mail encryption %q", ErrInvalid, in.MailEncryption)
+		return fmt.Errorf("%w: unknown mail encryption %q", fault.ErrInvalid, in.MailEncryption)
 	}
 	if in.MailPort < 0 || in.MailPort > 65535 {
-		return fmt.Errorf("%w: mail port %d is out of range", ErrInvalid, in.MailPort)
+		return fmt.Errorf("%w: mail port %d is out of range", fault.ErrInvalid, in.MailPort)
 	}
 	// Checked when it is switched on rather than when it is filled in, so a
 	// half-completed form can still be saved and come back to.
 	if in.MailEnabled {
 		switch {
 		case strings.TrimSpace(in.MailHost) == "":
-			return fmt.Errorf("%w: a mail server is required to send email", ErrInvalid)
+			return fmt.Errorf("%w: a mail server is required to send email", fault.ErrInvalid)
 		case strings.TrimSpace(in.MailFrom) == "" && strings.TrimSpace(in.MailUsername) == "":
-			return fmt.Errorf("%w: a from address is required to send email", ErrInvalid)
+			return fmt.Errorf("%w: a from address is required to send email", fault.ErrInvalid)
 		case strings.TrimSpace(in.MailTo) == "":
-			return fmt.Errorf("%w: at least one recipient is required to send email", ErrInvalid)
+			return fmt.Errorf("%w: at least one recipient is required to send email", fault.ErrInvalid)
 		}
 	}
 	if in.BackupEveryHours < 0 || in.BackupEveryHours > 24*30 {
 		return fmt.Errorf("%w: backup interval must be between 0 and %d hours",
-			ErrInvalid, 24*30)
+			fault.ErrInvalid, 24*30)
 	}
 	if in.BackupKeep < 0 || in.BackupKeep > 365 {
-		return fmt.Errorf("%w: keep between 0 and 365 backups", ErrInvalid)
+		return fmt.Errorf("%w: keep between 0 and 365 backups", fault.ErrInvalid)
 	}
 	if in.NotifyEnabled && strings.TrimSpace(in.NotifyChatID) == "" {
-		return fmt.Errorf("%w: notifications need a chat id", ErrInvalid)
+		return fmt.Errorf("%w: notifications need a chat id", fault.ErrInvalid)
 	}
 	switch in.NotifyLang {
 	case "", "en", "fa":
 	default:
-		return fmt.Errorf("%w: unknown bot language %q", ErrInvalid, in.NotifyLang)
+		return fmt.Errorf("%w: unknown bot language %q", fault.ErrInvalid, in.NotifyLang)
 	}
 	if v := strings.TrimSpace(in.NotifyAPIServer); v != "" &&
 		!strings.HasPrefix(v, "http://") && !strings.HasPrefix(v, "https://") {
-		return fmt.Errorf("%w: the Telegram API server must begin with http:// or https://", ErrInvalid)
+		return fmt.Errorf("%w: the Telegram API server must begin with http:// or https://", fault.ErrInvalid)
 	}
 	if v := strings.TrimSpace(in.NotifyRunTime); v != "" {
 		if _, err := notify.ParseSchedule(v); err != nil {
-			return fmt.Errorf("%w: notification time: %v", ErrInvalid, err)
+			return fmt.Errorf("%w: notification time: %v", fault.ErrInvalid, err)
 		}
 	}
 	if v := strings.TrimSpace(in.NotifyBackupTime); v != "" {
 		if err := notify.CheckBackupSchedule(v); err != nil {
-			return fmt.Errorf("%w: backup time: %v", ErrInvalid, err)
+			return fmt.Errorf("%w: backup time: %v", fault.ErrInvalid, err)
 		}
 	} else if in.NotifyBackup {
-		return fmt.Errorf("%w: choose when the automatic backup is sent", ErrInvalid)
+		return fmt.Errorf("%w: choose when the automatic backup is sent", fault.ErrInvalid)
 	}
 	for _, p := range []int{in.NotifyCPUThreshold, in.NotifyMemoryThreshold, in.NotifyOutboundDownThreshold} {
 		if p < 0 || p > 100 {
-			return fmt.Errorf("%w: a threshold is a percentage, 0 to 100", ErrInvalid)
+			return fmt.Errorf("%w: a threshold is a percentage, 0 to 100", fault.ErrInvalid)
 		}
 	}
 	return nil
@@ -732,7 +737,7 @@ func MergeListen(current, host string, port int) string {
 	return net.JoinHostPort(host, p)
 }
 
-func intOr(raw string, fallback int) int {
+func IntOr(raw string, fallback int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
 		return fallback

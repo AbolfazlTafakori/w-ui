@@ -16,6 +16,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
@@ -269,8 +270,8 @@ func slicesContains(haystack []string, needle string) bool {
 // defaults, so the page can mark a value that has never been changed instead of
 // leaving the operator to guess which of these they chose.
 type panelSettingsResponse struct {
-	Settings service.PanelSettings `json:"settings"`
-	Defaults service.PanelSettings `json:"defaults"`
+	Settings panelconf.PanelSettings `json:"settings"`
+	Defaults panelconf.PanelSettings `json:"defaults"`
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -300,8 +301,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 // displayOnly keeps the preferences that change how a page is drawn and
 // drops everything that describes the server.
-func displayOnly(in service.PanelSettings) service.PanelSettings {
-	return service.PanelSettings{
+func displayOnly(in panelconf.PanelSettings) panelconf.PanelSettings {
+	return panelconf.PanelSettings{
 		PageSize:    in.PageSize,
 		Datepicker:  in.Datepicker,
 		ExpireDiff:  in.ExpireDiff,
@@ -313,7 +314,7 @@ func displayOnly(in service.PanelSettings) service.PanelSettings {
 // them with what the process is actually running with, so the page shows
 // the real listen address and path rather than blanks -- and marks them as
 // the default, which for these means "from the environment".
-func (s *Server) withEffective(in service.PanelSettings) service.PanelSettings {
+func (s *Server) withEffective(in panelconf.PanelSettings) panelconf.PanelSettings {
 	host, port, err := net.SplitHostPort(s.listen)
 	if err == nil {
 		if in.WebListen == "" {
@@ -342,21 +343,21 @@ func (s *Server) withEffective(in service.PanelSettings) service.PanelSettings {
 // It is a bearer credential for an account that can message the operator, and
 // this endpoint is fetched on every visit to the page. Returning a placeholder
 // still lets the page show that one is configured.
-func maskToken(in service.PanelSettings) service.PanelSettings {
+func maskToken(in panelconf.PanelSettings) panelconf.PanelSettings {
 	if in.NotifyBotToken != "" {
-		in.NotifyBotToken = service.TokenPlaceholder
+		in.NotifyBotToken = panelconf.TokenPlaceholder
 	}
 	// The mail password is the same kind of thing and gets the same treatment.
 	// It is often an account password rather than one issued for this, so
 	// handing it back on every page load would be worse, not better.
 	if in.MailPassword != "" {
-		in.MailPassword = service.TokenPlaceholder
+		in.MailPassword = panelconf.TokenPlaceholder
 	}
 	return in
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
-	var in service.PanelSettings
+	var in panelconf.PanelSettings
 	if !decode(w, r, &in) {
 		return
 	}

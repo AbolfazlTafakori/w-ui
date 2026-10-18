@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 )
 
 // Informer posts each customer's traffic to an outside URL, the way the classic panel's
@@ -19,14 +19,14 @@ import (
 // polling the panel. Only what changed since the last post is sent.
 type Informer struct {
 	db       *gorm.DB
-	settings *service.Settings
+	settings *panelconf.Settings
 	log      *slog.Logger
 	client   *http.Client
 
 	last map[uint][2]uint64 // client id -> up, down at the last post
 }
 
-func NewInformer(db *gorm.DB, settings *service.Settings, log *slog.Logger) *Informer {
+func NewInformer(db *gorm.DB, settings *panelconf.Settings, log *slog.Logger) *Informer {
 	return &Informer{db: db, settings: settings, log: log,
 		client: &http.Client{Timeout: 20 * time.Second}, last: map[uint][2]uint64{}}
 }

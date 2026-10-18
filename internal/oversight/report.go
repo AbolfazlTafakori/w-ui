@@ -12,6 +12,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -21,12 +22,12 @@ import (
 type Reporter struct {
 	db       *gorm.DB
 	clients  *service.Clients
-	settings *service.Settings
+	settings *panelconf.Settings
 	backups  *backup.Service
 	version  string
 }
 
-func NewReporter(db *gorm.DB, clients *service.Clients, settings *service.Settings, backups *backup.Service, version string) *Reporter {
+func NewReporter(db *gorm.DB, clients *service.Clients, settings *panelconf.Settings, backups *backup.Service, version string) *Reporter {
 	return &Reporter{db: db, clients: clients, settings: settings, backups: backups, version: version}
 }
 

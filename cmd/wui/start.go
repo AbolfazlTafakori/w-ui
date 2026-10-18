@@ -27,6 +27,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -100,13 +101,13 @@ func openPanelDatabase(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 // the environment, before anything listens or schedules. Empty values change
 // nothing, which is how a fresh install keeps running on its environment
 // alone.
-func applySavedSettings(cfg *config.Config, settings *service.Settings, log *slog.Logger) {
+func applySavedSettings(cfg *config.Config, settings *panelconf.Settings, log *slog.Logger) {
 	ov := settings.Overrides(context.Background())
-	if ov == (service.Overrides{}) {
+	if ov == (panelconf.Overrides{}) {
 		return
 	}
 	if ov.ListenHost != "" || ov.ListenPort > 0 {
-		cfg.Listen = service.MergeListen(cfg.Listen, ov.ListenHost, ov.ListenPort)
+		cfg.Listen = panelconf.MergeListen(cfg.Listen, ov.ListenHost, ov.ListenPort)
 	}
 	if ov.BasePath != "" {
 		cfg.BasePath = ov.BasePath
@@ -241,7 +242,7 @@ func reloadOnHangup(ctx context.Context, restart func(context.Context) error, lo
 // startBackupSchedule takes backups on the settings page's schedule. Both
 // values are read again on every check rather than captured here, so
 // changing either takes effect without a restart.
-func startBackupSchedule(ctx context.Context, backups *backup.Service, settings *service.Settings, notifier *notify.Notifier) {
+func startBackupSchedule(ctx context.Context, backups *backup.Service, settings *panelconf.Settings, notifier *notify.Notifier) {
 	scheduler := backup.NewScheduler(backups)
 	scheduler.Every = func() time.Duration {
 		got, err := settings.Get(ctx)
@@ -304,7 +305,7 @@ func startSubListeners(ctx context.Context, cfg config.Config, subs *service.Sub
 // startBot runs the Telegram bot: the same chat the notifications go to
 // answers questions and takes orders, as the classic panel's bot does.
 func startBot(ctx context.Context, notifier *notify.Notifier, clients *service.Clients, subs *service.Subscriptions,
-	ifaces *service.Interfaces, settings *service.Settings, sys *sysinfo.Collector, backups *backup.Service,
+	ifaces *service.Interfaces, settings *panelconf.Settings, sys *sysinfo.Collector, backups *backup.Service,
 	restartTunnels func(context.Context) error, log *slog.Logger) {
 	go tgbot.New(tgbot.Deps{
 		Config:   notifier.Config,

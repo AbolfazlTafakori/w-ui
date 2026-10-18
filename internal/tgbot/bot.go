@@ -16,6 +16,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/sysinfo"
 )
@@ -27,7 +28,7 @@ type Deps struct {
 	Clients  *service.Clients
 	Subs     *service.Subscriptions
 	Ifaces   *service.Interfaces
-	Settings *service.Settings
+	Settings *panelconf.Settings
 	Sys      func() sysinfo.Snapshot
 	// Backup takes a backup and returns its name and bytes.
 	Backup func(ctx context.Context) (string, []byte, error)

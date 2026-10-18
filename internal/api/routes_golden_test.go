@@ -23,8 +23,8 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/scope"
-	"github.com/abolfazl/w-ui/internal/service"
 )
 
 var updateRoutes = flag.Bool("update", false, "rewrite testdata/routes.golden")
@@ -143,7 +143,7 @@ func routeTableServer(t *testing.T) (*Server, map[string]string) {
 	}
 	s := New(Options{
 		DB: db, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Catalog: catalog,
-		Enforcer: enforce.NewNoop(), Settings: service.NewSettings(db, "en"),
+		Enforcer: enforce.NewNoop(), Settings: panelconf.NewSettings(db, "en"),
 		JWTSecret: []byte("route-table-secret-0123456789abcd"), Version: "test",
 	})
 	hash, err := bcrypt.GenerateFromPassword([]byte("route-table-pass-1"), bcrypt.MinCost)

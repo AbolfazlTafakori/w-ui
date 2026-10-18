@@ -13,6 +13,7 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -42,7 +43,7 @@ func TestTheReportKeepsNamesFromBeingMarkdown(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r := NewReporter(db, service.NewClients(db, nil, quietLog()), service.NewSettings(db, "en"), nil, "test")
+	r := NewReporter(db, service.NewClients(db, nil, quietLog()), panelconf.NewSettings(db, "en"), nil, "test")
 	text, err := r.Build(ctx, "en")
 	if err != nil {
 		t.Fatal(err)

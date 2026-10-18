@@ -26,6 +26,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/operators"
 	"github.com/abolfazl/w-ui/internal/oversight"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -39,7 +40,7 @@ type Server struct {
 	ifaces    *service.Interfaces
 	catalog   *i18n.Catalog
 	enforcer  enforce.Enforcer
-	settings  *service.Settings
+	settings  *panelconf.Settings
 	nodes     *fleet.Nodes
 	prober    *nodes.Prober
 	throttle  *throttle
@@ -96,7 +97,7 @@ type Options struct {
 	Interfaces *service.Interfaces
 	Catalog    *i18n.Catalog
 	Enforcer   enforce.Enforcer
-	Settings   *service.Settings
+	Settings   *panelconf.Settings
 	Prober     *nodes.Prober
 	Notifier   *notify.Notifier
 	Backups    *backup.Service

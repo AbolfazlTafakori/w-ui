@@ -17,8 +17,8 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/scope"
-	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // machineServer is a whole panel's API over a real schema, and a machine
@@ -47,7 +47,7 @@ func machineServer(t *testing.T) (http.Handler, string) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := New(Options{
 		DB: db, Logger: log, Catalog: catalog, Enforcer: enforce.NewNoop(),
-		Settings: service.NewSettings(db, "en"), JWTSecret: []byte("machine-test-secret-0123456789ab"),
+		Settings: panelconf.NewSettings(db, "en"), JWTSecret: []byte("machine-test-secret-0123456789ab"),
 		Version: "test",
 	})
 	// Secrets a token must never be handed, stored as the settings page does.

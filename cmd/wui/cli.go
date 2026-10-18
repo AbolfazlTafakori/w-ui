@@ -26,6 +26,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/logger"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -191,7 +192,7 @@ func cmdSetting(args []string) error {
 
 	// What the panel actually answers on: the settings page's values win
 	// over the environment at start, so they are what is shown.
-	stored, _ := service.NewSettings(db, cfg.DefaultLocale).Get(context.Background())
+	stored, _ := panelconf.NewSettings(db, cfg.DefaultLocale).Get(context.Background())
 	if stored.WebListen != "" || stored.WebPort > 0 {
 		host := stored.WebListen
 		port := stored.WebPort
@@ -369,7 +370,7 @@ func cmdSettingSet(args []string) error {
 		return err
 	}
 	ctx := context.Background()
-	settings := service.NewSettings(db, cfg.DefaultLocale)
+	settings := panelconf.NewSettings(db, cfg.DefaultLocale)
 	cur, err := settings.Get(ctx)
 	if err != nil {
 		return err
@@ -397,7 +398,7 @@ func cmdSettingSet(args []string) error {
 	panelChanged := *listen != "" || *port != 0 || *basePath != "" || *cert != "" || *noTLS
 	subChanged := *subEnable || *subDisable || *subPort >= 0 || *subListen != "" || *subCert != ""
 
-	var saved service.PanelSettings
+	var saved panelconf.PanelSettings
 	if panelChanged {
 		if saved, err = settings.Save(ctx, cur); err != nil {
 			return err

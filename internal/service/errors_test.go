@@ -14,6 +14,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 )
 
 // seeded is a database with the local node and one WireGuard tunnel, which
@@ -189,23 +190,23 @@ func TestSubscriptionSettingsErrors(t *testing.T) {
 func TestPanelSettingsErrors(t *testing.T) {
 	ctx := context.Background()
 	db := testDB(t)
-	settings := NewSettings(db, "en")
+	settings := panelconf.NewSettings(db, "en")
 	base, err := settings.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	with := func(f func(*PanelSettings)) PanelSettings { p := base; f(&p); return p }
+	with := func(f func(*panelconf.PanelSettings)) panelconf.PanelSettings { p := base; f(&p); return p }
 	cases := []struct {
 		name string
-		in   PanelSettings
+		in   panelconf.PanelSettings
 		want string
 	}{
-		{"port", with(func(p *PanelSettings) { p.WebPort = 70000 }), "panel port 70000 is out of range"},
-		{"listen", with(func(p *PanelSettings) { p.WebListen = "not-an-ip" }), `listen IP "not-an-ip" is not an address`},
-		{"base path", with(func(p *PanelSettings) { p.WebBasePath = "/a/b/" }), "the URI path is one segment, like /panel/"},
-		{"session", with(func(p *PanelSettings) { p.SessionMaxAge = 0 }), "session duration must be between 1 and"},
-		{"locale", with(func(p *PanelSettings) { p.DefaultLocale = "de" }), `unknown language "de"`},
-		{"proxy", with(func(p *PanelSettings) { p.TrustedProxyCIDRs = "nope" }), `trusted proxy "nope" is not an address or a CIDR`},
+		{"port", with(func(p *panelconf.PanelSettings) { p.WebPort = 70000 }), "panel port 70000 is out of range"},
+		{"listen", with(func(p *panelconf.PanelSettings) { p.WebListen = "not-an-ip" }), `listen IP "not-an-ip" is not an address`},
+		{"base path", with(func(p *panelconf.PanelSettings) { p.WebBasePath = "/a/b/" }), "the URI path is one segment, like /panel/"},
+		{"session", with(func(p *panelconf.PanelSettings) { p.SessionMaxAge = 0 }), "session duration must be between 1 and"},
+		{"locale", with(func(p *panelconf.PanelSettings) { p.DefaultLocale = "de" }), `unknown language "de"`},
+		{"proxy", with(func(p *panelconf.PanelSettings) { p.TrustedProxyCIDRs = "nope" }), `trusted proxy "nope" is not an address or a CIDR`},
 	}
 	for _, c := range cases {
 		_, err := settings.Save(ctx, c.in)

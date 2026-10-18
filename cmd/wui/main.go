@@ -45,6 +45,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/oversight"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -121,7 +122,7 @@ func run() error {
 	// environment now, before anything listens or schedules. Empty values
 	// change nothing, which is how a fresh install keeps running on its
 	// environment alone.
-	settings := service.NewSettings(db, cfg.DefaultLocale)
+	settings := panelconf.NewSettings(db, cfg.DefaultLocale)
 	applySavedSettings(&cfg, settings, log)
 	if password != "" {
 		printFirstRunCredentials(password)
@@ -369,7 +370,7 @@ func buildServer(
 	catalog *i18n.Catalog,
 	enforcer enforce.Enforcer,
 	shp shaper.Shaper,
-	settings *service.Settings,
+	settings *panelconf.Settings,
 	notifier *notify.Notifier,
 	backups *backup.Service,
 	prober *nodes.Prober,

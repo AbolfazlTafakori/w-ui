@@ -26,6 +26,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/endpoints"
+	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
@@ -194,10 +195,10 @@ func (s *Subscriptions) Settings(ctx context.Context) (SubSettings, error) {
 	if v := strings.TrimSpace(stored[keySubTitle]); v != "" {
 		out.Title = v
 	}
-	out.UpdateHours = intOr(stored[keySubInterval], out.UpdateHours)
+	out.UpdateHours = panelconf.IntOr(stored[keySubInterval], out.UpdateHours)
 	out.ReverseProxyURI = strings.TrimSpace(stored[keySubProxyURI])
 	out.Listen = strings.TrimSpace(stored[keySubListen])
-	out.Port = intOr(stored[keySubPort], 0)
+	out.Port = panelconf.IntOr(stored[keySubPort], 0)
 	out.CertFile = strings.TrimSpace(stored[keySubCertFile])
 	out.KeyFile = strings.TrimSpace(stored[keySubKeyFile])
 	out.Encode = stored[keySubEncode] == "true"
