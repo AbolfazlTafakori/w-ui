@@ -8,7 +8,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
 // Holding a customer to the connections their plan allows.
@@ -408,7 +408,7 @@ func (c *concurrency) lookup(id uint, now time.Time) (n int, since time.Time, ok
 }
 
 // setRemote stores what a node just reported.
-func (c *concurrency) setRemote(nodeID uint, sessions []service.NodeSession, now time.Time) {
+func (c *concurrency) setRemote(nodeID uint, sessions []fleet.NodeSession, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	rep := &remoteReport{at: now, sessions: make(map[uint]remoteSession, len(sessions))}
@@ -429,10 +429,10 @@ func (c *concurrency) setRemote(nodeID uint, sessions []service.NodeSession, now
 
 // sessions is what this server reports upward when it is somebody's node:
 // every managed credential that is live here, by its id on that panel.
-func (c *concurrency) sessions(now time.Time) []service.NodeSession {
+func (c *concurrency) sessions(now time.Time) []fleet.NodeSession {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var out []service.NodeSession
+	var out []fleet.NodeSession
 	for id, a := range c.acts {
 		origin := c.originOf[id]
 		if origin == 0 {
@@ -442,7 +442,7 @@ func (c *concurrency) sessions(now time.Time) []service.NodeSession {
 		if n == 0 {
 			continue
 		}
-		out = append(out, service.NodeSession{
+		out = append(out, fleet.NodeSession{
 			OriginID:    origin,
 			Connections: n,
 			AgeSeconds:  int(now.Sub(a.since) / time.Second),

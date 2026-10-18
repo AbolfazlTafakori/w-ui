@@ -6,7 +6,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
 func stat(id uint, bytes uint64, ep string) backend.Stat {
@@ -149,7 +149,7 @@ func TestLimitSpansNodes(t *testing.T) {
 	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
 	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
 	// The node reports the laptop just came on.
-	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1, AgeSeconds: 0}}, t0.Add(3*time.Second))
+	c.setRemote(5, []fleet.NodeSession{{OriginID: 11, Connections: 1, AgeSeconds: 0}}, t0.Add(3*time.Second))
 
 	got := c.enforce(client, accs, t0.Add(3*time.Second))
 	if len(got) != 1 || got[0].Account.ID != 11 || got[0].Node != 5 {
@@ -176,7 +176,7 @@ func TestTheOlderConnectionOnANodeIsKept(t *testing.T) {
 		{ID: 11, NodeID: 5, InterfaceID: 9},
 	}
 	c.remember(accs, nil, 1, t0)
-	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1, AgeSeconds: 60}}, t0)
+	c.setRemote(5, []fleet.NodeSession{{OriginID: 11, Connections: 1, AgeSeconds: 60}}, t0)
 	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, t0)
 	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, t0.Add(2*time.Second))
 	got := c.enforce(client, accs, t0.Add(2*time.Second))
@@ -193,7 +193,7 @@ func TestAStaleNodeReportIsNotCounted(t *testing.T) {
 	client := &model.Client{ID: 1, DeviceLimit: 1}
 	accs := []model.Account{{ID: 10, NodeID: 1}, {ID: 11, NodeID: 5}}
 	c.remember(accs, nil, 1, t0)
-	c.setRemote(5, []service.NodeSession{{OriginID: 11, Connections: 1}}, t0)
+	c.setRemote(5, []fleet.NodeSession{{OriginID: 11, Connections: 1}}, t0)
 	later := t0.Add(remoteTTL + 5*time.Second)
 	c.observe([]backend.Stat{stat(10, 100, "1.1.1.1")}, later)
 	c.observe([]backend.Stat{stat(10, 200, "1.1.1.1")}, later.Add(2*time.Second))

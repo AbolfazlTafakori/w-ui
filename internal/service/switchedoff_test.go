@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/operators"
 )
@@ -59,10 +60,10 @@ func TestWhatIsCreatedSwitchedOffStaysOff(t *testing.T) {
 
 	t.Run("a node", func(t *testing.T) {
 		db := testDB(t)
-		nodes := NewNodes(db, quietLog())
+		nodes := fleet.NewNodes(db, quietLog())
 		for i, sw := range []*bool{&off, &on} {
 			want := *sw
-			got, err := nodes.Create(ctx, NodeInput{Name: []string{"node-off", "node-on"}[i],
+			got, err := nodes.Create(ctx, fleet.NodeInput{Name: []string{"node-off", "node-on"}[i],
 				Address: []string{"https://n1.example.com:2096", "https://n2.example.com:2096"}[i],
 				Token:   "wui_x", Enabled: sw})
 			if err != nil {

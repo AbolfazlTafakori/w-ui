@@ -3,14 +3,14 @@ package nodes
 import (
 	"testing"
 
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
 // What a node reports is charged against an allowance, so the arithmetic here
 // is somebody's bill. A coefficient that silently came out as zero would serve
 // traffic that never appears on any total.
 func TestChargeReportChargesWhatTheNodeIsWorth(t *testing.T) {
-	reported := []service.NodeUsage{
+	reported := []fleet.NodeUsage{
 		{OriginID: 5, Bytes: 1000, Up: 200, Down: 800},
 	}
 
@@ -51,7 +51,7 @@ func TestChargeReportChargesWhatTheNodeIsWorth(t *testing.T) {
 // small enough to round a real transfer down to zero would let a customer use
 // that node for free, one small transfer at a time.
 func TestChargeReportNeverRoundsRealTrafficToNothing(t *testing.T) {
-	got, _ := chargeReport([]service.NodeUsage{{OriginID: 1, Bytes: 10, Up: 4, Down: 6}}, nil, 0.001, nil)
+	got, _ := chargeReport([]fleet.NodeUsage{{OriginID: 1, Bytes: 10, Up: 4, Down: 6}}, nil, 0.001, nil)
 	if got[0].Bytes == 0 || got[0].Up == 0 || got[0].Down == 0 {
 		t.Errorf("chargeReport() charged nothing for traffic that happened: %+v", got[0])
 	}
@@ -63,7 +63,7 @@ func TestChargeReportNeverRoundsRealTrafficToNothing(t *testing.T) {
 // Nothing counted stays nothing. An idle customer must not accrue a byte per
 // round for as long as their node is up.
 func TestChargeReportLeavesIdleCustomersAlone(t *testing.T) {
-	got, _ := chargeReport([]service.NodeUsage{{OriginID: 1}}, nil, 5, nil)
+	got, _ := chargeReport([]fleet.NodeUsage{{OriginID: 1}}, nil, 5, nil)
 	if got[0].Bytes != 0 || got[0].Up != 0 || got[0].Down != 0 {
 		t.Errorf("an idle customer was charged: %+v", got[0])
 	}
@@ -73,8 +73,8 @@ func TestChargeReportLeavesIdleCustomersAlone(t *testing.T) {
 // their rows add up to the customer's charged usage to the byte, whatever the
 // coefficient does to the rounding.
 func TestChargeReportKeepsTheFilesEqualToTheTotal(t *testing.T) {
-	usage := []service.NodeUsage{{OriginID: 7, Bytes: 1001, Up: 333, Down: 668}}
-	devices := []service.NodeDeviceUsage{
+	usage := []fleet.NodeUsage{{OriginID: 7, Bytes: 1001, Up: 333, Down: 668}}
+	devices := []fleet.NodeDeviceUsage{
 		{OriginID: 21, Up: 111, Down: 0},
 		{OriginID: 22, Up: 111, Down: 334},
 		{OriginID: 23, Up: 111, Down: 334},
@@ -106,8 +106,8 @@ func TestChargeReportKeepsTheFilesEqualToTheTotal(t *testing.T) {
 // converted each on their own, not forced onto a total they were not counted
 // towards; files of a customer the report does not name are converted too.
 func TestChargeReportConvertsLooseFilesOnTheirOwn(t *testing.T) {
-	usage := []service.NodeUsage{{OriginID: 7, Bytes: 1000, Up: 0, Down: 1000}}
-	devices := []service.NodeDeviceUsage{
+	usage := []fleet.NodeUsage{{OriginID: 7, Bytes: 1000, Up: 0, Down: 1000}}
+	devices := []fleet.NodeDeviceUsage{
 		{OriginID: 21, Down: 300}, // adds up to 300, not 1000
 		{OriginID: 30, Down: 50},  // a customer the report does not name
 	}

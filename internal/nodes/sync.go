@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -60,12 +61,12 @@ type Syncer struct {
 	// charged at the node's price: what each customer spent, folded into the
 	// same per-customer total the local kernel feeds, and what each of their
 	// files carried, by the file's id on this panel.
-	onReport func([]service.NodeUsage, []service.NodeDeviceUsage)
+	onReport func([]fleet.NodeUsage, []fleet.NodeDeviceUsage)
 
 	// Sessions is where what a node reports live on it is handed back, for
 	// the connections limit. Holds answers which devices the panel has
 	// decided to hold off, carried in every push. Either may be nil.
-	Sessions func(nodeID uint, sessions []service.NodeSession)
+	Sessions func(nodeID uint, sessions []fleet.NodeSession)
 	Holds    func() map[uint]time.Time
 
 	// XUIMirror holds a 3x-ui node's inbounds as this panel's tunnels
@@ -84,7 +85,7 @@ type Syncer struct {
 }
 
 // NewSyncer builds the loop. onReport is called with whatever a node reports.
-func NewSyncer(db *gorm.DB, onReport func([]service.NodeUsage, []service.NodeDeviceUsage), log *slog.Logger) *Syncer {
+func NewSyncer(db *gorm.DB, onReport func([]fleet.NodeUsage, []fleet.NodeDeviceUsage), log *slog.Logger) *Syncer {
 	return &Syncer{
 		db:       db,
 		log:      log,
@@ -146,7 +147,7 @@ func (s *Syncer) sessionsRound(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			var reply struct {
-				Sessions []service.NodeSession `json:"sessions"`
+				Sessions []fleet.NodeSession `json:"sessions"`
 			}
 			if err := s.post(ctx, node, "/api/node/sessions", nil, &reply); err != nil {
 				return // reported by the next Round, which fails the same way
@@ -160,7 +161,7 @@ func (s *Syncer) sessionsRound(ctx context.Context) {
 // PushHold tells one node, now, to hold a device off. Called from the
 // reconciler's tick, so the call itself happens off that goroutine; the
 // next push carries the same hold again in case this one is lost.
-func (s *Syncer) PushHold(nodeID uint, hold service.NodeHold) {
+func (s *Syncer) PushHold(nodeID uint, hold fleet.NodeHold) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
@@ -168,7 +169,7 @@ func (s *Syncer) PushHold(nodeID uint, hold service.NodeHold) {
 		if err := s.db.WithContext(ctx).First(&node, nodeID).Error; err != nil {
 			return
 		}
-		body := map[string]any{"holds": []service.NodeHold{hold}}
+		body := map[string]any{"holds": []fleet.NodeHold{hold}}
 		if err := s.post(ctx, node, "/api/node/hold", body, nil); err != nil {
 			s.log.Warn("could not hold a device off on a node", "node", node.Name, "error", err)
 		}
@@ -233,8 +234,8 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 	// the tunnels the node should still have, so one deleted here is taken
 	// down there.
 	var reply struct {
-		Usage   []service.NodeUsage       `json:"usage"`
-		Devices []service.NodeDeviceUsage `json:"devices"`
+		Usage   []fleet.NodeUsage       `json:"usage"`
+		Devices []fleet.NodeDeviceUsage `json:"devices"`
 	}
 	if err := s.post(ctx, node, "/api/node/usage", map[string]any{"keep": keep}, &reply); err != nil {
 		s.report(node, fmt.Errorf("reading its usage: %w", err))
@@ -248,7 +249,7 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 	for _, u := range reply.Usage {
 		raw += u.Bytes
 	}
-	if err := service.RecordNodeTraffic(ctx, s.db, node.ID, raw, time.Now().UTC()); err != nil {
+	if err := fleet.RecordNodeTraffic(ctx, s.db, node.ID, raw, time.Now().UTC()); err != nil {
 		s.log.Warn("could not record what a node carried", "node", node.Name, "error", err)
 	}
 
@@ -265,7 +266,7 @@ func (s *Syncer) one(ctx context.Context, node model.Node) {
 }
 
 // customersOf reads which customer each reported file belongs to.
-func (s *Syncer) customersOf(ctx context.Context, devices []service.NodeDeviceUsage) (map[uint]uint, error) {
+func (s *Syncer) customersOf(ctx context.Context, devices []fleet.NodeDeviceUsage) (map[uint]uint, error) {
 	out := make(map[uint]uint, len(devices))
 	if len(devices) == 0 {
 		return out, nil
@@ -293,7 +294,7 @@ func (s *Syncer) customersOf(ctx context.Context, devices []service.NodeDeviceUs
 // Per tunnel rather than one big payload: a node with three interfaces should
 // not have all three refused because one of them has a customer with a bad row,
 // and a failure that names the tunnel is one an operator can act on.
-func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]service.NodeState, error) {
+func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.NodeState, error) {
 	db := s.db.WithContext(ctx)
 
 	// The node's IKEv2 and OpenConnect certificates are this panel's to make
@@ -349,16 +350,16 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 		holds = s.Holds()
 	}
 
-	out := make([]service.NodeState, 0, len(interfaces))
+	out := make([]fleet.NodeState, 0, len(interfaces))
 	for _, iface := range interfaces {
-		state := service.NodeState{Interface: interfaceState(iface)}
+		state := fleet.NodeState{Interface: interfaceState(iface)}
 
-		grouped := map[uint][]service.NodeAccount{}
+		grouped := map[uint][]fleet.NodeAccount{}
 		for _, a := range accounts {
 			if a.InterfaceID != iface.ID {
 				continue
 			}
-			na := service.NodeAccount{
+			na := fleet.NodeAccount{
 				OriginID:     a.ID,
 				DeviceName:   a.DeviceName,
 				IP:           a.IP,
@@ -386,7 +387,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 			// allowance, the date, an operator's switch — was resolved here,
 			// because the allowance is one number spent across every node and
 			// only this panel can see the whole of it.
-			state.Clients = append(state.Clients, service.NodeClient{
+			state.Clients = append(state.Clients, fleet.NodeClient{
 				OriginID: c.ID,
 				// A server past its host's transfer allowance carries nobody.
 				// Sent as a disabled customer rather than an omitted one so the
@@ -403,8 +404,8 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]servic
 	return out, nil
 }
 
-func interfaceState(iface model.Interface) service.NodeInterface {
-	out := service.NodeInterface{
+func interfaceState(iface model.Interface) fleet.NodeInterface {
+	out := fleet.NodeInterface{
 		OriginID:     iface.ID,
 		Name:         iface.Name,
 		Protocol:     iface.Protocol,

@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/service"
 )
@@ -43,7 +44,7 @@ func newRig(t *testing.T, node model.Node) *rig {
 	pools := ipam.NewPools()
 	r := &rig{t: t, ctx: context.Background(), db: db, node: node, charged: map[uint]uint64{},
 		clients: service.NewClients(db, pools, quietLog())}
-	r.s = NewSyncer(db, func(u []service.NodeUsage, _ []service.NodeDeviceUsage) {
+	r.s = NewSyncer(db, func(u []fleet.NodeUsage, _ []fleet.NodeDeviceUsage) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		for _, x := range u {

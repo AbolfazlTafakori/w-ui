@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
 // A node is handed peers and nothing else.
@@ -15,11 +16,11 @@ import (
 // a customer off at a third of what they bought. So the payload must not carry
 // one, and this is what stops a field being added later without the thought.
 func TestNodeStateCarriesNoPlan(t *testing.T) {
-	body, err := json.Marshal(NodeState{
-		Interface: NodeInterface{OriginID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard},
-		Clients: []NodeClient{{
+	body, err := json.Marshal(fleet.NodeState{
+		Interface: fleet.NodeInterface{OriginID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard},
+		Clients: []fleet.NodeClient{{
 			OriginID: 7, Enabled: true, RateBitsPerSec: 1_000_000,
-			Accounts: []NodeAccount{{OriginID: 11, DeviceName: "Phone", IP: "10.0.0.2"}},
+			Accounts: []fleet.NodeAccount{{OriginID: 11, DeviceName: "Phone", IP: "10.0.0.2"}},
 		}},
 	})
 	if err != nil {
@@ -49,10 +50,10 @@ func TestNodeStateCarriesNoPlan(t *testing.T) {
 // customers are, so nothing identifying is sent and the row it stores is named
 // after an id.
 func TestNodeStateCarriesNoCustomerIdentity(t *testing.T) {
-	body, _ := json.Marshal(NodeClient{
+	body, _ := json.Marshal(fleet.NodeClient{
 		OriginID: 7,
 		Enabled:  true,
-		Accounts: []NodeAccount{{OriginID: 11, DeviceName: "Phone"}},
+		Accounts: []fleet.NodeAccount{{OriginID: 11, DeviceName: "Phone"}},
 	})
 	got := string(body)
 
@@ -72,14 +73,14 @@ func TestNodeStateCarriesNoCustomerIdentity(t *testing.T) {
 // generating its own would hand every customer a file for a server that is not
 // there.
 func TestNodeStateCarriesTheCredentialsTheNodeMustHave(t *testing.T) {
-	body, _ := json.Marshal(NodeState{
-		Interface: NodeInterface{
+	body, _ := json.Marshal(fleet.NodeState{
+		Interface: fleet.NodeInterface{
 			OriginID: 1, Name: "wg0",
 			PrivateKey: "server-private", PublicKey: "server-public",
 		},
-		Clients: []NodeClient{{
+		Clients: []fleet.NodeClient{{
 			OriginID: 7, Enabled: true,
-			Accounts: []NodeAccount{{
+			Accounts: []fleet.NodeAccount{{
 				OriginID: 11, PrivateKey: "peer-private",
 				PublicKey: "peer-public", PresharedKey: "peer-psk",
 				Username: "u", Secret: "s",
@@ -102,7 +103,7 @@ func TestNodeStateCarriesTheCredentialsTheNodeMustHave(t *testing.T) {
 // tunnel's payload does not carry six empty WireGuard fields per peer and the
 // other way round.
 func TestNodeAccountOmitsCredentialsItDoesNotHave(t *testing.T) {
-	body, _ := json.Marshal(NodeAccount{
+	body, _ := json.Marshal(fleet.NodeAccount{
 		OriginID: 11, DeviceName: "Phone", IP: "10.0.0.2", Enabled: true,
 		Username: "s7-phone", Secret: "hunter2",
 	})

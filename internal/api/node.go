@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
 // The two endpoints a panel serves when another panel is using it as a node.
@@ -21,7 +21,7 @@ import (
 // replay, no queue and no ordering to get wrong — and what makes a sync that
 // arrives twice do nothing the second time.
 func (s *Server) handleNodeSync(w http.ResponseWriter, r *http.Request) {
-	var state service.NodeState
+	var state fleet.NodeState
 	if !decodeLenient(w, r, &state) {
 		return
 	}
@@ -76,10 +76,10 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if usage == nil {
-		usage = []service.NodeUsage{}
+		usage = []fleet.NodeUsage{}
 	}
 	if devices == nil {
-		devices = []service.NodeDeviceUsage{}
+		devices = []fleet.NodeDeviceUsage{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"usage": usage, "devices": devices})
 }
@@ -87,7 +87,7 @@ func (s *Server) handleNodeUsage(w http.ResponseWriter, r *http.Request) {
 // handleNodeSessions reports what is live on this server, for the panel that
 // manages it to count a customer's connections across every server.
 func (s *Server) handleNodeSessions(w http.ResponseWriter, r *http.Request) {
-	sessions := []service.NodeSession{}
+	sessions := []fleet.NodeSession{}
 	if s.rec != nil {
 		if got := s.rec.Sessions(); got != nil {
 			sessions = got
@@ -100,7 +100,7 @@ func (s *Server) handleNodeSessions(w http.ResponseWriter, r *http.Request) {
 // connections at once, and holds it off here until the time given.
 func (s *Server) handleNodeHold(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Holds []service.NodeHold `json:"holds"`
+		Holds []fleet.NodeHold `json:"holds"`
 	}
 	if !decodeLenient(w, r, &in) {
 		return

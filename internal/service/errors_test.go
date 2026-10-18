@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/ipam"
 )
 
@@ -214,16 +215,16 @@ func TestPanelSettingsErrors(t *testing.T) {
 func TestNodeInputErrors(t *testing.T) {
 	ctx := context.Background()
 	db := testDB(t)
-	nodes := NewNodes(db, quietLog())
+	nodes := fleet.NewNodes(db, quietLog())
 	cases := []struct {
 		name string
-		in   NodeInput
+		in   fleet.NodeInput
 		want wantErr
 	}{
-		{"no name", NodeInput{Address: "https://n.example.com:2096", Token: "wui_x"}, wantErr{"name", "a node needs a name"}},
-		{"no address", NodeInput{Name: "n", Token: "wui_x"}, wantErr{"address", "a node needs an address"}},
-		{"bad address", NodeInput{Name: "n", Address: "n.example.com", Token: "wui_x"}, wantErr{"address", "is not a URL. It should look like https://vpn2.example.com:2096"}},
-		{"no token", NodeInput{Name: "n", Address: "https://n.example.com:2096"}, wantErr{"token", "a node needs an access token"}},
+		{"no name", fleet.NodeInput{Address: "https://n.example.com:2096", Token: "wui_x"}, wantErr{"name", "a node needs a name"}},
+		{"no address", fleet.NodeInput{Name: "n", Token: "wui_x"}, wantErr{"address", "a node needs an address"}},
+		{"bad address", fleet.NodeInput{Name: "n", Address: "n.example.com", Token: "wui_x"}, wantErr{"address", "is not a URL. It should look like https://vpn2.example.com:2096"}},
+		{"no token", fleet.NodeInput{Name: "n", Address: "https://n.example.com:2096"}, wantErr{"token", "a node needs an access token"}},
 	}
 	for _, c := range cases {
 		_, err := nodes.Create(ctx, c.in)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 )
@@ -247,9 +248,9 @@ func TestL2TPCustomersSignInWithAUsernameAndPassword(t *testing.T) {
 // A node is handed the key with the tunnel, and carries one L2TP tunnel.
 func TestANodeIsHandedItsL2TPTunnel(t *testing.T) {
 	db := testDB(t)
-	ns := NewNodeSync(db, quietLog())
+	ns := fleet.NewNodeSync(db, quietLog())
 	ctx := context.Background()
-	st := NodeState{Interface: NodeInterface{
+	st := fleet.NodeState{Interface: fleet.NodeInterface{
 		OriginID: 5, Name: "l2tp0", Protocol: model.ProtocolL2TP, Enabled: true, ListenPort: 1701,
 		Subnet: "10.77.0.0/24", EndpointHost: "vpn.example.com", MTU: 1400,
 		L2TP: &model.L2TPParams{PSK: "SharedKey123"},
@@ -282,7 +283,7 @@ func TestANodeIsHandedItsL2TPTunnel(t *testing.T) {
 	}
 
 	// Other protocols' payloads do not grow the field.
-	body, _ := json.Marshal(NodeInterface{OriginID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard})
+	body, _ := json.Marshal(fleet.NodeInterface{OriginID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard})
 	if strings.Contains(string(body), "l2tp") {
 		t.Fatalf("a WireGuard payload carries l2tp: %s", body)
 	}

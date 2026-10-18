@@ -24,6 +24,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/config"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/service"
 )
@@ -296,7 +297,7 @@ func cmdToken(args []string) error {
 	if err != nil {
 		return err
 	}
-	tok, err := service.NewNodes(db, slog.New(slog.NewTextHandler(io.Discard, nil))).IssueToken(context.Background(), *name)
+	tok, err := fleet.NewNodes(db, slog.New(slog.NewTextHandler(io.Discard, nil))).IssueToken(context.Background(), *name)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package service
+package fleet
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 )
 
 // The state one panel hands another.
@@ -162,10 +163,10 @@ func NewNodeSync(db *gorm.DB, log *slog.Logger) *NodeSync {
 // and building a second.
 func (s *NodeSync) Apply(ctx context.Context, nodeID uint, state NodeState) error {
 	if state.Interface.OriginID == 0 {
-		return invalidField("interface.originId", "the tunnel has no id on the panel that sent it")
+		return fault.Field("interface.originId", "the tunnel has no id on the panel that sent it")
 	}
 	if state.Interface.Name = strings.TrimSpace(state.Interface.Name); state.Interface.Name == "" {
-		return invalidField("interface.name", "a tunnel needs a name")
+		return fault.Field("interface.name", "a tunnel needs a name")
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -208,7 +209,7 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 	}
 	if in.Protocol == model.ProtocolL2TP {
 		if in.L2TP == nil || in.L2TP.PSK == "" {
-			return nil, invalidField("interface.l2tp", "an L2TP tunnel arrived without its pre-shared key")
+			return nil, fault.Field("interface.l2tp", "an L2TP tunnel arrived without its pre-shared key")
 		}
 		// A server carries one L2TP tunnel: the ports are fixed and the agent
 		// serves one. A second, from another panel or made here, would have
@@ -221,13 +222,13 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 			return nil, fmt.Errorf("count L2TP tunnels: %w", err)
 		}
 		if other > 0 {
-			return nil, invalidField("interface.protocol", "this server already carries an L2TP tunnel; it can carry one")
+			return nil, fault.Field("interface.protocol", "this server already carries an L2TP tunnel; it can carry one")
 		}
 		iface.L2TP = model.JSON(*in.L2TP)
 	}
 	if in.Protocol == model.ProtocolIKEv2 {
 		if in.IKEv2 == nil || in.IKEv2.ServerCert == "" || in.IKEv2.ServerKey == "" {
-			return nil, invalidField("interface.ikev2", "an IKEv2 tunnel arrived without its certificates")
+			return nil, fault.Field("interface.ikev2", "an IKEv2 tunnel arrived without its certificates")
 		}
 		if err := s.oneOf(tx, nodeID, in, "an IKEv2"); err != nil {
 			return nil, err
@@ -238,7 +239,7 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 	}
 	if in.Protocol == model.ProtocolOpenConnect {
 		if in.OpenConnect == nil || in.OpenConnect.Cert == "" || in.OpenConnect.Key == "" {
-			return nil, invalidField("interface.openconnect", "an OpenConnect tunnel arrived without its certificate")
+			return nil, fault.Field("interface.openconnect", "an OpenConnect tunnel arrived without its certificate")
 		}
 		if err := s.oneOf(tx, nodeID, in, "an OpenConnect"); err != nil {
 			return nil, err
@@ -255,7 +256,7 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 			return nil, fmt.Errorf("count PPTP tunnels: %w", err)
 		}
 		if other > 0 {
-			return nil, invalidField("interface.protocol", "this server already carries a PPTP tunnel; it can carry one")
+			return nil, fault.Field("interface.protocol", "this server already carries a PPTP tunnel; it can carry one")
 		}
 	}
 
@@ -275,7 +276,7 @@ func (s *NodeSync) oneOf(tx *gorm.DB, nodeID uint, in NodeInterface, what string
 		return fmt.Errorf("count %s tunnels: %w", in.Protocol, err)
 	}
 	if other > 0 {
-		return invalidField("interface.protocol", "this server already carries %s tunnel; it can carry one", what)
+		return fault.Field("interface.protocol", "this server already carries %s tunnel; it can carry one", what)
 	}
 	return nil
 }

@@ -1,4 +1,9 @@
-package service
+// Package fleet is the servers this panel runs tunnels on, as the panel
+// keeps them: each node's record and the token it signs in with, the state
+// each is sent -- its tunnels, its customers, who is held -- and the usage
+// each reports back. Carrying that state to a node and reading its answer
+// is internal/nodes'; this is what is carried.
+package fleet
 
 import (
 	"context"
@@ -18,6 +23,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 )
 
 // Nodes manages the other servers this panel watches.
@@ -108,7 +114,7 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		return nil, fmt.Errorf("service: check node name: %w", err)
 	}
 	if clash > 0 {
-		return nil, invalidField("name", "a node called %q already exists", in.Name)
+		return nil, fault.Field("name", "a node called %q already exists", in.Name)
 	}
 
 	coefficient := 1.0
@@ -148,7 +154,7 @@ func (s *Nodes) Get(ctx context.Context, id uint) (*model.Node, error) {
 	var node model.Node
 	if err := s.db.WithContext(ctx).First(&node, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: no node %d", ErrNotFound, id)
+			return nil, fmt.Errorf("%w: no node %d", fault.ErrNotFound, id)
 		}
 		return nil, fmt.Errorf("service: load node: %w", err)
 	}
@@ -159,10 +165,10 @@ func (s *Nodes) Get(ctx context.Context, id uint) (*model.Node, error) {
 func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node, error) {
 	var node model.Node
 	if err := s.db.WithContext(ctx).First(&node, id).Error; err != nil {
-		return nil, fmt.Errorf("%w: no node %d", ErrNotFound, id)
+		return nil, fmt.Errorf("%w: no node %d", fault.ErrNotFound, id)
 	}
 	if node.Kind == model.KindLocal {
-		return nil, fmt.Errorf("%w: this panel's own entry cannot be edited", ErrInvalid)
+		return nil, fmt.Errorf("%w: this panel's own entry cannot be edited", fault.ErrInvalid)
 	}
 	if err := s.validate(&in, false); err != nil {
 		return nil, err
@@ -193,12 +199,12 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 	// one setting here that quietly gives service away.
 	if in.UsageCoefficient != nil {
 		if *in.UsageCoefficient <= 0 {
-			return nil, invalidField("usageCoefficient",
+			return nil, fault.Field("usageCoefficient",
 				"a coefficient of %g would charge nothing for traffic through this server",
 				*in.UsageCoefficient)
 		}
 		if *in.UsageCoefficient > 100 {
-			return nil, invalidField("usageCoefficient",
+			return nil, fault.Field("usageCoefficient",
 				"a coefficient of %g charges a hundred times what the customer used",
 				*in.UsageCoefficient)
 		}
@@ -240,10 +246,10 @@ func (s *Nodes) Update(ctx context.Context, id uint, in NodeInput) (*model.Node,
 func (s *Nodes) Delete(ctx context.Context, id uint) error {
 	var node model.Node
 	if err := s.db.WithContext(ctx).First(&node, id).Error; err != nil {
-		return fmt.Errorf("%w: no node %d", ErrNotFound, id)
+		return fmt.Errorf("%w: no node %d", fault.ErrNotFound, id)
 	}
 	if node.Kind == model.KindLocal {
-		return fmt.Errorf("%w: this panel's own entry cannot be removed", ErrInvalid)
+		return fmt.Errorf("%w: this panel's own entry cannot be removed", fault.ErrInvalid)
 	}
 
 	// A 3x-ui or Pasarguard node's tunnels are its inbounds as read from
@@ -259,7 +265,7 @@ func (s *Nodes) Delete(ctx context.Context, id uint) error {
 		}
 		if held > 0 {
 			return fmt.Errorf("%w: %d customer file(s) are on %s; take them off it first, so their clients there are removed",
-				ErrInvalid, held, node.Name)
+				fault.ErrInvalid, held, node.Name)
 		}
 		if err := s.db.WithContext(ctx).Where("node_id = ?", id).Delete(&model.Interface{}).Error; err != nil {
 			return fmt.Errorf("service: remove its tunnels: %w", err)
@@ -277,7 +283,7 @@ func (s *Nodes) Delete(ctx context.Context, id uint) error {
 	}
 	if ifaces > 0 {
 		return fmt.Errorf("%w: %s still carries %d interface(s); remove them first",
-			ErrInvalid, node.Name, ifaces)
+			fault.ErrInvalid, node.Name, ifaces)
 	}
 
 	if err := s.db.WithContext(ctx).Delete(&node).Error; err != nil {
@@ -290,7 +296,7 @@ func (s *Nodes) Delete(ctx context.Context, id uint) error {
 func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	if in.TLSServerName != nil {
 		if n := strings.TrimSpace(*in.TLSServerName); n != "" && !validServerName(n) {
-			return invalidField("tlsServerName", "the TLS name is a host name: letters, digits, dots and hyphens, up to 253")
+			return fault.Field("tlsServerName", "the TLS name is a host name: letters, digits, dots and hyphens, up to 253")
 		}
 	}
 	in.Name = strings.TrimSpace(in.Name)
@@ -299,24 +305,24 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	in.Note = strings.TrimSpace(in.Note)
 
 	if in.Name == "" {
-		return invalidField("name", "a node needs a name")
+		return fault.Field("name", "a node needs a name")
 	}
 	if len(in.Name) > 64 {
-		return invalidField("name", "that name is too long")
+		return fault.Field("name", "that name is too long")
 	}
 	if in.Address == "" {
-		return invalidField("address", "a node needs an address")
+		return fault.Field("address", "a node needs an address")
 	}
 
 	u, err := url.Parse(in.Address)
 	if err != nil || u.Host == "" {
-		return invalidField("address", "%q is not a URL. It should look like https://vpn2.example.com:2096",
+		return fault.Field("address", "%q is not a URL. It should look like https://vpn2.example.com:2096",
 			in.Address)
 	}
 	switch u.Scheme {
 	case "http", "https":
 	default:
-		return invalidField("address", "the address must start with http:// or https://")
+		return fault.Field("address", "the address must start with http:// or https://")
 	}
 	// Said once, here. A token travelling over plain HTTP to another machine is
 	// readable by everything between them, and this is the panel's own key to a
@@ -329,7 +335,7 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	switch in.Kind {
 	case "", model.KindRemote, model.KindXUI, model.KindPG:
 	default:
-		return invalidField("kind", "a node is a W-UI, 3x-ui or Pasarguard panel")
+		return fault.Field("kind", "a node is a W-UI, 3x-ui or Pasarguard panel")
 	}
 	signsIn := strings.TrimSpace(deref(in.Username)) != "" && in.Password != ""
 	if (in.Kind == model.KindXUI || in.Kind == model.KindPG) && signsIn {
@@ -337,14 +343,14 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	}
 	if needToken && in.Token == "" {
 		if in.Kind == model.KindXUI {
-			return invalidField("token", "a 3x-ui node needs an API token. Make one on that "+
+			return fault.Field("token", "a 3x-ui node needs an API token. Make one on that "+
 				"panel under Settings, API tokens, then paste it here")
 		}
 		if in.Kind == model.KindPG {
-			return invalidField("token", "a Pasarguard node needs an API key. Make one on that "+
+			return fault.Field("token", "a Pasarguard node needs an API key. Make one on that "+
 				"panel under API keys, then paste it here")
 		}
-		return invalidField("token", "a node needs an access token. Create one on that "+
+		return fault.Field("token", "a node needs an access token. Create one on that "+
 			"panel under Settings, then paste it here")
 	}
 
@@ -355,11 +361,11 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 		case model.TLSVerify, model.TLSSkip:
 		case model.TLSPin:
 			if strings.TrimSpace(deref(in.TLSPin)) == "" {
-				return invalidField("tlsPin",
+				return fault.Field("tlsPin",
 					"pinning needs a certificate to pin. Fetch it from the node, or paste a sha256/… fingerprint")
 			}
 		default:
-			return invalidField("tlsMode",
+			return fault.Field("tlsMode",
 				"a node's certificate is either verified, pinned, or not checked at all")
 		}
 	}
@@ -368,7 +374,7 @@ func (s *Nodes) validate(in *NodeInput, needToken bool) error {
 	// and a transfer limit that lapses for one month a year lapses in the month
 	// nobody is watching for it.
 	if in.ResetDay != nil && (*in.ResetDay < 0 || *in.ResetDay > 28) {
-		return invalidField("resetDay",
+		return fault.Field("resetDay",
 			"the allowance can start again on day 1 to 28 of the month, or 0 to never reset")
 	}
 	return nil
@@ -399,7 +405,7 @@ type TokenPlain struct {
 func (s *Nodes) IssueToken(ctx context.Context, name string) (*TokenPlain, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, fmt.Errorf("%w: give the token a name so you know what it is for", ErrInvalid)
+		return nil, fmt.Errorf("%w: give the token a name so you know what it is for", fault.ErrInvalid)
 	}
 
 	raw := make([]byte, 32)
@@ -449,7 +455,7 @@ func (s *Nodes) SetTokenEnabled(ctx context.Context, id uint, enabled bool) erro
 		return fmt.Errorf("service: update token: %w", res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return ErrNotFound
+		return fault.ErrNotFound
 	}
 	return nil
 }

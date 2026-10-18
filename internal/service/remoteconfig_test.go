@@ -15,6 +15,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend/ovpndriver"
 	"github.com/abolfazl/w-ui/internal/backend/wgdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
 // The real drivers, because a tunnel that runs on another server has no open
@@ -206,9 +207,9 @@ func TestTheServerComesBackWhenItsAllowanceDoes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RecordNodeTraffic(context.Background(), db, 7, 0,
+	if err := fleet.RecordNodeTraffic(context.Background(), db, 7, 0,
 		time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)); err != nil {
-		t.Fatalf("RecordNodeTraffic: %v", err)
+		t.Fatalf("fleet.RecordNodeTraffic: %v", err)
 	}
 
 	s := newSubs(db, nil)

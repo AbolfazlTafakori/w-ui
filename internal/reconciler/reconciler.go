@@ -30,6 +30,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -132,7 +133,7 @@ type Reconciler struct {
 	fileSpeed *speedTracker
 	// OnHold carries a hold decided here to the node serving the device.
 	// Set by the panel's node syncer; nil when there are no nodes.
-	OnHold func(nodeID uint, hold service.NodeHold)
+	OnHold func(nodeID uint, hold fleet.NodeHold)
 
 	// suspended is the last set of operators read as suspended, kept for a
 	// tick on which it cannot be read. See lastSuspended.
@@ -248,7 +249,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 // types. This package is the only thing that talks to the data plane and
 // imports nothing that imports it back; the node package's types here would
 // be the first strand of a cycle.
-func (r *Reconciler) AddNodeReport(usage []service.NodeUsage, devices []service.NodeDeviceUsage) {
+func (r *Reconciler) AddNodeReport(usage []fleet.NodeUsage, devices []fleet.NodeDeviceUsage) {
 	now := time.Now().UTC()
 	batch := make([]trafficUpdate, 0, len(usage)+len(devices))
 	for _, u := range usage {
@@ -341,7 +342,7 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 	// What this machine itself carried, against its own host's allowance.
 	// Nodes are accounted for by the syncer as their usage arrives; this is the
 	// same thing for the panel's own server, which is a server like any other.
-	if err := service.RecordNodeTraffic(ctx, r.db, r.localNodeID, counted, time.Now().UTC()); err != nil {
+	if err := fleet.RecordNodeTraffic(ctx, r.db, r.localNodeID, counted, time.Now().UTC()); err != nil {
 		r.log.Warn("could not record what this server carried", "error", err)
 	}
 
@@ -1045,7 +1046,7 @@ func (r *Reconciler) holdOver(ctx context.Context, c *model.Client, accs []model
 		r.recordHeld(ctx, c, h, where, now)
 		if h.Node != 0 {
 			if r.OnHold != nil {
-				r.OnHold(h.Node, service.NodeHold{OriginID: h.Account.ID, Until: h.Until})
+				r.OnHold(h.Node, fleet.NodeHold{OriginID: h.Account.ID, Until: h.Until})
 			}
 			continue
 		}
@@ -1081,7 +1082,7 @@ func (r *Reconciler) Hold(ctx context.Context, accountID uint, until time.Time) 
 
 // Sessions is what this server reports to the panel that manages it: every
 // managed credential live here, by its id there.
-func (r *Reconciler) Sessions() []service.NodeSession {
+func (r *Reconciler) Sessions() []fleet.NodeSession {
 	now := time.Now().UTC()
 	r.conc.panelSpoke(now)
 	return r.conc.sessions(now)
@@ -1091,7 +1092,7 @@ func (r *Reconciler) Sessions() []service.NodeSession {
 func (r *Reconciler) PanelSpoke() { r.conc.panelSpoke(time.Now().UTC()) }
 
 // SetRemoteSessions stores what one node just reported live on it.
-func (r *Reconciler) SetRemoteSessions(nodeID uint, sessions []service.NodeSession) {
+func (r *Reconciler) SetRemoteSessions(nodeID uint, sessions []fleet.NodeSession) {
 	r.conc.setRemote(nodeID, sessions, time.Now().UTC())
 }
 

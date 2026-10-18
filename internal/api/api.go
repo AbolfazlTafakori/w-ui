@@ -19,6 +19,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/egress"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
@@ -38,7 +39,7 @@ type Server struct {
 	catalog   *i18n.Catalog
 	enforcer  enforce.Enforcer
 	settings  *service.Settings
-	nodes     *service.Nodes
+	nodes     *fleet.Nodes
 	prober    *nodes.Prober
 	throttle  *throttle
 	notifier  *notify.Notifier
@@ -73,7 +74,7 @@ type Server struct {
 	audit     *oversight.Audit
 	admins    *operators.Admins
 	pool      *backend.Pool
-	nodeSync  *service.NodeSync
+	nodeSync  *fleet.NodeSync
 	// dataPlane is every tunnel on this server at once; nodeCtl what is
 	// done about nodes beyond their rows.
 	dataPlane *service.DataPlane
@@ -147,7 +148,7 @@ func New(o Options) *Server {
 		catalog:   o.Catalog,
 		enforcer:  o.Enforcer,
 		settings:  o.Settings,
-		nodes:     service.NewNodes(o.DB, o.Logger),
+		nodes:     fleet.NewNodes(o.DB, o.Logger),
 		admins:    operators.NewAdmins(o.DB, o.Logger),
 		prober:    o.Prober,
 		throttle:  newThrottle(),
@@ -358,8 +359,8 @@ func maxUint(v, floor uint) uint {
 // newNodeSync builds the node side with its way to the data plane: a hold
 // the managing panel decides has to end a session here, which is the
 // reconciler's to do.
-func newNodeSync(o Options) *service.NodeSync {
-	ns := service.NewNodeSync(o.DB, o.Logger)
+func newNodeSync(o Options) *fleet.NodeSync {
+	ns := fleet.NewNodeSync(o.DB, o.Logger)
 	if o.Reconciler != nil {
 		ns.OnHold = o.Reconciler.Hold
 	}

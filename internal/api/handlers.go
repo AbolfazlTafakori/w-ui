@@ -10,6 +10,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -987,7 +988,7 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
-	var in service.NodeInput
+	var in fleet.NodeInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -1010,7 +1011,7 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in service.NodeInput
+	var in fleet.NodeInput
 	if !decode(w, r, &in) {
 		return
 	}

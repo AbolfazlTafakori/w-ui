@@ -212,7 +212,7 @@ func TestTheAPIDoesNotQueryTheDatabase(t *testing.T) {
 // shared pieces are what the services are built from; a dependency back up
 // would tie them into the one package this split took them out of.
 func TestLowerLayersDoNotImportTheServices(t *testing.T) {
-	domains := []string{"github.com/abolfazl/w-ui/internal/service", "github.com/abolfazl/w-ui/internal/operators"}
+	domains := []string{"github.com/abolfazl/w-ui/internal/service", "github.com/abolfazl/w-ui/internal/operators", "github.com/abolfazl/w-ui/internal/fleet"}
 	for _, dir := range []string{"internal/egress", "internal/fault", "internal/listfield", "internal/tunnelport", "internal/backend",
 		"internal/idset", "internal/optional", "internal/membership"} {
 		for _, f := range sources(t, dir) {
@@ -231,10 +231,10 @@ func TestLowerLayersDoNotImportTheServices(t *testing.T) {
 // The domains split out of the services are siblings of what is left, not
 // layers of it: neither imports the other. What one needs of another is
 // asked through a small interface it declares -- operators.Customers -- or
-// lives in a package below both, as internal/membership does.
+// lives in a package below them, as internal/membership does.
 func TestTheDomainsDoNotImportEachOther(t *testing.T) {
 	const mod = "github.com/abolfazl/w-ui/"
-	domains := []string{"internal/service", "internal/operators"}
+	domains := []string{"internal/service", "internal/operators", "internal/fleet"}
 	for _, dir := range domains {
 		for _, f := range sources(t, dir) {
 			for _, imp := range f.ast.Imports {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -252,8 +253,8 @@ func since(now, last uint64) uint64 {
 // the node's price, and records what crossed the machine.
 func (s *Syncer) chargeXUI(ctx context.Context, node model.Node, usage []service.XUIUsage) {
 	var raw uint64
-	byClient := map[uint]*service.NodeUsage{}
-	var devices []service.NodeDeviceUsage
+	byClient := map[uint]*fleet.NodeUsage{}
+	var devices []fleet.NodeDeviceUsage
 	clientOf := map[uint]uint{}
 	for _, u := range usage {
 		if u.Up == 0 && u.Down == 0 {
@@ -262,22 +263,22 @@ func (s *Syncer) chargeXUI(ctx context.Context, node model.Node, usage []service
 		raw += u.Up + u.Down
 		nu := byClient[u.ClientID]
 		if nu == nil {
-			nu = &service.NodeUsage{OriginID: u.ClientID}
+			nu = &fleet.NodeUsage{OriginID: u.ClientID}
 			byClient[u.ClientID] = nu
 		}
 		nu.Up += u.Up
 		nu.Down += u.Down
 		nu.Bytes += u.Up + u.Down
-		devices = append(devices, service.NodeDeviceUsage{OriginID: u.AccountID, Up: u.Up, Down: u.Down})
+		devices = append(devices, fleet.NodeDeviceUsage{OriginID: u.AccountID, Up: u.Up, Down: u.Down})
 		clientOf[u.AccountID] = u.ClientID
 	}
-	if err := service.RecordNodeTraffic(ctx, s.db, node.ID, raw, time.Now().UTC()); err != nil {
+	if err := fleet.RecordNodeTraffic(ctx, s.db, node.ID, raw, time.Now().UTC()); err != nil {
 		s.log.Warn("could not record what a node carried", "node", node.Name, "error", err)
 	}
 	if len(byClient) == 0 || s.onReport == nil {
 		return
 	}
-	list := make([]service.NodeUsage, 0, len(byClient))
+	list := make([]fleet.NodeUsage, 0, len(byClient))
 	for _, nu := range byClient {
 		list = append(list, *nu)
 	}

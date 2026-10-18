@@ -4,7 +4,7 @@ import (
 	"math/bits"
 	"sort"
 
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
 // Turning what a node counted into what its customers are charged.
@@ -20,19 +20,19 @@ import (
 
 // chargeReport applies a node's coefficient to one report. clientOf maps each
 // file's id on this panel to its customer's.
-func chargeReport(usage []service.NodeUsage, devices []service.NodeDeviceUsage,
-	coefficient float64, clientOf map[uint]uint) ([]service.NodeUsage, []service.NodeDeviceUsage) {
+func chargeReport(usage []fleet.NodeUsage, devices []fleet.NodeDeviceUsage,
+	coefficient float64, clientOf map[uint]uint) ([]fleet.NodeUsage, []fleet.NodeDeviceUsage) {
 	// Zero is a node created before the column existed, and negative is
 	// nonsense: neither is an operator asking to give traffic away.
 	if coefficient <= 0 || coefficient == 1 {
 		return usage, devices
 	}
 
-	charged := make([]service.NodeUsage, 0, len(usage))
-	byClient := make(map[uint]service.NodeUsage, len(usage)) // raw, by customer
-	chargedBy := make(map[uint]service.NodeUsage, len(usage))
+	charged := make([]fleet.NodeUsage, 0, len(usage))
+	byClient := make(map[uint]fleet.NodeUsage, len(usage)) // raw, by customer
+	chargedBy := make(map[uint]fleet.NodeUsage, len(usage))
 	for _, u := range usage {
-		c := service.NodeUsage{OriginID: u.OriginID}
+		c := fleet.NodeUsage{OriginID: u.OriginID}
 		if u.Up+u.Down == u.Bytes {
 			// The total is the two directions, so it stays their sum.
 			c.Up = atLeastOne(u.Up, coefficient)
@@ -50,8 +50,8 @@ func chargeReport(usage []service.NodeUsage, devices []service.NodeDeviceUsage,
 
 	// Files grouped by customer, in id order so the remainder always goes the
 	// same way for the same report.
-	groups := map[uint][]service.NodeDeviceUsage{}
-	var alone []service.NodeDeviceUsage
+	groups := map[uint][]fleet.NodeDeviceUsage{}
+	var alone []fleet.NodeDeviceUsage
 	for _, d := range devices {
 		client, ok := clientOf[d.OriginID]
 		if _, reported := byClient[client]; !ok || !reported {
@@ -61,7 +61,7 @@ func chargeReport(usage []service.NodeUsage, devices []service.NodeDeviceUsage,
 		groups[client] = append(groups[client], d)
 	}
 
-	out := make([]service.NodeDeviceUsage, 0, len(devices))
+	out := make([]fleet.NodeDeviceUsage, 0, len(devices))
 	for client, files := range groups {
 		sort.Slice(files, func(i, j int) bool { return files[i].OriginID < files[j].OriginID })
 		raw, total := byClient[client], chargedBy[client]
@@ -89,11 +89,11 @@ func chargeReport(usage []service.NodeUsage, devices []service.NodeDeviceUsage,
 			downs = each(downs, coefficient)
 		}
 		for i, f := range files {
-			out = append(out, service.NodeDeviceUsage{OriginID: f.OriginID, Up: ups[i], Down: downs[i]})
+			out = append(out, fleet.NodeDeviceUsage{OriginID: f.OriginID, Up: ups[i], Down: downs[i]})
 		}
 	}
 	for _, d := range alone {
-		out = append(out, service.NodeDeviceUsage{
+		out = append(out, fleet.NodeDeviceUsage{
 			OriginID: d.OriginID,
 			Up:       atLeastOne(d.Up, coefficient),
 			Down:     atLeastOne(d.Down, coefficient),

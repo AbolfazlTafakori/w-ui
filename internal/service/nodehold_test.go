@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 )
 
-func managedState(held *time.Time, limit int) NodeState {
-	return NodeState{
-		Interface: NodeInterface{OriginID: 3, Name: "wg1", Protocol: model.ProtocolWireGuard,
+func managedState(held *time.Time, limit int) fleet.NodeState {
+	return fleet.NodeState{
+		Interface: fleet.NodeInterface{OriginID: 3, Name: "wg1", Protocol: model.ProtocolWireGuard,
 			Enabled: true, ListenPort: 51820, Subnet: "10.67.0.0/16", EndpointHost: "vpn2.example.com", MTU: 1420},
-		Clients: []NodeClient{{OriginID: 7, Enabled: true, DeviceLimit: limit, Accounts: []NodeAccount{
+		Clients: []fleet.NodeClient{{OriginID: 7, Enabled: true, DeviceLimit: limit, Accounts: []fleet.NodeAccount{
 			{OriginID: 40, DeviceName: "phone", IP: "10.67.0.2", Enabled: true, PublicKey: "p1", HeldUntil: held},
 			{OriginID: 41, DeviceName: "laptop", IP: "10.67.0.3", Enabled: true, PublicKey: "p2"},
 		}}},
@@ -24,7 +25,7 @@ func managedState(held *time.Time, limit int) NodeState {
 // for the fallback.
 func TestHoldsReachTheNodesDataPlane(t *testing.T) {
 	db := testDB(t)
-	ns := NewNodeSync(db, quietLog())
+	ns := fleet.NewNodeSync(db, quietLog())
 	var got []uint
 	ns.OnHold = func(_ context.Context, id uint, until time.Time) { got = append(got, id) }
 
@@ -62,7 +63,7 @@ func TestHoldsReachTheNodesDataPlane(t *testing.T) {
 	if err := db.Where("origin_id = ?", 41).First(&laptop).Error; err != nil {
 		t.Fatal(err)
 	}
-	n, err := ns.Hold(context.Background(), []NodeHold{{OriginID: 41, Until: until}, {OriginID: 999, Until: until}})
+	n, err := ns.Hold(context.Background(), []fleet.NodeHold{{OriginID: 41, Until: until}, {OriginID: 999, Until: until}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +87,14 @@ func TestHoldsReachTheNodesDataPlane(t *testing.T) {
 // of the other, or every round would tear them down and build them again.
 func TestAPushForOneTunnelLeavesTheOtherTunnelsCustomersAlone(t *testing.T) {
 	db := testDB(t)
-	ns := NewNodeSync(db, quietLog())
+	ns := fleet.NewNodeSync(db, quietLog())
 	one := managedState(nil, 1)
 	two := managedState(nil, 1)
 	two.Interface.OriginID, two.Interface.Name, two.Interface.ListenPort, two.Interface.Subnet = 4, "wg2", 51821, "10.68.0.0/16"
-	two.Clients = []NodeClient{{OriginID: 8, Enabled: true, DeviceLimit: 1, Accounts: []NodeAccount{
+	two.Clients = []fleet.NodeClient{{OriginID: 8, Enabled: true, DeviceLimit: 1, Accounts: []fleet.NodeAccount{
 		{OriginID: 50, DeviceName: "tv", IP: "10.68.0.2", Enabled: true, PublicKey: "p3"},
 	}}}
-	for _, st := range []NodeState{one, two, one, two} {
+	for _, st := range []fleet.NodeState{one, two, one, two} {
 		if err := ns.Apply(context.Background(), 1, st); err != nil {
 			t.Fatal(err)
 		}

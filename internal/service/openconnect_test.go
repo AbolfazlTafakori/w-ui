@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/occonf"
 )
@@ -163,7 +164,7 @@ func TestTheOpenConnectCertificateFollowsTheAddress(t *testing.T) {
 // and it makes none of its own for them.
 func TestANodeIsHandedItsIKEv2AndOpenConnectTunnels(t *testing.T) {
 	db := testDB(t)
-	ns := NewNodeSync(db, quietLog())
+	ns := fleet.NewNodeSync(db, quietLog())
 	ctx := context.Background()
 	ike, err := newIKEv2Params("ike0", "node.example.com", nil)
 	if err != nil {
@@ -175,12 +176,12 @@ func TestANodeIsHandedItsIKEv2AndOpenConnectTunnels(t *testing.T) {
 	}
 	sent := ike // as the panel sends it
 	sent.CAKey = ""
-	for _, st := range []NodeState{
-		{Interface: NodeInterface{OriginID: 7, Name: "ike0", Protocol: model.ProtocolIKEv2, Enabled: true, ListenPort: 500,
+	for _, st := range []fleet.NodeState{
+		{Interface: fleet.NodeInterface{OriginID: 7, Name: "ike0", Protocol: model.ProtocolIKEv2, Enabled: true, ListenPort: 500,
 			Subnet: "10.79.0.0/24", EndpointHost: "node.example.com", MTU: 1400, IKEv2: &sent},
-			Clients: []NodeClient{{OriginID: 3, Enabled: true, Accounts: []NodeAccount{{OriginID: 30, IP: "10.79.0.2", Enabled: true,
+			Clients: []fleet.NodeClient{{OriginID: 3, Enabled: true, Accounts: []fleet.NodeAccount{{OriginID: 30, IP: "10.79.0.2", Enabled: true,
 				Username: "dev1", Secret: "Secret12345", CertPEM: "CERT"}}}}},
-		{Interface: NodeInterface{OriginID: 8, Name: "oc0", Protocol: model.ProtocolOpenConnect, Enabled: true, ListenPort: 443,
+		{Interface: fleet.NodeInterface{OriginID: 8, Name: "oc0", Protocol: model.ProtocolOpenConnect, Enabled: true, ListenPort: 443,
 			Subnet: "10.81.0.0/24", EndpointHost: "node.example.com", MTU: 1400, OpenConnect: &oc}},
 	} {
 		if err := ns.Apply(ctx, 1, st); err != nil {
@@ -214,7 +215,7 @@ func TestANodeIsHandedItsIKEv2AndOpenConnectTunnels(t *testing.T) {
 		t.Fatal("the node made certificates of its own for a panel's tunnel")
 	}
 	// Without its certificates, an IKEv2 tunnel is refused rather than run.
-	bare := NodeState{Interface: NodeInterface{OriginID: 9, Name: "ike1", Protocol: model.ProtocolIKEv2, Enabled: true,
+	bare := fleet.NodeState{Interface: fleet.NodeInterface{OriginID: 9, Name: "ike1", Protocol: model.ProtocolIKEv2, Enabled: true,
 		ListenPort: 500, Subnet: "10.90.0.0/24", EndpointHost: "x", MTU: 1400}}
 	if err := ns.Apply(ctx, 1, bare); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("an IKEv2 tunnel without certificates: %v", err)
