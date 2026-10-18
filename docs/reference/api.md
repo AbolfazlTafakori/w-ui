@@ -52,5 +52,7 @@ Before this was fixed, every update by the installer left one more full-access t
 | `POST /api/backups` · `GET /api/backups/{name}` | backups |
 | `GET /api/backups/password` · `PUT /api/backups/password` | whether archives are encrypted; set the backup password (`{"password":"…"}`, at least ten characters; empty stops encrypting) |
 | `GET /api/system` · `GET /api/system/history` | the host |
+| `GET /api/health` | `200 {"ok":true}` or `503`, with no sign-in, for an uptime checker; it is under the panel's own path, and only someone signed in is told why it is not ok |
+| `GET /api/metrics` | for Prometheus: each tunnel up or down, the loop's last run, usage writes failing, nodes reachable, and the backups kept |
 
 Errors come back as `{"error": "…", "field": "…"}` with a status that means what it says; a validation error names the field.

@@ -282,6 +282,31 @@ func (r *Reconciler) Stats() Stats {
 	return r.stats
 }
 
+// Health is what monitoring is told about the loop.
+type Health struct {
+	// Every is how often a pass runs; LastRun when the last one started,
+	// and LastError what stopped it, if anything did.
+	Every     time.Duration
+	LastRun   time.Time
+	LastError string
+	Ticks     uint64
+	// UsageFailing is the last write of usage failing; what it carried is
+	// kept and written by the next. UsageFailures counts every failed
+	// write since start, UsageHeld the customers whose usage is waiting.
+	UsageFailing  bool
+	UsageFailures uint64
+	UsageHeld     int
+}
+
+// Health says how the loop is doing.
+func (r *Reconciler) Health() Health {
+	r.mu.RLock()
+	h := Health{Every: r.interval, LastRun: r.stats.LastRun, LastError: r.stats.LastError, Ticks: r.stats.Ticks}
+	r.mu.RUnlock()
+	h.UsageFailing, h.UsageFailures, h.UsageHeld = r.writer.health()
+	return h
+}
+
 // Tick runs one full reconciliation. Exported so tests can drive it directly
 // rather than waiting on wall-clock time.
 func (r *Reconciler) Tick(ctx context.Context) {

@@ -52,5 +52,7 @@ Authorization: Bearer wui_…
 | `POST /api/backups` · `GET /api/backups/{name}` | بک‌آپ |
 | `GET /api/backups/password` · `PUT /api/backups/password` | آیا آرشیوها رمزنگاری می‌شوند؛ تنظیم رمز بک‌آپ (`{"password":"…"}`، دست‌کم ده نویسه؛ خالی یعنی توقف رمزنگاری) |
 | `GET /api/system` · `GET /api/system/history` | سرور |
+| `GET /api/health` | `200 {"ok":true}` یا `503`، بدون ورود، برای سرویس پایش آپ‌تایم؛ زیر مسیر خود پنل است و فقط به کسی که وارد شده دلیلش گفته می‌شود |
+| `GET /api/metrics` | برای Prometheus: بالا یا پایین بودن هر تانل، آخرین اجرای حلقه، شکست نوشتن مصرف، در دسترس بودن نودها و بک‌آپ‌های نگه‌داشته‌شده |
 
 خطاها به شکل `{"error": "…", "field": "…"}` با status معنادار برمی‌گردند؛ خطای اعتبارسنجی فیلد را نام می‌برد.

@@ -142,6 +142,8 @@ DELETE /api/tokens/{id}                               Nodes          auth=true  
 PATCH  /api/tokens/{id}                               Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 GET    /api/overview                                  Server         auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 GET    /api/overview/full                             Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
+GET    /api/health                                    Server         auth=false operator=false | none=yes token=yes reseller=yes admin=yes owner=yes
+GET    /api/metrics                                   Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/system                                    Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/configs                                   Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/logs                                      Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes

@@ -51,6 +51,9 @@ func TestOnlySigningInIsOpen(t *testing.T) {
 		"POST /api/auth/login":   true,
 		"GET /api/meta":          true,
 		"GET /api/i18n/{locale}": true,
+		// ok or not, for an uptime checker; the reasons only to someone
+		// signed in.
+		"GET /api/health": true,
 	}
 	for _, r := range newRouteServer().routes() {
 		key := r.Method + " " + r.Path

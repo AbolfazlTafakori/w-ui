@@ -59,6 +59,8 @@ type trafficWriter struct {
 	// failing is whether the last flush failed, so the failure is said
 	// once and its recovery once, not on every attempt in between.
 	failing bool
+	// failures is how many flushes have failed since the panel started.
+	failures uint64
 }
 
 // usageDelta is what one client or file accumulated between two flushes.
@@ -319,6 +321,7 @@ func (w *trafficWriter) flush(ctx context.Context) {
 		w.mu.Lock()
 		first := !w.failing
 		w.failing = true
+		w.failures++
 		w.mu.Unlock()
 		if first {
 			w.log.Error("could not write usage; keeping it to write on the next try", "error", err,
@@ -349,3 +352,11 @@ func clientIDFromKey(key string) (uint, bool) {
 
 // keyFromClientID is the inverse, kept next to its pair so the two cannot drift.
 func keyFromClientID(id uint) string { return enforce.Key(id) }
+
+// health is whether usage is being written, how many writes have failed,
+// and how many customers' usage is waiting for the next one.
+func (w *trafficWriter) health() (failing bool, failures uint64, held int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.failing, w.failures, len(w.usage)
+}

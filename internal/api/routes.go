@@ -629,6 +629,14 @@ func (s *Server) routes() []Route {
 			Summary: "Telemetry, panel state and inventory in one call.",
 			Note:    "One request so the page cannot show three readings from three moments.",
 			handler: s.handleFullOverview},
+		{Method: "GET", Path: "/api/health", Group: "Server",
+			Summary: "Whether the panel is doing its job: 200 with {\"ok\":true}, or 503.",
+			Note: "For an uptime checker. Under the panel's own path, and a stranger is told only ok or not; " +
+				"someone signed in is also told why.",
+			handler: s.handleHealth},
+		{Method: "GET", Path: "/api/metrics", Group: "Server", Auth: true,
+			Summary: "Tunnels, the loop, usage writes, nodes and backups, in Prometheus's text format.",
+			handler: s.handleMetrics},
 		{Method: "GET", Path: "/api/system", Group: "Server", Auth: true,
 			Summary: "Versions, configuration and whether limits are being enforced.",
 			handler: s.handleSystemInfo},
@@ -896,7 +904,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux, routes []Route) {
 		h := r.handler
 		if r.Group == "Operators" {
 			h = s.requireAdminManager(h)
-		} else if r.forOwner() {
+		} else if r.forOwner() && (r.Auth || r.Operator) {
+			// An open route has nobody signed in to be the owner.
 			h = s.requireManager(h)
 		}
 		if r.Operator {
