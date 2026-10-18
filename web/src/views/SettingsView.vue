@@ -11,12 +11,16 @@ import { useDelayed } from '../lib/live.js'
 import { store, t, loadMessages, loadPanelSettings, notify } from '../lib/store.js'
 import AntIcon from '../components/AntIcon.vue'
 import ErrorState from '../components/ErrorState.vue'
-import Toggle from '../components/Toggle.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 import SecuritySettings from '../components/settings/SecuritySettings.vue'
 import BackupArchives from '../components/settings/BackupArchives.vue'
 import LogsPanel from '../components/settings/LogsPanel.vue'
+import GeneralTab from '../components/settings/GeneralTab.vue'
+import TelegramTab from '../components/settings/TelegramTab.vue'
+import EmailTab from '../components/settings/EmailTab.vue'
+import SubscriptionTab from '../components/settings/SubscriptionTab.vue'
+import { provideSettings } from '../components/settings/context.js'
 
 const router = useRouter()
 
@@ -67,20 +71,6 @@ const busy = ref(false)
 const sub = ref(null)
 const subSaved = ref(null)
 const subError = ref({})
-
-// The looks the customer's page can wear. Chosen here; every customer's
-// page follows on its next opening.
-const SUB_TEMPLATES = ['classic', 'aurora', 'waves', 'network', 'minimal', 'midnight', 'ember', 'ocean', 'forest', 'sunset', 'neon', 'glass', 'paper', 'terminal', 'carbon', 'royal', 'sakura', 'frost', 'graphite', 'mesh', 'retro']
-// A one-time link, opened in a new tab: the page is served without the
-// panel's session, so the tab cannot carry it.
-async function previewTemplate(key) {
-  try {
-    const res = await api.post('/api/subscription/preview', { template: key })
-    window.open(res.url, '_blank', 'noopener')
-  } catch (e) {
-    notify(e.message, 'error')
-  }
-}
 
 const outboundTags = ref([])
 const balancerTags = ref([])
@@ -233,25 +223,12 @@ function isDefault(key) {
   return form.value[key] === defaults.value[key]
 }
 
-// Quota and rate are stored in bytes and bits. Nobody types either.
-const quotaGB = computed({
-  get: () => (form.value?.defaultQuotaBytes ? form.value.defaultQuotaBytes / 1024 ** 3 : 0),
-  set: (v) => {
-    form.value.defaultQuotaBytes = Math.max(0, Math.round(Number(v) * 1024 ** 3)) || 0
-  },
-})
-const rateMbit = computed({
-  get: () => (form.value?.defaultRateBitsPerSec ? form.value.defaultRateBitsPerSec / 1e6 : 0),
-  set: (v) => {
-    form.value.defaultRateBitsPerSec = Math.max(0, Math.round(Number(v) * 1e6)) || 0
-  },
-})
-
-// URI paths begin and end with a slash, as theirs sanitise them.
-function sanitizePath(v) {
-  v = String(v || '').replace(/[^A-Za-z0-9_\-/]/g, '')
-  return v
+// The tabs edit the same form through this; their tests save first, since
+// the server tests what it has stored.
+async function saveIfDirty() {
+  if (dirty.value) await save()
 }
+provideSettings({ form, saved, defaults, info, inner, sub, subError, isDefault, outboundTags, balancerTags, saveIfDirty })
 
 // ── security warnings ────────────────────────────────────────────────────────
 const alertVisible = ref(true)
@@ -271,177 +248,6 @@ onMounted(async () => {
     warnings.value = []
   }
 })
-
-// ── secrets: theirs show "configured" and offer Clear ────────────────────────
-const PLACEHOLDER = '********'
-function secretConfigured(key) {
-  return saved.value?.[key] === PLACEHOLDER && form.value?.[key] === PLACEHOLDER
-}
-function secretClearArmed(key) {
-  return saved.value?.[key] === PLACEHOLDER && form.value?.[key] === ''
-}
-function toggleClear(key) {
-  form.value[key] = secretClearArmed(key) ? PLACEHOLDER : ''
-}
-const showSecret = ref({})
-
-// ── event notifications, in their card grid ─────────────────────────────────
-// Each group is a card; each event a checkbox, some with a threshold beside.
-const eventGroups = [
-  { icon: 'TeamOutlined', title: 'set.eventGroupClients', events: [
-    { key: 'exhausted', label: 'set.eventExhausted' },
-    { key: 'expired', label: 'set.eventExpired' },
-    { key: 'expiring', label: 'set.eventExpiring', setting: 'expireDiff', min: 0, max: 3650 },
-    { key: 'sharing', label: 'set.eventSharing' },
-  ] },
-  { icon: 'CloudServerOutlined', title: 'set.eventGroupOutbound', events: [
-    { key: 'outbound.down', label: 'set.eventOutboundDown', setting: 'notifyOutboundDownThreshold', min: 1, max: 100 },
-    { key: 'outbound.up', label: 'set.eventOutboundUp' },
-  ] },
-  { icon: 'ThunderboltOutlined', title: 'set.eventGroupPanel', events: [
-    { key: 'panel', label: 'set.eventPanel' },
-    { key: 'backup', label: 'set.eventBackup' },
-  ] },
-  { icon: 'DesktopOutlined', title: 'set.eventGroupNode', events: [
-    { key: 'node.down', label: 'set.eventNodeDown' },
-    { key: 'node.up', label: 'set.eventNodeUp' },
-  ] },
-  { icon: 'DashboardOutlined', title: 'set.eventGroupSystem', events: [
-    { key: 'cpu.high', label: 'set.eventCPUHigh', setting: 'notifyCPUThreshold', min: 0, max: 100 },
-    { key: 'memory.high', label: 'set.eventMemoryHigh', setting: 'notifyMemoryThreshold', min: 0, max: 100 },
-  ] },
-  { icon: 'SafetyOutlined', title: 'set.eventGroupSecurity', events: [
-    { key: 'login', label: 'set.eventLoginAttempt' },
-  ] },
-]
-function kindsOf(field) {
-  return form.value?.[field] || []
-}
-function hasKind(field, key) {
-  return kindsOf(field).includes(key)
-}
-function toggleKind(field, key) {
-  const set = new Set(kindsOf(field))
-  set.has(key) ? set.delete(key) : set.add(key)
-  form.value[field] = [...set]
-}
-function groupCount(field, g) {
-  return g.events.filter((e) => hasKind(field, e.key)).length
-}
-function toggleGroup(field, g) {
-  const keys = g.events.map((e) => e.key)
-  const all = keys.every((k) => hasKind(field, k))
-  const set = new Set(kindsOf(field))
-  keys.forEach((k) => (all ? set.delete(k) : set.add(k)))
-  form.value[field] = [...set]
-}
-
-// ── notification time: their preset select, interval or crontab ─────────────
-const notifyMode = computed({
-  get: () => {
-    const v = form.value?.notifyRunTime || ''
-    if (v.startsWith('@every ')) return 'every'
-    if (['@hourly', '@daily', '@weekly', '@monthly'].includes(v)) return v
-    return 'custom'
-  },
-  set: (m) => {
-    if (m === 'every') form.value.notifyRunTime = '@every 30m'
-    else if (m === 'custom') form.value.notifyRunTime = '0 30 8 * * *'
-    else form.value.notifyRunTime = m
-  },
-})
-const everyNum = computed({
-  get: () => Number((form.value?.notifyRunTime || '').replace('@every ', '').replace(/[a-z]+$/, '')) || 1,
-  set: (n) => {
-    form.value.notifyRunTime = `@every ${Math.max(1, Math.round(Number(n) || 1))}${everyUnit.value}`
-  },
-})
-const everyUnit = computed({
-  get: () => (form.value?.notifyRunTime || '').replace('@every ', '').replace(/^\d+/, '') || 'm',
-  set: (u) => {
-    form.value.notifyRunTime = `@every ${everyNum.value}${u}`
-  },
-})
-
-// ── automatic backup time: every few hours, a time each day or week, crontab ──
-// Kept as the same schedule string the report uses; these read and write it.
-function readBackupTime(v) {
-  v = (v || '').trim()
-  let m = v.match(/^@every (\d+)h$/)
-  if (m) return { mode: 'hours', hours: Number(m[1]), time: '03:00', day: 5 }
-  if (v === '@daily' || v === '@midnight') return { mode: 'daily', hours: 24, time: '00:00', day: 5 }
-  if (v === '@weekly') return { mode: 'weekly', hours: 24, time: '00:00', day: 0 }
-  m = v.match(/^(?:0 )?(\d{1,2}) (\d{1,2}) \* \* (\*|[0-6])$/)
-  if (m && Number(m[1]) < 60 && Number(m[2]) < 24) {
-    const time = `${m[2].padStart(2, '0')}:${m[1].padStart(2, '0')}`
-    if (m[3] === '*') return { mode: 'daily', hours: 24, time, day: 5 }
-    return { mode: 'weekly', hours: 24, time, day: Number(m[3]) }
-  }
-  return { mode: 'custom', hours: 24, time: '03:00', day: 5 }
-}
-function writeBackupTime(p) {
-  const [h, min] = (p.time || '00:00').split(':').map(Number)
-  if (p.mode === 'hours') return `@every ${Math.min(720, Math.max(1, Math.round(Number(p.hours) || 1)))}h`
-  if (p.mode === 'daily') return `0 ${min} ${h} * * *`
-  if (p.mode === 'weekly') return `0 ${min} ${h} * * ${p.day}`
-  return form.value.notifyBackupTime
-}
-function setBackupTime(change) {
-  const p = { ...readBackupTime(form.value.notifyBackupTime), ...change }
-  // Custom starts from the line already there, to be edited.
-  if (change.mode === 'custom') {
-    backupCustom.value = true
-    return
-  }
-  backupCustom.value = false
-  form.value.notifyBackupTime = writeBackupTime(p)
-}
-// Custom stays chosen while its line is typed, even when that line happens to
-// read as one of the others.
-const backupCustom = ref(false)
-const backupTime = computed(() => {
-  const p = readBackupTime(form.value?.notifyBackupTime)
-  if (backupCustom.value) p.mode = 'custom'
-  return p
-})
-const weekdays = computed(() => {
-  const f = new Intl.DateTimeFormat(store.locale === 'fa' ? 'fa-IR' : 'en-GB', { weekday: 'long', timeZone: 'UTC' })
-  // 4 January 1970 was a Sunday, day 0 to crontab.
-  return [0, 1, 2, 3, 4, 5, 6].map((d) => ({ d, name: f.format(new Date(Date.UTC(1970, 0, 4 + d))) }))
-})
-
-// ── tests ────────────────────────────────────────────────────────────────────
-// Saved first, because the server tests what it has stored.
-const testLoading = ref(false)
-const testResult = ref(null)
-async function testTgBot() {
-  testLoading.value = true
-  testResult.value = null
-  try {
-    if (dirty.value) await save()
-    const res = await api.post('/api/settings/notify/test')
-    testResult.value = { success: !!res.ok, msg: res.ok ? t('settings.testOk') : res.error }
-  } catch (e) {
-    testResult.value = { success: false, msg: e.message }
-  } finally {
-    testLoading.value = false
-  }
-}
-const mailTesting = ref(false)
-const mailResult = ref(null)
-async function testMail() {
-  mailTesting.value = true
-  mailResult.value = null
-  try {
-    if (dirty.value) await save()
-    const res = await api.post('/api/settings/mail/test')
-    mailResult.value = { success: !!res.ok, msg: res.ok ? t('settings.testOk') : res.error }
-  } catch (e) {
-    mailResult.value = { success: false, msg: e.message }
-  } finally {
-    mailTesting.value = false
-  }
-}
 
 // ── the pages outside the menu: backups, engine, logs, system ────────────────
 const uptime = computed(() => {
@@ -499,136 +305,7 @@ const uptime = computed(() => {
         <div class="acard-body">
           <!-- ══ General ══ -->
           <template v-if="active === 'general'">
-            <div class="atabs-nav"><div class="atabs-list">
-              <button class="atab" :class="{ active: inner.general === '1' }" @click="inner.general = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.panelSettings') }}</span></button>
-              <button class="atab" :class="{ active: inner.general === '2' }" @click="inner.general = '2'"><AntIcon name="BellOutlined" /><span>{{ t('set.notifications') }}</span></button>
-              <button class="atab" :class="{ active: inner.general === '3' }" @click="inner.general = '3'"><AntIcon name="SafetyCertificateOutlined" /><span>{{ t('set.certs') }}</span></button>
-              <button class="atab" :class="{ active: inner.general === '4' }" @click="inner.general = '4'"><AntIcon name="GlobalOutlined" /><span>{{ t('set.externalTraffic') }}</span></button>
-              <button class="atab" :class="{ active: inner.general === '5' }" @click="inner.general = '5'"><AntIcon name="ClockCircleOutlined" /><span>{{ t('set.dateAndTime') }}</span></button>
-              <button class="atab" :class="{ active: inner.general === '6' }" @click="inner.general = '6'"><AntIcon name="TeamOutlined" /><span>{{ t('set.customerDefaults') }}</span></button>
-            </div></div>
-
-            <template v-if="inner.general === '1'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelListeningIP') }}</div><div class="setting-list-description">{{ t('set.panelListeningIPDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.webListen" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelListeningDomain') }}</div><div class="setting-list-description">{{ t('set.panelListeningDomainDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.webDomain" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelPort') }}<span v-if="isDefault('webPort')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.panelPortDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="form.webPort" type="number" min="1" max="65535" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelUrlPath') }}</div><div class="setting-list-description">{{ t('set.panelUrlPathDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input :value="form.webBasePath" class="ltr" @input="form.webBasePath = sanitizePath($event.target.value)" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.sessionMaxAge') }}<span v-if="isDefault('sessionMaxAge')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.sessionMaxAgeDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="form.sessionMaxAge" type="number" min="60" max="525600" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.trustedProxyCidrs') }}</div><div class="setting-list-description">{{ t('set.trustedProxyCidrsDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.trustedProxyCIDRs" class="ltr" placeholder="127.0.0.1/32,::1/128" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelOutbound') }}</div><div class="setting-list-description">{{ t('set.panelOutboundDesc') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.panelOutbound" :aria-label="t('set.panelOutbound')">
-                  <option value="">{{ t('set.panelOutboundPh') }}</option>
-                  <optgroup v-if="balancerTags.length" :label="t('nav.outbounds')"><option v-for="tag in outboundTags" :key="tag" :value="tag">{{ tag }}</option></optgroup>
-                  <template v-else><option v-for="tag in outboundTags" :key="tag" :value="tag">{{ tag }}</option></template>
-                  <optgroup v-if="balancerTags.length" :label="t('routing.tab.balancers')"><option v-for="tag in balancerTags" :key="tag" :value="tag">{{ tag }}</option></optgroup>
-                </select></div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.pageSize') }}<span v-if="isDefault('pageSize')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.pageSizeDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="form.pageSize" type="number" min="0" max="1000" step="5" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.language') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.defaultLocale" :aria-label="t('set.language')">
-                  <option value="en">🇬🇧&nbsp;&nbsp;English</option>
-                  <option value="fa">🇮🇷&nbsp;&nbsp;فارسی</option>
-                </select></div></div>
-              </div></div>
-            </template>
-
-            <template v-else-if="inner.general === '2'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.expireTimeDiff') }}<span v-if="isDefault('expireDiff')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.expireTimeDiffDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="form.expireDiff" type="number" min="0" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.trafficDiff') }}<span v-if="isDefault('trafficDiff')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.trafficDiffDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="form.trafficDiff" type="number" min="0" max="100" class="ltr" /></label></div>
-              </div></div>
-            </template>
-
-            <template v-else-if="inner.general === '3'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.publicKeyPath') }}</div><div class="setting-list-description">{{ t('set.publicKeyPathDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.webCertFile" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.privateKeyPath') }}</div><div class="setting-list-description">{{ t('set.privateKeyPathDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.webKeyFile" class="ltr" /></label></div>
-              </div></div>
-            </template>
-
-            <template v-else-if="inner.general === '4'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.externalTrafficInformEnable') }}</div><div class="setting-list-description">{{ t('set.externalTrafficInformEnableDesc') }}</div></div></div>
-                <div class="acol"><Toggle v-model="form.externalTrafficInformEnable" :label="t('set.externalTrafficInformEnable')" /></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.externalTrafficInformURI') }}</div><div class="setting-list-description">{{ t('set.externalTrafficInformURIDesc') }} {{ t('set.informBody') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.externalTrafficInformURI" class="ltr" placeholder="(http|https)://domain[:port]/path/" /></label></div>
-              </div></div>
-            </template>
-
-            <template v-else-if="inner.general === '5'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.timeZone') }}</div><div class="setting-list-description">{{ t('set.timeZoneDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.timeLocation" class="ltr" placeholder="Asia/Tehran" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.datepicker') }}</div><div class="setting-list-description">{{ t('set.datepickerDescription') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.datepicker" :aria-label="t('set.datepicker')">
-                  <option value="gregorian">{{ t('set.calendarGregorian') }}</option>
-                  <option value="jalalian">{{ t('set.calendarJalalian') }}</option>
-                </select></div></div>
-              </div></div>
-            </template>
-
-            <template v-else>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defQuota') }}<span v-if="isDefault('defaultQuotaBytes')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defQuotaDesc') }}</div></div></div>
-                <div class="acol"><div class="acompact"><label class="ainput number"><input v-model.number="quotaGB" type="number" min="0" class="ltr" /></label><span class="abtn addon">GB</span></div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defExpiry') }}<span v-if="isDefault('defaultExpiryDays')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defExpiryDesc') }}</div></div></div>
-                <div class="acol"><div class="acompact"><label class="ainput number"><input v-model.number="form.defaultExpiryDays" type="number" min="0" class="ltr" /></label><span class="abtn addon">{{ t('settings.days') }}</span></div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defDevices') }}<span v-if="isDefault('defaultDeviceLimit')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defDevicesDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="form.defaultDeviceLimit" type="number" min="1" max="64" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defRate') }}<span v-if="isDefault('defaultRateBitsPerSec')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defRateDesc') }}</div></div></div>
-                <div class="acol"><div class="acompact"><label class="ainput number"><input v-model.number="rateMbit" type="number" min="0" class="ltr" /></label><span class="abtn addon">Mbit/s</span></div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.defReset') }}<span v-if="isDefault('defaultResetCycle')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.defResetDesc') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.defaultResetCycle" :aria-label="t('set.defReset')">
-                  <option value="none">{{ t('reset.none') }}</option>
-                  <option value="daily">{{ t('reset.daily') }}</option>
-                  <option value="weekly">{{ t('reset.weekly') }}</option>
-                  <option value="monthly">{{ t('reset.monthly') }}</option>
-                </select></div></div>
-              </div></div>
-            </template>
+            <GeneralTab />
           </template>
 
           <!-- ══ Authentication ══ -->
@@ -638,330 +315,17 @@ const uptime = computed(() => {
 
           <!-- ══ Telegram Bot ══ -->
           <template v-else-if="active === 'telegram'">
-            <div class="atabs-nav"><div class="atabs-list">
-              <button class="atab" :class="{ active: inner.telegram === '1' }" @click="inner.telegram = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.panelSettings') }}</span></button>
-              <button class="atab" :class="{ active: inner.telegram === '2' }" @click="inner.telegram = '2'"><AntIcon name="BellOutlined" /><span>{{ t('set.notifications') }}</span></button>
-              <button class="atab" :class="{ active: inner.telegram === '3' }" @click="inner.telegram = '3'"><AntIcon name="CloudUploadOutlined" /><span>{{ t('set.tgBackupTab') }}</span></button>
-            </div></div>
-
-            <template v-if="inner.telegram === '1'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramBotEnable') }}</div><div class="setting-list-description">{{ t('set.telegramBotEnableDesc') }}</div></div></div>
-                <div class="acol"><Toggle v-model="form.notifyEnabled" :label="t('set.telegramBotEnable')" /></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramToken') }}</div><div class="setting-list-description">{{ secretConfigured('notifyBotToken') ? t('set.telegramTokenConfigured') : t('set.telegramTokenDesc') }}</div></div></div>
-                <div class="acol"><div class="acompact">
-                  <label class="ainput"><input :value="form.notifyBotToken === PLACEHOLDER ? '' : form.notifyBotToken" :type="showSecret.tg ? 'text' : 'password'" autocomplete="off" spellcheck="false" class="ltr" :placeholder="secretConfigured('notifyBotToken') ? t('set.telegramTokenPlaceholder') : ''" @input="form.notifyBotToken = $event.target.value" /><button type="button" class="ainput-clear" @click="showSecret.tg = !showSecret.tg"><AntIcon :name="showSecret.tg ? 'EyeOutlined' : 'EyeInvisibleOutlined'" /></button></label>
-                  <button v-if="saved.notifyBotToken === PLACEHOLDER" type="button" class="abtn" :class="{ danger: secretClearArmed('notifyBotToken') }" @click="toggleClear('notifyBotToken')">{{ secretClearArmed('notifyBotToken') ? t('set.secretClearUndo') : t('set.secretClear') }}</button>
-                </div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramChatId') }}</div><div class="setting-list-description">{{ t('set.telegramChatIdDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.notifyChatId" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramBotLanguage') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.notifyLang" :aria-label="t('set.telegramBotLanguage')">
-                  <option value="en">🇬🇧&nbsp;&nbsp;English</option>
-                  <option value="fa">🇮🇷&nbsp;&nbsp;فارسی</option>
-                </select></div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramAPIServer') }}</div><div class="setting-list-description">{{ t('set.telegramAPIServerDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.notifyAPIServer" class="ltr" placeholder="https://api.example.com" /></label></div>
-              </div></div>
-              <div class="aspace-v" style="margin-top: 16px">
-                <div><button class="abtn primary" :disabled="testLoading" @click="testTgBot"><span v-if="testLoading" class="spin sm"></span><AntIcon v-else name="SendOutlined" /><span>{{ t('set.testTgBot') }}</span></button></div>
-                <div v-if="testResult" class="aalert" :class="testResult.success ? 'success' : 'error'">
-                  <AntIcon :name="testResult.success ? 'CheckCircleFilled' : 'CloseCircleFilled'" />
-                  <div class="aalert-body"><span class="aalert-title">{{ testResult.msg }}</span></div>
-                  <button type="button" class="aalert-close" @click="testResult = null"><AntIcon name="CloseOutlined" /></button>
-                </div>
-              </div>
-            </template>
-
-            <template v-else-if="inner.telegram === '3'">
-              <div v-if="!form.notifyEnabled" class="aalert warning" style="margin-bottom: 16px">
-                <AntIcon name="WarningOutlined" />
-                <div class="aalert-body"><span class="aalert-title">{{ t('set.tgBackupBotOff') }}</span></div>
-              </div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgAutoBackup') }}</div><div class="setting-list-description">{{ t('set.tgAutoBackupDesc') }}</div></div></div>
-                <div class="acol"><Toggle v-model="form.notifyBackup" :label="t('set.tgAutoBackup')" /></div>
-              </div></div>
-              <div v-if="form.notifyBackup" class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgBackupTime') }}</div><div class="setting-list-description">{{ t('set.tgBackupTimeDesc', { zone: saved?.timeLocation || t('set.tgBackupServerZone') }) }}</div></div></div>
-                <div class="acol"><div class="aspace-v">
-                  <div class="aselect"><select :value="backupTime.mode" :aria-label="t('set.tgBackupTime')" @change="setBackupTime({ mode: $event.target.value })">
-                    <option value="daily">{{ t('set.tgBackupMode.daily') }}</option>
-                    <option value="weekly">{{ t('set.tgBackupMode.weekly') }}</option>
-                    <option value="hours">{{ t('set.tgBackupMode.hours') }}</option>
-                    <option value="custom">{{ t('set.notifyTime.custom') }}</option>
-                  </select></div>
-                  <div v-if="backupTime.mode === 'hours'" class="acompact">
-                    <label class="ainput number"><input :value="backupTime.hours" type="number" min="1" max="720" class="ltr" :aria-label="t('set.notifyTime.interval')" @change="setBackupTime({ hours: $event.target.value })" /></label>
-                    <span class="abtn addon">{{ t('settings.hours') }}</span>
-                  </div>
-                  <div v-if="backupTime.mode === 'weekly'" class="aselect"><select :value="backupTime.day" :aria-label="t('set.tgBackupDay')" @change="setBackupTime({ day: Number($event.target.value) })">
-                    <option v-for="w in weekdays" :key="w.d" :value="w.d">{{ w.name }}</option>
-                  </select></div>
-                  <label v-if="backupTime.mode === 'daily' || backupTime.mode === 'weekly'" class="ainput"><input :value="backupTime.time" type="time" class="ltr" :aria-label="t('set.tgBackupAt')" @change="$event.target.value && setBackupTime({ time: $event.target.value })" /></label>
-                  <label v-if="backupTime.mode === 'custom'" class="ainput block"><input v-model="form.notifyBackupTime" class="ltr" placeholder="0 0 3 * * *" /></label>
-                </div></div>
-              </div></div>
-            </template>
-
-            <template v-else>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.telegramNotifyTime') }}</div><div class="setting-list-description">{{ t('set.telegramNotifyTimeDesc') }}</div></div></div>
-                <div class="acol"><div class="aspace-v">
-                  <div class="aselect"><select v-model="notifyMode" :aria-label="t('set.telegramNotifyTime')">
-                    <option value="every">{{ t('set.notifyTime.every') }}</option>
-                    <option value="@hourly">{{ t('set.notifyTime.hourly') }}</option>
-                    <option value="@daily">{{ t('set.notifyTime.daily') }}</option>
-                    <option value="@weekly">{{ t('set.notifyTime.weekly') }}</option>
-                    <option value="@monthly">{{ t('set.notifyTime.monthly') }}</option>
-                    <option value="custom">{{ t('set.notifyTime.custom') }}</option>
-                  </select></div>
-                  <div v-if="notifyMode === 'every'" class="acompact">
-                    <label class="ainput number"><input v-model.number="everyNum" type="number" min="1" class="ltr" :aria-label="t('set.notifyTime.interval')" /></label>
-                    <div class="aselect"><select v-model="everyUnit" :aria-label="t('set.notifyTime.unit')">
-                      <option value="s">{{ t('set.notifyTime.seconds') }}</option>
-                      <option value="m">{{ t('set.notifyTime.minutes') }}</option>
-                      <option value="h">{{ t('set.notifyTime.hours') }}</option>
-                    </select></div>
-                  </div>
-                  <label v-if="notifyMode === 'custom'" class="ainput block"><input v-model="form.notifyRunTime" class="ltr" placeholder="0 30 8 * * *" /></label>
-                </div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.tgEventBusNotify') }}</div><div class="setting-list-description">{{ t('set.tgEventBusNotifyDesc') }}</div></div></div>
-                <div class="acol">
-                  <div class="notif-grid">
-                    <div v-for="g in eventGroups" :key="g.title" class="acard small notif-card">
-                      <div class="acard-head small">
-                        <span class="notif-title"><AntIcon :name="g.icon" /> {{ t(g.title) }}</span>
-                        <span class="notif-extra"><span class="atag">{{ groupCount('notifyKinds', g) }}/{{ g.events.length }}</span><input type="checkbox" class="acheck" :checked="groupCount('notifyKinds', g) === g.events.length" :indeterminate.prop="groupCount('notifyKinds', g) > 0 && groupCount('notifyKinds', g) < g.events.length" @change="toggleGroup('notifyKinds', g)" /></span>
-                      </div>
-                      <div class="acard-body"><div class="aspace-v">
-                        <div v-for="e in g.events" :key="e.key">
-                          <label class="acheckbox"><input type="checkbox" :checked="hasKind('notifyKinds', e.key)" @change="toggleKind('notifyKinds', e.key)" />{{ t(e.label) }}</label>
-                          <div v-if="e.setting && hasKind('notifyKinds', e.key)" style="padding-left: 24px; margin-top: 4px">
-                            <label class="ainput number sm" style="width: 80px"><input v-model.number="form[e.setting]" type="number" :min="e.min" :max="e.max" class="ltr" /></label>
-                          </div>
-                        </div>
-                      </div></div>
-                    </div>
-                  </div>
-                </div>
-              </div></div>
-            </template>
+            <TelegramTab />
           </template>
 
           <!-- ══ Email ══ -->
           <template v-else-if="active === 'email'">
-            <div class="atabs-nav"><div class="atabs-list">
-              <button class="atab" :class="{ active: inner.email === '1' }" @click="inner.email = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.smtpSettings') }}</span></button>
-              <button class="atab" :class="{ active: inner.email === '2' }" @click="inner.email = '2'"><AntIcon name="MailOutlined" /><span>{{ t('set.emailNotifications') }}</span></button>
-            </div></div>
-
-            <template v-if="inner.email === '1'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpEnable') }}</div><div class="setting-list-description">{{ t('set.smtpEnableDesc') }}</div></div></div>
-                <div class="acol"><Toggle v-model="form.mailEnabled" :label="t('set.smtpEnable')" /></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpHost') }}</div><div class="setting-list-description">{{ t('set.smtpHostDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.mailHost" class="ltr" placeholder="smtp.gmail.com" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpPort') }}<span v-if="isDefault('mailPort')" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.smtpPortDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="form.mailPort" type="number" min="1" max="65535" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpUsername') }}</div><div class="setting-list-description">{{ t('set.smtpUsernameDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.mailUsername" class="ltr" placeholder="user@gmail.com" autocomplete="off" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpPassword') }}</div><div class="setting-list-description">{{ secretConfigured('mailPassword') ? t('set.smtpPasswordConfigured') : t('set.smtpPasswordDesc') }}</div></div></div>
-                <div class="acol"><div class="acompact">
-                  <label class="ainput"><input :value="form.mailPassword === PLACEHOLDER ? '' : form.mailPassword" :type="showSecret.mail ? 'text' : 'password'" autocomplete="off" class="ltr" :placeholder="secretConfigured('mailPassword') ? t('set.smtpPasswordPlaceholder') : ''" @input="form.mailPassword = $event.target.value" /><button type="button" class="ainput-clear" @click="showSecret.mail = !showSecret.mail"><AntIcon :name="showSecret.mail ? 'EyeOutlined' : 'EyeInvisibleOutlined'" /></button></label>
-                  <button v-if="saved.mailPassword === PLACEHOLDER" type="button" class="abtn" :class="{ danger: secretClearArmed('mailPassword') }" @click="toggleClear('mailPassword')">{{ secretClearArmed('mailPassword') ? t('set.secretClearUndo') : t('set.secretClear') }}</button>
-                </div></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpFrom') }}</div><div class="setting-list-description">{{ t('set.smtpFromDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.mailFrom" class="ltr" placeholder="user@gmail.com" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpFromName') }}</div><div class="setting-list-description">{{ t('set.smtpFromNameDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.mailFromName" placeholder="W-UI" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpTo') }}</div><div class="setting-list-description">{{ t('set.smtpToDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="form.mailTo" class="ltr" placeholder="admin@example.com, ops@example.com" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpEncryption') }}</div><div class="setting-list-description">{{ t('set.smtpEncryptionDesc') }}</div></div></div>
-                <div class="acol"><div class="aselect"><select v-model="form.mailEncryption" :aria-label="t('set.smtpEncryption')">
-                  <option value="none">{{ t('set.smtpEncryptionNone') }}</option>
-                  <option value="starttls">{{ t('set.smtpEncryptionStartTLS') }}</option>
-                  <option value="tls">{{ t('set.smtpEncryptionTLS') }}</option>
-                </select></div></div>
-              </div></div>
-              <div class="aspace-v" style="margin-top: 16px">
-                <div><button class="abtn primary" :disabled="mailTesting" @click="testMail"><span v-if="mailTesting" class="spin sm"></span><AntIcon v-else name="SendOutlined" /><span>{{ t('set.testSmtp') }}</span></button></div>
-                <div v-if="mailResult" class="aalert" :class="mailResult.success ? 'success' : 'error'">
-                  <AntIcon :name="mailResult.success ? 'CheckCircleFilled' : 'CloseCircleFilled'" />
-                  <div class="aalert-body"><span class="aalert-title">{{ mailResult.msg }}</span></div>
-                  <button type="button" class="aalert-close" @click="mailResult = null"><AntIcon name="CloseOutlined" /></button>
-                </div>
-              </div>
-            </template>
-
-            <template v-else>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.smtpEventBusNotify') }}</div><div class="setting-list-description">{{ t('set.smtpEventBusNotifyDesc') }}</div></div></div>
-                <div class="acol">
-                  <div class="notif-grid">
-                    <div v-for="g in eventGroups" :key="g.title" class="acard small notif-card">
-                      <div class="acard-head small">
-                        <span class="notif-title"><AntIcon :name="g.icon" /> {{ t(g.title) }}</span>
-                        <span class="notif-extra"><span class="atag">{{ groupCount('mailKinds', g) }}/{{ g.events.length }}</span><input type="checkbox" class="acheck" :checked="groupCount('mailKinds', g) === g.events.length" :indeterminate.prop="groupCount('mailKinds', g) > 0 && groupCount('mailKinds', g) < g.events.length" @change="toggleGroup('mailKinds', g)" /></span>
-                      </div>
-                      <div class="acard-body"><div class="aspace-v">
-                        <div v-for="e in g.events" :key="e.key">
-                          <label class="acheckbox"><input type="checkbox" :checked="hasKind('mailKinds', e.key)" @change="toggleKind('mailKinds', e.key)" />{{ t(e.label) }}</label>
-                          <div v-if="e.setting && hasKind('mailKinds', e.key)" style="padding-left: 24px; margin-top: 4px">
-                            <label class="ainput number sm" style="width: 80px"><input v-model.number="form[e.setting]" type="number" :min="e.min" :max="e.max" class="ltr" /></label>
-                          </div>
-                        </div>
-                      </div></div>
-                    </div>
-                  </div>
-                </div>
-              </div></div>
-            </template>
+            <EmailTab />
           </template>
 
           <!-- ══ Subscription ══ -->
           <template v-else-if="active === 'subscription' && sub">
-            <div class="atabs-nav"><div class="atabs-list">
-              <button class="atab" :class="{ active: inner.subscription === '1' }" @click="inner.subscription = '1'"><AntIcon name="SettingOutlined" /><span>{{ t('set.panelSettings') }}</span></button>
-              <button class="atab" :class="{ active: inner.subscription === '2' }" @click="inner.subscription = '2'"><AntIcon name="InfoCircleOutlined" /><span>{{ t('set.information') }}</span></button>
-              <button class="atab" :class="{ active: inner.subscription === '3' }" @click="inner.subscription = '3'"><AntIcon name="IdcardOutlined" /><span>{{ t('set.profile') }}</span></button>
-              <button class="atab" :class="{ active: inner.subscription === '4' }" @click="inner.subscription = '4'"><AntIcon name="SafetyCertificateOutlined" /><span>{{ t('set.certs') }}</span></button>
-              <button class="atab" :class="{ active: inner.subscription === '5' }" @click="inner.subscription = '5'"><AntIcon name="PictureOutlined" /><span>{{ t('set.subTemplate') }}</span></button>
-            </div></div>
-
-            <template v-if="inner.subscription === '1'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subEnable') }}</div><div class="setting-list-description">{{ t('set.subEnableDesc') }}</div></div></div>
-                <div class="acol"><Toggle v-model="sub.enabled" :label="t('set.subEnable')" /></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subListen') }}</div><div class="setting-list-description">{{ t('set.subListenDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.listen" class="ltr" /></label><p v-if="subError.listen" class="field-error">{{ subError.listen }}</p></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subDomain') }}</div><div class="setting-list-description">{{ t('set.subDomainDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.host" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subPort') }}<span v-if="!sub.port" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.subPortDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="sub.port" type="number" min="0" max="65535" class="ltr" /></label><p v-if="subError.port" class="field-error">{{ subError.port }}</p></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subPath') }}</div><div class="setting-list-description">{{ t('set.subPathDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input :value="sub.path" class="ltr" placeholder="/sub/" @input="sub.path = sanitizePath($event.target.value)" /></label><p v-if="subError.path" class="field-error">{{ subError.path }}</p></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subURI') }}</div><div class="setting-list-description">{{ t('set.subURIDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.reverseProxyUri" class="ltr" placeholder="(http|https)://domain[:port]/path/" /></label><p v-if="subError.reverseProxyUri" class="field-error">{{ subError.reverseProxyUri }}</p></div>
-              </div></div>
-              <!-- Addresses the service had before, still answered so links
-                   already handed out keep working. Added on their own when
-                   the port, the certificate or the path changes. -->
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subFormer') }}</div><div class="setting-list-description">{{ t('set.subFormerDesc') }}</div></div></div>
-                <div class="acol">
-                  <p v-if="!(sub.former || []).length" class="setting-list-description">{{ t('set.subFormerNone') }}</p>
-                  <div v-for="(f, i) in sub.former || []" :key="i" class="sub-former-row">
-                    <label class="ainput number"><input v-model.number="f.port" type="number" min="0" max="65535" class="ltr" :aria-label="t('set.subPort')" /></label>
-                    <label class="acheckbox"><input v-model="f.tls" type="checkbox" :disabled="!f.port" /><span>HTTPS</span></label>
-                    <label class="ainput block"><input :value="f.path" class="ltr" placeholder="/sub/" :aria-label="t('set.subPath')" @input="f.path = sanitizePath($event.target.value)" /></label>
-                    <span v-if="!f.port" class="atag">{{ t('set.subFormerPanel') }}</span>
-                    <button type="button" class="abtn small danger" :aria-label="t('action.delete')" @click="sub.former.splice(i, 1)"><AntIcon name="DeleteOutlined" /></button>
-                  </div>
-                  <button type="button" class="abtn small" @click="(sub.former ||= []).push({ port: 0, tls: false, path: sub.path })"><AntIcon name="PlusOutlined" /><span>{{ t('set.subFormerAdd') }}</span></button>
-                  <p v-if="subError.former" class="field-error">{{ subError.former }}</p>
-                </div>
-              </div></div>
-            </template>
-
-            <template v-else-if="inner.subscription === '2'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subEncrypt') }}</div><div class="setting-list-description">{{ t('set.subEncryptDescWG') }}</div></div></div>
-                <div class="acol"><Toggle v-model="sub.encode" :label="t('set.subEncrypt')" /></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subUpdates') }}<span v-if="sub.updateHours === 12" class="atag">{{ t('set.defaultTag') }}</span></div><div class="setting-list-description">{{ t('set.subUpdatesDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput number"><input v-model.number="sub.updateHours" type="number" min="1" max="168" class="ltr" /></label><p v-if="subError.updateHours" class="field-error">{{ subError.updateHours }}</p></div>
-              </div></div>
-            </template>
-
-            <template v-else-if="inner.subscription === '3'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subTitle') }}</div><div class="setting-list-description">{{ t('set.subTitleDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.title" /></label><p v-if="subError.title" class="field-error">{{ subError.title }}</p></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subSupportUrl') }}</div><div class="setting-list-description">{{ t('set.subSupportUrlDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.supportUrl" class="ltr" placeholder="https://example.com" /></label><p v-if="subError.supportUrl" class="field-error">{{ subError.supportUrl }}</p></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subProfileUrl') }}</div><div class="setting-list-description">{{ t('set.subProfileUrlDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.profileUrl" class="ltr" placeholder="https://example.com" /></label><p v-if="subError.profileUrl" class="field-error">{{ subError.profileUrl }}</p></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subAnnounce') }}</div><div class="setting-list-description">{{ t('set.subAnnounceDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block area"><textarea v-model="sub.announce" rows="3"></textarea></label><p v-if="subError.announce" class="field-error">{{ subError.announce }}</p></div>
-              </div></div>
-            </template>
-
-            <template v-else-if="inner.subscription === '5'">
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subTemplate') }}</div><div class="setting-list-description">{{ t('set.subTemplateDesc') }}</div></div></div>
-                <div class="acol"></div>
-              </div></div>
-              <div class="tpl-grid">
-                <label v-for="tp in SUB_TEMPLATES" :key="tp" class="tpl-card" :class="{ on: sub.template === tp }">
-                  <input v-model="sub.template" type="radio" name="sub-template" :value="tp" class="tpl-radio" />
-                  <div class="tpl-swatch" :class="tp">
-                    <span class="tpl-sw-head"></span>
-                    <span class="tpl-sw-row"></span><span class="tpl-sw-row short"></span>
-                    <span class="tpl-sw-bar"></span>
-                  </div>
-                  <div class="tpl-meta">
-                    <div class="tpl-name">{{ t(`set.subTpl.${tp}`) }}<span v-if="tp === 'classic'" class="atag">{{ t('set.defaultTag') }}</span></div>
-                    <div class="tpl-desc">{{ t(`set.subTpl.${tp}Desc`) }}</div>
-                    <button type="button" class="abtn small" @click.prevent="previewTemplate(tp)"><AntIcon name="EyeOutlined" /><span>{{ t('set.subTplPreview') }}</span></button>
-                  </div>
-                </label>
-              </div>
-            </template>
-
-            <template v-else>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subCertPath') }}</div><div class="setting-list-description">{{ t('set.subCertPathDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.certFile" class="ltr" /></label></div>
-              </div></div>
-              <div class="setting-list-item"><div class="arow">
-                <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.subKeyPath') }}</div><div class="setting-list-description">{{ t('set.subKeyPathDesc') }}</div></div></div>
-                <div class="acol"><label class="ainput block"><input v-model="sub.keyFile" class="ltr" /></label><p v-if="subError.certFile" class="field-error">{{ subError.certFile }}</p></div>
-              </div></div>
-            </template>
+            <SubscriptionTab />
           </template>
 
           <!-- ══ Backups ══ (reached from Maintenance) -->
@@ -1059,93 +423,88 @@ const uptime = computed(() => {
   </div>
 </template>
 
-<style scoped>
+<style>
+/* Unscoped, keyed on the page's root, so its tab components are styled too. */
 /* Their header row: actions in a 10/24 column, the note in the other 14/24,
    flushed to its end. */
-.header-row { display: flex; flex-wrap: wrap; align-items: center; }
-.header-actions { flex: 0 0 41.6667%; max-width: 41.6667%; padding: 4px; }
-.header-info { flex: 0 0 58.3333%; max-width: 58.3333%; display: flex; justify-content: flex-end; }
+.settings-page .header-row { display: flex; flex-wrap: wrap; align-items: center; }
+.settings-page .header-actions { flex: 0 0 41.6667%; max-width: 41.6667%; padding: 4px; }
+.settings-page .header-info { flex: 0 0 58.3333%; max-width: 58.3333%; display: flex; justify-content: flex-end; }
 @media (max-width: 575px) {
-  .header-actions, .header-info { flex: 0 0 100%; max-width: 100%; }
-  .header-info { justify-content: flex-start; margin-top: 8px; }
+  .settings-page .header-actions, .settings-page .header-info { flex: 0 0 100%; max-width: 100%; }
+  .settings-page .header-info { justify-content: flex-start; margin-top: 8px; }
 }
-.conf-alert { margin-bottom: 10px; }
-.abtn.danger-primary { background: var(--bad-fill, var(--bad)); border-color: var(--bad-fill, var(--bad)); color: #fff; }
-.abtn.danger-primary:hover:not(:disabled) { opacity: 0.85; }
-.abtn:disabled { color: var(--faint); background: var(--surface-2); border-color: var(--line); box-shadow: none; cursor: not-allowed; }
-.abtn.text.danger-text { color: var(--bad); }
-.abtn.text.danger-text:hover { background: var(--bad-soft); color: var(--bad); }
-.abtn.addon { flex: none; background: var(--surface-2); color: var(--muted); cursor: default; }
-
-/* Their API token list. */
+.settings-page .conf-alert { margin-bottom: 10px; }
+.settings-page .abtn.danger-primary { background: var(--bad-fill, var(--bad)); border-color: var(--bad-fill, var(--bad)); color: #fff; }
+.settings-page .abtn.danger-primary:hover:not(:disabled) { opacity: 0.85; }
+.settings-page .abtn:disabled { color: var(--faint); background: var(--surface-2); border-color: var(--line); box-shadow: none; cursor: not-allowed; }
+.settings-page .abtn.text.danger-text { color: var(--bad); }
+.settings-page .abtn.text.danger-text:hover { background: var(--bad-soft); color: var(--bad); }
+.settings-page .abtn.addon { flex: none; background: var(--surface-2); color: var(--muted); cursor: default; }
 
 /* Their notification cards: a grid of small outlined Cards. */
-.notif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-.notif-card { border-width: 1px; }
-.notif-card:hover { box-shadow: none; border-color: var(--line-soft); }
-.acard-head.small { min-height: 38px; padding: 0 12px; font-size: 14px; font-weight: 600; justify-content: space-between; }
-.notif-title { display: inline-flex; align-items: center; gap: 4px; }
-.notif-extra { display: inline-flex; align-items: center; gap: 8px; }
-.notif-extra .atag { margin: 0; }
+.settings-page .notif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.settings-page .notif-card { border-width: 1px; }
+.settings-page .notif-card:hover { box-shadow: none; border-color: var(--line-soft); }
+.settings-page .acard-head.small { min-height: 38px; padding: 0 12px; font-size: 14px; font-weight: 600; justify-content: space-between; }
+.settings-page .notif-title { display: inline-flex; align-items: center; gap: 4px; }
+.settings-page .notif-extra { display: inline-flex; align-items: center; gap: 8px; }
+.settings-page .notif-extra .atag { margin: 0; }
 
-/* Their two-factor modal. */
-.adivider { margin: 24px 0; border: 0; border-top: 1px solid var(--line-soft); }
-.amodal-body p { margin: 0 0 1em; }
-
-.field-error { margin: 4px 0 0; color: var(--bad); font-size: 12px; }
+.settings-page .field-error { margin: 4px 0 0; color: var(--bad); font-size: 12px; }
 
 /* The template picker: a card per look, its swatch a small drawing of it. */
-.sub-former-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.sub-former-row .atag { white-space: nowrap; }
-@media (max-width: 600px) { .sub-former-row { flex-wrap: wrap; } }
-.sub-former-row .ainput.number { width: 96px; flex: none; }
-.sub-former-row .ainput.block { flex: 1; min-width: 0; }
-.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 10px 20px; }
-.tpl-card { position: relative; display: flex; gap: 12px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-2); cursor: pointer; transition: border-color .2s, box-shadow .2s; }
-.tpl-card:hover { border-color: var(--accent-hover); }
-.tpl-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
-.tpl-radio { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.tpl-swatch { position: relative; flex: none; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; background: #0a090a; display: flex; flex-direction: column; gap: 5px; padding: 8px; }
-.tpl-sw-head { height: 8px; width: 60%; border-radius: 2px; background: rgba(255,255,255,.35); }
-.tpl-sw-row { height: 5px; width: 80%; border-radius: 2px; background: rgba(255,255,255,.14); }
-.tpl-sw-row.short { width: 55%; }
-.tpl-sw-bar { margin-top: auto; height: 6px; width: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent) 70%, rgba(255,255,255,.12) 70%); }
-.tpl-swatch.aurora { background: radial-gradient(60px 40px at 15% 10%, #e02e3d99, transparent 70%), radial-gradient(60px 40px at 90% 40%, #3a5bff99, transparent 70%), radial-gradient(60px 40px at 40% 110%, #17b3a699, transparent 70%), #07111f; }
-.tpl-swatch.waves { background: linear-gradient(180deg, #0b1220, #12203a); }
-.tpl-swatch.waves::after { content: ''; position: absolute; left: -30%; right: -30%; bottom: -18px; height: 34px; border-radius: 45%; background: linear-gradient(90deg, #e02e3d, #2f6df6); opacity: .5; }
-.tpl-swatch.network { background-color: #050608; background-image: radial-gradient(circle at 20% 30%, #e9edf3 1px, transparent 2px), radial-gradient(circle at 70% 20%, #e9edf3 1px, transparent 2px), radial-gradient(circle at 55% 75%, #e9edf3 1px, transparent 2px), linear-gradient(35deg, transparent 49%, rgba(224,46,61,.35) 50%, transparent 51%); }
-.tpl-swatch.minimal { background: #fff; }
-.tpl-swatch.minimal .tpl-sw-head { background: #111; } .tpl-swatch.minimal .tpl-sw-row { background: #ddd; }
-.tpl-swatch.midnight { background: radial-gradient(70px 40px at 50% -10%, rgba(224,46,61,.45), transparent 70%), #000; box-shadow: inset 0 0 0 1px rgba(224,46,61,.4); }
-.tpl-swatch.ember { background: radial-gradient(80px 50px at 50% 110%, rgba(255,106,61,.7), rgba(224,46,61,.25) 50%, transparent 75%), #0f0b0a; }
-.tpl-swatch.ocean { background: linear-gradient(180deg, #06202f, #04121c); }
-.tpl-swatch.ocean::after { content: ''; position: absolute; left: -30%; right: -30%; top: -22px; height: 34px; border-radius: 42%; background: linear-gradient(90deg, #19b8e6, #0b5f8a); opacity: .5; }
-.tpl-swatch.forest { background: radial-gradient(60px 40px at 90% -10%, rgba(46,204,113,.55), transparent 70%), radial-gradient(60px 40px at 0% 110%, rgba(23,179,166,.4), transparent 70%), #08120c; }
-.tpl-swatch.sunset { background: linear-gradient(180deg, #2b1449, #6a2a5f 45%, #c8553d 80%, #ff8c42); }
-.tpl-swatch.neon { background: #050008; box-shadow: inset 0 0 0 1px #ff2bd6, inset 0 0 14px -4px #ff2bd6; }
-.tpl-swatch.neon .tpl-sw-bar { background: #00e5ff; }
-.tpl-swatch.glass { background: radial-gradient(50px 40px at 10% 10%, #8b5cf6aa, transparent 70%), radial-gradient(50px 40px at 90% 50%, #22d3eeaa, transparent 70%), radial-gradient(50px 40px at 40% 110%, #f472b6aa, transparent 70%), #dfe6f3; }
-.tpl-swatch.glass .tpl-sw-head { background: rgba(20,26,38,.7); } .tpl-swatch.glass .tpl-sw-row { background: rgba(20,26,38,.2); }
-.tpl-swatch.paper { background: #fbf8f2; box-shadow: inset 0 0 0 1px #d9d0be; }
-.tpl-swatch.paper .tpl-sw-head { background: #2b241c; } .tpl-swatch.paper .tpl-sw-row { background: #ddd3c0; } .tpl-swatch.paper .tpl-sw-bar { background: #9c2f2f; }
-.tpl-swatch.terminal { background: #020402; box-shadow: inset 0 0 0 1px #1d3d24; }
-.tpl-swatch.terminal .tpl-sw-head, .tpl-swatch.terminal .tpl-sw-bar { background: #37ff6e; } .tpl-swatch.terminal .tpl-sw-row { background: rgba(55,255,110,.35); }
-.tpl-swatch.carbon { background-color: #101113; background-image: linear-gradient(27deg, #151618 3px, transparent 3px), linear-gradient(207deg, #151618 3px, transparent 3px), linear-gradient(90deg, #131416 6px, transparent 6px); background-size: 12px 12px; }
-.tpl-swatch.carbon .tpl-sw-bar { background: #c9ced4; }
-.tpl-swatch.royal { background: radial-gradient(80px 50px at 50% -20%, rgba(212,175,55,.35), transparent 60%), #0d1330; box-shadow: inset 0 0 0 1px rgba(212,175,55,.6); }
-.tpl-swatch.royal .tpl-sw-bar { background: #d4af37; }
-.tpl-swatch.sakura { background: radial-gradient(60px 40px at 100% 0%, rgba(232,97,140,.3), transparent 60%), #fff6f8; box-shadow: inset 0 0 0 1px #f5cfd9; }
-.tpl-swatch.sakura .tpl-sw-head { background: #3a2530; } .tpl-swatch.sakura .tpl-sw-row { background: #f5cfd9; } .tpl-swatch.sakura .tpl-sw-bar { background: #e8618c; }
-.tpl-swatch.frost { background: #e9f2fb; box-shadow: inset 0 0 0 1px #cfe0f1; }
-.tpl-swatch.frost .tpl-sw-head { background: #10233a; } .tpl-swatch.frost .tpl-sw-row { background: #cfe0f1; } .tpl-swatch.frost .tpl-sw-bar { background: #1f6fe0; }
-.tpl-swatch.graphite { background: #292c30; border-radius: 12px; }
-.tpl-swatch.graphite .tpl-sw-bar { background: #3b82f6; }
-.tpl-swatch.mesh { background: radial-gradient(60px 50px at 0% 0%, #a855f7cc, transparent 70%), radial-gradient(60px 50px at 100% 30%, #ec4899cc, transparent 70%), radial-gradient(60px 50px at 50% 120%, #06b6d4cc, transparent 70%), #0b0b14; }
-.tpl-swatch.retro { background: linear-gradient(180deg, #12041f 0%, #3a0a5c 50%, #12041f 51%); }
-.tpl-swatch.retro::after { content: ''; position: absolute; left: 50%; top: 30%; width: 28px; height: 28px; transform: translateX(-50%); border-radius: 50%; background: linear-gradient(180deg, #ffd166, #ff0099); }
-.tpl-swatch.retro .tpl-sw-bar { background: #ff0099; }
-.tpl-meta { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.tpl-name { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-.tpl-desc { font-size: 12px; color: var(--faint); line-height: 1.5; }
-.tpl-meta .abtn { align-self: flex-start; margin-top: 4px; }
+.settings-page .sub-former-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.settings-page .sub-former-row .atag { white-space: nowrap; }
+@media (max-width: 600px) { .settings-page .sub-former-row { flex-wrap: wrap; } }
+.settings-page .sub-former-row .ainput.number { width: 96px; flex: none; }
+.settings-page .sub-former-row .ainput.block { flex: 1; min-width: 0; }
+.settings-page .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 10px 20px; }
+.settings-page .tpl-card { position: relative; display: flex; gap: 12px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-2); cursor: pointer; transition: border-color .2s, box-shadow .2s; }
+.settings-page .tpl-card:hover { border-color: var(--accent-hover); }
+.settings-page .tpl-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
+.settings-page .tpl-radio { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.settings-page .tpl-swatch { position: relative; flex: none; width: 96px; height: 72px; border-radius: 6px; overflow: hidden; background: #0a090a; display: flex; flex-direction: column; gap: 5px; padding: 8px; }
+.settings-page .tpl-sw-head { height: 8px; width: 60%; border-radius: 2px; background: rgba(255,255,255,.35); }
+.settings-page .tpl-sw-row { height: 5px; width: 80%; border-radius: 2px; background: rgba(255,255,255,.14); }
+.settings-page .tpl-sw-row.short { width: 55%; }
+.settings-page .tpl-sw-bar { margin-top: auto; height: 6px; width: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent) 70%, rgba(255,255,255,.12) 70%); }
+.settings-page .tpl-swatch.aurora { background: radial-gradient(60px 40px at 15% 10%, #e02e3d99, transparent 70%), radial-gradient(60px 40px at 90% 40%, #3a5bff99, transparent 70%), radial-gradient(60px 40px at 40% 110%, #17b3a699, transparent 70%), #07111f; }
+.settings-page .tpl-swatch.waves { background: linear-gradient(180deg, #0b1220, #12203a); }
+.settings-page .tpl-swatch.waves::after { content: ''; position: absolute; left: -30%; right: -30%; bottom: -18px; height: 34px; border-radius: 45%; background: linear-gradient(90deg, #e02e3d, #2f6df6); opacity: .5; }
+.settings-page .tpl-swatch.network { background-color: #050608; background-image: radial-gradient(circle at 20% 30%, #e9edf3 1px, transparent 2px), radial-gradient(circle at 70% 20%, #e9edf3 1px, transparent 2px), radial-gradient(circle at 55% 75%, #e9edf3 1px, transparent 2px), linear-gradient(35deg, transparent 49%, rgba(224,46,61,.35) 50%, transparent 51%); }
+.settings-page .tpl-swatch.minimal { background: #fff; }
+.settings-page .tpl-swatch.minimal .tpl-sw-head { background: #111; } .settings-page .tpl-swatch.minimal .tpl-sw-row { background: #ddd; }
+.settings-page .tpl-swatch.midnight { background: radial-gradient(70px 40px at 50% -10%, rgba(224,46,61,.45), transparent 70%), #000; box-shadow: inset 0 0 0 1px rgba(224,46,61,.4); }
+.settings-page .tpl-swatch.ember { background: radial-gradient(80px 50px at 50% 110%, rgba(255,106,61,.7), rgba(224,46,61,.25) 50%, transparent 75%), #0f0b0a; }
+.settings-page .tpl-swatch.ocean { background: linear-gradient(180deg, #06202f, #04121c); }
+.settings-page .tpl-swatch.ocean::after { content: ''; position: absolute; left: -30%; right: -30%; top: -22px; height: 34px; border-radius: 42%; background: linear-gradient(90deg, #19b8e6, #0b5f8a); opacity: .5; }
+.settings-page .tpl-swatch.forest { background: radial-gradient(60px 40px at 90% -10%, rgba(46,204,113,.55), transparent 70%), radial-gradient(60px 40px at 0% 110%, rgba(23,179,166,.4), transparent 70%), #08120c; }
+.settings-page .tpl-swatch.sunset { background: linear-gradient(180deg, #2b1449, #6a2a5f 45%, #c8553d 80%, #ff8c42); }
+.settings-page .tpl-swatch.neon { background: #050008; box-shadow: inset 0 0 0 1px #ff2bd6, inset 0 0 14px -4px #ff2bd6; }
+.settings-page .tpl-swatch.neon .tpl-sw-bar { background: #00e5ff; }
+.settings-page .tpl-swatch.glass { background: radial-gradient(50px 40px at 10% 10%, #8b5cf6aa, transparent 70%), radial-gradient(50px 40px at 90% 50%, #22d3eeaa, transparent 70%), radial-gradient(50px 40px at 40% 110%, #f472b6aa, transparent 70%), #dfe6f3; }
+.settings-page .tpl-swatch.glass .tpl-sw-head { background: rgba(20,26,38,.7); } .settings-page .tpl-swatch.glass .tpl-sw-row { background: rgba(20,26,38,.2); }
+.settings-page .tpl-swatch.paper { background: #fbf8f2; box-shadow: inset 0 0 0 1px #d9d0be; }
+.settings-page .tpl-swatch.paper .tpl-sw-head { background: #2b241c; } .settings-page .tpl-swatch.paper .tpl-sw-row { background: #ddd3c0; } .settings-page .tpl-swatch.paper .tpl-sw-bar { background: #9c2f2f; }
+.settings-page .tpl-swatch.terminal { background: #020402; box-shadow: inset 0 0 0 1px #1d3d24; }
+.settings-page .tpl-swatch.terminal .tpl-sw-head, .settings-page .tpl-swatch.terminal .tpl-sw-bar { background: #37ff6e; } .settings-page .tpl-swatch.terminal .tpl-sw-row { background: rgba(55,255,110,.35); }
+.settings-page .tpl-swatch.carbon { background-color: #101113; background-image: linear-gradient(27deg, #151618 3px, transparent 3px), linear-gradient(207deg, #151618 3px, transparent 3px), linear-gradient(90deg, #131416 6px, transparent 6px); background-size: 12px 12px; }
+.settings-page .tpl-swatch.carbon .tpl-sw-bar { background: #c9ced4; }
+.settings-page .tpl-swatch.royal { background: radial-gradient(80px 50px at 50% -20%, rgba(212,175,55,.35), transparent 60%), #0d1330; box-shadow: inset 0 0 0 1px rgba(212,175,55,.6); }
+.settings-page .tpl-swatch.royal .tpl-sw-bar { background: #d4af37; }
+.settings-page .tpl-swatch.sakura { background: radial-gradient(60px 40px at 100% 0%, rgba(232,97,140,.3), transparent 60%), #fff6f8; box-shadow: inset 0 0 0 1px #f5cfd9; }
+.settings-page .tpl-swatch.sakura .tpl-sw-head { background: #3a2530; } .settings-page .tpl-swatch.sakura .tpl-sw-row { background: #f5cfd9; } .settings-page .tpl-swatch.sakura .tpl-sw-bar { background: #e8618c; }
+.settings-page .tpl-swatch.frost { background: #e9f2fb; box-shadow: inset 0 0 0 1px #cfe0f1; }
+.settings-page .tpl-swatch.frost .tpl-sw-head { background: #10233a; } .settings-page .tpl-swatch.frost .tpl-sw-row { background: #cfe0f1; } .settings-page .tpl-swatch.frost .tpl-sw-bar { background: #1f6fe0; }
+.settings-page .tpl-swatch.graphite { background: #292c30; border-radius: 12px; }
+.settings-page .tpl-swatch.graphite .tpl-sw-bar { background: #3b82f6; }
+.settings-page .tpl-swatch.mesh { background: radial-gradient(60px 50px at 0% 0%, #a855f7cc, transparent 70%), radial-gradient(60px 50px at 100% 30%, #ec4899cc, transparent 70%), radial-gradient(60px 50px at 50% 120%, #06b6d4cc, transparent 70%), #0b0b14; }
+.settings-page .tpl-swatch.retro { background: linear-gradient(180deg, #12041f 0%, #3a0a5c 50%, #12041f 51%); }
+.settings-page .tpl-swatch.retro::after { content: ''; position: absolute; left: 50%; top: 30%; width: 28px; height: 28px; transform: translateX(-50%); border-radius: 50%; background: linear-gradient(180deg, #ffd166, #ff0099); }
+.settings-page .tpl-swatch.retro .tpl-sw-bar { background: #ff0099; }
+.settings-page .tpl-meta { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.settings-page .tpl-name { font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.settings-page .tpl-desc { font-size: 12px; color: var(--faint); line-height: 1.5; }
+.settings-page .tpl-meta .abtn { align-self: flex-start; margin-top: 4px; }
 </style>
