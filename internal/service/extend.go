@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // Adding time or traffic to many customers at once, or taking it back.
@@ -121,7 +122,7 @@ func (s *Clients) Extend(ctx context.Context, in ExtendInput) (*ExtendResult, er
 	if err := checkBarred(ctx); err != nil {
 		return nil, err
 	}
-	ids := dedupe(in.IDs)
+	ids := idset.Unique(in.IDs)
 	if len(ids) == 0 {
 		return nil, invalidField("ids", "select the customers first")
 	}

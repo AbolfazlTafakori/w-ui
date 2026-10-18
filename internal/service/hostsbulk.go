@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // Working on several addresses at once, and putting them in order.
@@ -30,7 +31,7 @@ const (
 
 // Bulk applies an action to several hosts and reports how many changed.
 func (s *Hosts) Bulk(ctx context.Context, action HostBulkAction, ids []uint) (int64, error) {
-	ids = dedupe(ids)
+	ids = idset.Unique(ids)
 	if len(ids) == 0 {
 		return 0, fmt.Errorf("%w: no addresses selected", ErrInvalid)
 	}
@@ -66,7 +67,7 @@ func (s *Hosts) Bulk(ctx context.Context, action HostBulkAction, ids []uint) (in
 // operator asked for. The list the page is showing is the intended answer, and
 // storing exactly that cannot be half applied.
 func (s *Hosts) Reorder(ctx context.Context, ids []uint) (int, error) {
-	ids = dedupe(ids)
+	ids = idset.Unique(ids)
 	if len(ids) == 0 {
 		return 0, fmt.Errorf("%w: no order was given", ErrInvalid)
 	}

@@ -10,7 +10,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
+	"github.com/abolfazl/w-ui/internal/membership"
 )
 
 // Selling the panel on.
@@ -147,7 +150,7 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		enabled := admin.Enabled
-		if err := createKeepingSwitch(tx, &admin, enabled); err != nil {
+		if err := database.CreateKeepingSwitch(tx, &admin, enabled); err != nil {
 			return fmt.Errorf("create operator: %w", err)
 		}
 		admin.Enabled = enabled
@@ -175,7 +178,7 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 		return nil, fmt.Errorf("service: %w", err)
 	}
 
-	admin.InterfaceIDs = dedupe(in.InterfaceIDs)
+	admin.InterfaceIDs = idset.Unique(in.InterfaceIDs)
 	s.log.Info("operator created", "username", admin.Username, "role", admin.Role)
 	return &admin, nil
 }
@@ -328,7 +331,7 @@ func refileCustomers(tx *gorm.DB, ownerID uint, from, to string) error {
 		Update("name", to).Error; err != nil {
 		return fmt.Errorf("refile the reseller's customers: %w", err)
 	}
-	return syncGroupLabel(tx, ids)
+	return membership.SyncLabel(tx, ids)
 }
 
 // Update changes an operator.
@@ -569,7 +572,7 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients *
 					Delete(&model.ClientGroup{}).Error; err != nil {
 					return fmt.Errorf("clear the operator's own group: %w", err)
 				}
-				if err := syncGroupLabel(tx, kept); err != nil {
+				if err := membership.SyncLabel(tx, kept); err != nil {
 					return fmt.Errorf("clear the operator's own group: %w", err)
 				}
 			}
@@ -724,7 +727,7 @@ func (s *Admins) checkInterfaces(ctx context.Context, adminID uint, role model.A
 	if !role.Capped() || len(ids) == 0 {
 		return nil
 	}
-	ids = dedupe(ids)
+	ids = idset.Unique(ids)
 	var found int64
 	if err := s.db.WithContext(ctx).Model(&model.Interface{}).
 		Where("id IN ?", ids).Count(&found).Error; err != nil {
@@ -757,7 +760,7 @@ func (s *Admins) setInterfaces(tx *gorm.DB, adminID uint, ids []uint) error {
 	if err := tx.Where("admin_id = ?", adminID).Delete(&model.AdminInterface{}).Error; err != nil {
 		return fmt.Errorf("clear the operator's tunnels: %w", err)
 	}
-	ids = dedupe(ids)
+	ids = idset.Unique(ids)
 	if len(ids) == 0 {
 		return nil
 	}

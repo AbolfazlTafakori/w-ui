@@ -44,3 +44,15 @@ func FieldOf(err error) string {
 	}
 	return ""
 }
+
+// Reason is an error as an operator reads it beside a name in a list: with
+// the package prefixes taken off, so it does not read like a stack trace.
+func Reason(err error) string {
+	msg := err.Error()
+	for _, prefix := range []string{"service: ", "ipam: ", "backend: "} {
+		if len(msg) > len(prefix) && msg[:len(prefix)] == prefix {
+			msg = msg[len(prefix):]
+		}
+	}
+	return msg
+}

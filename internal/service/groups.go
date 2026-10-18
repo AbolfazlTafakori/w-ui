@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/membership"
 	"github.com/abolfazl/w-ui/internal/scope"
 )
 
@@ -69,24 +70,7 @@ func setGroups(ctx context.Context, db *gorm.DB, clientID uint, groups []string)
 			return fmt.Errorf("service: set groups: %w", err)
 		}
 	}
-	return syncGroupLabel(db, []uint{clientID})
-}
-
-// syncGroupLabel keeps the one-label column on each customer equal to the
-// first of their groups, for anything that still reads it.
-//
-// Vouched for (scope.Vouch): every caller's ids are already the operator's
-// -- a customer read through the narrowed Get or Create, members read
-// through callerMembers, or the owner acting on a reseller.
-func syncGroupLabel(db *gorm.DB, ids []uint) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	ctx := db.Statement.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return db.WithContext(scope.Vouch(ctx)).Exec(`UPDATE clients SET "group" = COALESCE((SELECT MIN(name) FROM client_groups g WHERE g.client_id = clients.id), '') WHERE id IN ?`, ids).Error
+	return membership.SyncLabel(db, []uint{clientID})
 }
 
 // fillGroups reads each customer's groups, in one query for the lot. The
@@ -520,7 +504,7 @@ func (s *Clients) AssignGroup(ctx context.Context, name string, ids []uint, remo
 				n += res.RowsAffected
 			}
 		}
-		return syncGroupLabel(tx, ids)
+		return membership.SyncLabel(tx, ids)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("service: assign group: %w", err)
@@ -747,7 +731,7 @@ func (s *Clients) DeleteGroup(ctx context.Context, name string) (int64, error) {
 		}
 		ungrouped = res.RowsAffected
 		if len(ids) > 0 {
-			if err := syncGroupLabel(tx, ids); err != nil {
+			if err := membership.SyncLabel(tx, ids); err != nil {
 				return err
 			}
 		}

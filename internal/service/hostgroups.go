@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"github.com/abolfazl/w-ui/internal/listfield"
 	"math/big"
 	"net"
 	"net/netip"
@@ -17,6 +16,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
+	"github.com/abolfazl/w-ui/internal/listfield"
 )
 
 // Host groups: the hosts page as the classic panel has it.
@@ -195,7 +196,7 @@ func (s *Hosts) validateGroup(ctx context.Context, in *HostGroup) error {
 	if err := s.db.WithContext(ctx).Model(&model.Interface{}).Where("id IN ?", in.InterfaceIDs).Count(&n).Error; err != nil {
 		return fmt.Errorf("service: check interfaces: %w", err)
 	}
-	if int(n) != len(dedupe(in.InterfaceIDs)) {
+	if int(n) != len(idset.Unique(in.InterfaceIDs)) {
 		return invalidField("interfaceIds", "one of those interfaces does not exist")
 	}
 	if in.Port < 0 || in.Port > 65535 {
@@ -263,7 +264,7 @@ func rowsFor(groupID string, in HostGroup) []model.Host {
 	var rows []model.Host
 	for _, hs := range hosts {
 		addr, port := parseHostAndPort(hs, in.Port)
-		for _, ifaceID := range dedupe(in.InterfaceIDs) {
+		for _, ifaceID := range idset.Unique(in.InterfaceIDs) {
 			rows = append(rows, model.Host{
 				GroupID: groupID, InterfaceID: ifaceID, Name: in.Remark, Description: in.Description,
 				Enabled: in.Enabled, Address: addr, Port: port, Priority: in.SortOrder,

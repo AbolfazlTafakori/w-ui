@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // Changing many resellers at once.
@@ -72,7 +74,7 @@ var errUnchanged = errors.New("nothing to change")
 
 // Bulk applies one action to a selection of operators.
 func (s *Admins) Bulk(ctx context.Context, in AdminBulkInput, clients *Clients) (*AdminBulkResult, error) {
-	ids := dedupe(in.IDs)
+	ids := idset.Unique(in.IDs)
 	if len(ids) == 0 {
 		return nil, invalidField("ids", "no resellers selected")
 	}
@@ -101,7 +103,7 @@ func (s *Admins) Bulk(ctx context.Context, in AdminBulkInput, clients *Clients) 
 		case errors.Is(err, errUnchanged):
 			res.Unchanged++
 		default:
-			res.Failures[a.Username] = humanReason(err)
+			res.Failures[a.Username] = fault.Reason(err)
 		}
 	}
 	// Selected ids that no longer exist are not a failure of any reseller,
@@ -132,7 +134,7 @@ func (in AdminBulkInput) validate() error {
 			return invalidField("clientLimit", "give the customer limit, or 0 for no limit")
 		}
 	case AdminBulkAddServers, AdminBulkRemoveServers:
-		if len(dedupe(in.InterfaceIDs)) == 0 {
+		if len(idset.Unique(in.InterfaceIDs)) == 0 {
 			return invalidField("interfaceIds", "choose at least one server")
 		}
 	case AdminBulkDelete:
@@ -225,8 +227,8 @@ func (s *Admins) bulkOne(ctx context.Context, a *model.Admin, in AdminBulkInput,
 		if err := capped(); err != nil {
 			return err
 		}
-		next := combine(a.InterfaceIDs, dedupe(in.InterfaceIDs), in.Action == AdminBulkAddServers)
-		if sameSet(a.InterfaceIDs, next) {
+		next := idset.Combine(a.InterfaceIDs, idset.Unique(in.InterfaceIDs), in.Action == AdminBulkAddServers)
+		if idset.Same(a.InterfaceIDs, next) {
 			return errUnchanged
 		}
 		upd.InterfaceIDs = next

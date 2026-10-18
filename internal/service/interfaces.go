@@ -23,6 +23,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/ipam"
@@ -259,7 +260,7 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	}
 
 	enabled := iface.Enabled
-	if err := createKeepingSwitch(s.db.WithContext(ctx), &iface, enabled); err != nil {
+	if err := database.CreateKeepingSwitch(s.db.WithContext(ctx), &iface, enabled); err != nil {
 		return nil, fmt.Errorf("service: create interface: %w", err)
 	}
 	iface.Enabled = enabled

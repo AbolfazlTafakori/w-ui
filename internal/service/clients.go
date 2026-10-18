@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,8 +16,10 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/optional"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -1352,7 +1353,7 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 // customer, not to a server, which is the whole reason one purchase can span
 // several.
 func (s *Clients) setInterfaces(ctx context.Context, client *model.Client, want []uint) error {
-	want = dedupe(want)
+	want = idset.Unique(want)
 	if len(want) == 0 {
 		return invalidField("interfaceId", "choose at least one server for this customer")
 	}
@@ -1432,20 +1433,6 @@ func (s *Clients) setInterfaces(ctx context.Context, client *model.Client, want 
 		}
 	}
 	return nil
-}
-
-// dedupe keeps the first occurrence of each id.
-func dedupe(ids []uint) []uint {
-	out := make([]uint, 0, len(ids))
-	seen := map[uint]bool{}
-	for _, id := range ids {
-		if id == 0 || seen[id] {
-			continue
-		}
-		seen[id] = true
-		out = append(out, id)
-	}
-	return out
 }
 
 func (s *Clients) revives(client *model.Client, in UpdateInput) bool {
@@ -2276,37 +2263,11 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 
 // OptionalTime is a time that can be absent, null or set, for the fields an
 // edit may leave alone, clear or change.
-type OptionalTime struct {
-	Set   bool
-	Value *time.Time
-}
-
-// UnmarshalJSON records that the field was present; null leaves Value nil.
-func (o *OptionalTime) UnmarshalJSON(b []byte) error {
-	o.Set = true
-	if string(b) == "null" {
-		o.Value = nil
-		return nil
-	}
-	var t time.Time
-	if err := json.Unmarshal(b, &t); err != nil {
-		return err
-	}
-	o.Value = &t
-	return nil
-}
-
-// MarshalJSON writes the value, or null.
-func (o OptionalTime) MarshalJSON() ([]byte, error) {
-	if !o.Set || o.Value == nil {
-		return []byte("null"), nil
-	}
-	return json.Marshal(o.Value)
-}
+type OptionalTime = optional.Time
 
 // At is the OptionalTime for a given time; Clear is one that removes the date.
-func At(t time.Time) OptionalTime { return OptionalTime{Set: true, Value: &t} }
-func ClearTime() OptionalTime     { return OptionalTime{Set: true} }
+func At(t time.Time) OptionalTime { return optional.At(t) }
+func ClearTime() OptionalTime     { return optional.Clear() }
 
 // seatNames names the files of a plan for n users: a plan for one keeps
 // the one name a single file has always had, a plan for more numbers them,

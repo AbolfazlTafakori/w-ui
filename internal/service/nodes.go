@@ -16,6 +16,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
@@ -134,7 +135,7 @@ func (s *Nodes) Create(ctx context.Context, in NodeInput) (*model.Node, error) {
 		OwnerID:             deref(in.OwnerID),
 	}
 	enabled := node.Enabled
-	if err := createKeepingSwitch(s.db.WithContext(ctx), &node, enabled); err != nil {
+	if err := database.CreateKeepingSwitch(s.db.WithContext(ctx), &node, enabled); err != nil {
 		return nil, fmt.Errorf("service: create node: %w", err)
 	}
 	node.Enabled = enabled

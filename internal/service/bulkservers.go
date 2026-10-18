@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // Putting a lot of customers onto a server, or taking them off it, at once.
@@ -50,7 +52,7 @@ func (s *Clients) DetachServers(ctx context.Context, ids, interfaceIDs []uint) (
 }
 
 func (s *Clients) moveServers(ctx context.Context, ids, interfaceIDs []uint, add bool) (*ServerBulkResult, error) {
-	ids, interfaceIDs = dedupe(ids), dedupe(interfaceIDs)
+	ids, interfaceIDs = idset.Unique(ids), idset.Unique(interfaceIDs)
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("%w: no customers selected", ErrInvalid)
 	}
@@ -83,9 +85,9 @@ func (s *Clients) moveServers(ctx context.Context, ids, interfaceIDs []uint, add
 	for i := range clients {
 		c := clients[i]
 		before := clientInterfaces(c.Accounts)
-		want := combine(before, interfaceIDs, add)
+		want := idset.Combine(before, interfaceIDs, add)
 
-		if sameSet(before, want) {
+		if idset.Same(before, want) {
 			out.Unchanged++
 			continue
 		}
@@ -101,7 +103,7 @@ func (s *Clients) moveServers(ctx context.Context, ids, interfaceIDs []uint, add
 			// One customer's pool being full must not stop the rest being
 			// moved; an operator doing this to three hundred people wants the
 			// two hundred and ninety-nine.
-			out.Failures[c.Name] = humanReason(err)
+			out.Failures[c.Name] = fault.Reason(err)
 			continue
 		}
 		out.Changed++
@@ -114,67 +116,4 @@ func (s *Clients) moveServers(ctx context.Context, ids, interfaceIDs []uint, add
 		"add", add, "servers", len(interfaceIDs),
 		"changed", out.Changed, "unchanged", out.Unchanged, "failed", len(out.Failures))
 	return out, nil
-}
-
-// combine works out the list a customer should end up with.
-func combine(have, change []uint, add bool) []uint {
-	in := map[uint]bool{}
-	for _, id := range have {
-		in[id] = true
-	}
-	for _, id := range change {
-		if add {
-			in[id] = true
-		} else {
-			delete(in, id)
-		}
-	}
-
-	out := make([]uint, 0, len(in))
-	// Built from the two inputs rather than by ranging the map, so the result
-	// is in a stable order and two identical requests produce identical rows.
-	for _, id := range have {
-		if in[id] {
-			out = append(out, id)
-			in[id] = false
-		}
-	}
-	for _, id := range change {
-		if in[id] {
-			out = append(out, id)
-			in[id] = false
-		}
-	}
-	return out
-}
-
-func sameSet(a, b []uint) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	seen := map[uint]int{}
-	for _, id := range a {
-		seen[id]++
-	}
-	for _, id := range b {
-		seen[id]--
-	}
-	for _, n := range seen {
-		if n != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// humanReason strips the package prefixes off an error so it can be shown
-// beside a customer's name without reading like a stack trace.
-func humanReason(err error) string {
-	msg := err.Error()
-	for _, prefix := range []string{"service: ", "ipam: ", "backend: "} {
-		if len(msg) > len(prefix) && msg[:len(prefix)] == prefix {
-			msg = msg[len(prefix):]
-		}
-	}
-	return msg
 }

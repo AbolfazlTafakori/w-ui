@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // One purchase, several servers. The interfaces a caller asked for are taken in
@@ -91,14 +92,14 @@ func TestDeviceNamesIsCaseInsensitive(t *testing.T) {
 }
 
 func TestDedupeKeepsFirstAndDropsZero(t *testing.T) {
-	got := dedupe([]uint{3, 0, 1, 3, 1, 0, 7})
+	got := idset.Unique([]uint{3, 0, 1, 3, 1, 0, 7})
 	want := []uint{3, 1, 7}
 	if len(got) != len(want) {
-		t.Fatalf("dedupe() = %v, want %v", got, want)
+		t.Fatalf("idset.Unique() = %v, want %v", got, want)
 	}
 	for i := range got {
 		if got[i] != want[i] {
-			t.Fatalf("dedupe() = %v, want %v", got, want)
+			t.Fatalf("idset.Unique() = %v, want %v", got, want)
 		}
 	}
 }
