@@ -4,7 +4,7 @@ description: "One command installs W-UI on Ubuntu, Debian, AlmaLinux, Rocky or F
 
 # Install
 
-One command, as root, on a fresh server:
+Run one command, as root, on a fresh server:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/install.sh)
@@ -14,16 +14,16 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 
 | | |
 |---|---|
-| OS | Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, AlmaLinux 9, Rocky 9, Fedora 41 — every one is installed clean in CI on each release |
+| OS | Ubuntu 22.04, 24.04 or 26.04; Debian 12 or 13; AlmaLinux 9; Rocky 9; Fedora 41. Each is installed clean in CI for every release. |
 | Architecture | x86-64 or arm64 |
-| Kernel | one with `nft_quota` — stock Ubuntu, Debian and most VPS kernels have it; the installer checks and says so |
-| Ports | the panel port (TCP), one UDP port per WireGuard interface, TCP 443 if you use OpenVPN, and port 80 reachable for a Let's Encrypt certificate |
+| Kernel | One with `nft_quota`. Stock Ubuntu, Debian and most VPS kernels have it; the installer checks and tells you. |
+| Ports | The panel port (TCP), one UDP port per WireGuard interface, TCP 443 if you use OpenVPN, and port 80 reachable for a Let's Encrypt certificate |
 
-It installs `nftables`, `wireguard-tools`, AmneziaWG, OpenVPN and `easy-rsa`, strongSwan and `xl2tpd` for L2TP/IPsec and IKEv2, `pppd` for PPTP, `ocserv` for OpenConnect, xray and sing-box for the proxy outbounds, and `qrencode` — each protocol left off until a tunnel uses it — enables IPv4/IPv6 forwarding, creates an unprivileged `wui` user, and registers a hardened systemd unit.
+The installer brings everything the protocols need: `nftables` and `wireguard-tools`, AmneziaWG, OpenVPN with `easy-rsa`, strongSwan and `xl2tpd` for L2TP/IPsec and IKEv2, `pppd` for PPTP, `ocserv` for OpenConnect, xray and sing-box for the proxy outbounds, and `qrencode`. Each protocol stays off until a tunnel uses it. The installer also turns on IPv4 and IPv6 forwarding, creates an unprivileged `wui` user, and registers a hardened systemd unit.
 
 ## The questions
 
-The first one is how to install:
+The first question is how to install:
 
 ```
 1) Manual     — you choose the port, the URL path, the administrator, the database,
@@ -32,25 +32,27 @@ The first one is how to install:
                 chosen and set up for you, and shown at the end   ← default
 ```
 
+`--auto` chooses the automatic install without asking, and `--manual` the manual one.
+
 ### Automatic
 
-Three questions, then it installs everything on its own:
+It asks three questions, then installs everything on its own:
 
-1. **The database** — SQLite or PostgreSQL, the same choice as below.
-2. **A domain**, if you have one whose DNS points at this server — it gets a Let's Encrypt certificate. The installer checks the record right away and says so if it does not point here yet; leave it blank if you have no domain.
-3. **Without a domain: a certificate for this server's IP address?** — yes by default (Let's Encrypt, six days, renews itself).
+1. **The database:** SQLite or PostgreSQL, the same choice as in the manual install below.
+2. **A domain,** if you have one whose DNS points at this server. It gets a Let's Encrypt certificate. The installer checks the record at once and tells you if it does not point here yet. Leave it blank if you have no domain.
+3. **Without a domain, a certificate for this server's IP address?** Yes by default: Let's Encrypt, valid for six days, renewed automatically.
 
-Everything else is chosen the way pressing enter through the manual questions would choose it — a random free port, a random URL path, a generated administrator and password, a free subscription port, and every protocol — and printed at the end: the panel's address, the username, the password, the ports and the path. Nothing after the three questions asks anything. A certificate that cannot be issued is skipped rather than asked about — port 80 already served by another project on the server is left alone — and the panel comes up on plain HTTP until you get one from the menu (`w-ui` → 20).
+Everything else is chosen the way pressing Enter through the manual questions would choose it: a random free port, a random URL path, a generated administrator and password, a free subscription port, and every protocol. At the end the installer prints the panel's address, the username, the password, the ports and the path.
 
-`--auto` picks this without the first question; `--manual` picks the other.
+Nothing after the three questions asks anything. If a certificate cannot be issued, the installer skips it rather than asking. Port 80 served by another project on the server, for example, is left alone. The panel then comes up on plain HTTP until you get a certificate from the menu (`w-ui` → 20).
 
 ### Manual
 
-Every choice, in this order, then it works unattended:
+It asks for every choice, in this order, then runs unattended:
 
-1. **The panel port** — a random free one unless you name it. It refuses a port something else already listens on.
-2. **The URL path** — a random 18-character prefix. Everything outside it answers 404, the sign-in page included.
-3. **The administrator** — name and password both generated unless you set them.
+1. **The panel port.** A random free one unless you name it. A port something else already listens on is refused.
+2. **The URL path.** A random 18-character prefix. Everything outside it answers 404, the sign-in page included.
+3. **The administrator.** The name and the password are both generated unless you set them.
 4. **The database:**
 
    ```
@@ -58,7 +60,7 @@ Every choice, in this order, then it works unattended:
    2) PostgreSQL  — for a large number of customers; installed and configured here
    ```
 
-   Either way a backup restores into the other, so this is not a decision you are stuck with. See [Backup and restore](/operations/backup-restore).
+   A backup from either restores into the other, so you are not locked into this choice. See [Backup and restore](/operations/backup-restore).
 
 5. **How the panel is reached:**
 
@@ -69,13 +71,13 @@ Every choice, in this order, then it works unattended:
    4) Skip SSL (advanced — behind reverse proxy / SSH tunnel only)
    ```
 
-   Whatever you choose, the panel answers on the one port — by the address and by the domain alike. See [Certificates](/guide/certificates).
+   Whichever you choose, the panel answers on one port, by the address and by the domain alike. See [Certificates](/guide/certificates).
 
-6. **The protocols** — one question, *Install every protocol?*, yes by default. Answer no and each is asked on its own: OpenVPN, AmneziaWG, L2TP/IPsec, IKEv2, PPTP, OpenConnect, and xray with sing-box. One left out is not lost: the panel installs it when the first tunnel of its kind is made.
+6. **The protocols.** One question, *Install every protocol?*, yes by default. If you answer no, each is asked on its own: OpenVPN, AmneziaWG, L2TP/IPsec, IKEv2, PPTP, OpenConnect, and xray with sing-box. A protocol left out is not lost: the panel installs it when you make the first tunnel of that kind.
 
-Not asked: the **subscription port**. The installer picks a free random one beside the panel's, turns the subscription service on, and gives it the panel's certificate, so a customer's link works from the first minute. `--sub-port N` names one instead.
+The **subscription port** is not asked. The installer picks a free random one beside the panel's port, turns the subscription service on and gives it the panel's certificate, so a customer's link works from the first minute. `--sub-port N` names one instead.
 
-Press enter through all of it and nothing about the result is guessable: random port, random path, random administrator, generated password, a certificate for the server's own address.
+If you press Enter through every question, nothing about the result can be guessed: a random port, a random path, a random administrator, a generated password, and a certificate for the server's own address.
 
 ## Unattended installs
 
@@ -89,13 +91,13 @@ Every answer is also a flag, and `--yes` skips the questions:
 | `--path SEG` / `--no-path` | The URL prefix, or none |
 | `--username NAME` / `--password PASS` | The administrator |
 | `--domain NAME` | Let's Encrypt for this domain |
-| `--ip-cert [ADDR]` | Six-day Let's Encrypt certificate for the server's address (auto-detected unless given) |
+| `--ip-cert [ADDR]` | A six-day Let's Encrypt certificate for the server's address, found automatically unless given |
 | `--tls-cert PATH` / `--tls-key PATH` | A certificate you already have |
-| `--no-tls` | Plain HTTP — only behind a proxy or an SSH tunnel |
+| `--no-tls` | Plain HTTP; only behind a proxy or an SSH tunnel |
 | `--local-only` | Bind to 127.0.0.1 |
 | `--no-amnezia` / `--no-openvpn` / `--no-l2tp` / `--no-ikev2` / `--no-pptp` / `--no-openconnect` / `--no-proxy-cores` | Skip that protocol's packages; the panel installs them with the first tunnel of that kind |
 | `--local PATH` | Install a binary you already built |
-| `--from-source` | Build the latest commit (installs Go if needed) |
+| `--from-source` | Build the latest commit, installing Go if needed |
 | `--auto` / `--manual` | The automatic install (three questions) or the manual one (every question), without being asked which |
 | `-y`, `--yes` | Ask nothing |
 
@@ -108,8 +110,8 @@ WUI_SSL_MODE=ip bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafako
 
 ## Behind nginx or another proxy
 
-Choose option 4 and answer **yes** to binding to 127.0.0.1. Then point the proxy at `http://127.0.0.1:PORT/` and terminate TLS there. The panel sets `X-Forwarded-*` aware headers when `WUI_TRUSTED_PROXIES` names the proxy (Settings → Security).
+In the manual install, choose option 4 at the certificate question and answer **yes** to binding to 127.0.0.1. Point the proxy at `http://127.0.0.1:PORT/` and terminate TLS there. Then put the proxy's address under Settings → General → **Trusted proxy CIDRs**, so the panel reads customers' addresses from `X-Forwarded-For`.
 
-## Re-running the installer
+## Running the installer again
 
-Running it again on a server that already has the panel is an **upgrade**: it keeps the port, the path, the administrator and the certificate, replaces the binary, and restarts the service. Customers on WireGuard are not disconnected — the tunnels live in the kernel, not in the panel process.
+On a server that already has the panel, running the installer again is an **upgrade**. It keeps the port, the path, the administrator and the certificate, replaces the binary, and restarts the service. Customers on WireGuard stay connected: the tunnels live in the kernel, not in the panel's process.

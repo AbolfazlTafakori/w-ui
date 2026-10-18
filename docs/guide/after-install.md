@@ -23,19 +23,19 @@ The installer ends with everything you need on one screen. Copy it somewhere saf
   Install result written to /etc/wui/install-result.env (mode 600).
 ```
 
-## Where each line comes from
+## What each line is
 
 | Line | What it is | Where to change it later |
 |------|-----------|--------------------------|
-| Username / Password | the administrator account | `w-ui` → 7, or Settings → Authentication |
-| Port | the one port the panel answers on, by address and by domain | `w-ui` → 10 |
-| WebBasePath | the secret path; nothing outside it answers | `w-ui` → 8 |
-| Access URL | paste this into a browser | — |
-| API Token | a bearer token minted for automation, shown once | Settings → Authentication → API Token, or `wui token issue` |
+| Username / Password | The administrator account | `w-ui` → 7, or Settings → Authentication |
+| Port | The one port the panel answers on, by address and by domain | `w-ui` → 10 |
+| WebBasePath | The secret path; nothing outside it answers | `w-ui` → 8 |
+| Access URL | The address to open in a browser | |
+| API Token | A bearer token for automation, shown once | Settings → Authentication → API Token, or `wui token issue` |
 
 ## `/etc/wui/install-result.env`
 
-The same facts, machine-readable, root-only (mode 600), for a cloud-init script or a login banner to pick up:
+The same values in a form a script can read, readable by root only (mode 600). A cloud-init script or a login banner can pick them up from here:
 
 ```bash
 WUI_USERNAME=kQz8mR2pLw
@@ -47,15 +47,15 @@ WUI_API_TOKEN=wui_Qm3…
 WUI_DB_TYPE=sqlite
 ```
 
-Delete it once you have the values somewhere safer; nothing reads it after the install.
+Delete the file once the values are somewhere safer. Nothing reads it after the install.
 
-An update — running the installer again, `w-ui update`, or the panel's own **Update** — leaves the file as it is, and mints no new API token. Only the install writes it, and only the install issues the `installer` token in it.
+An update leaves the file as it is and issues no new API token, whether you update by running the installer again, with `w-ui update`, or with the panel's own **Update** button. Only the install writes this file, and only the install issues the `installer` token in it.
 
 ## What else the installer did
 
-- **fail2ban** was installed and given a jail that watches the panel's sign-in log (`w-ui` → 22 to manage it; `WUI_ENABLE_FAIL2BAN=false` to skip).
-- **A certificate** was issued and its renewal scheduled — acme.sh's cron entry plus a systemd timer every six hours. The panel picks a renewed certificate up by itself; nothing restarts.
-- **The `w-ui` command** was installed. It prints its subcommands at the end:
+- **fail2ban** is installed, with a jail that watches the panel's sign-in log. Manage it from `w-ui` → 22; set `WUI_ENABLE_FAIL2BAN=false` at install time to skip it.
+- **A certificate** is issued and its renewal scheduled, by acme.sh's cron entry and by a systemd timer that runs every six hours. The panel picks up a renewed certificate on its own, and nothing restarts.
+- **The `w-ui` command** is installed. The installer ends by printing its main subcommands:
 
 ```
 ┌───────────────────────────────────────────────────────┐
@@ -78,19 +78,21 @@ An update — running the installer again, `w-ui update`, or the panel's own **U
 └───────────────────────────────────────────────────────┘
 ```
 
+The full list, with `restart-tunnels`, `backup`, `postgres` and the rest, is in the [w-ui command reference](/reference/w-ui).
+
 ## Lost the password?
 
+Open the menu and choose 7, *Reset username and password*:
+
 ```bash
-w-ui            # → 7. Reset Username & Password
+w-ui
 ```
 
-or directly:
+Or reset it directly. The command prints a new generated password once:
 
 ```bash
 wui admin reset --username admin
 ```
-
-which prints a new generated password once.
 
 ## Next
 

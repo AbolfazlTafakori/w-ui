@@ -74,3 +74,11 @@ html[lang='fa'] body {
   .VPHero .name, .VPHero .text { font-size: 30px; line-height: 1.2; }
   .VPHero .tagline { font-size: 16px; }
 }
+
+/* A numbered list on the Persian pages counts in Persian digits. The pages
+   write their lists as ordinary Markdown (1. 2. 3.); a list typed with
+   Persian digits is not a list to Markdown at all, and its lines run
+   together into one paragraph. */
+[dir="rtl"] .vp-doc ol {
+  list-style-type: persian;
+}
