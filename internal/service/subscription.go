@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"gorm.io/gorm"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
 
@@ -67,12 +67,12 @@ const DefaultSubPath = "/subscribe/"
 type Subscriptions struct {
 	db    *gorm.DB
 	pool  *backend.Pool
-	hosts *Hosts
+	hosts *endpoints.Hosts
 	log   *slog.Logger
 }
 
 func NewSubscriptions(
-	db *gorm.DB, pool *backend.Pool, hosts *Hosts, log *slog.Logger,
+	db *gorm.DB, pool *backend.Pool, hosts *endpoints.Hosts, log *slog.Logger,
 ) *Subscriptions {
 	return &Subscriptions{db: db, pool: pool, hosts: hosts, log: log}
 }
@@ -545,7 +545,7 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 	return &Bundle{
 		Body:        body,
 		ContentType: ctype,
-		Filename:    safeFilename(c.Name) + configExt(format),
+		Filename:    endpoints.SafeFilename(c.Name) + configExt(format),
 		UserInfo:    userInfo(c),
 		Title:       cfg.Title,
 		UpdateHours: cfg.UpdateHours,
@@ -680,7 +680,7 @@ func (s *Subscriptions) renderDevicesFor(
 				continue
 			}
 			out = append(out, RenderedDevice{Account: acc, Profile: backend.ClientProfile{
-				Filename: clientFilename(c.Name, acc.DeviceName, safeFilename(iface.Name)+".txt", single),
+				Filename: clientFilename(c.Name, acc.DeviceName, endpoints.SafeFilename(iface.Name)+".txt", single),
 				MIMEType: "text/plain",
 				Body:     []byte(acc.XUILink),
 			}})
@@ -692,8 +692,8 @@ func (s *Subscriptions) renderDevicesFor(
 				"client", c.Name, "account", acc.ID, "error", err)
 			continue
 		}
-		for _, v := range variantsFor(&iface, format) {
-			at := withEndpoint(iface, v)
+		for _, v := range endpoints.VariantsFor(&iface, format) {
+			at := endpoints.WithEndpoint(iface, v)
 			if title != "" {
 				at.ListedAs = title + " · " + iface.Name
 			}
@@ -703,7 +703,7 @@ func (s *Subscriptions) renderDevicesFor(
 					"client", c.Name, "account", acc.ID, "error", err)
 				continue
 			}
-			profile.Filename = variantFilename(clientFilename(c.Name, acc.DeviceName, profile.Filename, single), v)
+			profile.Filename = endpoints.VariantFilename(clientFilename(c.Name, acc.DeviceName, profile.Filename, single), v)
 			rd := RenderedDevice{Account: acc, Profile: profile, Host: v.Host}
 			if iface.Protocol.ByAgent() {
 				rd.Withheld = []byte(withheldText(&acc, &at))
@@ -1235,31 +1235,6 @@ func userInfo(c *model.Client) string {
 		up, down, c.QuotaBytes, expire)
 }
 
-// safeFilename keeps a customer's name out of the response headers as anything
-// but letters and digits -- in any script, so a customer named in Persian
-// gets a file named in Persian; the header carries it encoded. A name with a
-// quote, a slash or a newline in it would otherwise let the customer write
-// their own headers or path.
-func safeFilename(name string) string {
-	var b strings.Builder
-	for _, r := range name {
-		switch {
-		case unicode.IsLetter(r), unicode.IsDigit(r), r == '-', r == '_':
-			b.WriteRune(r)
-		case r == ' ':
-			b.WriteByte('-')
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if out == "" {
-		return "config"
-	}
-	if rs := []rune(out); len(rs) > 48 {
-		out = string(rs[:48])
-	}
-	return out
-}
-
 func newSubToken() (string, error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
@@ -1319,9 +1294,9 @@ func clientFilename(client, device, base string, single bool) string {
 	if i := strings.LastIndex(base, "."); i > 0 {
 		ext = base[i:]
 	}
-	name := safeFilename(client)
+	name := endpoints.SafeFilename(client)
 	if !single {
-		name += "-" + safeFilename(device)
+		name += "-" + endpoints.SafeFilename(device)
 	}
 	if rs := []rune(name); ext == ".conf" && len(rs) > 15 {
 		name = strings.Trim(string(rs[:15]), "-_")

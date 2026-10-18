@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/ipam"
 )
@@ -145,16 +146,16 @@ func TestInterfaceInputErrors(t *testing.T) {
 func TestHostInputErrors(t *testing.T) {
 	ctx := context.Background()
 	db, _ := seeded(t)
-	hosts := NewHosts(db, quietLog())
+	hosts := endpoints.NewHosts(db, quietLog())
 	cases := []struct {
 		name string
-		in   HostInput
+		in   endpoints.HostInput
 		want wantErr
 	}{
-		{"no interface", HostInput{Name: "a", Address: "1.2.3.4"}, wantErr{"interfaceId", "a host has to belong to an interface"}},
-		{"no name", HostInput{InterfaceID: 1, Address: "1.2.3.4"}, wantErr{"name", "give the host a name so the list can be read later"}},
-		{"no address", HostInput{InterfaceID: 1, Name: "a"}, wantErr{"address", "a host needs the address customers will dial"}},
-		{"bad port", HostInput{InterfaceID: 1, Name: "a", Address: "1.2.3.4", Port: 99999}, wantErr{"port", "99999 is not a port number"}},
+		{"no interface", endpoints.HostInput{Name: "a", Address: "1.2.3.4"}, wantErr{"interfaceId", "a host has to belong to an interface"}},
+		{"no name", endpoints.HostInput{InterfaceID: 1, Address: "1.2.3.4"}, wantErr{"name", "give the host a name so the list can be read later"}},
+		{"no address", endpoints.HostInput{InterfaceID: 1, Name: "a"}, wantErr{"address", "a host needs the address customers will dial"}},
+		{"bad port", endpoints.HostInput{InterfaceID: 1, Name: "a", Address: "1.2.3.4", Port: 99999}, wantErr{"port", "99999 is not a port number"}},
 	}
 	for _, c := range cases {
 		_, err := hosts.Create(ctx, c.in)

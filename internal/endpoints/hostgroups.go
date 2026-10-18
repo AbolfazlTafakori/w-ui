@@ -1,4 +1,4 @@
-package service
+package endpoints
 
 import (
 	"context"
@@ -12,10 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/listfield"
 )
@@ -180,27 +182,27 @@ func containsStr(xs []string, v string) bool {
 func (s *Hosts) validateGroup(ctx context.Context, in *HostGroup) error {
 	in.Remark = strings.TrimSpace(in.Remark)
 	if in.Remark == "" {
-		return invalidField("remark", "give the host a name; it is what the config is called")
+		return fault.Field("remark", "give the host a name; it is what the config is called")
 	}
 	if len(in.Remark) > 256 {
-		return invalidField("remark", "the name is longer than 256 characters")
+		return fault.Field("remark", "the name is longer than 256 characters")
 	}
 	in.Description = strings.TrimSpace(in.Description)
 	if len(in.Description) > 64 {
-		return invalidField("description", "the description is longer than 64 characters")
+		return fault.Field("description", "the description is longer than 64 characters")
 	}
 	if len(in.InterfaceIDs) == 0 {
-		return invalidField("interfaceIds", "choose at least one interface")
+		return fault.Field("interfaceIds", "choose at least one interface")
 	}
 	var n int64
 	if err := s.db.WithContext(ctx).Model(&model.Interface{}).Where("id IN ?", in.InterfaceIDs).Count(&n).Error; err != nil {
 		return fmt.Errorf("service: check interfaces: %w", err)
 	}
 	if int(n) != len(idset.Unique(in.InterfaceIDs)) {
-		return invalidField("interfaceIds", "one of those interfaces does not exist")
+		return fault.Field("interfaceIds", "one of those interfaces does not exist")
 	}
 	if in.Port < 0 || in.Port > 65535 {
-		return invalidField("port", "port %d is out of range", in.Port)
+		return fault.Field("port", "port %d is out of range", in.Port)
 	}
 	var hosts []string
 	for _, h := range in.Hosts {
@@ -210,11 +212,11 @@ func (s *Hosts) validateGroup(ctx context.Context, in *HostGroup) error {
 		}
 		addr, _ := parseHostAndPort(h, 0)
 		if addr == "" {
-			return invalidField("hosts", "%q is not an address", h)
+			return fault.Field("hosts", "%q is not an address", h)
 		}
 		if _, err := netip.ParseAddr(addr); err != nil {
 			if strings.ContainsAny(addr, " /\\?#") {
-				return invalidField("hosts", "%q is not a host name or address", addr)
+				return fault.Field("hosts", "%q is not a host name or address", addr)
 			}
 		}
 		if !containsStr(hosts, h) {
@@ -229,7 +231,7 @@ func (s *Hosts) validateGroup(ctx context.Context, in *HostGroup) error {
 			continue
 		}
 		if strings.ContainsAny(t, ", ") {
-			return invalidField("tags", "a tag cannot contain a comma or a space")
+			return fault.Field("tags", "a tag cannot contain a comma or a space")
 		}
 		if !containsStr(tags, t) {
 			tags = append(tags, t)
@@ -243,7 +245,7 @@ func (s *Hosts) validateGroup(ctx context.Context, in *HostGroup) error {
 			continue
 		}
 		if !containsStr(SubFormats, f) {
-			return invalidField("excludeFormats", "%q is not a format; the formats are %s", f, strings.Join(SubFormats, ", "))
+			return fault.Field("excludeFormats", "%q is not a format; the formats are %s", f, strings.Join(SubFormats, ", "))
 		}
 		if !containsStr(ex, f) {
 			ex = append(ex, f)
@@ -423,7 +425,7 @@ func (s *Hosts) group(ctx context.Context, groupID string) (*HostGroup, error) {
 	}
 	gs := groupHosts(rows)
 	if len(gs) == 0 {
-		return nil, fmt.Errorf("%w: no host %s", ErrNotFound, groupID)
+		return nil, fmt.Errorf("%w: no host %s", fault.ErrNotFound, groupID)
 	}
 	return &gs[0], nil
 }
@@ -434,7 +436,7 @@ func (s *Hosts) rowsOf(ctx context.Context, groupID string) ([]model.Host, error
 	if strings.HasPrefix(groupID, "fallback_") {
 		id, err := strconv.ParseUint(strings.TrimPrefix(groupID, "fallback_"), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("%w: no host %s", ErrNotFound, groupID)
+			return nil, fmt.Errorf("%w: no host %s", fault.ErrNotFound, groupID)
 		}
 		q = q.Where("id = ?", id)
 	} else {
@@ -444,7 +446,7 @@ func (s *Hosts) rowsOf(ctx context.Context, groupID string) ([]model.Host, error
 		return nil, fmt.Errorf("service: read host: %w", err)
 	}
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("%w: no host %s", ErrNotFound, groupID)
+		return nil, fmt.Errorf("%w: no host %s", fault.ErrNotFound, groupID)
 	}
 	return rows, nil
 }
@@ -461,7 +463,7 @@ func (s *Hosts) rowIDs(ctx context.Context, groupIDs []string) ([]uint, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("%w: no hosts selected", ErrInvalid)
+		return nil, fmt.Errorf("%w: no hosts selected", fault.ErrInvalid)
 	}
 	return ids, nil
 }
@@ -481,13 +483,13 @@ func (v HostVariant) Label() string {
 	return v.Host.Name
 }
 
-// variantsFor is where a WireGuard customer connects to on an interface:
+// VariantsFor is where a WireGuard customer connects to on an interface:
 // the enabled hosts in order, or the interface's own endpoint when it has
 // none. A host that leaves its address blank inherits the interface's, as
 // the classic panel's does. format leaves out the hosts excluded from it. Hosts win:
 // once one exists the interface's own address is not handed out on its
 // own, which is exactly how the classic panel's externalProxy fan-out behaves.
-func variantsFor(iface *model.Interface, format string) []HostVariant {
+func VariantsFor(iface *model.Interface, format string) []HostVariant {
 	own := HostVariant{Endpoint: iface.EndpointHost, Port: iface.ListenPort}
 	if !iface.IsWireGuard() {
 		return []HostVariant{own}
@@ -528,15 +530,15 @@ func variantsFor(iface *model.Interface, format string) []HostVariant {
 	return out
 }
 
-// withEndpoint is the interface as seen from one variant, for the renderer.
-func withEndpoint(iface model.Interface, v HostVariant) model.Interface {
+// WithEndpoint is the interface as seen from one variant, for the renderer.
+func WithEndpoint(iface model.Interface, v HostVariant) model.Interface {
 	iface.EndpointHost = v.Endpoint
 	iface.ListenPort = v.Port
 	return iface
 }
 
-// variantFilename names a per-host file after the device and the host.
-func variantFilename(base string, v HostVariant) string {
+// VariantFilename names a per-host file after the device and the host.
+func VariantFilename(base string, v HostVariant) string {
 	if v.Host == nil {
 		return base
 	}
@@ -544,5 +546,30 @@ func variantFilename(base string, v HostVariant) string {
 	if i := strings.LastIndex(base, "."); i > 0 {
 		base, ext = base[:i], base[i:]
 	}
-	return base + "-" + safeFilename(v.Host.Name) + ext
+	return base + "-" + SafeFilename(v.Host.Name) + ext
+}
+
+// SafeFilename keeps a customer's name out of the response headers as anything
+// but letters and digits -- in any script, so a customer named in Persian
+// gets a file named in Persian; the header carries it encoded. A name with a
+// quote, a slash or a newline in it would otherwise let the customer write
+// their own headers or path.
+func SafeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r), r == '-', r == '_':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "config"
+	}
+	if rs := []rune(out); len(rs) > 48 {
+		out = string(rs[:48])
+	}
+	return out
 }

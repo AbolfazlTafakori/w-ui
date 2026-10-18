@@ -35,6 +35,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/dnsproxy"
 	"github.com/abolfazl/w-ui/internal/egress"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/geoip"
 	"github.com/abolfazl/w-ui/internal/i18n"
@@ -220,7 +221,7 @@ func run() error {
 	ifaceSvc.Teardown = pool.Destroy
 	defer pool.CloseAll()
 
-	subs := service.NewSubscriptions(db, pool, service.NewHosts(db, log), log)
+	subs := service.NewSubscriptions(db, pool, endpoints.NewHosts(db, log), log)
 
 	// The two built-in outbounds are created before the reconciler starts, so
 	// its first tick already has somewhere to send traffic.

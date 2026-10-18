@@ -9,6 +9,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend/occdriver"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 )
@@ -73,8 +74,8 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 	iface.Hosts = hosts
 
 	var out []Profile
-	for _, v := range variantsFor(iface, "") {
-		at := withEndpoint(*iface, v)
+	for _, v := range endpoints.VariantsFor(iface, "") {
+		at := endpoints.WithEndpoint(*iface, v)
 		var p *Profile
 		switch iface.Protocol {
 		case model.ProtocolWireGuard:
@@ -86,7 +87,7 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 		default:
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
 		}
-		p.Filename = variantFilename(clientFilename(owner.Name, acc.DeviceName, p.Filename, single), v)
+		p.Filename = endpoints.VariantFilename(clientFilename(owner.Name, acc.DeviceName, p.Filename, single), v)
 		p.Guides = devguide.Views(guideValues(&acc, &at, p.Filename))
 		if v.Host != nil {
 			p.HostID = v.Host.ID

@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/egress"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/oversight"
 	"github.com/abolfazl/w-ui/internal/routing"
-	"github.com/abolfazl/w-ui/internal/service"
 )
 
 // ── outbounds ────────────────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
-	var in service.HostInput
+	var in endpoints.HostInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -366,7 +366,7 @@ func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in service.HostInput
+	var in endpoints.HostInput
 	if !decode(w, r, &in) {
 		return
 	}

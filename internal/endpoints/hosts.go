@@ -1,4 +1,7 @@
-package service
+// Package endpoints is the addresses a customer's files and links point
+// at -- the hosts page: a tunnel's own address, and the others an operator
+// adds in front of it, each a variant of the file a customer is given.
+package endpoints
 
 import (
 	"context"
@@ -12,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 )
 
 // Hosts manages the public addresses customers are handed.
@@ -133,7 +137,7 @@ func (s *Hosts) Update(ctx context.Context, id uint, in HostInput) (*model.Host,
 
 	var h model.Host
 	if err := db.First(&h, id).Error; err != nil {
-		return nil, fmt.Errorf("%w: no host %d", ErrNotFound, id)
+		return nil, fmt.Errorf("%w: no host %d", fault.ErrNotFound, id)
 	}
 	if in.InterfaceID == 0 {
 		in.InterfaceID = h.InterfaceID
@@ -170,7 +174,7 @@ func (s *Hosts) Delete(ctx context.Context, id uint) error {
 		return fmt.Errorf("service: delete host: %w", res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return fmt.Errorf("%w: no host %d", ErrNotFound, id)
+		return fmt.Errorf("%w: no host %d", fault.ErrNotFound, id)
 	}
 	return nil
 }
@@ -181,11 +185,11 @@ func (s *Hosts) Check(ctx context.Context, id uint) (*egress.CheckResult, error)
 
 	var h model.Host
 	if err := db.First(&h, id).Error; err != nil {
-		return nil, fmt.Errorf("%w: no host %d", ErrNotFound, id)
+		return nil, fmt.Errorf("%w: no host %d", fault.ErrNotFound, id)
 	}
 	var iface model.Interface
 	if err := db.First(&iface, h.InterfaceID).Error; err != nil {
-		return nil, fmt.Errorf("%w: host %d has no interface", ErrNotFound, id)
+		return nil, fmt.Errorf("%w: host %d has no interface", fault.ErrNotFound, id)
 	}
 
 	port := h.EffectivePort(iface.ListenPort)
@@ -226,10 +230,10 @@ func (s *Hosts) validate(ctx context.Context, in *HostInput, selfID uint) error 
 	in.Address = strings.TrimSpace(in.Address)
 
 	if in.Name == "" {
-		return invalidField("name", "give the host a name so the list can be read later")
+		return fault.Field("name", "give the host a name so the list can be read later")
 	}
 	if in.InterfaceID == 0 {
-		return invalidField("interfaceId", "a host has to belong to an interface")
+		return fault.Field("interfaceId", "a host has to belong to an interface")
 	}
 
 	var iface model.Interface
@@ -238,18 +242,18 @@ func (s *Hosts) validate(ctx context.Context, in *HostInput, selfID uint) error 
 		return fmt.Errorf("service: check interface: %w", err)
 	}
 	if iface.ID == 0 {
-		return invalidField("interfaceId", "there is no interface %d", in.InterfaceID)
+		return fault.Field("interfaceId", "there is no interface %d", in.InterfaceID)
 	}
 
 	if in.Address == "" {
-		return invalidField("address", "a host needs the address customers will dial")
+		return fault.Field("address", "a host needs the address customers will dial")
 	}
 	if strings.ContainsAny(in.Address, " /\\:") {
-		return invalidField("address",
+		return fault.Field("address",
 			"%q should be just a hostname or address; the port goes in its own field", in.Address)
 	}
 	if in.Port != 0 && (in.Port < 1 || in.Port > 65535) {
-		return invalidField("port", "%d is not a port number", in.Port)
+		return fault.Field("port", "%d is not a port number", in.Port)
 	}
 
 	var clash int64
@@ -262,7 +266,7 @@ func (s *Hosts) validate(ctx context.Context, in *HostInput, selfID uint) error 
 		return fmt.Errorf("service: check host name: %w", err)
 	}
 	if clash > 0 {
-		return invalidField("name", "%s already has a host called %q", iface.Name, in.Name)
+		return fault.Field("name", "%s already has a host called %q", iface.Name, in.Name)
 	}
 	return nil
 }

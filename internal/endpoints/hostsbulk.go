@@ -1,4 +1,4 @@
-package service
+package endpoints
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/idset"
 )
 
@@ -33,7 +34,7 @@ const (
 func (s *Hosts) Bulk(ctx context.Context, action HostBulkAction, ids []uint) (int64, error) {
 	ids = idset.Unique(ids)
 	if len(ids) == 0 {
-		return 0, fmt.Errorf("%w: no addresses selected", ErrInvalid)
+		return 0, fmt.Errorf("%w: no addresses selected", fault.ErrInvalid)
 	}
 
 	db := s.db.WithContext(ctx)
@@ -50,7 +51,7 @@ func (s *Hosts) Bulk(ctx context.Context, action HostBulkAction, ids []uint) (in
 		res = db.Where("id IN ?", ids).Delete(&model.Host{})
 	default:
 		return 0, fmt.Errorf("%w: %q is not something that can be done to an address",
-			ErrInvalid, action)
+			fault.ErrInvalid, action)
 	}
 
 	if res.Error != nil {
@@ -69,7 +70,7 @@ func (s *Hosts) Bulk(ctx context.Context, action HostBulkAction, ids []uint) (in
 func (s *Hosts) Reorder(ctx context.Context, ids []uint) (int, error) {
 	ids = idset.Unique(ids)
 	if len(ids) == 0 {
-		return 0, fmt.Errorf("%w: no order was given", ErrInvalid)
+		return 0, fmt.Errorf("%w: no order was given", fault.ErrInvalid)
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

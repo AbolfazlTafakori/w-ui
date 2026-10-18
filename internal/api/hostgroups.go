@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/abolfazl/w-ui/internal/devguide"
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 )
 
 // The hosts page's own endpoints: groups, as the classic panel's page speaks in them.
@@ -20,7 +20,7 @@ func (s *Server) handleListHostGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateHostGroup(w http.ResponseWriter, r *http.Request) {
-	var in service.HostGroup
+	var in endpoints.HostGroup
 	if !decode(w, r, &in) {
 		return
 	}
@@ -33,7 +33,7 @@ func (s *Server) handleCreateHostGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateHostGroup(w http.ResponseWriter, r *http.Request) {
-	var in service.HostGroup
+	var in endpoints.HostGroup
 	if !decode(w, r, &in) {
 		return
 	}

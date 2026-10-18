@@ -16,6 +16,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 )
 
 func testDB(t *testing.T) *gorm.DB {
@@ -104,7 +105,7 @@ func newSubs(db *gorm.DB, drv backend.Backend) *Subscriptions {
 		// Open would ask the registry for a real driver.
 		pool.Put(&model.Interface{ID: 1, Name: "wg0", Protocol: model.ProtocolWireGuard}, drv)
 	}
-	return NewSubscriptions(db, pool, NewHosts(db, quietLog()), quietLog())
+	return NewSubscriptions(db, pool, endpoints.NewHosts(db, quietLog()), quietLog())
 }
 
 // ── what a customer's app actually receives ──────────────────────────────────
@@ -343,12 +344,12 @@ func TestAFilenameCannotCarryACustomersOwnHeaders(t *testing.T) {
 	for _, in := range []string{
 		`a" ; drop`, "line\r\nX-Evil: yes", `../../etc/passwd`, "",
 	} {
-		got := safeFilename(in)
+		got := endpoints.SafeFilename(in)
 		if strings.ContainsAny(got, "\r\n\"';/\\ ") {
-			t.Errorf("safeFilename(%q) produced %q, which is not safe in a header", in, got)
+			t.Errorf("endpoints.SafeFilename(%q) produced %q, which is not safe in a header", in, got)
 		}
 		if got == "" {
-			t.Errorf("safeFilename(%q) produced an empty name", in)
+			t.Errorf("endpoints.SafeFilename(%q) produced an empty name", in)
 		}
 	}
 }

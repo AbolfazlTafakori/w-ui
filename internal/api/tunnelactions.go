@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 )
 
 // Whole-tunnel actions, and bulk work on the addresses a tunnel is reached at.
@@ -70,7 +70,7 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := s.hosts.Bulk(r.Context(), service.HostBulkAction(in.Action), in.IDs)
+	n, err := s.hosts.Bulk(r.Context(), endpoints.HostBulkAction(in.Action), in.IDs)
 	if err != nil {
 		fail(w, s.log, err)
 		return

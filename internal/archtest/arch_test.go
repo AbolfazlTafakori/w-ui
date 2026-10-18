@@ -214,7 +214,7 @@ func TestTheAPIDoesNotQueryTheDatabase(t *testing.T) {
 func TestLowerLayersDoNotImportTheServices(t *testing.T) {
 	domains := []string{"github.com/abolfazl/w-ui/internal/service", "github.com/abolfazl/w-ui/internal/operators", "github.com/abolfazl/w-ui/internal/fleet"}
 	for _, dir := range []string{"internal/egress", "internal/fault", "internal/listfield", "internal/tunnelport", "internal/backend",
-		"internal/idset", "internal/optional", "internal/membership"} {
+		"internal/idset", "internal/optional", "internal/membership", "internal/endpoints"} {
 		for _, f := range sources(t, dir) {
 			for _, imp := range f.ast.Imports {
 				path := strings.Trim(imp.Path.Value, `"`)

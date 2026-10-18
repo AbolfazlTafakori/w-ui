@@ -1,4 +1,4 @@
-package service
+package endpoints
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ import (
 // of a format is left out.
 func TestVariantsFanOutPerHost(t *testing.T) {
 	iface := &model.Interface{Protocol: model.ProtocolWireGuard, EndpointHost: "vpn.example.com", ListenPort: 51820}
-	if got := variantsFor(iface, "conf"); len(got) != 1 || got[0].Host != nil || got[0].Endpoint != "vpn.example.com" || got[0].Port != 51820 {
+	if got := VariantsFor(iface, "conf"); len(got) != 1 || got[0].Host != nil || got[0].Endpoint != "vpn.example.com" || got[0].Port != 51820 {
 		t.Fatalf("no hosts: got %+v", got)
 	}
 	iface.Hosts = []model.Host{
@@ -22,7 +22,7 @@ func TestVariantsFanOutPerHost(t *testing.T) {
 		{ID: 3, Name: "off", Address: "off.example.com", Enabled: false},
 		{ID: 4, Name: "nozip", Address: "z.example.com", Enabled: true, Priority: 3, ExcludeFormats: "zip"},
 	}
-	got := variantsFor(iface, "conf")
+	got := VariantsFor(iface, "conf")
 	if len(got) != 3 {
 		t.Fatalf("want 3 variants, got %d", len(got))
 	}
@@ -32,14 +32,14 @@ func TestVariantsFanOutPerHost(t *testing.T) {
 	if got[1].Host.Name != "cdn" || got[1].Endpoint != "cdn.example.com" || got[1].Port != 443 {
 		t.Errorf("second should be cdn:443: %+v", got[1])
 	}
-	if zipped := variantsFor(iface, "zip"); len(zipped) != 2 {
+	if zipped := VariantsFor(iface, "zip"); len(zipped) != 2 {
 		t.Errorf("the host excluded from zip should be left out: %d", len(zipped))
 	}
-	if name := variantFilename("phone.conf", got[1]); name != "phone-cdn.conf" {
+	if name := VariantFilename("phone.conf", got[1]); name != "phone-cdn.conf" {
 		t.Errorf("filename = %q", name)
 	}
 	ovpn := &model.Interface{Protocol: model.ProtocolOpenVPN, EndpointHost: "vpn.example.com", ListenPort: 1194, Hosts: iface.Hosts}
-	if got := variantsFor(ovpn, ""); len(got) != 1 {
+	if got := VariantsFor(ovpn, ""); len(got) != 1 {
 		t.Errorf("OpenVPN carries its hosts as remotes inside one profile, not as variants: %d", len(got))
 	}
 }

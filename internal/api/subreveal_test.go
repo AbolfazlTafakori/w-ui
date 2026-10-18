@@ -20,6 +20,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -62,7 +63,7 @@ func revealServer(t *testing.T) (*Server, string) {
 		IP: "10.77.0.2", Enabled: true, Username: revealUser, Secret: revealPass}).Error)
 
 	s := withDB(&Server{log: log, reveals: newSubReveals(),
-		subs: service.NewSubscriptions(db, backend.NewPool(log), service.NewHosts(db, log), log)}, db)
+		subs: service.NewSubscriptions(db, backend.NewPool(log), endpoints.NewHosts(db, log), log)}, db)
 
 	req := httptest.NewRequest(http.MethodGet, "/sub/"+revealToken, nil)
 	req.Header.Set("Accept", "text/html")

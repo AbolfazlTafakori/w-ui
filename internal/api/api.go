@@ -18,6 +18,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/egress"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/i18n"
@@ -59,7 +60,7 @@ type Server struct {
 	rec       *reconciler.Reconciler
 	outbounds *egress.Outbounds
 	routing   *egress.Routing
-	hosts     *service.Hosts
+	hosts     *endpoints.Hosts
 	router    *routing.Applier
 	subs      *service.Subscriptions
 	subMiss   *subMisses
@@ -165,7 +166,7 @@ func New(o Options) *Server {
 		rec:       o.Reconciler,
 		outbounds: o.Outbounds,
 		routing:   o.Routing,
-		hosts:     service.NewHosts(o.DB, o.Logger),
+		hosts:     endpoints.NewHosts(o.DB, o.Logger),
 		router:    o.Router,
 		subs:      o.Subs,
 		subMiss:   newSubMisses(),
