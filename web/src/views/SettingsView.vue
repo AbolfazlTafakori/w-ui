@@ -4,14 +4,15 @@
 // category the sidebar chose -- General, Authentication, Telegram Bot, Email,
 // Subscription -- each a row of tabs over lists of setting rows.
 import { computed, onMounted, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { waitForRestart } from '../lib/restart.js'
 import { useDelayed } from '../lib/live.js'
+import { useLeaveGuard } from '../lib/leaveGuard.js'
 import { store, t, loadMessages, loadPanelSettings, notify } from '../lib/store.js'
 import AntIcon from '../components/AntIcon.vue'
 import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import LeaveDialog from '../components/LeaveDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 import SecuritySettings from '../components/settings/SecuritySettings.vue'
 import BackupArchives from '../components/settings/BackupArchives.vue'
@@ -21,8 +22,6 @@ import TelegramTab from '../components/settings/TelegramTab.vue'
 import EmailTab from '../components/settings/EmailTab.vue'
 import SubscriptionTab from '../components/settings/SubscriptionTab.vue'
 import { provideSettings } from '../components/settings/context.js'
-
-const router = useRouter()
 
 // ── which page ──────────────────────────────────────────────────────────────
 const categories = ['general', 'security', 'telegram', 'email', 'subscription']
@@ -197,25 +196,8 @@ async function restartPanel() {
   }
 }
 
-const pendingRoute = ref(null)
-const leaving = ref(false)
-onBeforeRouteLeave((to) => {
-  if (!dirty.value || leaving.value) return true
-  pendingRoute.value = to.fullPath
-  return false
-})
-async function discardAndGo() {
-  leaving.value = true
-  const to = pendingRoute.value
-  pendingRoute.value = null
-  await router.push(to)
-  leaving.value = false
-}
-async function saveAndGo() {
-  await save()
-  if (!dirty.value) await discardAndGo()
-  else pendingRoute.value = null
-}
+// Leaving with an unsaved edit asks first.
+const { pendingRoute, stay, discard, saveAndGo } = useLeaveGuard({ dirty, save })
 
 // A value equal to what the panel ships as gets their "Default" tag.
 function isDefault(key) {
@@ -409,16 +391,7 @@ const uptime = computed(() => {
       @confirm="restartPanel"
       @cancel="askRestart = false"
     />
-    <ConfirmDialog
-      :open="!!pendingRoute"
-      :title="t('settings.leaveTitle')"
-      :body="t('settings.leaveBody')"
-      :confirm-label="t('settings.saveAndLeave')"
-      :danger="false"
-      :busy="busy"
-      @confirm="saveAndGo"
-      @cancel="discardAndGo"
-    />
+    <LeaveDialog :open="!!pendingRoute" :busy="busy" @stay="stay" @discard="discard" @save="saveAndGo" />
 
   </div>
 </template>

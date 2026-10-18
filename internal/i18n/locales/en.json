@@ -1064,6 +1064,8 @@
   "settings.leaveTitle": "You have unsaved changes",
   "settings.leaveBody": "Leaving now discards them. Save first, or discard and go.",
   "settings.saveAndLeave": "Save and leave",
+  "settings.stay": "Stay",
+  "settings.discardAndLeave": "Discard and leave",
   "outbound.testAll": "Test all",
   "outbound.modeRealDelay": "Real delay",
   "outbound.testModeTooltip": "TCP: fast dial-only probe. HTTP: full request through the outbound. Real delay: total time including connection setup.",

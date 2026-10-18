@@ -1064,6 +1064,8 @@
   "settings.leaveTitle": "تغییرات ذخیره‌نشده دارید",
   "settings.leaveBody": "اگر الان بروید از بین می‌روند. اول ذخیره کنید، یا رها کنید و بروید.",
   "settings.saveAndLeave": "ذخیره کن و برو",
+  "settings.stay": "بمان",
+  "settings.discardAndLeave": "رها کن و برو",
   "outbound.testAll": "تست همه",
   "outbound.modeRealDelay": "تأخیر واقعی",
   "outbound.testModeTooltip": "TCP: فقط dial سریع. HTTP: درخواست کامل از طریق خروجی. تأخیر واقعی: کل زمان همراه با برقراری اتصال.",
