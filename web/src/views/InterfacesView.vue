@@ -1,50 +1,30 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { api, saveFile } from '../lib/api.js'
+// The tunnels: the strip of what they carry, a list by server with search,
+// sorting and pages, and what can be done to each. The rows, the actions and
+// the dialogs are their own; this holds the list's state and wires them.
+import { ref, computed, watch, onMounted } from 'vue'
+import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
+import { store, t, notify } from '../lib/store.js'
+import { cmpText, generalItems, nextSort, ocPayload, sortRows, totals as totalsOf } from '../lib/interfaces/rows.js'
+import { useInterfaceActions } from '../lib/interfaces/actions.js'
 import ErrorState from '../components/ErrorState.vue'
-import { store, t, tn, notify } from '../lib/store.js'
-import { bytes } from '../lib/format.js'
 import InterfaceForm from '../components/InterfaceForm.vue'
 import InterfaceDetail from '../components/InterfaceDetail.vue'
-import Toggle from '../components/Toggle.vue'
-import Icon from '../components/Icon.vue'
 import AntIcon from '../components/AntIcon.vue'
+import MoreMenu from '../components/MoreMenu.vue'
 import TextDialog from '../components/TextDialog.vue'
+import InterfaceStats from '../components/interfaces/InterfaceStats.vue'
+import InterfacesTable from '../components/interfaces/InterfacesTable.vue'
+import InterfaceCards from '../components/interfaces/InterfaceCards.vue'
 import ImportDialog from '../components/interfaces/ImportDialog.vue'
 import AttachDialog from '../components/interfaces/AttachDialog.vue'
 import CloneDialog from '../components/interfaces/CloneDialog.vue'
+import MoveDialog from '../components/interfaces/MoveDialog.vue'
+import GroupDialog from '../components/interfaces/GroupDialog.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 import { useIsMobile } from '../lib/mobile.js'
-
-// What a tunnel carries its traffic over, as the table tags it: OpenVPN's
-// choice, PPTP's TCP (its data is GRE), OpenConnect's TLS on TCP with DTLS
-// on UDP beside it, and UDP for the rest.
-// A 3x-ui inbound shows what it is there: VLESS over TCP with Reality, say.
-function protoTag(i) {
-  return i.protocol === 'xray' ? (i.xui?.kind || 'xray') : i.protocol
-}
-function transportTag(i) {
-  if (i.protocol === 'xray') {
-    const net = (i.xui?.network || 'tcp').toUpperCase()
-    const sec = i.xui?.security && i.xui.security !== 'none' ? ' · ' + i.xui.security : ''
-    return net + sec
-  }
-  if (i.protocol === 'openvpn') return (i.openvpn?.transport || 'udp').toUpperCase()
-  if (i.protocol === 'pptp') return 'TCP'
-  if (i.protocol === 'openconnect') return i.openconnect?.dtls ? 'TCP + UDP' : 'TCP'
-  return 'UDP'
-}
-
-// What an OpenConnect tunnel's form sends: a secret left empty is drawn by
-// the server.
-function ocPayload(oc) {
-  if (!oc) return undefined
-  const out = { dtls: !!oc.dtls, camouflage: !!oc.camouflage, usePanelCert: !!oc.usePanelCert }
-  if ((oc.camouflageSecret || '').trim()) out.camouflageSecret = oc.camouflageSecret.trim()
-  return out
-}
 
 const interfaces = ref([])
 // The servers a tunnel can be put on. An install that never added one has
@@ -61,15 +41,8 @@ const loading = ref(true)
 const formFor = ref(null) // null = closed, {} = create, { iface } = edit
 const detailFor = ref(null)
 const selected = ref(new Set())
-// On a phone the table becomes a list of cards, as the classic panel's inbounds do;
-// tapping a card's info opens its stats.
+// On a phone the table becomes a list of cards, as the classic panel's inbounds do.
 const isMobile = useIsMobile()
-const cardOpen = ref(new Set())
-function toggleCard(id) {
-  const next = new Set(cardOpen.value)
-  next.has(id) ? next.delete(id) : next.add(id)
-  cardOpen.value = next
-}
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
 
@@ -105,7 +78,6 @@ watch(servers, (list) => {
 const onServer = computed(() =>
   server.value === 'all' ? interfaces.value : interfaces.value.filter((i) => String(i.nodeId) === server.value),
 )
-
 const visible = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return onServer.value
@@ -115,50 +87,10 @@ const visible = computed(() => {
 })
 const hasNodes = computed(() => interfaces.value.some((i) => i.nodeName && !i.nodeLocal))
 
-// Their sortable headers. A click goes ascending, another descending, a
-// third back to the order the server gave, exactly as Ant's Table cycles.
+// The order the headers set, and the pages: the size from the settings
+// page, and no bar at all when everything fits on one page.
 const sort = ref({ key: '', dir: '' })
-const cmpText = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' })
-const sorters = {
-  id: (a, b) => a.id - b.id,
-  remark: (a, b) => cmpText(a.name, b.name),
-  node: (a, b) => cmpText(a.nodeName, b.nodeName),
-  port: (a, b) => a.listenPort - b.listenPort,
-  protocol: (a, b) => cmpText(a.protocol, b.protocol),
-  clients: (a, b) => (a.clients || 0) - (b.clients || 0),
-  traffic: (a, b) => (a.usedBytes || 0) - (b.usedBytes || 0),
-  speed: (a, b) => speedOf(a) - speedOf(b),
-  expiry: () => 0,
-}
-// What a tunnel's files are moving right now, each way; the server leaves
-// it out while they move nothing.
-function speedOf(i) {
-  return i.speed ? (i.speed.up || 0) + (i.speed.down || 0) : 0
-}
-const speedActive = (i) => speedOf(i) > 0
-function speedText(i) {
-  const rate = (v) => `${bytes(v || 0, store.locale)}/s`
-  return `↑ ${rate(i.speed.up)} / ↓ ${rate(i.speed.down)}`
-}
-
-function sortCls(key) {
-  return sort.value.key === key ? `sorted ${sort.value.dir}` : ''
-}
-function sortBy(key) {
-  const cur = sort.value
-  if (cur.key !== key) sort.value = { key, dir: 'asc' }
-  else if (cur.dir === 'asc') sort.value = { key, dir: 'desc' }
-  else sort.value = { key: '', dir: '' }
-}
-const sorted = computed(() => {
-  const { key, dir } = sort.value
-  if (!key || !sorters[key]) return visible.value
-  const rows = [...visible.value].sort(sorters[key])
-  return dir === 'desc' ? rows.reverse() : rows
-})
-
-// Their pagination: the size from the settings page, and no bar at all when
-// everything fits on one page.
+const sorted = computed(() => sortRows(visible.value, sort.value))
 const page = ref(1)
 const pageSize = computed(() => (store.panel.pageSize > 0 ? store.panel.pageSize : sorted.value.length || 1))
 const pageCount = computed(() => Math.max(1, Math.ceil(sorted.value.length / pageSize.value)))
@@ -171,252 +103,35 @@ const paged = computed(() => {
 })
 const pageNumbers = computed(() => Array.from({ length: pageCount.value }, (_, i) => i + 1))
 
-// ── the two menus: General Actions on the toolbar, and each row's ──
-const generalOpen = ref(false)
-const rowMenu = ref(null) // { iface, x, y }
-function openRowMenu(i, e) {
-  if (rowMenu.value?.iface?.id === i.id) {
-    rowMenu.value = null
-    return
-  }
-  const r = e.currentTarget.getBoundingClientRect()
-  const height = rowItems(i).length * 32 + 8
-  const up = r.bottom + height > window.innerHeight && r.top > height
-  rowMenu.value = { iface: i, x: r.left, y: up ? r.top - height - 4 : r.bottom + 4 }
-}
-function closeMenus() {
-  rowMenu.value = null
-  generalOpen.value = false
-}
-function onDocClick(e) {
-  if (!rowMenu.value && !generalOpen.value) return
-  if (e.target.closest?.('.amenu') || e.target.closest?.('.abtn.text') || e.target.closest?.('.more-btn')) return
-  closeMenus()
-}
-function onKey(e) {
-  if (e.key === 'Escape') closeMenus()
-}
-onMounted(() => {
-  window.addEventListener('click', onDocClick, true)
-  window.addEventListener('keydown', onKey)
-  window.addEventListener('scroll', closeMenus, true)
-})
-onUnmounted(() => {
-  window.removeEventListener('click', onDocClick, true)
-  window.removeEventListener('keydown', onKey)
-  window.removeEventListener('scroll', closeMenus, true)
-})
-
-// Their row menu, item for item: what the classic panel shows for an inbound that
-// carries many customers (every one of ours does). Restart is the one
-// addition; a kernel tunnel can be bounced, an Xray inbound cannot.
-function rowItems(i) {
-  const many = i.clients > 0
-  const items = [
-    { key: 'urls', icon: 'ExportOutlined', label: t('iface.menu.exportUrls') },
-    { key: 'export', icon: 'CopyOutlined', label: t('iface.menu.exportInbound') },
-    { key: 'reset', icon: 'RetweetOutlined', label: t('outbound.resetTraffic') },
-    { key: 'clone', icon: 'BlockOutlined', label: t('interface.clone') },
-    { key: 'restart', icon: 'ReloadOutlined', label: t('interface.restart') },
-    { key: 'attachExisting', icon: 'UsergroupAddOutlined', label: t('iface.menu.attachExisting') },
-  ]
-  if (i.protocol === 'openvpn') items.splice(2, 0, { key: 'profile', icon: 'ExportOutlined', label: t('interface.downloadProfile') })
-  if (many) {
-    items.push(
-      { key: 'attachTo', icon: 'UsergroupAddOutlined', label: t('iface.menu.attachTo') },
-      { key: 'detach', icon: 'UsergroupDeleteOutlined', label: t('iface.menu.detachClients') },
-      { key: 'group', icon: 'TagsOutlined', label: t('iface.menu.addToGroup') },
-      { divider: true },
-      { key: 'delAll', icon: 'UsergroupDeleteOutlined', label: t('iface.menu.delAllClients'), danger: true },
-    )
-  } else {
-    items.push({ divider: true })
-  }
-  items.push({ key: 'delete', icon: 'DeleteOutlined', label: t('action.delete'), danger: true })
-  // A 3x-ui inbound is changed on its own panel: here it only holds customers,
-  // and is deleted only once it is gone there.
-  if (i.protocol === 'xray') {
-    const keep = new Set(['urls', 'attachExisting', 'attachTo', 'detach', 'group', 'delAll'])
-    if (i.xui?.gone) keep.add('delete')
-    return items.filter((m) => m.divider || keep.has(m.key))
-  }
-  return items
-}
-function pickRow(i, key) {
-  rowMenu.value = null
-  switch (key) {
-    case 'urls': return exportUrls(i)
-    case 'export': return exportOne(i)
-    case 'profile': return downloadProfile(i)
-    case 'reset': return resetUsage(i)
-    case 'clone': return openClone(i)
-    case 'restart': return restart(i)
-    case 'attachExisting': return openAttach(i)
-    case 'attachTo': return openMove(i, 'attach')
-    case 'detach': return openMove(i, 'detach')
-    case 'group': return openGroup(i)
-    case 'delAll': return clearTunnel(i)
-    case 'delete': return removeOne(i)
-  }
-}
-
-// The customers on one tunnel, for the actions that take all of them: every
-// one of them, however many pages the list runs to.
-async function clientsOn(i) {
-  return api.allClients({ interfaceIds: i.id })
-}
-
-// The subscription links of these customers, one per line, each once.
-async function linksOf(list) {
-  const links = await api.subscriptionLinks(list.map((c) => c.id))
-  return [...new Set(links.filter(Boolean))]
-}
-
-// Export All URLs: every customer's subscription link, one per line, the
-// way the classic panel hands over every client's share link at once.
-async function exportUrls(i) {
-  try {
-    const links = await linksOf(await clientsOn(i))
-    textModal.value = { title: `${t('iface.menu.exportUrls')} — ${i.name}`, text: links.join('\n'), file: `${i.name}-links.txt` }
-  } catch (err) {
-    notify(err.message, 'error')
-  }
-}
-
-// Attach Clients To… / Detach Clients: this tunnel's customers put on, or
-// taken off, another tunnel.
-const move = ref(null) // { iface, kind, target }
-async function openMove(i, kind) {
-  move.value = { iface: i, kind, target: null }
-}
-async function submitMove() {
-  const m = move.value
-  if (!m.target) return
-  busy.value = true
-  try {
-    const list = await clientsOn(m.iface)
-    const res = await api.post(`/api/clients/servers/${m.kind}`, { ids: list.map((c) => c.id), interfaceIds: [m.target] })
-    const failed = Object.entries(res?.failures || {})
-    if (failed.length) notify(failed.map(([n, why]) => `${n}: ${why}`).join('\n'), 'error')
-    else notify(`${m.kind === 'attach' ? t('iface.menu.attachTo') : t('iface.menu.detachClients')} — ${nf(res?.changed || 0)}`, 'success')
-    move.value = null
-    await load()
-  } catch (err) {
-    notify(err.message, 'error')
-  } finally {
-    busy.value = false
-  }
-}
-
-// Add Clients To Group…: every customer here gets the group.
-const grouping = ref(null) // { iface, name, names }
-async function openGroup(i) {
-  let names = []
-  try { names = await api.groupNames() } catch { /* the box still takes a new name */ }
-  grouping.value = { iface: i, name: '', names }
-}
-async function submitGroup() {
-  const g = grouping.value
-  if (!g.name.trim()) return
-  busy.value = true
-  try {
-    const list = await clientsOn(g.iface)
-    await api.assignGroup(g.name.trim(), list.map((c) => c.id))
-    notify(`${t('iface.menu.addToGroup')} — ${nf(list.length)}`, 'success')
-    grouping.value = null
-    await load()
-  } catch (err) {
-    notify(err.message, 'error')
-  } finally {
-    busy.value = false
-  }
-}
-
-// Export: the tunnel as the JSON the API creates one from -- what
-// "Import an Interface" reads back, field for field. The stored AmneziaWG and
-// OpenVPN blocks are not part of it: the create call takes neither, refuses a
-// field it does not know, and makes both afresh; the transport, the one part
-// of them it does take, travels on its own.
+// The dialogs, while open.
 const textModal = ref(null) // { title, text, file }
-function exportable(i) {
-  return {
-    name: i.name, protocol: i.protocol, enabled: i.enabled, listenPort: i.listenPort, subnet: i.subnet,
-    endpointHost: i.endpointHost, mtu: i.mtu, dns: i.dns, natInterface: i.natInterface, mode: i.mode,
-    transport: i.protocol === 'openvpn' && i.openvpn?.transport ? i.openvpn.transport : undefined,
-    // Top level, as the API takes it: a tunnel made from this keeps the key
-    // every device already has.
-    psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
-    l2tpPlain: i.protocol === 'l2tp' && i.l2tp?.allowPlain ? true : undefined,
-  }
-}
-function exportOne(i) {
-  textModal.value = { title: `${t('iface.menu.exportInbound')} — ${i.name}`, text: JSON.stringify(exportable(i), null, 2), file: `${i.name}.json` }
-}
-async function exportAllUrls() {
-  try {
-    // Everyone on any tunnel: one list rather than one per tunnel, so a
-    // customer on several is fetched once.
-    const all = await api.allClients()
-    const links = await linksOf(all.filter((c) => (c.accounts || []).length))
-    textModal.value = { title: t('iface.menu.exportUrls'), text: links.join('\n'), file: 'subscription-links.txt' }
-  } catch (err) {
-    notify(err.message, 'error')
-  }
-}
-function exportAll() {
-  textModal.value = { title: t('iface.menu.exportAll'), text: JSON.stringify(interfaces.value.map(exportable), null, 2), file: 'interfaces.json' }
-}
-// The import and clone dialogs, while open.
 const importOpen = ref(false)
 const cloning = ref(null) // the tunnel being copied
-
-function openClone(iface) {
-  cloning.value = iface
-}
-
-function pickGeneral(key) {
-  generalOpen.value = false
-  if (key === 'import') importOpen.value = true
-  else if (key === 'export') exportAllUrls()
-  else if (key === 'exportAll') exportAll()
-  else if (key === 'resetAll') resetAllUsage()
-}
-function resetAllUsage() {
-  ask.value = {
-    title: t('iface.menu.resetAll'),
-    body: t('interface.resetUsageBody'),
-    subject: tn('interface.nTunnels', interfaces.value.length),
-    confirmLabel: t('outbound.reset'),
-    run: async () => {
-      for (const i of interfaces.value) await api.post(`/api/interfaces/${i.id}/reset-usage`)
-      await load()
-    },
-  }
-}
-
-// Attach Existing Clients: pick customers not yet on this tunnel.
 const attach = ref(null) // { iface, list }
-async function openAttach(i) {
-  try {
-    const all = await api.allClients()
-    const items = all.filter((c) => !(c.accounts || []).some((a) => a.interfaceId === i.id))
-    attach.value = { iface: i, list: items }
-  } catch (err) {
-    notify(err.message, 'error')
-  }
-}
-// Their traffic tag colour: by how much of the limit is used; ours have
-// no limit, so it is the calm one.
+const move = ref(null) // { iface, kind }
+const grouping = ref(null) // { iface, names }
+
+// What an operator does to tunnels, and the menus that offer it.
+const { pending, setEnabled, ask, runConfirmed, bulkDelete, pickRow, pickGeneral } = useInterfaceActions({
+  interfaces, selected, busy, load,
+  open: {
+    text: (m) => (textModal.value = m),
+    importer: () => (importOpen.value = true),
+    clone: (i) => (cloning.value = i),
+    attach: (i, list) => (attach.value = { iface: i, list }),
+    move: (i, kind) => (move.value = { iface: i, kind }),
+    group: (i, names) => (grouping.value = { iface: i, names }),
+  },
+})
+
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
     const fresh = await api.interfaces({ background: quiet })
     loadError.value = null
-    interfaces.value = quiet
-      ? mergeRows(interfaces.value, fresh, pending.value)
-      : fresh
-    const visible = new Set(interfaces.value.map((i) => i.id))
-    selected.value = new Set([...selected.value].filter((id) => visible.has(id)))
+    interfaces.value = quiet ? mergeRows(interfaces.value, fresh, pending.value) : fresh
+    const ids = new Set(interfaces.value.map((i) => i.id))
+    selected.value = new Set([...selected.value].filter((id) => ids.has(id)))
   } catch (err) {
     // A poll that fails leaves the rows that are already on screen alone; a
     // first load that fails has nothing to leave, so it says so.
@@ -440,35 +155,18 @@ onMounted(async () => {
   }
 })
 
-// What these rows carry -- the traffic, the speed, how much of the address pool
-// is spoken for -- changes constantly. An interface that has just been created
-// also takes a moment to come up, and this is what shows it happening.
+// What these rows carry -- the traffic, the speed, how much of the address
+// pool is spoken for -- changes constantly. An interface that has just been
+// created also takes a moment to come up, and this is what shows it happening.
 const showSkeleton = useDelayed(computed(() => loading.value && !interfaces.value.length))
-
 useLive(load, {
   every: 5000,
   busy: () => !!formFor.value || !!detailFor.value || !!ask.value,
 })
 
-// The strip the classic panel puts above its inbound table: what the whole set is carrying.
-const totals = computed(() => {
-  const list = interfaces.value
-  return {
-    used: list.reduce((a, i) => a + (i.usedBytes || 0), 0),
-    up: list.reduce((a, i) => a + (i.upBytes || 0), 0),
-    down: list.reduce((a, i) => a + (i.downBytes || 0), 0),
-    clients: list.reduce((a, i) => a + (i.clients || 0), 0),
-    devices: list.reduce((a, i) => a + (i.devices || 0), 0),
-    allocated: list.reduce((a, i) => a + (i.allocated || 0), 0),
-    capacity: list.reduce((a, i) => a + (i.capacity || 0), 0),
-    count: list.length,
-  }
-})
+const totals = computed(() => totalsOf(interfaces.value))
 
-const allSelected = computed(
-  () => !!interfaces.value.length && selected.value.size === interfaces.value.length,
-)
-
+const allSelected = computed(() => !!interfaces.value.length && selected.value.size === interfaces.value.length)
 function toggleAll(checked) {
   selected.value = checked ? new Set(interfaces.value.map((i) => i.id)) : new Set()
 }
@@ -476,199 +174,6 @@ function toggleOne(id, checked) {
   const next = new Set(selected.value)
   checked ? next.add(id) : next.delete(id)
   selected.value = next
-}
-
-async function guard(fn, successKey) {
-  try {
-    await fn()
-    if (successKey) notify(t(successKey), 'success')
-    await load()
-  } catch (err) {
-    notify(err.message, 'error')
-  }
-}
-
-// Rows that are mid-request. Per-row rather than one flag for the page: taking
-// one tunnel down should not freeze the controls on the other five.
-const pending = ref(new Set())
-const isPending = (id) => pending.value.has(id)
-
-function hold(id) {
-  pending.value = new Set(pending.value).add(id)
-}
-function release(id) {
-  const next = new Set(pending.value)
-  next.delete(id)
-  pending.value = next
-}
-
-// The switch moves on click and the knob spins until the server agrees.
-//
-// Bringing an interface up is slower than a client toggle — a device is
-// created, addresses assigned, a driver opened — so the old behaviour, where
-// nothing moved until a full reload of the list came back, read as a switch
-// that did not work and invited a second click.
-async function setEnabled(iface, on) {
-  const was = iface.enabled
-  if (was === on) return
-  iface.enabled = on
-  hold(iface.id)
-  try {
-    const updated = await api.updateInterface(iface.id, { enabled: on })
-    Object.assign(iface, updated)
-    notify(t('interface.updated'), 'success')
-  } catch (err) {
-    iface.enabled = was
-    notify(err.message, 'error')
-  } finally {
-    release(iface.id)
-    // The strip above the table counts what is enabled and what it carries.
-    load(true)
-  }
-}
-
-// Reopening one tunnel's driver. The reconciler heals most things, but not a
-// driver whose Open failed at startup — a port that was taken, a tool that was
-// not installed yet. Without this the only way out is restarting the panel,
-// which disconnects every customer on every other interface to fix one.
-// Copying a tunnel.
-//
-// The port and the address range have to be new — two tunnels sharing either
-// would collide — so they are suggested rather than assumed, moved one along
-// from the original where that is free.
-// Zeroing what everyone on a tunnel has used.
-//
-// A customer on three tunnels has one total, so this clears all of it for them
-// — which is on the confirmation rather than discovered from a customer who
-// suddenly has their whole allowance back.
-function resetUsage(iface) {
-  ask.value = {
-    title: t('interface.resetUsageTitle'),
-    subject: iface.name,
-    body: t('interface.resetUsageBody'),
-    confirmLabel: t('action.resetTraffic'),
-    run: async () => {
-      const res = await api.post(`/api/interfaces/${iface.id}/reset-usage`)
-      notify(`${t('interface.resetUsageDone')} — ${res?.customers ?? 0}`, 'success')
-      await load()
-    },
-  }
-}
-
-// Emptying a tunnel, which is what has to happen before it can be removed.
-function clearTunnel(iface) {
-  ask.value = {
-    title: t('interface.clearTitle'),
-    subject: iface.name,
-    body: t('interface.clearBody'),
-    confirmLabel: t('interface.clear'),
-    danger: true,
-    run: async () => {
-      const res = await api.post(`/api/interfaces/${iface.id}/clear`)
-      const failed = Object.entries(res?.failures || {})
-      if (failed.length) {
-        notify(failed.map(([name, why]) => `${name}: ${why}`).join('\n'), 'error')
-      } else {
-        notify(`${t('interface.clearDone')} — ${res?.changed ?? 0}`, 'success')
-      }
-      await load()
-    },
-  }
-}
-
-async function restart(iface) {
-  hold(iface.id)
-  try {
-    const res = await api.post(`/api/interfaces/${iface.id}/restart`)
-    if (res.ok) {
-      notify(t('interface.restarted'), 'success')
-    } else {
-      // The reason it will not come up is the whole point of asking.
-      notify(t('interface.restartFailed').replace('{error}', res.error), 'error')
-    }
-    await load()
-  } catch (e) {
-    notify(e.message, 'error')
-  } finally {
-    release(iface.id)
-  }
-}
-
-const ask = ref(null)
-
-async function runConfirmed() {
-  const spec = ask.value
-  if (!spec) return
-  busy.value = true
-  try {
-    await spec.run()
-  } finally {
-    busy.value = false
-    ask.value = null
-  }
-}
-
-// Deleting a tunnel destroys its keys, and there is no undo. The server
-// refuses while any device is still on it -- customers are taken off first,
-// with the row menu's Take All Clients Off -- so a tunnel that still has
-// customers is told so at once, rather than after a confirmation that could
-// only fail.
-const removeOne = (iface) => {
-  if ((iface.clients ?? 0) > 0) {
-    notify(tn('interface.stillHasClients', iface.clients).replace('{name}', iface.name), 'error')
-    return
-  }
-  ask.value = {
-    title: t('interface.confirmDeleteTitle'),
-    body: t('interface.confirmDeleteBody'),
-    subject: iface.name,
-    consequences: [t('interface.consequenceKeys')],
-    confirmLabel: t('action.delete'),
-    run: () => guard(() => api.deleteInterface(iface.id), 'interface.deleted'),
-  }
-}
-
-const bulkDelete = () => {
-  const ids = [...selected.value]
-  if (!ids.length) return
-  const chosen = interfaces.value.filter((i) => selected.value.has(i.id))
-  const busyOnes = chosen.filter((i) => (i.clients ?? 0) > 0)
-  if (busyOnes.length) {
-    notify(busyOnes.map((i) => tn('interface.stillHasClients', i.clients).replace('{name}', i.name)).join('\n'), 'error')
-    return
-  }
-
-  ask.value = {
-    title: t('interface.confirmDeleteManyTitle'),
-    body: t('interface.confirmDeleteBody'),
-    subject: tn('interface.nTunnels', ids.length),
-    consequences: [t('interface.consequenceKeys')],
-    confirmLabel: t('action.delete'),
-    run: () =>
-      guard(async () => {
-        for (const id of ids) await api.deleteInterface(id)
-        selected.value = new Set()
-      }, 'interface.deleted'),
-  }
-}
-
-// The tunnel's own OpenVPN profile, which every customer on it uses.
-//
-// Fetched with the session token rather than linked: it carries the certificate
-// authority, and a plain link sends no Authorization header — the panel would
-// either refuse it or have to serve it to anyone who guessed the URL.
-const downloadingProfile = ref(0)
-
-async function downloadProfile(iface) {
-  downloadingProfile.value = iface.id
-  try {
-    await saveFile(`/api/interfaces/${iface.id}/profile`, `${iface.name}.ovpn`)
-    notify(t('interface.profileDownloaded'), 'success')
-  } catch (err) {
-    notify(err.message, 'error')
-  } finally {
-    downloadingProfile.value = 0
-  }
 }
 
 async function submitForm(input) {
@@ -749,26 +254,7 @@ async function submitForm(input) {
 <template>
   <div class="antpage inbounds">
   <!-- Their summary Card: size="small", three Statistics. -->
-  <div class="acard small summary-card">
-    <div class="acard-body">
-      <div class="arow">
-        <div class="acol">
-          <div class="stat-title">{{ t('iface.stat.totalDownUp') }}</div>
-          <div class="stat-content ltr">
-            <span><AntIcon name="ArrowUpOutlined" /> {{ bytes(totals.up, store.locale) }} / <AntIcon name="ArrowDownOutlined" /> {{ bytes(totals.down, store.locale) }}</span>
-          </div>
-        </div>
-        <div class="acol">
-          <div class="stat-title">{{ t('iface.stat.totalUsage') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="PieChartOutlined" /></span><span>{{ bytes(totals.used, store.locale) }}</span></div>
-        </div>
-        <div class="acol">
-          <div class="stat-title">{{ t('iface.stat.count') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="BarsOutlined" /></span><span>{{ nf(totals.count) }}</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <InterfaceStats :totals="totals" />
 
   <!-- Their list Card: the title is a Space of Add Inbound, General Actions,
        the search, and -- with rows picked -- the count and a Delete. -->
@@ -778,17 +264,7 @@ async function submitForm(input) {
         <button class="abtn primary" @click="formFor = {}">
           <AntIcon name="PlusOutlined" /><span v-if="!isMobile">{{ t('iface.menu.add') }}</span>
         </button>
-        <div class="more-wrap">
-          <button class="abtn primary more-btn" :aria-expanded="generalOpen" @click="generalOpen = !generalOpen">
-            <AntIcon name="MenuOutlined" /><span v-if="!isMobile">{{ t('iface.menu.general') }}</span>
-          </button>
-          <div v-if="generalOpen" class="amenu below" role="menu">
-            <button class="amenu-item" role="menuitem" @click="pickGeneral('import')"><AntIcon name="ImportOutlined" /><span>{{ t('iface.menu.import') }}</span></button>
-            <button class="amenu-item" role="menuitem" @click="pickGeneral('export')"><AntIcon name="ExportOutlined" /><span>{{ t('iface.menu.exportUrls') }}</span></button>
-            <button class="amenu-item" role="menuitem" @click="pickGeneral('exportAll')"><AntIcon name="CopyOutlined" /><span>{{ t('iface.menu.exportAll') }}</span></button>
-            <button class="amenu-item" role="menuitem" @click="pickGeneral('resetAll')"><AntIcon name="ReloadOutlined" /><span>{{ t('iface.menu.resetAll') }}</span></button>
-          </div>
-        </div>
+        <MoreMenu :items="generalItems()" :compact="isMobile" button-class="abtn primary more-btn" icon="MenuOutlined" :label="t('iface.menu.general')" @pick="pickGeneral" />
         <label class="ainput">
           <span class="ainput-prefix"><AntIcon name="SearchOutlined" /></span>
           <input v-model="search" type="text" :placeholder="t('iface.menu.search')" :aria-label="t('iface.menu.search')" />
@@ -821,229 +297,29 @@ async function submitForm(input) {
       <PageSpin v-else-if="showSkeleton" />
       <div v-else-if="loading" class="empty"></div>
 
-      <div v-else-if="isMobile" class="inbound-cards">
-        <div v-if="!sorted.length" class="card-empty">
-          <AntIcon name="ImportOutlined" :size="28" style="opacity: 0.5" />
-          <div>{{ t('common.nothingYet') }}</div>
-        </div>
-        <template v-else>
-          <div class="card-bulk-bar">
-            <label class="acheckbox">
-              <input type="checkbox" class="acheck" :checked="allSelected" @change="toggleAll($event.target.checked)" />
-              <span>{{ t('action.selectAll') }}</span>
-            </label>
-            <span v-if="selected.size" class="bulk-count">{{ nf(selected.size) }}</span>
-          </div>
-          <div v-for="i in paged" :key="i.id" class="inbound-card" :class="{ 'is-selected': selected.has(i.id) }">
-            <div class="card-head" @click="toggleCard(i.id)">
-              <input type="checkbox" class="acheck" :checked="selected.has(i.id)" :aria-label="i.name" @click.stop @change="toggleOne(i.id, $event.target.checked)" />
-              <span class="card-id">#{{ i.id }}</span>
-              <span class="tag-name">{{ i.name }}</span>
-              <div class="card-actions" @click.stop>
-                <button type="button" class="row-action-trigger" :aria-label="t('iface.menu.info')" :title="t('iface.menu.info')" @click="toggleCard(i.id)"><AntIcon name="InfoCircleOutlined" /></button>
-                <Toggle :model-value="i.enabled" :label="i.name" :loading="isPending(i.id)" small @update:model-value="(v) => setEnabled(i, v)" />
-                <button type="button" class="row-action-trigger" :aria-label="t('action.more')" :aria-expanded="rowMenu?.iface?.id === i.id" @click="openRowMenu(i, $event)"><AntIcon name="MoreOutlined" /></button>
-              </div>
-            </div>
-            <div v-if="cardOpen.has(i.id)" class="card-stats">
-              <div class="stat-row">
-                <span class="stat-label">{{ t('client.protocol') }}</span>
-                <span class="atag purple">{{ protoTag(i) }}</span>
-                <span class="atag green">{{ transportTag(i) }}</span>
-                <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">{{ t('interface.port') }}</span>
-                <span class="ltr">{{ i.listenPort }}</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">{{ t('nav.clients') }}</span>
-                <span class="atag count"><AntIcon name="TeamOutlined" /> {{ nf(i.clients) }}</span>
-                <span class="atag green count">{{ nf(i.active) }}</span>
-                <span v-if="i.depleted" class="atag red count">{{ nf(i.depleted) }}</span>
-                <span v-if="i.online" class="atag blue count">{{ nf(i.online) }}</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-label">{{ t('client.traffic') }}</span>
-                <span class="atag purple ltr">{{ bytes(i.usedBytes, store.locale) }} / <span class="infinity">∞</span></span>
-              </div>
-              <div v-if="speedActive(i)" class="stat-row">
-                <span class="stat-label">{{ t('client.speed') }}</span>
-                <span class="atag blue ltr">{{ speedText(i) }}</span>
-              </div>
-            </div>
-          </div>
-          <ul v-if="pageCount > 1" class="apagination">
-            <li><button class="apage" :disabled="page <= 1" :aria-label="t('action.previous')" @click="page--">‹</button></li>
-            <li v-for="n in pageNumbers" :key="n"><button class="apage" :class="{ active: n === page }" @click="page = n">{{ n }}</button></li>
-            <li><button class="apage" :disabled="page >= pageCount" :aria-label="t('action.next')" @click="page++">›</button></li>
-          </ul>
-        </template>
-      </div>
-
-      <div v-else class="atable-wrap">
-        <table class="atable small" :style="{ minWidth: (hasNodes ? 1366 : 1236) + 'px' }">
-          <thead>
-            <tr>
-              <th class="sel">
-                <input type="checkbox" class="acheck" :checked="allSelected" :aria-label="t('action.selectAll')" @change="toggleAll($event.target.checked)" />
-              </th>
-              <th class="w-id right sortable" :class="sortCls('id')" @click="sortBy('id')">
-                <div class="sorters"><span class="title">ID</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th class="w-menu center">{{ t('iface.col.menu') }}</th>
-              <th class="w-enable center">{{ t('table.enabled') }}</th>
-              <th class="w-remark center sortable" :class="sortCls('remark')" @click="sortBy('remark')">
-                <div class="sorters"><span class="title">{{ t('iface.col.remark') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th v-if="hasNodes" class="w-node center sortable" :class="sortCls('node')" @click="sortBy('node')">
-                <div class="sorters"><span class="title">{{ t('iface.col.node') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th class="w-port center sortable" :class="sortCls('port')" @click="sortBy('port')">
-                <div class="sorters"><span class="title">{{ t('interface.port') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th class="w-proto sortable" :class="sortCls('protocol')" @click="sortBy('protocol')">
-                <div class="sorters"><span class="title">{{ t('client.protocol') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th class="w-clients sortable" :class="sortCls('clients')" @click="sortBy('clients')">
-                <div class="sorters"><span class="title">{{ t('nav.clients') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th class="w-itraffic center sortable" :class="sortCls('traffic')" @click="sortBy('traffic')">
-                <div class="sorters"><span class="title">{{ t('client.traffic') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th class="w-speed center sortable" :class="sortCls('speed')" @click="sortBy('speed')">
-                <div class="sorters"><span class="title">{{ t('client.speed') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-              <th class="w-dur center sortable" :class="sortCls('expiry')" @click="sortBy('expiry')">
-                <div class="sorters"><span class="title">{{ t('iface.col.duration') }}</span><span class="sorter"><AntIcon name="CaretUpFilled" class="up" /><AntIcon name="CaretDownFilled" class="down" /></span></div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!sorted.length" class="empty-row">
-              <td :colspan="hasNodes ? 12 : 11">
-                <div class="card-empty">
-                  <AntIcon name="ImportOutlined" :size="32" />
-                  <div>{{ t('common.nothingYet') }}</div>
-                </div>
-              </td>
-            </tr>
-            <tr v-for="i in paged" :key="i.id" :class="{ picked: selected.has(i.id) }">
-              <td class="sel">
-                <input type="checkbox" class="acheck" :checked="selected.has(i.id)" :aria-label="i.name" @change="toggleOne(i.id, $event.target.checked)" />
-              </td>
-              <td class="right">{{ i.id }}</td>
-              <td class="center">
-                <div class="action-buttons">
-                  <button class="abtn text sm" :title="t('action.edit')" @click="formFor = { iface: i }"><AntIcon name="EditOutlined" /></button>
-                  <button class="abtn text sm" :title="t('action.more')" :aria-expanded="rowMenu?.iface?.id === i.id" @click="openRowMenu(i, $event)"><AntIcon name="MoreOutlined" /></button>
-                </div>
-              </td>
-              <td class="center">
-                <Toggle :model-value="i.enabled" :label="i.name" :loading="isPending(i.id)" :disabled="i.protocol === 'xray'" @update:model-value="(v) => setEnabled(i, v)" />
-              </td>
-              <td class="center">{{ i.name }}</td>
-              <td v-if="hasNodes" class="center">
-                <span v-if="i.nodeName && !i.nodeLocal" class="atag" :class="i.nodeUp ? 'blue' : 'red'">{{ i.nodeName }}</span>
-                <span v-else class="atag">{{ t('iface.col.localPanel') }}</span>
-              </td>
-              <td class="center">{{ i.listenPort }}</td>
-              <td>
-                <div class="protocol-tags">
-                  <span class="atag purple">{{ protoTag(i) }}</span>
-                  <span class="atag green">{{ transportTag(i) }}</span>
-                  <span v-if="i.mode === 'amnezia'" class="atag blue">AmneziaWG</span>
-                </div>
-              </td>
-              <td>
-                <span class="atag count" :title="t('nav.clients')"><AntIcon name="TeamOutlined" /> {{ nf(i.clients) }}</span>
-                <span class="atag green count" :title="t('status.active')">{{ nf(i.active) }}</span>
-                <span v-if="i.disabled" class="atag count" :title="t('status.disabled')">{{ nf(i.disabled) }}</span>
-                <span v-if="i.depleted" class="atag red count" :title="t('stat.depleted')">{{ nf(i.depleted) }}</span>
-                <span v-if="i.online" class="atag blue count last" :title="t('status.online')">{{ nf(i.online) }}</span>
-              </td>
-              <td class="center">
-                <span class="atag purple ltr" :title="`↑ ${bytes(i.upBytes || 0, store.locale)}  ↓ ${bytes(i.downBytes || 0, store.locale)}`">
-                  {{ bytes(i.usedBytes, store.locale) }} / <span class="infinity">∞</span>
-                </span>
-              </td>
-              <td class="center"><span class="atag speed-tag ltr" :class="{ blue: speedActive(i) }">{{ speedActive(i) ? speedText(i) : '—' }}</span></td>
-              <td class="center"><span class="atag purple"><span class="infinity">∞</span></span></td>
-            </tr>
-          </tbody>
-        </table>
+      <InterfaceCards v-else-if="isMobile" :rows="paged" :selected="selected" :all-selected="allSelected" :pending="pending"
+        @toggle="toggleOne" @toggle-all="toggleAll" @enable="setEnabled" @pick="pickRow">
         <ul v-if="pageCount > 1" class="apagination">
           <li><button class="apage" :disabled="page <= 1" :aria-label="t('action.previous')" @click="page--">‹</button></li>
           <li v-for="n in pageNumbers" :key="n"><button class="apage" :class="{ active: n === page }" @click="page = n">{{ n }}</button></li>
           <li><button class="apage" :disabled="page >= pageCount" :aria-label="t('action.next')" @click="page++">›</button></li>
         </ul>
-      </div>
+      </InterfaceCards>
+      <InterfacesTable v-else :rows="paged" :selected="selected" :all-selected="allSelected" :pending="pending"
+        @toggle="toggleOne" @toggle-all="toggleAll" @enable="setEnabled" @pick="pickRow"
+        :has-nodes="hasNodes" :sort="sort" @edit="(i) => (formFor = { iface: i })" @sort="(key) => (sort = nextSort(sort, key))">
+        <ul v-if="pageCount > 1" class="apagination">
+          <li><button class="apage" :disabled="page <= 1" :aria-label="t('action.previous')" @click="page--">‹</button></li>
+          <li v-for="n in pageNumbers" :key="n"><button class="apage" :class="{ active: n === page }" @click="page = n">{{ n }}</button></li>
+          <li><button class="apage" :disabled="page >= pageCount" :aria-label="t('action.next')" @click="page++">›</button></li>
+        </ul>
+      </InterfacesTable>
     </div>
   </div>
   </div>
 
-  <Teleport to="body">
-    <div v-if="rowMenu" v-fit class="amenu" role="menu" :style="{ top: rowMenu.y + 'px', left: rowMenu.x + 'px' }">
-      <template v-for="(m, idx) in rowItems(rowMenu.iface)" :key="m.key || `d${idx}`">
-        <hr v-if="m.divider" class="amenu-divider" />
-        <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" @click="pickRow(rowMenu.iface, m.key)">
-          <AntIcon :name="m.icon" /><span>{{ m.label }}</span>
-        </button>
-      </template>
-    </div>
-  </Teleport>
-
-  <!-- Attach Clients To… / Detach Clients: a target tunnel to pick. -->
-  <div v-if="move" class="modal-backdrop" @click.self="move = null">
-    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="mv-title">
-      <div class="card-head">
-        <h2 id="mv-title">{{ move.kind === 'attach' ? t('iface.menu.attachTo') : t('iface.menu.detachClients') }} — {{ move.iface.name }}</h2>
-        <button class="act" :aria-label="t('common.close')" @click="move = null"><Icon name="close" :size="16" /></button>
-      </div>
-      <div class="card-body">
-        <div class="field">
-          <label for="mv-target">{{ t('iface.menu.targetInbound') }}</label>
-          <select id="mv-target" v-model="move.target">
-            <option :value="null" disabled>—</option>
-            <option v-for="o in interfaces.filter((x) => x.id !== move.iface.id)" :key="o.id" :value="o.id">{{ o.name }} · {{ o.protocol }}:{{ o.listenPort }}</option>
-          </select>
-        </div>
-        <p class="muted small">{{ tn('interface.nClients', move.iface.clients || 0) }}</p>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" @click="move = null">{{ t('common.close') }}</button>
-        <button class="btn primary" :disabled="busy || !move.target" @click="submitMove">
-          <span v-if="busy" class="spin"></span>
-          <template v-else>{{ move.kind === 'attach' ? t('iface.menu.attach') : t('iface.menu.detach') }}</template>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Add Clients To Group…: a name, existing or new. -->
-  <div v-if="grouping" class="modal-backdrop" @click.self="grouping = null">
-    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="gr-title">
-      <div class="card-head">
-        <h2 id="gr-title">{{ t('iface.menu.addToGroup') }} — {{ grouping.iface.name }}</h2>
-        <button class="act" :aria-label="t('common.close')" @click="grouping = null"><Icon name="close" :size="16" /></button>
-      </div>
-      <div class="card-body">
-        <div class="field">
-          <label for="gr-name">{{ t('client.group') }}</label>
-          <input id="gr-name" v-model="grouping.name" list="gr-names" autofocus />
-          <datalist id="gr-names"><option v-for="n in grouping.names" :key="n" :value="n" /></datalist>
-        </div>
-        <p class="muted small">{{ tn('interface.nClients', grouping.iface.clients || 0) }}</p>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" @click="grouping = null">{{ t('common.close') }}</button>
-        <button class="btn primary" :disabled="busy || !grouping.name.trim()" @click="submitGroup">
-          <span v-if="busy" class="spin"></span>
-          <template v-else>{{ t('action.save') }}</template>
-        </button>
-      </div>
-    </div>
-  </div>
+  <MoveDialog v-if="move" :iface="move.iface" :kind="move.kind" :interfaces="interfaces" @close="move = null" @done="load()" />
+  <GroupDialog v-if="grouping" :iface="grouping.iface" :names="grouping.names" @close="grouping = null" @done="load()" />
 
   <TextDialog v-if="textModal" :title="textModal.title" :text="textModal.text" :file="textModal.file" @close="textModal = null" />
   <ImportDialog v-if="importOpen" @close="importOpen = false" @imported="load()" />
@@ -1076,29 +352,31 @@ async function submitForm(input) {
   <CloneDialog v-if="cloning" :from="cloning" :interfaces="interfaces" @close="cloning = null" @cloned="load()" />
 </template>
 
-<style scoped>
+<style>
+/* Keyed on the page's root rather than scoped, so the components it is
+   made of are styled as when their markup was the page's. */
 /* Their column widths, exactly */
-.w-id { width: 60px; }
-.w-menu { width: 70px; }
-.w-enable { width: 80px; }
-.w-remark { width: 90px; }
-.w-node { width: 130px; }
-.server-tabs .atag.count { margin-inline-start: 6px; }
-.w-port { width: 80px; }
-.w-proto { width: 190px; }
-.w-clients { width: 200px; }
-.w-itraffic { width: 140px; }
-.w-speed { width: 216px; }
-.w-dur { width: 100px; }
-.atable th.center, .atable td.center { text-align: center; }
-.atable th.right, .atable td.right { text-align: end; }
-.action-buttons {
+.inbounds .w-id { width: 60px; }
+.inbounds .w-menu { width: 70px; }
+.inbounds .w-enable { width: 80px; }
+.inbounds .w-remark { width: 90px; }
+.inbounds .w-node { width: 130px; }
+.inbounds .server-tabs .atag.count { margin-inline-start: 6px; }
+.inbounds .w-port { width: 80px; }
+.inbounds .w-proto { width: 190px; }
+.inbounds .w-clients { width: 200px; }
+.inbounds .w-itraffic { width: 140px; }
+.inbounds .w-speed { width: 216px; }
+.inbounds .w-dur { width: 100px; }
+.inbounds .atable th.center, .inbounds .atable td.center { text-align: center; }
+.inbounds .atable th.right, .inbounds .atable td.right { text-align: end; }
+.inbounds .action-buttons {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
 }
-.card-empty {
+.inbounds .card-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1106,9 +384,9 @@ async function submitForm(input) {
   padding: 24px 12px;
   color: var(--muted);
 }
-.card-empty .anticon { margin-bottom: 8px; }
+.inbounds .card-empty .anticon { margin-bottom: 8px; }
 
-.strip {
+.inbounds .strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1px;
@@ -1116,48 +394,48 @@ async function submitForm(input) {
   margin-bottom: 16px;
   overflow: hidden;
 }
-.strip-item {
+.inbounds .strip-item {
   background: var(--surface);
   padding: 14px 18px;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
-.strip-label {
+.inbounds .strip-label {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: var(--t-xs);
   color: var(--muted);
 }
-.strip-value {
+.inbounds .strip-value {
   font-size: var(--t-lg);
   font-weight: 600;
   line-height: 1.15;
 }
 
-.actionbar {
+.inbounds .actionbar {
   display: flex;
   align-items: center;
   gap: 9px;
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
-.selcount {
+.inbounds .selcount {
   color: var(--muted);
   margin-inline-start: 8px;
 }
 
-.name {
+.inbounds .name {
   color: var(--ink);
   font-weight: 600;
 }
-.tags {
+.inbounds .tags {
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
 }
-.linkish {
+.inbounds .linkish {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1169,7 +447,7 @@ async function submitForm(input) {
   cursor: pointer;
   padding: 0;
 }
-.linkish:hover {
+.inbounds .linkish:hover {
   color: var(--accent-hover);
 }
 </style>
