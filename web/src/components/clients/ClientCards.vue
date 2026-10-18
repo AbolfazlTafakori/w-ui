@@ -108,3 +108,8 @@ onUnmounted(() => {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+a.tag-name { color: inherit; text-decoration: none; }
+.speed-num { font-variant-numeric: tabular-nums; }
+</style>

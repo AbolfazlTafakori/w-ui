@@ -1,23 +1,27 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
-import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, dateTime, unitToBytes } from '../lib/format.js'
+import { store, t, notify } from '../lib/store.js'
 import ClientForm from '../components/ClientForm.vue'
 import ExtendDialog from '../components/ExtendDialog.vue'
 import BulkClientForm from '../components/BulkClientForm.vue'
 import ClientQrModal from '../components/ClientQrModal.vue'
 import ClientInfoModal from '../components/ClientInfoModal.vue'
 import AntIcon from '../components/AntIcon.vue'
-import Icon from '../components/Icon.vue'
 import ImportDialog from '../components/clients/ImportDialog.vue'
 import SubLinksDialog from '../components/clients/SubLinksDialog.vue'
-import { DEPLETING_AT } from '../lib/clientRow.js'
 import ClientsTable from '../components/clients/ClientsTable.vue'
 import ClientCards from '../components/clients/ClientCards.vue'
 import Pager from '../components/Pager.vue'
+import BulkDialog from '../components/clients/BulkDialog.vue'
+import AccountCard from '../components/clients/AccountCard.vue'
+import { filterChips as chipsFor, filtersFromLink, listQuery, withoutChip } from '../lib/clients/filters.js'
+import { useClientActions } from '../lib/clients/actions.js'
+import ClientStats from '../components/clients/ClientStats.vue'
+import { useSelection } from '../lib/clients/selection.js'
+import MoreMenu from '../components/MoreMenu.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FilterDrawer, { emptyFilters, activeFilterCount } from '../components/FilterDrawer.vue'
 import PageSpin from '../components/PageSpin.vue'
@@ -70,12 +74,10 @@ const shareFor = ref(null)
 const infoFor = ref(null)
 const dialog = ref(null) // { kind }
 const bulkOpen = ref(false)
-const form = ref({ group: '', addDays: '', addUnit: 'days', quotaGB: '', quotaUnit: 'GB', resetCycle: '' })
 const selected = ref(new Set())
 // On a phone the table becomes a list of cards, as the classic panel's clients do,
 // and each card's actions live behind one menu.
 const isMobile = useIsMobile()
-const moreOpen = ref(null) // { x, y }
 const busy = ref(false)
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
@@ -90,34 +92,11 @@ const filterOpen = ref(false)
 // the overview's tiles (/clients?status=depleting), or a group, from the
 // groups page (/clients?group=trial). Each becomes that one filter, which
 // shows as a chip and is cleared like any other.
-const STATUS_LINKS = ['active', 'depleting', 'exhausted', 'expired', 'disabled', 'online']
-function filtersFromLink() {
-  const f = emptyFilters()
-  const s = String(route.query.status || '')
-  if (STATUS_LINKS.includes(s)) f.buckets = [s]
-  if (route.query.group) f.groups = [String(route.query.group)]
-  return f
-}
-const filters = ref(filtersFromLink())
+const filters = ref(filtersFromLink(route.query))
 const filterCount = computed(() => activeFilterCount(filters.value))
 
-// Sent only when set, so an untouched filter leaves the query string as short
-// as it was before any of this existed.
-function filterParams() {
-  const f = filters.value
-  const out = {}
-  if (f.buckets.length) out.buckets = f.buckets.join(',')
-  if (f.protocols.length) out.protocols = f.protocols.join(',')
-  if (f.interfaceIds.length) out.interfaceIds = f.interfaceIds.join(',')
-  if (f.groups.length) out.groups = f.groups.join(',')
-  if (f.expiryFrom) out.expiryFrom = f.expiryFrom
-  if (f.expiryTo) out.expiryTo = f.expiryTo
-  if (f.usedFromGB !== '') out.usedFromGB = f.usedFromGB
-  if (f.usedToGB !== '') out.usedToGB = f.usedToGB
-  if (f.renews) out.renews = f.renews
-  if (f.hasNote) out.hasNote = f.hasNote
-  return out
-}
+// What the list is asked for, but the page.
+const query = () => listQuery({ search: search.value, status: statusFilter.value, group: groupFilter.value, sort: sort.value, filters: filters.value })
 
 // A narrowed list is a different list: staying on page four of the old one
 // would show an empty table and look like the filter matched nothing.
@@ -136,47 +115,12 @@ async function loadAccount() {
     /* the strip stays as it was; the list is what matters */
   }
 }
-const accountStrip = computed(() => {
-  const a = account.value || store.admin
-  if (!reseller.value || !a) return null
-  const DAY = 86400e3
-  const left = a.quotaBytes ? Math.max(0, a.quotaBytes - a.usedBytes) : null
-  const spentPct = a.quotaBytes ? Math.min(100, Math.round((a.usedBytes / a.quotaBytes) * 100)) : null
-  const days = a.expiresAt ? Math.ceil((new Date(a.expiresAt).getTime() - Date.now()) / DAY) : null
-  let reason = ''
-  if (!a.enabled) reason = t('admins.switchedOff')
-  else if (days !== null && days <= 0) reason = t('admins.termEnded')
-  else if (a.quotaBytes && a.usedBytes >= a.quotaBytes) reason = t('admins.allowanceSpent')
-  return {
-    customers: a.clientLimit ? `${nf(a.users)} / ${nf(a.clientLimit)}` : `${nf(a.users)} / ∞`,
-    customersColor: a.clientLimit && a.users >= a.clientLimit ? 'orange' : 'green',
-    traffic: left === null ? '∞' : bytes(left, store.locale),
-    trafficColor: left === null ? 'purple' : spentPct >= 100 ? 'red' : spentPct >= DEPLETING_AT ? 'orange' : 'green',
-    time: days === null ? '∞' : days <= 0 ? t('admins.termEnded') : t('admins.daysLeft', { n: nf(days) }),
-    timeColor: days === null ? 'purple' : days <= 0 ? 'red' : days <= 7 ? 'orange' : 'green',
-    timeTitle: a.expiresAt ? dateTime(a.expiresAt, store.locale) : '',
-    reason,
-  }
-})
-
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   loadAccount()
   try {
     const [p, o] = await Promise.all([
-      api.clients(
-        {
-          search: search.value,
-          status: ['active', 'disabled', 'expired', 'exhausted'].includes(statusFilter.value) ? statusFilter.value : '',
-          buckets: statusFilter.value === 'depleted' ? 'exhausted,expired' : undefined,
-          group: groupFilter.value,
-          sort: sort.value,
-          page: currentPage.value,
-          perPage: pageSize.value,
-          ...filterParams(),
-        },
-        { background: quiet },
-      ),
+      api.clients({ ...query(), page: currentPage.value, perPage: pageSize.value }, { background: quiet }),
       api.overview({ background: quiet }),
     ])
 
@@ -250,22 +194,8 @@ onMounted(async () => {
     notify(err.message, 'error')
   }
   await Promise.all([load(), loadGroups()])
-  window.addEventListener('click', onDocClick, true)
-  window.addEventListener('keydown', onKey)
-})
-onUnmounted(() => {
-  window.removeEventListener('click', onDocClick, true)
-  window.removeEventListener('keydown', onKey)
 })
 
-function onDocClick(e) {
-  if (moreOpen.value && !e.target.closest?.('.rowmenu') && !e.target.closest?.('.more-btn')) {
-    moreOpen.value = null
-  }
-}
-function onKey(e) {
-  if (e.key === 'Escape') moreOpen.value = null
-}
 
 let searchTimer = null
 watch(search, () => {
@@ -283,44 +213,10 @@ watch([statusFilter, groupFilter, sort], () => {
 const hasGroups = computed(() => groupNames.value.length > 0)
 
 // Their chips: one per active filter, each closable on its own.
-const filterChips = computed(() => {
-  const f = filters.value
-  const out = []
-  for (const b of f.buckets || []) out.push({ key: 'buckets', value: b, color: '', text: t(`filter.bucket.${b}`) })
-  for (const p of f.protocols || []) out.push({ key: 'protocols', value: p, color: 'geekblue', text: t(`protocol.${p}`) })
-  for (const id of f.interfaceIds || []) out.push({ key: 'interfaceIds', value: id, color: 'green', text: interfaces.value.find((i) => i.id === id)?.name || `#${id}` })
-  for (const g of f.groups || []) out.push({ key: 'groups', value: g, color: 'geekblue', text: `${t('client.group')}: ${g}` })
-  if (f.expiryFrom || f.expiryTo) out.push({ key: 'expiry', color: 'orange', text: `${t('client.expires')}: ${f.expiryFrom || '…'} → ${f.expiryTo || '…'}` })
-  if (f.usedFromGB !== '' || f.usedToGB !== '') out.push({ key: 'usage', color: 'purple', text: `${t('client.traffic')}: ${f.usedFromGB || 0} → ${f.usedToGB || '∞'} GB` })
-  if (f.renews) out.push({ key: 'renews', color: 'gold', text: `${t('client.resetCycle')}: ${f.renews === 'on' ? t('status.enabled') : t('status.disabled')}` })
-  if (f.hasNote) out.push({ key: 'hasNote', color: '', text: `${t('client.note')}: ${f.hasNote === 'yes' ? t('filter.has') : t('filter.hasNot')}` })
-  return out
-})
+const filterChips = computed(() => chipsFor(filters.value, interfaces.value, t))
 function clearChip(chip) {
-  const f = { ...filters.value }
-  switch (chip.key) {
-    case 'buckets':
-    case 'protocols':
-    case 'interfaceIds':
-    case 'groups':
-      f[chip.key] = f[chip.key].filter((v) => v !== chip.value)
-      break
-    case 'expiry':
-      f.expiryFrom = ''
-      f.expiryTo = ''
-      break
-    case 'usage':
-      f.usedFromGB = ''
-      f.usedToGB = ''
-      break
-    default:
-      f[chip.key] = ''
-  }
-  filters.value = f
+  filters.value = withoutChip(filters.value, chip)
 }
-
-// The inbounds a customer is on, as their chips: one per server, coloured
-// by protocol, three shown and the rest counted.
 
 // Clearing every filter at once. Undoing three separately, to find out whether
 // the list is empty or merely filtered, is work the panel should do.
@@ -333,289 +229,31 @@ function clearFilters() {
   load()
 }
 
-const allSelected = computed(
-  () => !!page.value?.items.length && page.value.items.every((c) => selected.value.has(c.id)),
-)
-function toggleAll(checked) {
-  allMatching.value = false
-  selected.value = checked ? new Set(page.value.items.map((c) => c.id)) : new Set()
-}
+// Which customers are chosen: ticked by hand, or every one the filter matches.
+const { allSelected, toggleAll, toggleOne, allMatching, matchingBusy, filtering, offerAllMatching, selectAllMatching, clearSelection } =
+  useSelection({
+    page, selected, query,
+    filtered: () => !!(search.value || statusFilter.value || groupFilter.value || filterCount.value),
+    filterKey: () => JSON.stringify([search.value, statusFilter.value, groupFilter.value, filters.value]),
+  })
 
-// Every customer the filter matches, across every page -- or every customer,
-// with no filter on. Offered once the whole page is ticked, as a mail client
-// offers it: selecting a page is not selecting a list of two thousand.
-const allMatching = ref(false)
-const matchingBusy = ref(false)
-const filtering = computed(() => !!(search.value || statusFilter.value || groupFilter.value || filterCount.value))
-const offerAllMatching = computed(
-  () => !allMatching.value && allSelected.value && (page.value?.total || 0) > page.value.items.length,
-)
-async function selectAllMatching() {
-  matchingBusy.value = true
-  try {
-    const res = await api.matchingClientIds({
-      search: search.value,
-      status: ['active', 'disabled', 'expired', 'exhausted'].includes(statusFilter.value) ? statusFilter.value : '',
-      buckets: statusFilter.value === 'depleted' ? 'exhausted,expired' : undefined,
-      group: groupFilter.value,
-      sort: sort.value,
-      ...filterParams(),
-    })
-    selected.value = new Set(res.ids || [])
-    allMatching.value = true
-  } catch (err) {
-    notify(err.message, 'error')
-  } finally {
-    matchingBusy.value = false
-  }
-}
-function clearSelection() {
-  allMatching.value = false
-  selected.value = new Set()
-}
-// A different filter is a different list: a selection of every match of the
-// old one would reach customers no longer shown.
-watch(
-  () => JSON.stringify([search.value, statusFilter.value, groupFilter.value, filters.value]),
-  () => { if (allMatching.value) clearSelection() },
-)
-function toggleOne(id, checked) {
-  // Unticking one of every match is a hand-picked selection again.
-  if (!checked) allMatching.value = false
-  const next = new Set(selected.value)
-  checked ? next.add(id) : next.delete(id)
-  selected.value = next
-}
-
-async function guard(fn, successKey) {
-  try {
-    await fn()
-    if (successKey) notify(t(successKey), 'success')
-    await Promise.all([load(), loadGroups()])
-  } catch (err) {
-    notify(err.message, 'error')
-  }
-}
-
-// Rows with a change in flight, so the switch can spin on that row alone.
-const pending = ref(new Set())
-
-// Toggling one customer moves the switch immediately and patches that row from
-// the reply. It used to await the request and then refetch the whole list and
-// the group list, which meant the switch stayed where it was for the entire
-// round trip — a control that does not move when clicked reads as broken, and
-// the operator clicks it again.
-async function setEnabled(c, on) {
-  const was = c.status
-  const next = on ? 'active' : 'disabled'
-  if (was === next) return
-
-  c.status = next                       // optimistic: the switch moves now
-  pending.value = new Set(pending.value).add(c.id)
-
-  try {
-    const updated = await api.updateClient(c.id, { status: next })
-    // Patched in place rather than reloading. Refetching would also reorder or
-    // re-page the list under the operator's cursor.
-    Object.assign(c, updated)
-  } catch (err) {
-    c.status = was                      // put it back where it was
-    notify(err.message, 'error')
-  } finally {
-    release(c.id)
-    // The row is right the moment the switch moves; the counts above it are
-    // not, and they are what an operator checks to see the change took.
-    settled()
-  }
-}
-
-function hold(id) {
-  pending.value = new Set(pending.value).add(id)
-}
-function release(id) {
-  const next = new Set(pending.value)
-  next.delete(id)
-  pending.value = next
-}
-
-// Zeroing one customer's counters. Fast on a small panel and not fast on a
-// large one, and until it came back the button gave nothing at all — so the
-// operator's second click reset the traffic they had just reset.
-// Fresh credentials for every file this customer holds. Asked for
-// plainly: what they are holding stops working, and they have to be told.
-function rotateKeysFor(c) {
-  ask.value = {
-    title: t('client.rotateKeys'),
-    subject: c.name,
-    body: t('client.rotateAllConfirm', { name: c.name }),
-    consequences: [t('client.rotateAllHint')],
-    confirmLabel: t('client.rotateKeys'),
-    run: async () => {
-      // Everything this customer holds: every file, and the link they
-      // fetch them from.
-      const res = await api.rotateKeys(c.id, { subToken: true })
-      notify(t('client.rotateKeysDone', { n: res?.rotated || 0 }), 'success')
-      await load()
+// What an operator does to customers, and the menu that offers it.
+const { ids, pending, setEnabled, ask, runConfirmed, rotateKeysFor, resetOne, removeOne, bulk, pickMore: pick, menu: moreItems } =
+  useClientActions({
+    page, stats, selected, busy, load, loadGroups, settled,
+    open: {
+      dialog: (kind) => (dialog.value = { kind }),
+      subLinks: openSubLinks,
+      importer: () => (importOpen.value = true),
+      batch: () => (bulkOpen.value = true),
+      extend: (kind) => (extendFor.value = { kind }),
     },
-  }
-}
-
-async function resetOne(c) {
-  hold(c.id)
-  try {
-    await api.resetTraffic(c.id)
-    c.rxBytes = 0
-    c.txBytes = 0
-    notify(t('client.trafficReset'), 'success')
-    settled()
-  } catch (err) {
-    notify(err.message, 'error')
-    await load()
-  } finally {
-    release(c.id)
-  }
-}
-const ask = ref(null) // { title, body, subject, consequences, confirmLabel, requireText, run }
-
-function confirmAnd(spec) {
-  ask.value = spec
-}
-
-async function runConfirmed() {
-  const spec = ask.value
-  if (!spec) return
-  busy.value = true
-  try {
-    await spec.run()
-  } finally {
-    busy.value = false
-    ask.value = null
-  }
-}
-
-const removeOne = (c) =>
-  confirmAnd({
-    title: t('client.confirmDeleteTitle'),
-    body: t('client.confirmDeleteBody'),
-    subject: c.name,
-    // Said because it is what an operator forgets: the customer's config stops
-    // working the moment this runs, and reissuing it does not bring the old one
-    // back.
-    consequences: [
-      tn('client.consequenceDevices', c.accounts?.length ?? 0),
-      t('client.consequenceConfigs'),
-      t('client.consequenceUsage'),
-    ],
-    confirmLabel: t('action.delete'),
-    run: () => guard(() => api.deleteClient(c.id), 'client.deleted'),
   })
-
-const ids = () => [...selected.value]
-
-const bulk = (action) => {
-  if (!selected.value.size) return
-  const n = selected.value.size
-
-  if (action === 'delete') {
-    return confirmAnd({
-      title: t('client.confirmDeleteManyTitle'),
-      body: t('client.confirmDeleteBody'),
-      subject: tn('client.nCustomers', n),
-      consequences: [t('client.consequenceConfigs'), t('client.consequenceUsage')],
-      confirmLabel: t('action.delete'),
-      // Typed out, because a selection of forty is not something the eye
-      // checks and this is the one action that cannot be walked back.
-      requireText: n >= 5 ? String(n) : '',
-      run: () => guard(async () => {
-        await api.bulkClients(action, ids())
-        selected.value = new Set()
-      }, 'client.bulkDone'),
-    })
-  }
-
-  return guard(async () => {
-    await api.bulkClients(action, ids())
-    selected.value = new Set()
-  }, 'client.bulkDone')
+function dialogDone() {
+  clearSelection()
+  Promise.all([load(), loadGroups()])
 }
 
-// Moving a selection of customers onto a server, or off it.
-//
-// The answer names every customer it could not move and why — a device limit,
-// an address pool with nothing left — because a count alone would leave an
-// operator to work out which of three hundred people is still on the old
-// server.
-async function submitServers(kind) {
-  const chosen = (form.value.interfaceIds || []).map(Number)
-  if (!chosen.length) {
-    notify(t('client.pickAServer'), 'error')
-    return
-  }
-
-  const res = await api.post(`/api/clients/servers/${kind === 'attach' ? 'attach' : 'detach'}`, {
-    ids: ids(),
-    interfaceIds: chosen,
-  })
-
-  const failed = Object.entries(res?.failures || {})
-  if (failed.length) {
-    notify(failed.map(([name, why]) => `${name}: ${why}`).join('\n'), 'error')
-  } else {
-    notify(`${t('client.bulkDone')} — ${nf(res?.changed || 0)}`, 'success')
-  }
-  dialog.value = null
-  selected.value = new Set()
-  await load()
-}
-
-const ungroup = () =>
-  guard(async () => {
-    await api.assignGroup('', ids())
-    selected.value = new Set()
-  }, 'client.bulkDone')
-
-function openMore(e) {
-  if (moreOpen.value) {
-    moreOpen.value = null
-    return
-  }
-  const r = e.currentTarget.getBoundingClientRect()
-  moreOpen.value = { rect: r, x: r.left, y: r.bottom + 4 }
-}
-
-// Their two menus: one for the page, one for a selection. Same items, same
-// order, same dividers.
-const moreItems = computed(() =>
-  selected.value.size
-    ? [
-        { key: 'attach', label: t('client.menu.attach'), icon: 'UsergroupAddOutlined' },
-        { key: 'detach', label: t('client.menu.detach'), icon: 'UsergroupDeleteOutlined', danger: true },
-        { key: 'group', label: t('client.addToGroup'), icon: 'TagsOutlined' },
-        { key: 'ungroup', label: t('client.ungroup'), icon: 'UngroupOutlined', danger: true },
-        { divider: true },
-        { key: 'enable', label: t('action.enable'), icon: 'CheckCircleOutlined' },
-        { key: 'disable', label: t('action.disable'), icon: 'StopOutlined', danger: true },
-        { key: 'time', label: t('client.menu.time'), icon: 'FieldTimeOutlined' },
-        { key: 'traffic', label: t('client.menu.traffic'), icon: 'DatabaseOutlined' },
-        { key: 'adjust', label: t('client.adjust'), icon: 'ClockCircleOutlined' },
-        { key: 'reset', label: t('outbound.resetTraffic'), icon: 'RetweetOutlined' },
-        { key: 'rotate', label: t('client.rotateKeys'), icon: 'KeyOutlined', danger: true },
-        { key: 'subLinks', label: t('client.menu.subLinks'), icon: 'LinkOutlined' },
-      ]
-    : [
-        { key: 'batch', label: t('client.menu.bulk'), icon: 'UsergroupAddOutlined' },
-        { key: 'export', label: t('client.export'), icon: 'DownloadOutlined' },
-        { key: 'import', label: t('client.menu.import'), icon: 'UploadOutlined' },
-        { key: 'resetAll', label: t('client.resetAll'), icon: 'RetweetOutlined' },
-        // Here too, and off: with nothing selected nothing is changed, and
-        // the item says what to do instead.
-        { key: 'time', label: t('client.menu.time'), icon: 'FieldTimeOutlined', disabled: true, title: t('xt.selectFirst') },
-        { key: 'traffic', label: t('client.menu.traffic'), icon: 'DatabaseOutlined', disabled: true, title: t('xt.selectFirst') },
-        { divider: true },
-        { key: 'purgeDepleted', label: t('client.menu.delDepleted'), icon: 'RestOutlined', danger: true },
-        { key: 'purgeUnattached', label: t('client.menu.delOrphans'), icon: 'DisconnectOutlined', danger: true },
-      ],
-)
 
 // The import and subscription-links dialogs, while open. The links are for
 // the customers chosen when it opened, named from the rows on this page.
@@ -634,153 +272,6 @@ function extendDone() {
   extendFor.value = null
   clearSelection()
   load()
-}
-
-function pickMore(key) {
-  moreOpen.value = null
-  if (key === 'time' || key === 'traffic') {
-    if (selected.value.size) extendFor.value = { kind: key }
-    return
-  }
-  if (key === 'attach' || key === 'detach' || key === 'group' || key === 'adjust') return openDialog(key)
-  if (key === 'ungroup') return ungroup()
-  if (key === 'enable' || key === 'disable') return bulk(key)
-  if (key === 'reset') {
-    const n = selected.value.size
-    return confirmAnd({
-      title: t('outbound.resetTraffic'),
-      body: t('client.bulkResetBody'),
-      subject: tn('client.nCustomers', n),
-      confirmLabel: t('outbound.resetTraffic'),
-      run: () => guard(async () => {
-        await api.bulkClients('reset', ids())
-        selected.value = new Set()
-      }, 'client.bulkDone'),
-    })
-  }
-  if (key === 'rotate') {
-    const n = selected.value.size
-    return confirmAnd({
-      title: t('client.rotateKeys'),
-      body: t('client.bulkRotateBody'),
-      subject: tn('client.nCustomers', n),
-      consequences: [t('client.rotateAllHint')],
-      confirmLabel: t('client.rotateKeys'),
-      // Typed out past a handful, as a bulk delete is: every file of every
-      // selected customer stops working, and each has to fetch new ones.
-      requireText: n >= 5 ? String(n) : '',
-      // One customer at a time, through the same call a row's key button
-      // makes, so each is rotated whole -- files and link together -- and one
-      // failing leaves the rest done rather than none of them.
-      run: async () => {
-        const failed = []
-        let rotated = 0
-        for (const id of ids()) {
-          try {
-            const res = await api.rotateKeys(id, { subToken: true })
-            rotated += res?.rotated || 0
-          } catch (err) {
-            const c = page.value?.items.find((x) => x.id === id)
-            failed.push(`${c?.name || id}: ${err.message}`)
-          }
-        }
-        selected.value = new Set()
-        if (failed.length) notify(`${t('client.rotateKeysDone', { n: rotated })}\n${failed.join('\n')}`, 'error')
-        else notify(t('client.rotateKeysDone', { n: rotated }), 'success')
-        await load()
-      },
-    })
-  }
-  if (key === 'subLinks') return openSubLinks()
-  if (key === 'import') return (importOpen.value = true)
-  if (key === 'purgeDepleted' || key === 'purgeUnattached') {
-    const status = key === 'purgeDepleted' ? 'depleted' : 'unattached'
-    const count = key === 'purgeDepleted' ? (stats.value?.exhausted ?? 0) + (stats.value?.expired ?? 0) : null
-    return confirmAnd({
-      title: t(key === 'purgeDepleted' ? 'client.menu.delDepletedTitle' : 'client.menu.delOrphansTitle'),
-      body: t(key === 'purgeDepleted' ? 'client.menu.delDepletedBody' : 'client.menu.delOrphansBody'),
-      subject: count == null ? '' : tn('client.nCustomers', count),
-      consequences: [t('client.consequenceConfigs'), t('client.consequenceUsage')],
-      confirmLabel: t('action.delete'),
-      run: () => guard(() => api.purgeClients(status), 'client.deleted'),
-    })
-  }
-  if (key === 'batch') {
-    bulkOpen.value = true
-    return
-  }
-  if (key === 'export') {
-    api.downloadClients().catch((e) => notify(e.message, 'error'))
-    return
-  }
-  if (key === 'resetAll') {
-    return confirmAnd({
-      title: t('client.confirmResetAllTitle'),
-      body: t('client.confirmResetAllBody'),
-      subject: tn('client.nCustomers', stats.value?.clients ?? 0),
-      consequences: [t('client.consequenceReset')],
-      confirmLabel: t('action.resetTraffic'),
-      run: () => guard(() => api.resetAllTraffic(), 'client.bulkDone'),
-    })
-  }
-  // The two purges are separate dialogs naming separate counts. They used to
-  // share one sentence, so the dialog could not tell an operator which of them
-  // they had picked.
-  if (key === 'purgeExhausted' || key === 'purgeExpired') {
-    const status = key === 'purgeExhausted' ? 'exhausted' : 'expired'
-    const count = (key === 'purgeExhausted' ? stats.value?.exhausted : stats.value?.expired) ?? 0
-    return confirmAnd({
-      title: t(key === 'purgeExhausted' ? 'client.confirmPurgeExhaustedTitle' : 'client.confirmPurgeExpiredTitle'),
-      body: t('client.confirmPurgeBody'),
-      subject: tn('client.nCustomers', count),
-      consequences: [t('client.consequenceConfigs'), t('client.consequenceUsage')],
-      confirmLabel: t('action.delete'),
-      requireText: count >= 5 ? String(count) : '',
-      run: () => guard(() => api.purgeClients(status), 'client.deleted'),
-    })
-  }
-}
-
-function openDialog(kind) {
-  if (kind === 'group') form.value.group = ''
-  if (kind === 'adjust') {
-    form.value.addDays = ''
-    form.value.quotaGB = ''
-    form.value.resetCycle = ''
-  }
-  // Cleared each time it opens: a list of ticks left over from the last use
-  // would be a bulk action applied to servers nobody chose this time.
-  if (kind === 'attach' || kind === 'detach') form.value.interfaceIds = []
-  dialog.value = { kind }
-}
-
-async function submitDialog() {
-  busy.value = true
-  try {
-    const d = dialog.value
-    if (d.kind === 'attach' || d.kind === 'detach') {
-      await submitServers(d.kind)
-      return
-    }
-    if (d.kind === 'group') {
-      const res = await api.assignGroup(form.value.group.trim(), ids())
-      notify(`${t('client.bulkDone')} — ${nf(res.affected)}`, 'success')
-      selected.value = new Set()
-    } else if (d.kind === 'adjust') {
-      const payload = { ids: ids() }
-      if (form.value.quotaGB !== '') payload.quotaBytes = unitToBytes(form.value.quotaGB, form.value.quotaUnit)
-      if (form.value.resetCycle) payload.resetCycle = form.value.resetCycle
-      const res = await api.adjustClients(payload)
-      notify(`${t('client.bulkDone')} — ${nf(res.affected)}`, 'success')
-      selected.value = new Set()
-    }
-    dialog.value = null
-    await Promise.all([load(), loadGroups()])
-  } catch (err) {
-    notify(err.message, 'error')
-  } finally {
-    busy.value = false
-  }
 }
 
 // A batch is created in one call and reported as one number; a failure
@@ -831,49 +322,10 @@ async function submitForm(input) {
 
   <div class="antpage clients">
   <!-- A reseller's own account: what they bought and how much of it is left. -->
-  <div v-if="accountStrip" class="acard small account-card">
-    <div class="acard-body">
-      <div class="account-row">
-        <span class="account-title"><AntIcon name="ShopOutlined" /> {{ t('admins.you.title') }}</span>
-        <span class="account-item">{{ t('admins.you.customers') }} <span class="atag ltr" :class="accountStrip.customersColor">{{ accountStrip.customers }}</span></span>
-        <span class="account-item">{{ t('admins.you.trafficLeft') }} <span class="atag ltr" :class="accountStrip.trafficColor">{{ accountStrip.traffic }}</span></span>
-        <span class="account-item">{{ t('admins.you.timeLeft') }} <span class="atag" dir="auto" :class="accountStrip.timeColor" :title="accountStrip.timeTitle">{{ accountStrip.time }}</span></span>
-      </div>
-      <p v-if="accountStrip.reason" class="account-barred">{{ t('admins.you.barred', { reason: accountStrip.reason }) }}</p>
-    </div>
-  </div>
+  <AccountCard v-if="reseller" :account="account || store.admin" />
 
   <!-- Their summary Card: size="small", six Statistics with a coloured dot. -->
-  <div v-if="stats" class="acard small summary-card">
-    <div class="acard-body">
-      <div class="arow six">
-        <div class="acol">
-          <div class="stat-title">{{ t('nav.clients') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="TeamOutlined" /></span><span>{{ nf(stats.clients) }}</span></div>
-        </div>
-        <div class="acol">
-          <div class="stat-title">{{ t('status.online') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-blue"></i></span><span>{{ nf(stats.online) }}</span></div>
-        </div>
-        <div class="acol">
-          <div class="stat-title">{{ t('stat.depleted') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-red"></i></span><span>{{ nf((stats.exhausted || 0) + (stats.expired || 0)) }}</span></div>
-        </div>
-        <div class="acol">
-          <div class="stat-title">{{ t('stat.depleting') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-orange"></i></span><span>{{ nf(stats.depleting) }}</span></div>
-        </div>
-        <div class="acol">
-          <div class="stat-title">{{ t('status.disabled') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-gray"></i></span><span>{{ nf(stats.disabled) }}</span></div>
-        </div>
-        <div class="acol">
-          <div class="stat-title">{{ t('status.active') }}</div>
-          <div class="stat-content ltr"><span class="stat-prefix"><i class="dot dot-green"></i></span><span>{{ nf(stats.active) }}</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <ClientStats v-if="stats" :stats="stats" />
 
   <div v-if="!interfaces.length" class="aalert warning">
     <AntIcon name="ExclamationCircleFilled" />
@@ -895,9 +347,7 @@ async function submitForm(input) {
           {{ t('client.menu.selectedCount').replace('{count}', nf(selected.size)) }}
           <button type="button" class="atag-close" :aria-label="t('action.cancel')" @click="selected = new Set()"><AntIcon name="CloseOutlined" /></button>
         </span>
-        <button class="abtn more-btn" :aria-label="isMobile ? t('outbound.more') : null" :aria-haspopup="'menu'" :aria-expanded="!!moreOpen" @click="openMore">
-          <AntIcon name="MoreOutlined" /><span v-if="!isMobile">{{ t('outbound.more') }}</span>
-        </button>
+        <MoreMenu :items="moreItems" :compact="isMobile" @pick="pick" />
         <button v-if="selected.size" class="abtn danger" style="margin-inline-start: auto" @click="bulk('delete')">
           <AntIcon name="DeleteOutlined" /><span v-if="!isMobile">{{ t('action.delete') }}</span>
         </button>
@@ -979,101 +429,9 @@ async function submitForm(input) {
   </div>
   </div>
 
-  <Teleport to="body">
-    <div v-if="moreOpen" v-fit="moreOpen.rect" class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
-      <template v-for="(m, i) in moreItems" :key="m.key || `d${i}`">
-        <hr v-if="m.divider" class="amenu-divider" />
-        <button v-else class="amenu-item" :class="{ danger: m.danger }" role="menuitem" :disabled="m.disabled" :aria-disabled="m.disabled ? 'true' : null" :title="m.title || null" @click="pickMore(m.key)">
-          <AntIcon :name="m.icon" /><span>{{ m.label }}</span>
-        </button>
-      </template>
-    </div>
-  </Teleport>
 
-  <div v-if="dialog" class="modal-backdrop" @click.self="dialog = null">
-    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="cd-title">
-      <div class="card-head">
-        <h2 id="cd-title">
-          {{ dialog.kind === 'group' ? t('client.addToGroup')
-            : dialog.kind === 'adjust' ? t('client.adjust')
-            : dialog.kind === 'attach' ? t('client.attachServers')
-            : t('client.detachServers') }}
-        </h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="dialog = null">
-          <Icon name="close" :size="15" />
-        </button>
-      </div>
-
-      <form id="cd-form" class="card-body" @submit.prevent="submitDialog">
-        <p class="target muted small">
-          {{ t('action.selected') }}: <b>{{ nf(selected.size) }}</b>
-        </p>
-
-        <div v-if="dialog.kind === 'group'" class="field">
-          <label for="cd-group">{{ t('client.group') }}</label>
-          <input id="cd-group" v-model="form.group" list="cd-groups" :placeholder="t('client.groupPlaceholder')" autofocus />
-          <datalist id="cd-groups">
-            <option v-for="g in groupNames" :key="g" :value="g" />
-          </datalist>
-          <span class="hint">{{ t('client.groupHint') }}</span>
-        </div>
-
-        <!-- Adding keeps what a customer already has; only taking away
-             removes anything. Said on the dialog, because "attach" and
-             "detach" do not say it and the difference is the whole point of
-             selling more than one server. -->
-        <template v-else-if="dialog.kind === 'attach' || dialog.kind === 'detach'">
-          <div class="field">
-            <label>{{ dialog.kind === 'attach' ? t('client.attachServers') : t('client.detachServers') }}</label>
-            <div class="srv-list">
-              <label v-for="i in interfaces" :key="i.id" class="srv-item">
-                <input v-model="form.interfaceIds" type="checkbox" :value="i.id" />
-                <span class="srv-name">{{ i.name }}</span>
-                <span class="srv-meta ltr">{{ i.protocol }} · {{ i.endpointHost }}</span>
-              </label>
-            </div>
-            <span class="hint">
-              {{ dialog.kind === 'attach' ? t('client.attachHint') : t('client.detachHint') }}
-            </span>
-          </div>
-        </template>
-
-        <!-- Setting a limit and the renewal. Adding time is Time's, which
-             keeps unlimited customers unlimited and plans not started
-             waiting. -->
-        <template v-else-if="dialog.kind === 'adjust'">
-          <div class="field">
-            <label for="cd-quota">{{ t('client.quota') }}</label>
-            <div class="unit-field">
-              <input id="cd-quota" v-model="form.quotaGB" type="number" min="0" step="any" inputmode="decimal" :placeholder="t('client.leaveBlank')" autofocus />
-              <select v-model="form.quotaUnit" class="unit-select" :aria-label="t('client.quotaUnit')">
-                <option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option>
-              </select>
-            </div>
-          </div>
-          <div class="field">
-            <label for="cd-cycle">{{ t('client.resetCycle') }}</label>
-            <select id="cd-cycle" v-model="form.resetCycle">
-              <option value="">{{ t('client.leaveBlank') }}</option>
-              <option value="none">{{ t('reset.none') }}</option>
-              <option value="daily">{{ t('reset.daily') }}</option>
-              <option value="weekly">{{ t('reset.weekly') }}</option>
-              <option value="monthly">{{ t('reset.monthly') }}</option>
-            </select>
-          </div>
-        </template>
-
-      </form>
-
-      <div class="modal-foot">
-        <button type="button" class="btn ghost" @click="dialog = null">{{ t('action.cancel') }}</button>
-        <button type="submit" form="cd-form" class="btn primary" :disabled="busy">
-          <span v-if="busy" class="spin"></span>
-          <template v-else>{{ t('action.save') }}</template>
-        </button>
-      </div>
-    </div>
-  </div>
+  <BulkDialog v-if="dialog" :kind="dialog.kind" :ids="ids()" :interfaces="interfaces" :group-names="groupNames"
+    @close="dialog = null" @done="dialogDone" />
 
   <ImportDialog v-if="importOpen" :interfaces="interfaces" @close="importOpen = false" @imported="load()" />
   <SubLinksDialog v-if="subLinks" :ids="subLinks.ids" :names="subLinks.names" @close="subLinks = null" />
@@ -1114,15 +472,8 @@ async function submitForm(input) {
 /* Keyed on the page's root rather than scoped, so the components it is
    made of are styled as when their markup was the page's. */
 /* the classic panel's ClientsPage.css, measured as it is. */
-.clients .arow.six > .acol { flex: 0 0 16.6667%; max-width: 16.6667%; }
 @media (max-width: 991px) { .clients .arow.six > .acol { flex: 0 0 33.3333%; max-width: 33.3333%; } }
 @media (max-width: 575px) { .clients .arow.six > .acol { flex: 0 0 50%; max-width: 50%; } }
-.clients .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-.clients .dot-green { background: var(--ok); }
-.clients .dot-blue { background: var(--accent); }
-.clients .dot-red { background: var(--bad); }
-.clients .dot-orange { background: var(--warn); }
-.clients .dot-gray { background: var(--faint); }
 
 .clients .acard.small .acard-head { min-height: 38px; padding: 0 12px; }
 .clients .acard.small .acard-body { padding: 12px; }
@@ -1139,21 +490,12 @@ async function submitForm(input) {
 .clients .sort-select select { padding-inline-end: 28px; }
 
 .clients .atable th.center, .clients .atable td.center { text-align: center; }
-.clients .atable-wrap.stale { opacity: 0.6; }
-.clients .email-cell { display: flex; flex-direction: column; }
-.clients .email-cell .email { font-weight: 500; color: inherit; text-decoration: none; }
 .clients .email-cell .email:hover, .clients a.tag-name:hover { text-decoration: underline; }
-.clients a.tag-name { color: inherit; text-decoration: none; }
-.clients .email-cell .sub.over { color: var(--danger, #e5484d); font-weight: 600; }
-.clients .email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.clients .cell-empty { color: var(--faint); }
 .clients .toggle-wrap { display: inline-flex; }
 .clients .online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }
 @keyframes online-blink { .clients 0%, .clients 100% { opacity: 1; } .clients 50% { opacity: 0.35; } }
-.clients .speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; font-variant-numeric: tabular-nums; }
 /* Figures of one width, so a speed that changes every few seconds does not
    shift the rest of the line. */
-.clients .speed-num { font-variant-numeric: tabular-nums; }
 
 /* Their ClientTrafficCell: a pill with the figures either side of a bar. */
 .clients .client-traffic-cell { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); }
@@ -1164,14 +506,8 @@ async function submitForm(input) {
 .clients .client-traffic-cell.is-unlimited .client-traffic-cell-bar > span { border: 1px solid rgba(114, 46, 209, 0.55); }
 .clients .client-traffic-cell-infinity { display: inline-flex; align-items: center; color: var(--tag-purple-ink); font-size: 14px; line-height: 1; }
 
-.clients .account-card { margin-bottom: 16px; }
-.clients .account-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
-.clients .account-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
-.clients .account-item { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
 .clients .account-item .atag { margin: 0; }
-.clients .account-barred { margin: 8px 0 0; color: var(--bad); font-size: 13px; }
 
-.clients .clients-empty { padding: 32px 0; text-align: center; color: var(--muted); }
 .clients .clients-empty .anticon { display: block; margin: 0 auto 8px; }
 
 /* Every match, across the pages: offered and said in one quiet line. */
@@ -1206,7 +542,3 @@ async function submitForm(input) {
 .clients .apage .anticon { font-size: 12px; }
 </style>
 
-<style scoped>
-/* In the bulk dialog, which is not under the page's root. */
-.unit-select { flex: 0 0 auto; width: auto; min-width: 72px; padding-inline: 8px; }
-</style>
