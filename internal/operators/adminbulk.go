@@ -1,4 +1,4 @@
-package service
+package operators
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/idset"
+	"github.com/abolfazl/w-ui/internal/optional"
 )
 
 // Changing many resellers at once.
@@ -73,13 +74,13 @@ const maxAdminBulk = 500
 var errUnchanged = errors.New("nothing to change")
 
 // Bulk applies one action to a selection of operators.
-func (s *Admins) Bulk(ctx context.Context, in AdminBulkInput, clients *Clients) (*AdminBulkResult, error) {
+func (s *Admins) Bulk(ctx context.Context, in AdminBulkInput, clients Customers) (*AdminBulkResult, error) {
 	ids := idset.Unique(in.IDs)
 	if len(ids) == 0 {
-		return nil, invalidField("ids", "no resellers selected")
+		return nil, fault.Field("ids", "no resellers selected")
 	}
 	if len(ids) > maxAdminBulk {
-		return nil, invalidField("ids", "%d resellers selected; at most %d at once", len(ids), maxAdminBulk)
+		return nil, fault.Field("ids", "%d resellers selected; at most %d at once", len(ids), maxAdminBulk)
 	}
 	if err := in.validate(); err != nil {
 		return nil, err
@@ -122,41 +123,41 @@ func (in AdminBulkInput) validate() error {
 	switch in.Action {
 	case AdminBulkEnable, AdminBulkDisable, AdminBulkResetUsage:
 	case AdminBulkExtend:
-		if in.Days < 1 || in.Days > maxTermDays {
-			return invalidField("days", "a term of 1 to %d days", maxTermDays)
+		if in.Days < 1 || in.Days > MaxTermDays {
+			return fault.Field("days", "a term of 1 to %d days", MaxTermDays)
 		}
 	case AdminBulkSetQuota:
 		if in.QuotaBytes == nil {
-			return invalidField("quotaBytes", "give the traffic allowance, or 0 for no limit")
+			return fault.Field("quotaBytes", "give the traffic allowance, or 0 for no limit")
 		}
 	case AdminBulkSetLimit:
 		if in.ClientLimit == nil || *in.ClientLimit < 0 {
-			return invalidField("clientLimit", "give the customer limit, or 0 for no limit")
+			return fault.Field("clientLimit", "give the customer limit, or 0 for no limit")
 		}
 	case AdminBulkAddServers, AdminBulkRemoveServers:
 		if len(idset.Unique(in.InterfaceIDs)) == 0 {
-			return invalidField("interfaceIds", "choose at least one server")
+			return fault.Field("interfaceIds", "choose at least one server")
 		}
 	case AdminBulkDelete:
 		if in.Mode != DeleteKeepClients && in.Mode != DeleteWithClients {
-			return invalidField("mode", "say whether to keep their customers under your own account or delete them too")
+			return fault.Field("mode", "say whether to keep their customers under your own account or delete them too")
 		}
 	default:
-		return invalidField("action", "unknown action %q", in.Action)
+		return fault.Field("action", "unknown action %q", in.Action)
 	}
 	return nil
 }
 
 // bulkOne applies the action to one operator, through the one-row paths.
-func (s *Admins) bulkOne(ctx context.Context, a *model.Admin, in AdminBulkInput, clients *Clients) error {
+func (s *Admins) bulkOne(ctx context.Context, a *model.Admin, in AdminBulkInput, clients Customers) error {
 	if a.Role == model.RoleOwner {
-		return fmt.Errorf("%w: the panel's owner is not changed from a selection", ErrInvalid)
+		return fmt.Errorf("%w: the panel's owner is not changed from a selection", fault.ErrInvalid)
 	}
 	// What only a reseller has -- a ceiling, a term, servers -- is not
 	// applied to a panel administrator, who holds none of them.
 	capped := func() error {
 		if !a.Role.Capped() {
-			return fmt.Errorf("%w: a panel administrator has no ceiling to change", ErrInvalid)
+			return fmt.Errorf("%w: a panel administrator has no ceiling to change", fault.ErrInvalid)
 		}
 		return nil
 	}
@@ -190,7 +191,7 @@ func (s *Admins) bulkOne(ctx context.Context, a *model.Admin, in AdminBulkInput,
 		}
 		switch {
 		case a.ExpiresAt == nil && a.DurationDays > 0:
-			d := min(a.DurationDays+in.Days, maxTermDays)
+			d := min(a.DurationDays+in.Days, MaxTermDays)
 			upd.DurationDays = &d
 		case a.ExpiresAt == nil:
 			// No end date: there is nothing to extend, and giving them one
@@ -202,7 +203,7 @@ func (s *Admins) bulkOne(ctx context.Context, a *model.Admin, in AdminBulkInput,
 				base = *a.ExpiresAt
 			}
 			next := base.Add(time.Duration(in.Days) * 24 * time.Hour)
-			upd.ExpiresAt = OptionalTime{Set: true, Value: &next}
+			upd.ExpiresAt = optional.Time{Set: true, Value: &next}
 		}
 
 	case AdminBulkSetQuota:

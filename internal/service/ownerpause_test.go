@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/operators"
 )
 
 // A paused reseller's customers say so, to the owner and to the reseller,
@@ -41,14 +42,14 @@ func TestAPausedResellersCustomersSaySo(t *testing.T) {
 	check("", string(model.StatusActive))
 
 	off := false
-	if _, err := admins.Update(t.Context(), reza.ID, AdminInput{Enabled: &off}); err != nil {
+	if _, err := admins.Update(t.Context(), reza.ID, operators.AdminInput{Enabled: &off}); err != nil {
 		t.Fatal(err)
 	}
 	check(model.PauseSwitchedOff, string(model.StatusDisabled))
 
 	// Nothing was written to the customer: switched back on, it is as it was.
 	on := true
-	if _, err := admins.Update(t.Context(), reza.ID, AdminInput{Enabled: &on}); err != nil {
+	if _, err := admins.Update(t.Context(), reza.ID, operators.AdminInput{Enabled: &on}); err != nil {
 		t.Fatal(err)
 	}
 	check("", string(model.StatusActive))

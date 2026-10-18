@@ -2261,6 +2261,13 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 	return id, nil
 }
 
+// DeleteCustomers removes customers the way Bulk's delete does, for the
+// operators' service deleting a reseller with everything they sold.
+func (s *Clients) DeleteCustomers(ctx context.Context, ids []uint) error {
+	_, err := s.Bulk(ctx, BulkDelete, ids)
+	return err
+}
+
 // OptionalTime is a time that can be absent, null or set, for the fields an
 // edit may leave alone, clear or change.
 type OptionalTime = optional.Time

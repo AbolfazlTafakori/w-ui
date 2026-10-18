@@ -12,6 +12,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/operators"
 	"github.com/abolfazl/w-ui/internal/scope"
 )
 
@@ -24,7 +25,7 @@ import (
 
 // resellerDB is a panel with two tunnels and the scoping rule registered,
 // which is how the real one is opened.
-func resellerDB(t *testing.T) (*gorm.DB, *Clients, *Admins) {
+func resellerDB(t *testing.T) (*gorm.DB, *Clients, *operators.Admins) {
 	t.Helper()
 	db := testDB(t)
 	if err := scope.Register(db); err != nil {
@@ -47,7 +48,7 @@ func resellerDB(t *testing.T) (*gorm.DB, *Clients, *Admins) {
 			t.Fatal(err)
 		}
 	}
-	return db, NewClients(db, pools, quietLog()), NewAdmins(db, quietLog())
+	return db, NewClients(db, pools, quietLog()), operators.NewAdmins(db, quietLog())
 }
 
 // asReseller is the context a request from that operator is served under.
@@ -63,10 +64,10 @@ func asReseller(admin *model.Admin, ifaces ...uint) context.Context {
 	return WithScope(context.Background(), sc)
 }
 
-func newReseller(t *testing.T, admins *Admins, name string, limit int) *model.Admin {
+func newReseller(t *testing.T, admins *operators.Admins, name string, limit int) *model.Admin {
 	t.Helper()
 	enabled := true
-	a, err := admins.Create(context.Background(), AdminInput{
+	a, err := admins.Create(context.Background(), operators.AdminInput{
 		Username: name, Password: "correct-horse", Role: model.RoleReseller,
 		Enabled: &enabled, ClientLimit: &limit, InterfaceIDs: []uint{1},
 	})
@@ -275,7 +276,7 @@ func TestSuspensionIsComputedAndLeavesCustomersAlone(t *testing.T) {
 
 	// The owner switches the reseller off.
 	no := false
-	if _, err := admins.Update(context.Background(), reza.ID, AdminInput{Enabled: &no}); err != nil {
+	if _, err := admins.Update(context.Background(), reza.ID, operators.AdminInput{Enabled: &no}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -303,7 +304,7 @@ func TestSuspensionIsComputedAndLeavesCustomersAlone(t *testing.T) {
 
 	// Switched back on, and the one that was stopped by hand stays stopped.
 	yes := true
-	if _, err := admins.Update(context.Background(), reza.ID, AdminInput{Enabled: &yes}); err != nil {
+	if _, err := admins.Update(context.Background(), reza.ID, operators.AdminInput{Enabled: &yes}); err != nil {
 		t.Fatal(err)
 	}
 	suspended, err = SuspendedOwners(context.Background(), db, now)
@@ -321,7 +322,7 @@ func TestSuspensionFollowsTheCeilings(t *testing.T) {
 	now := time.Now().UTC()
 
 	quota := uint64(100)
-	if _, err := admins.Update(context.Background(), reza.ID, AdminInput{QuotaBytes: &quota}); err != nil {
+	if _, err := admins.Update(context.Background(), reza.ID, operators.AdminInput{QuotaBytes: &quota}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&model.Admin{}).Where("id = ?", reza.ID).
@@ -342,7 +343,7 @@ func TestSuspensionFollowsTheCeilings(t *testing.T) {
 
 	// Out of time.
 	past := now.Add(-time.Hour)
-	if _, err := admins.Update(context.Background(), reza.ID, AdminInput{ExpiresAt: At(past)}); err != nil {
+	if _, err := admins.Update(context.Background(), reza.ID, operators.AdminInput{ExpiresAt: At(past)}); err != nil {
 		t.Fatal(err)
 	}
 	if s, _ := SuspendedOwners(context.Background(), db, now); !s[reza.ID] {
@@ -445,13 +446,13 @@ func TestTheOwnerCannotBeRemovedOrSwitchedOff(t *testing.T) {
 	}
 
 	no := false
-	if _, err := admins.Update(context.Background(), owner.ID, AdminInput{Enabled: &no}); err == nil {
+	if _, err := admins.Update(context.Background(), owner.ID, operators.AdminInput{Enabled: &no}); err == nil {
 		t.Error("the owner was switched off")
 	}
-	if err := admins.Delete(context.Background(), owner.ID, DeleteKeepClients, clients); err == nil {
+	if err := admins.Delete(context.Background(), owner.ID, operators.DeleteKeepClients, clients); err == nil {
 		t.Error("the owner was deleted")
 	}
-	if _, err := admins.Create(context.Background(), AdminInput{
+	if _, err := admins.Create(context.Background(), operators.AdminInput{
 		Username: "second", Password: "correct-horse", Role: model.RoleOwner,
 	}); err == nil {
 		t.Error("a second owner was created")
@@ -471,7 +472,7 @@ func TestDeletingAResellerNeedsAnAnswerAboutTheirCustomers(t *testing.T) {
 		t.Fatalf("deleting with customers gave %v, want a refusal asking which", err)
 	}
 
-	if err := admins.Delete(context.Background(), reza.ID, DeleteKeepClients, clients); err != nil {
+	if err := admins.Delete(context.Background(), reza.ID, operators.DeleteKeepClients, clients); err != nil {
 		t.Fatal(err)
 	}
 	var kept model.Client

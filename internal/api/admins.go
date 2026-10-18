@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/operators"
 )
 
 // The operator list: who signs in to this panel, and how much of it they get.
@@ -37,7 +37,7 @@ func (s *Server) handleGetAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateAdmin(w http.ResponseWriter, r *http.Request) {
-	var in service.AdminInput
+	var in operators.AdminInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -56,7 +56,7 @@ func (s *Server) handleUpdateAdmin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in service.AdminInput
+	var in operators.AdminInput
 	if !decode(w, r, &in) {
 		return
 	}
@@ -90,7 +90,7 @@ func (s *Server) handleDeleteAdmin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "you cannot delete the account you are signed in with")
 		return
 	}
-	mode := service.DeleteMode(strings.TrimSpace(r.URL.Query().Get("clients")))
+	mode := operators.DeleteMode(strings.TrimSpace(r.URL.Query().Get("clients")))
 	if err := s.admins.Delete(r.Context(), id, mode, s.clients); err != nil {
 		fail(w, s.log, err)
 		return
@@ -102,7 +102,7 @@ func (s *Server) handleDeleteAdmin(w http.ResponseWriter, r *http.Request) {
 // handleBulkAdmins changes a selection of resellers at once. The answer says
 // how many changed and names every one that did not, and why.
 func (s *Server) handleBulkAdmins(w http.ResponseWriter, r *http.Request) {
-	var in service.AdminBulkInput
+	var in operators.AdminBulkInput
 	if !decode(w, r, &in) {
 		return
 	}

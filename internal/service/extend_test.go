@@ -9,12 +9,13 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/operators"
 )
 
 const gib = uint64(1) << 30
 
 // extendDB is a panel with the scope registered and no customers yet.
-func extendDB(t *testing.T) (*gorm.DB, *Clients, *Admins) {
+func extendDB(t *testing.T) (*gorm.DB, *Clients, *operators.Admins) {
 	t.Helper()
 	return resellerDB(t)
 }

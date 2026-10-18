@@ -15,6 +15,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/operators"
 	"github.com/abolfazl/w-ui/internal/scope"
 	"github.com/abolfazl/w-ui/internal/service"
 )
@@ -47,7 +48,7 @@ func pauseServer(t *testing.T) (*Server, *gorm.DB, *service.Clients) {
 	if _, err := pools.Add(iface.ID, iface.Subnet); err != nil {
 		t.Fatal(err)
 	}
-	return &Server{log: log, admins: service.NewAdmins(db, log)}, db, service.NewClients(db, pools, log)
+	return &Server{log: log, admins: operators.NewAdmins(db, log)}, db, service.NewClients(db, pools, log)
 }
 
 func reseller(t *testing.T, db *gorm.DB, a model.Admin) *model.Admin {

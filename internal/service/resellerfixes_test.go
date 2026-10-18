@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/operators"
 )
 
 // One reseller cannot delete another's device by its number.
@@ -145,7 +146,7 @@ func TestGroupActionsAreRefusedToABarredReseller(t *testing.T) {
 func TestAResellersTermCanWaitForTheirFirstSignIn(t *testing.T) {
 	_, _, admins := resellerDB(t)
 	thirty, limit := 30, 5
-	a, err := admins.Create(t.Context(), AdminInput{
+	a, err := admins.Create(t.Context(), operators.AdminInput{
 		Username: "on-hold", Password: "correct-horse", Role: model.RoleReseller,
 		ClientLimit: &limit, InterfaceIDs: []uint{1}, DurationDays: &thirty,
 	})
@@ -161,7 +162,7 @@ func TestAResellersTermCanWaitForTheirFirstSignIn(t *testing.T) {
 
 	// A date replaces the hold.
 	when := time.Now().UTC().AddDate(0, 2, 0)
-	got, err := admins.Update(t.Context(), a.ID, AdminInput{ExpiresAt: OptionalTime{Set: true, Value: &when}})
+	got, err := admins.Update(t.Context(), a.ID, operators.AdminInput{ExpiresAt: OptionalTime{Set: true, Value: &when}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +171,7 @@ func TestAResellersTermCanWaitForTheirFirstSignIn(t *testing.T) {
 	}
 
 	// And the hold replaces a date.
-	got, err = admins.Update(t.Context(), a.ID, AdminInput{DurationDays: &thirty})
+	got, err = admins.Update(t.Context(), a.ID, operators.AdminInput{DurationDays: &thirty})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +179,8 @@ func TestAResellersTermCanWaitForTheirFirstSignIn(t *testing.T) {
 		t.Fatalf("a hold given did not replace the date: expires=%v days=%d", got.ExpiresAt, got.DurationDays)
 	}
 
-	tooLong := maxTermDays + 1
-	if _, err := admins.Update(t.Context(), a.ID, AdminInput{DurationDays: &tooLong}); err == nil {
+	tooLong := operators.MaxTermDays + 1
+	if _, err := admins.Update(t.Context(), a.ID, operators.AdminInput{DurationDays: &tooLong}); err == nil {
 		t.Fatal("a term past the limit was accepted")
 	}
 }
@@ -191,7 +192,7 @@ func TestTheOwnerChoosesAndRenamesAResellersLabel(t *testing.T) {
 	db, clients, admins := resellerDB(t)
 	limit := 0
 	label := "Tehran agents"
-	a, err := admins.Create(t.Context(), AdminInput{
+	a, err := admins.Create(t.Context(), operators.AdminInput{
 		Username: "reza", Password: "correct-horse", Role: model.RoleReseller,
 		ClientLimit: &limit, InterfaceIDs: []uint{1}, GroupName: &label,
 	})
@@ -222,7 +223,7 @@ func TestTheOwnerChoosesAndRenamesAResellersLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	vip := "vip"
-	got, err := admins.Update(t.Context(), a.ID, AdminInput{GroupName: &vip})
+	got, err := admins.Update(t.Context(), a.ID, operators.AdminInput{GroupName: &vip})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,13 +241,13 @@ func TestTheOwnerChoosesAndRenamesAResellersLabel(t *testing.T) {
 
 	// Two resellers under one label cannot be told apart.
 	sara := newReseller(t, admins, "sara", 0)
-	if _, err := admins.Update(t.Context(), sara.ID, AdminInput{GroupName: &vip}); err == nil {
+	if _, err := admins.Update(t.Context(), sara.ID, operators.AdminInput{GroupName: &vip}); err == nil {
 		t.Fatal("a second reseller was filed under the same label")
 	}
 
 	// Removing the reseller, keeping their customers: theirs leave the
 	// label, the owner's own stay in it, and so does the group.
-	if err := admins.Delete(t.Context(), a.ID, DeleteKeepClients, clients); err != nil {
+	if err := admins.Delete(t.Context(), a.ID, operators.DeleteKeepClients, clients); err != nil {
 		t.Fatal(err)
 	}
 	if inGroup(c.ID, "VIP") {

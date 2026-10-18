@@ -17,7 +17,7 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
-	"github.com/abolfazl/w-ui/internal/service"
+	"github.com/abolfazl/w-ui/internal/operators"
 	"github.com/abolfazl/w-ui/internal/totp"
 )
 
@@ -36,7 +36,7 @@ func authServer(t *testing.T) (*Server, *gorm.DB) {
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return &Server{log: log, throttle: newThrottle(), jwtSecret: []byte("a test session key, 32 bytes!!!"),
-		admins: service.NewAdmins(db, log)}, db
+		admins: operators.NewAdmins(db, log)}, db
 }
 
 func admin(t *testing.T, db *gorm.DB, a model.Admin, password string) *model.Admin {

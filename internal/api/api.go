@@ -22,6 +22,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/nodes"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/operators"
 	"github.com/abolfazl/w-ui/internal/oversight"
 	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/routing"
@@ -70,7 +71,7 @@ type Server struct {
 	balancers *egress.Balancers
 	providers *egress.Providers
 	audit     *oversight.Audit
-	admins    *service.Admins
+	admins    *operators.Admins
 	pool      *backend.Pool
 	nodeSync  *service.NodeSync
 	// dataPlane is every tunnel on this server at once; nodeCtl what is
@@ -147,7 +148,7 @@ func New(o Options) *Server {
 		enforcer:  o.Enforcer,
 		settings:  o.Settings,
 		nodes:     service.NewNodes(o.DB, o.Logger),
-		admins:    service.NewAdmins(o.DB, o.Logger),
+		admins:    operators.NewAdmins(o.DB, o.Logger),
 		prober:    o.Prober,
 		throttle:  newThrottle(),
 		notifier:  o.Notifier,

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/operators"
 )
 
 // fakeTunnels is a pool that refuses the tunnels named in fail.
@@ -77,7 +78,7 @@ func TestStopAndStartEveryTunnelOnThisServer(t *testing.T) {
 func TestAResellersTermStartsAtTheFirstSignIn(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
-	admins := NewAdmins(db, quietLog())
+	admins := operators.NewAdmins(db, quietLog())
 	a := model.Admin{Username: "res", Role: model.RoleReseller, Enabled: true, DurationDays: 30}
 	if err := db.Create(&a).Error; err != nil {
 		t.Fatal(err)

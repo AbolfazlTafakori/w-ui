@@ -212,12 +212,37 @@ func TestTheAPIDoesNotQueryTheDatabase(t *testing.T) {
 // shared pieces are what the services are built from; a dependency back up
 // would tie them into the one package this split took them out of.
 func TestLowerLayersDoNotImportTheServices(t *testing.T) {
-	const svc = "github.com/abolfazl/w-ui/internal/service"
-	for _, dir := range []string{"internal/egress", "internal/fault", "internal/listfield", "internal/tunnelport", "internal/backend"} {
+	domains := []string{"github.com/abolfazl/w-ui/internal/service", "github.com/abolfazl/w-ui/internal/operators"}
+	for _, dir := range []string{"internal/egress", "internal/fault", "internal/listfield", "internal/tunnelport", "internal/backend",
+		"internal/idset", "internal/optional", "internal/membership"} {
 		for _, f := range sources(t, dir) {
 			for _, imp := range f.ast.Imports {
-				if path := strings.Trim(imp.Path.Value, `"`); path == svc || strings.HasPrefix(path, svc+"/") {
-					t.Errorf("%s imports %s; the services build on it, not the other way", f.rel, path)
+				path := strings.Trim(imp.Path.Value, `"`)
+				for _, svc := range domains {
+					if path == svc || strings.HasPrefix(path, svc+"/") {
+						t.Errorf("%s imports %s; the services build on it, not the other way", f.rel, path)
+					}
+				}
+			}
+		}
+	}
+}
+
+// The domains split out of the services are siblings of what is left, not
+// layers of it: neither imports the other. What one needs of another is
+// asked through a small interface it declares -- operators.Customers -- or
+// lives in a package below both, as internal/membership does.
+func TestTheDomainsDoNotImportEachOther(t *testing.T) {
+	const mod = "github.com/abolfazl/w-ui/"
+	domains := []string{"internal/service", "internal/operators"}
+	for _, dir := range domains {
+		for _, f := range sources(t, dir) {
+			for _, imp := range f.ast.Imports {
+				path := strings.Trim(imp.Path.Value, `"`)
+				for _, other := range domains {
+					if other != dir && path == mod+other {
+						t.Errorf("%s imports %s; the two are siblings", f.rel, path)
+					}
 				}
 			}
 		}

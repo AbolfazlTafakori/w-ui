@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/operators"
 	"gorm.io/gorm"
 )
 
@@ -15,7 +16,7 @@ import (
 type bulkRig struct {
 	db      *gorm.DB
 	clients *Clients
-	admins  *Admins
+	admins  *operators.Admins
 	owner   *model.Admin
 	admin   *model.Admin
 	dated   *model.Admin
@@ -33,7 +34,7 @@ func newBulkRig(t *testing.T) *bulkRig {
 	if err := db.Create(r.owner).Error; err != nil {
 		t.Fatal(err)
 	}
-	mk := func(name string, role model.AdminRole, in AdminInput) *model.Admin {
+	mk := func(name string, role model.AdminRole, in operators.AdminInput) *model.Admin {
 		in.Username, in.Password, in.Role = name, "correct-horse", role
 		if role == model.RoleReseller && in.InterfaceIDs == nil {
 			in.InterfaceIDs = []uint{1}
@@ -46,11 +47,11 @@ func newBulkRig(t *testing.T) *bulkRig {
 	}
 	in30 := time.Now().UTC().Add(30 * 24 * time.Hour)
 	ten, off := 10, false
-	r.admin = mk("helper", model.RoleAdmin, AdminInput{})
-	r.dated = mk("dated", model.RoleReseller, AdminInput{ExpiresAt: OptionalTime{Set: true, Value: &in30}})
-	r.onHold = mk("on-hold", model.RoleReseller, AdminInput{DurationDays: &ten})
-	r.noEnd = mk("no-end", model.RoleReseller, AdminInput{})
-	r.off = mk("switched-off", model.RoleReseller, AdminInput{Enabled: &off})
+	r.admin = mk("helper", model.RoleAdmin, operators.AdminInput{})
+	r.dated = mk("dated", model.RoleReseller, operators.AdminInput{ExpiresAt: OptionalTime{Set: true, Value: &in30}})
+	r.onHold = mk("on-hold", model.RoleReseller, operators.AdminInput{DurationDays: &ten})
+	r.noEnd = mk("no-end", model.RoleReseller, operators.AdminInput{})
+	r.off = mk("switched-off", model.RoleReseller, operators.AdminInput{Enabled: &off})
 	return r
 }
 
@@ -63,7 +64,7 @@ func (r *bulkRig) reload(t *testing.T, a *model.Admin) model.Admin {
 	return *got
 }
 
-func (r *bulkRig) run(t *testing.T, in AdminBulkInput) *AdminBulkResult {
+func (r *bulkRig) run(t *testing.T, in operators.AdminBulkInput) *operators.AdminBulkResult {
 	t.Helper()
 	res, err := r.admins.Bulk(t.Context(), in, r.clients)
 	if err != nil {
@@ -84,7 +85,7 @@ func TestBulkSwitchingResellersOffAndOn(t *testing.T) {
 	r := newBulkRig(t)
 	before := r.reload(t, r.dated).SessionEpoch
 
-	res := r.run(t, AdminBulkInput{Action: AdminBulkDisable, IDs: adminIDs(r.dated, r.noEnd, r.off)})
+	res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkDisable, IDs: adminIDs(r.dated, r.noEnd, r.off)})
 	if res.Changed != 2 || res.Unchanged != 1 || len(res.Failures) != 0 {
 		t.Fatalf("switching off two on and one already off: %+v", res)
 	}
@@ -98,7 +99,7 @@ func TestBulkSwitchingResellersOffAndOn(t *testing.T) {
 		t.Error("switching off in bulk left the reseller's sessions open")
 	}
 
-	res = r.run(t, AdminBulkInput{Action: AdminBulkEnable, IDs: adminIDs(r.dated, r.noEnd, r.off, r.onHold)})
+	res = r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkEnable, IDs: adminIDs(r.dated, r.noEnd, r.off, r.onHold)})
 	if res.Changed != 3 || res.Unchanged != 1 {
 		t.Fatalf("switching three off and one on back on: %+v", res)
 	}
@@ -106,7 +107,7 @@ func TestBulkSwitchingResellersOffAndOn(t *testing.T) {
 
 func TestBulkRefusesTheOwnerAndChangesTheRest(t *testing.T) {
 	r := newBulkRig(t)
-	res := r.run(t, AdminBulkInput{Action: AdminBulkDisable, IDs: adminIDs(r.owner, r.dated)})
+	res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkDisable, IDs: adminIDs(r.owner, r.dated)})
 	if res.Changed != 1 || len(res.Failures) != 1 || res.Failures["owner"] == "" {
 		t.Fatalf("the owner in a selection: %+v", res)
 	}
@@ -122,12 +123,12 @@ func TestBulkCeilingActionsSkipAPanelAdministrator(t *testing.T) {
 	r := newBulkRig(t)
 	gb := uint64(100) << 30
 	five := 5
-	for _, in := range []AdminBulkInput{
-		{Action: AdminBulkSetQuota, QuotaBytes: &gb},
-		{Action: AdminBulkSetLimit, ClientLimit: &five},
-		{Action: AdminBulkExtend, Days: 30},
-		{Action: AdminBulkResetUsage},
-		{Action: AdminBulkAddServers, InterfaceIDs: []uint{2}},
+	for _, in := range []operators.AdminBulkInput{
+		{Action: operators.AdminBulkSetQuota, QuotaBytes: &gb},
+		{Action: operators.AdminBulkSetLimit, ClientLimit: &five},
+		{Action: operators.AdminBulkExtend, Days: 30},
+		{Action: operators.AdminBulkResetUsage},
+		{Action: operators.AdminBulkAddServers, InterfaceIDs: []uint{2}},
 	} {
 		in.IDs = adminIDs(r.admin)
 		res := r.run(t, in)
@@ -140,14 +141,14 @@ func TestBulkCeilingActionsSkipAPanelAdministrator(t *testing.T) {
 func TestBulkExtendingEveryKindOfTerm(t *testing.T) {
 	r := newBulkRig(t)
 	past := time.Now().UTC().Add(-48 * time.Hour)
-	expired, err := r.admins.Create(t.Context(), AdminInput{Username: "expired", Password: "correct-horse",
+	expired, err := r.admins.Create(t.Context(), operators.AdminInput{Username: "expired", Password: "correct-horse",
 		Role: model.RoleReseller, InterfaceIDs: []uint{1}, ExpiresAt: OptionalTime{Set: true, Value: &past}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	datedBefore := *r.reload(t, r.dated).ExpiresAt
 
-	res := r.run(t, AdminBulkInput{Action: AdminBulkExtend, Days: 30, IDs: adminIDs(r.dated, r.onHold, r.noEnd, expired)})
+	res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkExtend, Days: 30, IDs: adminIDs(r.dated, r.onHold, r.noEnd, expired)})
 	if res.Changed != 3 || res.Unchanged != 1 {
 		t.Fatalf("extending four: %+v", res)
 	}
@@ -173,7 +174,7 @@ func TestBulkExtendingEveryKindOfTerm(t *testing.T) {
 func TestBulkSettingCeilings(t *testing.T) {
 	r := newBulkRig(t)
 	gb := uint64(500) << 30
-	res := r.run(t, AdminBulkInput{Action: AdminBulkSetQuota, QuotaBytes: &gb, IDs: adminIDs(r.dated, r.noEnd)})
+	res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkSetQuota, QuotaBytes: &gb, IDs: adminIDs(r.dated, r.noEnd)})
 	if res.Changed != 2 {
 		t.Fatalf("setting a quota: %+v", res)
 	}
@@ -181,12 +182,12 @@ func TestBulkSettingCeilings(t *testing.T) {
 		t.Error("the quota was not set")
 	}
 	// Setting it again is no change.
-	if res := r.run(t, AdminBulkInput{Action: AdminBulkSetQuota, QuotaBytes: &gb, IDs: adminIDs(r.dated)}); res.Unchanged != 1 {
+	if res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkSetQuota, QuotaBytes: &gb, IDs: adminIDs(r.dated)}); res.Unchanged != 1 {
 		t.Errorf("setting the same quota again: %+v", res)
 	}
 
 	fifty := 50
-	res = r.run(t, AdminBulkInput{Action: AdminBulkSetLimit, ClientLimit: &fifty, IDs: adminIDs(r.dated, r.onHold)})
+	res = r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkSetLimit, ClientLimit: &fifty, IDs: adminIDs(r.dated, r.onHold)})
 	if res.Changed != 2 || r.reload(t, r.onHold).ClientLimit != 50 {
 		t.Fatalf("setting a customer limit: %+v", res)
 	}
@@ -195,7 +196,7 @@ func TestBulkSettingCeilings(t *testing.T) {
 func TestBulkResettingAllowances(t *testing.T) {
 	r := newBulkRig(t)
 	r.db.Model(&model.Admin{}).Where("id = ?", r.dated.ID).Update("used_bytes", 12345)
-	res := r.run(t, AdminBulkInput{Action: AdminBulkResetUsage, IDs: adminIDs(r.dated, r.noEnd)})
+	res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkResetUsage, IDs: adminIDs(r.dated, r.noEnd)})
 	if res.Changed != 1 || res.Unchanged != 1 {
 		t.Fatalf("resetting one used and one untouched: %+v", res)
 	}
@@ -212,38 +213,38 @@ func TestBulkAddingAndRemovingServers(t *testing.T) {
 		return got
 	}
 
-	res := r.run(t, AdminBulkInput{Action: AdminBulkAddServers, InterfaceIDs: []uint{2}, IDs: adminIDs(r.dated, r.noEnd)})
+	res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkAddServers, InterfaceIDs: []uint{2}, IDs: adminIDs(r.dated, r.noEnd)})
 	if res.Changed != 2 || len(servers(r.dated)) != 2 {
 		t.Fatalf("adding a server: %+v, now %v", res, servers(r.dated))
 	}
 	// Adding one they already have is no change.
-	if res := r.run(t, AdminBulkInput{Action: AdminBulkAddServers, InterfaceIDs: []uint{2}, IDs: adminIDs(r.dated)}); res.Unchanged != 1 {
+	if res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkAddServers, InterfaceIDs: []uint{2}, IDs: adminIDs(r.dated)}); res.Unchanged != 1 {
 		t.Errorf("adding a server they already have: %+v", res)
 	}
 
 	// Taking every server away leaves a reseller with none -- a real state,
 	// not "leave it alone".
-	res = r.run(t, AdminBulkInput{Action: AdminBulkRemoveServers, InterfaceIDs: []uint{1, 2}, IDs: adminIDs(r.dated)})
+	res = r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkRemoveServers, InterfaceIDs: []uint{1, 2}, IDs: adminIDs(r.dated)})
 	if res.Changed != 1 || len(servers(r.dated)) != 0 {
 		t.Fatalf("removing every server: %+v, now %v", res, servers(r.dated))
 	}
 
 	// A server that does not exist is refused for that reseller.
-	res = r.run(t, AdminBulkInput{Action: AdminBulkAddServers, InterfaceIDs: []uint{999}, IDs: adminIDs(r.noEnd)})
+	res = r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkAddServers, InterfaceIDs: []uint{999}, IDs: adminIDs(r.noEnd)})
 	if res.Changed != 0 || res.Failures["no-end"] == "" {
 		t.Errorf("adding a server that does not exist: %+v", res)
 	}
 }
 
 func TestBulkDeletingResellers(t *testing.T) {
-	for _, mode := range []DeleteMode{DeleteKeepClients, DeleteWithClients} {
+	for _, mode := range []operators.DeleteMode{operators.DeleteKeepClients, operators.DeleteWithClients} {
 		t.Run(string(mode), func(t *testing.T) {
 			r := newBulkRig(t)
 			c, err := r.clients.Create(asReseller(r.dated, 1), CreateInput{Name: "theirs", InterfaceIDs: []uint{1}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			res := r.run(t, AdminBulkInput{Action: AdminBulkDelete, Mode: mode, IDs: adminIDs(r.dated, r.noEnd)})
+			res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkDelete, Mode: mode, IDs: adminIDs(r.dated, r.noEnd)})
 			if res.Changed != 2 {
 				t.Fatalf("deleting two: %+v", res)
 			}
@@ -254,10 +255,10 @@ func TestBulkDeletingResellers(t *testing.T) {
 			}
 			var kept model.Client
 			found := r.db.First(&kept, c.ID).Error == nil
-			if mode == DeleteKeepClients && (!found || kept.OwnerID != 0) {
+			if mode == operators.DeleteKeepClients && (!found || kept.OwnerID != 0) {
 				t.Errorf("keep: the customer is found=%v owner=%d, want kept under the owner", found, kept.OwnerID)
 			}
-			if mode == DeleteWithClients && found {
+			if mode == operators.DeleteWithClients && found {
 				t.Error("delete: the customer is still there")
 			}
 		})
@@ -266,15 +267,15 @@ func TestBulkDeletingResellers(t *testing.T) {
 
 func TestBulkRefusesWhatItCannotDo(t *testing.T) {
 	r := newBulkRig(t)
-	for name, in := range map[string]AdminBulkInput{
-		"nothing selected":        {Action: AdminBulkEnable},
+	for name, in := range map[string]operators.AdminBulkInput{
+		"nothing selected":        {Action: operators.AdminBulkEnable},
 		"an unknown action":       {Action: "promote", IDs: adminIDs(r.dated)},
-		"extend by no days":       {Action: AdminBulkExtend, IDs: adminIDs(r.dated)},
-		"extend past the limit":   {Action: AdminBulkExtend, Days: maxTermDays + 1, IDs: adminIDs(r.dated)},
-		"a quota not given":       {Action: AdminBulkSetQuota, IDs: adminIDs(r.dated)},
-		"a negative limit":        {Action: AdminBulkSetLimit, ClientLimit: new(int), IDs: adminIDs(r.dated)},
-		"servers not given":       {Action: AdminBulkAddServers, IDs: adminIDs(r.dated)},
-		"delete without a choice": {Action: AdminBulkDelete, IDs: adminIDs(r.dated)},
+		"extend by no days":       {Action: operators.AdminBulkExtend, IDs: adminIDs(r.dated)},
+		"extend past the limit":   {Action: operators.AdminBulkExtend, Days: operators.MaxTermDays + 1, IDs: adminIDs(r.dated)},
+		"a quota not given":       {Action: operators.AdminBulkSetQuota, IDs: adminIDs(r.dated)},
+		"a negative limit":        {Action: operators.AdminBulkSetLimit, ClientLimit: new(int), IDs: adminIDs(r.dated)},
+		"servers not given":       {Action: operators.AdminBulkAddServers, IDs: adminIDs(r.dated)},
+		"delete without a choice": {Action: operators.AdminBulkDelete, IDs: adminIDs(r.dated)},
 	} {
 		if name == "a negative limit" {
 			*in.ClientLimit = -1
@@ -293,7 +294,7 @@ func TestBulkRefusesWhatItCannotDo(t *testing.T) {
 // in another tab is not an error about any reseller.
 func TestBulkCountsIdsThatAreGone(t *testing.T) {
 	r := newBulkRig(t)
-	res := r.run(t, AdminBulkInput{Action: AdminBulkDisable, IDs: []uint{r.dated.ID, 99999}})
+	res := r.run(t, operators.AdminBulkInput{Action: operators.AdminBulkDisable, IDs: []uint{r.dated.ID, 99999}})
 	if res.Changed != 1 || res.Unchanged != 1 || len(res.Failures) != 0 {
 		t.Fatalf("a selection with a missing id: %+v", res)
 	}

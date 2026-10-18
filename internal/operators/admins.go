@@ -1,4 +1,11 @@
-package service
+// Package operators is the people who run the panel: the owner, the
+// administrators and the resellers they sell it on to -- their accounts and
+// their ceilings, signing in, and what is done to many of them at once.
+//
+// A reseller's customers are the customers' service's; what happens to them
+// when a reseller is relabelled or deleted goes through internal/membership,
+// in the same transaction, and deleting them through Customers.
+package operators
 
 import (
 	"context"
@@ -12,8 +19,10 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/membership"
+	"github.com/abolfazl/w-ui/internal/optional"
 )
 
 // Selling the panel on.
@@ -51,10 +60,10 @@ type AdminInput struct {
 
 	Role model.AdminRole `json:"role"`
 
-	Enabled     *bool        `json:"enabled"`
-	ClientLimit *int         `json:"clientLimit"`
-	QuotaBytes  *uint64      `json:"quotaBytes"`
-	ExpiresAt   OptionalTime `json:"expiresAt"`
+	Enabled     *bool         `json:"enabled"`
+	ClientLimit *int          `json:"clientLimit"`
+	QuotaBytes  *uint64       `json:"quotaBytes"`
+	ExpiresAt   optional.Time `json:"expiresAt"`
 
 	// InterfaceIDs is which tunnels this reseller may sell. Nil leaves the
 	// set alone on an update; an empty list is a deliberate "none", which
@@ -74,10 +83,10 @@ type AdminInput struct {
 	GroupName *string `json:"groupName"`
 }
 
-// maxTermDays bounds a term on hold. Ten years is past any plan anybody
+// MaxTermDays bounds a term on hold. Ten years is past any plan anybody
 // sells, and low enough that the date it turns into is one a database of
 // either kind stores without complaint.
-const maxTermDays = 3650
+const MaxTermDays = 3650
 
 // Create adds an operator.
 func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error) {
@@ -86,18 +95,18 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 		return nil, err
 	}
 	if len(in.Password) < 8 {
-		return nil, invalidField("password", "a password of at least 8 characters")
+		return nil, fault.Field("password", "a password of at least 8 characters")
 	}
 	if in.Role == "" {
 		in.Role = model.RoleReseller
 	}
 	if !in.Role.Valid() {
-		return nil, invalidField("role", "%q is not a role this panel has", in.Role)
+		return nil, fault.Field("role", "%q is not a role this panel has", in.Role)
 	}
 	// One owner, set up when the panel was installed. A second would be a
 	// second person who can remove the first.
 	if in.Role == model.RoleOwner {
-		return nil, invalidField("role", "the panel has one owner and it cannot be handed over from here")
+		return nil, fault.Field("role", "the panel has one owner and it cannot be handed over from here")
 	}
 	if err := s.checkInterfaces(ctx, 0, in.Role, in.InterfaceIDs); err != nil {
 		return nil, err
@@ -128,8 +137,8 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 			admin.ExpiresAt = in.ExpiresAt.Value
 		}
 		if in.DurationDays != nil {
-			if *in.DurationDays < 0 || *in.DurationDays > maxTermDays {
-				return nil, invalidField("durationDays", "a term of 1 to %d days", maxTermDays)
+			if *in.DurationDays < 0 || *in.DurationDays > MaxTermDays {
+				return nil, fault.Field("durationDays", "a term of 1 to %d days", MaxTermDays)
 			}
 			if *in.DurationDays > 0 {
 				admin.DurationDays = *in.DurationDays
@@ -232,7 +241,7 @@ func (s *Admins) makeOwnerGroup(tx *gorm.DB, admin *model.Admin) (string, error)
 // owner's -- the group they made would vanish from their own page.
 func (s *Admins) checkOwnerGroup(ctx context.Context, self uint, name string) error {
 	if len(name) > 64 {
-		return invalidField("groupName", "group names are limited to 64 characters")
+		return fault.Field("groupName", "group names are limited to 64 characters")
 	}
 	db := s.db.WithContext(ctx)
 	var clash int64
@@ -242,7 +251,7 @@ func (s *Admins) checkOwnerGroup(ctx context.Context, self uint, name string) er
 		return fmt.Errorf("service: check the label: %w", err)
 	}
 	if clash > 0 {
-		return invalidField("groupName", "another reseller's customers are already filed under %q", name)
+		return fault.Field("groupName", "another reseller's customers are already filed under %q", name)
 	}
 	if self != 0 {
 		if err := db.Model(&model.Group{}).
@@ -251,7 +260,7 @@ func (s *Admins) checkOwnerGroup(ctx context.Context, self uint, name string) er
 			return fmt.Errorf("service: check the label: %w", err)
 		}
 		if clash > 0 {
-			return invalidField("groupName", "%q is one of this reseller's own groups", name)
+			return fault.Field("groupName", "%q is one of this reseller's own groups", name)
 		}
 	}
 	return nil
@@ -311,35 +320,12 @@ func dropOwnerGroupIfUnused(tx *gorm.DB, name string, except uint) error {
 	return nil
 }
 
-// refileCustomers moves one reseller's customers from one label to another.
-func refileCustomers(tx *gorm.DB, ownerID uint, from, to string) error {
-	var ids []uint
-	if err := tx.Model(&model.Client{}).Where("owner_id = ?", ownerID).Pluck("id", &ids).Error; err != nil {
-		return fmt.Errorf("list the reseller's customers: %w", err)
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	// A customer already in the new group keeps that one row rather than
-	// being given a second: the pair is the key.
-	if err := tx.Where("name = ? AND client_id IN ? AND client_id IN (SELECT client_id FROM client_groups WHERE name = ?)",
-		to, ids, from).Delete(&model.ClientGroup{}).Error; err != nil {
-		return fmt.Errorf("refile the reseller's customers: %w", err)
-	}
-	if err := tx.Model(&model.ClientGroup{}).
-		Where("name = ? AND client_id IN ?", from, ids).
-		Update("name", to).Error; err != nil {
-		return fmt.Errorf("refile the reseller's customers: %w", err)
-	}
-	return membership.SyncLabel(tx, ids)
-}
-
 // Update changes an operator.
 func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Admin, error) {
 	var admin model.Admin
 	if err := s.db.WithContext(ctx).First(&admin, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
+			return nil, fault.ErrNotFound
 		}
 		return nil, fmt.Errorf("service: load operator: %w", err)
 	}
@@ -360,19 +346,19 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	role := admin.Role
 	if in.Role != "" && in.Role != admin.Role {
 		if !in.Role.Valid() {
-			return nil, invalidField("role", "%q is not a role this panel has", in.Role)
+			return nil, fault.Field("role", "%q is not a role this panel has", in.Role)
 		}
 		if admin.Role == model.RoleOwner {
-			return nil, invalidField("role", "the owner's role cannot be changed")
+			return nil, fault.Field("role", "the owner's role cannot be changed")
 		}
 		if in.Role == model.RoleOwner {
-			return nil, invalidField("role", "the panel has one owner and it cannot be handed over from here")
+			return nil, fault.Field("role", "the panel has one owner and it cannot be handed over from here")
 		}
 		role = in.Role
 		fields["role"] = role
 	}
 	if admin.Role == model.RoleOwner && in.Enabled != nil && !*in.Enabled {
-		return nil, invalidField("enabled", "the owner cannot be switched off")
+		return nil, fault.Field("enabled", "the owner cannot be switched off")
 	}
 
 	// A password change ends whatever sessions this operator has open. That
@@ -380,7 +366,7 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	// out should not have to wait for a token to expire.
 	if in.Password != "" {
 		if len(in.Password) < 8 {
-			return nil, invalidField("password", "a password of at least 8 characters")
+			return nil, fault.Field("password", "a password of at least 8 characters")
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -420,8 +406,8 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 		}
 		if in.DurationDays != nil {
 			d := *in.DurationDays
-			if d < 0 || d > maxTermDays {
-				return nil, invalidField("durationDays", "a term of 1 to %d days", maxTermDays)
+			if d < 0 || d > MaxTermDays {
+				return nil, fault.Field("durationDays", "a term of 1 to %d days", MaxTermDays)
 			}
 			fields["duration_days"] = d
 			if d > 0 {
@@ -440,7 +426,7 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	if role.Capped() && admin.Role.Capped() && in.GroupName != nil {
 		want := strings.TrimSpace(*in.GroupName)
 		if want == "" {
-			return nil, invalidField("groupName", "a reseller's customers have to be filed under something")
+			return nil, fault.Field("groupName", "a reseller's customers have to be filed under something")
 		}
 		if want != admin.GroupName {
 			if err := s.checkOwnerGroup(ctx, admin.ID, want); err != nil {
@@ -462,7 +448,7 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 			}
 			newGroup = canonical
 			if admin.GroupName != "" {
-				if err := refileCustomers(tx, admin.ID, admin.GroupName, newGroup); err != nil {
+				if err := membership.Refile(tx, admin.ID, admin.GroupName, newGroup); err != nil {
 					return err
 				}
 			}
@@ -510,16 +496,23 @@ const (
 // rather than choosing: one answer quietly stops people paying for a
 // service and the other quietly leaves an owner administering customers
 // they did not know they had. The caller says which.
-func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients *Clients) error {
+// Customers is what deleting an operator asks of the customers' service:
+// their customers removed the way any customer is -- addresses back to
+// their pools, the tunnels told -- rather than by a DELETE.
+type Customers interface {
+	DeleteCustomers(ctx context.Context, ids []uint) error
+}
+
+func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients Customers) error {
 	var admin model.Admin
 	if err := s.db.WithContext(ctx).First(&admin, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrNotFound
+			return fault.ErrNotFound
 		}
 		return fmt.Errorf("service: load operator: %w", err)
 	}
 	if admin.Role == model.RoleOwner {
-		return fmt.Errorf("%w: the panel's owner cannot be deleted", ErrInvalid)
+		return fmt.Errorf("%w: the panel's owner cannot be deleted", fault.ErrInvalid)
 	}
 
 	var held int64
@@ -529,7 +522,7 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients *
 		return fmt.Errorf("service: count the operator's customers: %w", err)
 	}
 	if held > 0 && mode != DeleteKeepClients && mode != DeleteWithClients {
-		return invalidField("clients",
+		return fault.Field("clients",
 			"%s has %d customers: say whether to keep them under your own account or delete them with the operator",
 			admin.Username, held)
 	}
@@ -542,40 +535,18 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients *
 			Where("owner_id = ?", admin.ID).Pluck("id", &ids).Error; err != nil {
 			return fmt.Errorf("service: list the operator's customers: %w", err)
 		}
-		if _, err := clients.Bulk(ctx, BulkDelete, ids); err != nil {
+		if err := clients.DeleteCustomers(ctx, ids); err != nil {
 			return err
 		}
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Read before they are handed over, when they can still be told
-		// apart from the owner's own.
-		var kept []uint
-		if err := tx.Model(&model.Client{}).Where("owner_id = ?", admin.ID).
-			Pluck("id", &kept).Error; err != nil {
-			return fmt.Errorf("list the operator's customers: %w", err)
-		}
-		// Anything left is kept, and the owner administers it.
-		if err := tx.Model(&model.Client{}).Where("owner_id = ?", admin.ID).
-			Update("owner_id", 0).Error; err != nil {
-			return fmt.Errorf("hand over the operator's customers: %w", err)
-		}
-		if err := tx.Where("owner_id = ?", admin.ID).Delete(&model.Group{}).Error; err != nil {
-			return fmt.Errorf("delete the operator's groups: %w", err)
+		// Anything left is kept, and the owner administers it; the
+		// operator's own groups go, and their customers leave the label.
+		if err := membership.HandOver(tx, admin.ID, admin.GroupName); err != nil {
+			return err
 		}
 		if admin.GroupName != "" {
-			// This reseller's customers leave the label, and nobody else's:
-			// the owner may have filed customers of their own under the same
-			// name, and those are not the departing reseller's to take.
-			if len(kept) > 0 {
-				if err := tx.Where("name = ? AND client_id IN ?", admin.GroupName, kept).
-					Delete(&model.ClientGroup{}).Error; err != nil {
-					return fmt.Errorf("clear the operator's own group: %w", err)
-				}
-				if err := membership.SyncLabel(tx, kept); err != nil {
-					return fmt.Errorf("clear the operator's own group: %w", err)
-				}
-			}
 			if err := dropOwnerGroupIfUnused(tx, admin.GroupName, admin.ID); err != nil {
 				return err
 			}
@@ -607,7 +578,7 @@ func (s *Admins) Get(ctx context.Context, id uint) (*model.Admin, error) {
 	var admin model.Admin
 	if err := s.db.WithContext(ctx).First(&admin, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
+			return nil, fault.ErrNotFound
 		}
 		return nil, fmt.Errorf("service: load operator: %w", err)
 	}
@@ -692,17 +663,17 @@ func (s *Admins) CheckUsername(ctx context.Context, self uint, name string) (str
 func (s *Admins) checkUsername(ctx context.Context, self uint, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if len(name) < 3 {
-		return "", invalidField("username", "a username of at least 3 characters")
+		return "", fault.Field("username", "a username of at least 3 characters")
 	}
 	if len(name) > 64 {
-		return "", invalidField("username", "that username is too long")
+		return "", fault.Field("username", "that username is too long")
 	}
 	for _, r := range name {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
 			r == '_', r == '-', r == '.':
 		default:
-			return "", invalidField("username",
+			return "", fault.Field("username",
 				"a username uses letters, digits, and - _ . only")
 		}
 	}
@@ -717,7 +688,7 @@ func (s *Admins) checkUsername(ctx context.Context, self uint, name string) (str
 		return "", fmt.Errorf("service: check username: %w", err)
 	}
 	if clash > 0 {
-		return "", invalidField("username", "%q is taken", name)
+		return "", fault.Field("username", "%q is taken", name)
 	}
 	return name, nil
 }
@@ -734,7 +705,7 @@ func (s *Admins) checkInterfaces(ctx context.Context, adminID uint, role model.A
 		return fmt.Errorf("service: check tunnels: %w", err)
 	}
 	if int(found) != len(ids) {
-		return invalidField("interfaceIds", "one of those servers no longer exists")
+		return fault.Field("interfaceIds", "one of those servers no longer exists")
 	}
 
 	// A machine reserved for one reseller carries nobody else. Allowing a
@@ -749,7 +720,7 @@ func (s *Admins) checkInterfaces(ctx context.Context, adminID uint, role model.A
 		return fmt.Errorf("service: check reserved machines: %w", err)
 	}
 	if taken > 0 {
-		return invalidField("interfaceIds",
+		return fault.Field("interfaceIds",
 			"one of those servers is on a machine reserved for another operator")
 	}
 	return nil

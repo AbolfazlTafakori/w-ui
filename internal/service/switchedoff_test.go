@@ -5,6 +5,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
+	"github.com/abolfazl/w-ui/internal/operators"
 )
 
 // Created switched off stays switched off.
@@ -23,7 +24,7 @@ func TestWhatIsCreatedSwitchedOffStaysOff(t *testing.T) {
 		for _, want := range []bool{false, true} {
 			sw, limit := want, 0
 			name := map[bool]string{false: "created-off", true: "created-on"}[want]
-			a, err := admins.Create(ctx, AdminInput{Username: name, Password: "correct-horse",
+			a, err := admins.Create(ctx, operators.AdminInput{Username: name, Password: "correct-horse",
 				Role: model.RoleReseller, Enabled: &sw, ClientLimit: &limit, InterfaceIDs: []uint{1}})
 			if err != nil {
 				t.Fatal(err)

@@ -1,4 +1,4 @@
-package service
+package operators
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fault"
 )
 
 // An operator's own account: signing in, the session, the second factor and
@@ -18,13 +19,13 @@ import (
 // often they may try -- is the API's; what is stored, and what a sign-in
 // starts, is here.
 
-// ByUsername is the operator signing in under this name, ErrNotFound when
+// ByUsername is the operator signing in under this name, fault.ErrNotFound when
 // there is none.
 func (s *Admins) ByUsername(ctx context.Context, username string) (*model.Admin, error) {
 	var a model.Admin
 	err := s.db.WithContext(ctx).Where("username = ?", username).First(&a).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
+		return nil, fault.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("service: load operator: %w", err)
@@ -37,12 +38,12 @@ func (s *Admins) ByUsername(ctx context.Context, username string) (*model.Admin,
 func (s *Admins) ForSession(ctx context.Context, subject string) (*model.Admin, error) {
 	id, err := strconv.ParseUint(subject, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("%w: operator %q", ErrNotFound, subject)
+		return nil, fmt.Errorf("%w: operator %q", fault.ErrNotFound, subject)
 	}
 	var a model.Admin
 	err = s.db.WithContext(ctx).First(&a, uint(id)).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
+		return nil, fault.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("service: load operator: %w", err)
