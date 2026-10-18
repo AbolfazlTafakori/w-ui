@@ -320,7 +320,7 @@ const shown = computed(() => (props.modelValue ? formatDate(`${props.modelValue}
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   color: var(--ink);
   font-size: 14px;
 }
@@ -360,5 +360,5 @@ const shown = computed(() => (props.modelValue ? formatDate(`${props.modelValue}
 .dp-day.today { border-color: var(--accent); }
 .dp-day.chosen { background: var(--accent); border-color: var(--accent); color: #fff; }
 .dp-day:disabled { color: var(--faint); opacity: 0.45; cursor: not-allowed; }
-.dp-foot { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; margin-top: 6px; border-top: 1px solid var(--border); }
+.dp-foot { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; margin-top: 6px; border-top: 1px solid var(--line); }
 </style>

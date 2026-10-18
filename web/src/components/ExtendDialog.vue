@@ -253,7 +253,7 @@ async function apply() {
   margin-top: 14px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   cursor: pointer;
 }
@@ -270,7 +270,7 @@ async function apply() {
 .xt-preview {
   margin-top: 14px;
   padding: 10px 12px;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   min-height: 42px;
 }

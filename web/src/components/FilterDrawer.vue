@@ -332,7 +332,7 @@ export function activeFilterCount(f) {
 
 .drawer-enter-active .fd,
 .drawer-leave-active .fd {
-  transition: transform 0.22s var(--ease-enter);
+  transition: transform 0.22s var(--ease-soft);
 }
 .drawer-enter-active,
 .drawer-leave-active {

@@ -519,7 +519,7 @@ async function submitForm(input) {
   gap: 4px 10px;
   margin: 8px 0 0;
   padding: 7px 12px;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink);
   font-size: var(--t-sm);

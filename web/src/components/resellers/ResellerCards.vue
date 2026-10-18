@@ -48,7 +48,7 @@ defineEmits(['toggle', 'toggle-all', 'edit', 'reset', 'remove', 'enable'])
 
 <style scoped>
 .rcards { display: flex; flex-direction: column; gap: 10px; }
-.rcard { padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.rcard { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .rcard.off { opacity: 0.7; }
 .rcard-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rcard-name { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
@@ -60,7 +60,7 @@ defineEmits(['toggle', 'toggle-all', 'edit', 'reset', 'remove', 'enable'])
 /* A tag here has a third of a phone to live in; a long one wraps inside it
    rather than pushing out past the card. */
 .rcard-stats dd .atag { max-width: 100%; white-space: normal; line-height: 1.4; }
-.rcard-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.rcard-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
 .rcard-actions .abtn span { margin-inline-start: 4px; }
 .rcard.picked { border-color: var(--accent); }
 .rcard-head .acheck { flex: none; }

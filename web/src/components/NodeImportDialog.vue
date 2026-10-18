@@ -137,11 +137,11 @@ async function run() {
 .ni-bar .ainput { flex: 1; }
 .ni-list { max-height: 50vh; overflow: auto; }
 .ni-check { width: 32px; }
-.ni-empty { padding: 24px; text-align: center; color: var(--text-2, #888); }
-.ni-empty.error { color: var(--danger, #d4380d); }
-.ni-tag { font-size: 12px; color: var(--text-2, #888); }
-.ni-tag.ok { color: var(--success, #389e0d); }
+.ni-empty { padding: 24px; text-align: center; color: var(--muted); }
+.ni-empty.error { color: var(--bad); }
+.ni-tag { font-size: 12px; color: var(--muted); }
+.ni-tag.ok { color: var(--ok); }
 .ni-inb { font-size: 12px; max-width: 220px; }
 tr.muted td { opacity: .65; }
-.ni-errors { margin-top: 12px; font-size: 12px; color: var(--danger, #d4380d); }
+.ni-errors { margin-top: 12px; font-size: 12px; color: var(--bad); }
 </style>

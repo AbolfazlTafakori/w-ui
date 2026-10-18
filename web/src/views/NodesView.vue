@@ -861,7 +861,7 @@ function latencyTone(ms) {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 10px 12px; margin-bottom: 12px;
   border: 1px solid var(--warn-line, var(--line)); border-radius: 6px;
-  background: var(--warn-bg, var(--surface-2)); color: var(--ink); font-size: 13px; line-height: 1.5;
+  background: var(--warn-soft); color: var(--ink); font-size: 13px; line-height: 1.5;
 }
 .nf-notice .anticon { color: var(--warn); margin-top: 2px; }
 .nf-token { margin: 0; user-select: all; }

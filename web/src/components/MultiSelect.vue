@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 .ms.invalid .ms-control {
-  border-color: var(--danger, var(--accent));
+  border-color: var(--bad);
 }
 
 /* One line. Tags past what fits are hidden and counted, rather than growing

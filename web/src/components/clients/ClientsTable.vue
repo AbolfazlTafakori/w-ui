@@ -128,7 +128,7 @@ const emit = defineEmits(['toggle', 'toggle-all', 'qr', 'info', 'rotate', 'reset
 .atable-wrap.stale { opacity: 0.6; }
 .email-cell { display: flex; flex-direction: column; }
 .email-cell .email { font-weight: 500; color: inherit; text-decoration: none; }
-.email-cell .sub.over { color: var(--danger, #e5484d); font-weight: 600; }
+.email-cell .sub.over { color: var(--bad); font-weight: 600; }
 .email-cell .sub { font-size: 11px; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .cell-empty { color: var(--faint); }
 .speed-tag { display: inline-flex; width: 200px; align-items: center; justify-content: center; margin-inline-end: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; font-variant-numeric: tabular-nums; }
