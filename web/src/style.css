@@ -1517,16 +1517,20 @@ code.readonly {
 }
 .backup-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 6px 12px;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-size: var(--t-sm);
 }
+/* A long name keeps a readable width, and the row wraps under it instead of
+   squeezing it to a few letters a line. */
 .backup-name {
-  flex: 1 1 auto;
+  flex: 1 1 16em;
+  min-width: 0;
   font-family: var(--mono);
   overflow-wrap: anywhere;
 }
