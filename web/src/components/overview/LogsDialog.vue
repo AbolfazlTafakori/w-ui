@@ -112,7 +112,7 @@ function logText() {
 async function copyLogs() {
   try {
     await navigator.clipboard.writeText(logText())
-    notify(t('logs.copied'), 'ok')
+    notify(t('logs.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')
   }

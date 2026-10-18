@@ -136,11 +136,11 @@ async function askNodeUpdate(node) {
     run: async () => {
       const res = await api.post(`/api/nodes/${node.id}/update`)
       if (res?.started) {
-        notify(t('update.nodeStarted').replace('{v}', res.to || ''), 'ok')
+        notify(t('update.nodeStarted').replace('{v}', res.to || ''), 'success')
       } else if (res?.updated) {
-        notify(t('update.nodeUpdated').replace('{v}', res.to || ''), 'ok')
+        notify(t('update.nodeUpdated').replace('{v}', res.to || ''), 'success')
       } else {
-        notify(res?.notice || t('update.upToDate'), 'ok')
+        notify(res?.notice || t('update.upToDate'), 'success')
       }
       await load()
     },
@@ -171,7 +171,7 @@ async function loadAuthority() {
 async function copyAuthority() {
   try {
     await navigator.clipboard.writeText(authority.value)
-    notify(t('node.authorityCopied'), 'ok')
+    notify(t('node.authorityCopied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')
   }
@@ -204,7 +204,7 @@ async function fetchPin() {
       tlsServerName: (form.value.tlsServerName || '').trim(),
     })
     form.value.tlsPin = res?.tlsPin || ''
-    notify(t('node.pinFetched'), 'ok')
+    notify(t('node.pinFetched'), 'success')
   } catch (e) {
     notify(e.message, 'error')
   } finally {
@@ -353,7 +353,7 @@ async function issueToken() {
 async function copyToken() {
   try {
     await navigator.clipboard.writeText(issued.value.token)
-    notify(t('node.tokenCopied'), 'ok')
+    notify(t('node.tokenCopied'), 'success')
   } catch {
     notify(t('api.copyFailed'), 'error')
   }

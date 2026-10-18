@@ -131,7 +131,7 @@ async function createGroup() {
   busy.value = true
   try {
     await api.post('/api/groups', { name, note: (form.value.note || '').trim() })
-    notify(t('group.created'), 'ok')
+    notify(t('group.created'), 'success')
     dialog.value = null
     await load()
   } catch (e) {
@@ -168,7 +168,7 @@ function deleteGroup(g) {
     run: async () => {
       try {
         const res = await api.post('/api/groups/delete', { name: g.name })
-        notify(tn('group.deleted', res.ungrouped ?? 0), 'ok')
+        notify(tn('group.deleted', res.ungrouped ?? 0), 'success')
         await load()
       } catch (e) {
         notify(e.message, 'error')
@@ -328,7 +328,7 @@ async function applyMembers() {
       ids: [...chosen],
       remove: mode !== 'add',
     })
-    notify(tn(mode === 'add' ? 'group.clientsAdded' : 'group.clientsRemoved', chosen.size), 'ok')
+    notify(tn(mode === 'add' ? 'group.clientsAdded' : 'group.clientsRemoved', chosen.size), 'success')
     members.value = null
     await load()
   } catch (e) {

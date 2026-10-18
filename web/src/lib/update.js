@@ -63,7 +63,7 @@ export function useUpdate(version) {
         installing.value = { stage: 'downloading', from: res.from, to: res.to, received: 0, total: 0 }
         followInstall()
       } else {
-        notify(res?.notice || t('update.upToDate'), 'ok')
+        notify(res?.notice || t('update.upToDate'), 'success')
         updateOpen.value = false
       }
     } catch (e) {
@@ -98,7 +98,7 @@ export function useUpdate(version) {
       if (from && res.current && res.current !== from) {
         // Back, on the new build.
         installing.value = { ...installing.value, stage: 'back' }
-        notify(t('update.back').replace('{v}', res.current), 'ok')
+        notify(t('update.back').replace('{v}', res.current), 'success')
         setTimeout(() => window.location.reload(), 1200)
         return
       }
@@ -136,7 +136,7 @@ export function useUpdate(version) {
     if (!p || !p.from || !v || v === p.from || p.stage === 'back' || p.stage === 'failed') return
     clearTimeout(followTimer)
     installing.value = { ...p, stage: 'back' }
-    notify(t('update.back').replace('{v}', v), 'ok')
+    notify(t('update.back').replace('{v}', v), 'success')
     setTimeout(() => window.location.reload(), 1200)
   })
 
@@ -145,9 +145,9 @@ export function useUpdate(version) {
   async function copyUpdateCommand() {
     try {
       await navigator.clipboard.writeText(updateCommand)
-      notify(t('common.copied'), 'ok')
+      notify(t('common.copied'), 'success')
     } catch {
-      notify(updateCommand, 'ok')
+      notify(updateCommand, 'success')
     }
   }
 

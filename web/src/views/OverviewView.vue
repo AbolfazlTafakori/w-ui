@@ -106,7 +106,7 @@ async function tunnelAction(path, message) {
     if (failed.length) {
       notify(failed.map(([name, why]) => `${name}: ${why}`).join('\n'), 'error')
     } else {
-      notify(message.replace('{n}', res?.interfaces ?? 0), 'ok')
+      notify(message.replace('{n}', res?.interfaces ?? 0), 'success')
     }
     await load(true)
   } catch (e) {

@@ -145,6 +145,8 @@ export function signOut() {
 
 let toastTimer = null
 
+// kind is one of info, success, warning or error: the toast has a look for
+// each, and anything else is drawn as plain info.
 export function notify(message, kind = 'info') {
   // The expired-session error carries no message: it has already been
   // announced once, and a second empty toast on top of it is noise.

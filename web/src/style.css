@@ -855,6 +855,10 @@ tbody tr:hover {
   border-color: var(--ok);
   color: var(--ok);
 }
+.toast.warning {
+  border-color: var(--warn);
+  color: var(--warn);
+}
 
 /* ══════════ modal ══════════
    The dialog is capped to the viewport and scrolls its own body, so a long

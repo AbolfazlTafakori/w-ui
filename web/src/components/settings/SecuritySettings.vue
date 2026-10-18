@@ -163,7 +163,7 @@ async function saveMtlsTrust() {
   mtlsBusy.value = true
   try {
     const res = await api.post('/api/nodes/mtls/trust', { caCert: mtlsTrust.value.trim() })
-    notify(res?.required ? t('settings.mtlsTrustSaved') : t('settings.mtlsTrustCleared'), 'ok')
+    notify(res?.required ? t('settings.mtlsTrustSaved') : t('settings.mtlsTrustCleared'), 'success')
   } catch (e) {
     notify(e.message, 'error')
   } finally {

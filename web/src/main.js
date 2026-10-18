@@ -165,7 +165,7 @@ window.addEventListener('wui:unauthorized', () => {
     // Said out loud. Being returned to a sign-in screen with no explanation
     // reads as the panel having lost the password, and the usual next move is
     // to start resetting things that were never wrong.
-    notify(t('error.sessionEnded'), 'warn')
+    notify(t('error.sessionEnded'), 'warning')
     router.replace({ name: 'login' })
   }
 })
