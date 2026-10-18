@@ -15,10 +15,13 @@ Each layer uses only the ones below it.
  ─────────────────────────────────────────────────────────────────────────────────
  Reporting         oversight: the security audit, the daily report, reminders
  ─────────────────────────────────────────────────────────────────────────────────
- Domain services   service: customers, tunnels, subscriptions, groups, hosts,
-                   operators, nodes, settings
+ Domain services   service: customers, tunnels, subscriptions, groups, the engine
+                   operators: the owner, administrators and resellers, sign-in
+                   fleet: the nodes as the panel keeps them, and what each is sent
                    egress: outbounds, providers, balancers, routing rules
                    nodes: probing and syncing the other servers
+                   endpoints: the addresses customers' files point at (hosts)
+                   panelconf: the panel's own settings
  ─────────────────────────────────────────────────────────────────────────────────
  Applying it       reconciler: the loop that makes the kernel match the database
                    backend + one driver per protocol, sharing agentkit
@@ -26,8 +29,9 @@ Each layer uses only the ones below it.
  ─────────────────────────────────────────────────────────────────────────────────
  Data              database (+ model, numbered migrations), scope, ipam, backup
  ─────────────────────────────────────────────────────────────────────────────────
- Small pieces      fault, listfield, tunnelport, keyfile, wgkey, totp, certfile,
-                   each protocol's conf package, devguide
+ Small pieces      fault, listfield, tunnelport, idset, optional, membership,
+                   keyfile, wgkey, totp, certfile, each protocol's conf package,
+                   devguide
 ```
 
 The **root agent** (`l2tpagent`, the `wui-l2tp` service) runs apart from the panel, as root, because pppd, strongSwan and ocserv need root. The panel never does. They talk through files in the data directory: the panel writes what each tunnel should be, the agent writes back a report, every second. `agentkit` is the panel's side of that.
@@ -35,7 +39,7 @@ The **root agent** (`l2tpagent`, the `wui-l2tp` service) runs apart from the pan
 ## What each layer may do
 
 - **An entry point reads, checks who is asking, and answers.** A handler decodes the request, calls a service, and writes the result. A rule that lives in a handler is one the bot, the CLI and the node sync do not keep. `api` never queries the database; only `api.go` names it, to build the services.
-- **A domain service owns its rules.** A reseller's term starting at the first sign-in is `service.Admins`'s; switching every tunnel off is `service.DataPlane`'s. One rule, one place.
+- **A domain service owns its rules.** A reseller's term starting at the first sign-in is `operators.Admins`'s; switching every tunnel off is `service.DataPlane`'s. One rule, one place.
 - **A service's failure has a kind.** `fault.ErrInvalid`, `fault.ErrNotFound` and `fault.FieldError` (which names the form field) are what the API turns into 400, 404 and the message under the right input.
 - **A reseller's queries are narrowed for them.** `scope` adds the owner to every query on customers, devices and groups. Raw SQL on those tables is refused unless the call site vouches for it (`scope.Vouch`), after showing it narrows by owner itself.
 - **The database only grows.** Tables gain columns and indexes every start from the models; nothing an earlier release made is removed (`additive_test.go`, against a database written by every release since 1.0). Anything more is a numbered migration in `database/migrate.go`, run once and recorded in `schema_migrations`.
@@ -49,9 +53,20 @@ The **root agent** (`l2tpagent`, the `wui-l2tp` service) runs apart from the pan
 | Only `cmd/wui` writes another package's variable | A plain setting (where files go) is set once, at start, before anything reads it. |
 | No tunnel driver imports another | What drivers share is in `backend/agentkit`, so changing one protocol cannot break another. |
 | `api` does not query the database | See above: handlers ask the services. |
-| `egress`, `fault`, `listfield`, `tunnelport` and `backend` do not import `service` | The services are built on them, not the other way. |
+| `egress`, `fault`, `listfield`, `tunnelport`, `backend`, `idset`, `optional`, `membership`, `endpoints` and `panelconf` import none of `service`, `operators` or `fleet` | The domains are built on them, not the other way. |
+| `service`, `operators` and `fleet` do not import each other | They are siblings. What one needs of another is a small interface it declares (`operators.Customers`, which `service.Clients` answers) or a package below them all (`membership`, whose functions take the caller's transaction, so a reseller's customers are handed over in the same transaction that deletes the reseller). |
 | `service` and `egress` do not import `oversight` | What reports on the panel reads it; it is never called back. |
 | No database error is discarded | `_ = db.Find(&x).Error` builds an answer out of nothing when the database is busy. |
+
+## What is still one package, and why
+
+`service` is still the customers, the tunnels, the subscriptions, the groups, the engine page and the 3x-ui and Pasarguard side, about 10,500 lines. The customers and the tunnels are the next to part, and they do not part by moving files:
+
+- The customers' side drives the tunnels' service itself in one place (`Interfaces`, `CreateInterfaceInput`), and answers with the tunnels' own failures (`ErrPoolExhausted`, `ErrDeviceLimit`) and their AmneziaWG preset.
+- The tunnels' side reads who is online (`onlineWithin`) and the customers' file usage.
+- `xui.go` and `subscription.go` sit across both: each side uses part of them.
+
+Parting them means a small interface each way and the 3x-ui code split in two, on the paths a customer's configuration is built from. That is a change to be designed and measured on its own, against the byte-identical upgrade from 2.6.4, rather than done as a move.
 
 ## Wiring
 
@@ -63,7 +78,7 @@ The **root agent** (`l2tpagent`, the `wui-l2tp` service) runs apart from the pan
 
 ## Where to put a new thing
 
-- **A new rule about customers, tunnels or operators**: a method on the service that owns the table, with a test in that package.
+- **A new rule about customers, tunnels, operators or nodes**: a method on the service that owns the table (`service`, `operators`, `fleet`), with a test in that package.
 - **A new endpoint**: one entry in `api/routes.go`'s table (it documents itself), a handler that calls the service, and `go test ./internal/api -run TestTheRouteTable -update`.
 - **A new protocol**: a driver package in `internal/backend` beside `wgdriver` and the others, implementing `backend.Backend`, registered in `cmd/wui`, using `agentkit` if the root agent runs it.
 - **A new column**: on the model, with a JSON tag only if the API should show it, then `go test ./internal/database/model -update` and a look at the diff.
