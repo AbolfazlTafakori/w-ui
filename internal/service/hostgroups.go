@@ -281,7 +281,9 @@ func (s *Hosts) CreateGroup(ctx context.Context, in HostGroup) (*HostGroup, erro
 		return nil, err
 	}
 	var last struct{ Max int }
-	_ = s.db.WithContext(ctx).Model(&model.Host{}).Select("COALESCE(MAX(priority), 0) AS max").Scan(&last).Error
+	if err := s.db.WithContext(ctx).Model(&model.Host{}).Select("COALESCE(MAX(priority), 0) AS max").Scan(&last).Error; err != nil {
+		return nil, fmt.Errorf("service: place the host: %w", err)
+	}
 	in.SortOrder = last.Max + 1
 	id := newGroupID()
 	rows := rowsFor(id, in)

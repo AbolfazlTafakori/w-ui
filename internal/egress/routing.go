@@ -1235,7 +1235,11 @@ func (s *Routing) resolveBalancer(ctx context.Context, ans *RouteAnswer) {
 		return
 	}
 	var outbounds []model.Outbound
-	_ = s.db.WithContext(ctx).Find(&outbounds).Error
+	if err := s.db.WithContext(ctx).Find(&outbounds).Error; err != nil {
+		// Without the members the answer stays the balancer itself rather
+		// than naming one it may not pick.
+		return
+	}
 	byOutbound := map[string]model.Outbound{}
 	byDevice := map[string]string{}
 	for _, o := range outbounds {

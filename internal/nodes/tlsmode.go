@@ -216,7 +216,7 @@ func verifyPin(want string) func([][]byte, [][]*x509.Certificate) error {
 // offers it has to say what it is.
 // serverName, when set, is given in the handshake, as the node's own
 // requests will give it.
-func FetchPin(address string, timeout time.Duration, allowPrivate bool, serverName string) (string, error) {
+func FetchPin(ctx context.Context, address string, timeout time.Duration, allowPrivate bool, serverName string) (string, error) {
 	host, err := hostPort(address)
 	if err != nil {
 		return "", err
@@ -230,11 +230,11 @@ func FetchPin(address string, timeout time.Duration, allowPrivate bool, serverNa
 	// like any other, and an operator who has typed a private address by
 	// mistake should find out here rather than after storing its certificate.
 	if !allowPrivate {
-		if err := checkPublic(host); err != nil {
+		if err := checkPublic(ctx, host); err != nil {
 			return "", err
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	conn, err := dialer.DialContext(ctx, "tcp", host)

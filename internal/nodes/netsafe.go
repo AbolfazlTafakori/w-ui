@@ -101,7 +101,7 @@ func guardedDial(allowPrivate bool, timeout time.Duration) func(context.Context,
 
 // checkPublic resolves a host and refuses it if it lands inside this server's
 // own network. Used where a connection is made without the guarded dialer.
-func checkPublic(hostPort string) error {
+func checkPublic(ctx context.Context, hostPort string) error {
 	host, _, err := net.SplitHostPort(hostPort)
 	if err != nil {
 		host = hostPort
@@ -113,7 +113,7 @@ func checkPublic(hostPort string) error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)

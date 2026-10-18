@@ -61,8 +61,12 @@ func (s *Balancers) List(ctx context.Context) ([]BalancerView, error) {
 	if err := s.db.WithContext(ctx).Order("id").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("service: list balancers: %w", err)
 	}
+	// Which members are live is read from the outbounds; without them the
+	// list would show every balancer as sending nowhere.
 	var outbounds []model.Outbound
-	_ = s.db.WithContext(ctx).Find(&outbounds).Error
+	if err := s.db.WithContext(ctx).Find(&outbounds).Error; err != nil {
+		return nil, fmt.Errorf("service: list balancers: %w", err)
+	}
 	byTag := make(map[string]model.Outbound, len(outbounds))
 	byDevice := map[string]string{}
 	for _, o := range outbounds {

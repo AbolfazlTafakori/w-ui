@@ -236,3 +236,29 @@ func TestTheServicesDoNotReportOnThemselves(t *testing.T) {
 		}
 	}
 }
+
+// No database error is thrown away.
+//
+// `_ = db.Find(&rows).Error` reads nothing when the database is busy or
+// gone, and the page or rule built from the empty rows looks like an answer.
+// An error from the database is returned, or logged where the caller carries
+// on without it.
+func TestNoDatabaseErrorIsIgnored(t *testing.T) {
+	for _, f := range sources(t, "internal", "cmd") {
+		ast.Inspect(f.ast, func(n ast.Node) bool {
+			as, ok := n.(*ast.AssignStmt)
+			if !ok || len(as.Rhs) != 1 {
+				return true
+			}
+			for _, l := range as.Lhs {
+				if id, ok := l.(*ast.Ident); !ok || id.Name != "_" {
+					return true
+				}
+			}
+			if sel, ok := as.Rhs[0].(*ast.SelectorExpr); ok && sel.Sel.Name == "Error" {
+				t.Errorf("%s:%d: a database error is thrown away", f.rel, f.fs.Position(as.Pos()).Line)
+			}
+			return true
+		})
+	}
+}

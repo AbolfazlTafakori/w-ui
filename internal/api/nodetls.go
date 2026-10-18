@@ -31,7 +31,7 @@ func (s *Server) handleFetchPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pin, err := nodes.FetchPin(in.Address, fetchPinTimeout, in.AllowPrivateAddress, strings.TrimSpace(in.TLSServerName))
+	pin, err := nodes.FetchPin(r.Context(), in.Address, fetchPinTimeout, in.AllowPrivateAddress, strings.TrimSpace(in.TLSServerName))
 	if err != nil {
 		// A refusal with a reason, not a fault: an unreachable address or a
 		// plain-HTTP one is something the operator can act on.

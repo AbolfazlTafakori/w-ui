@@ -191,7 +191,7 @@ func TestTheFingerprintCanBeReadFromTheNode(t *testing.T) {
 	node, stop := nodeServing(t, cert, model.TLSSkip, "")
 	defer stop()
 
-	got, err := FetchPin(node.Address, 5*time.Second, true, "")
+	got, err := FetchPin(t.Context(), node.Address, 5*time.Second, true, "")
 	if err != nil {
 		t.Fatalf("FetchPin: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestTheFingerprintCanBeReadFromTheNode(t *testing.T) {
 // There is nothing to read from a plain-HTTP address, and saying so beats a
 // connection error an operator has to interpret.
 func TestFetchingFromAPlainAddressSaysWhy(t *testing.T) {
-	_, err := FetchPin("http://node.example:2096", time.Second, true, "")
+	_, err := FetchPin(t.Context(), "http://node.example:2096", time.Second, true, "")
 	if err == nil {
 		t.Fatal("fetching a certificate from a plain HTTP address was accepted")
 	}

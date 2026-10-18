@@ -398,7 +398,7 @@ func (s *NodeSync) upsertAccounts(
 			return fmt.Errorf("store managed account %d: %w", wa.OriginID, err)
 		}
 		if wa.HeldUntil != nil && s.OnHold != nil && time.Now().Before(*wa.HeldUntil) {
-			s.OnHold(context.Background(), a.ID, *wa.HeldUntil)
+			s.OnHold(tx.Statement.Context, a.ID, *wa.HeldUntil)
 		}
 	}
 
