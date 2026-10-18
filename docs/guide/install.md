@@ -19,7 +19,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/ins
 | Kernel | one with `nft_quota` — stock Ubuntu, Debian and most VPS kernels have it; the installer checks and says so |
 | Ports | the panel port (TCP), one UDP port per WireGuard interface, TCP 443 if you use OpenVPN, and port 80 reachable for a Let's Encrypt certificate |
 
-It installs `nftables`, `wireguard-tools`, AmneziaWG, OpenVPN, `easy-rsa` and `qrencode`, enables IPv4/IPv6 forwarding, creates an unprivileged `wui` user, and registers a hardened systemd unit.
+It installs `nftables`, `wireguard-tools`, AmneziaWG, OpenVPN and `easy-rsa`, strongSwan and `xl2tpd` for L2TP/IPsec and IKEv2, `pppd` for PPTP, `ocserv` for OpenConnect, xray and sing-box for the proxy outbounds, and `qrencode` — each protocol left off until a tunnel uses it — enables IPv4/IPv6 forwarding, creates an unprivileged `wui` user, and registers a hardened systemd unit.
 
 ## The questions
 
@@ -40,7 +40,7 @@ Three questions, then it installs everything on its own:
 2. **A domain**, if you have one whose DNS points at this server — it gets a Let's Encrypt certificate. The installer checks the record right away and says so if it does not point here yet; leave it blank if you have no domain.
 3. **Without a domain: a certificate for this server's IP address?** — yes by default (Let's Encrypt, six days, renews itself).
 
-Everything else is chosen the way pressing enter through the manual questions would choose it — a random free port, a random URL path, a generated administrator and password, a free subscription port, OpenVPN and AmneziaWG — and printed at the end: the panel's address, the username, the password, the ports and the path. Nothing after the three questions asks anything. A certificate that cannot be issued is skipped rather than asked about — port 80 already served by another project on the server is left alone — and the panel comes up on plain HTTP until you get one from the menu (`w-ui` → 20).
+Everything else is chosen the way pressing enter through the manual questions would choose it — a random free port, a random URL path, a generated administrator and password, a free subscription port, and every protocol — and printed at the end: the panel's address, the username, the password, the ports and the path. Nothing after the three questions asks anything. A certificate that cannot be issued is skipped rather than asked about — port 80 already served by another project on the server is left alone — and the panel comes up on plain HTTP until you get one from the menu (`w-ui` → 20).
 
 `--auto` picks this without the first question; `--manual` picks the other.
 
@@ -71,7 +71,7 @@ Every choice, in this order, then it works unattended:
 
    Whatever you choose, the panel answers on the one port — by the address and by the domain alike. See [Certificates](/guide/certificates).
 
-6. Whether to install OpenVPN and AmneziaWG alongside WireGuard.
+6. **The protocols** — one question, *Install every protocol?*, yes by default. Answer no and each is asked on its own: OpenVPN, AmneziaWG, L2TP/IPsec, IKEv2, PPTP, OpenConnect, and xray with sing-box. One left out is not lost: the panel installs it when the first tunnel of its kind is made.
 
 Not asked: the **subscription port**. The installer picks a free random one beside the panel's, turns the subscription service on, and gives it the panel's certificate, so a customer's link works from the first minute. `--sub-port N` names one instead.
 
@@ -93,7 +93,7 @@ Every answer is also a flag, and `--yes` skips the questions:
 | `--tls-cert PATH` / `--tls-key PATH` | A certificate you already have |
 | `--no-tls` | Plain HTTP — only behind a proxy or an SSH tunnel |
 | `--local-only` | Bind to 127.0.0.1 |
-| `--no-amnezia` / `--no-openvpn` | Skip those packages |
+| `--no-amnezia` / `--no-openvpn` / `--no-l2tp` / `--no-ikev2` / `--no-pptp` / `--no-openconnect` / `--no-proxy-cores` | Skip that protocol's packages; the panel installs them with the first tunnel of that kind |
 | `--local PATH` | Install a binary you already built |
 | `--from-source` | Build the latest commit (installs Go if needed) |
 | `--auto` / `--manual` | The automatic install (three questions) or the manual one (every question), without being asked which |

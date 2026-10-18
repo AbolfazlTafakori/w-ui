@@ -63,12 +63,14 @@ run_wizard() {
     printf 'PORT=%s\nUSER=%s\nPASS=%s\nBASE=%s\nMODE=%s\nDOMAIN=%s\nEMAIL=%s\nCERT=%s\nLISTEN=%s\nOVPN=%s\nAWG=%s\n' \
       "$PANEL_PORT" "$ADMIN_USER" "$ADMIN_PASS" "$BASE_PATH" "$TLS_MODE" "$ACME_DOMAIN" \
       "$ACME_EMAIL" "$TLS_CERT" "$LISTEN_ADDR" "$WANT_OPENVPN" "$WANT_AMNEZIA"
+    printf 'PROTOS=%s%s%s%s%s%s%s\n' "$WANT_OPENVPN" "$WANT_AMNEZIA" "$WANT_L2TP" "$WANT_IKEV2" \
+      "$WANT_PPTP" "$WANT_OPENCONNECT" "$WANT_PROXY"
   )
 }
 
-# Ten blank lines: port? path? credentials? database? certificate (2: the
-# address)? is that the address? ipv6? openvpn? amneziawg? confirm?
-ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n\n'
+# Nine blank lines: port? path? credentials? database? certificate (2: the
+# address)? is that the address? ipv6? every protocol? confirm?
+ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n'
 
 echo
 echo "── pressing enter through everything leaves nothing guessable ─────────"
@@ -116,7 +118,6 @@ Sup3rSecret!
 panel.example.com
 me@example.com
 y
-y
 y")
 check "the port they asked for"     "8443"              "$(field PORT "$out")"
 check "the path they asked for"     "panel"             "$(field BASE "$out")"
@@ -150,7 +151,6 @@ n
 4
 n
 y
-y
 y")
 check "a blank path means the root" "" "$(field BASE "$out")"
 
@@ -163,7 +163,6 @@ n
 4
 y
 y
-y
 y")
 check "binds to the loopback when asked"  "127.0.0.1" "$(field LISTEN "$out")"
 out=$(run_wizard "n
@@ -172,7 +171,6 @@ n
 1
 4
 n
-y
 y
 y")
 check "and to every interface when not"   "0.0.0.0"   "$(field LISTEN "$out")"
@@ -196,7 +194,6 @@ not-a-domain
 panel.example.org
 
 y
-y
 y")
 check "invalid ports rejected"  "2096"              "$(field PORT "$out")"
 check "invalid paths rejected"  "good-path"         "$(field BASE "$out")"
@@ -218,7 +215,6 @@ matching-one
 4
 n
 y
-y
 y")
 check "the confirmed password is the one kept" "matching-one" "$(field PASS "$out")"
 
@@ -234,7 +230,6 @@ longenough1
 1
 4
 n
-y
 y
 y")
 check "short password rejected, long one kept" "longenough1" "$(field PASS "$out")"
@@ -257,7 +252,7 @@ out=$(
   set +e
   # shellcheck disable=SC1091
   WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
-  printf '1\nn\nn\nn\n1\n4\nn\ny\ny\nn\n' >"$WORK/answers"
+  printf '1\nn\nn\nn\n1\n4\nn\ny\nn\n' >"$WORK/answers"
   open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
   public_ip() { printf '203.0.113.5'; }
   have() { return 1; }
@@ -315,6 +310,46 @@ out=$(
 truth "a pinned port that is busy fails clearly, naming the service" \
       "$([[ "$out" == *"already served by caddy"* ]] && echo 1)" "got: $out"
 
+echo
+echo "── manual: enter at the protocols installs every one ──────────────────"
+out=$(run_wizard "$ALL_DEFAULT")
+check "all seven: OpenVPN, AmneziaWG, L2TP, IKEv2, PPTP, OpenConnect, proxy cores" \
+      "1111111" "$(field PROTOS "$out")"
+
+echo
+echo "── manual: no to every protocol, then each asked on its own ───────────"
+# port, path, credentials, database, certificate, loopback; then no to all,
+# and yes / no for OpenVPN, AmneziaWG, L2TP, IKEv2, PPTP, OpenConnect, proxy
+# cores; then go ahead.
+out=$(run_wizard "n
+n
+n
+1
+4
+n
+n
+y
+n
+n
+y
+y
+n
+n
+y")
+check "each protocol as answered" "1001100" "$(field PROTOS "$out")"
+
+echo
+echo "── manual: a --no-... flag is kept when every protocol is chosen ──────"
+out=$(run_wizard "n
+n
+n
+1
+4
+n
+y
+y" 'WANT_OPENCONNECT=0; WANT_PPTP=0')
+check "the flags still hold" "1111001" "$(field PROTOS "$out")"
+
 # ── the automatic install ───────────────────────────────────────────────────
 # Answers go straight in, without the manual "1" run_wizard puts first. What
 # is left unread in the answers afterwards is a question too many.
@@ -335,9 +370,11 @@ run_auto() {
     port_taken() { return 1; }
     die() { printf 'DIED: %s\n' "$*"; exit 9; }
     configure >/dev/null 2>&1
-    printf 'INSTALL=%s\nDB=%s\nSUB=%s\nPORT=%s\nUSER=%s\nPASS=%s\nBASE=%s\nMODE=%s\nDOMAIN=%s\nIP=%s\nOVPN=%s\nAWG=%s\nLEFT=%s\n' \
+    printf 'INSTALL=%s\nDB=%s\nSUB=%s\nPORT=%s\nUSER=%s\nPASS=%s\nBASE=%s\nMODE=%s\nDOMAIN=%s\nIP=%s\nOVPN=%s\nAWG=%s\nPROTOS=%s%s%s%s%s%s%s\nLEFT=%s\n' \
       "$INSTALL_MODE" "$DB_DRIVER" "$SUB_PORT" "$PANEL_PORT" "$ADMIN_USER" "$ADMIN_PASS" "$BASE_PATH" \
-      "$TLS_MODE" "$ACME_DOMAIN" "$ACME_IP" "$WANT_OPENVPN" "$WANT_AMNEZIA" "$(grep -v '^$' <&3 | tr '\n' ',')"
+      "$TLS_MODE" "$ACME_DOMAIN" "$ACME_IP" "$WANT_OPENVPN" "$WANT_AMNEZIA" \
+      "$WANT_OPENVPN" "$WANT_AMNEZIA" "$WANT_L2TP" "$WANT_IKEV2" "$WANT_PPTP" "$WANT_OPENCONNECT" "$WANT_PROXY" \
+      "$(grep -v '^$' <&3 | tr '\n' ',')"
   )
 }
 
@@ -358,6 +395,7 @@ sub=$(field SUB "$out")
 truth "a subscription port beside the panel's"   "$([[ "$sub" =~ ^[0-9]+$ && "$sub" != "$port" ]] && echo 1)" "got $sub"
 check "OpenVPN installed"   "1" "$(field OVPN "$out")"
 check "AmneziaWG installed" "1" "$(field AWG "$out")"
+check "every protocol installed, without a question" "1111111" "$(field PROTOS "$out")"
 check "no question beyond the three was asked" "SENTINEL," "$(field LEFT "$out")"
 
 echo

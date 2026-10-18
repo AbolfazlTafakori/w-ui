@@ -3,8 +3,9 @@
 # W-UI installer.
 #
 # Brings a bare server to the point where the panel can actually serve tunnels:
-# WireGuard, AmneziaWG, OpenVPN, nftables, kernel forwarding, a systemd unit and
-# the panel itself. Safe to re-run — it upgrades in place rather than starting
+# WireGuard, AmneziaWG, OpenVPN, L2TP/IPsec, IKEv2, PPTP, OpenConnect, xray and
+# sing-box for the proxy outbounds, nftables, kernel forwarding, a systemd unit
+# and the panel itself. Safe to re-run — it upgrades in place rather than starting
 # over, and every step checks whether it is already done.
 #
 #   curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/install.sh | sudo bash
@@ -12,10 +13,11 @@
 # It asks first how to install:
 #
 #   1) Manual     every choice is asked -- the port, the URL path, who signs
-#                 in, the database, the certificate, what is installed
+#                 in, the database, the certificate, and which protocols
 #   2) Automatic  three questions -- the database, a domain, a certificate for
-#                 the address -- and everything else is chosen and set up, and
-#                 shown at the end: the address, the username and the password
+#                 the address -- and everything else is chosen and set up, every
+#                 protocol installed, and shown at the end: the address, the
+#                 username and the password
 #
 # Answer nothing and it uses the defaults below. Every answer can also be given
 # as a flag, which is what --yes needs to run unattended.
@@ -25,8 +27,14 @@
 #   --from-source      build from the repository in the current directory
 #   --no-amnezia       skip AmneziaWG (it builds a kernel module and needs headers)
 #   --no-openvpn       skip OpenVPN if you only sell WireGuard
-#   --no-l2tp          skip L2TP/IPsec (strongSwan, xl2tpd); it stays off
-#                      until an L2TP tunnel is made either way
+#   --no-l2tp          skip L2TP/IPsec (strongSwan, xl2tpd)
+#   --no-ikev2         skip IKEv2 (strongSwan and its EAP plugins)
+#   --no-pptp          skip PPTP (pppd)
+#   --no-openconnect   skip OpenConnect (ocserv)
+#   --no-proxy-cores   skip xray and sing-box (the proxy outbounds)
+#                      Every protocol installed stays off until a tunnel uses
+#                      it, and one skipped is installed by the panel when the
+#                      first tunnel of its kind is made.
 #   --port <n>         panel port (default: random)
 #   --sub-port <n>     subscription service port (default: random)
 #   --db <engine>      sqlite (default) or postgres, for a large customer count
@@ -111,6 +119,10 @@ DB_PASS=""
 WANT_AMNEZIA=1
 WANT_OPENVPN=1
 WANT_L2TP=1
+WANT_IKEV2=1
+WANT_PPTP=1
+WANT_OPENCONNECT=1
+WANT_PROXY=1
 LOCAL_BIN=""
 FROM_SOURCE=0
 ACTION=install
@@ -208,6 +220,10 @@ while [[ "$LIB_ONLY" != 1 && $# -gt 0 ]]; do
     --no-amnezia)  WANT_AMNEZIA=0; shift ;;
     --no-openvpn)  WANT_OPENVPN=0; shift ;;
     --no-l2tp)     WANT_L2TP=0; shift ;;
+    --no-ikev2)    WANT_IKEV2=0; shift ;;
+    --no-pptp)     WANT_PPTP=0; shift ;;
+    --no-openconnect) WANT_OPENCONNECT=0; shift ;;
+    --no-proxy-cores) WANT_PROXY=0; shift ;;
     --port)        PANEL_PORT="${2:?--port needs a number}"; PORT_KNOWN=1; shift 2 ;;
     --sub-port)    SUB_PORT="${2:?--sub-port needs a number}"; SUB_KNOWN=1; shift 2 ;;
     --db)          DB_DRIVER="${2:?--db needs sqlite or postgres}"; DB_KNOWN=1; shift 2 ;;
@@ -969,6 +985,83 @@ with zipfile.ZipFile(sys.argv[1]) as z, open(sys.argv[3], "wb") as f:
 PYZ
 }
 
+# ── IKEv2, PPTP and OpenConnect ──────────────────────────────────────────────
+# Installed the way L2TP is, and left off the same way: the panel's agent
+# runs each from its own files while a tunnel of that kind exists. The same
+# packages the agent would install the first time one is made, so a tunnel
+# made later starts at once rather than after an install.
+#
+# install_parked LABEL UNITS DEBIAN-PACKAGES RHEL-PACKAGES BINARIES
+#
+# Each list is one space-separated word. What is already enabled or running
+# here is the operator's and is left as it was; what the packages bring
+# with them is stopped and disabled, so nothing holds a port the agent's own
+# will need. A package that cannot be installed is said, not fatal: the
+# panel tries again when the first tunnel of its kind is made.
+install_parked() {
+  local label="$1" units="$2" deb="$3" rpm="$4" bins="$5" u b theirs=" " installed=1
+  step "Installing $label (off until a tunnel uses it)"
+  if have_systemd; then
+    for u in $units; do
+      if systemctl is-enabled --quiet "$u" 2>/dev/null || systemctl is-active --quiet "$u" 2>/dev/null; then
+        theirs="$theirs$u "
+      fi
+    done
+  fi
+  # shellcheck disable=SC2086
+  parked_packages() {
+    case "$FAMILY" in
+      debian) DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $deb >/dev/null 2>&1 ;;
+      rhel)
+        [[ "$OS_ID" == fedora ]] || dnf install -y -q epel-release >/dev/null 2>&1 || true
+        dnf install -y -q $rpm >/dev/null 2>&1 ;;
+      *) return 1 ;;
+    esac
+  }
+  if ! parked_packages; then
+    if [[ "$FAMILY" == debian ]]; then
+      pkg_refresh
+      parked_packages || installed=0
+    else
+      installed=0
+    fi
+  fi
+  if have_systemd; then
+    for u in $units; do
+      [[ "$theirs" == *" $u "* ]] && continue
+      systemctl disable --now "$u" >/dev/null 2>&1 || true
+      systemctl stop "$u" >/dev/null 2>&1 || true
+    done
+  fi
+  for b in $bins; do have "$b" || installed=0; done
+  if [[ "$installed" == 1 ]]; then
+    ok "$label: installed, off until a tunnel uses it"
+  else
+    warn "$label could not be installed now; the panel installs it when the first such tunnel is made"
+  fi
+  [[ "$theirs" == " " ]] || info "already in use here, left as it was:$theirs"
+}
+
+install_ikev2() {
+  install_parked "IKEv2" \
+    "strongswan.service strongswan-starter.service strongswan-swanctl.service ipsec.service" \
+    "strongswan-swanctl charon-systemd libcharon-extauth-plugins libcharon-extra-plugins libstrongswan-standard-plugins" \
+    "strongswan" \
+    "swanctl"
+}
+
+# The PPTP server is the panel's own; pppd is all it needs of the system.
+install_pptp() {
+  install_parked "PPTP" "pptpd.service" "ppp" "ppp" "pppd"
+}
+
+# ocserv's package starts its own on 443 (Debian by socket activation); the
+# agent runs ocserv from its own files instead. netbase carries the "radius"
+# service name ocserv's sign-in looks up, which a minimal image lacks.
+install_openconnect() {
+  install_parked "OpenConnect" "ocserv.socket ocserv.service" "ocserv netbase" "ocserv" "ocserv occtl"
+}
+
 install_l2tp() {
   step "Installing L2TP/IPsec (off until a tunnel uses it)"
   local u theirs=" " installed=1
@@ -1700,7 +1793,7 @@ choose_install_mode() {
 #
 # Three questions, and the rest decided as the manual install's defaults would
 # decide it: a random free port, a random URL path, a generated administrator
-# and password, a free subscription port, OpenVPN and AmneziaWG. Nothing after
+# and password, a free subscription port, and every protocol. Nothing after
 # this asks anything: a certificate that cannot be issued -- port 80 served by
 # another project, a domain that does not point here yet -- is skipped rather
 # than asked about, and the closing summary says so beside everything needed to
@@ -1786,10 +1879,14 @@ read_back() {
     none)  info "Address        http://$([[ "$LISTEN_ADDR" == 127.0.0.1 ]] && echo 127.0.0.1 || echo '<this server>'):$PANEL_PORT$shown_path  (no certificate)" ;;
   esac
   local extras="WireGuard"
-  [[ "$WANT_AMNEZIA" == 1 ]] && extras="AmneziaWG, $extras"
-  [[ "$WANT_OPENVPN" == 1 ]] && extras="OpenVPN, $extras"
-  [[ "$WANT_L2TP" == 1 ]] && extras="$extras, L2TP/IPsec (off until used)"
-  info "Installing     $extras"
+  [[ "$WANT_OPENVPN" == 1 ]] && extras="$extras, OpenVPN"
+  [[ "$WANT_AMNEZIA" == 1 ]] && extras="$extras, AmneziaWG"
+  [[ "$WANT_L2TP" == 1 ]] && extras="$extras, L2TP/IPsec"
+  [[ "$WANT_IKEV2" == 1 ]] && extras="$extras, IKEv2"
+  [[ "$WANT_PPTP" == 1 ]] && extras="$extras, PPTP"
+  [[ "$WANT_OPENCONNECT" == 1 ]] && extras="$extras, OpenConnect"
+  [[ "$WANT_PROXY" == 1 ]] && extras="$extras, xray and sing-box"
+  info "Installing     $extras (each off until a tunnel uses it)"
   tty_out '\n'
 }
 
@@ -1932,16 +2029,34 @@ configure() {
 
   ask_tls
 
-  # ── what is installed alongside ───────────────────────────────────────────
-  tty_out '\n'
-  if ask_yn "Install OpenVPN as well as WireGuard?" y; then WANT_OPENVPN=1; else WANT_OPENVPN=0; fi
-  if ask_yn "Install AmneziaWG (obfuscated WireGuard)?" y; then WANT_AMNEZIA=1; else WANT_AMNEZIA=0; fi
+  ask_protocols
 
   # ── read it back ──────────────────────────────────────────────────────────
   tty_out '\n'
   read_back
 
   ask_yn "Start the install with these?" y || die "cancelled — nothing was changed"
+}
+
+# What is installed alongside WireGuard. One question for all of it -- the
+# answer most operators want -- and only on a no, one for each, so a panel
+# that sells two protocols is not made to carry the rest. A protocol left out
+# here is not lost: the panel installs it when the first tunnel of its kind
+# is made. A --no-... flag already given is kept either way.
+ask_protocols() {
+  tty_out '\n'
+  qhead "Protocols"
+  info "  WireGuard always; besides it OpenVPN, AmneziaWG, L2TP/IPsec, IKEv2, PPTP,"
+  info "  OpenConnect, and xray with sing-box for the proxy outbounds. Each stays off"
+  info "  until a tunnel uses it."
+  ask_yn "Install every protocol?" y && return 0
+  if ask_yn "OpenVPN?" y; then WANT_OPENVPN=1; else WANT_OPENVPN=0; fi
+  if ask_yn "AmneziaWG (obfuscated WireGuard; builds a kernel module)?" y; then WANT_AMNEZIA=1; else WANT_AMNEZIA=0; fi
+  if ask_yn "L2TP/IPsec?" y; then WANT_L2TP=1; else WANT_L2TP=0; fi
+  if ask_yn "IKEv2?" y; then WANT_IKEV2=1; else WANT_IKEV2=0; fi
+  if ask_yn "PPTP?" y; then WANT_PPTP=1; else WANT_PPTP=0; fi
+  if ask_yn "OpenConnect (Cisco AnyConnect compatible)?" y; then WANT_OPENCONNECT=1; else WANT_OPENCONNECT=0; fi
+  if ask_yn "xray and sing-box (proxy outbounds: VLESS, VMess, Trojan, Shadowsocks...)?" y; then WANT_PROXY=1; else WANT_PROXY=0; fi
 }
 
 # Everything as it is. What read_existing could not find is left at what it
@@ -1954,6 +2069,9 @@ configure_upgrade() {
   [[ -n "$SUB_PORT" ]] || SUB_PORT="$(pick_sub_port)"
   if [[ "$WANT_OPENVPN" == 1 && ! -x "$(command -v openvpn 2>/dev/null)" ]]; then WANT_OPENVPN=0; fi
   if [[ "$WANT_AMNEZIA" == 1 && ! -x "$(command -v awg 2>/dev/null)" ]]; then WANT_AMNEZIA=0; fi
+  if [[ "$WANT_IKEV2" == 1 ]] && ! have swanctl; then WANT_IKEV2=0; fi
+  if [[ "$WANT_PPTP" == 1 ]] && ! have pppd; then WANT_PPTP=0; fi
+  if [[ "$WANT_OPENCONNECT" == 1 ]] && ! have ocserv; then WANT_OPENCONNECT=0; fi
 }
 
 # The same decisions, made without a terminal.
@@ -2886,6 +3004,11 @@ summary() {
   part WireGuard "$(state "$(have wg && wg --version 2>/dev/null | awk '{print $2}' || echo 'missing')")"
   part AmneziaWG "$(state "$([[ "${AMNEZIA_OK:-0}" == 1 ]] && awg --version 2>/dev/null | awk '{print $2}' || echo 'not installed')")"
   part OpenVPN "$(state "$([[ "${OPENVPN_OK:-0}" == 1 ]] && openvpn --version 2>/dev/null | head -1 | awk '{print $2}' || echo 'not installed')")"
+  part L2TP/IPsec "$(state "$(have xl2tpd && have swanctl && echo 'installed, off until used' || echo 'not installed')")"
+  part IKEv2 "$(state "$(have swanctl && echo 'installed, off until used' || echo 'not installed')")"
+  part PPTP "$(state "$(have pppd && echo 'installed, off until used' || echo 'not installed')")"
+  part OpenConnect "$(state "$(have ocserv && echo 'installed, off until used' || echo 'not installed')")"
+  part xray "$(state "$(have xray && echo "${XRAY_VERSION#v}" || echo 'not installed')")"
   part nftables "$(state "$(nft --version 2>/dev/null | awk '{print $2}')")"
   part forwarding "$(state "$([[ "$(sysctl -n net.ipv4.ip_forward)" == 1 ]] && echo on || echo off)")"
   if [[ "$LISTEN_ADDR" == 127.0.0.1 ]]; then
@@ -3062,8 +3185,11 @@ install_base
 install_wireguard
 if [[ "$WANT_AMNEZIA" == 1 ]]; then install_amnezia; else info "AmneziaWG skipped (--no-amnezia)"; fi
 if [[ "$WANT_OPENVPN" == 1 ]]; then install_openvpn; else info "OpenVPN skipped (--no-openvpn)"; fi
-if [[ "$WANT_L2TP" == 1 ]]; then install_l2tp; else info "L2TP/IPsec skipped (--no-l2tp)"; fi
-install_proxy_cores
+if [[ "$WANT_L2TP" == 1 ]]; then install_l2tp; else info "L2TP/IPsec skipped; the panel installs it with the first L2TP tunnel"; fi
+if [[ "$WANT_IKEV2" == 1 ]]; then install_ikev2; else info "IKEv2 skipped; the panel installs it with the first IKEv2 tunnel"; fi
+if [[ "$WANT_PPTP" == 1 ]]; then install_pptp; else info "PPTP skipped; the panel installs it with the first PPTP tunnel"; fi
+if [[ "$WANT_OPENCONNECT" == 1 ]]; then install_openconnect; else info "OpenConnect skipped; the panel installs it with the first OpenConnect tunnel"; fi
+if [[ "$WANT_PROXY" == 1 ]]; then install_proxy_cores; else info "xray and sing-box skipped (--no-proxy-cores)"; fi
 enable_forwarding
 check_nftables
 install_binary
