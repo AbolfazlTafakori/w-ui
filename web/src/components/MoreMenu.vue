@@ -15,6 +15,7 @@ defineProps({
   buttonClass: { type: String, default: 'abtn more-btn' },
   icon: { type: String, default: 'MoreOutlined' },
   label: { type: String, default: '' },
+  disabled: { type: Boolean, default: false },
 })
 const emit = defineEmits(['pick'])
 
@@ -56,7 +57,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <button ref="button" type="button" :class="buttonClass" :aria-label="compact ? (label || t('outbound.more')) : null" :title="compact ? (label || t('outbound.more')) : null" aria-haspopup="menu" :aria-expanded="!!open" @click="toggle">
+  <button ref="button" type="button" :class="buttonClass" :aria-label="compact ? (label || t('outbound.more')) : null" :title="compact ? (label || t('outbound.more')) : null" aria-haspopup="menu" :aria-expanded="!!open" :disabled="disabled" @click="toggle">
     <AntIcon :name="icon" /><span v-if="!compact">{{ label || t('outbound.more') }}</span>
   </button>
   <Teleport to="body">
