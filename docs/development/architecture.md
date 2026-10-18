@@ -65,7 +65,7 @@ The **root agent** (`l2tpagent`, the `wui-l2tp` service) runs apart from the pan
 
 - **A new rule about customers, tunnels or operators**: a method on the service that owns the table, with a test in that package.
 - **A new endpoint**: one entry in `api/routes.go`'s table (it documents itself), a handler that calls the service, and `go test ./internal/api -run TestTheRouteTable -update`.
-- **A new protocol**: a driver in `internal/backend/<name>driver` implementing `backend.Backend`, registered in `cmd/wui`, using `agentkit` if the root agent runs it.
+- **A new protocol**: a driver package in `internal/backend` beside `wgdriver` and the others, implementing `backend.Backend`, registered in `cmd/wui`, using `agentkit` if the root agent runs it.
 - **A new column**: on the model, with a JSON tag only if the API should show it, then `go test ./internal/database/model -update` and a look at the diff.
 - **Changing old data**: a new numbered migration at the end of the list, written so that running it twice changes nothing.
 
