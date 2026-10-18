@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, relative, dateTime, percent, unitToBytes } from '../lib/format.js'
+import { bytes, dateTime, unitToBytes } from '../lib/format.js'
 import ClientForm from '../components/ClientForm.vue'
 import ExtendDialog from '../components/ExtendDialog.vue'
 import BulkClientForm from '../components/BulkClientForm.vue'
@@ -13,6 +13,11 @@ import ClientInfoModal from '../components/ClientInfoModal.vue'
 import AntIcon from '../components/AntIcon.vue'
 import Toggle from '../components/Toggle.vue'
 import Icon from '../components/Icon.vue'
+import ImportDialog from '../components/clients/ImportDialog.vue'
+import SubLinksDialog from '../components/clients/SubLinksDialog.vue'
+import {
+  DEPLETING_AT, barColor, expiryTag, expiryTitle, lastOnlineTitle, remainingTag, speedActive, speedText, statusTag, usedPercent,
+} from '../lib/clientRow.js'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FilterDrawer, { emptyFilters, activeFilterCount } from '../components/FilterDrawer.vue'
 import PageSpin from '../components/PageSpin.vue'
@@ -437,114 +442,6 @@ function toggleOne(id, checked) {
   selected.value = next
 }
 
-// Online is what the reconciler sees moving right now -- bytes in the last
-// window, counted every two seconds -- rather than a handshake written to
-// the database a flush later. A device that connects shows within a poll.
-const clientOnline = (c) => (c.onlineNow || 0) > 0
-const usedPercent = (c) => percent(c.usedBytes, c.quotaBytes)
-
-// What the customer is moving right now, each way, as the server measures it
-// from the kernel's own counters every tick -- up is what they send, down
-// what they receive. Absent while they move nothing. It used to be worked out
-// here from two readings of the stored total, inside the render: every
-// re-render took a new reading, so the column read "—" nearly always.
-const speedActive = (c) => !!c.speed && (c.speed.up > 0 || c.speed.down > 0)
-function speedText(c) {
-  const rate = (v) => `${bytes(v || 0, store.locale)}/s`
-  return `↑ ${rate(c.speed.up)} / ↓ ${rate(c.speed.down)}`
-}
-
-// Their traffic bar: green while there is room, orange within the warning
-// band, red when out; a disabled customer's bar is grey; unlimited is a
-// purple wash.
-function barColor(c) {
-  if (c.status === 'disabled') return 'var(--faint)'
-  if (!c.quotaBytes) return 'rgba(114, 46, 209, 0.35)'
-  const p = usedPercent(c) ?? 0
-  if (p >= 100) return 'var(--bad)'
-  if (p >= DEPLETING_AT) return 'var(--warn)'
-  return 'var(--ok)'
-}
-// The three cells below use the classic panel's own colour rules, so a row reads at a
-// glance: purple is unlimited, green healthy, orange running low, red stopped.
-
-function statusTag(c) {
-  // Ended plans say why: out of data, or past their date. The switch beside
-  // them is off, because the panel switched them off.
-  if (c.status === 'exhausted') return { color: 'red', label: t('status.exhausted') }
-  if (c.status === 'expired') return { color: 'red', label: t('status.expired') }
-  // Their own plan is fine but the reseller who sold it is paused, so they
-  // cannot connect. Said here, or "Active" would be a lie told on every row.
-  // One short word in the column; the reason is on the tag's tooltip.
-  if (c.ownerPaused) {
-    return {
-      color: 'red',
-      label: t('client.paused'),
-      // The switch is shown off while paused, so the tooltip is where their
-      // own setting -- what they return to -- is still told.
-      title: (store.admin?.role === 'reseller' ? t('client.accountPausedHint') : t('client.resellerPausedHint'))
-        + ' ' + (c.status === 'disabled' ? t('client.pausedStaysOff') : t('client.pausedComesBack')),
-    }
-  }
-  if (c.status !== 'disabled' && clientOnline(c)) return { color: 'green', label: t('status.online'), dot: true }
-  if (c.status === 'disabled') return { color: 'grey', label: t('status.disabled') }
-  // A plan that has not started: on hold until the first connection.
-  if (!c.expiresAt && c.startOnFirstUse && c.durationDays > 0 && !c.activatedAt) {
-    return { color: 'blue', label: t('status.onHold') }
-  }
-  // "Running low" earns its own state: it is the moment to sell a renewal,
-  // which is worth surfacing before the customer notices anything.
-  const p = usedPercent(c)
-  if (p != null && p >= DEPLETING_AT) return { color: 'orange', label: t('stat.depleting') }
-  return { color: 'grey', label: t('status.offline') }
-}
-
-// The server's own line for running low (depletingPercent in the clients
-// service), so a row turns orange exactly when the summary above and the
-// Running low filter start counting it.
-const DEPLETING_AT = 80
-
-function remainingTag(c) {
-  if (!c.quotaBytes) return { color: 'purple', label: '∞' }
-  const p = usedPercent(c)
-  const left = bytes(Math.max(0, c.quotaBytes - c.usedBytes), store.locale)
-  if (p >= 100) return { color: 'red', label: left }
-  if (p >= DEPLETING_AT) return { color: 'orange', label: left }
-  return { color: 'green', label: left }
-}
-
-function expiryTag(c) {
-  // A plan waiting for its first connection has no date yet. Showing the
-  // unlimited mark here would read as "never expires", which is the opposite
-  // of a thirty-day plan that simply has not started.
-  if (!c.expiresAt && c.startOnFirstUse && c.durationDays > 0) {
-    return { color: 'blue', label: `${c.durationDays}d`, title: t('client.notStartedHint') }
-  }
-  if (!c.expiresAt) return { color: 'purple', label: '∞' }
-  const ms = new Date(c.expiresAt) - Date.now()
-  const label = relative(c.expiresAt, store.locale)
-  if (ms <= 0) return { color: 'red', label }
-  if (ms < 3 * 86400e3) return { color: 'orange', label }
-  return { color: 'green', label }
-}
-
-// The tooltip has to agree with the tag: "never expires" under a badge that
-// says 30d would leave the operator with two different answers.
-// Their tooltip on the status: when the customer was last seen.
-function lastOnlineTitle(c) {
-  let last = null
-  for (const a of c.accounts || []) {
-    if (a.lastHandshake && (!last || a.lastHandshake > last)) last = a.lastHandshake
-  }
-  return `${t('client.menu.lastOnline')}: ${last ? dateTime(last, store.locale) : '-'}`
-}
-
-function expiryTitle(c) {
-  if (c.expiresAt) return dateTime(c.expiresAt, store.locale)
-  if (c.startOnFirstUse && c.durationDays > 0) return t('client.notStartedHint')
-  return t('client.neverExpires')
-}
-
 async function guard(fn, successKey) {
   try {
     await fn()
@@ -776,102 +673,14 @@ const moreItems = computed(() =>
       ],
 )
 
-// Import: a JSON list in the shape the export writes -- the file it
-// downloads, chosen here, or its text pasted.
+// The import and subscription-links dialogs, while open. The links are for
+// the customers chosen when it opened, named from the rows on this page.
 const importOpen = ref(false)
-const importText = ref('')
-const importFile = ref(null)
-// The export names no tunnel -- one on the old server means nothing here --
-// so the operator says which one they go on, and what to do about a name
-// that is already taken. Skip is the default: it is the one that cannot
-// overwrite a plan somebody is paying for.
-const importTo = ref(0)
-const importConflict = ref('skip')
-const importBusy = ref(false)
-function openImport() {
-  importTo.value = interfaces.value[0]?.id || 0
-  importConflict.value = 'skip'
-  importOpen.value = true
-}
-function pickImportFile() {
-  importFile.value?.click()
-}
-async function onImportFile(e) {
-  const file = e.target.files?.[0]
-  e.target.value = ''
-  if (file) importText.value = await file.text()
-}
-async function runImport() {
-  let parsed
-  try {
-    parsed = JSON.parse(importText.value)
-  } catch {
-    notify(t('outbound.importInvalidJson'), 'error')
-    return
-  }
-  // The export's own file ({ exportedAt, count, clients }) or a bare list of
-  // customers, alike.
-  const clients = Array.isArray(parsed) ? parsed : parsed?.clients
-  if (!Array.isArray(clients) || !clients.length) {
-    notify(t('outbound.importInvalidJson'), 'error')
-    return
-  }
-  importBusy.value = true
-  try {
-    const rep = await api.post('/api/clients/import', {
-      clients,
-      interfaceId: Number(importTo.value),
-      onConflict: importConflict.value,
-    })
-    // Every outcome said, not only what was made: importing a list into the
-    // panel it came from makes nothing and skips everyone, and "0" alone
-    // read as an import that did not work.
-    const summary = t('client.importDone', {
-      created: nf(rep.created || 0),
-      replaced: nf(rep.replaced || 0),
-      skipped: nf(rep.skipped || 0),
-      failed: nf(rep.failed || 0),
-    })
-    const problems = rep.problems || []
-    notify(problems.length ? `${summary}\n${problems.join('\n')}` : summary, rep.failed ? 'error' : 'success')
-    if (!rep.failed) {
-      importOpen.value = false
-      importText.value = ''
-    }
-    if (rep.created || rep.replaced) await load()
-  } catch (err) {
-    notify(err.message, 'error')
-  } finally {
-    importBusy.value = false
-  }
-}
-
-// Sub links: every selected customer's subscription address, one per line,
-// read for each of them -- the list's rows do not carry it. A customer whose
-// link could not be read is named, so the lines still say who is who.
-const subLinksOpen = ref(false)
-const subLinksText = ref('')
-const subLinksBusy = ref(false)
-async function openSubLinks() {
-  const chosen = ids()
-  const names = new Map((page.value?.items || []).map((c) => [c.id, c.name]))
-  subLinksText.value = ''
-  subLinksOpen.value = true
-  subLinksBusy.value = true
-  try {
-    const links = await api.subscriptionLinks(chosen)
-    subLinksText.value = chosen.map((id, i) => links[i] || `${names.get(id) || `#${id}`}: —`).join('\n')
-  } finally {
-    subLinksBusy.value = false
-  }
-}
-async function copySubLinks() {
-  try {
-    await navigator.clipboard.writeText(subLinksText.value)
-    notify(t('action.copied'), 'success')
-  } catch {
-    notify(t('action.copyFailed'), 'error')
-  }
+const subLinks = ref(null) // { ids, names }
+function openSubLinks() {
+  const names = {}
+  for (const c of page.value?.items || []) names[c.id] = c.name
+  subLinks.value = { ids: ids(), names }
 }
 
 // Time or traffic for the selection: its own dialog, which works out what
@@ -939,7 +748,7 @@ function pickMore(key) {
     })
   }
   if (key === 'subLinks') return openSubLinks()
-  if (key === 'import') return openImport()
+  if (key === 'import') return (importOpen.value = true)
   if (key === 'purgeDepleted' || key === 'purgeUnattached') {
     const status = key === 'purgeDepleted' ? 'depleted' : 'unattached'
     const count = key === 'purgeDepleted' ? (stats.value?.exhausted ?? 0) + (stats.value?.expired ?? 0) : null
@@ -1382,61 +1191,6 @@ async function submitForm(input) {
   </div>
   </div>
 
-  <div v-if="importOpen" class="modal-backdrop" @click.self="importOpen = false">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ci-title">
-      <div class="card-head">
-        <h2 id="ci-title">{{ t('client.menu.import') }}</h2>
-        <button class="act" :aria-label="t('common.close')" @click="importOpen = false"><Icon name="close" :size="16" /></button>
-      </div>
-      <div class="card-body">
-        <div class="field"><textarea v-model="importText" class="ltr mono" rows="12" spellcheck="false" placeholder="[ { ... } ]"></textarea></div>
-        <input ref="importFile" type="file" accept=".json,application/json" hidden @change="onImportFile" />
-        <div class="field">
-          <label for="ci-to">{{ t('client.importTo') }}</label>
-          <select id="ci-to" v-model="importTo">
-            <option v-for="i in interfaces" :key="i.id" :value="i.id">{{ i.name }} · {{ i.protocol }}:{{ i.listenPort }}</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="ci-conflict">{{ t('client.importConflict') }}</label>
-          <select id="ci-conflict" v-model="importConflict">
-            <option value="skip">{{ t('client.importSkip') }}</option>
-            <option value="rename">{{ t('client.importRename') }}</option>
-            <option value="replace">{{ t('client.importReplace') }}</option>
-          </select>
-        </div>
-        <p class="muted small">{{ t('client.importHint') }}</p>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" @click="pickImportFile"><Icon name="upload" :size="14" /><span>{{ t('action.chooseFile') }}</span></button>
-        <button type="button" class="btn" @click="importOpen = false">{{ t('common.close') }}</button>
-        <button class="btn primary" :disabled="importBusy || !importText.trim() || !importTo" @click="runImport">
-          <span v-if="importBusy" class="spin"></span>
-          <template v-else>{{ t('client.menu.import') }}</template>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div v-if="subLinksOpen" class="modal-backdrop" @click.self="subLinksOpen = false">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sl-title">
-      <div class="card-head">
-        <h2 id="sl-title">{{ t('client.menu.subLinks') }}</h2>
-        <button class="act" :aria-label="t('common.close')" @click="subLinksOpen = false"><Icon name="close" :size="16" /></button>
-      </div>
-      <div class="card-body">
-        <div class="field"><textarea class="ltr mono" rows="10" readonly spellcheck="false" :value="subLinksText" :placeholder="subLinksBusy ? '…' : ''"></textarea></div>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn" @click="subLinksOpen = false">{{ t('common.close') }}</button>
-        <button class="btn primary" :disabled="subLinksBusy || !subLinksText" @click="copySubLinks">
-          <span v-if="subLinksBusy" class="spin"></span>
-          <template v-else><Icon name="copy" :size="14" /><span>{{ t('action.copy') }}</span></template>
-        </button>
-      </div>
-    </div>
-  </div>
-
   <Teleport to="body">
     <div v-if="moreOpen" v-fit="moreOpen.rect" class="amenu" role="menu" :style="{ top: moreOpen.y + 'px', left: moreOpen.x + 'px' }">
       <template v-for="(m, i) in moreItems" :key="m.key || `d${i}`">
@@ -1533,6 +1287,8 @@ async function submitForm(input) {
     </div>
   </div>
 
+  <ImportDialog v-if="importOpen" :interfaces="interfaces" @close="importOpen = false" @imported="load()" />
+  <SubLinksDialog v-if="subLinks" :ids="subLinks.ids" :names="subLinks.names" @close="subLinks = null" />
   <ExtendDialog
     v-if="extendFor"
     :kind="extendFor.kind"
