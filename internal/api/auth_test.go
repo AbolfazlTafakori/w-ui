@@ -232,7 +232,7 @@ func TestAResellersTermStartsAtFirstSignIn(t *testing.T) {
 	}
 	var x model.Admin
 	db.First(&x, a.ID)
-	if x.ExpiresAt == nil || x.DurationDays != 0 || x.ExpiresAt.Sub(time.Now()) < 29*24*time.Hour {
+	if x.ExpiresAt == nil || x.DurationDays != 0 || time.Until(*x.ExpiresAt) < 29*24*time.Hour {
 		t.Fatalf("term %v, days %d", x.ExpiresAt, x.DurationDays)
 	}
 	first := *x.ExpiresAt

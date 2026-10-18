@@ -56,14 +56,18 @@ jobs:
           out="$(gofmt -l cmd internal tools)"
           if [ -n "$out" ]; then echo "not gofmt'd:"; echo "$out"; exit 1; fi
       - run: go vet ./...
+      # Exact versions: the same code passes or fails the same way on every
+      # run. Moved forward deliberately, in a change of its own.
       - name: staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
           staticcheck ./...
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
+      - name: coverage floor
+        run: bash scripts/coverage-floor.sh
       - run: go test -race ./...
         env:
           WUI_TEST_PG_DSN: postgres://wui:wui@localhost:5432/wui?sslmode=disable

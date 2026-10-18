@@ -92,6 +92,7 @@ const enSidebar = [
     text: 'Development',
     collapsed: true,
     items: [
+      { text: 'Architecture', link: '/development/architecture' },
       { text: 'Release checklist', link: '/development/release-checklist' },
       { text: 'Deprecation policy', link: '/development/deprecation-policy' },
       { text: 'Protecting main and releases', link: '/development/branch-protection' },
@@ -183,6 +184,7 @@ const faSidebar = [
     text: 'توسعه',
     collapsed: true,
     items: [
+      { text: 'معماری', link: '/fa/development/architecture' },
       { text: 'چک‌لیست ریلیز', link: '/fa/development/release-checklist' },
       { text: 'سیاست کنار گذاشتن', link: '/fa/development/deprecation-policy' },
       { text: 'محافظت از main و ریلیزها', link: '/fa/development/branch-protection' },

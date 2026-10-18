@@ -213,12 +213,11 @@ func TestARetransmissionGetsTheSameAnswer(t *testing.T) {
 // EAP-MSCHAPv2, as strongSwan relays it for an IKEv2 sign-in.
 
 type eapClient struct {
-	t      *testing.T
-	s      *Server
-	state  []byte
-	eapID  byte
-	id     byte
-	server []byte // the server's challenge
+	t     *testing.T
+	s     *Server
+	state []byte
+	eapID byte
+	id    byte
 }
 
 func (c *eapClient) send(eap []byte) *packet {

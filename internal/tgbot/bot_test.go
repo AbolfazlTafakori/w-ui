@@ -70,12 +70,11 @@ func (tg *telegram) reset() {
 }
 
 type fixture struct {
-	bot       *Bot
-	tg        *telegram
-	db        *gorm.DB
-	backups   int
-	restarts  int
-	resetUsed bool
+	bot      *Bot
+	tg       *telegram
+	db       *gorm.DB
+	backups  int
+	restarts int
 }
 
 func newFixture(t *testing.T) *fixture {
