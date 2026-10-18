@@ -1,65 +1,28 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+// Customer groups: the figures across the top, a row each, and what can be
+// done to a group's members. How a row reads is lib/groups/rows.js; the
+// table and the dialogs are their own; this holds the list and the actions
+// that ask first.
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../lib/api.js'
 import { useLive, useDelayed } from '../lib/live.js'
 import ErrorState from '../components/ErrorState.vue'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, gigabytesToBytes } from '../lib/format.js'
+import { bytes } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
+import GroupsTable from '../components/groups/GroupsTable.vue'
+import GroupDialog from '../components/groups/GroupDialog.vue'
+import MembersDialog from '../components/groups/MembersDialog.vue'
 
 const router = useRouter()
 
 const data = ref(null)
 const loading = ref(true)
-// The menu is positioned fixed and rendered outside the table. Inside it, the
-// wrapper's overflow-x clips the dropdown to a couple of rows.
-const menu = ref(null) // { group, x, y, up }
-
-function openMenuFor(g, event) {
-  if (menu.value?.group?.name === g.name) {
-    menu.value = null
-    return
-  }
-  const r = event.currentTarget.getBoundingClientRect()
-  const height = 8 * 34 + 10
-  const up = r.bottom + height > window.innerHeight && r.top > height
-  menu.value = {
-    group: g,
-    x: r.left,
-    y: up ? r.top - height - 4 : r.bottom + 4,
-  }
-}
-
-function closeMenu() {
-  menu.value = null
-}
-
-onMounted(() => {
-  window.addEventListener('click', onDocClick, true)
-  window.addEventListener('keydown', onKey)
-  window.addEventListener('resize', closeMenu)
-  window.addEventListener('scroll', closeMenu, true)
-})
-onUnmounted(() => {
-  window.removeEventListener('click', onDocClick, true)
-  window.removeEventListener('keydown', onKey)
-  window.removeEventListener('resize', closeMenu)
-  window.removeEventListener('scroll', closeMenu, true)
-})
-
-function onDocClick(e) {
-  if (!menu.value) return
-  if (e.target.closest?.('.rowmenu') || e.target.closest?.('.act')) return
-  closeMenu()
-}
-function onKey(e) {
-  if (e.key === 'Escape') closeMenu()
-}
 const dialog = ref(null) // { kind, group }
-const form = ref({ name: '', note: '', days: 30, quotaGB: '' })
+const members = ref(null) // { group, mode }
 const busy = ref(false)
 
 const nf = (n) => Number(n || 0).toLocaleString(store.locale)
@@ -90,56 +53,10 @@ onMounted(load)
 // The totals here are sums over the customers, so they move whenever any of
 // them does. Slower than the customer list itself: this is a summary, and
 // nobody watches a summary for a change of one row.
-useLive(load, { every: 10_000, busy: () => !!ask.value })
+useLive(load, { every: 10_000, busy: () => !!ask.value || !!dialog.value || !!members.value })
 
 const items = computed(() => data.value?.items || [])
 const totals = computed(() => data.value?.totals || {})
-
-// Every entry in the row menu, with the ones that need members disabled rather
-// than hidden, so the menu keeps the same shape on an empty group.
-// The order is the classic panel's: what you do to the members, then to the group, then a
-// rule, then everything that destroys something. Entries needing members are
-// disabled rather than hidden, so the menu keeps its shape on an empty group and
-// an operator learns one layout instead of two.
-function menuFor(g) {
-  const empty = g.clients === 0
-  return [
-    { key: 'extend', label: t('group.extend'), icon: 'clock', disabled: empty },
-    { key: 'quota', label: t('group.setQuota'), icon: 'database', disabled: empty },
-    { key: 'reset', label: t('action.resetTraffic'), icon: 'refresh', disabled: empty },
-    { key: 'enable', label: t('action.enable'), icon: 'power', disabled: empty },
-    { key: 'disable', label: t('action.disable'), icon: 'power', disabled: empty },
-    { key: 'addClients', label: t('group.addClients'), icon: 'users' },
-    { key: 'rename', label: t('group.rename'), icon: 'edit' },
-    { divider: true },
-    { key: 'removeClients', label: t('group.removeClients'), icon: 'close', danger: true, disabled: empty },
-    { key: 'clear', label: t('group.dissolve'), icon: 'close', danger: true, disabled: empty },
-    { key: 'deleteClients', label: t('group.deleteClients'), icon: 'trash', danger: true, disabled: empty },
-    { key: 'delete', label: t('group.delete'), icon: 'trash', danger: true },
-  ]
-}
-
-function openCreate() {
-  form.value.name = ''
-  form.value.note = ''
-  dialog.value = { kind: 'create' }
-}
-
-async function createGroup() {
-  const name = (form.value.name || '').trim()
-  if (!name) return
-  busy.value = true
-  try {
-    await api.post('/api/groups', { name, note: (form.value.note || '').trim() })
-    notify(t('group.created'), 'success')
-    dialog.value = null
-    await load()
-  } catch (e) {
-    notify(e.message, 'error')
-  } finally {
-    busy.value = false
-  }
-}
 
 const ask = ref(null)
 
@@ -177,30 +94,13 @@ function deleteGroup(g) {
   }
 }
 
-function openRename(g) {
-  closeMenu()
-  form.value.name = g.name
-  dialog.value = { kind: 'rename', group: g }
-}
-
 function pick(g, key) {
-  closeMenu()
   if (key === 'addClients' || key === 'removeClients') {
-    return openMembers(g, key === 'addClients' ? 'add' : 'remove')
-  }
-  if (key === 'rename') {
-    form.value.name = g.name
-    dialog.value = { kind: 'rename', group: g }
+    members.value = { group: g, mode: key === 'addClients' ? 'add' : 'remove' }
     return
   }
-  if (key === 'extend') {
-    form.value.days = 30
-    dialog.value = { kind: 'extend', group: g }
-    return
-  }
-  if (key === 'quota') {
-    form.value.quotaGB = ''
-    dialog.value = { kind: 'quota', group: g }
+  if (key === 'rename' || key === 'extend' || key === 'quota') {
+    dialog.value = { kind: key, group: g }
     return
   }
   // The two destructive ones ask before they run; the rest are reversible.
@@ -241,7 +141,6 @@ async function run(op) {
   try {
     const res = await api.groupAction(op)
     notify(`${t('group.applied')} — ${nf(res.affected)}`, 'success')
-    dialog.value = null
     await load()
   } catch (err) {
     notify(err.message, 'error')
@@ -250,92 +149,10 @@ async function run(op) {
   }
 }
 
-async function submitDialog() {
-  if (dialog.value.kind === 'create') return createGroup()
-  const d = dialog.value
-  if (!d) return
-
-  if (d.kind === 'rename') {
-    busy.value = true
-    try {
-      const res = await api.renameGroup(d.group.name, form.value.name)
-      notify(`${t('group.renamed')} — ${nf(res.affected)}`, 'success')
-      dialog.value = null
-      await load()
-    } catch (err) {
-      notify(err.message, 'error')
-    } finally {
-      busy.value = false
-    }
-    return
-  }
-
-  if (d.kind === 'extend') {
-    return run({ action: 'extend', group: d.group.name, days: Number(form.value.days) })
-  }
-  if (d.kind === 'quota') {
-    return run({
-      action: 'quota',
-      group: d.group.name,
-      quotaBytes: gigabytesToBytes(form.value.quotaGB),
-    })
-  }
-}
-
-// Members picker, shared by "add clients" and "remove clients". They differ
-// only in which customers are listed and what the confirm does, so one dialog
-// with two modes beats two dialogs that drift apart.
-const members = ref(null) // { group, mode, chosen:Set }
-const allClients = ref([])
-const memberSearch = ref('')
-
-async function openMembers(g, mode) {
-  closeMenu()
-  members.value = { group: g, mode, chosen: new Set() }
-  memberSearch.value = ''
-  try {
-    allClients.value = await api.allClients({}, {})
-  } catch (e) {
-    notify(e.message, 'error')
-    members.value = null
-  }
-}
-
-const memberChoices = computed(() => {
-  if (!members.value) return []
-  const { group, mode } = members.value
-  const q = memberSearch.value.trim().toLowerCase()
-  return allClients.value
-    .filter((c) => (mode === 'add' ? !(c.groups || []).includes(group.name) : (c.groups || []).includes(group.name)))
-    .filter((c) => !q || c.name.toLowerCase().includes(q))
-})
-
-function toggleMember(id) {
-  const next = new Set(members.value.chosen)
-  next.has(id) ? next.delete(id) : next.add(id)
-  members.value = { ...members.value, chosen: next }
-}
-
-async function applyMembers() {
-  const { group, mode, chosen } = members.value
-  if (!chosen.size) return
-  busy.value = true
-  try {
-    // One endpoint serves both: adding to this group, and taking out of
-    // this group only -- a customer's other groups are theirs to keep.
-    await api.post('/api/groups/assign', {
-      group: group.name,
-      ids: [...chosen],
-      remove: mode !== 'add',
-    })
-    notify(tn(mode === 'add' ? 'group.clientsAdded' : 'group.clientsRemoved', chosen.size), 'success')
-    members.value = null
-    await load()
-  } catch (e) {
-    notify(e.message, 'error')
-  } finally {
-    busy.value = false
-  }
+async function done() {
+  dialog.value = null
+  members.value = null
+  await load()
 }
 
 function viewMembers(g) {
@@ -375,7 +192,7 @@ function viewMembers(g) {
          again in the middle of the empty state -- two buttons for one action,
          neither of them where the table is. -->
     <div class="card-toolbar">
-      <button class="btn primary" @click="openCreate">
+      <button class="btn primary" @click="dialog = { kind: 'create' }">
         <Icon name="plus" :size="14" />
         <span>{{ t('group.add') }}</span>
       </button>
@@ -386,214 +203,17 @@ function viewMembers(g) {
     <PageSpin v-else-if="showSkeleton" />
     <div v-else-if="loading" class="empty"></div>
 
-    <!-- The header row stays when there is nothing under it, the way their
-         Table keeps its columns and puts the empty state inside the body. A
-         table that vanishes when empty makes the page a different shape
-         depending on the data. -->
-    <div v-else class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th class="w-gact">{{ t('table.actions') }}</th>
-            <th>{{ t('group.name') }}</th>
-            <th class="w-gcount">{{ t('group.clientCount') }}</th>
-            <th class="w-gsize">{{ t('overview.upload') }}</th>
-            <th class="w-gsize">{{ t('overview.download') }}</th>
-            <th class="w-gtraffic">{{ t('group.trafficUsed') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="!items.length" class="empty-row">
-            <td colspan="6">
-              <div class="card-empty">
-                <Icon name="tag" :size="32" />
-                <div>{{ t('common.nothingYet') }}</div>
-              </div>
-            </td>
-          </tr>
-          <tr v-for="g in items" :key="g.name">
-            <!-- Two controls, as theirs has: the whole menu behind one
-                 button, and rename lifted out of it because it is the one an
-                 operator reaches for most. -->
-            <td class="w-gact">
-              <div class="actions">
-                <button
-                  class="act"
-                  :title="t('table.actions')"
-                  :aria-expanded="menu?.group?.name === g.name"
-                  @click="openMenuFor(g, $event)"
-                >
-                  <Icon name="more" :size="16" />
-                </button>
-                <button class="act" :title="t('group.rename')" @click="openRename(g)">
-                  <Icon name="edit" :size="16" />
-                </button>
-              </div>
-            </td>
-
-            <td>
-              <button class="tag geekblue name" @click="viewMembers(g)">{{ g.name }}</button>
-              <div v-if="g.note" class="sub muted small">{{ g.note }}</div>
-            </td>
-
-            <td class="num">{{ nf(g.clients) }}</td>
-            <td class="muted"><span class="num ltr">{{ bytes(g.upBytes, store.locale) }}</span></td>
-            <td class="muted"><span class="num ltr">{{ bytes(g.downBytes, store.locale) }}</span></td>
-            <td><span class="num ltr">{{ bytes(g.usedBytes, store.locale) }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <GroupsTable
+      v-else
+      :items="items"
+      @pick="pick"
+      @rename="(g) => (dialog = { kind: 'rename', group: g })"
+      @view="viewMembers"
+    />
   </div>
 
-  <!-- Members picker -->
-  <div v-if="members" class="modal-backdrop" @click.self="members = null">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
-      <div class="card-head">
-        <h2 id="m-title">
-          {{ members.mode === 'add' ? t('group.addClients') : t('group.removeClients') }}
-        </h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="members = null">
-          <Icon name="close" :size="15" />
-        </button>
-      </div>
-
-      <div class="card-body">
-        <p class="target">
-          <span class="tag geekblue">{{ members.group.name }}</span>
-          <span class="muted small">{{ nf(members.chosen.size) }} {{ t('group.selected') }}</span>
-        </p>
-
-        <div class="field">
-          <input v-model="memberSearch" type="search" :placeholder="t('client.searchHint')" />
-        </div>
-
-        <p v-if="!memberChoices.length" class="muted small">{{ t('group.noCandidates') }}</p>
-
-        <ul v-else class="picklist">
-          <li v-for="c in memberChoices" :key="c.id">
-            <label class="pick">
-              <input
-                type="checkbox"
-                :checked="members.chosen.has(c.id)"
-                @change="toggleMember(c.id)"
-              />
-              <span class="pick-name">{{ c.name }}</span>
-              <span v-for="g in c.groups || []" :key="g" class="tag geekblue">{{ g }}</span>
-              <span class="muted small ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
-            </label>
-          </li>
-        </ul>
-      </div>
-
-      <div class="modal-foot">
-        <button type="button" class="btn ghost" @click="members = null">{{ t('action.cancel') }}</button>
-        <button
-          class="btn primary"
-          :disabled="busy || !members.chosen.size"
-          :title="!members.chosen.size ? t('group.pickSomeone') : ''"
-          @click="applyMembers"
-        >
-          <span v-if="busy" class="spin"></span>
-          <template v-else>{{ t('action.save') }}</template>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div
-    v-if="menu"
-    v-fit
-    class="rowmenu"
-    role="menu"
-    :style="{ top: menu.y + 'px', left: menu.x + 'px' }"
-  >
-    <template v-for="(m, i) in menuFor(menu.group)" :key="m.key || `d${i}`">
-      <!-- The rule before the destructive half, so a slip of the pointer lands
-           on a separator rather than on delete. -->
-      <hr v-if="m.divider" class="menu-divider" />
-      <button
-        v-else
-        class="menu-item"
-        :class="{ danger: m.danger }"
-        :disabled="m.disabled"
-        role="menuitem"
-        @click="pick(menu.group, m.key)"
-      >
-        <Icon :name="m.icon" :size="14" />{{ m.label }}
-      </button>
-    </template>
-  </div>
-
-  <!-- One dialog serves rename, extend and set-quota; they differ only in the
-       single field they collect. -->
-  <div v-if="dialog" class="modal-backdrop" @click.self="dialog = null">
-    <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="g-title">
-      <div class="card-head">
-        <h2 id="g-title">
-          {{ dialog.kind === 'create' ? t('group.add')
-            : dialog.kind === 'rename' ? t('group.rename')
-            : dialog.kind === 'extend' ? t('group.extend') : t('group.setQuota') }}
-        </h2>
-        <button class="btn sm icon ghost spacer" :aria-label="t('action.cancel')" @click="dialog = null">
-          <Icon name="close" :size="15" />
-        </button>
-      </div>
-
-      <form id="g-form" class="card-body" @submit.prevent="submitDialog">
-        <p v-if="dialog.group" class="target">
-          <span class="tag geekblue">{{ dialog.group.name }}</span>
-          <span class="muted small">{{ nf(dialog.group.clients) }} {{ t('nav.clients') }}</span>
-        </p>
-
-        <template v-if="dialog.kind === 'create'">
-          <div class="field">
-            <label for="g-new">{{ t('group.name') }}</label>
-            <input id="g-new" v-model="form.name" required autofocus maxlength="64" />
-            <span class="hint">{{ t('group.addHint') }}</span>
-          </div>
-          <div class="field">
-            <label for="g-note">{{ t('group.note') }}</label>
-            <input id="g-note" v-model="form.note" maxlength="256" />
-          </div>
-        </template>
-
-        <div v-else-if="dialog.kind === 'rename'" class="field">
-          <label for="g-name">{{ t('group.newName') }}</label>
-          <input id="g-name" v-model="form.name" required autofocus />
-          <span class="hint">{{ t('group.renameHint') }}</span>
-        </div>
-
-        <div v-else-if="dialog.kind === 'extend'" class="field">
-          <label for="g-days">{{ t('group.extendDays') }}</label>
-          <input id="g-days" v-model="form.days" type="number" required autofocus />
-          <span class="hint">{{ t('group.extendHint') }}</span>
-        </div>
-
-        <div v-else class="field">
-          <label for="g-quota">{{ t('client.quota') }} (GB)</label>
-          <input
-            id="g-quota"
-            v-model="form.quotaGB"
-            type="number"
-            min="0"
-            step="0.5"
-            :placeholder="t('client.unlimited')"
-            autofocus
-          />
-          <span class="hint">{{ t('group.quotaHint') }}</span>
-        </div>
-      </form>
-
-      <div class="modal-foot">
-        <button type="button" class="btn ghost" @click="dialog = null">{{ t('action.cancel') }}</button>
-        <button type="submit" form="g-form" class="btn primary" :disabled="busy">
-          <span v-if="busy" class="spin"></span>
-          <template v-else>{{ t('action.save') }}</template>
-        </button>
-      </div>
-    </div>
-  </div>
+  <MembersDialog v-if="members" :group="members.group" :mode="members.mode" @close="members = null" @done="done" />
+  <GroupDialog v-if="dialog" :kind="dialog.kind" :group="dialog.group || null" @close="dialog = null" @done="done" />
 
   <ConfirmDialog
     :open="!!ask"
@@ -608,94 +228,3 @@ function viewMembers(g) {
     @cancel="ask = null"
   />
 </template>
-
-<style scoped>
-
-.act {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.act:hover {
-  background: var(--surface-3);
-  color: var(--ink);
-}
-.rowmenu {
-  position: fixed;
-  z-index: 40;
-  min-width: 210px;
-  padding: 5px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 11px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  font-size: var(--t-sm);
-  text-align: start;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.menu-item:hover:not(:disabled) {
-  background: var(--surface-3);
-  color: var(--ink);
-}
-.menu-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.menu-item.danger {
-  color: var(--bad);
-}
-.menu-item.danger:hover:not(:disabled) {
-  background: var(--bad-soft);
-}
-
-.name {
-  border: 1px solid var(--tag-geek-line);
-  cursor: pointer;
-  font: inherit;
-  font-family: var(--mono);
-  font-size: var(--t-xs);
-  font-weight: 600;
-}
-.name:hover {
-  background: var(--tag-geek-line);
-  color: var(--tag-geek-ink);
-}
-
-.modal.narrow {
-  max-width: 440px;
-}
-.card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.target {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line-soft);
-}
-</style>
