@@ -20,7 +20,6 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/abolfazl/w-ui/internal/config"
-	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/scope"
 )
 
@@ -100,48 +99,6 @@ func tuneSQLite(db *gorm.DB) error {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 	sqlDB.SetConnMaxLifetime(0)
-	return nil
-}
-
-// Migrate brings the schema up to date.
-func Migrate(db *gorm.DB) error {
-	// A group's name used to be unique across the panel; it is now unique
-	// per operator, so two resellers can each have a "trial". AutoMigrate
-	// adds the new index but will not drop the old one, and leaving it
-	// would refuse the second reseller their own name.
-	//
-	// Dropped by every name the two supported drivers give it, and IF
-	// EXISTS on all of them: a panel that never had the old index, and one
-	// that has already been through this, both run it without noticing.
-	for _, idx := range []string{"idx_groups_name", "uni_groups_name", "groups_name_key"} {
-		if err := db.Exec(`DROP INDEX IF EXISTS ` + idx).Error; err != nil {
-			return fmt.Errorf("database: drop old group name index: %w", err)
-		}
-	}
-
-	if err := db.AutoMigrate(model.AllModels()...); err != nil {
-		return fmt.Errorf("database: migrate: %w", err)
-	}
-	// Whoever was already administering this panel owns it. The column
-	// defaults to owner, which covers the single account every existing
-	// install has; this names it explicitly for any row that predates the
-	// default and would otherwise come up with an empty role.
-	if err := db.Exec(`UPDATE admins SET role = 'owner' WHERE COALESCE(role, '') = ''`).Error; err != nil {
-		return fmt.Errorf("database: set administrator roles: %w", err)
-	}
-	// A customer used to carry one group as a column; they now carry any
-	// number as rows. The column's label becomes the first row, once, for
-	// every customer who has the label and no rows yet.
-	if err := db.Exec(`
-		INSERT INTO client_groups (client_id, name)
-		SELECT id, "group" FROM clients
-		WHERE COALESCE("group", '') <> ''
-		  AND NOT EXISTS (SELECT 1 FROM client_groups g WHERE g.client_id = clients.id)`).Error; err != nil {
-		return fmt.Errorf("database: carry groups over: %w", err)
-	}
-	if err := startExactFileUsage(db); err != nil {
-		return err
-	}
 	return nil
 }
 

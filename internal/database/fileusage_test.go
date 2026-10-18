@@ -31,6 +31,10 @@ func TestExactFileUsageStartsOnce(t *testing.T) {
 	if err := db.Exec(`DELETE FROM settings WHERE key = ?`, KeyFileUsageSince).Error; err != nil {
 		t.Fatal(err)
 	}
+	// An older panel has not been through the migration either.
+	if err := db.Exec(`DELETE FROM schema_migrations WHERE id = 4`).Error; err != nil {
+		t.Fatal(err)
+	}
 	own := model.Account{ClientID: 1, InterfaceID: 1, NodeID: 1, DeviceName: "a", IP: "10.66.0.2", UpBytes: 10, DownBytes: 90}
 	held := model.Account{ClientID: 2, InterfaceID: 1, NodeID: 1, DeviceName: "b", IP: "10.66.0.3", UpBytes: 5, DownBytes: 5, OriginID: 77}
 	if err := db.Create(&own).Error; err != nil {

@@ -177,6 +177,11 @@ func Import(ctx context.Context, db *gorm.DB, driver config.Driver, r io.Reader,
 				}
 			}
 		}
+		// Rows from an older panel are in the shape it wrote them in; the
+		// data migrations carry them into this one's.
+		if err := Replay(tx); err != nil {
+			return err
+		}
 		if log != nil {
 			log.Info("imported a portable backup", "rows", total, "from", dump.Driver, "version", dump.Version, "takenAt", dump.TakenAt)
 		}
