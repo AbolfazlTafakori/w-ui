@@ -1,37 +1,38 @@
 ---
-description: "Coming from another panel : what each concept is called here and what to expect."
+description: "Coming from another panel: what each concept is called here, what to expect, and how to bring a 3x-ui or Pasarguard panel's users along."
 ---
 
 # Coming from another panel
 
-The pages are in the same places. The words map like this:
+The pages are in the places you expect. The words map like this:
 
-| Xray panels | Marzban | W-UI |
+| Xray panels (3x-ui) | Pasarguard, Marzban | W-UI |
 |-------|---------|------|
-| Inbound | Inbound (Xray config) | **Interface** — one WireGuard / AmneziaWG / OpenVPN tunnel |
-| Client (email) | User | **Client** — a customer, with one **account** per device |
-| Client's `id` / password | User's proxies | the device's key (WireGuard) or username + password (OpenVPN) |
-| Total GB, Expiry, IP limit | Data limit, Expire, — | Data allowance, Valid for, **Users** |
-| Subscription URL | Subscription URL | Subscription link — same idea, with a customer page |
+| Inbound | Inbound (core config) | **Interface**: one tunnel, in WireGuard, AmneziaWG, OpenVPN, OpenConnect, IKEv2, L2TP/IPsec or PPTP |
+| Client (email) | User | **Client**: a customer, with one **account** per device |
+| Client's `id` or password | User's proxies | The device's key (WireGuard) or username and password (the other protocols) |
+| Total GB, Expiry, IP limit | Data limit, Expire | Data allowance, Valid for, **Users** |
+| Subscription URL | Subscription URL | Subscription link: the same idea, with a customer page |
 | Hosts | Host settings | Hosts and host groups |
-| Outbounds / Routing / Balancers | Core settings | Outbounds / Routing / Balancers — same tabs |
-| Xray settings | Core settings | Engine (basics, balancers, DNS, advanced) |
-| numbered menu | `marzban` CLI | `w-ui` menu, the same numbering |
+| Outbounds, Routing, Balancers | Core settings | Outbounds, Routing, Balancers: the same tabs |
+| Xray settings | Core settings | Engine: basics, balancers, DNS, advanced |
+| Numbered menu | CLI | The `w-ui` menu, with the same numbering |
 | Restart Xray | Restart core | Restart tunnels |
-| Nodes (multi-node) | Marzban-node | Nodes — other W-UI panels watched over the API |
+| Nodes | Nodes | Nodes: other W-UI, 3x-ui or Pasarguard panels, managed over their API |
+| Admins | Admins | Owner, panel administrators and [resellers](/panel/operators) |
 | Telegram bot | Telegram bot | Telegram bot |
 
-## What has no equivalent
+## What is different
 
-- **REALITY, VLESS, Trojan, Shadowsocks** — not here; this panel runs WireGuard and OpenVPN. Where those protocols are needed for DPI, AmneziaWG is the obfuscated option.
-- **Multiple admins** — one administrator per panel.
+- **The protocols.** W-UI runs VPN tunnels itself, not Xray. For VLESS, VMess, Trojan, Shadowsocks or REALITY, keep an Xray panel and add it as a [node](/panel/nodes): its inbounds appear here, and one subscription carries both. Where a plain VPN is filtered, AmneziaWG, OpenConnect on 443 and OpenVPN over TCP 443 are the options that run here.
+- **Enforcement in the kernel.** A quota overshoots by one packet, not by a polling interval.
+- **A default outbound that fails closed.** When the hop everything leaves through is down, traffic is dropped rather than leaked from the server's own address.
+- **A certificate for the IP.** HTTPS without a domain, from the first minute.
 
-## What is new to you
+## Bringing customers along
 
-- **Enforcement in the kernel** — quota overshoot is one packet, not a polling interval.
-- **Fail-closed default outbound** — when the hop everything leaves through is down, traffic is dropped rather than leaked from the server's own address.
-- **A certificate for the IP** — HTTPS without a domain, from the first minute.
+**From a 3x-ui or Pasarguard panel:** add it as a node, then use **Bring in users** on its row. Its users keep their credentials, their links and their subscription; nothing changes for them. Their allowance, usage and expiry are managed here from then on, and you can give them W-UI tunnels as well. See [Bringing in a panel's own users](/panel/nodes#bringing-in-a-panel-s-own-users).
 
-## Moving customers
+**From anywhere else:** there is no importer for another panel's database, because the credentials are different kinds of thing. Create the customers here, where bulk creation takes a prefix and a count, and hand out their new subscription links.
 
-There is no importer for another panel's database: the credentials are different kinds of thing (Xray UUIDs vs WireGuard keys). Create the customers here — bulk creation takes a prefix and a count — and hand out new configs.
+**From another W-UI:** a [backup](/operations/backup-restore) moves everything, keys included, and **Import clients** moves a customer list with new keys.

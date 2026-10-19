@@ -26,7 +26,7 @@ Open only what you use.
 
 ## ufw
 
-Open the lines for the protocols you run:
+With ufw or firewalld on, the panel lets its tunnels' ports through by itself, GRE and ESP included: `wui-firewall.service` opens what a new tunnel needs and closes what it opened for a tunnel that is gone, and never closes a rule of yours. The installer, in a firewall that is already on, opens the panel's port, the subscription port, and port 80 when the certificate is renewed over it. SSH is yours to keep open. To set the firewall up by hand, or for nftables, open the lines for the protocols you run:
 
 ```bash
 ufw allow 22/tcp

@@ -10,7 +10,7 @@ Every error W-UI shows is a sentence that names what is wrong. This page lists t
 
 | Where | How |
 |---|---|
-| **The panel** | A red toast, or — for a field you typed — the message under that input. |
+| **The panel** | A red toast, or, for a field you typed, the message under that input. |
 | **The API** | JSON: `{"error": "…"}`; for one input, `{"error": "…", "field": "name"}`. Status `400` bad input, `401` not signed in, `403` refused, `404` not there, `413` too large, `429` locked out, `500` the panel's own fault (details are in the log, never in the answer). |
 | **The panel's log** | `journalctl -u wui`. `level=ERROR` is something that failed; `level=WARN` is something worth knowing; both carry `error=` with the underlying cause. |
 | **The installer** | `error: …` in red, and the install stops. Everything before it was done; nothing after it. |
@@ -27,9 +27,9 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `that code is not right` / `that code is not right. Check your phone's clock is correct and try the next one.` | The two-factor code did not match. Codes are 30 seconds wide; a phone whose clock drifts produces codes the server rejects. | Wait for the next code. Set the phone's clock to automatic. Lost the authenticator: `w-ui` → 7 and answer **y** to disabling two-factor. |
 | `that password or code is not right` | Turning two-factor on or off needs your current password (and code, when on). | Retype it. |
 | `too many attempts from this address; try again in … ` (429) | Sign-in is throttled per address and per account after repeated failures. | Wait the time shown. If it was not you, `w-ui` → 22 shows who is knocking. |
-| `your session has ended; sign in again` | No token was sent, or the token's cookie is missing — a token copied out of one browser into another does not work on its own. | Sign in again in this browser. |
-| `this needs a signed-in administrator, not an API token` (403) | An API token — a machine's — tried something only an administrator may do: the administrator's own account or two-factor, issuing tokens, backups, registering nodes, the panel's settings, a restart. | Do it signed in to the panel. A token is for automation and for another panel using this one as a node. |
-| `too many requests` (429, subscription link) | This address asked for many subscription links that do not exist — a scan. Real links are still served; only the guessing is slowed. | Wait the time in `Retry-After`. |
+| `your session has ended; sign in again` | No token was sent, or the token's cookie is missing; a token copied out of one browser into another does not work on its own. | Sign in again in this browser. |
+| `this needs a signed-in administrator, not an API token` (403) | An API token, a machine's, tried something only an administrator may do: the administrator's own account or two-factor, issuing tokens, backups, registering nodes, the panel's settings, a restart. | Do it signed in to the panel. A token is for automation and for another panel using this one as a node. |
+| `too many requests` (429, subscription link) | This address asked for many subscription links that do not exist: a scan. Real links are still served; only the guessing is slowed. | Wait the time in `Retry-After`. |
 | `session expired, sign in again` | The token is past its life (Settings → General → Session Duration) or is not one this panel issued. | Sign in again. |
 | `you were signed out everywhere; sign in again` | The password was changed or **Sign out everywhere** was used since this token was issued. | Sign in again. |
 | `that access token is not valid` | A `wui_…` API token that was revoked or never existed. | Issue one on the API page, or `wui token issue --name NAME`. |
@@ -43,7 +43,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 
 | Message | Meaning | What to do |
 |---|---|---|
-| `the request body could not be read as JSON` | The body is not valid JSON. | From a script: check quoting; send `Content-Type: application/json`. From the panel: reload the page — it is a version mismatch. |
+| `the request body could not be read as JSON` | The body is not valid JSON. | From a script: check quoting; send `Content-Type: application/json`. From the panel: reload the page; it is a version mismatch. |
 | `the request had no body` | A POST/PUT arrived with nothing. | Send the document. |
 | `that request is too large` (413) | Bodies are capped at 1 MB; uploads (backups, profiles) have their own, larger caps. | For a backup, use the upload endpoint; for anything else, the request is wrong. |
 | `this request carried a field this server does not know: …. The panel and its interface are probably different versions` | The JSON has a key the server has no use for. | Reload the panel after an update; from a script, drop the field. |
@@ -51,10 +51,10 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `that is not a range this panel keeps. Ask for 5m, 1h, 6h, 24h, 48h or 7d` | History was asked for a window the store does not have. | Use one of those. |
 | `action must be enable, disable or delete` | A bulk action with an unknown verb. | One of the three. |
 | `no file was sent` / `that file could not be read, or it is larger than this panel accepts` | An upload with no file part, or one past the cap. | Attach the file; a backup larger than the cap is not a W-UI backup. |
-| `this panel runs without permission to replace its own binary, and the update helper is not installed on this server. …` (412) | The panel runs unprivileged and this server has no `wui-update.path` yet — every server installed before 2.3.2. | Run the command the message gives, once, as root: `bash <(curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/update.sh)`. |
+| `this panel runs without permission to replace its own binary, and the update helper is not installed on this server. …` (412) | The panel runs unprivileged and this server has no `wui-update.path` yet: every server installed before 2.3.2. | Run the command the message gives, once, as root: `bash <(curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/update.sh)`. |
 | `the update helper did not answer. Check it on the server: …` | The release was left for the helper and nothing answered within two minutes. | `systemctl status wui-update.path wui-update.service`; `journalctl -u wui-update -n 30`. |
 | `… is not newer than the installed …; nothing was installed` | The helper refuses a step back, even a signed one. | Nothing to do; the panel keeps its version. |
-| `an update is already being installed` (409) | *Install* was pressed while an install is under way — in another tab, or before a reload. | Wait: the dialog shows the one in progress, and the page reloads when it is done. |
+| `an update is already being installed` (409) | *Install* was pressed while an install is under way, in another tab, or before a reload. | Wait: the dialog shows the one in progress, and the page reloads when it is done. |
 | `the download stopped at … of … bytes` | The connection to GitHub closed before the release arrived whole. Nothing was installed. | Press *Try again*; on a server whose route to GitHub is unreliable, try at a quieter hour. |
 
 ## Customers (clients)
@@ -64,7 +64,7 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `name is required` | | Give the customer a name. |
 | `at most … characters` / `no line breaks or control characters` | A customer or device name, or a note, is longer than its column (name 128, device 64, note 512) or carries a line break. | Shorten it; keep it on one line. |
 | `choose at least one server for this customer` | No interface was ticked. | Tick the tunnel(s) the customer may use. |
-| `Not found: …` | An interface id that does not exist — usually a stale page after a deletion. | Reload; pick an existing tunnel. |
+| `Not found: …` | An interface id that does not exist, usually a stale page after a deletion. | Reload; pick an existing tunnel. |
 | `one of those interfaces does not exist` / `choose at least one interface` | The same, on bulk creation. | |
 | `device limit must be between 0 and 50` | **Users**: connections at once; 0 is unlimited. | A number in that range. |
 | `… devices requested; at most … per customer` | Device files are capped at 64. | |
@@ -96,7 +96,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | Message | Meaning | What to do |
 |---|---|---|
 | `your account has been switched off` | At sign-in: the owner switched this account off. Every customer on it is off too. | Ask the owner to switch it back on. |
-| `your account has been switched off` / `your account's term has ended` / `your data allowance is used up` | On any change — a new customer, an edit, a reset, a new device. The account is paused, so its customers are off and nothing about them can change until it is renewed. Reading them still works. | Ask the owner to switch it back on, extend the date, or start the allowance again. |
+| `your account has been switched off` / `your account's term has ended` / `your data allowance is used up` | On any change: a new customer, an edit, a reset, a new device. The account is paused, so its customers are off and nothing about them can change until it is renewed. Reading them still works. | Ask the owner to switch it back on, extend the date, or start the allowance again. |
 | `that server is not one of yours` | The server chosen is not one the owner gave this reseller, or was taken back. Customers already on it keep working and can still be edited or moved off it. | Pick a server from the list offered. |
 | `you may have … users and you have …; this customer would make it …` | The user limit is reached. It counts users, not customers: a customer for four users counts four. | Lower a customer's users, delete a customer, or ask the owner for a higher limit. |
 | `you may sell … users in all, so each customer is for a number of users: give 1 or more` | A reseller with a user limit gave a customer any number of users at once, which the limit could not count. | Give the customer a number of users. |
@@ -108,7 +108,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | Message | Meaning | What to do |
 |---|---|---|
 | `only the panel's owner manages operators` | Only the owner may add, change or remove a reseller. | Sign in as the owner. |
-| `a username of at least 3 characters` / `a username uses letters, digits, and - _ . only` / `"…" is taken` | The username breaks the rules, or another operator has it — in any capitalisation. | Choose another; the generate button draws one that fits. |
+| `a username of at least 3 characters` / `a username uses letters, digits, and - _ . only` / `"…" is taken` | The username breaks the rules, or another operator has it; in any capitalisation. | Choose another; the generate button draws one that fits. |
 | `a password of at least 8 characters` | | Use the generate button. |
 | `a term of 1 to … days` | *On hold* was given a number of days outside the range. | Enter 1 to 3650, or turn *On hold* off and pick a date. |
 | `another reseller's customers are already filed under "…"` | Two resellers under one group could not be told apart on the customer list. | Choose another group name. |
@@ -125,9 +125,9 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | Message | Meaning | What to do |
 |---|---|---|
 | `select the customers first` | Nothing was selected; nothing is changed without a selection. | Tick customers, or tick the header and *Select all*. |
-| `enter an amount of time` / `enter an amount of traffic` | Every field was empty or 0. | Enter months, days or hours — or TB, GB or MB. |
+| `enter an amount of time` / `enter an amount of traffic` | Every field was empty or 0. | Enter months, days or hours, or TB, GB or MB. |
 | `… is a number of zero or more; choose add or take back for the direction` | A negative or non-numeric value. | Enter the amount as it is, and choose *Take back* to subtract. |
-| `… customers selected; at most … at once` / `more than … customers match; narrow the filter` | A selection larger than one request takes. | Filter to fewer — by group, status or search. |
+| `… customers selected; at most … at once` / `more than … customers match; narrow the filter` | A selection larger than one request takes. | Filter to fewer, by group, status or search. |
 
 ### Many resellers at once
 
@@ -150,7 +150,7 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | Names are unique per server. | Another name. |
 | `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | The name becomes the kernel device (`wg0`); a domain typed here would fail at bring-up. | Something like `wg0` or `ir443`; the domain goes in **Endpoint**. |
 | `… overlaps …, the subnet of tunnel "…"; every tunnel on a server needs its own range` | Two tunnels on one range give the kernel two routes to the same addresses. | A different range, like `10.67.0.0/16`. |
-| `… overlaps … on …, a network already on this server — another program's, such as Docker or another VPN, or the server's own; pick a range nothing here uses` | The range is already on one of the machine's own network devices — Docker's bridge, another VPN's interface, the server's own network. A tunnel on it would take that traffic into the tunnel. | A range nothing on the server uses; `ip -brief address` lists what is there. |
+| `… overlaps … on …, a network already on this server — another program's, such as Docker or another VPN, or the server's own; pick a range nothing here uses` | The range is already on one of the machine's own network devices: Docker's bridge, another VPN's interface, the server's own network. A tunnel on it would take that traffic into the tunnel. | A range nothing on the server uses; `ip -brief address` lists what is there. |
 | `"…" is too small for the … devices on this tunnel` | The new subnet cannot hold the devices already issued. | A larger range. |
 | `unknown protocol "…"` | | `wireguard` or `openvpn`. |
 | `no driver available for "…" on this server` | The kernel or the binary for that protocol is missing here (`wg`/`awg`/`openvpn`). | Install it: re-run the installer. |
@@ -247,8 +247,8 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `backup interval must be between 0 and … hours` / `keep between 0 and 365 backups` | | |
 | `notifications need a chat id` / `unknown bot language "…"` / `notification thresholds cannot be negative` / `a threshold is a percentage, 0 to 100` / `notification time: …` | Telegram settings. | |
 | `backup time: …` / `… is more often than a backup may be taken, once every … minutes` / `… does not come round within a year` / `choose when the automatic backup is sent` | Settings → Telegram Bot → Backup: a time the bot cannot keep, or none with it switched on. | Choose one of the offered times, or a crontab line no more often than every 10 minutes. |
-| `could not take the automatic backup` / `could not send the automatic backup` (log, and said in the chat) | The archive could not be made, or Telegram refused it — past 50 MB it is not sent at all. | `error=`; a large database is downloaded from the panel instead. The next goes at the next time. |
-| `could not read when the last automatic backup went` / `could not record when the automatic backup went` (log) | The database could not be read or written. | The database — disk space, permissions. |
+| `could not take the automatic backup` / `could not send the automatic backup` (log, and said in the chat) | The archive could not be made, or Telegram refused it: past 50 MB it is not sent at all. | `error=`; a large database is downloaded from the panel instead. The next goes at the next time. |
+| `could not read when the last automatic backup went` / `could not record when the automatic backup went` (log) | The database could not be read or written. | Check the database: disk space, permissions. |
 | `the Telegram API server must begin with http:// or https://` / `the external traffic URI must begin with http:// or https://` / `the test URL must begin with http:// or https://` | | |
 | `a mail server is required to send email` / `a from address is required to send email` / `at least one recipient is required to send email` / `mail port … is out of range` / `unknown mail encryption "…"` | | |
 | `could not deliver a notification` / `telegram bot could not send` / `telegram bot could not poll` (log) | Telegram was unreachable, or the token is wrong. | `error=`: a 401 is a bad token; a timeout is the network. |
@@ -297,7 +297,7 @@ These end the process; `journalctl -u wui -n 30` shows them.
 | `config: WUI_BASE_PATH "…" must be a single path segment` / `config: WUI_BASE_PATH "…" may only contain letters, digits, and - _ . ~` / `config: WUI_BASE_PATH may not be "…"; it collides with the API` | | |
 | `config: WUI_TLS_CERT is set without WUI_TLS_KEY` / `config: WUI_TLS_KEY is set without WUI_TLS_CERT` / `config: the certificate and key do not form a usable pair: …` | | Both files, matching. |
 | `config: WUI_COLLECT_INTERVAL is …, minimum is 1s` | | |
-| `database: open …: …` | The database could not be opened. | SQLite: permissions on `/var/lib/wui`; PostgreSQL: the server is down or `db.env` is wrong — `w-ui` → 25 → 3. |
+| `database: open …: …` | The database could not be opened. | SQLite: permissions on `/var/lib/wui`; PostgreSQL: the server is down or `db.env` is wrong. Check with `w-ui` → 25 → 3. |
 | `database: migrate: …` | The schema could not be brought up to date. | Report it with the line; a restore of the last backup is the way back. |
 | `http server: …` | The panel's port could not be bound. | Another port, or free it (`ss -ltnp`). |
 | `frontend placeholder embedded; run npm run build in web/ and rebuild` (log) | A binary built without the web interface. | Use a release build. |
@@ -337,7 +337,7 @@ These end the process; `journalctl -u wui -n 30` shows them.
 | `--db must be sqlite or postgres, not …` | | |
 | `port … is already served by …; pass --port with a free one` | The panel port is taken by something else. | `--port N`, or let it pick one. |
 | `could not install base packages` / `wireguard-tools did not install; the panel cannot serve WireGuard without it` / `nft missing; quota enforcement cannot run without nftables` | apt/dnf failed. | Check the network and the package sources; run the shown command by hand to see why. |
-| `download failed` / `checksum mismatch for …: the download is not the file that was released` | | Try again; a persistent mismatch is a tampered mirror — do not install it. |
+| `download failed` / `checksum mismatch for …: the download is not the file that was released` | | Try again; a persistent mismatch is a tampered mirror, so do not install it. |
 | `--from-source needs Go on PATH` / `could not install Go; use --local <path> with a prebuilt binary` / `build failed` / `could not fetch the source` / `could not unpack the source` / `the source archive does not look like this project` | Building from source. | Use a release, or `--local` with a binary you built. |
 | `no such file: …` / `installed binary is not executable` | `--local` pointed at nothing usable. | |
 | `could not install PostgreSQL` / `could not initialise PostgreSQL` / `PostgreSQL did not come up; see: journalctl -u postgresql` / `could not create the database role` / `could not create the database` / `could not set the database password` | The PostgreSQL step. | The named log; SQLite is one flag away (`--db sqlite`). |
@@ -364,7 +364,7 @@ These end the process; `journalctl -u wui -n 30` shows them.
 |---|---|---|
 | `Please install the panel first` / `Panel installed, Please do not reinstall` | The option needs a panel, or you already have one. | |
 | `Please enter the correct number [0-28]` | | |
-| `get current settings error, please check logs` | `wui setting show` failed — the database could not be opened. | `journalctl -u wui`; on PostgreSQL, is it running? |
+| `get current settings error, please check logs` | `wui setting show` failed: the database could not be opened. | `journalctl -u wui`; on PostgreSQL, is it running? |
 | `panel Failed to start, Probably because it takes longer than two seconds to start, Please check the log information later` / `Panel restart failed, …` / `Panel stop failed, …` | The state did not change within two seconds. | `w-ui status` a moment later; then the log. |
 | `w-ui Failed to set Autostart` / `w-ui Failed to cancel autostart` | `systemctl enable/disable` failed. | The unit file is missing: re-run the installer. |
 | `Failed to download script, Please check whether the machine can connect Github` / `could not fetch the installer` | | Network to GitHub. |
@@ -375,7 +375,7 @@ These end the process; `journalctl -u wui -n 30` shows them.
 | `Failed to install acme.sh` / `Install acme failed, please check logs.` / `Installation of acme.sh failed.` / `install socat failed, please check logs` | | Network; `curl https://get.acme.sh` by hand. |
 | `Auto renew failed, certificate details:` / `Auto update setup failed, script exiting...` | acme.sh's renewal or upgrade hook. | The details printed under it. |
 | `Backup failed: …` / `backup failed: …` / `Restore failed: …` / `restore failed: …` | From `wui backup`; the text after the colon is the panel's own message, listed under *Backup and restore*. | |
-| `The panel did not come back; see: journalctl -u … -n 50` / `the panel did not come up on …; see: …` | After a restore or a move between engines. | The log; the previous state was kept — the line printed with it says how to go back. |
+| `The panel did not come back; see: journalctl -u … -n 50` / `the panel did not come up on …; see: …` | After a restore or a move between engines. | The log; the previous state was kept, and the line printed with it says how to go back. |
 | `PostgreSQL is not installed` / `PostgreSQL is not set up for the panel yet; choose 1 first` / `PostgreSQL install failed` | | Option 25 → 1 first. |
 | `No such file` | The restore path does not exist. | |
 | `ERROR: You must be root to run this script!` | | `sudo w-ui`. |

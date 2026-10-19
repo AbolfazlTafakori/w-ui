@@ -1,45 +1,46 @@
 ---
-description: "همه چیز متغیر محیطی است : فایل کانفیگی نیست که هماهنگ نگه داری. نصاب آن‌ها را در unit سیستم‌دی می‌نویسد؛ /etc/wui/wui.env بعد از آن خوانده می‌شود و روی آن می‌نشیند."
+description: "همه چیز متغیر محیطی است و فایل پیکربندی‌ای وجود ندارد که باید هماهنگ نگهش داشت. نصب‌کننده آنها را در unit سیستم‌دی می‌نویسد؛ /etc/wui/wui.env بعد از آن خوانده می‌شود و بر آن مقدم است."
 ---
 
 # پیکربندی
 
-همه چیز متغیر محیطی است — فایل کانفیگی نیست که هماهنگ نگه داری. نصاب آن‌ها را در unit سیستم‌دی می‌نویسد؛ `/etc/wui/wui.env` بعد از آن خوانده می‌شود و روی آن می‌نشیند.
+همه چیز متغیر محیطی است و فایل پیکربندی‌ای نیست که لازم باشد هماهنگ نگهش دارید. نصب‌کننده این متغیرها را در unit سیستم‌دی می‌نویسد، و `/etc/wui/wui.env` بعد از آن خوانده می‌شود و بر آن مقدم است.
 
 | متغیر | پیش‌فرض | معنی |
-|-------|---------|------|
-| `WUI_LISTEN` | `127.0.0.1:2096` | آدرس سرو |
-| `WUI_BASE_PATH` | `/` | پیشوند مخفی URL |
-| `WUI_TLS_CERT` / `WUI_TLS_KEY` | — | HTTPS با این جفت |
-| `WUI_TRUSTED_PROXIES` | — | CIDRهایی که اجازهٔ `X-Forwarded-*` دارند |
-| `WUI_DATA_DIR` | `./data` | دیتابیس و state |
-| `WUI_DB_DRIVER` | `sqlite` | `sqlite` یا `postgres` |
-| `WUI_DB_SOURCE` | `<data dir>/wui.db` | مسیر فایل یا DSN؛ نصاب هر دو متغیر دیتابیس را در `/etc/wui/db.env` نگه می‌دارد (فقط root، یونیت و اسکریپت می‌خوانند) |
-| `WUI_BACKUP_DIR` | `<data dir>/backups` | بکاپ‌های زمان‌بندی‌شده؛ نصاب به `/var/backups/wui` می‌بردش |
-| `WUI_COLLECT_INTERVAL` | `2s` | هر چند وقت مصرف خوانده شود (حداقل `1s`) |
-| `WUI_DEFAULT_LOCALE` | `en` | `en` یا `fa` |
-| `WUI_LOG_LEVEL` | `info` | `debug`، `info`، `warn`، `error` |
-| `WUI_LOG_FORMAT` | `text` | `text` یا `json` |
-| `WUI_DEBUG` | `false` | تشخیص پرحرف |
+|----------|---------|---------|
+| `WUI_LISTEN` | `127.0.0.1:2096` | آدرسی که پنل روی آن جواب می‌دهد. |
+| `WUI_BASE_PATH` | `/` | پیشوند مخفی آدرس. |
+| `WUI_TLS_CERT` / `WUI_TLS_KEY` | | ارائه‌ی HTTPS با این گواهی و کلید. |
+| `WUI_TRUSTED_PROXIES` | | بازه‌هایی (CIDR) که اجازه دارند هدرهای `X-Forwarded-*` را بگذارند. |
+| `WUI_DATA_DIR` | `./data` | دیتابیس و وضعیت پنل. |
+| `WUI_DB_DRIVER` | `sqlite` | `sqlite` یا `postgres`. |
+| `WUI_DB_SOURCE` | `<data dir>/wui.db` | مسیر فایل یا یک DSN. نصب‌کننده هر دو متغیر دیتابیس را در `/etc/wui/db.env` نگه می‌دارد، که فقط root می‌تواند بخواندش و unit و اسکریپت از آن استفاده می‌کنند. |
+| `WUI_BACKUP_DIR` | `<data dir>/backups` | جای بکاپ‌های زمان‌بندی‌شده. نصب‌کننده آن را روی `/var/backups/wui` می‌گذارد. |
+| `WUI_COLLECT_INTERVAL` | `2s` | هر چند وقت مصرف خوانده شود؛ دست‌کم `1s`. |
+| `WUI_DEFAULT_LOCALE` | `en` | `en` یا `fa`. |
+| `WUI_LOG_LEVEL` | `info` | `debug`، `info`، `warn` یا `error`. |
+| `WUI_LOG_FORMAT` | `text` | `text` یا `json`. |
+| `WUI_DEBUG` | `false` | گزارش‌های عیب‌یابی مفصل. |
 
-## اولویت
+## ترتیب اولویت
 
-۱. آنچه صفحهٔ تنظیمات ذخیره کرده (`wui setting set`، یا تنظیمات → عمومی) — listen، پورت، مسیر، سرتیفیکیت، trusted proxies، منطقهٔ زمانی؛
-۲. `/etc/wui/wui.env`؛
-۳. خط‌های `Environment=` در unit؛
-۴. پیش‌فرض‌های بالا.
+1. آنچه صفحه‌ی تنظیمات ذخیره کرده، از طریق `wui setting set` یا تنظیمات ← عمومی: آدرس شنود، پورت، مسیر، گواهی، پراکسی‌های مورد اعتماد و منطقه‌ی زمانی.
+1. فایل `/etc/wui/wui.env`.
+1. خط‌های `Environment=` در unit.
+1. پیش‌فرض‌های بالا.
 
-پس پورتی که در پنل عوض شده در نصب‌های مجدد می‌ماند و env فقط چیزی است که نصب تازه با آن اجرا می‌شود.
+پس پورتی که در پنل عوض شده بعد از نصب دوباره هم می‌ماند، و متغیرهای محیطی فقط چیزی است که نصب تازه با آن شروع می‌کند.
 
 ## مسیرها
 
-| | |
+| مسیر | چیست |
 |---|---|
-| `/usr/local/bin/wui` | پنل |
-| `/usr/local/bin/w-ui` | منو |
-| `/etc/systemd/system/wui.service` | unit |
-| `/etc/wui/` | `wui.env`، `certs/`، `install-result.env` |
-| `/var/lib/wui/` | `wui.db`، `openvpn/`، `geoip/`، `hops/`، `history.gob` |
-| `/var/backups/wui/` | بکاپ‌های زمان‌بندی‌شده |
-| `/var/log/wui/` | لاگ بن fail2ban |
-| `/root/.acme.sh/` | acme.sh و state تمدیدش |
+| `/usr/local/bin/wui` | خود پنل. |
+| `/usr/local/bin/w-ui` | منو. |
+| `/etc/systemd/system/wui.service` | unit پنل. `wui-l2tp`، `wui-firewall` و `wui-update` سرویس‌های کمکی با دسترسی root در کنار آن‌اند. |
+| `/etc/wui/` | `wui.env`، `db.env`، `certs/`، `install-result.env`. |
+| `/var/lib/wui/` | `wui.db`، `keys/`، `openvpn/`، `l2tp/`، `geoip/`، `hops/`، `history.gob`. |
+| `/var/lib/wui/keys/` | کلید امضای نشست‌ها و رمز بکاپ. هیچ‌وقت در آرشیو نمی‌رود و با بازگردانی عوض نمی‌شود. |
+| `/var/backups/wui/` | بکاپ‌های زمان‌بندی‌شده. |
+| `/var/log/wui/` | لاگ مسدودسازی‌های fail2ban. |
+| `/root/.acme.sh/` | acme.sh و وضعیت تمدید آن. |

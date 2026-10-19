@@ -1,10 +1,10 @@
 ---
-description: "Everything the panel does, it does through its own HTTP API : there is no private path the interface uses and callers cannot."
+description: "Everything the panel does, it does through its own HTTP API. There is no private path the interface uses and callers cannot."
 ---
 
 # API
 
-Everything the panel does, it does through its own HTTP API — there is no private path the interface uses and callers cannot.
+Everything the panel does, it does through its own HTTP API. There is no private path the interface uses and callers cannot.
 
 ## Authentication
 
@@ -16,14 +16,14 @@ curl -X POST 'https://panel:2053/PATH/api/auth/login' \
   -d '{"username":"admin","password":"…"}'
 ```
 
-or use an **API token** — the one the installer printed, or one from Settings → Authentication → API Token or `wui token issue --name NAME` — and send it as:
+or use an **API token**: the one the installer printed, or one from Settings → Authentication → API Token or `wui token issue --name NAME`. Send it as:
 
 ```
 Authorization: Bearer wui_…
 ```
 
 ::: warning What a token cannot do
-A token is a machine's. What only an administrator may do answers `403 this needs a signed-in administrator, not an API token`: the administrator's own account and two-factor, issuing or revoking tokens, backups, registering nodes and their trust, the panel's settings and template, a restart. Everything about customers, devices, tunnels, hosts, outbounds and routing is open to a token — that is what it is for.
+A token is a machine's. What only an administrator may do answers `403 this needs a signed-in administrator, not an API token`: the administrator's own account and two-factor, issuing or revoking tokens, backups, registering nodes and their trust, the panel's settings and template, a restart. Everything about customers, devices, tunnels, hosts, outbounds and routing is open to a token; that is what it is for.
 :::
 
 ::: tip Extra "installer" tokens

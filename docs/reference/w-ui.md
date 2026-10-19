@@ -62,16 +62,16 @@ Under the box: the panel state, whether it starts at boot, and one line per tunn
 | # | Does | Asks |
 |---|------|------|
 | 1 | runs the installer | — |
-| 2 | fetches the latest release, verifies it, replaces the binary and this script, restarts — nothing is asked; port, path, certificate, database and administrator stay. A panel with no certificate is offered one | confirm |
+| 2 | fetches the latest release, verifies it, replaces the binary and this script, and restarts. Nothing is asked; port, path, certificate, database and administrator stay. A panel with no certificate is offered one | confirm |
 | 3 | the same, from the rolling `dev-latest` build of the latest commit | confirm |
 | 4 | replaces this script with the one published for the installed version | confirm |
 | 5 | installs a named earlier version | the version |
-| 6 | removes the panel, its data and its unit — **after copying the data to `/root/wui-last-copy-…`** | confirm, default no |
+| 6 | removes the panel, its data and its unit, **after copying the data to `/root/wui-last-copy-…`** | confirm, default no |
 | 7 | new username and password (generated unless typed), and whether to drop two-factor | both, 2FA, then whether to restart |
 | 8 | a new random URL path | confirm |
 | 9 | every panel setting back to the environment's; the admin and customers stay | confirm, default no |
 | 10 | the port, applied at the next restart | the port |
-| 11 | listen, port, path, certificate, database, **Access URL** — and an offer to get an IP certificate if there is none | — |
+| 11 | listen, port, path, certificate, database and **Access URL**, and an offer to get an IP certificate if there is none | — |
 | 12–14 | start / stop / restart the service | — |
 | 15 | every tunnel again from its configuration; the panel stays up | — |
 | 16 | `systemctl status wui` | — |
@@ -102,4 +102,4 @@ w-ui install | uninstall
 w-ui setup-fail2ban
 ```
 
-A question the script asks with nobody there to answer — piped input, a script — is answered **no**. A non-interactive run can never install, update or remove anything.
+A question the script asks with nobody there to answer, such as piped input or a script, is answered **no**. A non-interactive run can never install, update or remove anything.

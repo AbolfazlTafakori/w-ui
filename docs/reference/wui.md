@@ -4,7 +4,7 @@ description: "One static, CGO-free binary at /usr/local/bin/wui with the fronten
 
 # The `wui` binary
 
-One static, CGO-free binary at `/usr/local/bin/wui` with the frontend embedded. Run with no arguments it is the panel; with a subcommand it is a tool the script and the installer use.
+One static, CGO-free binary at `/usr/local/bin/wui`, with the frontend embedded. Run with no arguments, it is the panel. With a subcommand, it is a tool the script and the installer use.
 
 ```
 wui                              run the panel
@@ -20,7 +20,10 @@ wui backup restore FILE          stage a restore, applied at the next start
 wui version                      print the version
 wui keygen                       make a release-signing key pair
 wui sign <binary>                sign a build, for a release
+wui verify <binary> <sig>        check a build against the key this panel was built with
 ```
+
+Four more subcommands are run by systemd, not by hand: `apply-update` (by `wui-update.service`, to install an update the panel downloaded), `l2tp-agent` (by `wui-l2tp.service`, to run the L2TP/IPsec, PPTP, IKEv2 and OpenConnect tunnels), `pptpd` (started by that agent), and `firewall-sync` (by `wui-firewall.service`, to let the tunnels' ports through ufw or firewalld).
 
 ## `setting set`
 
@@ -39,11 +42,15 @@ wui sign <binary>                sign a build, for a release
 --sub-key FILE     its private key
 ```
 
-The settings page's values win over the environment at start, so this is where a change has to land to stick. `setting show` prints the effective result — `listen`, `listenIP`, `port`, `basePath`, `scheme`, `cert`, `key`, `subEnabled`, `subPort`, `subPath`, `dbDriver`, `dbSource` (password redacted) — in the lines the script parses.
+The settings page's values win over the environment at start, so this is where a change has to land to stick. `setting show` prints the effective result, in the lines the script parses: `listen`, `listenIP`, `port`, `basePath`, `scheme`, `cert`, `key`, `subEnabled`, `subPort`, `subPath`, `dbDriver` and `dbSource`, with the password redacted.
 
 ## `backup`
 
-`create` writes the same archive the panel's scheduler writes: the SQLite snapshot, every key, and a portable JSON dump of every table, so the file restores into a panel on either database engine and into a newer W-UI. `restore` copies the archive in, checks it, keeps a copy of the current data beside it, and stages it; the next start applies it. Pass `--move-addresses` to take the archive's server addresses too instead of keeping this machine's. Both need the panel's environment — the `w-ui` menu supplies it, and so does `/etc/wui/db.env`. See [Backup and restore](/operations/backup-restore).
+`create` writes the same archive the panel's scheduler writes: the SQLite snapshot when there is one, the server files, and a portable JSON dump of every table, so the file restores into a panel on either database engine and into a newer W-UI. It is encrypted when a backup password is set.
+
+`restore` copies the archive in, checks it, keeps a copy of the current data beside it, and stages it; the next start applies it. Pass `--move-addresses` to take the archive's server addresses instead of keeping this machine's.
+
+Both need the panel's environment, which the `w-ui` menu supplies, as does `/etc/wui/db.env`. See [Backup and restore](/operations/backup-restore).
 
 ## `admin reset`
 
