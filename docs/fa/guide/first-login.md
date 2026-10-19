@@ -68,5 +68,5 @@ w-ui settings     # the same, without the menu
 
 ## قدم بعد
 
-- [اولین تانل، اولین مشتری](/fa/guide/first-steps)
+- [اولین تونل، اولین مشتری](/fa/guide/first-steps)
 - [امنیت](/fa/operations/security)

@@ -34,7 +34,7 @@ Go to **Clients → Add Clients**. One client is one customer and their plan.
 | Name | What you will search for; their files are named after it |
 | Data allowance | Empty or `0` is unlimited. The kernel enforces it |
 | Users | How many people the plan is for: one file each, each on one device at a time |
-| Valid for | How long from now. Or turn on **Start when they first connect** with a number of days, counted from the first connection |
+| Valid for | How long from now. Or turn on **On hold** with a number of days, counted from the first connection |
 | Speed limit | Download speed in Mbit/s; `0` is no limit |
 | Renews | Never, daily, weekly or monthly: the traffic comes back each period |
 | Telegram ID | Lets the customer ask the bot about their own plan |

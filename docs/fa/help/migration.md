@@ -8,7 +8,7 @@ description: "از پنل دیگری آمده‌اید : هر مفهوم این�
 
 | پنل‌های Xray | مرزبان | W-UI |
 |-------|--------|------|
-| Inbound | Inbound (کانفیگ Xray) | **اینترفیس** — یک تانل WireGuard / AmneziaWG / OpenVPN |
+| Inbound | Inbound (کانفیگ Xray) | **اینترفیس** — یک تونل WireGuard / AmneziaWG / OpenVPN |
 | Client (email) | User | **Client** — یک مشتری، با یک **account** به ازای هر دستگاه |
 | `id` / رمز کلاینت | proxyهای کاربر | کلید دستگاه (وایرگارد) یا نام کاربری + رمز (OpenVPN) |
 | Total GB، Expiry، IP limit | Data limit، Expire، — | حجم، مدت اعتبار، **کاربران** |

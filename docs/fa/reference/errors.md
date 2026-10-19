@@ -1,5 +1,5 @@
 ---
-description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت و منوی w-ui می‌توانند نشان دهند، معنی هر کدام، و راه حلش."
+description: "هر پیامی که پنل، نصاب، اسکریپت به‌روزرسانی و منوی w-ui می‌توانند نشان دهند، معنی هر کدام، و راه حلش."
 ---
 
 # خطاها
@@ -14,7 +14,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | **API** | JSON: `{"error": "…"}`؛ برای یک ورودی، `{"error": "…", "field": "name"}`. وضعیت `400` ورودی بد، `401` وارد نشده، `403` رد شده، `404` نیست، `413` خیلی بزرگ، `429` قفل شده، `500` تقصیر خود پنل (جزئیات در لاگ است، هرگز در جواب). |
 | **لاگ پنل** | `journalctl -u wui`. `level=ERROR` چیزی که شکست خورده؛ `level=WARN` چیزی که دانستنش لازم است؛ هر دو `error=` با علت اصلی را دارند. |
 | **نصاب** | `error: …` قرمز، و نصب می‌ایستد. هر چه قبلش بود انجام شده؛ بعدش هیچ. |
-| **`update.sh`** | همان؛ آپدیت ناموفق پنل قبلی را در حال اجرا می‌گذارد. |
+| **`update.sh`** | همان؛ به‌روزرسانی ناموفق پنل قبلی را در حال اجرا می‌گذارد. |
 | **منوی `w-ui`** | `[ERR] …` قرمز. |
 
 خطایی که می‌گوید **internal error** باگ یا سرور خراب است، نه ورودی بد: در `journalctl -u wui -n 50` خطی که با `request failed` شروع می‌شود را بخوان و با همان خط گزارش کن.
@@ -45,12 +45,12 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 |---|---|---|
 | `the request body could not be read as JSON` | بدنهٔ درخواست JSON معتبر نیست. | از اسکریپت: کوتیشن‌ها را چک کن؛ `Content-Type: application/json` بفرست. از پنل: صفحه را رفرش کن — نسخه‌ها ناهماهنگ‌اند. |
 | `the request had no body` | یک POST/PUT بدون بدنه رسیده. | سند را بفرست. |
-| `that request is too large` (413) | بدنه‌ها تا ۱ مگابایت‌اند؛ آپلودها (بک‌آپ، پروفایل) سقف بزرگ‌تر خودشان را دارند. | برای بک‌آپ از endpoint آپلود استفاده کن؛ برای بقیه، درخواست غلط است. |
-| `this request carried a field this server does not know: …. The panel and its interface are probably different versions` | JSON کلیدی دارد که سرور نمی‌شناسد. | بعد از آپدیت پنل را رفرش کن؛ از اسکریپت، آن فیلد را حذف کن. |
+| `that request is too large` (413) | بدنه‌ها تا ۱ مگابایت‌اند؛ آپلودها (بکاپ، پروفایل) سقف بزرگ‌تر خودشان را دارند. | برای بکاپ از endpoint آپلود استفاده کن؛ برای بقیه، درخواست غلط است. |
+| `this request carried a field this server does not know: …. The panel and its interface are probably different versions` | JSON کلیدی دارد که سرور نمی‌شناسد. | بعد از به‌روزرسانی پنل را رفرش کن؛ از اسکریپت، آن فیلد را حذف کن. |
 | `unsupported language "…"; available: …` | `/api/i18n/xx` برای زبانی که وجود ندارد. | `en` یا `fa`. |
 | `that is not a range this panel keeps. Ask for 5m, 1h, 6h, 24h, 48h or 7d` | تاریخچه برای بازه‌ای درخواست شده که نگه داشته نمی‌شود. | یکی از همان‌ها. |
 | `action must be enable, disable or delete` | عمل گروهی با فعل ناشناخته. | یکی از سه تا. |
-| `no file was sent` / `that file could not be read, or it is larger than this panel accepts` | آپلود بدون فایل، یا بزرگ‌تر از سقف. | فایل را پیوست کن؛ بک‌آپ بزرگ‌تر از سقف، بک‌آپ W-UI نیست. |
+| `no file was sent` / `that file could not be read, or it is larger than this panel accepts` | آپلود بدون فایل، یا بزرگ‌تر از سقف. | فایل را پیوست کن؛ بکاپ بزرگ‌تر از سقف، بکاپ W-UI نیست. |
 | `this panel runs without permission to replace its own binary, and the update helper is not installed on this server. …` (412) | پنل بدون دسترسی root اجرا می‌شود و این سرور هنوز `wui-update.path` ندارد — هر سروری که قبل از ۲.۳.۲ نصب شده. | دستوری را که پیام می‌دهد یک‌بار با root اجرا کن: `bash <(curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/update.sh)`. |
 | `the update helper did not answer. Check it on the server: …` | نسخه برای سرویس کمکی گذاشته شد و ظرف دو دقیقه جوابی نیامد. | `systemctl status wui-update.path wui-update.service`؛ `journalctl -u wui-update -n 30`. |
 | `… is not newer than the installed …; nothing was installed` | سرویس کمکی نسخهٔ قدیمی‌تر را، حتی امضاشده، نصب نمی‌کند. | کاری لازم نیست؛ پنل نسخه‌اش را نگه می‌دارد. |
@@ -63,8 +63,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 |---|---|---|
 | `name is required` |  | به مشتری نام بده. |
 | `at most … characters` / `no line breaks or control characters` | نام مشتری یا دستگاه، یا یادداشت، از ستونش بلندتر است (نام ۱۲۸، دستگاه ۶۴، یادداشت ۵۱۲) یا شکستِ خط دارد. | کوتاه‌ترش کن و در یک خط بنویس. |
-| `choose at least one server for this customer` | هیچ اینترفیسی تیک نخورده. | تانل‌(های) مجاز مشتری را تیک بزن. |
-| `Not found: …` | آی‌دی اینترفیسی که وجود ندارد — معمولاً صفحهٔ کهنه بعد از حذف. | رفرش کن؛ تانل موجود را انتخاب کن. |
+| `choose at least one server for this customer` | هیچ اینترفیسی تیک نخورده. | تونل‌(های) مجاز مشتری را تیک بزن. |
+| `Not found: …` | آی‌دی اینترفیسی که وجود ندارد — معمولاً صفحهٔ کهنه بعد از حذف. | رفرش کن؛ تونل موجود را انتخاب کن. |
 | `one of those interfaces does not exist` / `choose at least one interface` | همان، در ساخت گروهی. |  |
 | `device limit must be between 0 and 50` | اتصال هم‌زمان. | عددی در همان بازه. |
 | `… devices requested; at most … per customer` | سقف فایل دستگاه ۶۴ است. |  |
@@ -75,17 +75,17 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `there is no group called "…"` | قانون یا عمل گروهی گروهی را نام برده که نیست. | اول گروه را بساز، یا نام را درست کن. |
 | `a group called "…" already exists` / `a group needs a name` / `that name is too long` |  |  |
 | `a tag prefix can only contain letters, digits, - and _` / `a tag cannot contain a comma or a space` |  |  |
-| `a username and password only apply when the customer is on an OpenVPN or L2TP tunnel` | برای مشتری‌ای که تانل OpenVPN یا L2TP ندارد نام کاربری/رمز وارد شده. | یک تانل OpenVPN یا L2TP تیک بزن، یا فیلدها را خالی بگذار. |
+| `a username and password only apply when the customer is on an OpenVPN or L2TP tunnel` | برای مشتری‌ای که تونل OpenVPN یا L2TP ندارد نام کاربری/رمز وارد شده. | یک تونل OpenVPN یا L2TP تیک بزن، یا فیلدها را خالی بگذار. |
 | `an OpenVPN username is 3 to 48 characters` / `an OpenVPN username can only contain letters, digits, - _ . and @ (found "…")` |  | چیزی مثل `roya` یا `roya.k`. |
 | `two users were given the same username "…"; each logs in as themselves` | دو ردیف تب Credentials یک نام کاربری دارند. | برای هر کاربر یکی متفاوت. |
-| `the username "…" is already used on …` | نام کاربری روی هر تانل OpenVPN یکتاست. | نام دیگری. |
+| `the username "…" is already used on …` | نام کاربری روی هر تونل OpenVPN یکتاست. | نام دیگری. |
 | `an OpenVPN password is 6 to 64 characters` / `an OpenVPN password cannot contain spaces` |  |  |
 | `a subscription id is 8 to 64 characters` / `a subscription id can only contain letters, digits, - and _ (found "…")` | شناسهٔ اشتراکی که در تب Credentials تایپ شده. | چیزی مثل `roya-2024-link`، یا خالی بگذار تا ساخته شود. |
 | `that subscription id cannot be used; choose another, or leave it empty for one to be drawn` | هر لینک در کل پنل یکتاست؛ اینکه مال کیست گفته نمی‌شود. | شناسهٔ دیگر، یا خالی. |
 | `too many subscription ids refused; wait a while, or leave it empty for one to be drawn` | پنج شناسهٔ تکراری در یک ساعت از یک نماینده: راهی برای فهمیدن اینکه کدام لینک‌ها وجود دارند. | خالی بگذار. |
 | `device limit reached` (400) | مشتری همین حالا ۶۴ فایل دستگاه دارد، بیشترین ممکن. | دستگاهی را حذف کن. |
-| `address pool exhausted` (400) | زیرشبکهٔ تانل آدرس آزاد ندارد. | زیرشبکهٔ بزرگ‌تر روی اینترفیس، یا اینترفیس دیگر. |
-| `no interfaces configured; create one before adding customers` (log) | مشتری قبل از هر تانلی ساخته شده. | اول یک اینترفیس بساز. |
+| `address pool exhausted` (400) | زیرشبکهٔ تونل آدرس آزاد ندارد. | زیرشبکهٔ بزرگ‌تر روی اینترفیس، یا اینترفیس دیگر. |
+| `no interfaces configured; create one before adding customers` (log) | مشتری قبل از هر تونلی ساخته شده. | اول یک اینترفیس بساز. |
 
 ## نمایندگان و اپراتورها
 
@@ -139,7 +139,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `give the traffic allowance, or 0 for no limit` / `give the customer limit, or 0 for no limit` / `choose at least one server` | مقداری که این کار لازم دارد داده نشده. | در پنجره پرش کن. |
 | `say whether to keep their customers under your own account or delete them too` | حذف دسته‌جمعی نماینده‌ها همان تصمیمِ حذف یک نماینده را لازم دارد. | *بمانند، زیر حساب من* یا *آن‌ها هم حذف شوند* را انتخاب کن. |
 
-## اینترفیس‌ها (تانل‌ها)
+## اینترفیس‌ها (تونل‌ها)
 
 | پیام | معنی | چه کنی |
 |---|---|---|
@@ -149,8 +149,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `a tunnel needs a name` / `name is required` |  |  |
 | `a tunnel called "…" already exists on …` / `a tunnel called "…" already exists on this server` | نام‌ها در هر سرور یکتا هستند. | نام دیگری. |
 | `a tunnel name is at most 15 characters; "…" is …` / `a tunnel name can only contain letters, digits, - and _ (found "…"); it names a network device, not a host` | نام، نام دستگاه کرنل می‌شود (`wg0`)؛ دامنه این‌جا موقع بالا آمدن شکست می‌خورد. | چیزی مثل `wg0` یا `ir443`؛ دامنه در **Endpoint** می‌رود. |
-| `… overlaps …, the subnet of tunnel "…"; every tunnel on a server needs its own range` | دو تانل روی یک رنج به کرنل دو مسیر برای یک آدرس می‌دهد. | رنج متفاوت، مثل `10.67.0.0/16`. |
-| `… overlaps … on …, a network already on this server — another program's, such as Docker or another VPN, or the server's own; pick a range nothing here uses` | این رنج از قبل روی یکی از دستگاه‌های شبکهٔ خودِ ماشین است — bridge داکر، اینترفیس یک VPN دیگر، شبکهٔ خودِ سرور. تانل روی آن ترافیک آن‌ها را به داخل تانل می‌برد. | رنجی که هیچ چیز روی سرور از آن استفاده نمی‌کند؛ `ip -brief address` نشان می‌دهد چه چیزهایی هست. |
+| `… overlaps …, the subnet of tunnel "…"; every tunnel on a server needs its own range` | دو تونل روی یک رنج به کرنل دو مسیر برای یک آدرس می‌دهد. | رنج متفاوت، مثل `10.67.0.0/16`. |
+| `… overlaps … on …, a network already on this server — another program's, such as Docker or another VPN, or the server's own; pick a range nothing here uses` | این رنج از قبل روی یکی از دستگاه‌های شبکهٔ خودِ ماشین است — bridge داکر، اینترفیس یک VPN دیگر، شبکهٔ خودِ سرور. تونل روی آن ترافیک آن‌ها را به داخل تونل می‌برد. | رنجی که هیچ چیز روی سرور از آن استفاده نمی‌کند؛ `ip -brief address` نشان می‌دهد چه چیزهایی هست. |
 | `"…" is too small for the … devices on this tunnel` | زیرشبکهٔ جدید دستگاه‌های موجود را جا نمی‌دهد. | رنج بزرگ‌تر. |
 | `unknown protocol "…"` |  | `wireguard` یا `openvpn`. |
 | `no driver available for "…" on this server` | کرنل یا باینری آن پروتکل این‌جا نیست (`wg`/`awg`/`openvpn`). | نصبش کن: نصاب را دوباره اجرا کن. |
@@ -165,17 +165,17 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `… needs AmneziaWG, and this kernel has no …` | حالت مبهم‌سازی ماژول `amneziawg` یا `amneziawg-go` می‌خواهد. | نصاب را دوباره اجرا کن (هر دو را نصب می‌کند)؛ یا وایرگارد ساده. |
 | `… already exists and belongs to another WireGuard …` / `… already exists and is not a tunnel this panel …` | اینترفیس کرنلی با این نام هست و مال ما نیست. | نام دیگر، یا اینترفیس سرگردان را حذف کن (`ip link del`). |
 | `… did not come up within …` / `interface did not start` (log) | درایور نتوانست لینک را بالا بیاورد. | `error=` خط لاگ: معمولاً پورت، ماژول یا مجوز. |
-| `… still carries … interface(s); remove them first` | حذف نودی که هنوز تانل دارد. | اول تانل‌ها را حذف کن. |
+| `… still carries … interface(s); remove them first` | حذف نودی که هنوز تونل دارد. | اول تونل‌ها را حذف کن. |
 | `… device(s) still use "…"; remove those clients first` | حذف اینترفیسی که مشتری دارد. | اول جابه‌جا یا حذفشان کن. |
 
 ## هاست‌ها و گروه‌های هاست
 
 | پیام | معنی | چه کنی |
 |---|---|---|
-| `a host has to belong to an interface` / `there is no interface …` |  | تانل را انتخاب کن. |
+| `a host has to belong to an interface` / `there is no interface …` |  | تونل را انتخاب کن. |
 | `give the host a name so the list can be read later` / `give the host a name; it is what the config is called` |  |  |
 | `a host needs the address customers will dial` / `"…" is not a host name or address` / `"…" is not an address` |  | hostname یا IP. |
-| `… is not a port number` |  | ۱ تا ۶۵۵۳۵، یا ۰ برای ارث از تانل. |
+| `… is not a port number` |  | ۱ تا ۶۵۵۳۵، یا ۰ برای ارث از تونل. |
 | `… already has a host called "…"` |  | نام دیگری. |
 | `the name is longer than 256 characters` / `the description is longer than 64 characters` |  |  |
 | `"…" is not a format; the formats are …` | حذف فرمت کانفیگی که وجود ندارد. | یکی از فرمت‌های فهرست. |
@@ -209,7 +209,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `the rule matches nothing as written; fill in at least one criterion` | همهٔ فیلدهای تطبیق خالی‌اند. | دست‌کم یکی از مبدأ، مقصد، دامنه، پورت، مشتری، گروه، اینترفیس. |
 | `"…" is not a network the router matches; use tcp, udp or icmp` / `icmp has no ports; drop the ports or pick tcp or udp` |  |  |
 | `there is no outbound or balancer called "…"` |  |  |
-| `a client is named by id here, and "…" is not one` / `an interface is named by id here, and "…" is not one` / `there is no interface with id …` | قانون‌ها مشتری و تانل را با شماره صدا می‌زنند. | آی‌دی از فهرست. |
+| `a client is named by id here, and "…" is not one` / `an interface is named by id here, and "…" is not one` / `there is no interface with id …` | قانون‌ها مشتری و تونل را با شماره صدا می‌زنند. | آی‌دی از فهرست. |
 | `"…" is a balancer; the default has to be an outbound. Point a rule at the balancer instead` |  |  |
 | `"…" has no dot in it, so it is not a domain name` / `"…" is too long to be a domain name` |  |  |
 | `unknown domain strategy "…"` / `unknown query strategy "…"` |  | یکی که فرم پیشنهاد می‌دهد. |
@@ -267,7 +267,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `node became unreachable` / `node is not in step with this panel` (log) | نود جواب نمی‌دهد، یا دیتایش واگرا شده. | پنل خودِ نود را چک کن؛ در poll بعدی sync می‌شود. |
 | `node address is plain HTTP; its token travels unencrypted` (log) |  | به نود سرتیفیکیت بده و `https://` بزن. |
 
-## بک‌آپ و ریستور
+## بکاپ و بازگردانی
 
 | پیام | معنی | چه کنی |
 |---|---|---|
@@ -277,11 +277,11 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `"…" contains a file far too large to be one of ours` / `"…" expands to more than this can restore` | محافظ اندازه در برابر آرشیو دست‌کاری‌شده. |  |
 | `"…" tries to write outside the data directory` | path traversal در آرشیو. | آرشیو W-UI نیست. |
 | `the uploaded file is empty` |  |  |
-| `could not save the current state before restoring: …` | کپی ایمنی شکست خورد، پس چیزی ریستور نشد. | فضای دیسک، یا مجوز پوشهٔ بک‌آپ. |
-| `this backup was written by a newer panel (format …); update first` | دامپ قابل حمل جدیدتر از فهم این پنل است. | `w-ui update`، بعد ریستور. |
+| `could not save the current state before restoring: …` | کپی ایمنی شکست خورد، پس چیزی بازگردانی نشد. | فضای دیسک، یا مجوز پوشهٔ بکاپ. |
+| `this backup was written by a newer panel (format …); update first` | دامپ قابل حمل جدیدتر از فهم این پنل است. | `w-ui update`، بعد بازگردانی. |
 | `not a portable backup: …` | `wui-export.json` خوانا نیست. |  |
 | `the restored backup could not be loaded into the database; the panel is running on the data it had` (log) | دامپ import نشد؛ به‌صورت `.restore-import.json.failed` نگه داشته شد. | `error=` جدول و ستون را می‌گوید؛ گزارشش کن. |
-| `the archive holds neither a database file for this engine nor a portable dump; only the other files are restored` (log) | آرشیو قدیمی در موتور دیگر ریستور شد. | در یک پنل SQLite ریستورش کن، آن‌جا بک‌آپ تازه بگیر، همان را ریستور کن. |
+| `the archive holds neither a database file for this engine nor a portable dump; only the other files are restored` (log) | آرشیو قدیمی در موتور دیگر بازگردانی شد. | در یک پنل SQLite بازگردانیش کن، آن‌جا بکاپ تازه بگیر، همان را بازگردانی کن. |
 | `restored, but this server's own addresses could not be put back` (log) | آدرس‌های آرشیو ماندند. | endpoint هر اینترفیس را چک کن. |
 | `scheduled backup failed` / `could not snapshot the database; archiving the live file instead` (log) |  | فضای دیسک یا مجوز؛ دومی فقط هشدار است. |
 | `backup: the database could not be copied, so no backup was written; see the log for why` | نه اسنپ‌شات سازگار SQLite گرفته شد و نه دامپ قابل‌حمل. بکاپ نوشته نمی‌شود، به‌جای اینکه بدون دیتابیس نگه داشته شود که بازگردانی ردش می‌کند. گزارش تلگرام هم همین را می‌گوید. | خطوط لاگ درست قبل از آن را بخوان؛ معمولاً دیسک پر (`df -h /var/backups`) یا دیتابیسی که پنل نمی‌تواند بخواند. |
@@ -298,7 +298,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `config: WUI_TLS_CERT is set without WUI_TLS_KEY` / `config: WUI_TLS_KEY is set without WUI_TLS_CERT` / `config: the certificate and key do not form a usable pair: …` |  | هر دو فایل، هم‌خوان. |
 | `config: WUI_COLLECT_INTERVAL is …, minimum is 1s` |  |  |
 | `database: open …: …` | دیتابیس باز نشد. | SQLite: مجوز `/var/lib/wui`؛ PostgreSQL: سرور خاموش است یا `db.env` غلط — `w-ui` → ۲۵ → ۳. |
-| `database: migrate: …` | اسکیما به‌روز نشد. | با همان خط گزارش کن؛ راه برگشت، ریستور آخرین بک‌آپ است. |
+| `database: migrate: …` | اسکیما به‌روز نشد. | با همان خط گزارش کن؛ راه برگشت، بازگردانی آخرین بکاپ است. |
 | `http server: …` | پورت پنل bind نشد. | پورت دیگر، یا آزادش کن (`ss -ltnp`). |
 | `frontend placeholder embedded; run npm run build in web/ and rebuild` (log) | باینری‌ای که بدون رابط وب ساخته شده. | از بیلد ریلیز استفاده کن. |
 | `created first admin account; this password is shown once` (log) | خطا نیست: دیتابیس تازه یک مدیر ساخت. | رمز را یادداشت کن. |
@@ -314,17 +314,17 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `something cleared our ruleset; rewriting it` / `the shaping hierarchy disappeared; rebuilding` (log) | برنامهٔ دیگری nftables یا tc را flush کرده. | پنل بازسازی کرد؛ پیدا کن چه چیزی flush می‌کند (`ufw`، پنل VPN دیگر) و متوقفش کن. |
 | `enforce: reduced enforcement` | بخشی از ruleset اعمال نشد. | خط `error=`. |
 
-## تانل‌ها در زمان اجرا
+## تونل‌ها در زمان اجرا
 
 | پیام | معنی | چه کنی |
 |---|---|---|
 | `wgdriver: WireGuard is only available on Linux` / `ovpndriver: OpenVPN is only available on Linux` |  |  |
 | `ovpndriver: openvpn is not installed` / `ovpndriver: /dev/net/tun is missing; load the tun module` |  | نصاب را دوباره اجرا کن، یا `modprobe tun`. |
-| `ovpndriver: interface … has no certificates; recreate it` | PKI تانل رفته (از آرشیوی بدون آن ریستور شده، یا حذف شده). | تانل را حذف و دوباره بساز؛ مشتری‌ها پروفایل جدید می‌گیرند. |
+| `ovpndriver: interface … has no certificates; recreate it` | PKI تونل رفته (از آرشیوی بدون آن بازگردانی شده، یا حذف شده). | تونل را حذف و دوباره بساز؛ مشتری‌ها پروفایل جدید می‌گیرند. |
 | `ovpndriver: the server process would not start` / `ovpndriver: the server process is not running (last pid …)` |  | `journalctl -u wui` خروجی خود OpenVPN را کنارش دارد. |
 | `wgdriver: awg syncconf …` / `wgdriver: configure …` | کرنل پیکربندی را رد کرد. | معمولاً آدرس تکراری یا کلید نامعتبر در یک peer؛ `error=` می‌گوید کدام. |
 | `some peers were skipped because their keys could not be parsed` (log) | اکانت یک مشتری کلید بد دارد. | آن دستگاه را حذف و دوباره اضافه کن. |
-| `openvpn transport changed; every customer needs their configuration again` (log) | تانل بین UDP و TCP جابه‌جا شده. | پروفایل جدید بده. |
+| `openvpn transport changed; every customer needs their configuration again` (log) | تونل بین UDP و TCP جابه‌جا شده. | پروفایل جدید بده. |
 | `this server has used its whole transfer allowance; customers are off it` (log) | سهمیهٔ خودِ نود (تنظیمات → نودها) تمام شده. | بالا ببر یا منتظر ریست بمان. |
 
 ## نصاب
@@ -355,7 +355,7 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `no release … with a build for … was found` | تگ وجود ندارد، یا برای این معماری باینری ندارد. | نام تگ را چک کن؛ `dev-latest` برای بیلد چرخشی. |
 | `download failed` / `checksum mismatch for …` |  | دوباره امتحان کن. |
 | `signature check failed: the download is not a build this project signed` | امضای باینری با کلید پروژه نمی‌خواند. چیزی نصب نشد. | نصبش نکن. اگر ریلیزهای خودت را می‌سازی، با کلید خودت امضا کن. |
-| `the installed panel cannot check signatures; the checksum is what was verified` (warning) | پنل نصب‌شده بدون کلید عمومی ساخته شده. | بی‌ضرر؛ بعد از این آپدیت، بعدی با امضا چک می‌شود. |
+| `the installed panel cannot check signatures; the checksum is what was verified` (warning) | پنل نصب‌شده بدون کلید عمومی ساخته شده. | بی‌ضرر؛ بعد از این به‌روزرسانی، بعدی با امضا چک می‌شود. |
 | `the panel did not come back — see: journalctl -u wui -n 50 --no-pager` |  | پیام‌های *استارت پنل*. |
 
 ## منوی `w-ui`
@@ -374,8 +374,8 @@ description: "هر پیامی که پنل، نصاب، اسکریپت آپدیت
 | `Certificate installation failed, script exiting...` / `Installing certificate failed, exiting.` / `Certificate files not found after installation` / `Error: Certificate or private key file not found for …` | فایل‌ها در `/etc/wui/certs/<name>/` ننشستند. | مجوزها؛ گزینه را دوباره اجرا کن. |
 | `Failed to install acme.sh` / `Install acme failed, please check logs.` / `Installation of acme.sh failed.` / `install socat failed, please check logs` |  | شبکه؛ `curl https://get.acme.sh` دستی. |
 | `Auto renew failed, certificate details:` / `Auto update setup failed, script exiting...` | hook تمدید یا آپگرید acme.sh. | جزئیات چاپ‌شده زیرش. |
-| `Backup failed: …` / `backup failed: …` / `Restore failed: …` / `restore failed: …` | از `wui backup`؛ متن بعد از دونقطه پیام خود پنل است، در بخش *بک‌آپ و ریستور*. |  |
-| `The panel did not come back; see: journalctl -u … -n 50` / `the panel did not come up on …; see: …` | بعد از ریستور یا جابه‌جایی بین موتورها. | لاگ؛ وضعیت قبلی نگه داشته شده — خطی که همراهش چاپ شده می‌گوید چطور برگردی. |
+| `Backup failed: …` / `backup failed: …` / `Restore failed: …` / `restore failed: …` | از `wui backup`؛ متن بعد از دونقطه پیام خود پنل است، در بخش *بکاپ و بازگردانی*. |  |
+| `The panel did not come back; see: journalctl -u … -n 50` / `the panel did not come up on …; see: …` | بعد از بازگردانی یا جابه‌جایی بین موتورها. | لاگ؛ وضعیت قبلی نگه داشته شده — خطی که همراهش چاپ شده می‌گوید چطور برگردی. |
 | `PostgreSQL is not installed` / `PostgreSQL is not set up for the panel yet; choose 1 first` / `PostgreSQL install failed` |  | اول گزینهٔ ۲۵ → ۱. |
-| `No such file` | مسیر ریستور وجود ندارد. |  |
+| `No such file` | مسیر بازگردانی وجود ندارد. |  |
 | `ERROR: You must be root to run this script!` |  | `sudo w-ui`. |

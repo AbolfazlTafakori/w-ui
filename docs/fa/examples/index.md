@@ -13,6 +13,6 @@ description: "دستورالعمل‌های کوتاه برای کارهایی �
 - [خروجی WARP کلادفلر](/fa/examples/warp)
 - [مسدود کردن تبلیغ و بیت‌تورنت](/fa/examples/blocking-rules)
 - [ترافیک داخلی مستقیم، بقیه از hop](/fa/examples/split-routing)
-- [بک‌آپ به تلگرام](/fa/examples/backup-telegram)
+- [بکاپ به تلگرام](/fa/examples/backup-telegram)
 - [نصب بدون سؤال با cloud-init](/fa/examples/cloud-init)
 - [انتقال پنل به سرور دیگر](/fa/examples/move-server)
