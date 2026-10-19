@@ -6,7 +6,7 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
-## [3.0.0] — 2026-10-18
+## [3.0.0] — 2026-10-19
 
 ### Updating
 - **An update from 2.6 keeps everything as it was.** Every setting, every customer and every configuration a customer holds is kept byte for byte, and nobody is disconnected: update from the panel's own button, with `w-ui update`, or by running the installer again, as before.
