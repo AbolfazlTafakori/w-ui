@@ -31,7 +31,7 @@ Thousands of servers update unattended, with scripts, client apps and other pane
 
 - **A subscription link handed to a customer stops working** while the customer exists, unless the operator rotates it. The token, the path on the subscription port, and what a client app reads (the configuration, `Subscription-Userinfo`, `Profile-Title`) keep their shape.
 - **A setting is renamed.** A new key is added, the old one is read as a fallback, and both are carried by backups.
-- **A migration drops or renames a column, a table or an index** — except an index replaced on purpose, listed with why in `internal/database/additive_test.go`.
+- **A migration drops or renames a column, a table or an index**, except an index replaced on purpose, listed with why in `internal/database/additive_test.go`.
 - **A panel stops managing a node one minor release behind it**, or a node stops answering a panel one minor release behind.
 - **A published release tag is moved or deleted.**
 

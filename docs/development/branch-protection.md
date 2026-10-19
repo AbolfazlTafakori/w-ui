@@ -11,15 +11,15 @@ These are GitHub settings, made once in the repository's **Settings**. They are 
 **Settings → Rules → Rulesets → New branch ruleset**, target `main`:
 
 - [ ] **Restrict deletions** and **Block force pushes**.
-- [ ] **Require a pull request before merging** — one approval when there is a second maintainer; dismiss approvals when new commits are pushed.
+- [ ] **Require a pull request before merging**: one approval when there is a second maintainer; dismiss approvals when new commits are pushed.
 - [ ] **Require status checks to pass**, with **Require branches to be up to date**. The checks, by the name each CI job shows:
   - *Frontend builds and matches the committed bundle*
   - *Go vet, static analysis and tests*
   - *Installer and menu behave*
-  - *Clean install on …* — every entry of the matrix
+  - *Clean install on …*: every entry of the matrix
   - *Upgrade from every earlier release (PostgreSQL)*
-  - *Update from … by installer*, *by panel*, *by menu* — every entry
-  - *Panel and node across releases …* — every entry
+  - *Update from … by installer*, *by panel*, *by menu*: every entry
+  - *Panel and node across releases …*: every entry
 - [ ] **Require linear history**.
 - [ ] Bypass: none. The owner merges through a pull request like anyone else; a hotfix too.
 
@@ -31,7 +31,7 @@ In `.github/workflows/ci.yml`, the `dev-release` job lists what it waits for und
 
 **New tag ruleset**, target `v*`:
 
-- [ ] **Restrict creations** to the maintainers, **Restrict updates** and **Restrict deletions** — a published tag never moves.
+- [ ] **Restrict creations** to the maintainers, **Restrict updates** and **Restrict deletions**. A published tag never moves.
 
 The release workflow additionally refuses a tag whose commit CI did not pass on `main` (see the [release checklist](./release-checklist)).
 
