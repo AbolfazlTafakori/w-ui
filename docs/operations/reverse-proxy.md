@@ -1,20 +1,20 @@
 ---
-description: "Put nginx or Caddy in front of the panel : when to, and the exact server blocks that work, including the subscription path."
+description: "Putting nginx or Caddy in front of the panel: when to, and the exact server blocks that work, including the subscription path."
 ---
 
 # Reverse proxy
 
-The panel does not need one: it serves HTTPS itself on its port, for the address and the domain alike. Put a proxy in front only when you already run one for other sites and want the panel on 443 beside them.
+The panel does not need one. It serves HTTPS itself on its port, for the address and the domain alike. Put a proxy in front only when you already run one for other sites and want the panel on 443 beside them.
 
 ## Install for it
 
-Choose **4 — Skip SSL** at install and answer **yes** to binding to 127.0.0.1, or:
+At install, choose **4. Skip SSL** and answer **yes** to binding the panel to 127.0.0.1. Or install without questions:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/install.sh) --no-tls --local-only --port 2053 -y
 ```
 
-Then tell the panel which address may set forwarded headers, so sign-in throttling and "last seen from" use the customer's address rather than the proxy's:
+Then tell the panel which address may set the forwarded headers, so that sign-in throttling and "last seen from" use the customer's address rather than the proxy's:
 
 ```bash
 wui setting set --listen 127.0.0.1 --port 2053
@@ -47,7 +47,9 @@ server {
 
 `certbot --nginx -d panel.example.com` fills in the TLS half and renews it.
 
-If the panel itself already serves HTTPS (the default install), proxy to it as HTTPS instead:
+`proxy_buffering off` and the long read timeout matter: the customer's subscription page and the panel keep a stream open, and a buffering proxy holds it back.
+
+If the panel itself already serves HTTPS, as a default install does, proxy to it as HTTPS instead:
 
 ```nginx
 proxy_pass https://127.0.0.1:2053;
@@ -66,8 +68,8 @@ Caddy issues and renews the certificate itself.
 
 ## The subscription path
 
-Customers' subscription links carry the panel's public address. Behind a proxy, set Settings → Subscription → **Reverse proxy URI** to `https://panel.example.com` so the links point at the proxy, or give the subscription service its own port and proxy that too.
+Customers' subscription links carry the panel's public address. Behind a proxy, set Settings → Subscription → **Reverse Proxy URI** to `https://panel.example.com/subscribe/` so the links point at the proxy, or give the subscription service its own port and proxy that too.
 
 ## Keep the panel's own port closed
 
-With a proxy in front, nothing outside should reach the panel directly: bind to 127.0.0.1 (above) and do not open its port in the firewall. `w-ui` → 23.
+With a proxy in front, nothing outside should reach the panel directly. Bind it to 127.0.0.1, as above, and do not open its port in the firewall (`w-ui` → 23).

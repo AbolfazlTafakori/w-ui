@@ -1,10 +1,10 @@
 ---
-description: "Install without a terminal : from cloud-init, a provisioning script, or a fleet tool : and pick the result up from a file."
+description: "Install without a terminal, from cloud-init, a provisioning script or a fleet tool, and pick the result up from a file."
 ---
 
 # Unattended install with cloud-init
 
-Every question has a flag or a variable; `-y` asks nothing.
+Every question the installer asks has a flag or a variable, and `-y` asks nothing. An unattended install installs every protocol.
 
 ```yaml [cloud-config]
 #cloud-config
@@ -22,7 +22,7 @@ echo "$WUI_ACCESS_URL"   # https://203.0.113.9:2053/aBcDeFgHiJkLmNoPqR/
 echo "$WUI_API_TOKEN"    # for the first API call
 ```
 
-Variables: `WUI_DOMAIN`, `WUI_SERVER_IP`, `WUI_SSL_MODE=ip|domain|none`, `WUI_ADMIN_USER`, `WUI_ADMIN_PASSWORD`, `WUI_ENABLE_FAIL2BAN=false`. Flags: see [Install → Unattended](/guide/install#unattended-installs).
+Variables: `WUI_DOMAIN`, `WUI_SERVER_IP`, `WUI_SSL_MODE=ip|domain|none`, `WUI_ADMIN_USER`, `WUI_ADMIN_PASSWORD`, `WUI_ENABLE_FAIL2BAN=false`. For the flags, see [Install → Unattended](/guide/install#unattended-installs).
 
 A first API call, to prove it is up:
 

@@ -4,8 +4,8 @@ description: "A Cloudflare WARP outbound in one click, for destinations that blo
 
 # A Cloudflare WARP outbound
 
-**Outbounds → more → WARP → Create WARP account**, then **Add outbound**. The panel registers a WARP device with Cloudflare and turns it into a WireGuard outbound. **Check** it with **HTTP**: the egress country becomes Cloudflare's. **Change IP** asks Cloudflare for another address; a WARP+ key goes in **WARP / WARP+ license key**.
+**Outbounds → More → WARP → Create WARP account**, then **Add outbound**. The panel registers a WARP device with Cloudflare and turns it into a WireGuard outbound. **Check** it with **HTTP**: the egress country becomes Cloudflare's. **Change IP** asks Cloudflare for another address. A WARP+ key goes in **WARP / WARP+ license key**.
 
-Use it as the default (row menu → **Move to top**), or only for some destinations: **Routing → Routing Rules → Add rule**, **Domain** the names you need, **Outbound tag** the WARP outbound. Everything else keeps its route.
+Use it as the default (row menu → **Move to top**), or only for some destinations: **Routing → Routing Rules → Add rule**, with **Domain** set to the names you need and **Outbound tag** to the WARP outbound. Everything else keeps its route.
 
-WARP's free tier is meant for a person, not a server; for heavy use, a paid hop of your own.
+WARP's free tier is meant for a person, not a server. For heavy use, run a paid hop of your own.
