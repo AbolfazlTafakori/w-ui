@@ -3207,7 +3207,7 @@ if [[ "$LIB_ONLY" == 1 ]]; then return 0 2>/dev/null || exit 0; fi
 detect_os
 [[ "$ACTION" == install ]] || do_uninstall
 
-printf '\n  %s%sW-UI%s  %s·%s  %sWireGuard%s · %sAmneziaWG%s · %sOpenVPN%s   %s%sinstaller%s\n' "$P" "$B" "$N" "$D" "$N" "$G" "$N" "$M" "$N" "$Y" "$N" "$B" "$C" "$N"
+printf '\n  %s%sW-UI%s  %s·%s  %sWireGuard%s · %sOpenVPN%s · %sOpenConnect · IKEv2 · L2TP · PPTP%s   %s%sinstaller%s\n' "$P" "$B" "$N" "$D" "$N" "$G" "$N" "$Y" "$N" "$M" "$N" "$B" "$C" "$N"
 printf '  %s%s · kernel %s · %s%s\n' "$D" "$OS_NAME" "$KERNEL" "$ARCH" "$N"
 
 # Asked first, so the rest runs unattended.

@@ -1,1 +1,0 @@
-import{r as a,K as c}from"./index-CRD6777p.js";const i=768;function m(o=i){const e=window.matchMedia(`(max-width: ${o}px)`),n=a(e.matches),t=s=>{n.value=s.matches};return e.addEventListener("change",t),c(()=>e.removeEventListener("change",t)),n}export{m as u};

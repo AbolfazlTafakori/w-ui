@@ -7,7 +7,7 @@ description: "Installed alongside the panel. Run w-ui for the menu, or w-ui <sub
 Installed alongside the panel. Run `w-ui` for the menu, or `w-ui <subcommand>` for one thing. The menu is the classic one, number for number; what is the core there is the tunnels here.
 
 ```text
-  W-UI  ·  WireGuard · AmneziaWG · OpenVPN   v3.0.0
+  W-UI  ·  WireGuard · OpenVPN · OpenConnect · IKEv2 · L2TP · PPTP   v3.0.0
 
   ╭──────────────────────────────────────────────────────╮
   │   0  Exit                                            │

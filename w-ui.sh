@@ -78,7 +78,7 @@ banner() {
     local ver
     ver=$(panel_version)
     echo
-    echo -e "  ${brand}${bold}W-UI${plain}  ${dim}·${plain}  WireGuard · AmneziaWG · OpenVPN   ${dim}${ver}${plain}"
+    echo -e "  ${brand}${bold}W-UI${plain}  ${dim}·${plain}  WireGuard · OpenVPN · OpenConnect · IKEv2 · L2TP · PPTP   ${dim}${ver}${plain}"
 }
 
 panel_version() {

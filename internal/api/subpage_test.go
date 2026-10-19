@@ -524,3 +524,28 @@ func TestSubPageWithoutFilesHasNoCard(t *testing.T) {
 		t.Fatal("a page with no files was given a setup card")
 	}
 }
+
+// A sign-in row's label is the panel's own word, so it is swapped with the
+// page's language like every other: each row carries its key, and both
+// languages have it.
+func TestSignInRowsAreTranslated(t *testing.T) {
+	d := subPageDevice{SignIn: l2tpSignIn(devguide.Values{Protocol: "l2tp", Server: "vpn.example.com", PSK: "k", OwnPort: 4500})}
+	var b strings.Builder
+	if err := subPageTemplate.ExecuteTemplate(&b, "signIn", d); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range d.SignIn {
+		key := signInKey(r.Label)
+		if key == "" {
+			t.Fatalf("the row %q has no key", r.Label)
+		}
+		if !strings.Contains(b.String(), `data-i="`+key+`"`) {
+			t.Errorf("the row %q is drawn without its key", r.Label)
+		}
+		for _, lang := range []string{"en", "fa"} {
+			if subPageL2TPStrings[lang][key] == "" {
+				t.Errorf("%s has no words for %q", lang, key)
+			}
+		}
+	}
+}

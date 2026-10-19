@@ -410,11 +410,17 @@ var subPageL2TPStrings = map[string]map[string]string{
 	"en": {"l2tpConfig": "L2TP/IPsec sign-in", "pptpConfig": "PPTP sign-in", "ikev2Config": "IKEv2 sign-in", "ocConfig": "OpenConnect (Cisco) sign-in", "l2tpBuiltIn": "L2TP/IPsec: built in, under Settings → VPN",
 		"revealExpired": "This page has been open a while: reload it, then copy again.",
 		"revealBusy":    "Too many copies in a row: wait a minute.",
-		"revealFailed":  "Could not copy it; try again."},
+		"revealFailed":  "Could not copy it; try again.",
+		"siServer":      "Server", "siServerAddress": "Server address", "siRemoteID": "Remote ID",
+		"siOwnPort": "Port (apps with a port setting)", "siPSK": "Pre-shared key",
+		"siUsername": "Username", "siPassword": "Password"},
 	"fa": {"l2tpConfig": "ورود L2TP/IPsec", "pptpConfig": "ورود PPTP", "ikev2Config": "ورود IKEv2", "ocConfig": "ورود OpenConnect (سیسکو)", "l2tpBuiltIn": "L2TP/IPsec: داخل خود دستگاه، در تنظیمات ← VPN",
 		"revealExpired": "این صفحه مدتی باز مانده: یک بار تازه‌اش کنید و دوباره کپی کنید.",
 		"revealBusy":    "کپی‌های پشت سر هم زیاد شد: یک دقیقه صبر کنید.",
-		"revealFailed":  "کپی نشد؛ دوباره امتحان کنید."},
+		"revealFailed":  "کپی نشد؛ دوباره امتحان کنید.",
+		"siServer":      "سرور", "siServerAddress": "آدرس سرور", "siRemoteID": "Remote ID",
+		"siOwnPort": "پورت (برای اپ‌هایی که تنظیم پورت دارند)", "siPSK": "کلید مشترک (PSK)",
+		"siUsername": "نام کاربری", "siPassword": "رمز عبور"},
 }
 
 // pageStrings is the dictionary a page is given: the guides' words on a page
@@ -747,7 +753,7 @@ const guideTemplate = `{{ $icon := .CopyIcon }}{{ $ref := .Ref }}{{ if .Weak }}
 `
 
 // signInTemplate is an L2TP row's four values.
-const signInTemplate = `{{ $icon := .CopyIcon }}{{ $ref := .Ref }}<dl class="guide-fields">{{ range .SignIn }}<div class="guide-row"><dt>{{ .Label }}</dt><dd>{{ if .Secret }}<code dir="ltr" class="secret">{{ .Value }}</code><button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="{{ .Secret }}" data-i-title="copy">{{ else }}<code dir="ltr">{{ .Value }}</code><button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy">{{ end }}<span class="anticon">{{ $icon }}</span></button></dd></div>{{ end }}</dl>`
+const signInTemplate = `{{ $icon := .CopyIcon }}{{ $ref := .Ref }}<dl class="guide-fields">{{ range .SignIn }}<div class="guide-row"><dt{{ with signInKey .Label }} data-i="{{ . }}"{{ end }}>{{ .Label }}</dt><dd>{{ if .Secret }}<code dir="ltr" class="secret">{{ .Value }}</code><button class="btn sm copy" type="button" data-ref="{{ $ref }}" data-secret="{{ .Secret }}" data-i-title="copy">{{ else }}<code dir="ltr">{{ .Value }}</code><button class="btn sm copy" type="button" data-text="{{ .Value }}" data-i-title="copy">{{ end }}<span class="anticon">{{ $icon }}</span></button></dd></div>{{ end }}</dl>`
 
 // All are templates of the page's own, added before it is ever run.
 var (
@@ -878,8 +884,24 @@ func humanBytes(n uint64) string {
 }
 
 var subPageFuncs = template.FuncMap{
-	"bytes": humanBytes,
+	"bytes":     humanBytes,
+	"signInKey": signInKey,
 }
+
+// signInLabels are the sign-in rows' labels by their English, each the key
+// the page's language button swaps it by.
+var signInLabels = map[string]string{
+	"Server":                          "siServer",
+	"Server address":                  "siServerAddress",
+	"Remote ID":                       "siRemoteID",
+	"Port (apps with a port setting)": "siOwnPort",
+	"Pre-shared key":                  "siPSK",
+	"Username":                        "siUsername",
+	"Password":                        "siPassword",
+}
+
+// signInKey is a sign-in row's label key; a label with none stays as it is.
+func signInKey(label string) string { return signInLabels[label] }
 
 var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).Parse(`<!doctype html>
 <html lang="{{ .Lang }}" dir="ltr" data-lang="{{ .Lang }}" data-layout="{{ .Template }}" data-rev="{{ .Page.Rev }}">

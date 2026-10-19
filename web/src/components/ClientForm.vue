@@ -134,7 +134,7 @@ const userCount = computed(() => {
 // operator usually rotates and then reads the new login off the Links tab.
 async function rotateUser(user, protocol) {
   if (!props.client) return
-  const kind = { openvpn: 'OpenVPN', l2tp: 'L2TP', wireguard: 'WireGuard' }[protocol] || protocol
+  const kind = PROTOCOL_NAMES[protocol] || protocol
   if (!window.confirm(t('client.rotateOneConfirm', { n: user, kind }))) return
   rotating.value = true
   rotated.value = ''
@@ -251,18 +251,23 @@ function openvpnChanges() {
 }
 
 const chosen = computed(() => props.interfaces.filter((i) => form.value.interfaceIds.includes(i.id)))
-// Whether any tunnel picked is OpenVPN or L2TP: those log in with a
-// username and password, and a reseller may want to choose them rather than
-// be handed generated ones. One login per user serves both.
-const hasOpenVPN = computed(() => chosen.value.some((i) => i.protocol === 'openvpn'))
-const hasL2TP = computed(() => chosen.value.some((i) => i.protocol === 'l2tp' || i.protocol === 'ikev2' || i.protocol === 'openconnect'))
-const hasPPTP = computed(() => chosen.value.some((i) => i.protocol === 'pptp'))
-const hasLogins = computed(() => hasOpenVPN.value || hasL2TP.value)
+// The protocols of the tunnels picked. Every one but WireGuard logs in with
+// a username and password, and a reseller may want to choose them rather
+// than be handed generated ones. One login per user serves them all.
+const chosenProtocols = computed(() => new Set(chosen.value.map((i) => i.protocol)))
+const PROTOCOL_NAMES = { wireguard: 'WireGuard', openvpn: 'OpenVPN', l2tp: 'L2TP', ikev2: 'IKEv2', openconnect: 'OpenConnect', pptp: 'PPTP' }
+const hasOpenVPN = computed(() => chosenProtocols.value.has('openvpn'))
+// A sign-in typed into the device's own VPN settings, not carried in a file.
+const hasSignIn = computed(() => ['l2tp', 'ikev2', 'openconnect', 'pptp'].some((p) => chosenProtocols.value.has(p)))
+const hasLogins = computed(() => hasOpenVPN.value || hasSignIn.value)
 const loginLabel = computed(() =>
-  hasOpenVPN.value && hasL2TP.value ? t('client.loginBoth') : hasL2TP.value ? t('client.l2tpLogin') : t('client.openvpnLogin'),
+  t('client.loginFor', { protocols: LOGIN_PROTOCOLS.filter((p) => chosenProtocols.value.has(p)).map((p) => PROTOCOL_NAMES[p]).join(' / ') }),
 )
-const usernameLabel = computed(() => (hasL2TP.value ? t('client.loginUsername') : t('client.openvpnUsername')))
-const passwordLabel = computed(() => (hasL2TP.value ? t('client.loginPassword') : t('client.openvpnPassword')))
+const usernameLabel = computed(() => (hasSignIn.value ? t('client.loginUsername') : t('client.openvpnUsername')))
+const passwordLabel = computed(() => (hasSignIn.value ? t('client.loginPassword') : t('client.openvpnPassword')))
+// A user's credentials are rotated one kind of file at a time: one button
+// for each protocol the customer is on.
+const rotateProtocols = computed(() => Object.keys(PROTOCOL_NAMES).filter((p) => chosenProtocols.value.has(p)))
 
 const allChosen = computed(
   () => props.interfaces.length > 0 && form.value.interfaceIds.length === props.interfaces.length,
@@ -508,17 +513,8 @@ async function submit() {
               <label class="aform-label">{{ t('client.rotateOne') }} <HelpTip :text="t('client.rotateOneHint')" /></label>
               <div v-for="n in userCount" :key="`rot-${n}`" class="rotate-row">
                 <span class="rotate-who">{{ userCount > 1 ? t('client.userN', { n }) : t('client.thisCustomer') }}</span>
-                <button type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'wireguard')">
-                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateWireGuard') }}</span>
-                </button>
-                <button v-if="hasOpenVPN" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'openvpn')">
-                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateOpenVPN') }}</span>
-                </button>
-                <button v-if="hasL2TP" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'l2tp')">
-                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateL2TP') }}</span>
-                </button>
-                <button v-if="hasPPTP" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, 'pptp')">
-                  <AntIcon name="KeyOutlined" /><span>{{ t('client.rotateL2TP') }}</span>
+                <button v-for="p in rotateProtocols" :key="p" type="button" class="abtn small" :disabled="rotating" @click="rotateUser(n, p)">
+                  <AntIcon name="KeyOutlined" /><span>{{ PROTOCOL_NAMES[p] }}</span>
                 </button>
               </div>
               <p v-if="rotated" class="hint ok-hint">{{ rotated }}</p>
@@ -532,7 +528,7 @@ async function submit() {
                 <label class="aform-label">
                   <template v-if="openvpnRows.length > 1">{{ t('client.userN', { n: i + 1 }) }}</template>
                   <template v-else>{{ loginLabel }}</template>
-                  <HelpTip v-if="i === 0" :text="hasL2TP ? t('client.l2tpHint') : t('client.openvpnHint')" />
+                  <HelpTip v-if="i === 0" :text="hasSignIn ? t('client.l2tpHint') : t('client.openvpnHint')" />
                 </label>
                 <div class="arow16">
                   <div class="acol12">
