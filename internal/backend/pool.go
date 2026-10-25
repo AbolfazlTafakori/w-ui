@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
@@ -28,6 +29,12 @@ type Pool struct {
 
 	mu   sync.RWMutex
 	open map[uint]entry
+	// destroyed is when each deleted interface was taken down. A pass that
+	// read the interfaces just before a deletion would otherwise open the
+	// tunnel again a moment after it was removed, and the device -- which a
+	// close leaves standing, so a restart does not drop customers -- would
+	// hold its port with nothing in the database to say so.
+	destroyed map[uint]time.Time
 }
 
 type entry struct {
@@ -43,7 +50,7 @@ type entry struct {
 
 // NewPool builds an empty pool.
 func NewPool(log *slog.Logger) *Pool {
-	return &Pool{log: log, open: map[uint]entry{}}
+	return &Pool{log: log, open: map[uint]entry{}, destroyed: map[uint]time.Time{}}
 }
 
 // Get returns the driver for an interface, if one is open.
@@ -151,6 +158,7 @@ func (p *Pool) Destroy(ctx context.Context, iface *model.Interface) {
 	p.mu.Lock()
 	e, ok := p.open[iface.ID]
 	delete(p.open, iface.ID)
+	p.destroyed[iface.ID] = time.Now()
 	p.mu.Unlock()
 	if ok && e.drv != nil {
 		if d, can := e.drv.(Destroyer); can {
@@ -176,11 +184,15 @@ func (p *Pool) Sync(ctx context.Context, ifaces []model.Interface) {
 		if !iface.Enabled {
 			continue
 		}
-		want[iface.ID] = true
 
 		p.mu.RLock()
 		e, have := p.open[iface.ID]
+		gone, wasDestroyed := p.destroyed[iface.ID]
 		p.mu.RUnlock()
+		if wasDestroyed && !iface.CreatedAt.After(gone) {
+			continue // deleted since this list was read
+		}
+		want[iface.ID] = true
 
 		if have && e.drv != nil && e.fp == fingerprint(&iface) {
 			// Unchanged -- but "unchanged" is not the same as "working". An
@@ -198,6 +210,13 @@ func (p *Pool) Sync(ctx context.Context, ifaces []model.Interface) {
 	}
 
 	// Anything no longer wanted.
+	p.mu.Lock()
+	for id, at := range p.destroyed {
+		if time.Since(at) > time.Minute {
+			delete(p.destroyed, id) // no pass is that far behind
+		}
+	}
+	p.mu.Unlock()
 	p.mu.RLock()
 	var stale []uint
 	for id := range p.open {
