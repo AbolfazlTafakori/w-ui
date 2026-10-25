@@ -47,6 +47,21 @@ type NFTables struct {
 	// written; nil when that is not known and the next apply writes it
 	// whole (incremental.go).
 	state tableState
+	// applies counts incremental applies, for reading the quotas' tallies
+	// every driftEvery of them.
+	applies uint64
+}
+
+// driftEvery is how many applies apart the quotas' tallies are read for
+// drift: about half a minute at the two-second tick.
+const driftEvery = 15
+
+// quotasIf reads the quotas' tallies when asked to, and nothing otherwise.
+func (n *NFTables) quotasIf(read bool) ([]namedValue, error) {
+	if !read {
+		return nil, nil
+	}
+	return n.objects(nftObjectQuota, false)
 }
 
 // probeCaps finds out what this kernel supports, once.
@@ -132,8 +147,18 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 		// What each quota has used, for the ones whose tally has drifted
 		// from the stored usage; nil when it cannot be read, and then only
 		// a limit that changed or usage that went down writes one again.
+		// Read every driftEvery applies, not every one: drift is usage on
+		// other servers or an operator's edit, which a quota may trail by
+		// half a minute, while a renewal -- which may not wait -- is seen
+		// in the stored usage alone.
 		var kernelUsed map[string]uint64
-		if objs, err := n.objects(nftObjectQuota, false); err == nil {
+		n.mu.Lock()
+		n.applies++
+		readDrift := n.applies%driftEvery == 0
+		n.mu.Unlock()
+		// Not read, nothing is compared: changeScript then reseeds only on
+		// a changed limit or a fall in stored usage.
+		if objs, err := n.quotasIf(readDrift); err == nil && readDrift {
 			kernelUsed = make(map[string]uint64, len(objs))
 			for _, o := range objs {
 				kernelUsed[o.name] = o.value
