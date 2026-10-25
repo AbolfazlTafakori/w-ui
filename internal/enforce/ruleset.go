@@ -269,6 +269,18 @@ func ownedFiles(sorted []Rule) map[string][]File {
 func writeClientChain(b *strings.Builder, r Rule, files []File, caps Caps, chain, side string,
 	counter func(key string, account uint) string) {
 	fmt.Fprintf(b, "\tchain %s {\n", chain)
+	for _, line := range chainRules(r, files, caps, side, counter) {
+		fmt.Fprintf(b, "\t\t%s\n", line)
+	}
+	b.WriteString("\t}\n")
+}
+
+// chainRules is the rules of one customer's chain for one direction, in
+// order, as nft takes them: what writeClientChain writes inside the chain,
+// and what an incremental update adds to it one rule at a time.
+func chainRules(r Rule, files []File, caps Caps, side string,
+	counter func(key string, account uint) string) []string {
+	var out []string
 
 	// Stamp the packet with its traffic class before anything else. HTB
 	// reads this stamp directly, so a rate limit needs no tc filter and the
@@ -277,14 +289,14 @@ func writeClientChain(b *strings.Builder, r Rule, files []File, caps Caps, chain
 	// about to be dropped and needs no class.
 	if !r.Blocked && r.RateBitsPerSec > 0 {
 		if minor, err := shaper.Minor(r.Key); err == nil {
-			fmt.Fprintf(b, "\t\tmeta priority set %s\n", shaper.ClassID(minor))
+			out = append(out, "meta priority set "+shaper.ClassID(minor))
 		}
 	}
 
 	switch {
 	case r.Blocked:
 		// An admin switched this client off: nothing else needs evaluating.
-		b.WriteString("\t\tdrop\n")
+		out = append(out, "drop")
 	default:
 		// Order matters. `drop` ends rule evaluation, so once the quota is
 		// over the counters below are never reached and dropped bytes are not
@@ -292,13 +304,13 @@ func writeClientChain(b *strings.Builder, r Rule, files []File, caps Caps, chain
 		// counted, and the reconciler cuts them off once the stored total
 		// crosses the limit — a tick late instead of a packet late.
 		if caps.Quota && !r.Unlimited() {
-			fmt.Fprintf(b, "\t\tquota name \"%s\" drop\n", quotaName(r.Key))
+			out = append(out, fmt.Sprintf("quota name \"%s\" drop", quotaName(r.Key)))
 		}
 		for _, f := range files {
-			fmt.Fprintf(b, "\t\tip %s %s counter name \"%s\"\n", side, f.Addr, counter(r.Key, f.Account))
+			out = append(out, fmt.Sprintf("ip %s %s counter name \"%s\"", side, f.Addr, counter(r.Key, f.Account)))
 		}
 	}
-	b.WriteString("\t}\n")
+	return out
 }
 
 // mapElements renders the address-to-chain entries for both directions.

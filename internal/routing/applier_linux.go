@@ -217,7 +217,10 @@ func (a *Applier) applyNAT(ctx context.Context, p Policy) error {
 // saying yes when it cannot tell: a failed look is no reason to rewrite the
 // rules every tick.
 func (a *Applier) hasTable(ctx context.Context, family, name string) bool {
-	out, err := a.runNFT(ctx, "", "list", "tables")
+	out, err := nftstate.ListTables()
+	if err != nil {
+		out, err = a.runNFT(ctx, "", "list", "tables")
+	}
 	if err != nil {
 		return true
 	}

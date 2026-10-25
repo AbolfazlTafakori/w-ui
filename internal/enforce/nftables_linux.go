@@ -41,6 +41,12 @@ type NFTables struct {
 	lastErr     error
 	caps        Caps
 	probed      bool
+	// netlinkSaid is that reading over netlink failed and was said once.
+	netlinkSaid bool
+	// state is what the table holds, customer by customer, as last
+	// written; nil when that is not known and the next apply writes it
+	// whole (incremental.go).
+	state tableState
 }
 
 // probeCaps finds out what this kernel supports, once.
@@ -94,41 +100,77 @@ func NewNFTables(log *slog.Logger) *NFTables {
 
 // Apply makes the kernel match rules exactly.
 //
-// The generated program is compared with the last one written and skipped when
-// identical, so a steady server does not reload its firewall every two seconds.
+// The first time, and whenever the table is gone or what was last written
+// is no longer known, it writes the whole table. Every other time it changes
+// only what differs from what it wrote (incremental.go): a steady server
+// sends the kernel nothing, and a customer's traffic is never a change.
 func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
-	script, err := BuildRulesetWithCaps(rules, n.probeCaps(ctx))
+	caps := n.probeCaps(ctx)
+	want, err := desiredState(rules, caps)
 	if err != nil {
 		return err
 	}
 
 	n.mu.Lock()
-	unchanged := script == n.applied
-	// Not n.applied: any failed nft call clears that, the counter drain
+	have := n.state
+	// Not the state: any failed nft call clears that, the counter drain
 	// that finds the table gone included, and runs before this each tick.
 	written := n.ready
 	n.mu.Unlock()
 	present := !written || n.tablePresent(ctx)
-	if unchanged && present {
-		return nil
-	}
 	if !present {
 		// Written before and gone now: something else on this server
 		// replaced the whole ruleset. Put back at once -- every limit and
-		// every switched-off customer depends on it. Said even when the
-		// rules changed too and are written anyway: the removal is still
-		// news, and a change landing on the same tick must not hide it.
+		// every switched-off customer depends on it.
 		n.log.Warn("the panel's firewall table was removed by something else on this server; putting it back",
 			"table", "inet "+TableName,
 			"likely", "a firewall reload that flushes the whole ruleset, such as nftables.service with flush ruleset in /etc/nftables.conf")
+		have = nil
 	}
 
+	if have != nil {
+		// What each quota has used, for the ones whose tally has drifted
+		// from the stored usage; nil when it cannot be read, and then only
+		// a limit that changed or usage that went down writes one again.
+		var kernelUsed map[string]uint64
+		if objs, err := n.objects(nftObjectQuota, false); err == nil {
+			kernelUsed = make(map[string]uint64, len(objs))
+			for _, o := range objs {
+				kernelUsed[o.name] = o.value
+			}
+		}
+		script, next := changeScript(have, want, kernelUsed)
+		if script == "" {
+			n.mu.Lock()
+			n.state = next
+			n.mu.Unlock()
+			return nil
+		}
+		if _, err := n.run(ctx, script, "-f", "-"); err == nil {
+			n.mu.Lock()
+			n.state = next
+			n.appliedKeys = ruleKeys(rules)
+			n.lastErr = nil
+			n.mu.Unlock()
+			n.log.Debug("enforcement changed", "lines", strings.Count(script, "\n"))
+			return nil
+		} else {
+			// Whatever the kernel holds now, the whole table makes it right.
+			n.log.Warn("could not change the firewall table in place; writing it whole", "error", err)
+		}
+	}
+
+	script, err := BuildRulesetWithCaps(rules, caps)
+	if err != nil {
+		return err
+	}
 	if _, err := n.run(ctx, script, "-f", "-"); err != nil {
 		return fmt.Errorf("enforce: apply ruleset: %w", err)
 	}
 
 	n.mu.Lock()
 	n.applied = script
+	n.state = want
 	n.appliedKeys = ruleKeys(rules)
 	n.ready = true
 	n.lastErr = nil
@@ -142,7 +184,10 @@ func (n *NFTables) Apply(ctx context.Context, rules []Rule) error {
 // it cannot tell, it says yes: a failed look is no reason to rewrite the
 // firewall every two seconds.
 func (n *NFTables) tablePresent(ctx context.Context) bool {
-	out, err := n.run(ctx, "", "list", "tables")
+	out, err := nftstate.ListTables()
+	if err != nil {
+		out, err = n.run(ctx, "", "list", "tables")
+	}
 	if err != nil {
 		return true
 	}
@@ -161,6 +206,11 @@ func missingTable(err error) bool {
 
 // Usage reports cumulative bytes charged against each quota, without resetting.
 func (n *NFTables) Usage(ctx context.Context) ([]Usage, error) {
+	if objs, err := n.objects(nftObjectQuota, false); err == nil {
+		return usageOfQuotas(objs), nil
+	} else if errors.Is(err, errNoTable) {
+		return nil, nil
+	}
 	out, err := n.run(ctx, "", "-j", "list", "quotas", "table", "inet", TableName)
 	if missingTable(err) {
 		return nil, nil
@@ -185,6 +235,13 @@ func (n *NFTables) Usage(ctx context.Context) ([]Usage, error) {
 // bytes arriving between a read and a separate reset cannot be lost. Doing it
 // as two calls would quietly under-bill every customer under load.
 func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
+	if objs, err := n.objects(nftObjectCounter, true); err == nil {
+		usage := usageOfCounters(objs)
+		n.verify(usage)
+		return usage, nil
+	} else if errors.Is(err, errNoTable) {
+		return nil, nil
+	}
 	out, err := n.run(ctx, "", "-j", "reset", "counters", "table", "inet", TableName)
 	if missingTable(err) {
 		// Nothing counted, and nothing to invalidate: any failing nft call
@@ -201,6 +258,23 @@ func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
 	}
 	n.verify(usage)
 	return usage, nil
+}
+
+// objects reads the table's counters or quotas over netlink, saying once
+// when it cannot and the nft tool is used instead.
+func (n *NFTables) objects(objType uint32, reset bool) ([]namedValue, error) {
+	objs, err := dumpObjects(objType, reset)
+	if err != nil && !errors.Is(err, errNoTable) {
+		n.mu.Lock()
+		said := n.netlinkSaid
+		n.netlinkSaid = true
+		n.mu.Unlock()
+		if !said {
+			n.log.Warn("counters are read with the nft tool, which is slower on a large table",
+				"reason", err)
+		}
+	}
+	return objs, err
 }
 
 // verify checks the drained counters against what was last applied.
@@ -231,6 +305,7 @@ func (n *NFTables) forget(why string) {
 	n.mu.Lock()
 	had := n.applied != ""
 	n.applied = ""
+	n.state = nil
 	n.appliedKeys = nil
 	n.mu.Unlock()
 	if !had {
@@ -253,10 +328,11 @@ func (n *NFTables) ResetQuota(ctx context.Context, keys []string) error {
 			n.log.Warn("could not reset quota", "key", k, "error", err)
 		}
 	}
-	// The cached script still carries the old `used` values, so force the next
-	// apply to rewrite them rather than seeing no change and skipping.
+	// The quotas were reset under what was written, so the next apply
+	// writes the whole table, seeding them from stored usage.
 	n.mu.Lock()
 	n.applied = ""
+	n.state = nil
 	n.appliedKeys = nil
 	n.mu.Unlock()
 	return nil
@@ -326,6 +402,7 @@ func (n *NFTables) run(ctx context.Context, stdin string, args ...string) ([]byt
 		// Drop the cache so the next attempt re-applies rather than assuming
 		// the kernel still holds what we last wrote.
 		n.applied = ""
+		n.state = nil
 		n.mu.Unlock()
 
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {

@@ -47,20 +47,36 @@ func drainedUsage(raw []byte) ([]Usage, error) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("decode nft json: %w", err)
 	}
-
-	byKey := map[string]*Usage{}
-	fileAt := map[string]map[uint]int{} // key -> account -> index in Files
-	order := make([]string, 0, len(doc.Nftables))
-
+	objs := make([]namedValue, 0, len(doc.Nftables))
 	for _, e := range doc.Nftables {
 		if e.Counter == nil || e.Counter.Table != TableName {
 			continue
 		}
-		key, account, down, ok := parseCounter(e.Counter.Name)
+		objs = append(objs, namedValue{e.Counter.Name, e.Counter.Bytes})
+	}
+	return usageOfCounters(objs), nil
+}
+
+// namedValue is one of the table's objects, by name, with what it holds: a
+// counter's bytes, or what a quota has used.
+type namedValue struct {
+	name  string
+	value uint64
+}
+
+// usageOfCounters is drainedUsage's arithmetic, on counters however they
+// were read: from nft's JSON, or from the kernel over netlink.
+func usageOfCounters(objs []namedValue) []Usage {
+	byKey := map[string]*Usage{}
+	fileAt := map[string]map[uint]int{} // key -> account -> index in Files
+	order := make([]string, 0, len(objs))
+
+	for _, o := range objs {
+		key, account, down, ok := parseCounter(o.name)
 		if !ok {
 			continue // not one of ours
 		}
-		n := e.Counter.Bytes
+		n := o.value
 
 		u, seen := byKey[key]
 		if !seen {
@@ -98,7 +114,20 @@ func drainedUsage(raw []byte) ([]Usage, error) {
 	for _, k := range order {
 		out = append(out, *byKey[k])
 	}
-	return out, nil
+	return out
+}
+
+// usageOfQuotas is what each quota has used, by its key.
+func usageOfQuotas(objs []namedValue) []Usage {
+	out := make([]Usage, 0, len(objs))
+	for _, o := range objs {
+		key := strings.TrimPrefix(o.name, "q_")
+		if key == o.name || !validKey(key) {
+			continue // not one of ours
+		}
+		out = append(out, Usage{Key: key, Bytes: o.value})
+	}
+	return out
 }
 
 func parseObjects(
