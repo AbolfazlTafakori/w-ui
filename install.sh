@@ -388,9 +388,31 @@ keep_dkms_from_breaking_apt() {
     > /etc/dkms/no-autoinstall-errors
 }
 
+# drop_failed_amnezia_package takes out the AmneziaWG module package when
+# its own build failed. amneziawg-dkms builds the module in its postinst;
+# when the build fails the package stays half-configured, and apt then
+# refuses every install after it -- OpenVPN, L2TP, IKEv2, PPTP, OpenConnect,
+# and the server's own updates. Seen on Ubuntu 22.04 with kernel 5.15.0-46.
+# The userspace amneziawg-go carries the tunnels instead and needs none of it;
+# amneziawg-tools, configured on its own, stays.
+drop_failed_amnezia_package() {
+  [[ "$FAMILY" == debian ]] || return 0
+  dpkg --audit 2>/dev/null | grep -q amneziawg || return 0
+  DEBIAN_FRONTEND=noninteractive dpkg --remove --force-remove-reinstreq \
+    amneziawg amneziawg-dkms >/dev/null 2>&1 || true
+  DEBIAN_FRONTEND=noninteractive dpkg --configure -a >/dev/null 2>&1 || true
+  if dpkg --audit 2>/dev/null | grep -q amneziawg; then
+    warn "the AmneziaWG module package is still half-installed; apt may refuse other packages"
+    warn "  remove it with: dpkg --remove --force-remove-reinstreq amneziawg amneziawg-dkms"
+  else
+    ok "removed the AmneziaWG module package that did not build; apt works again"
+  fi
+}
+
 # repair_dpkg finishes what a failed run left half-configured -- a kernel
 # whose DKMS module did not build, most often -- so the installs below can
-# work. Nothing is removed.
+# work. Nothing is removed but an AmneziaWG module package that cannot build,
+# which would otherwise keep apt broken for good.
 repair_dpkg() {
   [[ "$FAMILY" == debian ]] || return 0
   [[ -z "$(dpkg --audit 2>/dev/null)" ]] && return 0
@@ -399,6 +421,11 @@ repair_dpkg() {
     keep_dkms_from_breaking_apt
   fi
   if DEBIAN_FRONTEND=noninteractive dpkg --configure -a >/tmp/wui-dpkg.log 2>&1; then
+    ok "dpkg is consistent again"
+    return 0
+  fi
+  drop_failed_amnezia_package
+  if [[ -z "$(dpkg --audit 2>/dev/null)" ]]; then
     ok "dpkg is consistent again"
   else
     warn "dpkg could not finish them; see /tmp/wui-dpkg.log"
@@ -714,6 +741,7 @@ install_amnezia() {
       keep_dkms_from_breaking_apt
       if ! pkg_install amneziawg; then
         warn "amneziawg failed to build against kernel $KERNEL"
+        drop_failed_amnezia_package
         install_amnezia_userspace
         return 0
       fi

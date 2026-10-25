@@ -258,5 +258,51 @@ missing=$(
 )
 yes_ current "$missing" "a binary that does not answer is not taken for an old one"
 
+echo
+echo "── an AmneziaWG module that does not build leaves apt working ─────────"
+# amneziawg-dkms builds the module in its postinst. When the kernel cannot
+# take it the package stays half-configured, and apt refuses every package
+# after it: OpenVPN, L2TP, IKEv2, PPTP and OpenConnect all failed so on a
+# server in Iran (Ubuntu 22.04, 5.15.0-46). dpkg here is a stand-in that
+# keeps the package half-configured until it is removed.
+broken_dpkg() { # broken_dpkg removes|stays
+  (
+    set +e
+    # shellcheck disable=SC1091
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+    FAMILY=debian
+    STATE="$WORK/dpkg-state"; : >"$STATE"
+    printf 'amneziawg-dkms half-configured\n' >"$STATE"
+    REMOVES="$1"
+    dpkg() {
+      case "$1" in
+        --audit) cat "$STATE" ;;
+        --remove) echo "$*" >>"$WORK/dpkg-calls"; [[ "$REMOVES" == removes ]] && : >"$STATE"; return 0 ;;
+        --configure) [[ -s "$STATE" ]] && return 1; return 0 ;;
+      esac
+    }
+    drop_failed_amnezia_package 2>&1
+    [[ -s "$STATE" ]] && echo "still-broken" || echo "apt-works"
+  )
+}
+: >"$WORK/dpkg-calls"
+out=$(broken_dpkg removes)
+yes_ "apt-works" "$out" "the half-installed module package is taken out"
+yes_ "--remove --force-remove-reinstreq amneziawg amneziawg-dkms" "$(cat "$WORK/dpkg-calls")" "only the AmneziaWG packages are removed"
+yes_ "apt works again" "$out" "the operator is told apt is fine"
+out=$(broken_dpkg stays)
+yes_ "still half-installed" "$out" "when it cannot be removed, the operator is told how"
+untouched=$(
+  set +e
+  # shellcheck disable=SC1091
+  WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+  FAMILY=debian
+  dpkg() { [[ "$1" == --audit ]] && printf 'someother-pkg half-configured\n'; [[ "$1" == --remove ]] && echo REMOVED; return 0; }
+  drop_failed_amnezia_package
+)
+no_ "REMOVED" "$untouched" "another package left half-configured is not removed"
+grep -q 'drop_failed_amnezia_package$' "$WORK/lib.sh" && on_fail=yes || on_fail=no
+yes_ yes "$on_fail" "a failed module install runs the clean-up before the userspace fallback"
+
 printf '\n  %d passed, %d failed\n\n' "$pass" "$fail"
 [[ "$fail" == 0 ]]

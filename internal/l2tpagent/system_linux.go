@@ -191,6 +191,24 @@ func packages(protocol, family string) []string {
 // removed -- libreswan, say, for another VPN -- stops the install instead, and
 // a service that was enabled or running before is left as it was: it is the
 // operator's, not ours to switch off.
+// unbreakDpkg clears what would keep apt from installing anything: a package
+// an earlier run left half-configured. The one seen is the AmneziaWG module
+// package, whose postinst builds the module and leaves the package
+// unconfigured when the kernel cannot take it (Ubuntu 22.04, 5.15.0-46); it
+// is removed, as the installer does, since amneziawg-go carries those
+// tunnels without it. Anything else is only asked to finish configuring.
+func (s *linuxSystem) unbreakDpkg(ctx context.Context) {
+	audit, _ := s.run(ctx, cmdTimeout, "", "dpkg", "--audit")
+	if len(bytes.TrimSpace(audit)) == 0 {
+		return
+	}
+	if bytes.Contains(audit, []byte("amneziawg")) {
+		s.log.Warn("removing the AmneziaWG module package that did not build; it keeps apt from installing anything")
+		_, _ = s.run(ctx, installTimeout, "", "dpkg", "--remove", "--force-remove-reinstreq", "amneziawg", "amneziawg-dkms")
+	}
+	_, _ = s.run(ctx, installTimeout, "", "dpkg", "--configure", "-a")
+}
+
 func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error {
 	gone := s.missing(protocol)
 	if len(gone) == 0 {
@@ -205,6 +223,7 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error
 	switch family {
 	case "debian":
 		env := append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+		s.unbreakDpkg(ctx)
 		upd := exec.CommandContext(ctx, "apt-get", "update", "-qq")
 		upd.Env = env
 		_ = upd.Run()

@@ -6,6 +6,9 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **An AmneziaWG module that does not build no longer stops every protocol after it from installing.** The module package builds the module as it installs; when the kernel could not take it (seen on Ubuntu 22.04 with kernel 5.15.0-46, on a server in Iran) the package stayed half-installed, and apt refused everything after it: OpenVPN, L2TP, IKEv2, PPTP and OpenConnect all failed, and so did the server's own updates. The installer now removes that package at once and carries AmneziaWG on amneziawg-go, as it already did; running the installer again clears a server that hit this before, and the panel's agent does the same before it installs what a new tunnel needs.
+
 ## [3.0.0] — 2026-10-19
 
 ### Updating
