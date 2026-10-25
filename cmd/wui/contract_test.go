@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/abolfazl/w-ui/internal/upgradecheck"
 )
@@ -184,7 +187,32 @@ func subscriptionAnswer(f *upgradecheck.Fetched) []byte {
 		}
 	}
 	b.WriteString("\n")
-	b.Write(f.Body)
+	if f.Header.Get("Content-Type") != "application/zip" {
+		b.Write(f.Body)
+		return b.Bytes()
+	}
+	// A zip as what is in it, a file at a time: its bytes say nothing a
+	// reader can check, and a changed line inside is then a changed line.
+	zr, err := zip.NewReader(bytes.NewReader(f.Body), int64(len(f.Body)))
+	if err != nil {
+		fmt.Fprintf(&b, "a zip that does not open: %v\n", err)
+		return b.Bytes()
+	}
+	for _, zf := range zr.File {
+		fmt.Fprintf(&b, "--- %s (%s)\n", zf.Name, zf.Modified.UTC().Format(time.RFC3339))
+		rc, err := zf.Open()
+		if err != nil {
+			fmt.Fprintf(&b, "does not open: %v\n", err)
+			continue
+		}
+		body, _ := io.ReadAll(rc)
+		rc.Close()
+		if utf8.Valid(body) {
+			b.Write(body)
+		} else {
+			fmt.Fprintf(&b, "%d bytes\n", len(body))
+		}
+	}
 	return b.Bytes()
 }
 
