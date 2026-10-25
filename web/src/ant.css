@@ -565,7 +565,11 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent-te
 /* A dialog is at most one screen tall: its head and foot stay put and the
    body scrolls, so a customer with seventeen files opens as a list to
    scroll rather than a wall past the bottom of the window. */
-.amodal { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); }
+.amodal { display: flex; flex-direction: column; max-height: calc(100dvh - 124px); }
+/* The height left is the backdrop's own padding taken off: 100px above and
+   24px below, or 24px each way for a centred dialog. Taking off less puts
+   a tall dialog's buttons below the bottom of the window. */
+.amodal-backdrop.centered .amodal { max-height: calc(100dvh - 48px); }
 .amodal-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; font-size: 14px; line-height: 22px; }
 /* A dialog's body scrolls with no bar drawn over its controls: the wheel,
    the trackpad and a thumb all still move it. */
