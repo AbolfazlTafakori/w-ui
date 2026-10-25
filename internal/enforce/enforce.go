@@ -135,6 +135,13 @@ type Enforcer interface {
 	// renewal.
 	ResetQuota(ctx context.Context, keys []string) error
 
+	// QuotaSpent says which of these keys' quotas the kernel holds spent,
+	// and so is dropping their traffic, each with what its quota has used.
+	// The packet that crosses a quota is dropped before any counter sees
+	// it, so stored usage stops just short of the limit: the kernel is what
+	// knows a customer is out.
+	QuotaSpent(ctx context.Context, keys []string) (map[string]uint64, error)
+
 	// Health reports whether the enforcement backend is usable.
 	Health(ctx context.Context) error
 

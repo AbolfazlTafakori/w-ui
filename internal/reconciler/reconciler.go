@@ -488,14 +488,20 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	// begun is not cut off for the traffic of the one that ended.
 	r.maybeRenew(ctx, now)
 
+	// A customer the kernel has cut off is out too, though their stored
+	// usage is a packet short of the limit: the packet that crossed it was
+	// dropped before any counter saw it, so stored usage never reaches the
+	// limit, and they would show as active while nothing of theirs passed.
+	spent := r.spentInKernel(ctx)
+
 	// Who is about to be cut off is read before the sweep. Afterwards the rows
 	// no longer match the condition, so there would be no way to say whose
 	// service just stopped — and "someone was cut off" is not a useful message.
 	exhaustedNames := r.namesMatching(ctx,
-		"status = ? AND quota_bytes > 0 AND used_bytes >= quota_bytes", model.StatusActive)
+		"status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR id IN ?)", model.StatusActive, spent)
 
 	res := db.Model(&model.Client{}).
-		Where("status = ? AND quota_bytes > 0 AND used_bytes >= quota_bytes", model.StatusActive).
+		Where("status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR id IN ?)", model.StatusActive, spent).
 		Update("status", model.StatusExhausted)
 	if res.Error != nil {
 		return 0, 0, res.Error
@@ -1124,3 +1130,50 @@ const defaultNodeReportEvery = 20 * time.Second
 
 // LiveClients is every customer connected right now, for the counters.
 func (r *Reconciler) LiveClients() []uint { return r.conc.liveClients(time.Now().UTC()) }
+
+// nearLimit is how close to their limit a customer's stored usage has to be
+// for the kernel to be asked whether it has cut them off: more than the
+// biggest packet the kernel counts at once, a 64 KiB offloaded one.
+const nearLimit = 64 << 10
+
+// spentInKernel is the active customers close to their limit whose quota
+// the kernel holds spent. Never nil, so it can stand in an IN list.
+//
+// Only where the kernel's tally agrees with the stored usage: a renewal or
+// a reset zeroes the stored usage a tick before the kernel's quota is
+// written again, and in between the kernel still holds the old period
+// spent. Taken at its word then, it would cut the customer off again the
+// moment they were let back in, and nothing would let them in after.
+func (r *Reconciler) spentInKernel(ctx context.Context) []uint {
+	out := []uint{0}
+	var near []struct {
+		ID         uint
+		UsedBytes  uint64
+		QuotaBytes uint64
+	}
+	if err := r.db.WithContext(ctx).Model(&model.Client{}).Select("id, used_bytes, quota_bytes").
+		Where("status = ? AND quota_bytes > 0 AND used_bytes < quota_bytes AND used_bytes + ? >= quota_bytes",
+			model.StatusActive, nearLimit).
+		Scan(&near).Error; err != nil || len(near) == 0 {
+		return out
+	}
+	keys := make([]string, 0, len(near))
+	for _, c := range near {
+		keys = append(keys, keyFromClientID(c.ID))
+	}
+	spent, err := r.enforcer.QuotaSpent(ctx, keys)
+	if err != nil {
+		r.log.Debug("could not ask the kernel which quotas are spent", "error", err)
+		return out
+	}
+	for _, c := range near {
+		// Agreeing is within one packet -- the one dropped uncounted -- and
+		// never more than half the plan, so a plan smaller than a packet's
+		// margin still tells a fresh period from a spent one.
+		agree := min(uint64(nearLimit), c.QuotaBytes/2)
+		if used, ok := spent[keyFromClientID(c.ID)]; ok && used <= c.UsedBytes+agree {
+			out = append(out, c.ID)
+		}
+	}
+	return out
+}

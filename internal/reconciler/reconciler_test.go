@@ -25,6 +25,17 @@ type fakeEnforcer struct {
 	applied []enforce.Rule
 	drain   []enforce.Usage
 	drains  int
+	spent   map[string]uint64 // quotas the kernel holds spent, with what each used
+}
+
+func (f *fakeEnforcer) QuotaSpent(_ context.Context, keys []string) (map[string]uint64, error) {
+	out := map[string]uint64{}
+	for _, k := range keys {
+		if used, ok := f.spent[k]; ok {
+			out[k] = used
+		}
+	}
+	return out, nil
 }
 
 func newFakeEnforcer() *fakeEnforcer {

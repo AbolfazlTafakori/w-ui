@@ -39,6 +39,7 @@ const (
 	nftObjectQuota   = 2
 
 	nftaCounterBytes  = 1
+	nftaQuotaBytes    = 1
 	nftaQuotaConsumed = 4
 
 	nfprotoINet = 1
@@ -144,4 +145,69 @@ func parseObject(b []byte, objType uint32) (namedValue, bool, error) {
 		}
 	}
 	return o, true, dd.Err()
+}
+
+// quotaState reads one quota: its limit and what it has used. found is
+// false when there is no such quota.
+func quotaState(name string) (limit, used uint64, found bool, err error) {
+	c, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("netlink: %w", err)
+	}
+	defer c.Close()
+	ae := netlink.NewAttributeEncoder()
+	ae.ByteOrder = binary.BigEndian
+	ae.String(nftaObjTable, TableName)
+	ae.String(nftaObjName, name)
+	ae.Uint32(nftaObjType, nftObjectQuota)
+	attrs, err := ae.Encode()
+	if err != nil {
+		return 0, 0, false, err
+	}
+	msgs, err := c.Execute(netlink.Message{
+		Header: netlink.Header{Type: netlink.HeaderType(nfnlSubsysNFTables<<8 | nftMsgGetObj), Flags: netlink.Request},
+		Data:   append([]byte{nfprotoINet, 0, 0, 0}, attrs...),
+	})
+	if err != nil {
+		if errors.Is(err, unix.ENOENT) {
+			return 0, 0, false, nil
+		}
+		return 0, 0, false, fmt.Errorf("netlink: %w", err)
+	}
+	for _, m := range msgs {
+		if len(m.Data) < 4 {
+			continue
+		}
+		ad, err := netlink.NewAttributeDecoder(m.Data[4:])
+		if err != nil {
+			return 0, 0, false, err
+		}
+		ad.ByteOrder = binary.BigEndian
+		for ad.Next() {
+			if ad.Type() != nftaObjData {
+				continue
+			}
+			dd, err := netlink.NewAttributeDecoder(ad.Bytes())
+			if err != nil {
+				return 0, 0, false, err
+			}
+			dd.ByteOrder = binary.BigEndian
+			for dd.Next() {
+				switch dd.Type() {
+				case nftaQuotaBytes:
+					limit = dd.Uint64()
+				case nftaQuotaConsumed:
+					used = dd.Uint64()
+				}
+			}
+			if err := dd.Err(); err != nil {
+				return 0, 0, false, err
+			}
+			found = true
+		}
+		if err := ad.Err(); err != nil {
+			return 0, 0, false, err
+		}
+	}
+	return limit, used, found, nil
 }

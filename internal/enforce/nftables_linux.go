@@ -341,6 +341,27 @@ func (n *NFTables) forget(why string) {
 		"consequence", "traffic between then and now was neither counted nor capped")
 }
 
+// QuotaSpent asks the kernel, quota by quota, which of these keys it holds
+// spent -- what it has used has reached its limit, and it drops their
+// traffic -- and what each has used. Asked of a few customers near their
+// limit, not of every one.
+func (n *NFTables) QuotaSpent(_ context.Context, keys []string) (map[string]uint64, error) {
+	out := map[string]uint64{}
+	for _, k := range keys {
+		if !validKey(k) {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidRule, k)
+		}
+		limit, used, found, err := quotaState(quotaName(k))
+		if err != nil {
+			return nil, err
+		}
+		if found && limit > 0 && used >= limit {
+			out[k] = used
+		}
+	}
+	return out, nil
+}
+
 // ResetQuota clears the cumulative quota for the given keys, used on renewal.
 func (n *NFTables) ResetQuota(ctx context.Context, keys []string) error {
 	for _, k := range keys {
