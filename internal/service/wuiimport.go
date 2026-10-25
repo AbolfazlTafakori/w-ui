@@ -83,8 +83,7 @@ func (s *Clients) handoverGroups(ctx context.Context, node model.Node, h handove
 	// Tunnels and customers are joined by the files between them; a group
 	// is everything reachable from one tunnel.
 	parent := map[uint]uint{}
-	var find func(uint) uint
-	find = func(x uint) uint {
+	find := func(x uint) uint {
 		for parent[x] != x {
 			parent[x] = parent[parent[x]]
 			x = parent[x]
