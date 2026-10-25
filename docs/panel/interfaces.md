@@ -131,12 +131,14 @@ The installer installs ocserv, and the panel installs it when the first tunnel i
 
 Choosing AmneziaWG opens the obfuscation values in the form, already filled in. The panel draws them for the server the tunnel is on: valid as AmneziaWG checks them, fitted to the tunnel's MTU, and unlike every other AmneziaWG tunnel on that server, with no shared identifier, no shared handshake padding and, while there are kinds left, a different packet before the handshake. They are kept small enough to cost a busy tunnel little: a few junk packets of at most 250 bytes, and data padding of at most 20. Change any of them before creating, or later with **Edit**.
 
+They are fitted to the server, too. On this server the panel reads what its way out to the internet carries (the MTU of the device its default route leaves by) and sets the tunnel's MTU to what fits it, as WireGuard's 1420 fits a 1500-byte link; the form says the number under the MTU field. On a cloud network that carries 1450 or 1400 the tunnel gets a smaller MTU, so no packet, padding included, is split on the way. Type an MTU of your own and the values are fitted to that instead. A node's link is taken to be 1500.
+
 There are two kinds of profile. **Modern (AmneziaWG 2)** has identifier ranges and a disguised packet before each handshake, which the current AmneziaWG and AmneziaVPN apps read. **Compatible (every app)** is what every AmneziaWG app has ever read, for devices that cannot be updated. A node running W-UI before 3.0 always gets a compatible one.
 
 The values:
 
 - **Jc, Jmin, Jmax:** the junk packets sent before each handshake.
-- **S1 to S4:** the padding on each message type. S2 must not be S1 + 56, and S4 has to fit the link: at most 1440 minus the MTU.
+- **S1 to S4:** the padding on each message type. S2 must not be S1 + 56, and S4 has to fit the link: at most 1440 minus the MTU on a 1500-byte link.
 - **H1 to H4:** the value each message type is marked with, above 4. Give a second value to make it a range (AmneziaWG 2.0), and each packet then carries a value of its own from it. The four must not overlap.
 - **HeaderProtectionKey:** AmneziaWG 3 header protection, a key in base64. It needs S1 to S4 of at least 12.
 - **I1 to I5:** packets sent before each handshake to look like another protocol. Pick a ready one (QUIC, a DNS query, STUN), or write your own from the tags `<b 0x…>`, `<r N>`, `<rc N>`, `<rd N>` and `<t>`, which both the kernel module and the phone apps read.

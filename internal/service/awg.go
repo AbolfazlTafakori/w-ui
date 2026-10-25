@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/linkmtu"
 )
 
 // The sizes a WireGuard message has before AmneziaWG pads it, and the most a
@@ -30,11 +31,46 @@ const (
 // awgMaxS4 is the most padding a data packet can take on a tunnel of this
 // MTU before it no longer fits a 1500-byte link and is split in two, which
 // costs every customer speed and some networks drop outright.
-func awgMaxS4(mtu int) int {
+func awgMaxS4(mtu int) int { return awgMaxS4On(mtu, linkmtu.Default) }
+
+// awgMaxS4On is awgMaxS4 on a link of this MTU.
+func awgMaxS4On(mtu, link int) int {
 	if mtu <= 0 {
 		mtu = 1420
 	}
-	return max(0, awgPacketLimit-awgDataOverhead-mtu)
+	if link <= 0 {
+		link = linkmtu.Default
+	}
+	return max(0, link-20-8-awgDataOverhead-mtu)
+}
+
+// awgMTUFor is the tunnel MTU that fits a link of this MTU with room for the
+// data padding the panel draws: what WireGuard's own 1420 is on a 1500-byte
+// link -- room for an IPv6 header, UDP and WireGuard's own -- so a customer
+// reaching the server over IPv6 is not split either.
+func awgMTUFor(link int) int {
+	if link <= 0 {
+		link = linkmtu.Default
+	}
+	return max(576, link-80)
+}
+
+// AWGDraw is a drawn profile with what it was sized for: the MTU of the
+// server's way out, and the tunnel MTU that fits it.
+type AWGDraw struct {
+	model.AWGParams
+	LinkMTU int `json:"linkMtu"`
+	MTU     int `json:"mtu"`
+}
+
+// linkMTUOf is the MTU of a server's way out: read on this one, and taken
+// as an Ethernet link's on a node, whose devices are not visible from here.
+func linkMTUOf(node *model.Node) int {
+	if node != nil && node.Kind == model.KindLocal {
+		_, mtu := linkmtu.Uplink()
+		return mtu
+	}
+	return linkmtu.Default
 }
 
 // checkAWG refuses an obfuscation profile AmneziaWG would refuse, or that
@@ -180,6 +216,33 @@ func checkSpecial(s string) error {
 	return nil
 }
 
+// specialSize is the size of the packet an I1-I5 makes, or 0 for one that
+// is not valid.
+func specialSize(s string) int {
+	if checkSpecial(s) != nil {
+		return 0
+	}
+	size, rest := 0, s
+	for {
+		start := strings.IndexByte(rest, '<')
+		if start < 0 {
+			return size
+		}
+		end := strings.IndexByte(rest[start:], '>')
+		parts := strings.Fields(rest[start+1 : start+end])
+		rest = rest[start+end+1:]
+		switch parts[0] {
+		case "b":
+			size += (len(parts[1]) - 2) / 2
+		case "t":
+			size += 4
+		default:
+			n, _ := strconv.Atoi(parts[1])
+			size += n
+		}
+	}
+}
+
 // AWGPreset is a ready I1 for the form: a packet that looks like the start
 // of a protocol networks let through.
 type AWGPreset struct {
@@ -267,6 +330,11 @@ func (s *Interfaces) awgTakenOn(ctx context.Context, nodeID, except uint) (awgTa
 // at most 20 -- and the packet before the handshake is sent once per
 // handshake, every two minutes or so per device.
 func (s *Interfaces) DrawAWG(ctx context.Context, nodeID, except uint, mtu int, level string) (model.AWGParams, error) {
+	return s.drawAWGOn(ctx, nodeID, except, mtu, linkmtu.Default, level)
+}
+
+// drawAWGOn is DrawAWG for a server whose way out carries link bytes.
+func (s *Interfaces) drawAWGOn(ctx context.Context, nodeID, except uint, mtu, link int, level string) (model.AWGParams, error) {
 	if level == "" {
 		level = AWGModern
 	}
@@ -281,7 +349,7 @@ func (s *Interfaces) DrawAWG(ctx context.Context, nodeID, except uint, mtu int, 
 		return model.AWGParams{}, err
 	}
 	for range 1000 {
-		p := drawAWG(mtu, level, taken)
+		p := drawAWG(mtu, link, level, taken)
 		if checkAWG(p, mtu) == nil {
 			return p, nil
 		}
@@ -289,25 +357,38 @@ func (s *Interfaces) DrawAWG(ctx context.Context, nodeID, except uint, mtu int, 
 	return model.AWGParams{}, fmt.Errorf("service: no AmneziaWG profile fits MTU %d beside this server's other tunnels", mtu)
 }
 
-// DrawAWGFor is DrawAWG for the form: node 0 is this server.
-func (s *Interfaces) DrawAWGFor(ctx context.Context, nodeID, except uint, mtu int, level string) (model.AWGParams, error) {
+// DrawAWGFor is DrawAWG for the form: node 0 is this server. It is sized
+// for the server's way out, and says the tunnel MTU that fits it; an mtu of
+// 0 asks for a profile for that MTU.
+func (s *Interfaces) DrawAWGFor(ctx context.Context, nodeID, except uint, mtu int, level string) (AWGDraw, error) {
 	node, err := s.resolveNode(ctx, nodeID)
 	if err != nil {
-		return model.AWGParams{}, err
+		return AWGDraw{}, err
 	}
 	if level == AWGModern && node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
 		level = AWGClassic
 	}
-	return s.DrawAWG(ctx, node.ID, except, mtu, level)
+	link := linkMTUOf(node)
+	if mtu <= 0 {
+		mtu = awgMTUFor(link)
+	}
+	p, err := s.drawAWGOn(ctx, node.ID, except, mtu, link, level)
+	if err != nil {
+		return AWGDraw{}, err
+	}
+	return AWGDraw{AWGParams: p, LinkMTU: link, MTU: awgMTUFor(link)}, nil
 }
 
-func drawAWG(mtu int, level string, taken awgTaken) model.AWGParams {
+func drawAWG(mtu, link int, level string, taken awgTaken) model.AWGParams {
 	p := NewAWGParams()
 	for taken.pads[[2]int{p.S1, p.S2}] {
 		q := NewAWGParams()
 		p.S1, p.S2 = q.S1, q.S2
 	}
-	if m := awgMaxS4(mtu); p.S4 > m {
+	// The data padding is paid on every packet, so it is what the link has
+	// room for and no more: a packet split in two on the way costs more than
+	// the padding hides.
+	if m := awgMaxS4On(mtu, link); p.S4 > m {
 		p.S4 = m
 	}
 	// A width of 2^18 to 2^22 values per identifier: wide enough that no
@@ -343,14 +424,24 @@ func drawAWG(mtu int, level string, taken awgTaken) model.AWGParams {
 	}
 	if level == AWGModern {
 		presets := AWGPresets()
-		var free []AWGPreset
+		// Only a packet the link carries whole: one split on the way is not
+		// the protocol it is dressed as.
+		var fits, free []AWGPreset
 		for _, pr := range presets {
+			if specialSize(pr.Value)+20+8 <= link {
+				fits = append(fits, pr)
+			}
+		}
+		for _, pr := range fits {
 			if !taken.specials[pr.Value] {
 				free = append(free, pr)
 			}
 		}
 		if len(free) == 0 {
-			free = presets
+			free = fits
+		}
+		if len(free) == 0 {
+			return p
 		}
 		p.I1 = free[randBetween(0, len(free)-1)].Value
 	}

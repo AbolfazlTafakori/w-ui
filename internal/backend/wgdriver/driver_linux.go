@@ -5,10 +5,12 @@ package wgdriver
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,7 +42,27 @@ type Driver struct {
 	// warned is what has been logged once already, so a warning that holds
 	// on every sync is said once and not every few seconds.
 	warned map[string]bool
+
+	// AmneziaWG only. Its device is read and written through the awg tool,
+	// a process each time, and every write hands the whole configuration
+	// to the device -- amneziawg-go reapplies all of it. Done on every tick
+	// for every tunnel, that was most of what an AmneziaWG server spent.
+	//
+	// dump is the last `awg show dump`, read for the counters; the sync in
+	// the same tick reads its peers from it instead of asking again.
+	// applied is the configuration last written, so an unchanged one is not
+	// written again: it is written when a peer differs from what the device
+	// holds -- which also catches a device that lost its peers -- or when
+	// the configuration itself changed.
+	dump    string
+	dumpAt  time.Time
+	applied [sha256.Size]byte
 }
+
+// dumpFresh is how long a dump read for the counters stands for the
+// device's peers. The counters and the sync are one tick apart at most, and
+// nothing but the sync writes the device in between.
+const dumpFresh = 3 * time.Second
 
 func (d *Driver) warnOnce(key, msg string, args ...any) {
 	d.mu.Lock()
@@ -204,8 +226,12 @@ func (d *Driver) configureDevice(ctx context.Context, iface *model.Interface) er
 	if d.amnezia {
 		// The obfuscation values are interface-wide and unknown to the
 		// WireGuard netlink API, so the whole device is configured from a file
-		// through awg instead.
-		return d.syncConfFile(ctx, iface, nil)
+		// through awg instead -- with the peers it already holds. A file
+		// without them would remove every customer from a device that was
+		// carrying them, on every restart of the panel, until the next sync
+		// put them back with fresh handshakes.
+		d.forgetApplied()
+		return d.syncConfFile(ctx, iface, d.heldPeers(ctx, iface))
 	}
 
 	key, err := wgtypes.ParseKey(iface.PrivateKey)
@@ -235,8 +261,11 @@ func (d *Driver) configureDevice(ctx context.Context, iface *model.Interface) er
 // drops all live sessions. syncconf changes only what differs, so customers who
 // were not touched keep their connection.
 func (d *Driver) syncConfFile(ctx context.Context, iface *model.Interface, peers []wgconf.Peer) error {
-	err := d.applyConf(ctx, iface, wgconf.RenderServer(iface, peers))
+	text := wgconf.RenderServer(iface, peers)
+	sum := sha256.Sum256([]byte(text))
+	err := d.applyConf(ctx, iface, text)
 	if err == nil {
+		d.markApplied(sum)
 		return nil
 	}
 	p := iface.AWG.V
@@ -249,6 +278,9 @@ func (d *Driver) syncConfFile(ctx context.Context, iface *model.Interface, peers
 		if err2 := d.applyConf(ctx, iface, wgconf.RenderServerPlain(iface, peers)); err2 == nil {
 			d.warnOnce(iface.Name+"/specials", "this server's AmneziaWG does not know I1-I5; the tunnel runs without the server sending them -- update amneziawg to have it send them too",
 				"interface", iface.Name)
+			// Marked as the full file: that is what was meant, and the
+			// device takes no more of it however often it is sent.
+			d.markApplied(sum)
 			return nil
 		}
 	}
@@ -314,6 +346,14 @@ func (d *Driver) Sync(ctx context.Context, desired []backend.DesiredAccount) (ba
 				AllowedIP:    allowedIP(a),
 			})
 		}
+		// In one order, so the same peers are the same file.
+		sort.Slice(peers, func(i, j int) bool { return peers[i].PublicKey < peers[j].PublicKey })
+		// Written only when something differs: a peer the device does not
+		// hold as wanted, or a configuration not yet written.
+		if dd.empty() && d.isApplied(sha256.Sum256([]byte(wgconf.RenderServer(iface, peers)))) {
+			d.rememberKeys(want)
+			return dd.report(unchanged), nil
+		}
 		if err := d.syncConfFile(ctx, iface, peers); err != nil {
 			return backend.SyncReport{}, err
 		}
@@ -361,7 +401,7 @@ func (d *Driver) currentPeers(ctx context.Context, iface *model.Interface, c *wg
 	out := map[string]string{}
 
 	if d.amnezia {
-		raw, err := d.output(ctx, "awg", "show", iface.Name, "dump")
+		raw, err := d.readDump(ctx, iface, true)
 		if err != nil {
 			// A freshly created interface has no peers to report; that is not a
 			// failure, it is the starting state.
@@ -449,7 +489,7 @@ func (d *Driver) Stats(ctx context.Context) ([]backend.Stat, error) {
 // statsFromDump parses `awg show <iface> dump`, the only interface AmneziaWG
 // offers for reading peer counters.
 func (d *Driver) statsFromDump(ctx context.Context, iface *model.Interface, byKey map[string]uint) ([]backend.Stat, error) {
-	raw, err := d.output(ctx, "awg", "show", iface.Name, "dump")
+	raw, err := d.readDump(ctx, iface, false)
 	if err != nil {
 		return nil, fmt.Errorf("wgdriver: awg show %s: %w", iface.Name, err)
 	}
@@ -529,6 +569,87 @@ func (d *Driver) Close() error {
 		return c.Close()
 	}
 	return nil
+}
+
+// readDump is `awg show <iface> dump`. The counters read it fresh and keep
+// it; the sync takes a kept one, once, if it is fresh enough, and asks
+// itself otherwise.
+func (d *Driver) readDump(ctx context.Context, iface *model.Interface, forSync bool) (string, error) {
+	if forSync {
+		d.mu.Lock()
+		raw, at := d.dump, d.dumpAt
+		d.dump, d.dumpAt = "", time.Time{}
+		d.mu.Unlock()
+		if raw != "" && time.Since(at) < dumpFresh {
+			return raw, nil
+		}
+	}
+	raw, err := d.output(ctx, "awg", "show", iface.Name, "dump")
+	if err != nil {
+		return "", err
+	}
+	if !forSync {
+		d.mu.Lock()
+		d.dump, d.dumpAt = raw, time.Now()
+		d.mu.Unlock()
+	}
+	return raw, nil
+}
+
+// heldPeers is what the device holds now, as peers for a configuration
+// file: key, preshared key and address, as the dump shows them.
+func (d *Driver) heldPeers(ctx context.Context, iface *model.Interface) []wgconf.Peer {
+	raw, err := d.output(ctx, "awg", "show", iface.Name, "dump")
+	if err != nil {
+		return nil
+	}
+	return peersFromDump(raw)
+}
+
+// peersFromDump reads the peers of an `awg show dump`: the first line is
+// the device; each after it is public-key, preshared-key, endpoint,
+// allowed-ips and the counters.
+func peersFromDump(raw string) []wgconf.Peer {
+	var out []wgconf.Peer
+	for i, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		if i == 0 {
+			continue
+		}
+		cols := strings.Split(line, "\t")
+		if len(cols) < 4 || cols[0] == "" {
+			continue
+		}
+		p := wgconf.Peer{PublicKey: cols[0], AllowedIP: cols[3]}
+		if cols[1] != "(none)" {
+			p.PresharedKey = cols[1]
+		}
+		if p.AllowedIP == "(none)" || p.AllowedIP == "" {
+			// A file cannot say "no address"; the sync adds it back as wanted.
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func (d *Driver) markApplied(sum [sha256.Size]byte) {
+	d.mu.Lock()
+	d.applied = sum
+	// What was read before the write no longer stands for the device.
+	d.dump, d.dumpAt = "", time.Time{}
+	d.mu.Unlock()
+}
+
+func (d *Driver) forgetApplied() {
+	d.mu.Lock()
+	d.applied = [sha256.Size]byte{}
+	d.mu.Unlock()
+}
+
+func (d *Driver) isApplied(sum [sha256.Size]byte) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.applied == sum
 }
 
 func (d *Driver) rememberKeys(want peerSet) {

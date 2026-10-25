@@ -39,6 +39,7 @@
   "interface.awgLevelNote.modern": "Identifier ranges and a disguised packet before each handshake. The current AmneziaWG and AmneziaVPN apps read it.",
   "interface.awgLevelNote.classic": "The profile every AmneziaWG app has ever read, for devices that cannot be updated.",
   "interface.awgDrawing": "Drawing the obfuscation values for this server…",
+  "interface.awgLinkMtu": "Fitted to this server: its way out carries {n} bytes, and every packet, padding included, fits whole.",
   "interface.awgSection": "AmneziaWG obfuscation",
   "interface.awgRegen": "Draw new values",
   "interface.awgRegenOn": "New values on save",

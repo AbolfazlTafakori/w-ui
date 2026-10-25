@@ -1393,7 +1393,7 @@ func (s *Interfaces) awgForNew(ctx context.Context, node *model.Node, in CreateI
 		if node.Kind != model.KindLocal && !versionAtLeast(node.Version, 3, 0) {
 			level = AWGClassic // what a panel before 3.0 can write
 		}
-		return s.DrawAWG(ctx, node.ID, 0, in.MTU, level)
+		return s.drawAWGOn(ctx, node.ID, 0, in.MTU, linkMTUOf(node), level)
 	}
 	p := normalizeAWG(*in.AWG)
 	if err := checkAWG(p, in.MTU); err != nil {

@@ -1,1 +1,0 @@
-import{a3 as i}from"./index-CYlh_Zyb.js";const r=180*1e3;async function s({reload:a=!0}={}){const n=Date.now();let e=!1,t=0;for(;Date.now()-n<r;){if(await new Promise(o=>setTimeout(o,1e3)),!await i()){e=!0,t=0;continue}if(t||(t=Date.now()),e||Date.now()-t>8e3)return a&&window.location.reload(),!0}return!1}export{s as w};

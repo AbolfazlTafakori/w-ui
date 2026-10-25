@@ -251,9 +251,10 @@ func (s *Server) routes() []Route {
 			handler: s.handleCreateInterface},
 		{Method: "GET", Path: "/api/interfaces/awg-draw", Group: "Interfaces", Auth: true,
 			Summary: "Draw an AmneziaWG obfuscation profile for a tunnel on a server, unlike its other tunnels.",
-			Note: "Query: nodeId (0 = this server), mtu, level (modern or classic), except " +
-				"(the tunnel it is for, when it exists). Nothing is stored: the form shows it, and " +
-				"it is sent back with the tunnel.",
+			Note: "Query: nodeId (0 = this server), mtu (0 = the one that fits the server), level (modern or classic), except " +
+				"(the tunnel it is for, when it exists). Sized for the server's way out: the answer carries linkMtu, " +
+				"what that link carries, and mtu, the tunnel MTU that fits it; neither is part of the profile. " +
+				"Nothing is stored: the form shows it, and it is sent back with the tunnel.",
 			handler: s.handleDrawAWG},
 		{Method: "PATCH", Path: "/api/interfaces/{id}", Group: "Interfaces", Auth: true,
 			Summary: "Change a tunnel. transport is OpenVPN only and moves every " +

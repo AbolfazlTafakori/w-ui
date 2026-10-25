@@ -158,19 +158,29 @@ const ownPort = computed(() => fixedPort.value && Number(form.value.listenPort) 
 // server or the kind of profile changes, and on asking. Shown filled in, and
 // sent back with the tunnel as the operator leaves it.
 const drawing = ref(false)
+// The MTU of the server's way out, as the draw read it; and whether the
+// operator typed an MTU of their own, which the draw then sizes for rather
+// than replacing.
+const linkMtu = ref(0)
+const mtuTouched = ref(false)
 let drawSeq = 0
 async function drawAwg(level = form.value.awgLevel) {
   const seq = ++drawSeq
   drawing.value = true
   try {
+    // A new tunnel whose MTU nobody typed asks for the one that fits the
+    // server, and takes it.
+    const fit = !editing.value && !mtuTouched.value
     const q = new URLSearchParams({
       nodeId: String(form.value.nodeId || 0),
-      mtu: String(Number(form.value.mtu) || 1420),
+      mtu: fit ? '0' : String(Number(form.value.mtu) || 1420),
       level,
       except: String(props.iface?.id || 0),
     })
-    const p = await api.get(`/api/interfaces/awg-draw?${q}`)
+    const { linkMtu: link, mtu, ...p } = await api.get(`/api/interfaces/awg-draw?${q}`)
     if (seq !== drawSeq) return
+    linkMtu.value = link || 0
+    if (fit && mtu) form.value.mtu = mtu
     form.value.awgLevel = level
     form.value.awg = p
     for (const k of Object.keys(p)) clearError(`awg.${k}`)
@@ -200,7 +210,8 @@ watch(
   () => form.value.mtu,
   (m) => {
     if (!showsAwg.value || !form.value.awg || editing.value) return
-    const room = Math.max(0, 1440 - Number(m))
+    // The link less IPv4, UDP and WireGuard's own header, less the MTU.
+    const room = Math.max(0, (linkMtu.value || 1500) - 60 - Number(m))
     if ((form.value.awg.s4 || 0) > room) drawAwg()
   },
 )
@@ -421,9 +432,10 @@ defineExpose({ showError })
               <div class="aform-item">
                 <label class="aform-label" for="if-mtu">MTU</label>
                 <label class="ainput number" :class="{ invalid: fieldName === 'mtu' }">
-                  <input id="if-mtu" v-model="form.mtu" data-field="mtu" type="number" min="576" max="9000" class="ltr" @input="clearError('mtu')" />
+                  <input id="if-mtu" v-model="form.mtu" data-field="mtu" type="number" min="576" max="9000" class="ltr" @input="clearError('mtu'); mtuTouched = true" />
                 </label>
                 <p v-if="fieldName === 'mtu'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else-if="showsAwg && linkMtu" class="aform-extra">{{ t('interface.awgLinkMtu').replace('{n}', linkMtu) }}</p>
               </div>
             </div>
             <div v-if="!isXray" class="acol12">

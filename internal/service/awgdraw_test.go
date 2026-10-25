@@ -87,10 +87,11 @@ func TestATunnelIsCreatedWithTheProfileTheFormShowed(t *testing.T) {
 	db, _ := seeded(t)
 	svc := NewInterfaces(db, ipam.NewPools(), quietLog())
 	ctx := context.Background()
-	shown, err := svc.DrawAWGFor(ctx, 0, 0, 1420, AWGModern)
+	drawn, err := svc.DrawAWGFor(ctx, 0, 0, 1420, AWGModern)
 	if err != nil {
 		t.Fatal(err)
 	}
+	shown := drawn.AWGParams
 	shown.I2 = "  <rd 8>  "
 	f, err := svc.Create(ctx, CreateInterfaceInput{Name: "awgx", Protocol: model.ProtocolWireGuard, ListenPort: 41890,
 		Subnet: "10.93.0.0/24", EndpointHost: "vpn.example.com", Mode: model.ModeAmnezia, AWG: &shown})

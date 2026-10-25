@@ -63,6 +63,9 @@ type diff struct {
 	remove []string // public keys
 }
 
+// empty reports a diff that changes nothing.
+func (d diff) empty() bool { return len(d.add) == 0 && len(d.update) == 0 && len(d.remove) == 0 }
+
 func computeDiff(want peerSet, have map[string]string) diff {
 	var d diff
 
