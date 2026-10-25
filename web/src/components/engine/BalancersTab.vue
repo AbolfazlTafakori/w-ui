@@ -15,6 +15,9 @@ const { form, inner } = useEngine()
 
 const balancers = ref([])
 const outbounds = ref([])
+// Whether the list has been read once: until it has, "no balancers" would
+// be a guess.
+const loaded = ref(false)
 const liveLoading = ref(false)
 const busy = ref(false)
 async function loadBalancers(quiet = true) {
@@ -25,6 +28,7 @@ async function loadBalancers(quiet = true) {
     /* the page still shows the rest */
   } finally {
     liveLoading.value = false
+    loaded.value = true
   }
 }
 async function loadOutbounds() {
@@ -49,7 +53,8 @@ const memberOptions = computed(() =>
     .map((o) => ({ value: o.tag, label: o.tag, tags: [{ text: t(`outbound.kind.${o.kind}`), kind: 'green' }] })),
 )
 const watched = computed(() => [...new Set(balancers.value.flatMap((b) => b.memberList || []))])
-const STRATEGY_LABELS = { random: 'Random', leastPing: 'Least Ping' }
+const STRATEGIES = ['random', 'leastPing']
+const strategyLabel = (s) => (STRATEGIES.includes(s) ? t(`eng.balancer.${s}`) : s)
 
 const balancerModal = ref(null) // { id?, tag, strategy, members, fallback, note, enabled }
 const bError = ref('')
@@ -62,12 +67,14 @@ function openEditBalancer(b) {
   balancerModal.value = { id: b.id, tag: b.tag, strategy: b.strategy, members: [...(b.memberList || [])], fallback: b.fallback || '', note: b.note || '', enabled: b.enabled }
 }
 async function submitBalancer() {
-  const m = balancerModal.value
+  const { id, ...body } = balancerModal.value
   busy.value = true
   bError.value = ''
   try {
-    if (m.id) await api.patch(`/api/balancers/${m.id}`, m)
-    else await api.post('/api/balancers', m)
+    // The id is the address, not part of the body: the API refuses a field
+    // it does not take, and refused every edit while it was sent.
+    if (id) await api.patch(`/api/balancers/${id}`, body)
+    else await api.post('/api/balancers', body)
     balancerModal.value = null
     await loadBalancers()
   } catch (e) {
@@ -107,13 +114,14 @@ async function setOverride(b, target) {
 </div></div>
 
 <template v-if="inner.balancer === 'balancers'">
-  <div v-if="!balancers.length" class="aempty">
+  <div v-if="!loaded" class="aempty"><AntIcon name="LoadingOutlined" class="spin" /></div>
+  <div v-else-if="!balancers.length" class="aempty">
     <div class="aempty-desc">{{ t('eng.emptyBalancersDesc') }}</div>
-    <button class="abtn primary" style="margin-top: 16px" @click="openAddBalancer"><AntIcon name="PlusOutlined" /><span>{{ t('eng.balancers') }}</span></button>
+    <button class="abtn primary bl-first" @click="openAddBalancer"><AntIcon name="PlusOutlined" /><span>{{ t('eng.balancer.add') }}</span></button>
   </div>
   <div v-else class="aspace-v gap-16">
     <div class="aspace">
-      <button class="abtn primary" @click="openAddBalancer"><AntIcon name="PlusOutlined" /><span>{{ t('eng.balancers') }}</span></button>
+      <button class="abtn primary" @click="openAddBalancer"><AntIcon name="PlusOutlined" /><span>{{ t('eng.balancer.add') }}</span></button>
       <button class="abtn" :title="t('eng.balancerLiveRefresh')" :aria-label="t('eng.balancerLiveRefresh')" @click="loadBalancers(false)"><AntIcon name="SyncOutlined" :class="{ spin: liveLoading }" /></button>
     </div>
     <div class="atable-wrap" style="margin-top: 0">
@@ -121,16 +129,16 @@ async function setOverride(b, target) {
         <thead>
           <tr>
             <th class="center" style="width: 100px">#</th>
-            <th class="center" style="width: 160px">Tag</th>
-            <th class="center" style="width: 140px">Strategy</th>
-            <th class="center">Selector</th>
-            <th class="center" style="width: 160px">Fallback</th>
+            <th class="center" style="width: 160px">{{ t('eng.balancer.tag') }}</th>
+            <th class="center" style="width: 140px">{{ t('eng.balancer.strategy') }}</th>
+            <th class="center">{{ t('eng.balancer.selector') }}</th>
+            <th class="center" style="width: 160px">{{ t('eng.balancer.fallback') }}</th>
             <th class="center" style="width: 140px">{{ t('eng.balancerLive') }}</th>
             <th class="center" style="width: 200px">{{ t('eng.balancerOverride') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(b, i) in balancers" :key="b.id">
+          <tr v-for="(b, i) in balancers" :key="b.id" :class="{ 'bl-off': !b.enabled }">
             <td class="center">
               <div class="action-cell">
                 <span class="row-index">{{ i + 1 }}</span>
@@ -140,9 +148,9 @@ async function setOverride(b, target) {
                 </div>
               </div>
             </td>
-            <td class="center">{{ b.tag }}</td>
-            <td class="center"><span class="atag" :class="b.strategy === 'random' ? 'purple' : 'green'" style="margin: 0">{{ STRATEGY_LABELS[b.strategy] || b.strategy }}</span></td>
-            <td class="center"><span v-for="m in b.memberList" :key="m" class="atag info-large-tag">{{ m }}</span></td>
+            <td class="center ltr"><div>{{ b.tag }}</div><div v-if="b.note" class="bl-note">{{ b.note }}</div></td>
+            <td class="center"><span class="atag" :class="b.strategy === 'random' ? 'purple' : 'green'" style="margin: 0">{{ strategyLabel(b.strategy) }}</span></td>
+            <td class="center"><span v-for="m in b.memberList || []" :key="m" class="atag info-large-tag ltr">{{ m }}</span></td>
             <td class="center">{{ b.fallback || '' }}</td>
             <td class="center">
               <span v-if="!b.enabled" class="atag" style="margin: 0" :title="t('eng.balancerNotRunning')">—</span>
@@ -151,8 +159,8 @@ async function setOverride(b, target) {
             <td class="center">
               <div class="aselect small" style="width: 170px; text-align: start"><select :value="b.override || ''" :disabled="!b.enabled" @change="setOverride(b, $event.target.value)">
                 <option value="">{{ t('eng.balancerOverridePh') }}</option>
-                <option v-for="m in b.memberList" :key="m" :value="m">{{ m }}</option>
-                <option v-if="b.fallback && !b.memberList.includes(b.fallback)" :value="b.fallback">{{ b.fallback }}</option>
+                <option v-for="m in b.memberList || []" :key="m" :value="m">{{ m }}</option>
+                <option v-if="b.fallback && !(b.memberList || []).includes(b.fallback)" :value="b.fallback">{{ b.fallback }}</option>
               </select></div>
             </td>
           </tr>
@@ -163,7 +171,7 @@ async function setOverride(b, target) {
 </template>
 
 <template v-else>
-  <div v-if="!balancers.length" class="aempty"><div class="aempty-desc">{{ t('eng.observatoryEmptyHint') }}</div></div>
+  <div v-if="loaded && !balancers.length" class="aempty"><div class="aempty-desc">{{ t('eng.observatoryEmptyHint') }}</div></div>
   <div v-else class="aspace-v gap-16">
     <div class="aalert info">
       <AntIcon name="InfoCircleFilled" />
@@ -194,30 +202,34 @@ async function setOverride(b, target) {
 <div v-if="balancerModal" class="amodal-backdrop" @click.self="balancerModal = null">
   <div class="amodal" role="dialog" aria-modal="true">
     <div class="amodal-head">
-      <h2 class="amodal-title">{{ balancerModal.id ? `${t('eng.edit')} ${t('eng.balancers')} #${balancers.findIndex((x) => x.id === balancerModal.id) + 1}` : `+ ${t('eng.balancers')}` }}</h2>
+      <h2 class="amodal-title">{{ balancerModal.id ? t('eng.balancer.editTitle').replace('{tag}', balancers.find((x) => x.id === balancerModal.id)?.tag || '') : t('eng.balancer.add') }}</h2>
       <button class="amodal-close" :aria-label="t('common.close')" @click="balancerModal = null"><AntIcon name="CloseOutlined" /></button>
     </div>
     <div class="amodal-body">
-      <div class="aform-item"><label class="aform-label required">{{ t('eng.balancer.tag') }}</label><label class="ainput block"><input v-model="balancerModal.tag" class="ltr" /></label></div>
-      <div class="aform-item"><label class="aform-label">{{ t('eng.balancer.strategy') }}</label><div class="aselect"><select v-model="balancerModal.strategy"><option value="random">Random</option><option value="leastPing">Least Ping</option></select></div></div>
-      <div class="aform-item"><label class="aform-label required">{{ t('eng.balancer.selector') }}</label><MultiSelect v-model="balancerModal.members" :options="memberOptions" /></div>
+      <div class="aform-item"><label class="aform-label required" for="bl-tag">{{ t('eng.balancer.tag') }}</label><label class="ainput block"><input id="bl-tag" v-model="balancerModal.tag" class="ltr" /></label></div>
+      <div class="aform-item"><label class="aform-label" for="bl-strategy">{{ t('eng.balancer.strategy') }}</label><div class="aselect"><select id="bl-strategy" v-model="balancerModal.strategy"><option v-for="s in STRATEGIES" :key="s" :value="s">{{ strategyLabel(s) }}</option></select></div><div class="aform-extra">{{ t(`eng.balancer.${balancerModal.strategy}Help`) }}</div></div>
+      <div class="aform-item"><label class="aform-label required">{{ t('eng.balancer.selector') }}</label><MultiSelect v-model="balancerModal.members" :options="memberOptions" />
+        <div v-if="!hopTags.length" class="aform-extra">{{ t('eng.balancer.noHops') }} <RouterLink to="/outbounds">{{ t('eng.balancer.toOutbounds') }}</RouterLink></div>
+      </div>
       <div class="aform-item"><label class="aform-label">{{ t('eng.balancer.fallback') }}</label><div class="aselect"><select v-model="balancerModal.fallback"><option value="">{{ t('eng.empty') }}</option><option v-for="tag in hopTags" :key="tag" :value="tag">{{ tag }}</option></select></div></div>
       <div v-if="balancerModal.fallback" class="aalert info">
         <AntIcon name="InfoCircleFilled" />
         <div class="aalert-body"><span class="aalert-title">{{ t('eng.balancer.fallbackInfo') }}</span></div>
       </div>
-      <p v-if="bError" class="json-error">{{ bError }}</p>
+      <div class="aform-item"><label class="aform-label" for="bl-note">{{ t('eng.balancer.note') }}</label><label class="ainput block"><input id="bl-note" v-model="balancerModal.note" maxlength="256" /></label></div>
+      <div class="aform-item bl-enabled"><Toggle v-model="balancerModal.enabled" :label="t('eng.balancer.enabled')" /><span>{{ t('eng.balancer.enabled') }}</span></div>
+      <p v-if="bError" class="json-error" role="alert">{{ bError }}</p>
     </div>
     <div class="amodal-foot">
       <button class="abtn" @click="balancerModal = null">{{ t('eng.cancel') }}</button>
-      <button class="abtn primary" :disabled="busy" @click="submitBalancer">{{ t('eng.confirm') }}</button>
+      <button class="abtn primary" :disabled="busy || !balancerModal.tag.trim() || !balancerModal.members.length" @click="submitBalancer">{{ t('eng.confirm') }}</button>
     </div>
   </div>
 </div>
 
   <ConfirmDialog
     :open="!!askDelete"
-    :title="`${t('eng.delete')} ${t('eng.balancers')} #${balancers.findIndex((x) => x.id === askDelete?.id) + 1}?`"
+    :title="t('eng.balancer.deleteTitle').replace('{tag}', askDelete?.tag || '')"
     :body="t('eng.deleteBalancerBody')"
     :confirm-label="t('eng.delete')"
     :danger="true"
@@ -225,3 +237,10 @@ async function setOverride(b, target) {
     @cancel="askDelete = null"
   />
 </template>
+
+<style scoped>
+.bl-first { margin-top: 16px; }
+.bl-note { font-size: 12px; color: var(--muted); }
+.bl-off td { opacity: 0.6; }
+.bl-enabled { display: flex; align-items: center; gap: 8px; }
+</style>

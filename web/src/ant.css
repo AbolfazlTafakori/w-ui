@@ -585,7 +585,8 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent-te
 
 /* Empty */
 .aempty { margin: 32px 8px; text-align: center; color: var(--faint); font-size: 14px; line-height: 22px; }
-.aempty .anticon { display: block; margin: 0 auto 8px; font-size: 40px; opacity: 0.5; }
+/* The empty state's own icon, not one inside a button there. */
+.aempty > .anticon { display: block; margin: 0 auto 8px; font-size: 40px; opacity: 0.5; }
 
 /* Pagination: Ant's. The row sits at the end of the table, reads left to
    right in every language as theirs does (a mirrored pager puts "next" on
