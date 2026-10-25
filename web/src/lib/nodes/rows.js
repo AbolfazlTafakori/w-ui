@@ -6,7 +6,7 @@ import { t, tn } from '../store.js'
 import { bytesToGigabytes, gigabytesToBytes } from '../format.js'
 
 // A 3x-ui or Pasarguard node: a panel with users of its own to bring in.
-export const takesImport = (n) => n.kind === 'xui' || n.kind === 'pasarguard'
+export const takesImport = (n) => n.kind === 'xui' || n.kind === 'pasarguard' || n.kind === 'remote'
 
 export function totals(nodes) {
   const remote = nodes.filter((n) => n.kind !== 'local')

@@ -90,7 +90,7 @@ The strip at the top shows how many **Nodes** there are, how many are **Online**
 
 | Column | What it shows |
 |--------|---------------|
-| **Actions** | ⚡ **Check now** probes the node at once; ⤓ **Ask this node to update itself** (see [Updating a node](#updating-a-node)); for a 3x-ui or Pasarguard node, **Bring in users**; ✎ edits; 🗑 removes. |
+| **Actions** | ⚡ **Check now** probes the node at once; ⤓ **Ask this node to update itself** (see [Updating a node](#updating-a-node)); for a W-UI, 3x-ui or Pasarguard node, **Bring in users**; ✎ edits; 🗑 removes. |
 | **Enabled** | A switch. A switched-off node is not synced, and no new tunnel can be put on it. |
 | **Name** | The node's name, with its type and how its certificate is checked. This server's own row is marked as this panel. |
 | **Address** | Where it is reached. |
@@ -168,6 +168,18 @@ A 3x-ui or Pasarguard panel usually has users before it becomes a node. Right af
 - **A user switched off there by hand stays off,** here too. **A customer removed here is left there** as it was.
 - On **3x-ui**, the clients sharing one subscription ID are one customer. On **Pasarguard**, a user is one customer; its groups stay its owner's, and its links carry every inbound in them.
 - Users made there later are not taken over on their own: bring them in from the same button. Users a W-UI panel made are never offered.
+
+### From a W-UI node
+
+A W-UI panel that becomes a node usually has tunnels and customers of its own. **Bring in users** on its row lists those customers, with their traffic, expiry and tunnels, and brings them in here as this panel's customers.
+
+- **Nothing a customer holds changes.** The tunnels and customers are made here exactly as they are on that panel: the same keys, ports, addresses and passwords. Nobody is disconnected and nobody needs a new configuration.
+- **A tunnel moves with every customer on it.** Tick one customer and everyone who shares a tunnel with them comes too; the list after the import names them. A customer with a file on an Xray inbound there stays where they are, since that file cannot move with them.
+- **Their allowance, usage, expiry, device limit, groups and Telegram and Bale IDs come with them** and are this panel's from then on. The usage that came over is not counted a second time.
+- **Their subscription link is this panel's from then on.** The link that panel gave out stops being theirs, so send customers the link from here. The subscription ID comes too, unless a customer here already has it.
+- On that panel the same tunnels and customers stay, now run for this panel and closed to editing there, like every tunnel a managing panel puts on its node.
+- **Both panels must be on this version or later.** An older node answers that it cannot hand its customers over until it is updated.
+- If the node refuses or does not answer midway, nothing is left half done: what was made here is removed and the node keeps its customers. Try again.
 
 ## Making an inbound on a 3x-ui or Pasarguard node
 

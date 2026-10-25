@@ -65,7 +65,7 @@ func TestA3xuiPanelsOwnUsersAreBroughtIn(t *testing.T) {
 			}
 			var alice model.Client
 			r.db.Where("name = ?", "Alice").First(&alice)
-			if alice.QuotaBytes != 10<<30 || alice.UsedBytes != 1000 || alice.ExpiresAt == nil {
+			if alice.QuotaBytes != 10<<30 || alice.UsedBytes != 1000 || alice.ExpiresAt == nil || alice.TelegramID != 12345 {
 				t.Fatalf("alice here is %+v", alice)
 			}
 

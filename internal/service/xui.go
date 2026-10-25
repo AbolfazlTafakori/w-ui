@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/handover"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
@@ -378,6 +379,10 @@ type RemotePanels interface {
 	CreateXrayInbound(ctx context.Context, node model.Node, in XrayInboundInput) (model.XUIInbound, error)
 	// ImportCandidates reads the node's own users as customers to bring in.
 	ImportCandidates(ctx context.Context, node model.Node, tunnels []model.Interface) ([]ImportCandidate, error)
+	// Handover reads what a W-UI node has of its own (internal/handover).
+	Handover(ctx context.Context, node model.Node) (handover.Handover, error)
+	// ClaimHandover tells a W-UI node which of its rows are now this panel's.
+	ClaimHandover(ctx context.Context, node model.Node, c handover.Claim) error
 }
 
 // SetRemote gives the tunnels' service the panels used as nodes.

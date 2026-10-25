@@ -92,6 +92,7 @@ func TestAManagingPanelReachesItsNode(t *testing.T) {
 		{"POST", "/api/node/usage", ""},
 		{"POST", "/api/node/usage", `{"keep":[]}`},
 		{"POST", "/api/node/sessions", ""},
+		{"POST", "/api/node/handover", ""},
 		{"GET", "/api/nodes", ""},
 	} {
 		rec := call(h, token, c.method, c.path, c.body)
@@ -112,8 +113,10 @@ func TestAManagingPanelReachesItsNode(t *testing.T) {
 	}
 	// A sync with nothing in it is refused for what it holds -- reaching the
 	// handler is the point.
-	if rec := call(h, token, "POST", "/api/node/sync", `{}`); rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
-		t.Errorf("POST /api/node/sync with the node's token: %d %s", rec.Code, rec.Body)
+	for _, path := range []string{"/api/node/sync", "/api/node/handover/claim"} {
+		if rec := call(h, token, "POST", path, `{}`); rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+			t.Errorf("POST %s with the node's token: %d %s", path, rec.Code, rec.Body)
+		}
 	}
 }
 

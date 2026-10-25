@@ -8,8 +8,12 @@ All notable changes to W-UI are recorded here. The format follows
 
 ### Added
 - **A Bale bot, beside the Telegram one.** Bale is the Iranian messenger whose bot API is Telegram's; it is reached from inside Iran with no relay. The same bot runs there, on its own token and chats set under *Settings → Bale Bot*: the same menu, commands and customer card for administrators, the same answers for a customer, and the same notifications, periodic report and automatic backup, each on its own schedule. A customer is known to it by the new **Bale ID** on their plan, beside the Telegram ID. Messages are written in Bale's own Markdown, since it has no HTML formatting.
+- **A W-UI node's own customers can be brought in, as a 3x-ui or Pasarguard node's are.** *Bring in users* on a W-UI node's row lists the tunnels and customers that panel had of its own, and brings them in as this panel's: made here with the same keys, ports, addresses and passwords, so nothing a customer holds changes and nobody is disconnected. Their allowance, usage, expiry, device limit, groups and Telegram and Bale IDs come with them; the usage that came over is not counted twice, and their subscription link is this panel's from then on. A tunnel moves with every customer on it, and a customer with a file on an Xray inbound there stays. Both panels need this version.
 
 ### Fixed
+- **A 3x-ui user brought in keeps its Telegram ID,** so the bot here knows the customer at once.
+- **A 3x-ui user on two inbounds is brought in** when the first of them takes no customers here and the second does; before, it was offered as one that could not be.
+- **A Pasarguard user in two groups that share an inbound** lists that inbound once.
 - **An AmneziaWG module that does not build no longer stops every protocol after it from installing.** The module package builds the module as it installs; when the kernel could not take it (seen on Ubuntu 22.04 with kernel 5.15.0-46, on a server in Iran) the package stayed half-installed, and apt refused everything after it: OpenVPN, L2TP, IKEv2, PPTP and OpenConnect all failed, and so did the server's own updates. The installer now removes that package at once and carries AmneziaWG on amneziawg-go, as it already did; running the installer again clears a server that hit this before, and the panel's agent does the same before it installs what a new tunnel needs.
 
 ## [3.0.0] — 2026-10-19

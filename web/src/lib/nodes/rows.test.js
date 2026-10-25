@@ -44,7 +44,8 @@ describe('a node’s row', () => {
   it('offers an import only for a panel with users of its own', () => {
     expect(takesImport({ kind: 'xui' })).toBe(true)
     expect(takesImport({ kind: 'pasarguard' })).toBe(true)
-    expect(takesImport({ kind: 'remote' })).toBe(false)
+    expect(takesImport({ kind: 'remote' })).toBe(true)
+    expect(takesImport({ kind: 'local' })).toBe(false)
   })
 })
 

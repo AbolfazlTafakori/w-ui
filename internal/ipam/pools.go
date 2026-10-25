@@ -74,3 +74,11 @@ func (p *Pools) Len() int {
 	defer p.mu.RUnlock()
 	return len(p.by)
 }
+
+// Remove drops an interface's allocator, for a tunnel that is gone or whose
+// making was undone.
+func (p *Pools) Remove(interfaceID uint) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.by, interfaceID)
+}

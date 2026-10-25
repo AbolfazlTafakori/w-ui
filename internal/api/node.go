@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/abolfazl/w-ui/internal/fleet"
+	"github.com/abolfazl/w-ui/internal/handover"
 )
 
 // The two endpoints a panel serves when another panel is using it as a node.
@@ -111,4 +112,33 @@ func (s *Server) handleNodeHold(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"held": n})
+}
+
+// handleNodeHandover is what the managing panel reads to bring this panel's
+// own tunnels and customers in: everything it needs to make the same records,
+// keys and passwords included. The token already reaches every one of them;
+// this is them in one answer.
+func (s *Server) handleNodeHandover(w http.ResponseWriter, r *http.Request) {
+	h, err := s.nodeSync.Handover(r.Context(), s.localNodeID)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h)
+}
+
+// handleNodeHandoverClaim marks what the managing panel took over as its own.
+func (s *Server) handleNodeHandoverClaim(w http.ResponseWriter, r *http.Request) {
+	var in handover.Claim
+	if !decodeLenient(w, r, &in) {
+		return
+	}
+	if err := s.nodeSync.Claim(r.Context(), s.localNodeID, in); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if s.rec != nil {
+		s.rec.PanelSpoke()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"claimed": len(in.Tunnels)})
 }

@@ -54,6 +54,9 @@ type ImportCandidate struct {
 	DurationDays int        `json:"durationDays,omitempty"` // the clock starts on first use
 	DeviceLimit  int        `json:"deviceLimit"`
 	Inbounds     []string   `json:"inbounds"`
+	// TelegramID is the account its owner gave it there, for the bot here
+	// to know them by.
+	TelegramID int64 `json:"-"`
 	// Imported says it is a customer here already; Reason why it cannot be.
 	Imported bool         `json:"imported"`
 	Reason   string       `json:"reason,omitempty"`
@@ -75,8 +78,9 @@ type ImportResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// NodeUsers is every user a 3x-ui or Pasarguard node has, as candidates, the
-// ones already brought in marked.
+// NodeUsers is every user a W-UI, 3x-ui or Pasarguard node has of its own,
+// as candidates, the ones already brought in marked. A W-UI node's are only
+// those it still has: one brought in is this panel's on the node too.
 func (s *Clients) NodeUsers(ctx context.Context, nodeID uint) ([]ImportCandidate, error) {
 	if s.remote == nil {
 		return nil, fmt.Errorf("%w: this panel cannot read another panel's users", ErrInvalid)
@@ -86,8 +90,11 @@ func (s *Clients) NodeUsers(ctx context.Context, nodeID uint) ([]ImportCandidate
 	if err := db.First(&node, nodeID).Error; err != nil {
 		return nil, fmt.Errorf("%w: no node %d", ErrNotFound, nodeID)
 	}
+	if node.Kind == model.KindRemote {
+		return s.wuiCandidates(ctx, node)
+	}
 	if node.Kind != model.KindXUI && node.Kind != model.KindPG {
-		return nil, fmt.Errorf("%w: users are brought in only from a 3x-ui or Pasarguard node", ErrInvalid)
+		return nil, fmt.Errorf("%w: users are brought in only from a W-UI, 3x-ui or Pasarguard node", ErrInvalid)
 	}
 	var tunnels []model.Interface
 	if err := db.Where("node_id = ? AND protocol = ?", node.ID, model.ProtocolXray).Find(&tunnels).Error; err != nil {
@@ -128,6 +135,15 @@ func (s *Clients) ImportNodeUsers(ctx context.Context, nodeID uint, keys []strin
 	// each find a user not yet brought in, and bring it in twice.
 	importing.Lock()
 	defer importing.Unlock()
+	if s.remote != nil {
+		var node model.Node
+		if err := s.db.WithContext(ctx).First(&node, nodeID).Error; err != nil {
+			return nil, fmt.Errorf("%w: no node %d", ErrNotFound, nodeID)
+		}
+		if node.Kind == model.KindRemote {
+			return s.importWUI(ctx, node, keys)
+		}
+	}
 	cands, err := s.NodeUsers(ctx, nodeID)
 	if err != nil {
 		return nil, err
@@ -174,6 +190,7 @@ func importInput(c ImportCandidate) CreateInput {
 		UsedBytes:   c.UsedBytes,
 		ExpiresAt:   c.ExpiresAt,
 		DeviceLimit: c.DeviceLimit,
+		TelegramID:  c.TelegramID,
 		Enabled:     &enabled,
 		Historical:  true,
 		DeviceNames: []string{"device-1"},

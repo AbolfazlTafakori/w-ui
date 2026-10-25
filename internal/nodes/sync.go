@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -449,6 +451,15 @@ func interfaceState(iface model.Interface) fleet.NodeInterface {
 }
 
 func (s *Syncer) post(ctx context.Context, node model.Node, path string, body, into any) error {
+	return postNode(ctx, s.db, node, path, body, into)
+}
+
+// errNoEndpoint is a node that has no such endpoint: an older panel.
+var errNoEndpoint = errors.New("it has no node endpoint")
+
+// postNode calls a W-UI node's API: with its token, under the certificate
+// rules set for it, and this panel's client certificate where it asks for one.
+func postNode(ctx context.Context, db *gorm.DB, node model.Node, path string, body, into any) error {
 	var payload []byte
 	if body != nil {
 		var err error
@@ -476,7 +487,7 @@ func (s *Syncer) post(ctx context.Context, node model.Node, path string, body, i
 	if node.TLSMode == model.TLSMutual {
 		// Loaded only when a node asks for it: a panel managing nothing over
 		// mutual TLS never mints a key it will not use.
-		if id, err = EnsureIdentity(s.db); err != nil {
+		if id, err = EnsureIdentity(db); err != nil {
 			return fmt.Errorf("could not load this panel's client certificate: %w", err)
 		}
 	}
@@ -498,8 +509,15 @@ func (s *Syncer) post(ctx context.Context, node model.Node, path string, body, i
 	case resp.StatusCode == http.StatusNotFound:
 		// The likeliest cause by far, and worth naming rather than reporting a
 		// bare 404 an operator would go looking for in their own logs.
-		return fmt.Errorf("it has no node endpoint; that panel is older than this one")
+		return fmt.Errorf("%w; that panel is older than this one", errNoEndpoint)
 	case resp.StatusCode >= 300:
+		// A refusal says why; that is what the operator needs to read.
+		var refused struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&refused) == nil && refused.Error != "" {
+			return fmt.Errorf("it refused: %s", refused.Error)
+		}
 		return fmt.Errorf("it answered %s", resp.Status)
 	}
 

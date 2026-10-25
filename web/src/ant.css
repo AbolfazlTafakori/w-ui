@@ -97,7 +97,7 @@
   color: var(--accent-ink);
   box-shadow: 0 2px 0 var(--accent-ring, rgba(0, 0, 0, 0.04));
 }
-.abtn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
+.abtn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
 .abtn.danger { border-color: var(--bad); color: var(--bad); }
 .abtn.danger:hover { border-color: var(--bad); color: var(--bad); opacity: 0.8; }
 .abtn.text {

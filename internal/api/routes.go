@@ -229,6 +229,17 @@ func (s *Server) routes() []Route {
 				"their plan allows and named the newest. Its session here is ended " +
 				"and its peer kept off until then.",
 			handler: s.requireManagingPanel(s.handleNodeHold)},
+		{Method: "POST", Path: "/api/node/handover", Group: "Nodes", Auth: true,
+			Summary: "This panel's own tunnels and customers, in full, for the managing panel to bring in.",
+			Note: "Keys, passwords and plans included: the managing panel makes the same records, so " +
+				"nothing a customer holds changes. Only tunnels this panel made itself; none it was handed.",
+			handler: s.requireManagingPanel(s.handleNodeHandover)},
+		{Method: "POST", Path: "/api/node/handover/claim", Group: "Nodes", Auth: true,
+			Summary: "Mark the tunnels, customers and files the managing panel took over as managed, under its ids.",
+			Body:    `{"tunnels":[{"localId":3,"originId":41}],"clients":[{"localId":9,"originId":120,"used":1048576}],"accounts":[{"localId":15,"originId":388}]}`,
+			Note: "All of it or none: a tunnel goes with every customer on it, since the next sync " +
+				"removes whoever it does not carry. The counters handed over are taken off this panel's, so they are not charged twice.",
+			handler: s.requireManagingPanel(s.handleNodeHandoverClaim)},
 
 		// ── Interfaces ──
 		{Method: "GET", Path: "/api/interfaces", Group: "Interfaces", Auth: true,
@@ -594,12 +605,13 @@ func (s *Server) routes() []Route {
 			Summary: "The kinds of inbound a 3x-ui or Pasarguard node can be given, for its version, and which take customers.",
 			handler: s.handleNodeInboundKinds},
 		{Method: "GET", Path: "/api/nodes/{id}/users", Group: "Nodes", Auth: true, Operator: true,
-			Summary: "The users a 3x-ui or Pasarguard node has of its own, as customers that can be brought in; those already brought in are marked.",
+			Summary: "The users a W-UI, 3x-ui or Pasarguard node has of its own, as customers that can be brought in; those already brought in are marked.",
 			handler: s.handleNodeUsers},
 		{Method: "POST", Path: "/api/nodes/{id}/users/import", Group: "Nodes", Auth: true, Operator: true,
-			Summary: "Bring a 3x-ui or Pasarguard node's own users in as customers, keeping their credentials, links and subscription there.",
+			Summary: "Bring a W-UI, 3x-ui or Pasarguard node's own users in as customers, keeping their credentials and links.",
 			Body:    `{"keys":["alice","bob"]}`,
-			Note:    "No keys brings in every user not yet brought in. Each user's allowance, usage and expiry come with it and are this panel's from then; its own limits there are cleared.",
+			Note: "No keys brings in every user not yet brought in. Each user's allowance, usage and expiry come with it and are this panel's from then; its own limits there are cleared. " +
+				"From a W-UI node a tunnel comes with every customer on it, made here as it is there, and the node hands it over; every customer brought in is in the answer.",
 			handler: s.handleImportNodeUsers},
 		{Method: "POST", Path: "/api/xray/keys", Group: "Nodes", Auth: true,
 			Summary: "Draw a key for an inbound's form: reality, wireguard, shadowsocks (with method), uuid, mtproto (with domain).",

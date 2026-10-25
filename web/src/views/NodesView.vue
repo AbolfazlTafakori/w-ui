@@ -59,8 +59,9 @@ const totals = computed(() => totalsOf(nodes.value))
 async function saved(made) {
   formFor.value = null
   await load()
-  // A panel with users of its own: offered to bring them in at once.
-  if (made && takesImport(made)) importing.value = made
+  // A 3x-ui or Pasarguard panel with users of its own: offered to bring
+  // them in at once. A W-UI panel is asked when the operator chooses.
+  if (made && takesImport(made) && made.kind !== 'remote') importing.value = made
 }
 
 // Asking a node to update its own panel.

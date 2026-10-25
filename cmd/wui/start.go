@@ -369,8 +369,8 @@ func startNodes(ctx context.Context, db *gorm.DB, rec *reconciler.Reconciler, if
 	syncer.Sessions = rec.SetRemoteSessions
 	syncer.Holds = rec.Holds
 	syncer.XUIMirror = ifaces.MirrorXUI
-	ifaces.SetRemote(nodes.Remote{})
-	clients.SetRemote(nodes.Remote{})
+	ifaces.SetRemote(nodes.Remote{DB: db})
+	clients.SetRemote(nodes.Remote{DB: db})
 	rec.OnHold = syncer.PushHold
 	clients.SetLive(rec)
 	ifaces.SetLive(rec)

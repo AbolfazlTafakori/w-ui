@@ -2,7 +2,9 @@
 // The users a 3x-ui or Pasarguard node had of its own, brought in as
 // customers here: each keeps its credentials, its links and the
 // subscription its owner gave it there, and gets this panel's subscription
-// beside it. Asked for here, never done unasked.
+// beside it. A W-UI node's own tunnels and customers are made here as they
+// are and handed over to this panel, a tunnel with everyone on it. Asked
+// for here, never done unasked.
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
@@ -20,6 +22,9 @@ const busy = ref(false)
 const picked = ref(new Set())
 const results = ref(null)
 const query = ref('')
+const wui = computed(() => props.node.kind === 'remote')
+// Brought in without being picked: they share a tunnel with someone who was.
+const along = ref([])
 
 async function load() {
   loading.value = true
@@ -61,7 +66,9 @@ async function run() {
   if (!picked.value.size) return
   busy.value = true
   try {
-    results.value = await api.post(`/api/nodes/${props.node.id}/users/import`, { keys: [...picked.value] })
+    const asked = new Set(picked.value)
+    results.value = await api.post(`/api/nodes/${props.node.id}/users/import`, { keys: [...asked] })
+    along.value = results.value.filter((r) => r.clientId && !asked.has(r.key)).map((r) => r.name)
     const ok = results.value.filter((r) => r.clientId).length
     notify(L('nodeImport.done', '{n} brought in').replace('{n}', ok), ok ? 'success' : 'error')
     emit('done')
@@ -78,17 +85,18 @@ async function run() {
   <div class="amodal-backdrop" @click.self="emit('close')">
     <div class="amodal w760" role="dialog" aria-modal="true" aria-labelledby="ni-title">
       <div class="amodal-head">
-        <h2 id="ni-title" class="amodal-title">{{ L('nodeImport.title', 'Bring in its users') }} — {{ node.name }}</h2>
+        <h2 id="ni-title" class="amodal-title">{{ wui ? L('nodeImport.wuiTitle', 'Bring in its customers') : L('nodeImport.title', 'Bring in its users') }} — {{ node.name }}</h2>
         <button class="amodal-close" :aria-label="t('action.cancel')" @click="emit('close')"><AntIcon name="CloseOutlined" /></button>
       </div>
       <div class="amodal-body">
-        <div class="nf-notice"><AntIcon name="InfoCircleOutlined" /><span>{{ L('nodeImport.explain', 'Each user becomes a customer here and keeps its credentials, its links and the subscription it already has there; this panel’s subscription carries the same links. Its allowance, usage and expiry come with it and are kept here from then on; its own limits there are cleared.') }}</span></div>
+        <div class="nf-notice"><AntIcon name="InfoCircleOutlined" /><span v-if="wui">{{ L('nodeImport.wuiExplain', 'That panel’s own tunnels and customers are made here exactly as they are. A tunnel moves with every customer on it.') }}</span><span v-else>{{ L('nodeImport.explain', 'Each user becomes a customer here and keeps its credentials, its links and the subscription it already has there; this panel’s subscription carries the same links. Its allowance, usage and expiry come with it and are kept here from then on; its own limits there are cleared.') }}</span></div>
         <div class="ni-bar">
           <label class="ainput"><input v-model="query" :placeholder="t('action.search')" /></label>
           <button type="button" class="abtn" :disabled="loading" @click="load"><AntIcon name="ReloadOutlined" /><span>{{ L('nodeImport.reload', 'Read again') }}</span></button>
         </div>
         <div v-if="loading" class="ni-empty"><span class="spin"></span></div>
         <div v-else-if="error" class="ni-empty error">{{ error }}</div>
+        <div v-else-if="!users.length && wui" class="ni-empty">{{ L('nodeImport.wuiNone', 'It has no tunnels or customers of its own left.') }}</div>
         <div v-else-if="!users.length" class="ni-empty">{{ L('nodeImport.none', 'It has no users of its own. Its inbounds appear here within twenty seconds of adding it; read again then.') }}</div>
         <div v-else class="ni-list">
           <table class="atable">
@@ -98,7 +106,7 @@ async function run() {
                 <th>{{ t('client.name') }}</th>
                 <th>{{ t('client.traffic') }}</th>
                 <th>{{ L('nodeImport.expiry', 'Expiry') }}</th>
-                <th>{{ L('nodeImport.inbounds', 'Inbounds') }}</th>
+                <th>{{ wui ? L('nodeImport.tunnels', 'Tunnels') : L('nodeImport.inbounds', 'Inbounds') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -117,13 +125,14 @@ async function run() {
             </tbody>
           </table>
         </div>
+        <div v-if="along.length" class="ni-along">{{ L('nodeImport.along', 'Brought in with them, because they share a tunnel: {names}').replace('{names}', along.join(store.locale === 'fa' ? '، ' : ', ')) }}</div>
         <div v-if="results && results.some((r) => r.error)" class="ni-errors">
           <div v-for="r in results.filter((x) => x.error)" :key="r.key" class="ltr">{{ r.name }}: {{ r.error }}</div>
         </div>
       </div>
       <div class="amodal-foot">
         <button type="button" class="abtn" @click="emit('close')">{{ t('action.cancel') }}</button>
-        <button type="button" class="abtn primary" :disabled="busy || !picked.size" @click="run">
+        <button v-if="users.length" type="button" class="abtn primary" :disabled="busy || !picked.size" @click="run">
           <span v-if="busy" class="spin sm"></span>
           <template v-else><AntIcon name="ImportOutlined" /><span>{{ L('nodeImport.run', 'Bring in {n}').replace('{n}', picked.size) }}</span></template>
         </button>
@@ -144,4 +153,5 @@ async function run() {
 .ni-inb { font-size: 12px; max-width: 220px; }
 tr.muted td { opacity: .65; }
 .ni-errors { margin-top: 12px; font-size: 12px; color: var(--bad); }
+.ni-along { margin-top: 12px; font-size: 12px; color: var(--muted); }
 </style>

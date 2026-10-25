@@ -59,7 +59,7 @@ func newRig(t *testing.T, node model.Node) *rig {
 		xuiInfos.Delete(xuiInfoKey(node))
 		pgSessions.Delete(pgSessionKey(node))
 	})
-	r.clients.SetRemote(Remote{})
+	r.clients.SetRemote(Remote{DB: r.db})
 	return r
 }
 
@@ -77,8 +77,18 @@ func (r *rig) roundErr() error {
 	if err := r.db.First(&node, r.node.ID).Error; err != nil {
 		r.t.Fatal(err)
 	}
-	if node.Kind == model.KindPG {
+	switch node.Kind {
+	case model.KindPG:
 		return r.s.pgRound(r.ctx, node)
+	case model.KindRemote:
+		// A W-UI node's round reports rather than returns what went wrong.
+		r.s.one(r.ctx, node)
+		r.s.mu.Lock()
+		defer r.s.mu.Unlock()
+		if msg := r.s.lastErr[node.ID]; msg != "" {
+			return errString(msg)
+		}
+		return nil
 	}
 	return r.s.xuiRound(r.ctx, node)
 }

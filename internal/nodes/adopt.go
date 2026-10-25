@@ -2,8 +2,10 @@ package nodes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -160,6 +162,14 @@ func xuiCandidates(ctx context.Context, node model.Node, tunnels []model.Interfa
 			}
 			if i, had := seenEmail[c.Email]; had {
 				out[i].Inbounds = append(out[i].Inbounds, r.Remark)
+				// Its first inbound may be one customers cannot be put on;
+				// this one may be, and is then where it is taken over.
+				if len(out[i].Files) == 0 && ok && t.XUI.V.Customers {
+					st := stats[c.Email]
+					out[i].Files = append(out[i].Files, service.ImportFile{InterfaceID: t.ID, AdoptedAccount: service.AdoptedAccount{
+						Remote: c.Email, Secret: xuiAdoptedSecret(r.Protocol, c), Up: st.Up, Down: st.Down, On: c.Enable,
+					}})
+				}
 				continue
 			}
 			key := c.SubID
@@ -203,6 +213,9 @@ func xuiCandidates(ctx context.Context, node model.Node, tunnels []model.Interfa
 			if c.LimitIP > cand.DeviceLimit {
 				cand.DeviceLimit = c.LimitIP
 			}
+			if id := xuiTelegramID(c.TgID); id != 0 && cand.TelegramID == 0 {
+				cand.TelegramID = id
+			}
 			cand.Inbounds = append(cand.Inbounds, r.Remark)
 			if !ok || !t.XUI.V.Customers {
 				if cand.Reason == "" {
@@ -223,6 +236,17 @@ func xuiCandidates(ctx context.Context, node model.Node, tunnels []model.Interfa
 		}
 	}
 	return out, nil
+}
+
+// xuiTelegramID is a client's Telegram account as 3x-ui keeps it: a number,
+// or a number in a string, by version; anything else is none.
+func xuiTelegramID(raw json.RawMessage) int64 {
+	s := strings.Trim(strings.TrimSpace(string(raw)), `"`)
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || id <= 0 {
+		return 0
+	}
+	return id
 }
 
 func candidateOn(c service.ImportCandidate, ifaceID uint) bool {
@@ -292,8 +316,14 @@ func pgCandidates(ctx context.Context, node model.Node, tunnels []model.Interfac
 			c.DurationDays = int(math.Ceil(float64(u.OnHoldExpireDuration) / 86400))
 		}
 		var file *service.ImportFile
+		listed := map[string]bool{}
 		for _, gid := range u.GroupIDs {
 			for _, tag := range tagsOf[gid] {
+				// Two of its groups may share an inbound.
+				if listed[tag] {
+					continue
+				}
+				listed[tag] = true
 				c.Inbounds = append(c.Inbounds, tag)
 				if t, ok := tunnelOf[tag]; ok && t.XUI.V.Customers && file == nil {
 					file = &service.ImportFile{InterfaceID: t.ID, AdoptedAccount: service.AdoptedAccount{
