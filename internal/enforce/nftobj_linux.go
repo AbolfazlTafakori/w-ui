@@ -45,8 +45,8 @@ const (
 	nfprotoINet = 1
 )
 
-// errNoTable is a table that is not there, as nft says it.
-var errNoTable = errors.New("No such file or directory")
+// errNoTable is a table that is not there.
+var errNoTable = errors.New("no such table")
 
 // dumpObjects lists the table's objects of one type -- its counters, or its
 // quotas -- each with its value, and with reset zeroes each as it is read,
