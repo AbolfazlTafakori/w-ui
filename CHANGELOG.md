@@ -6,6 +6,8 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-10-26
+
 ### Added
 - **A Bale bot, beside the Telegram one.** Bale is the Iranian messenger whose bot API is Telegram's; it is reached from inside Iran with no relay. The same bot runs there, on its own token and chats set under *Settings → Bale Bot*: the same menu, commands and customer card for administrators, the same answers for a customer, and the same notifications, periodic report and automatic backup, each on its own schedule. A customer is known to it by the new **Bale ID** on their plan, beside the Telegram ID. Messages are written in Bale's own Markdown, since it has no HTML formatting.
 - **A W-UI node's own customers can be brought in, as a 3x-ui or Pasarguard node's are.** *Bring in users* on a W-UI node's row lists the tunnels and customers that panel had of its own, and brings them in as this panel's: made here with the same keys, ports, addresses and passwords, so nothing a customer holds changes and nobody is disconnected. Their allowance, usage, expiry, device limit, groups and Telegram and Bale IDs come with them; the usage that came over is not counted twice, and their subscription link is this panel's from then on. A tunnel moves with every customer on it, and a customer with a file on an Xray inbound there stays. Both panels need this version.
@@ -15,8 +17,7 @@ All notable changes to W-UI are recorded here. The format follows
 - **AmneziaWG values are fitted to the server.** The panel reads what this server's way out to the internet carries and sets the tunnel's MTU and padding to fit it, so on a cloud network with a 1450- or 1400-byte link no packet is split on the way. The form says the number under the MTU field; an MTU typed by hand is fitted to instead.
 
 ### Fixed
-
-- A deleted tunnel stays deleted. A pass of the loop that had read the tunnels just before the deletion opened it again, and its device kept the port, so a new tunnel on that port was refused.
+- **A deleted tunnel stays deleted.** A pass of the loop that had read the tunnels just before the deletion opened it again, and its device kept the port, so a new tunnel on that port was refused.
 - **A customer who runs out is shown as out.** The packet that crosses a customer's allowance is dropped by the kernel before any counter sees it, so their stored usage stopped a few bytes short of the limit and they stayed *active* -- cut off, while the panel, the bot and their reseller saw them as running. A customer near their limit whose kernel quota is spent is now marked out of data, and a reset or renewal still lets them back in at once.
 - **Every byte a customer sends is counted, on a busy server too.** Each customer's stored usage was written into the firewall table, so any customer's traffic changed the table and the panel deleted and wrote it again whole -- making every counter anew at zero. Whatever any customer sent between the last read and the rewrite was never counted: on a test server with twenty thousand customers online, about a third of all traffic. The table is now written whole once, and from then on changed a customer at a time; a customer's traffic changes nothing in it, and a change -- a customer added or removed, switched off, renewed, given another plan -- touches that customer alone, in one transaction, the others' counters untouched. On the same server, twenty thousand customers sending at once and two hundred added mid-run were counted to the byte.
 - **The panel keeps its two-second pace with many customers.** Each pass read the counters, the quotas and the tables through the nft tool, which reads the whole ruleset back first: at ten thousand customers each read took most of a second and the pass fell behind. They are now read from the kernel directly. On a two-core server the panel holds its pace at twenty thousand customers using half the CPU.
@@ -1028,7 +1029,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.7...v3.0.0
 [2.6.7]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.6...v2.6.7
 [2.6.6]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.5...v2.6.6
