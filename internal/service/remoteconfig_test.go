@@ -101,7 +101,7 @@ func TestACustomerOnANodeStillGetsThatServersConfig(t *testing.T) {
 		t.Fatalf("BundleForClient: %v", err)
 	}
 
-	body := string(b.Body)
+	body := bundleText(t, b)
 	for _, host := range []string{"vpn1.example.com", "vpn2.example.com"} {
 		if !strings.Contains(body, host) {
 			t.Errorf("the subscription is missing %s:\n%s", host, body)
@@ -152,7 +152,7 @@ func TestAnOpenDriverIsStillPreferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BundleForClient: %v", err)
 	}
-	if !strings.Contains(string(b.Body), "FROM-THE-OPEN-DRIVER") {
+	if !strings.Contains(bundleText(t, b), "FROM-THE-OPEN-DRIVER") {
 		t.Errorf("the open driver was bypassed:\n%s", b.Body)
 	}
 }
@@ -182,7 +182,7 @@ func TestAServerPastItsAllowanceLeavesTheSubscription(t *testing.T) {
 		t.Fatalf("BundleForClient: %v", err)
 	}
 
-	body := string(b.Body)
+	body := bundleText(t, b)
 	if strings.Contains(body, "vpn2.example.com") {
 		t.Errorf("a server past its allowance is still being handed out:\n%s", body)
 	}
@@ -217,7 +217,7 @@ func TestTheServerComesBackWhenItsAllowanceDoes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BundleForClient: %v", err)
 	}
-	if !strings.Contains(string(b.Body), "vpn2.example.com") {
+	if !strings.Contains(bundleText(t, b), "vpn2.example.com") {
 		t.Errorf("the server did not come back after its month rolled over:\n%s", b.Body)
 	}
 }

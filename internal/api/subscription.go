@@ -88,8 +88,16 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "nothing on this subscription is for this app; open this link in a browser for your files", http.StatusNotFound)
 			return
 		}
+		if errors.Is(err, service.ErrSeveralFiles) {
+			http.Error(w, "this subscription has several files and no links; open this link in a browser, or add ?format=zip", http.StatusNotFound)
+			return
+		}
 		if errors.Is(err, service.ErrNotFound) {
 			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, service.ErrUnknownFormat) {
+			http.Error(w, "unknown format; it is conf, base64, links or zip", http.StatusBadRequest)
 			return
 		}
 		if errors.Is(err, service.ErrInvalid) {

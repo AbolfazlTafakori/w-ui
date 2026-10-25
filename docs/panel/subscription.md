@@ -81,4 +81,17 @@ Usage and the online dot update without a reload. An app fetches the subscriptio
 
 ## Formats
 
-The same token serves apps too: `?format=conf` for a WireGuard file, `base64`, `zip` for every device at once, and the per-device, per-host download the page links to.
+The same token serves apps too. What the link answers depends on what asks:
+
+| Who asks | What they get |
+|---|---|
+| A browser | The customer's page. |
+| A proxy app (v2rayNG, Hiddify, Streisand, NekoBox and the like) | Its links, in base64: `wireguard://` for WireGuard, and the Xray links of a 3x-ui or Pasarguard node. |
+| Anything else, or `?format=conf` | The file, when the customer has one. With several, a **zip**: one file per device, since a configuration file holds one tunnel and several in one text is a file no app imports. |
+| `?format=zip` | Every file in a zip, always: the WireGuard and OpenVPN files, the instructions for L2TP, PPTP, IKEv2 and OpenConnect, and for IKEv2 the tunnel's authority and the device's certificate. |
+| `?format=base64` | The file in base64; with several, the links. |
+| `?format=links` | The links, as a proxy app gets them. |
+
+Any other format is refused with the list above. The page links to each device's file, and to each host's.
+
+Every WireGuard and AmneziaWG file is named as the apps take a tunnel's name: Latin letters, digits and `_ = + . -`, at most fifteen. A customer named in Persian gets files named after the tunnel, and a customer on several tunnels, or with several devices, gets each file named apart, so the second import is not refused as a tunnel that already exists.

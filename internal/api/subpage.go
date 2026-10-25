@@ -794,6 +794,12 @@ func (s *Server) maybeServeSubDevice(w http.ResponseWriter, r *http.Request, tok
 	if raw == "" {
 		return false
 	}
+	// A view names a device too -- an IKEv2 certificate, a sign-in value to
+	// copy -- and is the page's to answer. Taken here, every certificate a
+	// customer downloaded was their instructions instead.
+	if v := strings.ToLower(r.URL.Query().Get("view")); v != "" && v != "raw" {
+		return false
+	}
 	id, err := strconv.ParseUint(raw, 10, 64)
 	if err != nil {
 		http.NotFound(w, r)

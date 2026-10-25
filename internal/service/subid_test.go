@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -116,24 +117,39 @@ func TestEmptyMeansUnlimitedOnEditToo(t *testing.T) {
 	}
 }
 
-// A device's file is named after the customer, in their own script, and a
-// WireGuard file keeps to the fifteen characters the app allows.
+// A device's file is named after the customer, and a WireGuard file as a
+// WireGuard app takes it: ASCII letters, digits and _ = + . -, at most
+// fifteen, with what tells it from the customer's other files kept whole.
 func TestFilesAreNamedAfterTheCustomer(t *testing.T) {
 	for _, tc := range []struct {
-		client, device, base string
-		single               bool
+		client, tunnel, base string
+		parts                []string
 		want                 string
 	}{
-		{"Hossein", "device-1", "device-1.conf", true, "Hossein.conf"},
-		{"Hossein", "laptop", "laptop.conf", false, "Hossein-laptop.conf"},
-		{"Hossein", "device-1", "device-1.ovpn", true, "Hossein.ovpn"},
-		{"حسین رضایی", "device-1", "device-1.ovpn", true, "حسین-رضایی.ovpn"},
-		{"a very long customer name", "phone", "phone.conf", false, "a-very-long-cus.conf"},
-		{"a very long customer name", "phone", "phone.ovpn", false, "a-very-long-customer-name-phone.ovpn"},
-		{"\"; rm -rf /", "d", "d.conf", true, "rm--rf.conf"},
+		{"Hossein", "wg0", "device-1.conf", nil, "Hossein.conf"},
+		{"Hossein", "wg0", "laptop.conf", []string{"laptop"}, "Hossein-laptop.conf"},
+		{"Hossein", "wg0", "device-1.ovpn", nil, "Hossein.ovpn"},
+		{"حسین رضایی", "ovpn0", "device-1.ovpn", nil, "حسین-رضایی.ovpn"},
+		// Another script: named by the tunnel, which the app takes.
+		{"حسین رضایی", "awg1", "device-1.conf", nil, "awg1.conf"},
+		{"حسین رضایی", "awg1", "device-1.conf", []string{"awg1", "phone"}, "awg1-phone.conf"},
+		// Cut from the customer's name, never from what tells files apart.
+		{"a very long customer name", "wg0", "phone.conf", []string{"phone"}, "a-very-lo-phone.conf"},
+		{"l2tp-ui-test", "awg1", "x.conf", []string{"awg1"}, "l2tp-ui-te-awg1.conf"},
+		{"l2tp-ui-test", "awg2", "x.conf", []string{"awg2"}, "l2tp-ui-te-awg2.conf"},
+		{"a very long customer name", "wg0", "phone.ovpn", []string{"phone"}, "a-very-long-customer-name-phone.ovpn"},
+		{"\"; rm -rf /", "wg0", "d.conf", nil, "rm--rf.conf"},
+		{"Ali", "wg0", "d.conf", []string{"Germany 2"}, "Ali-Germany-2.conf"},
 	} {
-		if got := clientFilename(tc.client, tc.device, tc.base, tc.single); got != tc.want {
-			t.Errorf("clientFilename(%q, %q, %q, %v) = %q, want %q", tc.client, tc.device, tc.base, tc.single, got, tc.want)
+		got := deviceFilename(tc.client, tc.tunnel, tc.base, tc.parts...)
+		if got != tc.want {
+			t.Errorf("deviceFilename(%q, %q, %q, %q) = %q, want %q", tc.client, tc.tunnel, tc.base, tc.parts, got, tc.want)
+		}
+		if strings.HasSuffix(got, ".conf") {
+			name := strings.TrimSuffix(got, ".conf")
+			if len(name) > confNameMax || confName(name) != name {
+				t.Errorf("%q is not a name a WireGuard app takes", got)
+			}
 		}
 	}
 }

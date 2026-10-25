@@ -18,10 +18,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/backend/ikev2driver"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/devguide"
@@ -533,15 +535,48 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 		return nil, err
 	}
 
+	format = strings.ToLower(strings.TrimSpace(format))
+	switch format {
+	case "raw":
+		// What a link with no format gets, by another name some links carry.
+		format = ""
+	case "", "conf", "base64", "links", "zip":
+	default:
+		return nil, fmt.Errorf("%w %q: it is conf, base64, links or zip", ErrUnknownFormat, format)
+	}
+
 	rendered, err := s.renderDevicesFor(ctx, c, byID, bundleFormatName(format))
 	if err != nil {
 		return nil, err
 	}
 	parts := bundleParts(rendered, byID, format)
-	if len(parts) == 0 && strings.EqualFold(format, "links") {
+	switch {
+	case len(parts) <= 1 || format == "zip" || format == "links":
+	case format == "base64":
+		// Several files in one text are no file any app reads; what a
+		// proxy app asking for base64 reads is links.
+		if parts = linkParts(rendered, byID); len(parts) == 0 {
+			return nil, fmt.Errorf("%w: %s", ErrSeveralFiles, c.Name)
+		}
+		format = "links"
+	default:
+		// A configuration file holds one tunnel. Several written one after
+		// another are a file no WireGuard, AmneziaWG or OpenVPN app imports
+		// -- it refuses it, or takes the first and drops the rest -- so a
+		// customer with several gets them as what holds several: a zip.
+		format = "zip"
+		if rendered, err = s.renderDevicesFor(ctx, c, byID, bundleFormatName(format)); err != nil {
+			return nil, err
+		}
+		parts = bundleParts(rendered, byID, format)
+	}
+	if format == "zip" {
+		parts = append(parts, ikev2Extras(rendered, byID)...)
+	}
+	if len(parts) == 0 && format == "links" {
 		return nil, fmt.Errorf("%w: %s", ErrNoLinks, c.Name)
 	}
-	body, ctype := encodeBundle(parts, format)
+	body, ctype := encodeBundle(parts, format, filesChanged(c))
 
 	return &Bundle{
 		Body:        body,
@@ -665,7 +700,6 @@ func (s *Subscriptions) renderDevicesFor(
 		title = strings.TrimSpace(cfg.Title)
 	}
 
-	single := len(deviceNames(c.Accounts)) <= 1
 	for i := range c.Accounts {
 		acc := c.Accounts[i]
 		iface, ok := byID[acc.InterfaceID]
@@ -681,7 +715,8 @@ func (s *Subscriptions) renderDevicesFor(
 				continue
 			}
 			out = append(out, RenderedDevice{Account: acc, Profile: backend.ClientProfile{
-				Filename: clientFilename(c.Name, acc.DeviceName, endpoints.SafeFilename(iface.Name)+".txt", single),
+				Filename: deviceFilename(c.Name, iface.Name, endpoints.SafeFilename(iface.Name)+".txt",
+					fileParts(c.Accounts, acc, iface.Name, endpoints.HostVariant{})...),
 				MIMEType: "text/plain",
 				Body:     []byte(acc.XUILink),
 			}})
@@ -704,7 +739,7 @@ func (s *Subscriptions) renderDevicesFor(
 					"client", c.Name, "account", acc.ID, "error", err)
 				continue
 			}
-			profile.Filename = endpoints.VariantFilename(clientFilename(c.Name, acc.DeviceName, profile.Filename, single), v)
+			profile.Filename = deviceFilename(c.Name, iface.Name, profile.Filename, fileParts(c.Accounts, acc, iface.Name, v)...)
 			rd := RenderedDevice{Account: acc, Profile: profile, Host: v.Host}
 			if iface.Protocol.ByAgent() {
 				rd.Withheld = []byte(withheldText(&acc, &at))
@@ -1128,7 +1163,51 @@ func bundleParts(rendered []RenderedDevice, byID map[uint]model.Interface, forma
 	return importable
 }
 
-func encodeBundle(parts []backend.ClientProfile, format string) (body []byte, contentType string) {
+// ErrUnknownFormat is a format a subscription is not served in.
+var ErrUnknownFormat = fmt.Errorf("%w: unknown format", ErrInvalid)
+
+// ErrSeveralFiles is base64 asked of a customer with several files and none
+// a proxy app reads: no one text holds them.
+var ErrSeveralFiles = fmt.Errorf("%w: several files, none a link", ErrNotFound)
+
+// ikev2Extras are the files an IKEv2 device's instructions name beside
+// them: the tunnel's authority, once, and the device's certificate, which
+// opens only with its password. A zip that named them and left them out
+// was instructions for files the customer did not have.
+func ikev2Extras(rendered []RenderedDevice, byID map[uint]model.Interface) []backend.ClientProfile {
+	var out []backend.ClientProfile
+	cas := map[uint]bool{}
+	for _, d := range rendered {
+		iface, ok := byID[d.Account.InterfaceID]
+		if !ok || iface.Protocol != model.ProtocolIKEv2 {
+			continue
+		}
+		if p := iface.IKEv2.V; p.CACert != "" && !cas[iface.ID] {
+			cas[iface.ID] = true
+			out = append(out, backend.ClientProfile{Filename: ikev2driver.CAFileName(&iface), Body: []byte(p.CACert)})
+		}
+		acc := d.Account
+		if b, ok, err := ikev2driver.CertBundle(&acc, &iface); err == nil && ok {
+			out = append(out, backend.ClientProfile{Filename: ikev2driver.CertFileName(&acc), Body: b})
+		}
+	}
+	return out
+}
+
+// filesChanged is when a customer's files last changed: the newest of the
+// customer's own row and their devices'. A zip is dated with it, so it says
+// when the files were made, and is the same zip for the same files.
+func filesChanged(c *model.Client) time.Time {
+	t := c.UpdatedAt
+	for _, a := range c.Accounts {
+		if a.UpdatedAt.After(t) {
+			t = a.UpdatedAt
+		}
+	}
+	return t.UTC()
+}
+
+func encodeBundle(parts []backend.ClientProfile, format string, made time.Time) (body []byte, contentType string) {
 	switch strings.ToLower(format) {
 	case "zip":
 		// One file per device. Concatenating them, which is what every other
@@ -1137,10 +1216,9 @@ func encodeBundle(parts []backend.ClientProfile, format string) (body []byte, co
 		// a laptop was being handed a file where the second device silently did
 		// not exist. This is the only format that can carry more than one.
 		//
-		// Not the default, and not what a subscription URL should return:
-		// OpenVPN Connect and most WireGuard subscription clients fetch that URL
-		// expecting text and reject an archive outright.
-		return zipBundle(parts), "application/zip"
+		// The link's answer for a customer with several files (bundle); one
+		// file is still that file, as an app fetching the link expects.
+		return zipBundle(parts, made), "application/zip"
 	case "links":
 		// One link a line, as every proxy app reads them.
 		lines := make([]string, 0, len(parts))
@@ -1172,10 +1250,14 @@ func joinProfiles(parts []backend.ClientProfile) []byte {
 // arrive with the same filename, and a zip with two identical names is one an
 // unpacker will either refuse or silently reduce to one file -- losing exactly
 // the configuration this format exists to deliver.
-func zipBundle(parts []backend.ClientProfile) []byte {
+func zipBundle(parts []backend.ClientProfile, made time.Time) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	used := make(map[string]int, len(parts))
+	// Dated, so an unpacker shows when the files were made rather than 1980.
+	if made.Year() < 2000 {
+		made = time.Now().UTC()
+	}
 
 	for i, p := range parts {
 		// Only the last element, and only after slashes are normalised: a
@@ -1194,8 +1276,13 @@ func zipBundle(parts []backend.ClientProfile) []byte {
 		}
 		used[name]++
 
-		w, err := zw.Create(name)
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: made})
 		if err != nil {
+			continue
+		}
+		if !utf8.Valid(p.Body) {
+			// A certificate bundle: bytes, written as they are.
+			_, _ = w.Write(p.Body)
 			continue
 		}
 		// A trailing newline: some editors and some clients will not read the
@@ -1211,7 +1298,7 @@ func zipBundle(parts []backend.ClientProfile) []byte {
 
 func configExt(format string) string {
 	switch strings.ToLower(format) {
-	case "base64":
+	case "base64", "links":
 		return ".txt"
 	case "zip":
 		return ".zip"
@@ -1285,27 +1372,111 @@ func checkSubPath(p string) error {
 	return nil
 }
 
-// clientFilename names a device's file after the customer: "Hossein.conf"
-// for a customer with one device, "Hossein-laptop.conf" when they hold
-// several, keeping the extension the driver chose. A WireGuard app takes
-// the tunnel's name from the file and allows fifteen characters of it, so a
-// .conf is cut to fit; a long name on the panel is not a broken import.
-func clientFilename(client, device, base string, single bool) string {
+// deviceFilename is the name of one of a customer's files: theirs, and
+// after it what tells this file apart from their others -- the tunnel when
+// they are on several, the device when they have several, the host when
+// the tunnel has several -- with the extension the driver chose.
+//
+// A WireGuard or AmneziaWG app makes the tunnel's name of the file's, and
+// on Android and Windows takes only a-z, A-Z, 0-9 and _ = + . - in it, at
+// most fifteen: a file named otherwise is refused on import. So a .conf
+// keeps to that: a customer named in another script is named by the
+// tunnel, and what does not fit is cut from the customer's name, never from
+// what tells two files apart -- two files of one name are a tunnel that
+// "already exists" in the app. Other files keep the customer's own script.
+func deviceFilename(client, tunnel, base string, parts ...string) string {
 	ext := ""
 	if i := strings.LastIndex(base, "."); i > 0 {
 		ext = base[i:]
 	}
-	name := endpoints.SafeFilename(client)
-	if !single {
-		name += "-" + endpoints.SafeFilename(device)
+	var keep []string
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			keep = append(keep, p)
+		}
 	}
-	if rs := []rune(name); ext == ".conf" && len(rs) > 15 {
-		name = strings.Trim(string(rs[:15]), "-_")
+	if ext != ".conf" {
+		name := endpoints.SafeFilename(client)
+		for _, p := range keep {
+			name += "-" + endpoints.SafeFilename(p)
+		}
+		return name + ext
 	}
-	if name == "" {
-		return base
+	who := confName(client)
+	var tail []string
+	for _, p := range keep {
+		if n := confName(p); n != "" {
+			tail = append(tail, n)
+		}
 	}
-	return name + ext
+	suffix := strings.Join(tail, "-")
+	if who == "" && suffix == "" {
+		who = confName(tunnel)
+	}
+	if who == "" && suffix == "" {
+		who = "vpn"
+	}
+	return fitConfName(who, suffix) + ext
+}
+
+// confNameMax is the longest tunnel name a WireGuard app takes.
+const confNameMax = 15
+
+// confName is s as a WireGuard app takes a tunnel's name: a space a dash,
+// anything but a-z, A-Z, 0-9 and _ = + . - left out.
+func confName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '_', r == '=', r == '+', r == '.', r == '-':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteByte('-')
+		}
+	}
+	return strings.Trim(b.String(), "-.")
+}
+
+// fitConfName joins who and suffix within confNameMax, cutting who first.
+func fitConfName(who, suffix string) string {
+	cut := func(s string, n int) string {
+		if len(s) > n {
+			s = s[:n]
+		}
+		return strings.Trim(s, "-.")
+	}
+	switch {
+	case suffix == "":
+		return cut(who, confNameMax)
+	case who == "":
+		return cut(suffix, confNameMax)
+	}
+	if room := confNameMax - len(suffix) - 1; room >= 3 {
+		return cut(who, room) + "-" + suffix
+	}
+	return cut(suffix, confNameMax)
+}
+
+// fileParts is what tells one of a customer's files from their others:
+// the tunnel when they are on several, the device when they have several,
+// the host when the tunnel has several.
+func fileParts(accounts []model.Account, acc model.Account, tunnel string, v endpoints.HostVariant) []string {
+	tunnels := map[uint]bool{}
+	for _, a := range accounts {
+		tunnels[a.InterfaceID] = true
+	}
+	var parts []string
+	if len(tunnels) > 1 {
+		parts = append(parts, tunnel)
+	}
+	if len(deviceNames(accounts)) > 1 {
+		parts = append(parts, acc.DeviceName)
+	}
+	if v.Host != nil {
+		parts = append(parts, v.Host.Name)
+	}
+	return parts
 }
 
 // TokenExists reports whether a link's secret belongs to a customer, for

@@ -66,7 +66,6 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 	if err := s.db.WithContext(ctx).Preload("Accounts").First(&owner, acc.ClientID).Error; err != nil {
 		return nil, fmt.Errorf("%w: customer %d", ErrNotFound, acc.ClientID)
 	}
-	single := len(deviceNames(owner.Accounts)) <= 1
 	var hosts []model.Host
 	if err := s.db.WithContext(ctx).Where("interface_id = ?", iface.ID).Order("priority, id").Find(&hosts).Error; err != nil {
 		return nil, fmt.Errorf("service: read hosts: %w", err)
@@ -87,7 +86,7 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 		default:
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
 		}
-		p.Filename = endpoints.VariantFilename(clientFilename(owner.Name, acc.DeviceName, p.Filename, single), v)
+		p.Filename = deviceFilename(owner.Name, iface.Name, p.Filename, fileParts(owner.Accounts, acc, iface.Name, v)...)
 		p.Guides = devguide.Views(guideValues(&acc, &at, p.Filename))
 		if v.Host != nil {
 			p.HostID = v.Host.ID

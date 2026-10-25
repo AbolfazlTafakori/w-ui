@@ -1,8 +1,11 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -123,8 +126,76 @@ func TestEveryDeviceIsInTheBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(string(b.Body), "CONFIG"); n != 3 {
-		t.Fatalf("a customer with three devices got %d configurations", n)
+	// Three files, one a file: written one after another they were one file
+	// no app imports. Each named apart, or the app has the second "already".
+	if b.ContentType != "application/zip" || !strings.HasSuffix(b.Filename, ".zip") {
+		t.Fatalf("three devices served as %s %s, want a zip", b.ContentType, b.Filename)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(b.Body), int64(len(b.Body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		rc, _ := f.Open()
+		body, _ := io.ReadAll(rc)
+		rc.Close()
+		if strings.Count(string(body), "CONFIG") != 1 {
+			t.Fatalf("%s holds %q", f.Name, body)
+		}
+		if f.Modified.Year() < 2020 {
+			t.Fatalf("%s is dated %s", f.Name, f.Modified)
+		}
+		names[f.Name] = true
+	}
+	if len(names) != 3 {
+		t.Fatalf("files %v, want three named apart", names)
+	}
+}
+
+// One device is its file, as it always was.
+func TestOneDeviceIsItsOwnFile(t *testing.T) {
+	db := testDB(t)
+	c := seed(t, db, 1)
+	s := newSubs(db, &fakeDriver{body: "CONFIG"})
+	token, _ := s.EnsureToken(context.Background(), c.ID)
+	b, err := s.Serve(context.Background(), token, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.ContentType != "text/plain; charset=utf-8" || strings.Count(string(b.Body), "CONFIG") != 1 {
+		t.Fatalf("one device served as %s: %q", b.ContentType, b.Body)
+	}
+}
+
+// A format the subscription is not served in is said, not answered with
+// something else.
+func TestAnUnknownFormatIsRefused(t *testing.T) {
+	db := testDB(t)
+	c := seed(t, db, 1)
+	s := newSubs(db, &fakeDriver{body: "CONFIG"})
+	token, _ := s.EnsureToken(context.Background(), c.ID)
+	for _, f := range []string{"clash", "singbox", "json"} {
+		if _, err := s.Serve(context.Background(), token, f); !errors.Is(err, ErrUnknownFormat) {
+			t.Fatalf("format %s: %v", f, err)
+		}
+	}
+	for _, f := range []string{"", "conf", "CONF", "base64", "zip"} {
+		if _, err := s.Serve(context.Background(), token, f); err != nil {
+			t.Fatalf("format %q: %v", f, err)
+		}
+	}
+}
+
+// base64 of several files that are no links is refused rather than served
+// as one text no app reads.
+func TestBase64OfSeveralFilesIsLinksOrNothing(t *testing.T) {
+	db := testDB(t)
+	c := seed(t, db, 2)
+	s := newSubs(db, &fakeDriver{body: "CONFIG"})
+	token, _ := s.EnsureToken(context.Background(), c.ID)
+	if _, err := s.Serve(context.Background(), token, "base64"); !errors.Is(err, ErrSeveralFiles) {
+		t.Fatalf("base64 of two files that are no links: %v", err)
 	}
 }
 
@@ -195,7 +266,7 @@ func TestAnUnlimitedClientIsReportedAsUnlimitedRatherThanAsZeroLeft(t *testing.T
 
 func TestBase64IsWhatClientsCanDecode(t *testing.T) {
 	db := testDB(t)
-	c := seed(t, db, 2)
+	c := seed(t, db, 1)
 	s := newSubs(db, &fakeDriver{body: "CONFIG"})
 
 	token, _ := s.EnsureToken(context.Background(), c.ID)
@@ -352,4 +423,29 @@ func TestAFilenameCannotCarryACustomersOwnHeaders(t *testing.T) {
 			t.Errorf("endpoints.SafeFilename(%q) produced an empty name", in)
 		}
 	}
+}
+
+// bundleText is every file in a bundle as one text, for a test looking for
+// what is in them: a zip's entries, or the body as it is.
+func bundleText(t *testing.T, b *Bundle) string {
+	t.Helper()
+	if b.ContentType != "application/zip" {
+		return string(b.Body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(b.Body), int64(len(b.Body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(rc)
+		rc.Close()
+		out.Write(body)
+		out.WriteByte('\n')
+	}
+	return out.String()
 }

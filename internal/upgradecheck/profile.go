@@ -1,9 +1,13 @@
 package upgradecheck
 
 import (
+	"archive/zip"
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"path"
 	"sort"
 	"strings"
 )
@@ -33,8 +37,17 @@ var openvpnDirectives = map[string]bool{"remote": true, "proto": true, "dev": tr
 var openvpnBlocks = map[string]bool{"ca": true, "cert": true, "key": true, "tls-crypt": true, "tls-auth": true}
 
 // ParseProfiles reads a subscription answer: one or more WireGuard or OpenVPN
-// configurations, one after another, base64 or not.
+// configurations, one after another, base64 or not -- or a zip of them, one
+// a file, which is how a link answers for a customer with several since
+// one text of several was no file an app imports.
 func ParseProfiles(body []byte) ([]Profile, error) {
+	if bytes.HasPrefix(body, []byte("PK\x03\x04")) {
+		joined, err := zipConfigs(body)
+		if err != nil {
+			return nil, err
+		}
+		body = joined
+	}
 	text := strings.TrimSpace(string(body))
 	if !strings.Contains(text, "[Interface]") && !strings.Contains(text, "client") {
 		if dec, err := base64.StdEncoding.DecodeString(text); err == nil {
@@ -177,4 +190,32 @@ func redact(f string) string {
 		}
 	}
 	return strings.Join(parts, "|")
+}
+
+// zipConfigs is the configurations in a zip, in its order, one after
+// another: the .conf and .ovpn files, not the instructions or certificates
+// beside them.
+func zipConfigs(body []byte) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return nil, fmt.Errorf("a zip that does not open: %w", err)
+	}
+	var out bytes.Buffer
+	for _, f := range zr.File {
+		if ext := path.Ext(f.Name); ext != ".conf" && ext != ".ovpn" {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", f.Name, err)
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", f.Name, err)
+		}
+		out.Write(bytes.TrimSpace(b))
+		out.WriteString("\n\n")
+	}
+	return out.Bytes(), nil
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
 )
@@ -38,7 +39,7 @@ func TestZipBundleKeepsEveryDeviceSeparate(t *testing.T) {
 	body, ctype := encodeBundle([]backend.ClientProfile{
 		{Filename: "phone.conf", Body: []byte("[Interface]\nAddress = 10.0.0.2/32")},
 		{Filename: "laptop.conf", Body: []byte("[Interface]\nAddress = 10.0.0.3/32")},
-	}, "zip")
+	}, "zip", time.Time{})
 
 	if ctype != "application/zip" {
 		t.Errorf("content type = %q, want application/zip", ctype)
@@ -117,12 +118,12 @@ func TestOtherFormatsAreStillText(t *testing.T) {
 		{Filename: "b.conf", Body: []byte("two")},
 	}
 	for _, format := range []string{"", "plain", "base64"} {
-		_, ctype := encodeBundle(parts, format)
+		_, ctype := encodeBundle(parts, format, time.Time{})
 		if ctype != "text/plain; charset=utf-8" {
 			t.Errorf("format %q gave content type %q, want text", format, ctype)
 		}
 	}
-	body, _ := encodeBundle(parts, "")
+	body, _ := encodeBundle(parts, "", time.Time{})
 	if string(body) != "one\n\ntwo" {
 		t.Errorf("plain bundle = %q, want the configurations joined", body)
 	}
@@ -133,7 +134,7 @@ func TestOtherFormatsAreStillText(t *testing.T) {
 
 func mustZip(t *testing.T, parts []backend.ClientProfile) []byte {
 	t.Helper()
-	body, _ := encodeBundle(parts, "zip")
+	body, _ := encodeBundle(parts, "zip", time.Time{})
 	if len(body) == 0 {
 		t.Fatal("the zip came back empty")
 	}
