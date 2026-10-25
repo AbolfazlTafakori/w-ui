@@ -75,7 +75,7 @@ The panel runs its own resolver on every interface's gateway address, port 53, a
 | Setting | What it does |
 |---------|--------------|
 | **Enable DNS** | On by default. When it is off, customers' files name each interface's own DNS setting instead. |
-| **Answering On** | The tunnel addresses the resolver is bound to right now. It reads *not listening* until the settings are saved with at least one server. A file issued while the resolver is on names its tunnel's gateway as DNS. |
+| **Answering On** | The tunnel addresses the resolver is bound to right now. It reads *not listening* until the settings are saved with at least one server. A file issued while the resolver is on names its tunnel's gateway as DNS, unless the resolver could not open port 53 there (something else holds it, or the service lacks the right to bind it): that tunnel's files then name the interface's own DNS, so customers are never handed a resolver that does not answer. |
 | **Query Strategy** | **UseIP** (both families), **UseIPv4** or **UseIPv6**. The default is IPv4 only, because the tunnels carry IPv4. A name that also came back with an IPv6 address made a phone try that first, wait for it to fail and only then load the page, or not load it at all in an app that does not fall back. |
 | **Disable cache** | Turns caching off. |
 | **Serve Expired TTL** | For how many seconds a stale cached answer may be served while a fresh one is fetched. `0` never serves a stale answer. |

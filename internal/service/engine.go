@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"strings"
 	"sync"
@@ -347,8 +348,12 @@ func (e *Engine) syncDNS(ctx context.Context, cfg EngineSettings) {
 	}
 	var addrs []netip.Addr
 	if cfg.DNS.Enabled {
+		// This server's tunnels only: a node's gateway is an address on that
+		// machine, which this one cannot answer on, and the node's own
+		// resolver does.
 		var ifaces []model.Interface
-		if err := e.db.WithContext(ctx).Where("enabled = ?", true).Find(&ifaces).Error; err == nil {
+		if err := e.db.WithContext(ctx).Where("enabled = ? AND node_id IN (?)", true,
+			e.db.Model(&model.Node{}).Select("id").Where("kind = ?", model.KindLocal)).Find(&ifaces).Error; err == nil {
 			for _, i := range ifaces {
 				// A 3x-ui or Pasarguard inbound's addresses are a placeholder.
 				if i.Protocol == model.ProtocolXray {
@@ -365,6 +370,38 @@ func (e *Engine) syncDNS(ctx context.Context, cfg EngineSettings) {
 		e.dns.SetMark(e.routing.DefaultMark())
 	}
 	e.dns.Reconfigure(cfg.DNS, addrs)
+	// What a customer is handed follows what actually answers: a gateway
+	// that is up here and still not answered on -- port 53 held by something
+	// else, or the service without the right to bind it -- is not handed out.
+	var answering []netip.Addr
+	for _, l := range e.dns.Listening() {
+		if a, err := netip.ParseAddr(l); err == nil {
+			answering = append(answering, a)
+		}
+	}
+	tunneldns.SetAnswering(upHere(addrs), answering)
+}
+
+// upHere is those of addrs that are an address of one of this machine's
+// network devices.
+func upHere(addrs []netip.Addr) []netip.Addr {
+	have, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	mine := map[netip.Addr]bool{}
+	for _, a := range have {
+		if pfx, err := netip.ParsePrefix(a.String()); err == nil {
+			mine[pfx.Addr().Unmap()] = true
+		}
+	}
+	var out []netip.Addr
+	for _, a := range addrs {
+		if mine[a] {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // DNSListening reports where the resolver answers.
