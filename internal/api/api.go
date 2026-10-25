@@ -36,15 +36,17 @@ import (
 
 // Server holds the API's dependencies.
 type Server struct {
-	clients   *service.Clients
-	ifaces    *service.Interfaces
-	catalog   *i18n.Catalog
-	enforcer  enforce.Enforcer
-	settings  *panelconf.Settings
-	nodes     *fleet.Nodes
-	prober    *nodes.Prober
-	throttle  *throttle
-	notifier  *notify.Notifier
+	clients  *service.Clients
+	ifaces   *service.Interfaces
+	catalog  *i18n.Catalog
+	enforcer enforce.Enforcer
+	settings *panelconf.Settings
+	nodes    *fleet.Nodes
+	prober   *nodes.Prober
+	throttle *throttle
+	notifier *notify.Notifier
+	// bale is the Bale bot's notifier, beside notifier, which is Telegram's.
+	bale      *notify.Notifier
 	backups   *backup.Service
 	shaper    shaper.Shaper
 	jwtSecret []byte
@@ -100,17 +102,20 @@ type Options struct {
 	Settings   *panelconf.Settings
 	Prober     *nodes.Prober
 	Notifier   *notify.Notifier
-	Backups    *backup.Service
-	Shaper     shaper.Shaper
-	JWTSecret  []byte
-	Logger     *slog.Logger
-	Version    string
-	Listen     string
-	DBDriver   string
-	DBSource   string
-	SysInfo    *sysinfo.Collector
-	Reconciler *reconciler.Reconciler
-	Outbounds  *egress.Outbounds
+	// BaleNotifier carries the Bale bot's notifications, reports and
+	// backups; nil where there is none.
+	BaleNotifier *notify.Notifier
+	Backups      *backup.Service
+	Shaper       shaper.Shaper
+	JWTSecret    []byte
+	Logger       *slog.Logger
+	Version      string
+	Listen       string
+	DBDriver     string
+	DBSource     string
+	SysInfo      *sysinfo.Collector
+	Reconciler   *reconciler.Reconciler
+	Outbounds    *egress.Outbounds
 	// Balancers is the process's one, the same that runs the checks; nil
 	// builds one for the API alone.
 	Balancers *egress.Balancers
@@ -155,6 +160,7 @@ func New(o Options) *Server {
 		prober:    o.Prober,
 		throttle:  newThrottle(),
 		notifier:  o.Notifier,
+		bale:      o.BaleNotifier,
 		backups:   o.Backups,
 		shaper:    o.Shaper,
 		jwtSecret: o.JWTSecret,
@@ -214,9 +220,12 @@ func New(o Options) *Server {
 // backupExposure is whether backups leave this server -- the Telegram bot
 // sends them -- and whether they are sealed, for the security warnings.
 func (s *Server) backupExposure() (sentAway, sealed bool) {
-	if s.notifier != nil {
-		c := s.notifier.Config()
-		sentAway = c.Enabled && c.Backup && c.BotToken != "" && c.ChatID != ""
+	for _, n := range []*notify.Notifier{s.notifier, s.bale} {
+		if n == nil {
+			continue
+		}
+		c := n.Config()
+		sentAway = sentAway || (c.Enabled && c.Backup && c.BotToken != "" && c.ChatID != "")
 	}
 	return sentAway, s.backups != nil && s.backups.PasswordSet()
 }

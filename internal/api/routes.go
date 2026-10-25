@@ -676,6 +676,10 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/settings/notify/test", Group: "Settings", Auth: true,
 			Summary: "Send one test notification and report what happened.",
 			handler: s.handleTestNotification},
+		{Method: "POST", Path: "/api/settings/bale/test", Group: "Settings", Auth: true,
+			Summary: "Send one test message from the Bale bot and report what happened.",
+			Note:    "Uses the saved settings, so save before testing.",
+			handler: s.handleTestBale},
 		{Method: "POST", Path: "/api/settings/mail/test", Group: "Settings", Auth: true,
 			Summary: "Send one test email and report what happened.",
 			Note: "Uses the saved settings, so save before testing. A wrong password " +

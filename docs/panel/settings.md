@@ -4,7 +4,7 @@ description: "The panel's own settings: where it listens and how, the account an
 
 # Settings
 
-The sidebar has five settings tabs, **General**, **Authentication**, **Telegram Bot**, **Email** and **Subscription**, each with inner tabs. Four more sections are reached from elsewhere:
+The sidebar has six settings tabs, **General**, **Authentication**, **Telegram Bot**, **Bale Bot**, **Email** and **Subscription**, each with inner tabs. Four more sections are reached from elsewhere:
 
 - **Backups**, from Overview → Backup & Restore → *All backups →*;
 - **System**, from Overview → *System*;
@@ -113,6 +113,10 @@ Under **Telegram Event Notifications**, tick what the bot tells the admins about
 ### Backup
 
 **Automatic backup** sends the backup archive to the admin chats by itself, at **When to send**, in the panel's time zone. A backup that falls due while the panel is off is sent as soon as the panel is back. It is the same archive *Backup & Restore* makes, and it restores the same way. See [Telegram bot](/panel/telegram).
+
+## Bale Bot
+
+The same three inner tabs as the Telegram Bot, for the [Bale bot](/panel/telegram#the-bale-bot), with its own settings: **Enable Bale Bot**, **Bale Token**, **Admin Chat ID**, **Bale Bot Language**, **Send Test Message**, the report's time, **Bale Event Notifications**, and its own automatic backup and time. There is no API server to set: Bale is reached directly. The event thresholds, CPU, memory and outbound, are the panel's, shared with the Telegram tab.
 
 ## Email
 

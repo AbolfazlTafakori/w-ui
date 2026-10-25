@@ -293,11 +293,15 @@ func postgresDB(t *testing.T, dsn string) *gorm.DB {
 var newSinceNewestFixture = map[string]string{
 	// The addresses the subscription service answered on before.
 	"sub.former": "3.0.0",
+	// The Bale bot, beside the Telegram one.
+	"bale.enabled": "3.1.0", "bale.botToken": "3.1.0", "bale.chatId": "3.1.0", "bale.kinds": "3.1.0",
+	"bale.lang": "3.1.0", "bale.runTime": "3.1.0", "bale.backup": "3.1.0", "bale.backupTime": "3.1.0",
 }
 
 // runtimeKeys are kept by the panel for itself, not set by an operator.
 var runtimeKeys = map[string]bool{
 	"notify.backupLastAt": true, "notify.backupLastSchedule": true,
+	"bale.backupLastAt": true, "bale.backupLastSchedule": true,
 	"usage.files_since":     true,
 	"sharing.historyImport": true,
 }

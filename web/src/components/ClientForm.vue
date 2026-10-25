@@ -74,6 +74,7 @@ const form = ref(
         note: props.client.note || '',
         groups: [...(props.client.groups || (props.client.group ? [props.client.group] : []))],
         telegramId: props.client.telegramId || 0,
+        baleId: props.client.baleId || 0,
         // Every server this customer already reaches, from their accounts.
         interfaceIds: [...new Set((props.client.accounts || []).map((a) => a.interfaceId))],
         quota: quotaToUnit(props.client.quotaBytes).value,
@@ -99,6 +100,7 @@ const form = ref(
         note: '',
         groups: [],
         telegramId: '',
+        baleId: '',
         interfaceIds: props.interfaces[0] ? [props.interfaces[0].id] : [],
         quota: '',
         quotaUnit: 'GB',
@@ -357,6 +359,7 @@ async function submit() {
       note: form.value.note.trim(),
       groups: form.value.groups,
       telegramId: Number(form.value.telegramId) || 0,
+      baleId: Number(form.value.baleId) || 0,
       interfaceIds: form.value.interfaceIds,
       quotaBytes: unitToBytes(form.value.quota, form.value.quotaUnit),
       expiresAt,
@@ -465,6 +468,12 @@ async function submit() {
                 <div class="aform-item">
                   <label class="aform-label" for="cf-tgid">{{ t('client.telegramId') }} <HelpTip :text="t('client.telegramIdHint')" /></label>
                   <label class="ainput number"><input id="cf-tgid" v-model.number="form.telegramId" type="number" min="0" class="ltr" :placeholder="t('client.telegramIdPlaceholder')" /></label>
+                </div>
+              </div>
+              <div class="acol6">
+                <div class="aform-item">
+                  <label class="aform-label" for="cf-baleid">{{ t('client.baleId') }} <HelpTip :text="t('client.baleIdHint')" /></label>
+                  <label class="ainput number"><input id="cf-baleid" v-model.number="form.baleId" type="number" min="0" class="ltr" :placeholder="t('client.baleIdPlaceholder')" /></label>
                 </div>
               </div>
             </div>

@@ -1,5 +1,5 @@
 ---
-description: "The Telegram bot: the operator manages customers and the server from the chat, customers ask for their usage and links, and the panel sends notices and backups."
+description: "The Telegram bot, and the same bot on Bale: the operator manages customers and the server from the chat, customers ask for their usage and links, and the panel sends notices and backups."
 ---
 
 # Telegram bot
@@ -50,3 +50,20 @@ Go to *Settings → Telegram Bot → Backup*, switch on **Automatic backup** and
 - A backup that cannot be taken, or is larger than the 50 MB Telegram accepts from a bot, is not retried every minute. The chat is told why, and the next one goes at the next time.
 - Backups are not sent more often than every 10 minutes, since each one is the whole database.
 - The archives are also kept on the server with the others, up to the number set in *Settings → Backups → Keep*.
+
+## The Bale bot
+
+Bale is the Iranian messenger whose bot API is Telegram's, with small differences. The panel runs the same bot there, beside the Telegram one: the same menu, commands and customer card for administrators, the same answers for customers, the same notifications, periodic report and automatic backup. Use either, or both.
+
+1. In Bale, open @BotFather, make a bot and copy its token.
+1. Go to *Settings → Bale Bot*. Switch on **Enable Bale Bot**, paste the token into **Bale Token**, and put your Bale user ID in **Admin Chat ID**. To learn your ID, send `/id` to your bot once it runs. For several admins, separate the IDs with commas.
+1. Press **Save**, then **Send Test Message**. The bot starts within 15 seconds, with no restart.
+
+What is its own:
+
+- **Its settings.** Its token, admin chats, language, which events it reports, the report's time and the automatic backup are set on its own tab, apart from Telegram's. The thresholds behind the CPU, memory and outbound events are the panel's, and shared.
+- **Its customers.** A customer uses the Bale bot through the **Bale ID** on their plan (*Clients → ✎ → Bale ID*), apart from the Telegram ID. The bot's 👤 button sets the Bale ID.
+- **Its messages.** Bale has no HTML formatting, so the bot writes Bale's own Markdown; the content is the same.
+- **Its automatic backup** goes on its own schedule. The 50 MB limit is the same as Telegram's.
+
+Bale is reached from inside Iran with no relay, which makes it the bot to rely on where Telegram is filtered.

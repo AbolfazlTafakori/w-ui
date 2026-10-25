@@ -85,12 +85,18 @@ type Config struct {
 	Backup     bool       `json:"backup"`
 	BackupTime string     `json:"backupTime"`
 	Thresholds Thresholds `json:"thresholds"`
+	// Platform is the messenger this configuration's bot is on: Telegram
+	// (empty) or Bale. Set by whoever builds the configuration, never stored.
+	Platform string `json:"-"`
 }
 
-// apiBase is where this configuration talks to Telegram.
+// apiBase is where this configuration talks to its bot API.
 func (c Config) apiBase() string {
 	if v := strings.TrimRight(strings.TrimSpace(c.APIServer), "/"); v != "" {
 		return v
+	}
+	if c.Platform == PlatformBale {
+		return BaleAPI
 	}
 	return "https://api.telegram.org"
 }
@@ -137,6 +143,10 @@ type Notifier struct {
 
 	queue chan Event
 
+	// peers are the other chats every event also goes to: Bale beside
+	// Telegram. Each has its own settings, schedule and queue.
+	peers []*Notifier
+
 	// dropped counts events discarded because the queue was full, so the
 	// silence is at least visible in the logs rather than total.
 	droppedMu sync.Mutex
@@ -169,9 +179,23 @@ func (n *Notifier) Config() Config {
 	return n.cfg
 }
 
+// Also has every event sent here go to other as well. The panel raises its
+// events on one notifier; this is how they reach the Bale chat too.
+func (n *Notifier) Also(other *Notifier) {
+	n.mu.Lock()
+	n.peers = append(n.peers, other)
+	n.mu.Unlock()
+}
+
 // Send queues an event. It never blocks and never returns an error: a
 // notification failing must not fail the thing being notified about.
 func (n *Notifier) Send(e Event) {
+	n.mu.RLock()
+	peers := n.peers
+	n.mu.RUnlock()
+	for _, p := range peers {
+		p.Send(e)
+	}
 	// Either channel wanting it is enough. Asking only Telegram would mean an
 	// operator who set up mail alone never received anything, with nothing to
 	// say why.
@@ -283,12 +307,17 @@ func (n *Notifier) post(ctx context.Context, c Config, text string) error {
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
 
-	body, err := json.Marshal(map[string]any{
+	msg := map[string]any{
 		"chat_id":                  c.ChatID,
-		"text":                     text,
-		"parse_mode":               "Markdown",
+		"text":                     c.render(text),
 		"disable_web_page_preview": true,
-	})
+	}
+	// Telegram is told the text is Markdown. Bale has no such parameter:
+	// every message there is Markdown already.
+	if c.Platform != PlatformBale {
+		msg["parse_mode"] = "Markdown"
+	}
+	body, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("notify: encode message: %w", err)
 	}

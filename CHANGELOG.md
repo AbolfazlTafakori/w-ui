@@ -6,6 +6,9 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **A Bale bot, beside the Telegram one.** Bale is the Iranian messenger whose bot API is Telegram's; it is reached from inside Iran with no relay. The same bot runs there, on its own token and chats set under *Settings → Bale Bot*: the same menu, commands and customer card for administrators, the same answers for a customer, and the same notifications, periodic report and automatic backup, each on its own schedule. A customer is known to it by the new **Bale ID** on their plan, beside the Telegram ID. Messages are written in Bale's own Markdown, since it has no HTML formatting.
+
 ### Fixed
 - **An AmneziaWG module that does not build no longer stops every protocol after it from installing.** The module package builds the module as it installs; when the kernel could not take it (seen on Ubuntu 22.04 with kernel 5.15.0-46, on a server in Iran) the package stayed half-installed, and apt refused everything after it: OpenVPN, L2TP, IKEv2, PPTP and OpenConnect all failed, and so did the server's own updates. The installer now removes that package at once and carries AmneziaWG on amneziawg-go, as it already did; running the installer again clears a server that hit this before, and the panel's agent does the same before it installs what a new tunnel needs.
 

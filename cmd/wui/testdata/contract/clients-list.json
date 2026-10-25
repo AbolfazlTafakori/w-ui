@@ -107,6 +107,7 @@
           }
         ],
         "activatedAt": null,
+        "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 3,
         "downBytes": 0,
@@ -155,6 +156,7 @@
           }
         ],
         "activatedAt": null,
+        "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
         "downBytes": 0,
@@ -206,6 +208,7 @@
           }
         ],
         "activatedAt": null,
+        "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
         "downBytes": 0,
@@ -254,6 +257,7 @@
           }
         ],
         "activatedAt": null,
+        "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
         "downBytes": 0,
@@ -302,6 +306,7 @@
           }
         ],
         "activatedAt": null,
+        "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
         "downBytes": 0,
@@ -367,6 +372,7 @@
           }
         ],
         "activatedAt": null,
+        "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 2,
         "downBytes": 0,

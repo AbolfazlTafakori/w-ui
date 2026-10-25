@@ -98,6 +98,7 @@ type CreateInput struct {
 	Group      string   `json:"group"`
 	Groups     []string `json:"groups"`
 	TelegramID int64    `json:"telegramId"`
+	BaleID     int64    `json:"baleId"`
 	// InterfaceID is the tunnel a customer is placed on. Kept for callers that
 	// sell one server, and it is the first entry of InterfaceIDs when both are
 	// given.
@@ -199,6 +200,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 		Note:           in.Note,
 		Group:          firstGroup(groupsOf(in.Groups, in.Group)),
 		TelegramID:     in.TelegramID,
+		BaleID:         in.BaleID,
 		Protocol:       iface.Protocol,
 		QuotaBytes:     in.QuotaBytes,
 		ExpiresAt:      in.ExpiresAt,
@@ -1147,6 +1149,7 @@ type UpdateInput struct {
 	Group      *string   `json:"group"`
 	Groups     *[]string `json:"groups"`
 	TelegramID *int64    `json:"telegramId"`
+	BaleID     *int64    `json:"baleId"`
 	QuotaBytes *uint64   `json:"quotaBytes"`
 	// ExpiresAt: absent leaves the date alone, null clears it (no expiry),
 	// a time sets it. A plain pointer could not tell the first two apart.
@@ -1223,6 +1226,9 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 	}
 	if in.TelegramID != nil {
 		fields["telegram_id"] = *in.TelegramID
+	}
+	if in.BaleID != nil {
+		fields["bale_id"] = *in.BaleID
 	}
 	if in.QuotaBytes != nil {
 		fields["quota_bytes"] = *in.QuotaBytes
@@ -2027,6 +2033,18 @@ func (s *Clients) ByTelegramID(ctx context.Context, id int64) ([]model.Client, e
 	}
 	if err := s.db.WithContext(ctx).Preload("Accounts").Where("telegram_id = ?", id).Order("name").Find(&out).Error; err != nil {
 		return nil, fmt.Errorf("service: find by telegram id: %w", err)
+	}
+	return out, nil
+}
+
+// ByBaleID finds the customers a Bale account is on, for the Bale bot.
+func (s *Clients) ByBaleID(ctx context.Context, id int64) ([]model.Client, error) {
+	var out []model.Client
+	if id == 0 {
+		return out, nil
+	}
+	if err := s.db.WithContext(ctx).Preload("Accounts").Where("bale_id = ?", id).Order("name").Find(&out).Error; err != nil {
+		return nil, fmt.Errorf("service: find by bale id: %w", err)
 	}
 	return out, nil
 }

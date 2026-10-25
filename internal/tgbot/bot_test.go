@@ -77,7 +77,11 @@ type fixture struct {
 	restarts int
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T) *fixture { return newFixtureOn(t, notify.PlatformTelegram) }
+
+// newFixtureOn is the bot on a platform. Ali's plan names the customer by
+// their Bale account as well as their Telegram one; sara's by Telegram alone.
+func newFixtureOn(t *testing.T, platform string) *fixture {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: gormlogger.Discard})
 	if err != nil {
@@ -87,7 +91,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	for _, c := range []model.Client{
-		{Name: "ali", Status: model.StatusActive, TelegramID: customerID, UsedBytes: 5 << 30, QuotaBytes: 10 << 30},
+		{Name: "ali", Status: model.StatusActive, TelegramID: customerID, BaleID: customerID, UsedBytes: 5 << 30, QuotaBytes: 10 << 30},
 		{Name: "sara", Status: model.StatusActive, TelegramID: 4004, UsedBytes: 1 << 30},
 	} {
 		if err := db.Create(&c).Error; err != nil {
@@ -101,7 +105,7 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{tg: tg, db: db}
 	f.bot = New(Deps{
 		Config: func() notify.Config {
-			return notify.Config{Enabled: true, BotToken: "test:token", ChatID: "999, 1001", APIServer: srv.URL, Lang: "en"}
+			return notify.Config{Enabled: true, BotToken: "test:token", ChatID: "999, 1001", APIServer: srv.URL, Lang: "en", Platform: platform}
 		},
 		Clients: service.NewClients(db, ipam.NewPools(), log),
 		Sys:     func() sysinfo.Snapshot { return sysinfo.Snapshot{} },

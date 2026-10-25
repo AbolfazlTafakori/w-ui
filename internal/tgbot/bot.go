@@ -40,7 +40,8 @@ type Deps struct {
 }
 
 // Bot answers on the chat the settings name, and any customer whose
-// Telegram id is on their plan.
+// Telegram id is on their plan. The Bale bot is a second Bot, on its own
+// settings; see platform.go.
 type Bot struct {
 	Deps
 	log  *slog.Logger
@@ -77,7 +78,7 @@ func (b *Bot) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			b.log.Warn("telegram bot could not poll", "error", err)
+			b.log.Warn("bot could not poll", "bot", b.name(), "error", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -105,7 +106,7 @@ func (b *Bot) isAdmin(id int64) bool {
 func (b *Bot) handle(ctx context.Context, u update) {
 	defer func() {
 		if r := recover(); r != nil {
-			b.log.Error("telegram bot handler panicked", "panic", r)
+			b.log.Error("bot handler panicked", "bot", b.name(), "panic", r)
 		}
 	}()
 	switch {
@@ -233,7 +234,7 @@ func (b *Bot) onCallback(ctx context.Context, q *callbackQuery) {
 		b.send(ctx, chat, b.t("clientCommands"), nil)
 		return
 	case strings.HasPrefix(data, "my:"):
-		clients, _ := b.Clients.ByTelegramID(ctx, q.From.ID)
+		clients, _ := b.ownClients(ctx, q.From.ID)
 		if len(clients) == 0 {
 			b.send(ctx, chat, b.t("noResult"), nil)
 			return
@@ -496,7 +497,11 @@ func (b *Bot) setField(ctx context.Context, chat int64, id uint, field, value st
 			b.send(ctx, chat, b.t("badNumber"), nil)
 			return
 		}
-		in.TelegramID = &n
+		if b.bale() {
+			in.BaleID = &n
+		} else {
+			in.TelegramID = &n
+		}
 	default:
 		return
 	}
@@ -548,7 +553,7 @@ func (b *Bot) addClient(ctx context.Context, chat int64, name string) {
 // ── what a customer is told about themselves ──
 
 func (b *Bot) showOwnUsage(ctx context.Context, chat, tgID int64, name string) {
-	clients, err := b.Clients.ByTelegramID(ctx, tgID)
+	clients, err := b.ownClients(ctx, tgID)
 	if err != nil || len(clients) == 0 {
 		b.send(ctx, chat, b.t("notLinked"), nil)
 		return
@@ -655,8 +660,8 @@ func (b *Bot) clientInfo(c *model.Client) string {
 	if len(c.Groups) > 0 {
 		fmt.Fprintf(&sb, "%s: %s\n", b.t("group"), html.EscapeString(strings.Join(c.Groups, ", ")))
 	}
-	if c.TelegramID != 0 {
-		fmt.Fprintf(&sb, "%s: <code>%d</code>\n", b.t("tgID"), c.TelegramID)
+	if id := b.accountID(c); id != 0 {
+		fmt.Fprintf(&sb, "%s: <code>%d</code>\n", b.t("tgID"), id)
 	}
 	if c.Note != "" {
 		fmt.Fprintf(&sb, "%s: %s\n", b.t("note"), html.EscapeString(c.Note))

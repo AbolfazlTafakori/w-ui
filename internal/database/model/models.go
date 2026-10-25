@@ -268,6 +268,9 @@ type Client struct {
 	// TelegramID is the customer's Telegram account, for the bot to answer
 	// them about their own plan. Zero is nobody.
 	TelegramID int64 `gorm:"index" json:"telegramId"`
+	// BaleID is the same for Bale, the Iranian messenger whose bot answers
+	// beside Telegram's.
+	BaleID int64 `gorm:"index" json:"baleId"`
 
 	// QuotaBytes of 0 means unlimited.
 	QuotaBytes uint64 `gorm:"not null;default:0" json:"quotaBytes"`

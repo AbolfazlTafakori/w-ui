@@ -347,6 +347,9 @@ func maskToken(in panelconf.PanelSettings) panelconf.PanelSettings {
 	if in.NotifyBotToken != "" {
 		in.NotifyBotToken = panelconf.TokenPlaceholder
 	}
+	if in.BaleBotToken != "" {
+		in.BaleBotToken = panelconf.TokenPlaceholder
+	}
 	// The mail password is the same kind of thing and gets the same treatment.
 	// It is often an account password rather than one issued for this, so
 	// handing it back on every page load would be worse, not better.
@@ -374,6 +377,9 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		s.notifier.SetConfig(s.settings.Notify(r.Context()))
 		s.notifier.SetMail(s.settings.Mail(r.Context()))
 	}
+	if s.bale != nil {
+		s.bale.SetConfig(s.settings.Bale(r.Context()))
+	}
 	if s.routing != nil {
 		s.routing.SetPanelOutbound(saved.PanelOutbound)
 	}
@@ -394,6 +400,19 @@ func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) 
 
 	cfg := s.settings.Notify(r.Context())
 	if err := s.notifier.Test(r.Context(), cfg); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleTestBale is handleTestNotification for the Bale bot.
+func (s *Server) handleTestBale(w http.ResponseWriter, r *http.Request) {
+	if s.bale == nil {
+		fail(w, s.log, fmt.Errorf("the Bale bot is not available"))
+		return
+	}
+	if err := s.bale.Test(r.Context(), s.settings.Bale(r.Context())); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}

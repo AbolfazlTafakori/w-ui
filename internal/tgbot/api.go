@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/abolfazl/w-ui/internal/notify"
 )
 
 // update is one thing Telegram reports.
@@ -123,10 +125,10 @@ func (b *Bot) do(req *http.Request, out any) error {
 		Result      json.RawMessage `json:"result"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&envelope); err != nil {
-		return fmt.Errorf("telegram: %s: %w", resp.Status, err)
+		return fmt.Errorf("%s: %s: %w", b.name(), resp.Status, err)
 	}
 	if !envelope.OK {
-		return fmt.Errorf("telegram: %s", envelope.Description)
+		return fmt.Errorf("%s: %s", b.name(), envelope.Description)
 	}
 	if out != nil {
 		return json.Unmarshal(envelope.Result, out)
@@ -136,6 +138,9 @@ func (b *Bot) do(req *http.Request, out any) error {
 
 func (b *Bot) endpoint(apiServer, token, method string) string {
 	base := strings.TrimRight(strings.TrimSpace(apiServer), "/")
+	if base == "" && b.bale() {
+		base = notify.BaleAPI
+	}
 	if base == "" {
 		base = "https://api.telegram.org"
 	}
@@ -145,12 +150,12 @@ func (b *Bot) endpoint(apiServer, token, method string) string {
 // send writes a message, HTML-formatted, with an optional keyboard.
 func (b *Bot) send(ctx context.Context, chat int64, text string, kb keyboard) {
 	for _, page := range pages(text, 3800) {
-		params := map[string]any{"chat_id": chat, "text": page, "parse_mode": "HTML", "disable_web_page_preview": true}
+		params := b.textParams(chat, page)
 		if m := kb.markup(); m != nil {
 			params["reply_markup"] = m
 		}
 		if err := b.call(ctx, "sendMessage", params, nil); err != nil {
-			b.log.Warn("telegram bot could not send", "error", err)
+			b.log.Warn("bot could not send", "bot", b.name(), "error", err)
 			return
 		}
 		kb = nil // the keyboard goes with the first page only
@@ -159,7 +164,8 @@ func (b *Bot) send(ctx context.Context, chat int64, text string, kb keyboard) {
 
 // edit rewrites a message the bot sent, keyboard included.
 func (b *Bot) edit(ctx context.Context, chat, msgID int64, text string, kb keyboard) {
-	params := map[string]any{"chat_id": chat, "message_id": msgID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true}
+	params := b.textParams(chat, text)
+	params["message_id"] = msgID
 	if m := kb.markup(); m != nil {
 		params["reply_markup"] = m
 	}
@@ -171,16 +177,34 @@ func (b *Bot) edit(ctx context.Context, chat, msgID int64, text string, kb keybo
 	}
 }
 
+// textParams is a message's text and how it is to be read: HTML on
+// Telegram; on Bale, which has no parse_mode, the HTML turned into the
+// Markdown it renders.
+func (b *Bot) textParams(chat int64, text string) map[string]any {
+	if b.bale() {
+		return map[string]any{"chat_id": chat, "text": b.forPlatform(text)}
+	}
+	return map[string]any{"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": true}
+}
+
+// captionParams is the same for a file's caption.
+func (b *Bot) captionParams(chat int64, caption string) map[string]string {
+	if b.bale() {
+		return map[string]string{"chat_id": fmt.Sprint(chat), "caption": b.forPlatform(caption)}
+	}
+	return map[string]string{"chat_id": fmt.Sprint(chat), "caption": caption, "parse_mode": "HTML"}
+}
+
 func (b *Bot) answer(ctx context.Context, id, text string) {
 	_ = b.call(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": id, "text": text}, nil)
 }
 
 func (b *Bot) sendDocument(ctx context.Context, chat int64, name string, data []byte, caption string) error {
-	return b.upload(ctx, "sendDocument", "document", name, data, map[string]string{"chat_id": fmt.Sprint(chat), "caption": caption, "parse_mode": "HTML"})
+	return b.upload(ctx, "sendDocument", "document", name, data, b.captionParams(chat, caption))
 }
 
 func (b *Bot) sendPhoto(ctx context.Context, chat int64, name string, png []byte, caption string) error {
-	return b.upload(ctx, "sendPhoto", "photo", name, png, map[string]string{"chat_id": fmt.Sprint(chat), "caption": caption, "parse_mode": "HTML"})
+	return b.upload(ctx, "sendPhoto", "photo", name, png, b.captionParams(chat, caption))
 }
 
 // pages splits a long message to fit Telegram's limit: at blank lines where

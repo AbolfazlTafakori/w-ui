@@ -302,8 +302,9 @@ func startSubListeners(ctx context.Context, cfg config.Config, subs *service.Sub
 	return out
 }
 
-// startBot runs the Telegram bot: the same chat the notifications go to
-// answers questions and takes orders, as the classic panel's bot does.
+// startBot runs a bot: the same chat the notifications go to answers
+// questions and takes orders, as the classic panel's bot does. It runs once
+// for Telegram and once for Bale, each on its own notifier's settings.
 func startBot(ctx context.Context, notifier *notify.Notifier, clients *service.Clients, subs *service.Subscriptions,
 	ifaces *service.Interfaces, settings *panelconf.Settings, sys *sysinfo.Collector, backups *backup.Service,
 	restartTunnels func(context.Context) error, log *slog.Logger) {

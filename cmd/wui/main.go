@@ -186,6 +186,12 @@ func run() error {
 	notifier := notify.New(log)
 	notifier.SetConfig(settings.Notify(context.Background()))
 	notifier.SetMail(settings.Mail(context.Background()))
+	// The Bale bot: Telegram's, on Bale, with its own bot and chats. Every
+	// event raised on notifier reaches it too; mail stays with notifier alone,
+	// so nobody is mailed twice.
+	baleNotifier := notify.New(log)
+	baleNotifier.SetConfig(settings.Bale(context.Background()))
+	notifier.Also(baleNotifier)
 	if got, err := settings.Get(context.Background()); err == nil {
 		routes.SetPanelOutbound(got.PanelOutbound)
 	}
@@ -279,6 +285,7 @@ func run() error {
 	sys, history := startReadings(ctx, cfg, log)
 
 	notifier.Start(ctx)
+	baleNotifier.Start(ctx)
 
 	// Every tunnel brought up again from its stored configuration: what
 	// the classic panel's "restart xray" is here. The bot offers it, and so does
@@ -287,6 +294,7 @@ func run() error {
 	go reloadOnHangup(ctx, restartTunnels, log)
 
 	startBot(ctx, notifier, clientsSvc, subs, ifaceSvc, settings, sys, backups, restartTunnels, log)
+	startBot(ctx, baleNotifier, clientsSvc, subs, ifaceSvc, settings, sys, backups, restartTunnels, log)
 
 	// The host's own load, for the CPU and memory events.
 	notifier.RunSystemMonitor(ctx, func() (float64, float64) {
@@ -298,6 +306,9 @@ func run() error {
 	notifier.RunReports(ctx, reporter.Build)
 	// The automatic backup to the chat, on its own schedule.
 	notifier.RunBackups(ctx, reporter.Backup, settings)
+	// And the same two for the Bale chat, each on its own schedule.
+	baleNotifier.RunReports(ctx, reporter.Build)
+	baleNotifier.RunBackups(ctx, reporter.Backup, settings.BaleBackupStamp())
 	// Traffic handed to an outside system, when one is configured.
 	oversight.NewInformer(db, settings, log).Run(ctx, cfg.CollectInterval)
 
@@ -311,7 +322,7 @@ func run() error {
 		Body:  fmt.Sprintf("W-UI %s on %s", version, cfg.Listen),
 	})
 
-	srv, subOnly, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, backups, prober,
+	srv, subOnly, err := buildServer(cfg, db, pools, catalog, enforcer, shp, settings, notifier, baleNotifier, backups, prober,
 		jwtSecret, sys, rec, outbounds, routes, router, subs, pool, local.ID, log,
 		clientsSvc, ifaceSvc, changes,
 		// Restart is a tidy stop: the service manager is set to bring the
@@ -371,7 +382,7 @@ func buildServer(
 	enforcer enforce.Enforcer,
 	shp shaper.Shaper,
 	settings *panelconf.Settings,
-	notifier *notify.Notifier,
+	notifier, baleNotifier *notify.Notifier,
 	backups *backup.Service,
 	prober *nodes.Prober,
 	jwtSecret []byte,
@@ -411,6 +422,7 @@ func buildServer(
 		Shaper:         shp,
 		Settings:       settings,
 		Notifier:       notifier,
+		BaleNotifier:   baleNotifier,
 		Backups:        backups,
 		Prober:         prober,
 		JWTSecret:      jwtSecret,

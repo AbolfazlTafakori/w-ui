@@ -187,7 +187,7 @@ func (n *Notifier) sendBackup(ctx context.Context, cfg Config, take BackupFunc) 
 		_ = n.post(ctx, cfg, backupNotSent(cfg.Lang, file, err))
 		return
 	}
-	n.log.Info("automatic backup sent to Telegram", "file", file.Name, "bytes", file.Size)
+	n.log.Info("automatic backup sent", "to", cfg.Name(), "file", file.Name, "bytes", file.Size)
 }
 
 // sendDocument uploads a file to the chat.
@@ -205,7 +205,7 @@ func (n *Notifier) sendDocument(ctx context.Context, c Config, a *Attachment) er
 	mw := multipart.NewWriter(&body)
 	_ = mw.WriteField("chat_id", c.ChatID)
 	if a.Caption != "" {
-		_ = mw.WriteField("caption", a.Caption)
+		_ = mw.WriteField("caption", c.render(a.Caption))
 	}
 	fw, err := mw.CreateFormFile("document", a.Name)
 	if err != nil {
@@ -242,9 +242,9 @@ func telegramRefused(resp *http.Response) error {
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&reply)
 	if reply.Description != "" {
-		return fmt.Errorf("notify: telegram refused it: %s", reply.Description)
+		return fmt.Errorf("notify: the bot API refused it: %s", reply.Description)
 	}
-	return fmt.Errorf("notify: telegram returned %s", resp.Status)
+	return fmt.Errorf("notify: the bot API returned %s", resp.Status)
 }
 
 // backupNotTaken is the chat's line for a backup that could not be made.

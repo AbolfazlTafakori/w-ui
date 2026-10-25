@@ -4,6 +4,14 @@ package tgbot
 // the classic panel's tgbot strings are, so a translator who knows one knows the other.
 
 func (b *Bot) t(key string) string {
+	s := b.text(key)
+	if b.bale() {
+		s = inPlatformWords.Replace(s)
+	}
+	return s
+}
+
+func (b *Bot) text(key string) string {
 	lang := b.config().Lang
 	if d, ok := texts[lang]; ok {
 		if s, ok := d[key]; ok {
@@ -79,7 +87,7 @@ var texts = map[string]map[string]string{
 		"getID":             "شناسهٔ تلگرام شما: <code>%d</code>",
 		"usageHint":         "برای دیدن یک مشتری بفرستید: /usage &lt;نام&gt;",
 		"unknown":           "دستور ناشناخته.",
-		"restartOK":         "✅ همهٔ تانل‌ها راه‌اندازی مجدد شدند.",
+		"restartOK":         "✅ همهٔ تونل‌ها راه‌اندازی مجدد شدند.",
 		"restartFailed":     "❌ راه‌اندازی مجدد ناموفق: %s",
 		"areYouSure":        "⚠️ مطمئن هستید؟",
 		"cancelled":         "لغو شد.",
@@ -90,7 +98,7 @@ var texts = map[string]map[string]string{
 		"backupTooLarge":    "بکاپ <code>%s</code> حجمش %.1f مگابایت است، بیشتر از ۵۰ مگابایتی که تلگرام از ربات می‌پذیرد، پس این‌جا فرستاده نمی‌شود. از پنل دانلودش کنید: نمای کلی ← بکاپ و بازگردانی.",
 		"noBanLogs":         "ورود ناموفقی ثبت نشده است.",
 		"banLogsTitle":      "ورودهای ناموفق",
-		"adminCommands":     "/usage &lt;نام&gt; — یک مشتری\n/inbound &lt;نام&gt; — یک اینترفیس\n/restart — راه‌اندازی مجدد تانل‌ها\n/clearall — بازنشانی همهٔ ترافیک\n/id — شناسهٔ تلگرام شما",
+		"adminCommands":     "/usage &lt;نام&gt; — یک مشتری\n/inbound &lt;نام&gt; — یک اینترفیس\n/restart — راه‌اندازی مجدد تونل‌ها\n/clearall — بازنشانی همهٔ ترافیک\n/id — شناسهٔ تلگرام شما",
 		"clientCommands":    "/usage — پلن شما\n/id — شناسهٔ تلگرام شما",
 		"askEmail":          "نام مشتری را بفرستید:",
 		"askNewName":        "نامی برای مشتری جدید بفرستید:",

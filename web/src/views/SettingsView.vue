@@ -24,7 +24,7 @@ import SubscriptionTab from '../components/settings/SubscriptionTab.vue'
 import { provideSettings } from '../components/settings/context.js'
 
 // ── which page ──────────────────────────────────────────────────────────────
-const categories = ['general', 'security', 'telegram', 'email', 'subscription']
+const categories = ['general', 'security', 'telegram', 'bale', 'email', 'subscription']
 // Pages this view still renders that are not in the settings menu: reached
 // from Maintenance and the overview.
 const asideTabs = ['backups', 'engine', 'logs', 'system']
@@ -52,7 +52,7 @@ window.addEventListener('hashchange', () => {
 })
 
 // The tab inside each category, as theirs: each remembers its own.
-const inner = ref({ general: '1', security: '1', telegram: '1', email: '1', subscription: '1' })
+const inner = ref({ general: '1', security: '1', telegram: '1', bale: '1', email: '1', subscription: '1' })
 
 // ── the settings themselves ─────────────────────────────────────────────────
 const info = ref(null)
@@ -297,7 +297,12 @@ const uptime = computed(() => {
 
           <!-- ══ Telegram Bot ══ -->
           <template v-else-if="active === 'telegram'">
-            <TelegramTab />
+            <TelegramTab key="telegram" />
+          </template>
+
+          <!-- ══ Bale Bot: the same bot, on Bale ══ -->
+          <template v-else-if="active === 'bale'">
+            <TelegramTab key="bale" platform="bale" />
           </template>
 
           <!-- ══ Email ══ -->

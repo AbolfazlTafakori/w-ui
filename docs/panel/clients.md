@@ -179,6 +179,7 @@ For a new customer, **Presets** fill in the plan in one click: 30 GB · 30 days 
 | **Speed limit** | A cap on the customer's download speed, in Mbit/s. Upload is not limited. | 0 is no limit. |
 | **Renews** | Never, Daily, Weekly or Monthly. A plan that renews gets its traffic back each period; see [Renewing plans](#renewing-plans). | |
 | **Telegram ID** | The customer's numeric Telegram user ID. With the [bot](/panel/telegram) on, they can ask it for their links and usage. | 0 is none. |
+| **Bale ID** | The same for Bale: the customer's numeric Bale user ID, for the [Bale bot](/panel/telegram#the-bale-bot). | 0 is none. |
 | **Note** | Anything to remember about them; it is searchable. | Up to 256 characters in the form. |
 | **Groups** | Labels to sort customers by: a reseller, a region, a plan. Pick existing ones or type a new name. | A customer can be in several. |
 | **Servers this customer can use** * | The interfaces the customer is on, with **Select all** and **Clear all**. Below it, how many addresses are left on the chosen interfaces. | At least one. A reseller sees only the interfaces they were given. |

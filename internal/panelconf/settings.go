@@ -77,6 +77,19 @@ const (
 	keyNotifyMemory       = "notify.memoryThreshold"
 	keyNotifyOutDown      = "notify.outboundDownThreshold"
 
+	// The Bale bot's own: Bale is the Iranian messenger whose bot API is
+	// Telegram's. The thresholds are shared, being the panel's, not a chat's.
+	keyBaleEnabled            = "bale.enabled"
+	keyBaleToken              = "bale.botToken"
+	keyBaleChat               = "bale.chatId"
+	keyBaleKinds              = "bale.kinds"
+	keyBaleLang               = "bale.lang"
+	keyBaleRunTime            = "bale.runTime"
+	keyBaleBackup             = "bale.backup"
+	keyBaleBackupAt           = "bale.backupTime"
+	keyBaleBackupLastAt       = "bale.backupLastAt"
+	keyBaleBackupLastSchedule = "bale.backupLastSchedule"
+
 	keyBackupEvery = "backup.everyHours"
 	keyBackupKeep  = "backup.keep"
 
@@ -164,6 +177,17 @@ type PanelSettings struct {
 	NotifyMemoryThreshold       int `json:"notifyMemoryThreshold"`
 	NotifyOutboundDownThreshold int `json:"notifyOutboundDownThreshold"`
 
+	// The Bale bot: the same as the Telegram one, on its own bot and chats.
+	// BaleBotToken is write-only, as NotifyBotToken is.
+	BaleEnabled    bool     `json:"baleEnabled"`
+	BaleChatID     string   `json:"baleChatId"`
+	BaleKinds      []string `json:"baleKinds"`
+	BaleBotToken   string   `json:"baleBotToken"`
+	BaleLang       string   `json:"baleLang"`
+	BaleRunTime    string   `json:"baleRunTime"`
+	BaleBackup     bool     `json:"baleBackup"`
+	BaleBackupTime string   `json:"baleBackupTime"`
+
 	BackupEveryHours int `json:"backupEveryHours"`
 	BackupKeep       int `json:"backupKeep"`
 
@@ -228,6 +252,10 @@ func (s *Settings) Defaults() PanelSettings {
 		NotifyCPUThreshold:          80,
 		NotifyMemoryThreshold:       80,
 		NotifyOutboundDownThreshold: 50,
+		BaleKinds:                   []string{},
+		BaleLang:                    "fa",
+		BaleRunTime:                 "@daily",
+		BaleBackupTime:              "@daily",
 		BackupEveryHours:            24,
 		BackupKeep:                  7,
 		MailPort:                    587,
@@ -333,6 +361,21 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	out.NotifyMemoryThreshold = IntOr(stored[keyNotifyMemory], out.NotifyMemoryThreshold)
 	out.NotifyOutboundDownThreshold = IntOr(stored[keyNotifyOutDown], out.NotifyOutboundDownThreshold)
 
+	out.BaleEnabled = stored[keyBaleEnabled] == "true"
+	str(keyBaleChat, &out.BaleChatID)
+	str(keyBaleToken, &out.BaleBotToken)
+	list(keyBaleKinds, &out.BaleKinds)
+	if v := strings.TrimSpace(stored[keyBaleLang]); v != "" {
+		out.BaleLang = v
+	}
+	if v := strings.TrimSpace(stored[keyBaleRunTime]); v != "" {
+		out.BaleRunTime = v
+	}
+	out.BaleBackup = stored[keyBaleBackup] == "true"
+	if v := strings.TrimSpace(stored[keyBaleBackupAt]); v != "" {
+		out.BaleBackupTime = v
+	}
+
 	out.BackupEveryHours = IntOr(stored[keyBackupEvery], out.BackupEveryHours)
 	out.BackupKeep = IntOr(stored[keyBackupKeep], out.BackupKeep)
 
@@ -397,6 +440,13 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 		keyNotifyCPU:       strconv.Itoa(in.NotifyCPUThreshold),
 		keyNotifyMemory:    strconv.Itoa(in.NotifyMemoryThreshold),
 		keyNotifyOutDown:   strconv.Itoa(in.NotifyOutboundDownThreshold),
+		keyBaleEnabled:     strconv.FormatBool(in.BaleEnabled),
+		keyBaleChat:        in.BaleChatID,
+		keyBaleKinds:       strings.Join(in.BaleKinds, ","),
+		keyBaleLang:        in.BaleLang,
+		keyBaleRunTime:     strings.TrimSpace(in.BaleRunTime),
+		keyBaleBackup:      strconv.FormatBool(in.BaleBackup),
+		keyBaleBackupAt:    strings.TrimSpace(in.BaleBackupTime),
 		keyBackupEvery:     strconv.Itoa(in.BackupEveryHours),
 		keyBackupKeep:      strconv.Itoa(in.BackupKeep),
 		keyMailEnabled:     strconv.FormatBool(in.MailEnabled),
@@ -418,6 +468,11 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 		values[keyNotifyToken] = in.NotifyBotToken
 	} else {
 		in.NotifyBotToken = cur.NotifyBotToken
+	}
+	if in.BaleBotToken != TokenPlaceholder {
+		values[keyBaleToken] = in.BaleBotToken
+	} else {
+		in.BaleBotToken = cur.BaleBotToken
 	}
 	if in.MailPassword != TokenPlaceholder {
 		values[keyMailPassword] = in.MailPassword
@@ -542,6 +597,24 @@ func (s *Settings) validate(in *PanelSettings) error {
 	if in.NotifyEnabled && strings.TrimSpace(in.NotifyChatID) == "" {
 		return fmt.Errorf("%w: notifications need a chat id", fault.ErrInvalid)
 	}
+	if in.BaleEnabled && strings.TrimSpace(in.BaleChatID) == "" {
+		return fmt.Errorf("%w: the Bale bot needs a chat id", fault.ErrInvalid)
+	}
+	switch in.BaleLang {
+	case "", "en", "fa":
+	default:
+		return fmt.Errorf("%w: unknown Bale bot language %q", fault.ErrInvalid, in.BaleLang)
+	}
+	if v := strings.TrimSpace(in.BaleRunTime); v != "" {
+		if _, err := notify.ParseSchedule(v); err != nil {
+			return fmt.Errorf("%w: Bale report time: %v", fault.ErrInvalid, err)
+		}
+	}
+	if v := strings.TrimSpace(in.BaleBackupTime); v != "" {
+		if err := notify.CheckBackupSchedule(v); err != nil {
+			return fmt.Errorf("%w: Bale backup time: %v", fault.ErrInvalid, err)
+		}
+	}
 	switch in.NotifyLang {
 	case "", "en", "fa":
 	default:
@@ -613,16 +686,68 @@ func (s *Settings) Notify(ctx context.Context) notify.Config {
 	}
 }
 
+// Bale projects the stored settings into what the Bale bot's notifier takes:
+// its own bot, chats, events and schedules, and the panel's thresholds.
+func (s *Settings) Bale(ctx context.Context) notify.Config {
+	got, err := s.Get(ctx)
+	if err != nil {
+		return notify.Config{Platform: notify.PlatformBale}
+	}
+	tg := s.Notify(ctx)
+	kinds := make(map[string]bool, len(got.BaleKinds))
+	for _, k := range got.BaleKinds {
+		if k = strings.TrimSpace(k); k != "" {
+			kinds[k] = true
+		}
+	}
+	return notify.Config{
+		Enabled:    got.BaleEnabled,
+		BotToken:   got.BaleBotToken,
+		ChatID:     got.BaleChatID,
+		Kinds:      kinds,
+		Lang:       got.BaleLang,
+		RunTime:    got.BaleRunTime,
+		Backup:     got.BaleBackup,
+		BackupTime: got.BaleBackupTime,
+		Thresholds: tg.Thresholds,
+		Platform:   notify.PlatformBale,
+	}
+}
+
+// BaleBackupStamp is where the Bale chat's automatic backup counts from,
+// apart from the Telegram one's: each goes on its own schedule.
+func (s *Settings) BaleBackupStamp() notify.BackupStamp {
+	return backupStamp{s: s, at: keyBaleBackupLastAt, schedule: keyBaleBackupLastSchedule}
+}
+
+// backupStamp keeps an automatic backup's last time under two keys.
+type backupStamp struct {
+	s            *Settings
+	at, schedule string
+}
+
+func (b backupStamp) LastBackup(ctx context.Context) (time.Time, string, error) {
+	return b.s.lastBackup(ctx, b.at, b.schedule)
+}
+
+func (b backupStamp) SetLastBackup(ctx context.Context, at time.Time, schedule string) error {
+	return b.s.setLastBackup(ctx, b.at, b.schedule, at, schedule)
+}
+
 // LastBackup is when the automatic backup last went to the chat, and on which
 // schedule; the zero time and "" before it ever has. It is the
 // notify.BackupStamp.
 func (s *Settings) LastBackup(ctx context.Context) (time.Time, string, error) {
+	return s.lastBackup(ctx, keyBackupLastAt, keyBackupLastSchedule)
+}
+
+func (s *Settings) lastBackup(ctx context.Context, atKey, scheduleKey string) (time.Time, string, error) {
 	db := s.db.WithContext(ctx)
-	at, _, err := database.GetSetting(db, keyBackupLastAt)
+	at, _, err := database.GetSetting(db, atKey)
 	if err != nil {
 		return time.Time{}, "", err
 	}
-	schedule, _, err := database.GetSetting(db, keyBackupLastSchedule)
+	schedule, _, err := database.GetSetting(db, scheduleKey)
 	if err != nil {
 		return time.Time{}, "", err
 	}
@@ -636,15 +761,19 @@ func (s *Settings) LastBackup(ctx context.Context) (time.Time, string, error) {
 
 // SetLastBackup records where the automatic backup's schedule counts from.
 func (s *Settings) SetLastBackup(ctx context.Context, at time.Time, schedule string) error {
+	return s.setLastBackup(ctx, keyBackupLastAt, keyBackupLastSchedule, at, schedule)
+}
+
+func (s *Settings) setLastBackup(ctx context.Context, atKey, scheduleKey string, at time.Time, schedule string) error {
 	stamp := ""
 	if !at.IsZero() {
 		stamp = at.UTC().Format(time.RFC3339Nano)
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := database.PutSetting(tx, keyBackupLastAt, stamp); err != nil {
+		if err := database.PutSetting(tx, atKey, stamp); err != nil {
 			return err
 		}
-		return database.PutSetting(tx, keyBackupLastSchedule, schedule)
+		return database.PutSetting(tx, scheduleKey, schedule)
 	})
 }
 

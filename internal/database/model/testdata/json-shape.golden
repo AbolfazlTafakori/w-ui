@@ -145,6 +145,7 @@ Client
 	group string
 	groups []string (not stored)
 	telegramId int64
+	baleId int64
 	quotaBytes uint64
 	usedBytes uint64
 	upBytes uint64

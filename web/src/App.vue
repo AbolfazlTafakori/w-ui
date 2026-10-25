@@ -53,6 +53,7 @@ const nav = [
       { to: '/settings/general', key: 'settings.tab.general', icon: 'SettingOutlined' },
       { to: '/settings/security', key: 'settings.tab.security', icon: 'SafetyOutlined' },
       { to: '/settings/telegram', key: 'settings.tab.notify', icon: 'MessageOutlined' },
+      { to: '/settings/bale', key: 'settings.tab.bale', icon: 'SendOutlined' },
       { to: '/settings/email', key: 'settings.tab.email', icon: 'MailOutlined' },
       { to: '/settings/subscription', key: 'settings.tab.subscription', icon: 'CloudServerOutlined' },
     ],

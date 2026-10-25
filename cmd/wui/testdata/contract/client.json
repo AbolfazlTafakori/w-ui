@@ -37,6 +37,7 @@
       }
     ],
     "activatedAt": null,
+    "baleId": 0,
     "createdAt": "\u003cstring\u003e",
     "deviceLimit": 2,
     "downBytes": 0,
