@@ -18,7 +18,7 @@ const { form, saved, inner, saveIfDirty, showSecret, secretConfigured, secretCle
 // The settings fields this tab edits, and the labels that name its platform.
 const f = computed(() => bale.value
   ? { enabled: 'baleEnabled', token: 'baleBotToken', chat: 'baleChatId', lang: 'baleLang', runTime: 'baleRunTime', backup: 'baleBackup', backupTime: 'baleBackupTime', kinds: 'baleKinds' }
-  : { enabled: 'notifyEnabled', token: 'notifyBotToken', chat: 'notifyChatId', lang: 'notifyLang', runTime: 'notifyRunTime', backup: 'notifyBackup', backupTime: 'notifyBackupTime', kinds: f.kinds })
+  : { enabled: 'notifyEnabled', token: 'notifyBotToken', chat: 'notifyChatId', lang: 'notifyLang', runTime: 'notifyRunTime', backup: 'notifyBackup', backupTime: 'notifyBackupTime', kinds: 'notifyKinds' })
 const L = computed(() => bale.value
   ? { enable: 'set.baleBotEnable', enableDesc: 'set.baleBotEnableDesc', token: 'set.baleToken', tokenDesc: 'set.baleTokenDesc', chatDesc: 'set.baleChatIdDesc', lang: 'set.baleBotLanguage', timeDesc: 'set.baleNotifyTimeDesc', events: 'set.baleEventBusNotify', eventsDesc: 'set.baleEventBusNotifyDesc' }
   : { enable: 'set.telegramBotEnable', enableDesc: 'set.telegramBotEnableDesc', token: 'set.telegramToken', tokenDesc: 'set.telegramTokenDesc', chatDesc: 'set.telegramChatIdDesc', lang: 'set.telegramBotLanguage', timeDesc: 'set.telegramNotifyTimeDesc', events: 'set.tgEventBusNotify', eventsDesc: 'set.tgEventBusNotifyDesc' })
