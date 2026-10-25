@@ -68,9 +68,10 @@ run_wizard() {
   )
 }
 
-# Nine blank lines: port? path? credentials? database? certificate (2: the
-# address)? is that the address? ipv6? every protocol? confirm?
-ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n'
+# Ten blank lines: port? subscription port? path? credentials? database?
+# certificate (2: the address)? is that the address? ipv6? every protocol?
+# confirm?
+ALL_DEFAULT=$'\n\n\n\n\n\n\n\n\n\n'
 
 echo
 echo "── pressing enter through everything leaves nothing guessable ─────────"
@@ -93,7 +94,7 @@ check "no password is chosen here; one is generated at install time" "" "$(field
 check "the default is a certificate for the address, as the classic default is" "ip" "$(field MODE "$out")"
 check "the default database is SQLite" "sqlite" "$(field DB "$out")"
 sub=$(field SUB "$out")
-truth "a subscription port is picked without asking" "$([[ "$sub" =~ ^[0-9]+$ ]] && echo 1)" "got $sub"
+truth "a random subscription port unless one is chosen" "$([[ "$sub" =~ ^[0-9]+$ && "$sub" != 2096 ]] && echo 1)" "got $sub"
 truth "and it is not the panel's port" "$([[ "$sub" != "$port" ]] && echo 1)" "both were $port"
 
 echo
@@ -108,6 +109,8 @@ echo "── an operator who wants to choose, can ──────────
 out=$(run_wizard "y
 8443
 y
+9443
+y
 panel
 y
 operator
@@ -120,6 +123,7 @@ me@example.com
 y
 y")
 check "the port they asked for"     "8443"              "$(field PORT "$out")"
+check "the subscription port they asked for" "9443"     "$(field SUB "$out")"
 check "the path they asked for"     "panel"             "$(field BASE "$out")"
 check "the name they asked for"     "operator"          "$(field USER "$out")"
 check "the password they asked for" "Sup3rSecret!"      "$(field PASS "$out")"
@@ -127,10 +131,23 @@ check "a certificate for the domain" "acme"             "$(field MODE "$out")"
 check "the domain"                  "panel.example.com" "$(field DOMAIN "$out")"
 
 echo
+echo "── choosing the port and pressing enter still gives a random one ──────"
+out=$(run_wizard "y
+
+y
+
+$ALL_DEFAULT")
+port=$(field PORT "$out"); sub=$(field SUB "$out")
+truth "enter at the port is random, not 2096" "$([[ "$port" =~ ^[0-9]+$ && "$port" != 2096 ]] && echo 1)" "got $port"
+truth "enter at the subscription port too, and not the panel's" \
+      "$([[ "$sub" =~ ^[0-9]+$ && "$sub" != 2096 && "$sub" != "$port" ]] && echo 1)" "got $sub"
+
+echo
 echo "── a port another project already serves is refused, not taken over ───"
 out=$(run_wizard "y
 2096
 9000
+n
 n
 n
 1
@@ -144,6 +161,7 @@ check "moved off the busy port" "9000" "$(field PORT "$out")"
 echo
 echo "── deliberately putting the panel at the root is allowed, and warned ──"
 out=$(run_wizard "n
+n
 y
 
 n
@@ -159,6 +177,7 @@ echo "── plain HTTP can be shut in to the loopback, and nothing is then open
 out=$(run_wizard "n
 n
 n
+n
 1
 4
 y
@@ -166,6 +185,7 @@ y
 y")
 check "binds to the loopback when asked"  "127.0.0.1" "$(field LISTEN "$out")"
 out=$(run_wizard "n
+n
 n
 n
 1
@@ -182,6 +202,10 @@ notaport
 70000
 2096
 y
+2096
+abc
+7001
+y
 has/slash
 also space
 good-path
@@ -196,6 +220,7 @@ panel.example.org
 y
 y")
 check "invalid ports rejected"  "2096"              "$(field PORT "$out")"
+check "the panel's own port refused for subscriptions" "7001" "$(field SUB "$out")"
 check "invalid paths rejected"  "good-path"         "$(field BASE "$out")"
 check "invalid choice rejected" "acme"              "$(field MODE "$out")"
 check "invalid domain rejected" "panel.example.org" "$(field DOMAIN "$out")"
@@ -204,6 +229,7 @@ check "invalid database choice rejected" "sqlite" "$(field DB "$out")"
 echo
 echo "── a mistyped password is asked again, not accepted ───────────────────"
 out=$(run_wizard "n
+n
 n
 y
 admin
@@ -221,6 +247,7 @@ check "the confirmed password is the one kept" "matching-one" "$(field PASS "$ou
 echo
 echo "── a password under 8 characters is refused ───────────────────────────"
 out=$(run_wizard "n
+n
 n
 y
 admin
@@ -252,7 +279,7 @@ out=$(
   set +e
   # shellcheck disable=SC1091
   WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
-  printf '1\nn\nn\nn\n1\n4\nn\ny\nn\n' >"$WORK/answers"
+  printf '1\nn\nn\nn\nn\n1\n4\nn\ny\nn\n' >"$WORK/answers"
   open_tty() { INTERACTIVE=1; exec 3<"$WORK/answers"; }
   public_ip() { printf '203.0.113.5'; }
   have() { return 1; }
@@ -324,6 +351,7 @@ echo "── manual: no to every protocol, then each asked on its own ───�
 out=$(run_wizard "n
 n
 n
+n
 1
 4
 n
@@ -341,6 +369,7 @@ check "each protocol as answered" "1001100" "$(field PROTOS "$out")"
 echo
 echo "── manual: a --no-... flag is kept when every protocol is chosen ──────"
 out=$(run_wizard "n
+n
 n
 n
 1

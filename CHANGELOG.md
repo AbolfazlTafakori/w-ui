@@ -11,6 +11,9 @@ All notable changes to W-UI are recorded here. The format follows
 - **A W-UI node's own customers can be brought in, as a 3x-ui or Pasarguard node's are.** *Bring in users* on a W-UI node's row lists the tunnels and customers that panel had of its own, and brings them in as this panel's: made here with the same keys, ports, addresses and passwords, so nothing a customer holds changes and nobody is disconnected. Their allowance, usage, expiry, device limit, groups and Telegram and Bale IDs come with them; the usage that came over is not counted twice, and their subscription link is this panel's from then on. A tunnel moves with every customer on it, and a customer with a file on an Xray inbound there stays. Both panels need this version.
 
 ### Fixed
+- **The installer no longer puts the panel on 2096 when you press Enter.** Choosing to name the panel port and then pressing Enter at the port question put the panel on 2096, the number in the documentation, the one a sweep for panels tries first. Enter there now gives a random free port.
+- **The installer asks for the subscription port, as it asks for the panel's.** Name one, or let it pick a random free one; it is never the panel's own port or one something else already serves.
+- **A tall dialog's buttons stay on the screen.** On a desktop window the tunnel form and the customer form could run past the bottom of the window, Create and Cancel with them; they now always fit, and the form scrolls inside.
 - **A 3x-ui user brought in keeps its Telegram ID,** so the bot here knows the customer at once.
 - **A 3x-ui user on two inbounds is brought in** when the first of them takes no customers here and the second does; before, it was offered as one that could not be.
 - **A Pasarguard user in two groups that share an inbound** lists that inbound once.

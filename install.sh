@@ -99,8 +99,9 @@ SUMS_URL=""
 REPO="${WUI_REPO:-AbolfazlTafakori/w-ui}"
 BRANCH="${WUI_BRANCH:-main}"
 
-# Only a starting point for the prompt. Nothing is installed on it unless the
-# operator asks for it by name: the default is a random free port.
+# The panel binary's own default, kept only for an older install whose unit
+# names no port. A new install never gets it: unless the operator types a
+# port, it gets a random free one.
 PANEL_PORT=2096
 # The subscription service's own port. Random, like the panel's: the panel
 # picks it and enables the service, so a customer's link works from the first
@@ -1639,6 +1640,35 @@ read_existing() {
   fi
 }
 
+# ask_port VAR "question" [port it may not be] -- a free port the operator
+# types, or a random free one on enter. Whatever is listening on a port typed
+# here belongs to somebody, so it is never offered as something to take over.
+ask_port() {
+  local __var="$1" __q="$2" __not="${3:-}" __p
+  while true; do
+    ask __p "$__q" ""
+    if [[ -z "$__p" ]]; then
+      if [[ -n "$__not" ]]; then __p="$(pick_sub_port)"; else __p="$(random_free_port)"; fi
+      info "random port: $__p"
+      break
+    fi
+    if [[ ! "$__p" =~ ^[0-9]+$ ]] || (( __p < 1 || __p > 65535 )); then
+      warn "a port is a number from 1 to 65535"
+      continue
+    fi
+    if [[ -n "$__not" && "$__p" == "$__not" ]]; then
+      warn "port $__p is the panel's own — pick another"
+      continue
+    fi
+    if port_taken "$__p"; then
+      warn "port $__p is already served by $(port_owner "$__p") — pick another"
+      continue
+    fi
+    break
+  done
+  printf -v "$__var" '%s' "$__p"
+}
+
 # A port for the subscription service that is free and is not the panel's.
 pick_sub_port() {
   local p tries=0
@@ -1997,25 +2027,12 @@ configure() {
   # Random unless the operator wants otherwise. A panel on a port that is
   # written down in a README is a panel that gets found by anyone sweeping the
   # address space for one, and what they find is a form to guess passwords at.
-  local p
+  # The question offers no port of its own for the same reason: enter gives a
+  # random one, never a number from the documentation.
   if [[ "$PORT_KNOWN" == 1 ]]; then
     info "keeping the port this install already uses: $PANEL_PORT"
   elif ask_yn "Choose the panel port yourself? (otherwise a random one is used)" n; then
-    while true; do
-      ask p "Panel port" "$PANEL_PORT"
-      if [[ ! "$p" =~ ^[0-9]+$ ]] || (( p < 1 || p > 65535 )); then
-        warn "a port is a number from 1 to 65535"
-        continue
-      fi
-      if port_taken "$p"; then
-        # Never offered as something to take over. Whatever is listening there
-        # belongs to somebody, and this installer's job is to fit around it.
-        warn "port $p is already served by $(port_owner "$p") — pick another"
-        continue
-      fi
-      PANEL_PORT="$p"
-      break
-    done
+    ask_port PANEL_PORT "Panel port (enter for a random one)" ""
   else
     PANEL_PORT="$(random_free_port)"
     info "panel port: $PANEL_PORT"
@@ -2023,11 +2040,13 @@ configure() {
 
   # ── the subscription port ─────────────────────────────────────────────────
   #
-  # Not asked. The customers' links carry it, and there is no reason for it
-  # to be anything but a free random port beside the panel's. An operator who
-  # wants a particular one passes --sub-port.
+  # Asked as the panel's is. The customers' links carry it, so an operator
+  # with a port open for it at their provider, or a CDN in front, sets it
+  # here rather than finding it in the settings later.
   if [[ "$SUB_KNOWN" == 1 ]]; then
     info "keeping the subscription port this install already uses: $SUB_PORT"
+  elif ask_yn "Choose the subscription port yourself? (otherwise a random one is used)" n; then
+    ask_port SUB_PORT "Subscription port (enter for a random one)" "$PANEL_PORT"
   else
     SUB_PORT="$(pick_sub_port)"
     info "subscription port: $SUB_PORT"

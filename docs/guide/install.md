@@ -51,9 +51,10 @@ Nothing after the three questions asks anything. If a certificate cannot be issu
 It asks for every choice, in this order, then runs unattended:
 
 1. **The panel port.** A random free one unless you name it. A port something else already listens on is refused.
-2. **The URL path.** A random 18-character prefix. Everything outside it answers 404, the sign-in page included.
-3. **The administrator.** The name and the password are both generated unless you set them.
-4. **The database:**
+2. **The subscription port.** Asked the same way: a random free one unless you name it, never the panel's own port or one already in use. The customers' links carry it.
+3. **The URL path.** A random 18-character prefix. Everything outside it answers 404, the sign-in page included.
+4. **The administrator.** The name and the password are both generated unless you set them.
+5. **The database:**
 
    ```
    1) SQLite      — one file, nothing to install; fine up to a few thousand customers   ← default
@@ -62,7 +63,7 @@ It asks for every choice, in this order, then runs unattended:
 
    A backup from either restores into the other, so you are not locked into this choice. See [Backup and restore](/operations/backup-restore).
 
-5. **How the panel is reached:**
+6. **How the panel is reached:**
 
    ```
    1) Let's Encrypt for Domain (90-day validity, auto-renews)
@@ -73,9 +74,9 @@ It asks for every choice, in this order, then runs unattended:
 
    Whichever you choose, the panel answers on one port, by the address and by the domain alike. See [Certificates](/guide/certificates).
 
-6. **The protocols.** One question, *Install every protocol?*, yes by default. If you answer no, each is asked on its own: OpenVPN, AmneziaWG, L2TP/IPsec, IKEv2, PPTP, OpenConnect, and xray with sing-box. A protocol left out is not lost: the panel installs it when you make the first tunnel of that kind.
+7. **The protocols.** One question, *Install every protocol?*, yes by default. If you answer no, each is asked on its own: OpenVPN, AmneziaWG, L2TP/IPsec, IKEv2, PPTP, OpenConnect, and xray with sing-box. A protocol left out is not lost: the panel installs it when you make the first tunnel of that kind.
 
-The **subscription port** is not asked. The installer picks a free random one beside the panel's port, turns the subscription service on and gives it the panel's certificate, so a customer's link works from the first minute. `--sub-port N` names one instead.
+Whichever subscription port it gets, the installer turns the subscription service on and gives it the panel's certificate, so a customer's link works from the first minute. `--port N` and `--sub-port N` name either port without a question. If you choose to name a port and then press Enter, you still get a random one, never a fixed default such as 2096.
 
 If you press Enter through every question, nothing about the result can be guessed: a random port, a random path, a random administrator, a generated password, and a certificate for the server's own address.
 
