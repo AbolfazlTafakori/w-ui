@@ -6,6 +6,9 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **An outbound moved to the top stays there.** The top of the outbounds list is the default every customer leaves through. A subscription set to add its outbounds at the top put the built-in ones back above everything each time it was fetched, so an outbound from it moved to the top was moved down again on the next refresh, and everyone left through direct. A fetch now leaves the order as the operator set it, and only a subscription's new outbounds are added near the top, never above the default.
+
 ## [3.1.1] — 2026-10-26
 
 ### Fixed

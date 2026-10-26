@@ -297,7 +297,7 @@ func (s *OutboundSubs) Refresh(ctx context.Context, id uint) error {
 		byTag[ob.Tag] = ob
 	}
 	keep := map[string]bool{}
-	var ids []uint
+	var ids, created []uint
 	var problems []string
 	for _, it := range items {
 		it.Tag = sub.TagPrefix + it.Tag
@@ -322,12 +322,13 @@ func (s *OutboundSubs) Refresh(ctx context.Context, id uint) error {
 			return err
 		}
 		ids = append(ids, ob.ID)
+		created = append(created, ob.ID)
 	}
 	if _, err := s.removeProduced(ctx, sub.ID, keep); err != nil {
 		return err
 	}
-	if sub.Prepend {
-		if err := s.prepend(ctx, ids); err != nil {
+	if sub.Prepend && len(created) > 0 {
+		if err := s.prepend(ctx, created); err != nil {
 			return err
 		}
 	}
@@ -349,7 +350,14 @@ func (s *OutboundSubs) Refresh(ctx context.Context, id uint) error {
 	return nil
 }
 
-// prepend moves the given outbounds to just after the built-ins.
+// prepend puts a subscription's new outbounds near the top: after the
+// built-ins that lead the list, and never above the first row.
+//
+// The first row is the default every customer leaves through, and the order
+// an operator dragged the rest into is theirs. This used to put the built-ins
+// back on top and the subscription's outbounds after them on every fetch --
+// so an outbound moved to the top to carry everything was moved down again
+// on the next refresh, and everyone left through direct.
 func (s *OutboundSubs) prepend(ctx context.Context, ids []uint) error {
 	all, err := s.outbounds.List(ctx)
 	if err != nil {
@@ -359,18 +367,26 @@ func (s *OutboundSubs) prepend(ctx context.Context, ids []uint) error {
 	for _, id := range ids {
 		set[id] = true
 	}
-	var order []uint
+	var rest []uint
 	for _, ob := range all {
-		if ob.Builtin {
-			order = append(order, ob.ID)
+		if !set[ob.ID] {
+			rest = append(rest, ob.ID)
 		}
 	}
-	order = append(order, ids...)
+	at := 0
 	for _, ob := range all {
-		if !ob.Builtin && !set[ob.ID] {
-			order = append(order, ob.ID)
+		if set[ob.ID] {
+			continue
 		}
+		if !ob.Builtin {
+			break
+		}
+		at++
 	}
+	if at == 0 && len(rest) > 0 {
+		at = 1
+	}
+	order := append(append(append([]uint{}, rest[:at]...), ids...), rest[at:]...)
 	return s.outbounds.Reorder(ctx, order)
 }
 
