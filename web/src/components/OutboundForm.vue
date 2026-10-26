@@ -3,6 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
+import MultiSelect from './MultiSelect.vue'
+import { tunnelOptions, tunnelIds } from '../lib/outbounds/tunnels.js'
 
 // The outbound form, laid out the way the classic panel's is: a 780px dialog titled
 // "+ Outbounds", two tabs -- Basics and JSON -- and a horizontal form with
@@ -52,6 +54,8 @@ function blank() {
     tag: '',
     kind: 'wireguard',
     note: '',
+    // The tunnels that leave through it, by id.
+    interfaces: [],
     // WireGuard
     address: '',
     privateKey: '',
@@ -294,13 +298,17 @@ function f() {
 }
 
 // ── load on edit ──
+const ifaceOptions = ref([])
+
 onMounted(async () => {
+  tunnelOptions().then((o) => (ifaceOptions.value = o))
   if (!props.outbound) return
   const o = props.outbound
   Object.assign(form.value, {
     tag: o.tag,
     kind: o.kind,
     note: o.note || '',
+    interfaces: (o.interfaces || []).map(String),
     address: o.address || '',
     peerPubKey: o.peerPubKey || '',
     hopAddress: o.hopAddress || '',
@@ -385,7 +393,7 @@ function removeAllowed(i) {
 // ── payload ──
 function payload() {
   const f = form.value
-  const body = { tag: f.tag.trim(), kind: f.kind, note: f.note }
+  const body = { tag: f.tag.trim(), kind: f.kind, note: f.note, interfaces: tunnelIds(f.interfaces) }
   if (f.kind === 'wireguard') {
     Object.assign(body, {
       address: f.address.trim(),
@@ -848,6 +856,14 @@ async function submit() {
             </div>
           </template>
 
+          <div class="hrow">
+            <label>{{ t('routing.tunnels') }}</label>
+            <div class="hctl">
+              <MultiSelect v-model="form.interfaces" :options="ifaceOptions" :placeholder="t('routing.tunnels')" />
+              <span class="hint">{{ t('routing.tunnels.hint') }}</span>
+              <p v-if="fieldError.interfaces" class="field-error">{{ fieldError.interfaces }}</p>
+            </div>
+          </div>
           <div class="hrow">
             <label for="ob-note">{{ t('outbound.note') }}</label>
             <div class="hctl"><input id="ob-note" v-model="form.note" autocomplete="off" /></div>

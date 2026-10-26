@@ -1257,6 +1257,8 @@
   "routing.rule.balancer": "Balancer",
   "routing.rule.balancerTagTooltip": "Send matching traffic to a balancer instead of one outbound.",
   "routing.balancer.strategy": "Strategy",
+  "routing.tunnels": "Interfaces",
+  "routing.tunnels.hint": "Everyone on these interfaces leaves through here. Saved as a routing rule; narrower rules above it still come first.",
   "routing.balancer.strategy.random": "Each connection goes to one member, chosen by hash, so the load spreads evenly and a connection stays put.",
   "routing.balancer.strategy.leastPing": "Every connection goes to the member that answered the last check fastest.",
   "routing.balancerCreated": "Balancer added",

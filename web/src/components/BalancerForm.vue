@@ -5,6 +5,7 @@ import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
+import { tunnelOptions, tunnelIds } from '../lib/outbounds/tunnels.js'
 
 // The balancer dialog: a tag, a strategy, the outbounds it spreads over.
 // Laid out as the rule dialog is, so the two read as one family.
@@ -20,10 +21,12 @@ const busy = ref(false)
 const fieldError = ref({})
 const formError = ref('')
 
-const form = ref({ tag: '', enabled: true, strategy: 'random', members: [], note: '' })
+const form = ref({ tag: '', enabled: true, strategy: 'random', members: [], note: '', interfaces: [] })
 const STRATEGIES = ['random', 'leastPing']
+const ifaceOptions = ref([])
 
-onMounted(() => {
+onMounted(async () => {
+  tunnelOptions().then((o) => (ifaceOptions.value = o))
   if (props.balancer) {
     const b = props.balancer
     Object.assign(form.value, {
@@ -32,6 +35,7 @@ onMounted(() => {
       strategy: b.strategy || 'random',
       members: b.memberList || [],
       note: b.note || '',
+      interfaces: (b.interfaces || []).map(String),
     })
   }
 })
@@ -56,9 +60,10 @@ async function submit() {
   fieldError.value = {}
   formError.value = ''
   try {
+    const body = { ...form.value, interfaces: tunnelIds(form.value.interfaces) }
     const saved = props.balancer
-      ? await api.patch(`/api/balancers/${props.balancer.id}`, form.value)
-      : await api.post('/api/balancers', form.value)
+      ? await api.patch(`/api/balancers/${props.balancer.id}`, body)
+      : await api.post('/api/balancers', body)
     notify(editing.value ? t('routing.balancerUpdated') : t('routing.balancerCreated'), 'success')
     emit('saved', saved)
   } catch (err) {
@@ -107,6 +112,14 @@ async function submit() {
             <div class="hctl">
               <MultiSelect v-model="form.members" :options="memberOptions" :placeholder="t('nav.outbounds')" />
               <p v-if="fieldError.members" class="field-error">{{ fieldError.members }}</p>
+            </div>
+          </div>
+          <div class="hrow">
+            <label>{{ t('routing.tunnels') }}</label>
+            <div class="hctl">
+              <MultiSelect v-model="form.interfaces" :options="ifaceOptions" :placeholder="t('routing.tunnels')" />
+              <span class="hint">{{ t('routing.tunnels.hint') }}</span>
+              <p v-if="fieldError.interfaces" class="field-error">{{ fieldError.interfaces }}</p>
             </div>
           </div>
           <div class="hrow">

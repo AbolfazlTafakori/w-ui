@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/egress"
 	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/oversight"
@@ -12,26 +13,90 @@ import (
 
 // ── outbounds ────────────────────────────────────────────────────────────────
 
+// An outbound or a balancer is shown with the tunnels that leave through it,
+// and its form can set them: "interfaces", a list of tunnel ids. Absent from
+// a request, they are left as they are. See egress.SetTunnels.
+
+type outboundView struct {
+	model.Outbound
+	Interfaces []uint `json:"interfaces"`
+}
+
+type outboundRequest struct {
+	egress.OutboundInput
+	Interfaces *[]uint `json:"interfaces"`
+}
+
+type balancerView struct {
+	egress.BalancerView
+	Interfaces []uint `json:"interfaces"`
+}
+
+type balancerRequest struct {
+	egress.BalancerInput
+	Interfaces *[]uint `json:"interfaces"`
+}
+
+// tunnelsOf is every target's tunnels, or nothing if they cannot be read --
+// a list is still worth showing without them.
+func (s *Server) tunnelsOf(r *http.Request) map[string][]uint {
+	m, err := s.routing.TunnelsByTarget(r.Context())
+	if err != nil {
+		s.log.Warn("could not read which tunnels leave where", "error", err)
+	}
+	return m
+}
+
+func orEmpty(v []uint) []uint {
+	if v == nil {
+		return []uint{}
+	}
+	return v
+}
+
+// setTunnels applies a form's tunnels to tag, if it sent any.
+func (s *Server) setTunnels(r *http.Request, tag string, ids *[]uint) error {
+	if ids == nil {
+		return nil
+	}
+	return s.routing.SetTunnels(r.Context(), tag, *ids)
+}
+
 func (s *Server) handleListOutbounds(w http.ResponseWriter, r *http.Request) {
 	list, err := s.outbounds.List(r.Context())
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	tunnels := s.tunnelsOf(r)
+	out := make([]outboundView, 0, len(list))
+	for _, ob := range list {
+		out = append(out, outboundView{Outbound: ob, Interfaces: orEmpty(tunnels[ob.Tag])})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleCreateOutbound(w http.ResponseWriter, r *http.Request) {
-	var in egress.OutboundInput
+	var in outboundRequest
 	if !decode(w, r, &in) {
 		return
 	}
-	ob, err := s.outbounds.Create(r.Context(), in)
+	if in.Interfaces != nil {
+		if err := s.routing.CheckTunnels(r.Context(), *in.Interfaces); err != nil {
+			fail(w, s.log, err)
+			return
+		}
+	}
+	ob, err := s.outbounds.Create(r.Context(), in.OutboundInput)
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, ob)
+	if err := s.setTunnels(r, ob.Tag, in.Interfaces); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, outboundView{Outbound: *ob, Interfaces: orEmpty(s.tunnelsOf(r)[ob.Tag])})
 }
 
 func (s *Server) handleUpdateOutbound(w http.ResponseWriter, r *http.Request) {
@@ -39,16 +104,26 @@ func (s *Server) handleUpdateOutbound(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in egress.OutboundInput
+	var in outboundRequest
 	if !decode(w, r, &in) {
 		return
 	}
-	ob, err := s.outbounds.Update(r.Context(), id, in)
+	if in.Interfaces != nil {
+		if err := s.routing.CheckTunnels(r.Context(), *in.Interfaces); err != nil {
+			fail(w, s.log, err)
+			return
+		}
+	}
+	ob, err := s.outbounds.Update(r.Context(), id, in.OutboundInput)
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ob)
+	if err := s.setTunnels(r, ob.Tag, in.Interfaces); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, outboundView{Outbound: *ob, Interfaces: orEmpty(s.tunnelsOf(r)[ob.Tag])})
 }
 
 func (s *Server) handleDeleteOutbound(w http.ResponseWriter, r *http.Request) {
@@ -112,20 +187,35 @@ func (s *Server) handleListBalancers(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, list)
+	tunnels := s.tunnelsOf(r)
+	out := make([]balancerView, 0, len(list))
+	for _, b := range list {
+		out = append(out, balancerView{BalancerView: b, Interfaces: orEmpty(tunnels[b.Tag])})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleCreateBalancer(w http.ResponseWriter, r *http.Request) {
-	var in egress.BalancerInput
+	var in balancerRequest
 	if !decode(w, r, &in) {
 		return
 	}
-	b, err := s.balancers.Create(r.Context(), in)
+	if in.Interfaces != nil {
+		if err := s.routing.CheckTunnels(r.Context(), *in.Interfaces); err != nil {
+			fail(w, s.log, err)
+			return
+		}
+	}
+	b, err := s.balancers.Create(r.Context(), in.BalancerInput)
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, b)
+	if err := s.setTunnels(r, b.Tag, in.Interfaces); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, balancerView{BalancerView: *b, Interfaces: orEmpty(s.tunnelsOf(r)[b.Tag])})
 }
 
 func (s *Server) handleUpdateBalancer(w http.ResponseWriter, r *http.Request) {
@@ -133,16 +223,26 @@ func (s *Server) handleUpdateBalancer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in egress.BalancerInput
+	var in balancerRequest
 	if !decode(w, r, &in) {
 		return
 	}
-	b, err := s.balancers.Update(r.Context(), id, in)
+	if in.Interfaces != nil {
+		if err := s.routing.CheckTunnels(r.Context(), *in.Interfaces); err != nil {
+			fail(w, s.log, err)
+			return
+		}
+	}
+	b, err := s.balancers.Update(r.Context(), id, in.BalancerInput)
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, b)
+	if err := s.setTunnels(r, b.Tag, in.Interfaces); err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, balancerView{BalancerView: *b, Interfaces: orEmpty(s.tunnelsOf(r)[b.Tag])})
 }
 
 func (s *Server) handleDeleteBalancer(w http.ResponseWriter, r *http.Request) {

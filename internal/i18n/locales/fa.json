@@ -1257,6 +1257,8 @@
   "routing.rule.balancer": "بالانسر",
   "routing.rule.balancerTagTooltip": "ترافیک منطبق را به‌جای یک خروجی به یک بالانسر بفرست.",
   "routing.balancer.strategy": "استراتژی",
+  "routing.tunnels": "اینترفیس‌ها",
+  "routing.tunnels.hint": "همه‌ی کاربرهای این اینترفیس‌ها از این‌جا خارج می‌شوند. به‌صورت یک قانون مسیریابی ذخیره می‌شود و قانون‌های دقیق‌تر بالای آن همچنان اول اعمال می‌شوند.",
   "routing.balancer.strategy.random": "هر اتصال با هش به یکی از اعضا می‌رود؛ بار یکنواخت پخش می‌شود و اتصال سر جایش می‌ماند.",
   "routing.balancer.strategy.leastPing": "هر اتصال به عضوی می‌رود که در آخرین بررسی سریع‌تر پاسخ داده.",
   "routing.balancerCreated": "بالانسر اضافه شد",
