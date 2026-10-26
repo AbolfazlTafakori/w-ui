@@ -6,6 +6,8 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.1.1] — 2026-10-26
+
 ### Fixed
 - **An L2TP or IKEv2 tunnel knows all of its addresses.** The other addresses an operator adds to a tunnel under *Hosts* went into customers' files but never reached the tunnel itself: an IKEv2 server certificate named only the first address, so a device dialing another was refused the certificate, and an L2TP tunnel bound to its first address only. A change to them now reaches the tunnel.
 
@@ -1032,7 +1034,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.7...v3.0.0
 [2.6.7]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.6...v2.6.7
