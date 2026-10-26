@@ -6,6 +6,8 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.1.2] — 2026-10-26
+
 ### Added
 - **Which tunnels leave through an outbound or a balancer is chosen on its own form.** An *Interfaces* field on both forms sends everyone on those tunnels out through it. It is saved as a routing rule, so the rules page shows it and narrower rules above it still come first; a tunnel moved to another outbound or balancer leaves the first, and the operator's own rules are never changed.
 
@@ -1040,7 +1042,8 @@ The first public release.
   server's own address, renews it unattended, and a `w-ui` management menu.
 - English and Persian, with dark, ultra-dark and light themes.
 
-[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.2...HEAD
+[3.1.2]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/AbolfazlTafakori/w-ui/compare/v2.6.7...v3.0.0
