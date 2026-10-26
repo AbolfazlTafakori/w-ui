@@ -350,8 +350,7 @@ func TestANewRunAdoptsTheRunningXl2tpd(t *testing.T) {
 }
 
 // xl2tpd answers from the endpoint that is this server's own address, when
-// exactly one is; with none or several, or with a relay in front of this
-// server among them, it listens on every address.
+// exactly one is; with none or several it listens on every address.
 func TestXl2tpdAnswersFromTheAddressDevicesDial(t *testing.T) {
 	local := []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("10.0.0.5"),
 		netip.MustParseAddr("203.0.113.7"), netip.MustParseAddr("203.0.113.8")}
@@ -369,9 +368,6 @@ func TestXl2tpdAnswersFromTheAddressDevicesDial(t *testing.T) {
 		{[]string{"vpn.example.com", "203.0.113.7"}, "203.0.113.7"},
 		{[]string{"vpn.example.com", "203.0.113.8"}, ""},
 		{[]string{"other.example"}, ""},
-		{[]string{"203.0.113.7", "other.example"}, ""}, // a relay forwards here too
-		{[]string{"203.0.113.7", "198.51.100.1"}, ""},  // the relay by address
-		{[]string{"203.0.113.7", "unresolved.example"}, "203.0.113.7"},
 		{[]string{"127.0.0.1"}, ""},
 		{nil, ""},
 	} {

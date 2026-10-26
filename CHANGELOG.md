@@ -9,9 +9,6 @@ All notable changes to W-UI are recorded here. The format follows
 ### Fixed
 - **An L2TP or IKEv2 tunnel knows all of its addresses.** The other addresses an operator adds to a tunnel under *Hosts* went into customers' files but never reached the tunnel itself: an IKEv2 server certificate named only the first address, so a device dialing another was refused the certificate, and an L2TP tunnel bound to its first address only. A change to them now reaches the tunnel.
 
-### Fixed
-- **L2TP works through a relay.** With a server inside Iran forwarding UDP 500 and 4500 to this one, IPsec came up but L2TP never did: xl2tpd was bound to this server's public address, and the relay hands its traffic over elsewhere -- often to the loopback. When one of a tunnel's addresses is another server's, xl2tpd now listens on every address.
-
 ## [3.1.0] — 2026-10-26
 
 ### Added
