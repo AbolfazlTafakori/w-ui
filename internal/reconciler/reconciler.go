@@ -791,6 +791,22 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		return nil, fmt.Errorf("load interfaces: %w", err)
 	}
 
+	// An interface's other addresses -- a relay in front of this server, a
+	// spare name for when the first is blocked -- are what an L2TP or IKEv2
+	// tunnel has to answer on as well: xl2tpd listens for them and the
+	// IKEv2 certificate names them. Only a profile used to be given them.
+	var hosts []model.Host
+	if err := db.Where("enabled = ?", true).Order("priority, id").Find(&hosts).Error; err != nil {
+		return nil, fmt.Errorf("load hosts: %w", err)
+	}
+	for i := range interfaces {
+		for _, h := range hosts {
+			if h.InterfaceID == interfaces[i].ID {
+				interfaces[i].Hosts = append(interfaces[i].Hosts, h)
+			}
+		}
+	}
+
 	// A machine past the transfer allowance its host gives it carries nobody,
 	// the same as any node. The interfaces stay up and configured; what stops
 	// is the peers on them, so the month rolling over puts everyone back
