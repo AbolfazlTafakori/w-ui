@@ -15,6 +15,13 @@ import (
 // one -- or with several, xl2tpd listens on every address, as before:
 // binding one would cut off devices dialing the others.
 //
+// So it does when an endpoint is another server's: a relay in front of
+// this one, such as a server inside Iran forwarding UDP 500 and 4500 here.
+// A device dialing the relay arrives from wherever the relay hands its
+// traffic over -- often this server's own loopback -- and with xl2tpd
+// bound to the public address its L2TP never reaches it, though IPsec
+// came up.
+//
 // Names are looked up at most once a minute; the agent runs every second.
 type listenAddr struct {
 	local   func() []netip.Addr
@@ -67,6 +74,7 @@ func (l *listenAddr) lookup(host string) []netip.Addr {
 
 func pickListen(endpoints []string, local []netip.Addr, lookup func(string) []netip.Addr) string {
 	var found []netip.Addr
+	relayed := false
 	for _, e := range endpoints {
 		var addrs []netip.Addr
 		if a, err := netip.ParseAddr(strings.Trim(e, "[]")); err == nil {
@@ -75,12 +83,17 @@ func pickListen(endpoints []string, local []netip.Addr, lookup func(string) []ne
 			addrs = lookup(e)
 		}
 		for _, a := range addrs {
-			if a.Is4() && !a.IsLoopback() && slices.Contains(local, a) && !slices.Contains(found, a) {
+			if !a.Is4() || a.IsLoopback() {
+				continue
+			}
+			if !slices.Contains(local, a) {
+				relayed = true
+			} else if !slices.Contains(found, a) {
 				found = append(found, a)
 			}
 		}
 	}
-	if len(found) != 1 {
+	if len(found) != 1 || relayed {
 		return ""
 	}
 	return found[0].String()

@@ -6,6 +6,9 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **L2TP works through a relay.** With a server inside Iran forwarding UDP 500 and 4500 to this one, IPsec came up but L2TP never did: xl2tpd was bound to this server's public address, and the relay hands its traffic over elsewhere -- often to the loopback. When one of a tunnel's addresses is another server's, xl2tpd now listens on every address.
+
 ## [3.1.0] — 2026-10-26
 
 ### Added
