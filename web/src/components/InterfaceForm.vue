@@ -11,6 +11,7 @@ import AntIcon from './AntIcon.vue'
 import HelpTip from './HelpTip.vue'
 import Toggle from './Toggle.vue'
 import AwgEditor from './AwgEditor.vue'
+import { wsOf } from '../lib/interfaces/rows.js'
 
 const props = defineProps({
   // When present the dialog edits that interface instead of creating one.
@@ -72,6 +73,9 @@ const form = ref(
         // beside it on a port of its own.
         transport: props.iface.protocol === 'wireguard' ? props.iface.stealth?.transport || 'udp' : props.iface.openvpn?.transport || 'udp',
         transportPort: props.iface.stealth?.port || '',
+        // wui-ws's front, path and decoy; the transport's keys never leave
+        // the server.
+        ws: wsOf(props.iface.stealth),
         psk: props.iface.l2tp?.psk || '',
         l2tpPlain: !!props.iface.l2tp?.allowPlain,
         ikev2Modes: ikeModesOf(props.iface.ikev2),
@@ -96,6 +100,7 @@ const form = ref(
         nodeId: 0,
         transport: 'udp',
         transportPort: '',
+        ws: wsOf(null),
         psk: '',
         l2tpPlain: false,
         ikev2Modes: [...IKE_MODES],
@@ -195,11 +200,13 @@ async function drawAwg(level = form.value.awgLevel) {
   }
 }
 const showsAwg = computed(() => isWireGuard.value && form.value.mode === 'amnezia')
-// WireGuard's transport menu: plain UDP, or wui-udp beside it. The stealth
-// transports read standard WireGuard only; AmneziaWG's packets are its own.
+// WireGuard's transport menu: plain UDP, or wui-udp or wui-ws beside it. The
+// stealth transports read standard WireGuard only; AmneziaWG's packets are
+// its own.
 const wgTransports = computed(() => isWireGuard.value && form.value.mode !== 'amnezia')
 const showsTransport = computed(() => !xrayNode.value && (isOpenVPN.value || wgTransports.value))
 const stealthChosen = computed(() => wgTransports.value && form.value.transport !== 'udp')
+const wsChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-ws')
 function chooseTransport() {
   clearError('transport')
   clearError('transportPort')
@@ -207,7 +214,10 @@ function chooseTransport() {
   if (stealthChosen.value && !form.value.transportPort) form.value.transportPort = (Number(form.value.listenPort) || 51820) + 1
 }
 const transportHint = computed(() => {
-  if (isWireGuard.value) return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
+  if (isWireGuard.value) {
+    if (form.value.transport === 'wui-ws') return t('interface.transportWuiWsHint')
+    return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
+  }
   return form.value.transport === 'tcp' ? t('interface.transportTcpHint') : t('interface.transportUdpHint')
 })
 watch(
@@ -314,6 +324,7 @@ function chooseProtocol(p) {
   // Each protocol's transports are its own.
   form.value.transport = 'udp'
   form.value.transportPort = ''
+  form.value.ws = wsOf(null)
 }
 
 const fieldError = ref('')
@@ -534,6 +545,7 @@ defineExpose({ showError })
                     <template v-if="isWireGuard">
                       <option value="udp">{{ t('interface.transportWgUdp') }}</option>
                       <option value="wui-udp">{{ t('interface.transportWuiUdp') }}</option>
+                      <option value="wui-ws">{{ t('interface.transportWuiWs') }}</option>
                     </template>
                     <template v-else>
                       <option value="udp">{{ t('interface.transportUdp') }}</option>
@@ -546,7 +558,10 @@ defineExpose({ showError })
             </div>
             <div v-if="stealthChosen" class="acol12">
               <div class="aform-item">
-                <label class="aform-label" for="if-transport-port">{{ t('interface.transportPort') }} <HelpTip :text="t('interface.transportPortHint')" /></label>
+                <label class="aform-label" for="if-transport-port">
+                  {{ wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
+                  <HelpTip :text="wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
+                </label>
                 <label class="ainput number" :class="{ invalid: fieldName === 'transportPort' }">
                   <input id="if-transport-port" v-model="form.transportPort" data-field="transportPort" type="number" min="1" max="65535" class="ltr" @input="clearError('transportPort')" />
                 </label>
@@ -554,6 +569,72 @@ defineExpose({ showError })
               </div>
             </div>
           </div>
+
+          <!-- wui-ws: the front devices reach, the path it sends on, and the
+               site every stranger sees. The path is drawn when left empty;
+               the operator's web server needs it, so it shows once saved. -->
+          <template v-if="wsChosen">
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-host">{{ t('interface.wsHost') }} <HelpTip :text="t('interface.wsHostHint')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.host' }">
+                    <input id="if-ws-host" v-model.trim="form.ws.host" data-field="transportWs.host" class="ltr" placeholder="cdn.example.com" @input="clearError('transportWs.host')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.host'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-front-port">{{ t('interface.wsFrontPort') }} <HelpTip :text="t('interface.wsFrontPortHint')" /></label>
+                  <label class="ainput number" :class="{ invalid: fieldName === 'transportWs.frontPort' }">
+                    <input id="if-ws-front-port" v-model="form.ws.frontPort" data-field="transportWs.frontPort" type="number" min="1" max="65535" class="ltr" placeholder="443" @input="clearError('transportWs.frontPort')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.frontPort'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-path">{{ t('interface.wsPath') }} <HelpTip :text="t('interface.wsPathHint')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.path' }">
+                    <input id="if-ws-path" v-model.trim="form.ws.path" data-field="transportWs.path" class="ltr" :placeholder="t('interface.wsPathDrawn')" @input="clearError('transportWs.path')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.path'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-origin">{{ t('interface.wsOrigin') }} <HelpTip :text="t('interface.wsOriginHint')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.origin' }">
+                    <input id="if-ws-origin" v-model.trim="form.ws.origin" data-field="transportWs.origin" class="ltr" placeholder="http://127.0.0.1:8080" @input="clearError('transportWs.origin')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.origin'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-proxies">{{ t('interface.wsProxies') }} <HelpTip :text="t('interface.wsProxiesHint')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.proxies' }">
+                    <input id="if-ws-proxies" v-model.trim="form.ws.proxies" data-field="transportWs.proxies" class="ltr" :placeholder="t('interface.wsProxiesNone')" @input="clearError('transportWs.proxies')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.proxies'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-header">{{ t('interface.wsClientHeader') }} <HelpTip :text="t('interface.wsClientHeaderHint')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.clientHeader' }">
+                    <input id="if-ws-header" v-model.trim="form.ws.clientHeader" data-field="transportWs.clientHeader" class="ltr" placeholder="X-Forwarded-For" @input="clearError('transportWs.clientHeader')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.clientHeader'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+          </template>
 
           <!-- L2TP only: the key every device types beside its own sign-in,
                the routers that have no IPsec, and what customers connect

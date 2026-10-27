@@ -133,6 +133,9 @@ export function exportable(i) {
     psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
     l2tpPlain: i.protocol === 'l2tp' && i.l2tp?.allowPlain ? true : undefined,
     ...(i.protocol === 'wireguard' && i.stealth?.transport ? { transport: i.stealth.transport, transportPort: i.stealth.port } : {}),
+    // wui-ws's front, path and decoy travel too; its key does not, and a
+    // tunnel made from this draws one of its own.
+    ...(i.protocol === 'wireguard' && i.stealth?.transport === 'wui-ws' ? { transportWs: wsPayload(wsOf(i.stealth)) } : {}),
   }
 }
 
@@ -143,4 +146,31 @@ export function ocPayload(oc) {
   const out = { dtls: !!oc.dtls, camouflage: !!oc.camouflage, usePanelCert: !!oc.usePanelCert }
   if ((oc.camouflageSecret || '').trim()) out.camouflageSecret = oc.camouflageSecret.trim()
   return out
+}
+
+// wui-ws's settings as the form holds them, from a tunnel's stealth block or
+// none. The transport's keys are the server's and never reach the form.
+export function wsOf(stealth) {
+  const s = stealth?.transport === 'wui-ws' ? stealth : {}
+  return {
+    host: s.host || '',
+    frontPort: s.frontPort || '',
+    path: s.path || '',
+    origin: s.origin || '',
+    proxies: s.proxies || '',
+    clientHeader: s.clientHeader || '',
+  }
+}
+
+// What a WireGuard tunnel's form sends for wui-ws: a path left empty is
+// drawn by the server, or kept when it has one.
+export function wsPayload(ws) {
+  return {
+    host: (ws?.host || '').trim(),
+    frontPort: Number(ws?.frontPort) || 0,
+    path: (ws?.path || '').trim(),
+    origin: (ws?.origin || '').trim(),
+    proxies: (ws?.proxies || '').trim(),
+    clientHeader: (ws?.clientHeader || '').trim(),
+  }
 }

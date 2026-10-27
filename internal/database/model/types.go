@@ -235,10 +235,48 @@ type OpenConnectParams struct {
 // that nothing of WireGuard shows (package stealthgw), for W-UI's own app.
 // The zero value is plain UDP.
 type StealthParams struct {
-	// Transport is the stealth transport, by its name: TransportWuiUDP.
+	// Transport is the stealth transport, by its name: TransportWuiUDP or
+	// TransportWuiWS.
 	Transport string `json:"transport,omitempty"`
 	// Port is where it listens.
 	Port int `json:"port,omitempty"`
+
+	// The rest is wui-ws's: WebSocket behind the operator's own web server
+	// or a CDN, which ends TLS and hands the gateway plain HTTP on Port.
+
+	// Host is the front's name: what devices connect to and TLS names.
+	Host string `json:"host,omitempty"`
+	// FrontPort is the front's port; 443 when zero.
+	FrontPort int `json:"frontPort,omitempty"`
+	// Path is the transport's path on the front.
+	Path string `json:"path,omitempty"`
+	// Origin is the decoy, the operator's own site, where every request that
+	// is not a device's goes as it came; empty, such a request is answered
+	// 404.
+	Origin string `json:"origin,omitempty"`
+	// Proxies are the fronts, besides the loopback, trusted to say who a
+	// visitor is: addresses and ranges, by commas or spaces. With none the
+	// gateway listens on the loopback alone, for a front on the same
+	// machine, and its port stays shut in the firewall.
+	Proxies string `json:"proxies,omitempty"`
+	// ClientHeader is the header a front names the visitor in;
+	// X-Forwarded-For when empty.
+	ClientHeader string `json:"clientHeader,omitempty"`
+	// Key and PreviousKey are the transport's private keys, base64: the
+	// current one, which profiles name, and the one before, still taken
+	// from apps that have not fetched their profile since. KeyAt is when Key
+	// was drawn, Unix seconds. The API never shows either key.
+	Key         string `json:"key,omitempty"`
+	PreviousKey string `json:"previousKey,omitempty"`
+	KeyAt       int64  `json:"keyAt,omitempty"`
+}
+
+// FrontPortOr is the front's port, 443 when none is set.
+func (p StealthParams) FrontPortOr() int {
+	if p.FrontPort == 0 {
+		return 443
+	}
+	return p.FrontPort
 }
 
 // WireGuard's transports, as a tunnel's form and the API name them. Plain
@@ -247,6 +285,7 @@ type StealthParams struct {
 const (
 	TransportUDP    = "udp"
 	TransportWuiUDP = "wui-udp"
+	TransportWuiWS  = "wui-ws"
 )
 
 // TransportNetwork is the network a WireGuard transport listens on, or ""
@@ -255,6 +294,8 @@ func TransportNetwork(name string) string {
 	switch name {
 	case TransportWuiUDP:
 		return "udp"
+	case TransportWuiWS:
+		return "tcp"
 	}
 	return ""
 }

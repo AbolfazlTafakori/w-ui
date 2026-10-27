@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Node is a machine that terminates tunnels. The panel serves a single local
 // node today; the table and the NodeID foreign keys exist so a second node is
@@ -256,6 +259,27 @@ func (i *Interface) StealthUDP() int {
 		return port
 	}
 	return 0
+}
+
+// StealthWS is the port wui-ws takes for this tunnel, or zero.
+func (i *Interface) StealthWS() int {
+	if name, port := i.StealthTransport(); name == TransportWuiWS {
+		return port
+	}
+	return 0
+}
+
+// StealthOpen says whether this tunnel's stealth transport is reached from
+// outside the machine, so its port is let through the firewall: wui-udp
+// always, wui-ws only when a front elsewhere is trusted to reach it.
+func (i *Interface) StealthOpen() bool {
+	switch name, _ := i.StealthTransport(); name {
+	case TransportWuiUDP:
+		return true
+	case TransportWuiWS:
+		return strings.TrimSpace(i.Stealth.V.Proxies) != ""
+	}
+	return false
 }
 
 // Client is the unit that gets sold. Quota, expiry and the device limit

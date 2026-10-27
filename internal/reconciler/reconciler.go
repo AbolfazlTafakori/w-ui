@@ -785,6 +785,9 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	if err := service.EnsureStealthSecrets(ctx, r.db); err != nil {
 		r.log.Error("transport secrets", "error", err)
 	}
+	if err := service.EnsureStealthKeys(ctx, r.db, time.Now()); err != nil {
+		r.log.Error("transport keys", "error", err)
+	}
 	db := r.db.WithContext(ctx)
 
 	var clients []model.Client

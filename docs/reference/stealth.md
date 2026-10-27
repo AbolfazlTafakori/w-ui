@@ -1,5 +1,5 @@
 ---
-description: "The wui-udp stealth transport: WireGuard inside UDP packets that look like random bytes, the keys, the packets, the server's rules, and what a client must do."
+description: "The stealth transports: wui-udp, WireGuard in UDP packets that look like random bytes, and wui-ws, WireGuard as WebSocket behind a web server or a CDN; the keys, the packets, the server's rules, and what a client must do."
 ---
 
 # Stealth transport: wui-udp
@@ -12,7 +12,7 @@ This page is the specification. The format is in `internal/stealth`, the server 
 
 ## On the panel
 
-A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **wui-udp** is WireGuard as it is on the tunnel's port and wui-udp beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `wui-udp`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. The other stealth transports join the same menu as they are built.
+A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **wui-udp** is WireGuard as it is on the tunnel's port and wui-udp beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `wui-udp`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. **wui-ws**, WebSocket behind a web server or a CDN, is the third choice, in a part of its own below. The other stealth transports join the same menu as they are built.
 
 The tunnel itself does not change. Its peers, its port and every `.conf` handed out stay as they were; the panel only starts a gateway beside it, gives it the devices the tunnel carries on every pass, and stops it when the tunnel no longer wants one. A device taken off the tunnel, out of its allowance or switched off, loses its gateway sessions with its peer. The online indicator and the sharing report see a device at its own address, not the gateway's.
 
@@ -180,3 +180,123 @@ Each is a token bucket, a burst and a rate per second, spent only by openings a 
 - Its timestamp is its clock plus the offset from the server, when it knows one. A clock more than a minute off is refused, silently, like everything else.
 
 The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port.
+
+# Stealth transport: wui-ws
+
+wui-ws carries a WireGuard tunnel as WebSocket behind the operator's own web server or a CDN. The front ends TLS, so to the network a device is visiting a site; the gateway behind it takes plain HTTP and answers nobody who cannot prove a device's secret. A request that proves nothing goes to the operator's own site, the decoy, exactly as it came: the gateway never makes an answer of its own for a stranger, so a probe sees the site and nothing else.
+
+The keys, the chunk and its padding are wui-udp's, above. The format is in `internal/stealth` (`proof.go`, `stream.go`, `websocket.go`), the server and the reference client in `internal/stealthgw` (`stream.go`, `streamclient.go`). `internal/stealth/testdata/ws.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own, HPKE included.
+
+## On the panel
+
+Choose **wui-ws** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with wui-udp.
+
+| Field | API | |
+|---|---|---|
+| wui-ws port | `transportPort` | The TCP port the front sends the transport's path to, as plain HTTP. |
+| Front host | `transportWs.host` | The name devices connect to and TLS names: the web server's domain or the CDN's. Required. |
+| Front port | `transportWs.frontPort` | The front's HTTPS port; 443 when empty. |
+| Path | `transportWs.path` | The path the front sends to the gateway: 12 to 256 characters of letters, digits and `/ - . _ ~`. Left empty, one of 20 characters is drawn, and kept when the settings are saved again with it empty. |
+| Decoy site | `transportWs.origin` | The operator's site, `http://` or `https://` with no path. Every request that is not a device's goes there as it came. Empty, such a request is answered 404 and the front dresses it like its own. |
+| Trusted fronts | `transportWs.proxies` | Addresses or ranges, by commas or spaces, besides this machine, that may send the transport and name the visitor: a CDN's ranges. |
+| Visitor header | `transportWs.clientHeader` | The header a front names the visitor in; `X-Forwarded-For` when empty. |
+
+With no trusted front listed the gateway listens on 127.0.0.1 alone, for a web server on the same machine, and its port stays shut in the firewall. With one listed it listens on every address and its port is opened; a request from an address that is neither a trusted front nor the loopback is a stranger's, whatever it carries. The visitor is the last address in the visitor header that is not a trusted front, and the online indicator and the sharing report see the device there.
+
+The transport has a key pair of its own, drawn when wui-ws is chosen. The panel draws the next one every 30 days and keeps the one before, which the gateway still takes, so an app that fetches its profile at least that often never meets a key it does not know. The private keys never leave the panel by the API; a remote node is given them with the tunnel, since its gateway needs them.
+
+nginx in front on the same machine, the transport on port 28081 and the site where it was:
+
+```nginx
+location /41yg3dsw2u5h97g50uvl {
+    proxy_pass http://127.0.0.1:28081;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_read_timeout 300s;
+}
+```
+
+Every other location stays the site's. With the decoy set to the site's own address, a request to the path without a proof is answered by the site as any unknown path is. Behind a CDN, the CDN must carry WebSocket and the query string. A client never lets a session go quiet for more than 40 seconds, well inside the minute a front gives a quiet connection.
+
+### The profile
+
+```json
+{"type": "wui-ws", "endpoints": ["cdn.example.com:443"], "url": "wss://cdn.example.com/41yg3dsw2u5h97g50uvl",
+ "key": "base64", "secret": "base64", "mtu": 1420}
+```
+
+`url` is the name TLS and the request give, with the path; `endpoints` is where the app connects, and an app may connect to a CDN's address instead while it keeps `url`'s name for TLS. `key` is the transport's current public key. The secret and the anchor are wui-udp's.
+
+## The proof
+
+A session opens with one request: a GET with a WebSocket upgrade (RFC 6455, version 13) whose target is the path and a token, `<path>?<token>`. The token is an HPKE message (RFC 9180) to the transport's key, in base mode, with DHKEM(X25519, HKDF-SHA256), HKDF-SHA256 and ChaCha20-Poly1305:
+
+```
+token  = base64url without padding (enc (32) | HPKE-Seal(key, info, aad = "", hello))
+info   = L | "proof" | 0x00 | "wui-ws" | 0x00 | A
+hello  = 0x01 | 0x00 0x00 0x00 | be64(timestamp) | tag (16) | binder (32) | zero padding (0..96)
+binder = HMAC(k_bind, Export(L | "binder", 32) | hello[0..28])
+
+tag      = HMAC(k_tag, "device")[0..16]
+k_bind   = HKDF-Expand(prk, "bind" | 0x00 | A, 32)
+k_stream = HKDF-Expand(prk, "stream" | 0x00 | A, 32)
+```
+
+A token is 108 to 204 bytes, 144 to 272 characters. Only the holder of the transport key reads the hello, so a device's tag never shows on the wire. The binder is what proves the secret: it is keyed by the secret and bound to this HPKE context's export, so a tag copied into a token of somebody else's making is no proof. The transport's name and the anchor are in `info`, so a token for one transport or one tunnel opens on no other. The path is not bound, since a front may rewrite it.
+
+The session's keys need both the proof's ephemeral key and the device's secret:
+
+```
+prk    = HKDF-Extract(salt = Export(L | "stream", 32), ikm = k_stream)
+k_up   = HKDF-Expand(prk, L | "stream up", 32)     client to server
+k_down = HKDF-Expand(prk, L | "stream down", 32)   server to client
+```
+
+## The session
+
+Every binary WebSocket message is one sealed chunk, in a single frame; the client masks its frames and the server does not. A chunk is sealed with its direction's key under the nonce `0x00000000 | le64(n)`, `n` being the chunk's number in its direction from 0, with no associated data. A chunk holds as many datagrams as are waiting and fit, or none: padding alone is how a side answers without saying anything. The padding is wui-udp's, wide for a direction's first 16 chunks and for a chunk that carries a handshake message.
+
+A text message, a fragmented one, one longer than 16 016 bytes, a frame with a reserved bit, a frame masked the wrong way for its side, or a chunk that does not open ends the session. Pings are answered and pongs ignored. However a session ends, the server sends a close of 1000 with no reason, waits up to 5 seconds for the client's close, and lets the connection go, so the cause cannot be read from outside.
+
+The answer to a proof is `101 Switching Protocols` with `Upgrade`, `Connection`, `Sec-WebSocket-Accept`, `Date`, and a cookie, of a name the transport key gives, whose value is 16 to 96 characters drawn afresh, so that no two answers are one length.
+
+## What the server does with a request
+
+Whatever is not a proof goes to the decoy as it came, and a counter says why.
+
+1. From an address that is neither a trusted front nor the loopback: the decoy.
+1. A path other than the transport's, compared in constant time, or no WebSocket upgrade: the decoy.
+1. Open the token under every transport key the gateway holds, current and previous, whether or not an earlier one opened it, and check the version byte, the three zero bytes and the padding. Any failure: the decoy.
+1. Find the device by its tag and check the binder. A tag no device has is checked against a stand-in, so a known tag and an unknown one cost the same. A failure: the decoy.
+1. wui-udp's replay rule, on `enc`, in a file of its own. A proof above the written limit asks for a raise and waits for it up to 2 seconds, since a refused stream costs its client a connection.
+1. The limits: at most 8 sessions per device, 2 pending per device, 4096 per gateway, and wui-udp's allowances for the device and for the visitor's address. No room: the decoy, and the proof is recorded while the device's allowance for that lasts.
+1. The proof is taken, once, under one lock: of two connections that carry the same proof, only one gets past here.
+1. Answer the upgrade, open a socket of the session's own to the tunnel, and carry the session.
+
+### Sessions
+
+A session is **pending** until WireGuard speaks on its socket, or until a transport message comes under an index the tunnel gave the device in a response the gateway carried, and nothing is sent on a pending session. When it becomes live it sends what the tunnel said, or a padding-only chunk.
+
+The first chunk of a session must hold a handshake initiation of this very device, or a keepalive; never user data. Anything else ends it. Every initiation is checked as on wui-udp, against the session's device, its static key and its timestamp, at most 3 at once and 1 a second after. Handshake responses must be 92 bytes, cookie replies 64, transport messages 32 or more, and a datagram of any other type ends the session.
+
+A stream cannot be replayed: its chunks open only in order, under a key of this session alone. So every chunk that opens is activity, unlike wui-udp's data packets.
+
+| Timer | |
+|---|---|
+| Pending session without WireGuard's word | ends after 10 s |
+| Live session with no activity | ends after 300 s |
+| Echo of a chunk of padding or keepalives alone | after U(0..3 s), at most four waiting |
+| A lone keepalive from the tunnel | held U(0..3 s) |
+| Close | 5 s for the client's close |
+
+## What a client does
+
+- It opens a session with a WireGuard handshake initiation, or with a keepalive when the tunnel is already up. Never with user data: what comes while it has no session is dropped.
+- A connection that failed is tried again after 250 ms, the wait doubling up to 8 seconds.
+- It sends a padding-only chunk after U(20..40 s) of sending nothing, and takes a session for dead when it sent and has heard nothing for 20 seconds: on a one-way flow WireGuard's own keepalive comes after ten seconds, and the gateway holds it a moment more.
+- Its timestamp is its clock plus the offset from the server, when it knows one.
+
+The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port, over `ws://` or `wss://`, with the address it dials apart from the name it gives.

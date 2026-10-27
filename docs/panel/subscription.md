@@ -91,7 +91,7 @@ The same token serves apps too. What the link answers depends on what asks:
 | `?format=zip` | Every file in a zip, always: the WireGuard and OpenVPN files, the instructions for L2TP, PPTP, IKEv2 and OpenConnect, and for IKEv2 the tunnel's authority and the device's certificate. |
 | `?format=base64` | The file in base64; with several, the links. |
 | `?format=links` | The links, as a proxy app gets them. |
-| `?format=wui` | W-UI's own profile, in JSON: every WireGuard file, and beside each the [wui-udp](/reference/stealth) transport of its tunnel when it has one. For W-UI's own app; stock apps keep their `.conf`. |
+| `?format=wui` | W-UI's own profile, in JSON: every WireGuard file, and beside each the [stealth transport](/reference/stealth) of its tunnel, wui-udp or wui-ws, when it has one. For W-UI's own app; stock apps keep their `.conf`. |
 
 Any other format is refused with the list above. The page links to each device's file, and to each host's.
 

@@ -1,6 +1,10 @@
 package api
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/abolfazl/w-ui/internal/database/model"
+)
 
 // A log keeps no secret a path carries: a customer's token, the panel's
 // hidden path. The rest of a path is as it was.
@@ -17,5 +21,25 @@ func TestALogKeepsNoSecretOfAPath(t *testing.T) {
 		if got := redactPath(in); got != want {
 			t.Errorf("%s logged as %s, want %s", in, got, want)
 		}
+	}
+}
+
+// A wui-ws transport's private keys never leave the panel by the API; what
+// else it has, the form shows.
+func TestAnInterfaceKeepsItsTransportKeysFromTheAPI(t *testing.T) {
+	in := model.Interface{Protocol: model.ProtocolWireGuard, Stealth: model.JSON(model.StealthParams{
+		Transport: model.TransportWuiWS, Port: 8081, Host: "front.example", Path: "/abcdefghijklmn",
+		Key: "current-private", PreviousKey: "previous-private", KeyAt: 7,
+	})}
+	out := redactKeys(in)
+	got := out.Stealth.V
+	if got.Key != "" || got.PreviousKey != "" {
+		t.Fatalf("the transport's keys were left: %+v", got)
+	}
+	if got.Host != "front.example" || got.Path != "/abcdefghijklmn" || got.KeyAt != 7 {
+		t.Fatalf("more than the keys went: %+v", got)
+	}
+	if in.Stealth.V.Key != "current-private" {
+		t.Fatal("redacting changed the interface it was given")
 	}
 }

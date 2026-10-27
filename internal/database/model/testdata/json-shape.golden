@@ -124,6 +124,15 @@ JSONField[github.com/abolfazl/w-ui/internal/database/model.StealthParams]
 StealthParams
 	transport string omitempty
 	port int omitempty
+	host string omitempty
+	frontPort int omitempty
+	path string omitempty
+	origin string omitempty
+	proxies string omitempty
+	clientHeader string omitempty
+	key string omitempty
+	previousKey string omitempty
+	keyAt int64 omitempty
 JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound]
 	V model.XUIInbound
 XUIInbound

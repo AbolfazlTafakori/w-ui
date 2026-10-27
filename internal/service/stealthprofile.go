@@ -60,6 +60,13 @@ type WUITransport struct {
 	// key, which every key is bound to, is the one in the file.
 	Secret string `json:"secret"`
 	MTU    int    `json:"mtu"`
+	// URL is a stream transport's address, wss:// with its path: the name
+	// TLS and the request give, which may differ from the endpoint
+	// connected to.
+	URL string `json:"url,omitempty"`
+	// Key is a stream transport's public key, base64, which its proof is
+	// sealed to.
+	Key string `json:"key,omitempty"`
 }
 
 // wuiBundle is a customer's W-UI profile.
@@ -97,6 +104,14 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 				Secret: acc.StealthSecret, MTU: max(iface.MTU, 0),
 			})
 		}
+		if iface.StealthWS() != 0 && acc.StealthSecret != "" {
+			if wt, ok := wsTransport(iface.Stealth.V); ok {
+				wt.Secret, wt.MTU = acc.StealthSecret, max(iface.MTU, 0)
+				t.Transports = append(t.Transports, wt)
+			} else {
+				s.log.Warn("a wui-ws transport has no usable key yet; profiles leave it out until it has", "interface", iface.Name)
+			}
+		}
 		p.Tunnels = append(p.Tunnels, t)
 	}
 	if len(p.Tunnels) == 0 {
@@ -114,6 +129,31 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 		Title:       cfg.Title,
 		UpdateHours: cfg.UpdateHours,
 	}, nil
+}
+
+// wsTransport is a tunnel's wui-ws as a profile gives it, but the device's
+// own secret: the front, which devices reach and TLS names, and the
+// transport's current public key. False when it has no key yet.
+func wsTransport(p model.StealthParams) (WUITransport, bool) {
+	key, err := stealth.ParseTransportKey(p.Key)
+	if err != nil {
+		return WUITransport{}, false
+	}
+	port := p.FrontPortOr()
+	host := p.Host
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]" // an IPv6 address
+	}
+	u := "wss://" + host
+	if port != 443 {
+		u += ":" + strconv.Itoa(port)
+	}
+	return WUITransport{
+		Type:      stealth.WS,
+		Endpoints: []string{net.JoinHostPort(p.Host, strconv.Itoa(port))},
+		URL:       u + p.Path,
+		Key:       key.Public(),
+	}, true
 }
 
 // stealthEndpoints is where a tunnel's wui-udp is reached: every address the

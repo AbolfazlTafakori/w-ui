@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"net/netip"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -12,15 +13,17 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/stealth"
 	"github.com/abolfazl/w-ui/internal/stealthgw"
 )
 
 // The stealth gateways.
 //
-// A WireGuard tunnel with wui-udp on has a gateway beside it, on a port of
-// its own, that hands what it unwraps to the tunnel's own port on the
-// loopback. The gateway is the panel's, like the tunnel's peers: started when
+// A WireGuard tunnel with a stealth transport on has a gateway beside it, on
+// a port of its own, that hands what it unwraps to the tunnel's own port on
+// the loopback: wui-udp's on UDP, wui-ws's on TCP behind the operator's web
+// server or CDN. The gateway is the panel's, like the tunnel's peers: started when
 // the tunnel wants one, given the devices the tunnel carries on every pass,
 // restarted when what it was started with changes, and stopped when the
 // tunnel stops wanting it. WireGuard goes on as it was through all of it.
@@ -37,9 +40,16 @@ type gateways struct {
 	running map[uint]*runningGateway // by tunnel
 }
 
+// gateway is a running gateway of either transport.
+type gateway interface {
+	Serve(ctx context.Context) error
+	SetDevices([]stealthgw.Device)
+	Source(endpoint string) (string, bool)
+}
+
 type runningGateway struct {
 	key    string // what it was started with
-	gw     *stealthgw.Gateway
+	gw     gateway
 	cancel context.CancelFunc
 	done   chan struct{}
 	failed string // the last start that failed, so it is said once
@@ -48,7 +58,13 @@ type runningGateway struct {
 // gatewayKey is what a gateway was started with: a change to any of it
 // starts it again.
 func gatewayKey(i model.Interface) string {
-	return fmt.Sprintf("%d|%d|%d|%s", i.StealthUDP(), i.ListenPort, i.MTU, i.PrivateKey)
+	name, port := i.StealthTransport()
+	p := i.Stealth.V
+	if name == model.TransportWuiWS {
+		return fmt.Sprintf("%s|%d|%d|%s|%s|%s|%s|%s|%s|%s", name, port, i.ListenPort, i.PrivateKey,
+			p.Path, p.Origin, p.Proxies, p.ClientHeader, p.Key, p.PreviousKey)
+	}
+	return fmt.Sprintf("%s|%d|%d|%d|%s", name, port, i.ListenPort, i.MTU, i.PrivateKey)
 }
 
 // keepStealth brings the gateways in line with the tunnels.
@@ -64,7 +80,7 @@ func (r *Reconciler) keepStealth(d *desired) {
 	}
 	want := map[uint]bool{}
 	for _, iface := range d.interfaces {
-		if iface.StealthUDP() == 0 {
+		if name, _ := iface.StealthTransport(); name == "" {
 			continue
 		}
 		want[iface.ID] = true
@@ -97,10 +113,11 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 	if before != nil {
 		rg.failed = before.failed
 	}
+	name, port := iface.StealthTransport()
 	fail := func(err error) *runningGateway {
 		if msg := err.Error(); msg != rg.failed {
-			r.log.Error("wui-udp could not start on this tunnel; its devices reach it over plain WireGuard meanwhile",
-				"interface", iface.Name, "port", iface.StealthUDP(), "error", err)
+			r.log.Error("a stealth transport could not start on this tunnel; its devices reach it over plain WireGuard meanwhile",
+				"interface", iface.Name, "transport", name, "port", port, "error", err)
 			rg.failed = msg
 		}
 		return rg
@@ -109,19 +126,16 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 	if err != nil || len(priv) != 32 {
 		return fail(fmt.Errorf("the tunnel's private key is not a WireGuard key"))
 	}
-	mtu := iface.MTU
-	if mtu <= 0 {
-		mtu = 1420
+	var gw interface {
+		gateway
+		Listen() error
 	}
-	cfg := stealthgw.Config{
-		Listen:     net.JoinHostPort("", strconv.Itoa(iface.StealthUDP())),
-		WireGuard:  net.JoinHostPort("127.0.0.1", strconv.Itoa(iface.ListenPort)),
-		MTU:        mtu,
-		ReplayFile: filepath.Join(r.dataDir, stealthDir, fmt.Sprintf("%d.replay", iface.ID)),
-		Log:        r.log.With("interface", iface.Name),
+	switch name {
+	case model.TransportWuiWS:
+		gw, err = r.newWSGateway(iface, priv)
+	default:
+		gw, err = r.newUDPGateway(iface, priv)
 	}
-	copy(cfg.PrivateKey[:], priv)
-	gw, err := stealthgw.New(cfg)
 	if err != nil {
 		return fail(err)
 	}
@@ -133,11 +147,78 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 	go func() {
 		defer close(rg.done)
 		if err := gw.Serve(ctx); err != nil {
-			r.log.Error("wui-udp stopped", "interface", iface.Name, "error", err)
+			r.log.Error("a stealth transport stopped", "interface", iface.Name, "transport", name, "error", err)
 		}
 	}()
-	r.log.Info("wui-udp is listening", "interface", iface.Name, "port", iface.StealthUDP())
+	r.log.Info("a stealth transport is listening", "interface", iface.Name, "transport", name, "port", port)
 	return rg
+}
+
+// replayFile is where a tunnel's gateway keeps its replay limit: one file
+// per transport, since each judges its own openings or proofs.
+func replayFile(dataDir string, iface model.Interface) string {
+	name, _ := iface.StealthTransport()
+	if name == model.TransportWuiUDP {
+		return filepath.Join(dataDir, stealthDir, fmt.Sprintf("%d.replay", iface.ID)) // as wui-udp has always kept it
+	}
+	return filepath.Join(dataDir, stealthDir, fmt.Sprintf("%d.%s.replay", iface.ID, name))
+}
+
+func (r *Reconciler) newUDPGateway(iface model.Interface, priv []byte) (*stealthgw.Gateway, error) {
+	mtu := iface.MTU
+	if mtu <= 0 {
+		mtu = 1420
+	}
+	cfg := stealthgw.Config{
+		Listen:     net.JoinHostPort("", strconv.Itoa(iface.StealthUDP())),
+		WireGuard:  net.JoinHostPort("127.0.0.1", strconv.Itoa(iface.ListenPort)),
+		MTU:        mtu,
+		ReplayFile: replayFile(r.dataDir, iface),
+		Log:        r.log.With("interface", iface.Name),
+	}
+	copy(cfg.PrivateKey[:], priv)
+	return stealthgw.New(cfg)
+}
+
+// newWSGateway is wui-ws's gateway. With no front trusted but the loopback
+// it listens on the loopback alone, for a web server on this machine; a
+// front elsewhere has it listen on every address, and the firewall lets the
+// port through.
+func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthgw.StreamGateway, error) {
+	p := iface.Stealth.V
+	proxies, err := service.ParseWSProxies(p.Proxies)
+	if err != nil {
+		return nil, err
+	}
+	host := "127.0.0.1"
+	if len(proxies) > 0 {
+		host = ""
+		proxies = append(proxies, netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128"))
+	}
+	var keys []stealth.TransportKey
+	for _, k := range []string{p.Key, p.PreviousKey} {
+		if k == "" {
+			continue
+		}
+		tk, err := stealth.ParseTransportKey(k)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, tk)
+	}
+	cfg := stealthgw.StreamConfig{
+		Listen:        net.JoinHostPort(host, strconv.Itoa(iface.StealthWS())),
+		Path:          p.Path,
+		Origin:        p.Origin,
+		Proxies:       proxies,
+		ClientHeader:  p.ClientHeader,
+		WireGuard:     net.JoinHostPort("127.0.0.1", strconv.Itoa(iface.ListenPort)),
+		TransportKeys: keys,
+		ReplayFile:    replayFile(r.dataDir, iface),
+		Log:           r.log.With("interface", iface.Name),
+	}
+	copy(cfg.PrivateKey[:], priv)
+	return stealthgw.NewStream(cfg)
 }
 
 // stopGateway stops a gateway and waits, a while, for its port to be free.
@@ -149,7 +230,7 @@ func (r *Reconciler) stopGateway(id uint, rg *runningGateway) {
 	select {
 	case <-rg.done:
 	case <-time.After(gatewayStop):
-		r.log.Warn("a wui-udp gateway did not stop in time", "interface", id)
+		r.log.Warn("a stealth gateway did not stop in time", "interface", id)
 	}
 }
 

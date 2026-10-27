@@ -160,6 +160,13 @@ func redactKeys(iface model.Interface) model.Interface {
 		iface.OpenConnect = model.JSON(k)
 	}
 
+	// A stealth transport's private keys: wui-ws's, which profiles carry the
+	// public half of.
+	if k := iface.Stealth.V; k.Key != "" || k.PreviousKey != "" {
+		k.Key, k.PreviousKey = "", ""
+		iface.Stealth = model.JSON(k)
+	}
+
 	// The WireGuard private key is already hidden by its struct tag; cleared
 	// here as well so this function is the one place to look.
 	iface.PrivateKey = ""

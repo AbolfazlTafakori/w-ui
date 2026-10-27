@@ -88,9 +88,9 @@ type CreateInterfaceInput struct {
 	// panel's own reconciler takes them to its kernel.
 	NodeID uint `json:"nodeId"`
 
-	// Transport is udp or tcp for OpenVPN, and udp or wui-udp for WireGuard.
-	// A WireGuard tunnel stays on plain UDP at its port whatever it is; wui-udp
-	// adds a second way to it, on TransportPort.
+	// Transport is udp or tcp for OpenVPN, and udp, wui-udp or wui-ws for
+	// WireGuard. A WireGuard tunnel stays on plain UDP at its port whatever
+	// it is; a stealth transport adds a second way to it, on TransportPort.
 	//
 	// It is worth exposing because TCP on 443 is what gets through a network
 	// that inspects traffic and drops what it does not recognise: to anything
@@ -127,6 +127,9 @@ type CreateInterfaceInput struct {
 
 	// TransportPort is where a WireGuard tunnel's stealth transport listens.
 	TransportPort int `json:"transportPort"`
+	// TransportWS is wui-ws's front, path and decoy, when Transport is
+	// wui-ws.
+	TransportWS *WSSettings `json:"transportWs"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -184,6 +187,9 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	var stealthParams model.StealthParams
 	if in.Protocol == model.ProtocolWireGuard {
 		want := model.StealthParams{Transport: in.Transport, Port: in.TransportPort}
+		if in.TransportWS != nil {
+			in.TransportWS.apply(&want)
+		}
 		if stealthParams, err = s.checkStealth(ctx, nodeID, 0, in.Mode, in.ListenPort, want, 0, node.Kind == model.KindLocal); err != nil {
 			return nil, err
 		}
@@ -825,6 +831,9 @@ type UpdateInterfaceInput struct {
 	// TransportPort moves a WireGuard tunnel's stealth transport, which
 	// Transport chooses. A device needs its file again to use one.
 	TransportPort *int `json:"transportPort"`
+	// TransportWS replaces wui-ws's front, path and decoy. An empty path
+	// keeps the one there is.
+	TransportWS *WSSettings `json:"transportWs"`
 }
 
 // Update applies changes to an interface.

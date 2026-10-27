@@ -6,7 +6,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, notify } from '../lib/store.js'
-import { cmpText, generalItems, nextSort, ocPayload, sortRows, totals as totalsOf } from '../lib/interfaces/rows.js'
+import { cmpText, generalItems, nextSort, ocPayload, sortRows, totals as totalsOf, wsOf, wsPayload } from '../lib/interfaces/rows.js'
 import { useInterfaceActions } from '../lib/interfaces/actions.js'
 import ErrorState from '../components/ErrorState.vue'
 import InterfaceForm from '../components/InterfaceForm.vue'
@@ -177,14 +177,21 @@ function toggleOne(id, checked) {
 }
 
 // A WireGuard tunnel's transport as the form asks for it: plain UDP, or a
-// stealth one and its port. AmneziaWG has only plain UDP.
+// stealth one and its port, and wui-ws's front, path and decoy. AmneziaWG
+// has only plain UDP.
 function wgTransportOf(input) {
   if (input.mode === 'amnezia' || !input.transport || input.transport === 'udp') return { transport: 'udp', transportPort: 0 }
-  return { transport: input.transport, transportPort: Number(input.transportPort) || 0 }
+  const out = { transport: input.transport, transportPort: Number(input.transportPort) || 0 }
+  if (input.transport === 'wui-ws') out.transportWs = wsPayload(input.ws)
+  return out
 }
 function wgTransportChanged(input, iface) {
   const want = wgTransportOf(input)
-  return want.transport !== (iface.stealth?.transport || 'udp') || want.transportPort !== (iface.stealth?.port || 0)
+  if (want.transport !== (iface.stealth?.transport || 'udp') || want.transportPort !== (iface.stealth?.port || 0)) return true
+  // An empty path keeps the one there is, so it is no change.
+  if (!want.transportWs) return false
+  const had = wsPayload(wsOf(iface.stealth))
+  return Object.keys(want.transportWs).some((k) => !(k === 'path' && want.transportWs.path === '') && want.transportWs[k] !== had[k])
 }
 
 async function submitForm(input) {
@@ -221,7 +228,7 @@ async function submitForm(input) {
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
       // eslint-disable-next-line no-unused-vars -- taken out of rest, sent by protocol below
-      const { transport, transportPort, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, ...rest } = input
+      const { transport, transportPort, ws, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, ...rest } = input
       if (xray) {
         // An inbound on a 3x-ui or Pasarguard node, made there as that
         // panel's own form would make it.
