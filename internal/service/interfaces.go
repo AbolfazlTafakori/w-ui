@@ -88,8 +88,9 @@ type CreateInterfaceInput struct {
 	// panel's own reconciler takes them to its kernel.
 	NodeID uint `json:"nodeId"`
 
-	// Transport is udp or tcp, and only means anything for OpenVPN — WireGuard
-	// has no other option.
+	// Transport is udp or tcp for OpenVPN, and udp or wui-udp for WireGuard.
+	// A WireGuard tunnel stays on plain UDP at its port whatever it is; wui-udp
+	// adds a second way to it, on TransportPort.
 	//
 	// It is worth exposing because TCP on 443 is what gets through a network
 	// that inspects traffic and drops what it does not recognise: to anything
@@ -124,8 +125,8 @@ type CreateInterfaceInput struct {
 	AWG      *model.AWGParams `json:"awg"`
 	AWGLevel string           `json:"awgLevel"`
 
-	// Stealth is a WireGuard tunnel's stealth transports; none is off.
-	Stealth *model.StealthParams `json:"stealth"`
+	// TransportPort is where a WireGuard tunnel's stealth transport listens.
+	TransportPort int `json:"transportPort"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -181,10 +182,13 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 	}
 
 	var stealthParams model.StealthParams
-	if in.Stealth != nil {
-		if stealthParams, err = s.checkStealth(ctx, nodeID, 0, in.Protocol, in.Mode, in.ListenPort, *in.Stealth, 0, node.Kind == model.KindLocal); err != nil {
+	if in.Protocol == model.ProtocolWireGuard {
+		want := model.StealthParams{Transport: in.Transport, Port: in.TransportPort}
+		if stealthParams, err = s.checkStealth(ctx, nodeID, 0, in.Mode, in.ListenPort, want, 0, node.Kind == model.KindLocal); err != nil {
 			return nil, err
 		}
+	} else if in.TransportPort != 0 {
+		return nil, invalidField("transportPort", "only a WireGuard tunnel's stealth transport takes a port of its own")
 	}
 
 	iface := model.Interface{
@@ -432,16 +436,23 @@ func checkListenPort(in *CreateInterfaceInput, checkPort, local bool) error {
 	if in.ListenPort < 1 || in.ListenPort > 65535 {
 		return invalidField("listenPort", "listen port %d is out of range", in.ListenPort)
 	}
-	// Transport is OpenVPN's alone. WireGuard is UDP and nothing else, so
-	// accepting the field there would be accepting a setting that does nothing.
-	switch in.Transport {
-	case "", "udp", "tcp":
+	// Only OpenVPN and WireGuard have a choice of transport; accepting the
+	// field elsewhere would be accepting a setting that does nothing.
+	switch in.Protocol {
+	case model.ProtocolOpenVPN:
+		switch in.Transport {
+		case "", "udp", "tcp":
+		default:
+			return invalidField("transport", "transport must be udp or tcp, not %q", in.Transport)
+		}
+	case model.ProtocolWireGuard:
+		if err := checkWireGuardTransport(in.Transport); err != nil {
+			return err
+		}
 	default:
-		return invalidField("transport", "transport must be udp or tcp, not %q", in.Transport)
-	}
-	if in.Transport != "" && in.Protocol != model.ProtocolOpenVPN {
-		return invalidField("transport",
-			"only OpenVPN has a choice of transport; WireGuard is always UDP")
+		if in.Transport != "" {
+			return invalidField("transport", "only OpenVPN and WireGuard have a choice of transport")
+		}
 	}
 
 	// Checked here rather than discovered later. A tunnel on a port something
@@ -811,9 +822,9 @@ type UpdateInterfaceInput struct {
 	// certificate alone.
 	OpenConnect *OpenConnectInput `json:"openconnect"`
 
-	// Stealth replaces a WireGuard tunnel's stealth transports; a port of
-	// zero turns wui-udp off. A device needs its file again to use one.
-	Stealth *model.StealthParams `json:"stealth"`
+	// TransportPort moves a WireGuard tunnel's stealth transport, which
+	// Transport chooses. A device needs its file again to use one.
+	TransportPort *int `json:"transportPort"`
 }
 
 // Update applies changes to an interface.
@@ -924,8 +935,8 @@ func (s *Interfaces) updatePort(ctx context.Context, iface *model.Interface, in 
 		if err := s.checkPortClash(ctx, iface.NodeID, iface.ID, port, ifaceTransports(*iface)); err != nil {
 			return err
 		}
-		if port == iface.StealthUDP() && (in.Stealth == nil || in.Stealth.UDPPort == port) {
-			return invalidField("listenPort", "udp %d is this tunnel's wui-udp port", port)
+		if name, own := iface.StealthTransport(); own == port && model.TransportNetwork(name) == "udp" && (in.TransportPort == nil || *in.TransportPort == port) {
+			return invalidField("listenPort", "udp %d is this tunnel's %s port", port, name)
 		}
 		proto := "udp"
 		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" ||
@@ -1145,6 +1156,9 @@ func (s *Interfaces) updateTransport(ctx context.Context, iface *model.Interface
 	// and every customer's — so a customer whose file still says udp cannot
 	// connect afterwards. Said plainly in the log rather than left for the
 	// operator to work out from support messages.
+	if in.Transport != nil && iface.Protocol == model.ProtocolWireGuard {
+		return nil // updateStealth's
+	}
 	if in.Transport != nil {
 		want := strings.ToLower(strings.TrimSpace(*in.Transport))
 		switch want {
@@ -1153,8 +1167,7 @@ func (s *Interfaces) updateTransport(ctx context.Context, iface *model.Interface
 			return invalidField("transport", "transport must be udp or tcp, not %q", want)
 		}
 		if iface.Protocol != model.ProtocolOpenVPN {
-			return invalidField("transport",
-				"only OpenVPN has a choice of transport; WireGuard is always UDP")
+			return invalidField("transport", "only OpenVPN and WireGuard have a choice of transport")
 		}
 		params := iface.OpenVPN.V
 		if params.Transport != want {

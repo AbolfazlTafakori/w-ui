@@ -31,7 +31,7 @@ func TestTheGatewaysFollowTheTunnels(t *testing.T) {
 	device, _ := wgkey.NewPair()
 	secret, _ := stealth.NewSecret()
 	iface := model.Interface{ID: 7, Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: 51820, MTU: 1420,
-		PrivateKey: server.Private.String(), Stealth: model.JSON(model.StealthParams{UDPPort: freeUDP(t)})}
+		PrivateKey: server.Private.String(), Stealth: model.JSON(model.StealthParams{Transport: model.TransportWuiUDP, Port: freeUDP(t)})}
 	d := &desired{interfaces: []model.Interface{iface}, perIface: map[uint][]backend.DesiredAccount{
 		7: {{ID: 1, PublicKey: device.Public.String(), StealthSecret: secret.String()}, {ID: 2, PublicKey: "no secret"}},
 	}}
@@ -59,7 +59,7 @@ func TestTheGatewaysFollowTheTunnels(t *testing.T) {
 		t.Fatal("a pass with nothing changed started the gateway again")
 	}
 	old := iface.StealthUDP()
-	d.interfaces[0].Stealth = model.JSON(model.StealthParams{UDPPort: freeUDP(t)})
+	d.interfaces[0].Stealth = model.JSON(model.StealthParams{Transport: model.TransportWuiUDP, Port: freeUDP(t)})
 	r.keepStealth(d)
 	if r.gws.running[7] == first || listening(old) {
 		t.Fatal("the gateway did not move to the new port")
@@ -68,7 +68,7 @@ func TestTheGatewaysFollowTheTunnels(t *testing.T) {
 	// AmneziaWG, or a tunnel that is gone, has none.
 	d.interfaces[0].Mode = model.ModeAmnezia
 	r.keepStealth(d)
-	if len(r.gws.running) != 0 || listening(d.interfaces[0].Stealth.V.UDPPort) {
+	if len(r.gws.running) != 0 || listening(d.interfaces[0].Stealth.V.Port) {
 		t.Fatal("a gateway outlived the tunnel's wanting one")
 	}
 	if got := r.realEndpoint(7, "1.2.3.4:5"); got != "1.2.3.4:5" {

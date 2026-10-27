@@ -230,14 +230,32 @@ type Interface struct {
 // IsWireGuard reports whether this interface is served by the WireGuard backend.
 func (i *Interface) IsWireGuard() bool { return i.Protocol == ProtocolWireGuard }
 
-// StealthUDP is the port wui-udp takes for this tunnel, or zero. Only a
-// standard WireGuard tunnel has one: AmneziaWG's datagrams have other types
-// and sizes, which the gateway does not read.
-func (i *Interface) StealthUDP() int {
-	if i.Protocol != ProtocolWireGuard || i.Mode == ModeAmnezia {
-		return 0
+// StealthTransport is the stealth transport in front of this tunnel and its
+// port, or none. Only a standard WireGuard tunnel has one: AmneziaWG's
+// datagrams have other types and sizes, which no gateway reads.
+func (i *Interface) StealthTransport() (name string, port int) {
+	t := i.Stealth.V
+	if i.Protocol != ProtocolWireGuard || i.Mode == ModeAmnezia || TransportNetwork(t.Transport) == "" || t.Port == 0 {
+		return "", 0
 	}
-	return i.Stealth.V.UDPPort
+	return t.Transport, t.Port
+}
+
+// WireGuardTransport is the transport a WireGuard tunnel is set to, as its
+// form shows it: plain UDP unless a stealth one is in front of it.
+func (i *Interface) WireGuardTransport() string {
+	if name, _ := i.StealthTransport(); name != "" {
+		return name
+	}
+	return TransportUDP
+}
+
+// StealthUDP is the port wui-udp takes for this tunnel, or zero.
+func (i *Interface) StealthUDP() int {
+	if name, port := i.StealthTransport(); name == TransportWuiUDP {
+		return port
+	}
+	return 0
 }
 
 // Client is the unit that gets sold. Quota, expiry and the device limit

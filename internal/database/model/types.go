@@ -226,14 +226,37 @@ type OpenConnectParams struct {
 	CertSource string `json:"certSource,omitempty"`
 }
 
-// StealthParams holds a WireGuard tunnel's stealth transports.
+// StealthParams is a WireGuard tunnel's transport, when it is not plain UDP
+// alone.
 //
-// The tunnel itself is unchanged: a device that can, reaches the same
-// WireGuard through a gateway on another port that wraps every packet so
-// that nothing of WireGuard shows (package stealthgw). Zero is off.
+// Plain WireGuard stays on the tunnel's own port whatever is chosen, so the
+// files stock apps hold keep working. A stealth transport is a second way to
+// the same tunnel: a gateway on a port of its own that wraps every packet so
+// that nothing of WireGuard shows (package stealthgw), for W-UI's own app.
+// The zero value is plain UDP.
 type StealthParams struct {
-	// UDPPort is where wui-udp listens.
-	UDPPort int `json:"udpPort,omitempty"`
+	// Transport is the stealth transport, by its name: TransportWuiUDP.
+	Transport string `json:"transport,omitempty"`
+	// Port is where it listens.
+	Port int `json:"port,omitempty"`
+}
+
+// WireGuard's transports, as a tunnel's form and the API name them. Plain
+// UDP is WireGuard's own and needs no gateway; the others are package
+// stealth's, by the names it gives them.
+const (
+	TransportUDP    = "udp"
+	TransportWuiUDP = "wui-udp"
+)
+
+// TransportNetwork is the network a WireGuard transport listens on, or ""
+// for a name that is none.
+func TransportNetwork(name string) string {
+	switch name {
+	case TransportWuiUDP:
+		return "udp"
+	}
+	return ""
 }
 
 // OpenVPNParams holds interface-scoped OpenVPN settings.

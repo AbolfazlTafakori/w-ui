@@ -122,7 +122,8 @@ OpenConnectParams
 JSONField[github.com/abolfazl/w-ui/internal/database/model.StealthParams]
 	V model.StealthParams
 StealthParams
-	udpPort int omitempty
+	transport string omitempty
+	port int omitempty
 JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound]
 	V model.XUIInbound
 XUIInbound

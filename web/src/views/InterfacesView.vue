@@ -176,9 +176,15 @@ function toggleOne(id, checked) {
   selected.value = next
 }
 
-// The wui-udp port the form asks for, or zero for off. AmneziaWG has none.
-function stealthPortOf(input) {
-  return input.stealthOn && input.mode !== 'amnezia' ? Number(input.stealthPort) || 0 : 0
+// A WireGuard tunnel's transport as the form asks for it: plain UDP, or a
+// stealth one and its port. AmneziaWG has only plain UDP.
+function wgTransportOf(input) {
+  if (input.mode === 'amnezia' || !input.transport || input.transport === 'udp') return { transport: 'udp', transportPort: 0 }
+  return { transport: input.transport, transportPort: Number(input.transportPort) || 0 }
+}
+function wgTransportChanged(input, iface) {
+  const want = wgTransportOf(input)
+  return want.transport !== (iface.stealth?.transport || 'udp') || want.transportPort !== (iface.stealth?.port || 0)
 }
 
 async function submitForm(input) {
@@ -204,7 +210,8 @@ async function submitForm(input) {
         ...(input.protocol === 'ikev2' ? { ikev2Modes: input.ikev2Modes } : {}),
         ...(input.protocol === 'openconnect' ? { openconnect: ocPayload(input.oc) } : {}),
         // Only when it moved; off is a port of zero.
-        ...(input.protocol === 'wireguard' && stealthPortOf(input) !== (formFor.value.iface.stealth?.udpPort || 0) ? { stealth: { udpPort: stealthPortOf(input) } } : {}),
+        // Only when it moved: a device needs its file again for a new one.
+        ...(input.protocol === 'wireguard' && wgTransportChanged(input, formFor.value.iface) ? wgTransportOf(input) : {}),
         // Only when it moved: a new profile means new files for everyone.
         ...(input.mode === 'amnezia' && input.awg && JSON.stringify(input.awg) !== JSON.stringify(formFor.value.iface.awg || {}) ? { awg: input.awg } : {}),
       })
@@ -213,8 +220,8 @@ async function submitForm(input) {
       // transport is OpenVPN's alone and the server refuses it elsewhere, so
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
-      // eslint-disable-next-line no-unused-vars -- taken out of rest, sent as stealth
-      const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, stealthOn, stealthPort, ...rest } = input
+      // eslint-disable-next-line no-unused-vars -- taken out of rest, sent by protocol below
+      const { transport, transportPort, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, ...rest } = input
       if (xray) {
         // An inbound on a 3x-ui or Pasarguard node, made there as that
         // panel's own form would make it.
@@ -235,7 +242,7 @@ async function submitForm(input) {
         ...(input.protocol === 'l2tp' && l2tpPlain ? { l2tpPlain: true } : {}),
         ...(input.protocol === 'ikev2' ? { ikev2Modes } : {}),
         ...(input.protocol === 'openconnect' ? { openconnect: ocPayload(oc) } : {}),
-        ...(input.protocol === 'wireguard' && stealthPortOf(input) ? { stealth: { udpPort: stealthPortOf(input) } } : {}),
+        ...(input.protocol === 'wireguard' && wgTransportOf(input).transport !== 'udp' ? wgTransportOf(input) : {}),
         // The profile the form shows, as drawn for this server and perhaps
         // changed: what is created is what the operator saw.
         ...(input.protocol === 'wireguard' && input.mode === 'amnezia' ? (awg ? { awg } : { awgLevel }) : {}),

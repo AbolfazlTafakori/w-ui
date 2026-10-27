@@ -68,7 +68,10 @@ const form = ref(
         nodeId: props.iface.nodeId ?? 0,
         // Nested under openvpn on the way out of the API, because that is
         // where it is stored; the scrubbed view keeps it and drops the keys.
-        transport: props.iface.openvpn?.transport || 'udp',
+        // OpenVPN's udp or tcp; WireGuard's udp, or a stealth transport
+        // beside it on a port of its own.
+        transport: props.iface.protocol === 'wireguard' ? props.iface.stealth?.transport || 'udp' : props.iface.openvpn?.transport || 'udp',
+        transportPort: props.iface.stealth?.port || '',
         psk: props.iface.l2tp?.psk || '',
         l2tpPlain: !!props.iface.l2tp?.allowPlain,
         ikev2Modes: ikeModesOf(props.iface.ikev2),
@@ -81,9 +84,6 @@ const form = ref(
         // A copy to edit; what is sent is compared with the tunnel's own.
         awg: { ...(props.iface.awg || {}) },
         awgLevel: usesAwg2(props.iface.awg) ? 'modern' : 'classic',
-        // wui-udp in front of a standard WireGuard tunnel; no port is off.
-        stealthOn: !!props.iface.stealth?.udpPort,
-        stealthPort: props.iface.stealth?.udpPort || '',
         enabled: props.iface.enabled,
       }
     : {
@@ -95,6 +95,7 @@ const form = ref(
         mode: 'standard',
         nodeId: 0,
         transport: 'udp',
+        transportPort: '',
         psk: '',
         l2tpPlain: false,
         ikev2Modes: [...IKE_MODES],
@@ -105,8 +106,6 @@ const form = ref(
         // Drawn by the panel for this server the moment AmneziaWG is chosen.
         awg: null,
         awgLevel: 'modern',
-        stealthOn: false,
-        stealthPort: '',
         enabled: true,
       },
 )
@@ -196,13 +195,21 @@ async function drawAwg(level = form.value.awgLevel) {
   }
 }
 const showsAwg = computed(() => isWireGuard.value && form.value.mode === 'amnezia')
-// wui-udp reads standard WireGuard only; AmneziaWG's packets are its own.
-const showsStealth = computed(() => !xrayNode.value && isWireGuard.value && form.value.mode !== 'amnezia')
-function toggleStealth(on) {
-  clearError('stealth.udpPort')
+// WireGuard's transport menu: plain UDP, or wui-udp beside it. The stealth
+// transports read standard WireGuard only; AmneziaWG's packets are its own.
+const wgTransports = computed(() => isWireGuard.value && form.value.mode !== 'amnezia')
+const showsTransport = computed(() => !xrayNode.value && (isOpenVPN.value || wgTransports.value))
+const stealthChosen = computed(() => wgTransports.value && form.value.transport !== 'udp')
+function chooseTransport() {
+  clearError('transport')
+  clearError('transportPort')
   // A port to start from, beside the tunnel's own; the operator may move it.
-  if (on && !form.value.stealthPort) form.value.stealthPort = (Number(form.value.listenPort) || 51820) + 1
+  if (stealthChosen.value && !form.value.transportPort) form.value.transportPort = (Number(form.value.listenPort) || 51820) + 1
 }
+const transportHint = computed(() => {
+  if (isWireGuard.value) return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
+  return form.value.transport === 'tcp' ? t('interface.transportTcpHint') : t('interface.transportUdpHint')
+})
 watch(
   () => [showsAwg.value, form.value.nodeId],
   ([on]) => {
@@ -304,6 +311,9 @@ function chooseProtocol(p) {
   clearError('protocol')
   Object.assign(form.value, defaults[p])
   if (p !== 'wireguard') form.value.mode = 'standard'
+  // Each protocol's transports are its own.
+  form.value.transport = 'udp'
+  form.value.transportPort = ''
 }
 
 const fieldError = ref('')
@@ -510,42 +520,37 @@ defineExpose({ showError })
           />
           <div v-else-if="showsAwg && drawing" class="awg-wait"><AntIcon name="LoadingOutlined" class="spin" />{{ t('interface.awgDrawing') }}</div>
 
-          <!-- wui-udp: the same tunnel, also reached through a gateway on a
-               port of its own whose packets show nothing of WireGuard. The
-               tunnel and its .conf files stay as they are. -->
-          <div v-if="showsStealth" class="aform-item">
-            <div class="opt-card" :class="{ on: form.stealthOn, calm: form.stealthOn }" data-field="stealth" tabindex="-1">
-              <div class="opt-text">
-                <div class="opt-title">{{ t('interface.stealth') }} <HelpTip :text="t('interface.stealthHint')" /></div>
-                <div class="opt-desc">{{ t('interface.stealthShort') }}</div>
-              </div>
-              <Toggle v-model="form.stealthOn" :label="t('interface.stealth')" @update:model-value="toggleStealth" />
-            </div>
-            <Transition name="reveal">
-              <div v-if="form.stealthOn" class="stealth-port">
-                <label class="aform-label" for="if-stealth-port">{{ t('interface.stealthPort') }}</label>
-                <label class="ainput number" :class="{ invalid: fieldName === 'stealth.udpPort' }">
-                  <input id="if-stealth-port" v-model="form.stealthPort" data-field="stealth.udpPort" type="number" min="1" max="65535" class="ltr" @input="clearError('stealth.udpPort')" />
-                </label>
-              </div>
-            </Transition>
-            <p v-if="fieldName === 'stealth.udpPort'" class="field-error" role="alert">{{ fieldError }}</p>
-          </div>
-
-          <!-- OpenVPN only: WireGuard and L2TP are UDP and have no other
-               option, so offering the choice there would be offering a
-               setting that does nothing. -->
-          <div v-if="!xrayNode && isOpenVPN" class="arow16">
+          <!-- OpenVPN and standard WireGuard: the others have one transport,
+               so offering the choice there would be offering a setting that
+               does nothing. WireGuard stays on plain UDP at its own port
+               whatever is chosen; a stealth transport is a second way to the
+               same tunnel, on a port of its own. -->
+          <div v-if="showsTransport" class="arow16">
             <div class="acol12">
               <div class="aform-item">
-                <label class="aform-label" for="if-transport">{{ t('interface.transport') }} <HelpTip :text="form.transport === 'tcp' ? t('interface.transportTcpHint') : t('interface.transportUdpHint')" /></label>
+                <label class="aform-label" for="if-transport">{{ t('interface.transport') }} <HelpTip :text="transportHint" /></label>
                 <div class="aselect" :class="{ invalid: fieldName === 'transport' }">
-                  <select id="if-transport" v-model="form.transport" data-field="transport" @change="clearError('transport')">
-                    <option value="udp">{{ t('interface.transportUdp') }}</option>
-                    <option value="tcp">{{ t('interface.transportTcp') }}</option>
+                  <select id="if-transport" v-model="form.transport" data-field="transport" @change="chooseTransport">
+                    <template v-if="isWireGuard">
+                      <option value="udp">{{ t('interface.transportWgUdp') }}</option>
+                      <option value="wui-udp">{{ t('interface.transportWuiUdp') }}</option>
+                    </template>
+                    <template v-else>
+                      <option value="udp">{{ t('interface.transportUdp') }}</option>
+                      <option value="tcp">{{ t('interface.transportTcp') }}</option>
+                    </template>
                   </select>
                 </div>
                 <p v-if="fieldName === 'transport'" class="field-error" role="alert">{{ fieldError }}</p>
+              </div>
+            </div>
+            <div v-if="stealthChosen" class="acol12">
+              <div class="aform-item">
+                <label class="aform-label" for="if-transport-port">{{ t('interface.transportPort') }} <HelpTip :text="t('interface.transportPortHint')" /></label>
+                <label class="ainput number" :class="{ invalid: fieldName === 'transportPort' }">
+                  <input id="if-transport-port" v-model="form.transportPort" data-field="transportPort" type="number" min="1" max="65535" class="ltr" @input="clearError('transportPort')" />
+                </label>
+                <p v-if="fieldName === 'transportPort'" class="field-error" role="alert">{{ fieldError }}</p>
               </div>
             </div>
           </div>
@@ -816,8 +821,6 @@ defineExpose({ showError })
   outline: none;
 }
 .opt-card.on { border-color: var(--tag-orange-line); }
-.opt-card.on.calm { border-color: var(--accent); }
-.stealth-port { display: grid; gap: 4px; max-width: 220px; margin-top: 12px; }
 .opt-text { flex: 1; min-width: 0; }
 .opt-title { font-size: 14px; line-height: 22px; color: var(--ink); }
 .opt-desc { margin-top: 2px; font-size: 12px; line-height: 18px; color: var(--faint); }

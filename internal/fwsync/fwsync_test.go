@@ -28,9 +28,9 @@ func TestEachTunnelIsLetInOnItsOwnPorts(t *testing.T) {
 	off := iface(model.ProtocolWireGuard, 9999)
 	off.Enabled = false
 	hidden := iface(model.ProtocolWireGuard, 51821) // with wui-udp beside it
-	hidden.Stealth.V.UDPPort = 2096
+	hidden.Stealth.V = model.StealthParams{Transport: model.TransportWuiUDP, Port: 2096}
 	awg := iface(model.ProtocolWireGuard, 51822) // which wui-udp does not read
-	awg.Mode, awg.Stealth.V.UDPPort = model.ModeAmnezia, 2097
+	awg.Mode, awg.Stealth.V = model.ModeAmnezia, model.StealthParams{Transport: model.TransportWuiUDP, Port: 2097}
 	got := ForInterfaces([]model.Interface{
 		iface(model.ProtocolWireGuard, 51820), iface(model.ProtocolOpenVPN, 1194), tcpOVPN, oc, plain,
 		iface(model.ProtocolIKEv2, 41500), iface(model.ProtocolPPTP, 41723), off, hidden, awg,

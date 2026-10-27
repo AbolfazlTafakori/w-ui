@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
@@ -78,14 +77,13 @@ func (s *Interfaces) portClash(ctx context.Context, nodeID, selfID uint, port in
 	if err := q.Find(&others).Error; err != nil {
 		return fmt.Errorf("service: check port: %w", err)
 	}
-	if slices.Contains(transports, "udp") {
-		o, err := s.stealthClash(ctx, nodeID, selfID, port)
-		if err != nil {
-			return err
-		}
-		if o != nil {
-			return invalidField(field, "udp %d is already the wui-udp port of the tunnel %q on this server", port, o.Name)
-		}
+	o, err := s.stealthClash(ctx, nodeID, selfID, port, transports)
+	if err != nil {
+		return err
+	}
+	if o != nil {
+		name, _ := o.StealthTransport()
+		return invalidField(field, "%s %d is already the %s port of the tunnel %q on this server", model.TransportNetwork(name), port, name, o.Name)
 	}
 	for _, o := range others {
 		for _, a := range ifaceTransports(o) {

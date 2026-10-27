@@ -19,35 +19,55 @@ func wgInput(name string, port int, subnet string) CreateInterfaceInput {
 	}
 }
 
-func TestATunnelTakesWuiUDPOnAPortOfItsOwn(t *testing.T) {
+func wuiUDP(in CreateInterfaceInput, port int) CreateInterfaceInput {
+	in.Transport, in.TransportPort = model.TransportWuiUDP, port
+	return in
+}
+
+// A WireGuard tunnel's transport is plain UDP, or wui-udp beside it on a
+// port of its own, chosen as OpenVPN's transport is.
+func TestAWireGuardTunnelsTransportIsUDPOrWuiUDP(t *testing.T) {
 	db := testDB(t)
 	svc := newInterfaces(t, db)
 	ctx := context.Background()
 	ports := freeUDPPorts(t, 4)
 
-	in := wgInput("wg0", ports[0], "10.66.0.0/24")
-	in.Stealth = &model.StealthParams{UDPPort: ports[1]}
-	wg0, err := svc.Create(ctx, in)
+	wg0, err := svc.Create(ctx, wuiUDP(wgInput("wg0", ports[0], "10.66.0.0/24"), ports[1]))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wg0.StealthUDP() != ports[1] {
-		t.Fatalf("the tunnel's wui-udp port is %d", wg0.StealthUDP())
+	if wg0.WireGuardTransport() != model.TransportWuiUDP || wg0.StealthUDP() != ports[1] || wg0.ListenPort != ports[0] {
+		t.Fatalf("made as %s on %d, wui-udp on %d", wg0.WireGuardTransport(), wg0.ListenPort, wg0.StealthUDP())
 	}
+	plain := wgInput("plain", ports[2], "10.69.0.0/24")
+	plain.Transport = model.TransportUDP
+	if p, err := svc.Create(ctx, plain); err != nil || p.WireGuardTransport() != model.TransportUDP {
+		t.Fatalf("plain UDP named: %v", err)
+	}
+	svc.Delete(ctx, wg0.ID+1)
 
 	for _, tc := range []struct {
-		what string
-		in   CreateInterfaceInput
-		port int
+		what  string
+		in    CreateInterfaceInput
+		field string
 	}{
-		{"the tunnel's own port", wgInput("wg1", ports[2], "10.67.0.0/24"), ports[2]},
-		{"another tunnel's port", wgInput("wg1", ports[2], "10.67.0.0/24"), ports[0]},
-		{"another tunnel's wui-udp port", wgInput("wg1", ports[2], "10.67.0.0/24"), ports[1]},
-		{"a port out of range", wgInput("wg1", ports[2], "10.67.0.0/24"), 70000},
+		{"the tunnel's own port", wuiUDP(wgInput("wg1", ports[2], "10.67.0.0/24"), ports[2]), "transportPort"},
+		{"another tunnel's port", wuiUDP(wgInput("wg1", ports[2], "10.67.0.0/24"), ports[0]), "transportPort"},
+		{"another tunnel's wui-udp port", wuiUDP(wgInput("wg1", ports[2], "10.67.0.0/24"), ports[1]), "transportPort"},
+		{"a port out of range", wuiUDP(wgInput("wg1", ports[2], "10.67.0.0/24"), 70000), "transportPort"},
+		{"no port", wuiUDP(wgInput("wg1", ports[2], "10.67.0.0/24"), 0), "transportPort"},
+		{"a transport there is none of", func() CreateInterfaceInput {
+			in := wgInput("wg1", ports[2], "10.67.0.0/24")
+			in.Transport = "tcp"
+			return in
+		}(), "transport"},
+		{"a port for plain UDP", func() CreateInterfaceInput {
+			in := wgInput("wg1", ports[2], "10.67.0.0/24")
+			in.TransportPort = ports[3]
+			return in
+		}(), "transportPort"},
 	} {
-		in := tc.in
-		in.Stealth = &model.StealthParams{UDPPort: tc.port}
-		if _, err := svc.Create(ctx, in); FieldOf(err) != stealthField {
+		if _, err := svc.Create(ctx, tc.in); FieldOf(err) != tc.field {
 			t.Errorf("%s: %v, field %q", tc.what, err, FieldOf(err))
 		}
 	}
@@ -56,28 +76,33 @@ func TestATunnelTakesWuiUDPOnAPortOfItsOwn(t *testing.T) {
 		t.Fatalf("a tunnel on another's wui-udp port: %v", err)
 	}
 	// AmneziaWG's packets are not WireGuard's: no wui-udp in front of them.
-	awg := wgInput("awg0", ports[2], "10.68.0.0/24")
-	awg.Mode, awg.Stealth = model.ModeAmnezia, &model.StealthParams{UDPPort: ports[3]}
-	if _, err := svc.Create(ctx, awg); FieldOf(err) != stealthField {
+	awg := wuiUDP(wgInput("awg0", ports[2], "10.68.0.0/24"), ports[3])
+	awg.Mode = model.ModeAmnezia
+	if _, err := svc.Create(ctx, awg); FieldOf(err) != "transport" {
 		t.Fatalf("wui-udp on AmneziaWG: %v", err)
 	}
 
-	// Moved, then off.
+	// Moved, then back to plain UDP.
 	if _, err := svc.Update(ctx, wg0.ID, UpdateInterfaceInput{ListenPort: &ports[1]}); FieldOf(err) != "listenPort" {
 		t.Fatalf("the tunnel moved onto its own wui-udp port: %v", err)
 	}
-	got, err := svc.Update(ctx, wg0.ID, UpdateInterfaceInput{Stealth: &model.StealthParams{UDPPort: ports[3]}})
+	got, err := svc.Update(ctx, wg0.ID, UpdateInterfaceInput{TransportPort: &ports[3]})
 	if err != nil || got.StealthUDP() != ports[3] {
 		t.Fatalf("moving wui-udp: %v, port %d", err, got.StealthUDP())
 	}
-	got, err = svc.Update(ctx, wg0.ID, UpdateInterfaceInput{Stealth: &model.StealthParams{}})
-	if err != nil || got.StealthUDP() != 0 {
-		t.Fatalf("turning wui-udp off: %v, port %d", err, got.StealthUDP())
+	udp := model.TransportUDP
+	got, err = svc.Update(ctx, wg0.ID, UpdateInterfaceInput{Transport: &udp})
+	if err != nil || got.WireGuardTransport() != model.TransportUDP || got.ListenPort != ports[0] {
+		t.Fatalf("back to plain UDP: %v, %s", err, got.WireGuardTransport())
 	}
 	// And the API says nothing of it once it is off.
 	b, _ := json.Marshal(got)
 	if strings.Contains(string(b), "stealth") {
-		t.Fatalf("a tunnel without wui-udp answers with %s", b)
+		t.Fatalf("a tunnel on plain UDP answers with %s", b)
+	}
+	// wui-udp is package stealth's name for it.
+	if model.TransportWuiUDP != stealth.UDP {
+		t.Fatal("the panel and the protocol name wui-udp apart")
 	}
 }
 
@@ -135,7 +160,7 @@ func TestTheWuiProfileCarriesEachFileAndItsTransport(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
 	c := seed(t, db, 1)
-	if err := db.Model(&model.Interface{}).Where("id = 1").Update("stealth", model.JSON(model.StealthParams{UDPPort: 2096})).Error; err != nil {
+	if err := db.Model(&model.Interface{}).Where("id = 1").Update("stealth", model.JSON(model.StealthParams{Transport: model.TransportWuiUDP, Port: 2096})).Error; err != nil {
 		t.Fatal(err)
 	}
 	db.Model(&model.Account{}).Where("client_id = ?", c.ID).Update("private_key", "priv")

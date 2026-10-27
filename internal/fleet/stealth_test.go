@@ -18,7 +18,7 @@ func TestANodeTakesWuiUDPAsThePanelHasIt(t *testing.T) {
 	state := NodeState{
 		Interface: NodeInterface{OriginID: 5, Name: "wg0", Protocol: model.ProtocolWireGuard, Enabled: true,
 			ListenPort: 51820, Subnet: "10.66.0.0/24", MTU: 1420, Mode: model.ModeStandard,
-			PrivateKey: "priv", PublicKey: "pub", Stealth: &model.StealthParams{UDPPort: 2096}},
+			PrivateKey: "priv", PublicKey: "pub", Stealth: &model.StealthParams{Transport: model.TransportWuiUDP, Port: 2096}},
 		Clients: []NodeClient{{OriginID: 9, Enabled: true, Accounts: []NodeAccount{{
 			OriginID: 11, DeviceName: "phone", IP: "10.66.0.2", Enabled: true,
 			PrivateKey: "p", PublicKey: "k", StealthSecret: "secret",

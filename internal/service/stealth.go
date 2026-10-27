@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -53,43 +55,58 @@ func EnsureStealthSecrets(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// stealthField is the input a stealth setting is reported against.
-const stealthField = "stealth.udpPort"
+// checkWireGuardTransport refuses a WireGuard transport there is none of.
+func checkWireGuardTransport(name string) error {
+	switch name {
+	case "", model.TransportUDP, model.TransportWuiUDP:
+		return nil
+	}
+	return invalidField("transport", "a WireGuard tunnel's transport is udp or wui-udp, not %q", name)
+}
 
-// checkStealth checks a tunnel's stealth transports as they would be, for a
-// tunnel of protocol and mode on listenPort. selfID is the tunnel when it
-// exists, and held the port its gateway already holds, which is no clash
-// with itself. local says the tunnel is on this machine, which can be asked
-// whether the port is free.
-func (s *Interfaces) checkStealth(ctx context.Context, nodeID, selfID uint, protocol model.Protocol, mode model.InterfaceMode,
+// checkStealth checks a WireGuard tunnel's transport as it would be, for a
+// tunnel of mode on listenPort. selfID is the tunnel when it exists, and
+// held the port its gateway already holds, which is no clash with itself.
+// local says the tunnel is on this machine, which can be asked whether the
+// port is free. Plain UDP comes back as the zero value.
+func (s *Interfaces) checkStealth(ctx context.Context, nodeID, selfID uint, mode model.InterfaceMode,
 	listenPort int, p model.StealthParams, held int, local bool,
 ) (model.StealthParams, error) {
-	if p.UDPPort == 0 {
-		return model.StealthParams{}, nil
-	}
-	if protocol != model.ProtocolWireGuard || mode == model.ModeAmnezia {
-		return p, invalidField(stealthField, "wui-udp runs in front of a standard WireGuard tunnel only")
-	}
-	if p.UDPPort < 1 || p.UDPPort > 65535 {
-		return p, invalidField(stealthField, "port %d is out of range", p.UDPPort)
-	}
-	if p.UDPPort == listenPort {
-		return p, invalidField(stealthField, "wui-udp needs a port of its own; %d is the tunnel's", p.UDPPort)
-	}
-	if err := s.portClash(ctx, nodeID, selfID, p.UDPPort, []string{"udp"}, stealthField); err != nil {
+	if err := checkWireGuardTransport(p.Transport); err != nil {
 		return p, err
 	}
-	if local && p.UDPPort != held {
-		if err := checkPortFree(p.UDPPort, "udp"); err != nil {
-			return p, &FieldError{Field: stealthField, Err: err}
+	if p.Transport == "" || p.Transport == model.TransportUDP {
+		if p.Port != 0 {
+			return p, invalidField("transportPort", "plain UDP is on the tunnel's own port and takes no other")
+		}
+		return model.StealthParams{}, nil
+	}
+	if mode == model.ModeAmnezia {
+		return p, invalidField("transport", "only a standard WireGuard tunnel takes %s; AmneziaWG's packets are its own", p.Transport)
+	}
+	switch {
+	case p.Port == 0:
+		return p, invalidField("transportPort", "a port of its own is needed for %s, beside the tunnel's", p.Transport)
+	case p.Port < 1 || p.Port > 65535:
+		return p, invalidField("transportPort", "port %d is out of range", p.Port)
+	case p.Port == listenPort:
+		return p, invalidField("transportPort", "port %d is the tunnel's own; %s needs one beside it", p.Port, p.Transport)
+	}
+	network := model.TransportNetwork(p.Transport)
+	if err := s.portClash(ctx, nodeID, selfID, p.Port, []string{network}, "transportPort"); err != nil {
+		return p, err
+	}
+	if local && p.Port != held {
+		if err := checkPortFree(p.Port, network); err != nil {
+			return p, &FieldError{Field: "transportPort", Err: err}
 		}
 	}
 	return p, nil
 }
 
-// stealthClash is the tunnel on a server whose stealth transport takes a UDP
-// port, other than selfID's, or nil.
-func (s *Interfaces) stealthClash(ctx context.Context, nodeID, selfID uint, port int) (*model.Interface, error) {
+// stealthClash is the tunnel on a server, other than selfID, whose stealth
+// transport takes port on one of transports, or nil.
+func (s *Interfaces) stealthClash(ctx context.Context, nodeID, selfID uint, port int, transports []string) (*model.Interface, error) {
 	var withStealth []model.Interface
 	q := s.db.WithContext(ctx).Where("node_id = ? AND protocol = ? AND stealth IS NOT NULL AND stealth <> ''", nodeID, model.ProtocolWireGuard)
 	if selfID != 0 {
@@ -99,18 +116,38 @@ func (s *Interfaces) stealthClash(ctx context.Context, nodeID, selfID uint, port
 		return nil, fmt.Errorf("service: check stealth ports: %w", err)
 	}
 	for i := range withStealth {
-		if withStealth[i].StealthUDP() == port {
+		name, p := withStealth[i].StealthTransport()
+		if p == port && slices.Contains(transports, model.TransportNetwork(name)) {
 			return &withStealth[i], nil
 		}
 	}
 	return nil, nil
 }
 
-// updateStealth takes a WireGuard tunnel's stealth transports. A device needs
-// its file again to use one, but nobody's tunnel is touched: the gateway
-// stands beside WireGuard, which goes on as it was.
+// updateStealth takes a WireGuard tunnel's transport and its port. A device
+// needs its file again to use a new one, but nobody's tunnel is touched: the
+// gateway stands beside WireGuard, which goes on as it was.
 func (s *Interfaces) updateStealth(ctx context.Context, iface *model.Interface, in UpdateInterfaceInput, fields map[string]any) error {
-	if in.Stealth == nil || *in.Stealth == iface.Stealth.V {
+	if iface.Protocol != model.ProtocolWireGuard {
+		if in.TransportPort != nil && *in.TransportPort != 0 {
+			return invalidField("transportPort", "only a WireGuard tunnel's stealth transport takes a port of its own")
+		}
+		return nil
+	}
+	if in.Transport == nil && in.TransportPort == nil {
+		return nil
+	}
+	want := iface.Stealth.V
+	if in.Transport != nil {
+		want.Transport = strings.ToLower(strings.TrimSpace(*in.Transport))
+		if want.Transport == model.TransportUDP || want.Transport == "" {
+			want = model.StealthParams{}
+		}
+	}
+	if in.TransportPort != nil && want.Transport != "" {
+		want.Port = *in.TransportPort
+	}
+	if want == iface.Stealth.V {
 		return nil
 	}
 	port := iface.ListenPort
@@ -125,7 +162,7 @@ func (s *Interfaces) updateStealth(ctx context.Context, iface *model.Interface, 
 	if err != nil {
 		return err
 	}
-	p, err := s.checkStealth(ctx, iface.NodeID, iface.ID, iface.Protocol, mode, port, *in.Stealth, iface.Stealth.V.UDPPort, local)
+	p, err := s.checkStealth(ctx, iface.NodeID, iface.ID, mode, port, want, iface.Stealth.V.Port, local)
 	if err != nil {
 		return err
 	}

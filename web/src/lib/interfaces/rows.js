@@ -6,7 +6,8 @@ import { store, t } from '../store.js'
 
 // What a tunnel carries its traffic over, as the table tags it: OpenVPN's
 // choice, PPTP's TCP (its data is GRE), OpenConnect's TLS on TCP with DTLS
-// on UDP beside it, and UDP for the rest. A 3x-ui inbound shows what it is
+// on UDP beside it, WireGuard's stealth transport beside its UDP, and UDP
+// for the rest. A 3x-ui inbound shows what it is
 // there: VLESS over TCP with Reality, say.
 export function protoTag(i) {
   return i.protocol === 'xray' ? (i.xui?.kind || 'xray') : i.protocol
@@ -20,6 +21,8 @@ export function transportTag(i) {
   if (i.protocol === 'openvpn') return (i.openvpn?.transport || 'udp').toUpperCase()
   if (i.protocol === 'pptp') return 'TCP'
   if (i.protocol === 'openconnect') return i.openconnect?.dtls ? 'TCP + UDP' : 'TCP'
+  // WireGuard with a stealth transport is on plain UDP and that one both.
+  if (i.protocol === 'wireguard' && i.stealth?.transport) return 'UDP + ' + i.stealth.transport
   return 'UDP'
 }
 
@@ -129,7 +132,7 @@ export function exportable(i) {
     // every device already has.
     psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
     l2tpPlain: i.protocol === 'l2tp' && i.l2tp?.allowPlain ? true : undefined,
-    stealth: i.stealth?.udpPort ? { udpPort: i.stealth.udpPort } : undefined,
+    ...(i.protocol === 'wireguard' && i.stealth?.transport ? { transport: i.stealth.transport, transportPort: i.stealth.port } : {}),
   }
 }
 
