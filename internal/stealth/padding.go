@@ -52,6 +52,11 @@ func (p *Padder) Next(handshake bool) int {
 	return uniform(min(p.base, p.normal), p.normal)
 }
 
+// Wide is a wide draw that is not counted among the direction's first
+// chunks: the padding of a UDP opening, which is always wide and is not one of
+// the data packets the first sixteen are counted over.
+func (p *Padder) Wide() int { return uniform(p.base, p.wide) }
+
 // IsHandshake says whether a WireGuard datagram is a handshake message:
 // an initiation, a response or a cookie reply. The type is its first byte.
 func IsHandshake(datagram []byte) bool {
