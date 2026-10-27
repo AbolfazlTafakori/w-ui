@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
@@ -63,6 +64,12 @@ func ifaceTransports(i model.Interface) []string {
 // enough: a redirected port has nothing listening on it, and a tunnel that
 // is switched off holds nothing until it is switched on again.
 func (s *Interfaces) checkPortClash(ctx context.Context, nodeID, selfID uint, port int, transports []string) error {
+	return s.portClash(ctx, nodeID, selfID, port, transports, "listenPort")
+}
+
+// portClash is checkPortClash, reported against field. A tunnel's wui-udp
+// port is one of the UDP ports it takes.
+func (s *Interfaces) portClash(ctx context.Context, nodeID, selfID uint, port int, transports []string, field string) error {
 	var others []model.Interface
 	q := s.db.WithContext(ctx).Where("node_id = ? AND listen_port = ?", nodeID, port)
 	if selfID != 0 {
@@ -71,11 +78,20 @@ func (s *Interfaces) checkPortClash(ctx context.Context, nodeID, selfID uint, po
 	if err := q.Find(&others).Error; err != nil {
 		return fmt.Errorf("service: check port: %w", err)
 	}
+	if slices.Contains(transports, "udp") {
+		o, err := s.stealthClash(ctx, nodeID, selfID, port)
+		if err != nil {
+			return err
+		}
+		if o != nil {
+			return invalidField(field, "udp %d is already the wui-udp port of the tunnel %q on this server", port, o.Name)
+		}
+	}
 	for _, o := range others {
 		for _, a := range ifaceTransports(o) {
 			for _, b := range transports {
 				if a == b {
-					return invalidField("listenPort", "%s %d is already the port of the tunnel %q on this server", b, port, o.Name)
+					return invalidField(field, "%s %d is already the port of the tunnel %q on this server", b, port, o.Name)
 				}
 			}
 		}

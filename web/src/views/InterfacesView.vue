@@ -176,6 +176,11 @@ function toggleOne(id, checked) {
   selected.value = next
 }
 
+// The wui-udp port the form asks for, or zero for off. AmneziaWG has none.
+function stealthPortOf(input) {
+  return input.stealthOn && input.mode !== 'amnezia' ? Number(input.stealthPort) || 0 : 0
+}
+
 async function submitForm(input) {
   try {
     if (formFor.value?.iface) {
@@ -198,6 +203,8 @@ async function submitForm(input) {
         ...(input.protocol === 'l2tp' && input.l2tpPlain !== !!formFor.value.iface.l2tp?.allowPlain ? { l2tpPlain: input.l2tpPlain } : {}),
         ...(input.protocol === 'ikev2' ? { ikev2Modes: input.ikev2Modes } : {}),
         ...(input.protocol === 'openconnect' ? { openconnect: ocPayload(input.oc) } : {}),
+        // Only when it moved; off is a port of zero.
+        ...(input.protocol === 'wireguard' && stealthPortOf(input) !== (formFor.value.iface.stealth?.udpPort || 0) ? { stealth: { udpPort: stealthPortOf(input) } } : {}),
         // Only when it moved: a new profile means new files for everyone.
         ...(input.mode === 'amnezia' && input.awg && JSON.stringify(input.awg) !== JSON.stringify(formFor.value.iface.awg || {}) ? { awg: input.awg } : {}),
       })
@@ -206,7 +213,8 @@ async function submitForm(input) {
       // transport is OpenVPN's alone and the server refuses it elsewhere, so
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
-      const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, ...rest } = input
+      // eslint-disable-next-line no-unused-vars -- taken out of rest, sent as stealth
+      const { transport, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, stealthOn, stealthPort, ...rest } = input
       if (xray) {
         // An inbound on a 3x-ui or Pasarguard node, made there as that
         // panel's own form would make it.
@@ -227,6 +235,7 @@ async function submitForm(input) {
         ...(input.protocol === 'l2tp' && l2tpPlain ? { l2tpPlain: true } : {}),
         ...(input.protocol === 'ikev2' ? { ikev2Modes } : {}),
         ...(input.protocol === 'openconnect' ? { openconnect: ocPayload(oc) } : {}),
+        ...(input.protocol === 'wireguard' && stealthPortOf(input) ? { stealth: { udpPort: stealthPortOf(input) } } : {}),
         // The profile the form shows, as drawn for this server and perhaps
         // changed: what is created is what the operator saw.
         ...(input.protocol === 'wireguard' && input.mode === 'amnezia' ? (awg ? { awg } : { awgLevel }) : {}),

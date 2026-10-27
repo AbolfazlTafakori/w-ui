@@ -6,6 +6,9 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **wui-udp: a WireGuard tunnel reached where WireGuard is blocked.** A standard WireGuard tunnel can turn on wui-udp in its form, on a UDP port of its own. A gateway on that port carries the same tunnel in packets that show nothing of WireGuard -- no fixed byte, size or rhythm -- and answers nobody who does not hold a device's secret, so a probe cannot tell anything listens. The tunnel, its port and every `.conf` handed out stay as they were. Each WireGuard device gets a transport secret of its own, drawn with its keys and replaced when they are rotated, and the subscription gives W-UI's own app its profile at `?format=wui`. The port is opened in the firewall, a remote node gets the setting with the tunnel, and the sharing report sees each device at its own address. The protocol is specified in the reference under *Stealth transport: wui-udp*.
+
 ## [3.1.2] — 2026-10-26
 
 ### Added

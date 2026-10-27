@@ -94,7 +94,7 @@ func (s *NodeSync) Handover(ctx context.Context, nodeID uint) (handover.Handover
 			hc.Accounts = append(hc.Accounts, handover.Account{
 				LocalID: a.ID, TunnelLocalID: a.InterfaceID, DeviceName: a.DeviceName, IP: a.IP,
 				Enabled: a.Enabled, PrivateKey: a.PrivateKey, PublicKey: a.PublicKey,
-				PresharedKey: a.PresharedKey, Username: a.Username, Secret: a.Secret,
+				PresharedKey: a.PresharedKey, StealthSecret: a.StealthSecret, Username: a.Username, Secret: a.Secret,
 				CertPEM: a.CertPEM, CertKeyPEM: a.CertKeyPEM, UpBytes: a.UpBytes, DownBytes: a.DownBytes,
 			})
 		}
@@ -114,6 +114,9 @@ func handoverTunnel(t model.Interface) handover.Tunnel {
 	}
 	if v := t.AWG.V; v != (model.AWGParams{}) {
 		out.AWG = &v
+	}
+	if v := t.Stealth.V; v != (model.StealthParams{}) {
+		out.Stealth = &v
 	}
 	if v := t.OpenVPN.V; v.CACert != "" {
 		out.OpenVPN = &v

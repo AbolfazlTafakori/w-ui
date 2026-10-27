@@ -78,6 +78,9 @@ func ForInterfaces(ifaces []model.Interface) []Rule {
 		switch i.Protocol {
 		case model.ProtocolWireGuard:
 			add(Rule{"udp", i.ListenPort})
+			if p := i.StealthUDP(); p != 0 {
+				add(Rule{"udp", p}) // wui-udp, in front of it
+			}
 		case model.ProtocolOpenVPN:
 			if i.OpenVPN.V.Transport == "tcp" {
 				add(Rule{"tcp", i.ListenPort})

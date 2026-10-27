@@ -98,7 +98,7 @@ func openReplay(path string, now uint64) (*replay, error) {
 func readLimit(path string) (uint64, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %v", errNoLimit, err)
+		return 0, fmt.Errorf("%w: %w", errNoLimit, err)
 	}
 	if len(b) != 48 || string(b[:8]) != replayMagic {
 		return 0, fmt.Errorf("%w: not a replay file", errNoLimit)

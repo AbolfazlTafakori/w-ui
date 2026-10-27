@@ -49,6 +49,7 @@ Interface
 	l2tp model.JSONField[github.com/abolfazl/w-ui/internal/database/model.L2TPParams] omitzero
 	ikev2 model.JSONField[github.com/abolfazl/w-ui/internal/database/model.IKEv2Params] omitzero
 	openconnect model.JSONField[github.com/abolfazl/w-ui/internal/database/model.OpenConnectParams] omitzero
+	stealth model.JSONField[github.com/abolfazl/w-ui/internal/database/model.StealthParams] omitzero
 	xui model.JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound] omitzero
 	configured bool (not stored)
 	originId uint omitempty
@@ -118,6 +119,10 @@ OpenConnectParams
 	cert string omitempty
 	key string omitempty
 	certSource string omitempty
+JSONField[github.com/abolfazl/w-ui/internal/database/model.StealthParams]
+	V model.StealthParams
+StealthParams
+	udpPort int omitempty
 JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound]
 	V model.XUIInbound
 XUIInbound

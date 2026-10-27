@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"math/big"
 	"net"
@@ -70,7 +71,8 @@ type Gateway struct {
 	slots    map[netip.AddrPort][]*slot // by source
 	nslots   int
 	sources  map[netip.Addr]*bucket
-	askLimit uint64 // a raise a client above the limit asked for
+	behind   map[string]netip.AddrPort // a slot socket's address -> its source
+	askLimit uint64                    // a raise a client above the limit asked for
 
 	stats counters
 	wake  chan struct{}
@@ -80,6 +82,7 @@ type Gateway struct {
 // device is what the gateway knows of one device.
 type device struct {
 	pub     [32]byte
+	secret  stealth.Secret
 	keys    stealth.DeviceKeys
 	ss      [32]byte // static-static secret with the tunnel
 	usable  bool     // its public key gives a secret at all
@@ -127,7 +130,8 @@ func New(cfg Config) (*Gateway, error) {
 		server: stealth.NewUDPServer(anchor), resp: resp, wg: wg,
 		room:    cfg.MTU + stealth.UDPOverhead,
 		devices: map[[32]byte]*device{}, slots: map[netip.AddrPort][]*slot{}, sources: map[netip.Addr]*bucket{},
-		wake: make(chan struct{}, 1),
+		behind: map[string]netip.AddrPort{},
+		wake:   make(chan struct{}, 1),
 	}
 	g.table.Store(&tagTable{byTag: map[stealth.Tag]*device{}})
 	return g, nil
@@ -148,11 +152,11 @@ func (g *Gateway) SetDevices(list []Device) {
 	g.mu.Lock()
 	keep := make(map[[32]byte]*device, len(list))
 	for _, d := range list {
-		if old, ok := g.devices[d.PublicKey]; ok && old.keys.Tag == stealth.Derive(d.Secret, anchor).Tag {
+		if old, ok := g.devices[d.PublicKey]; ok && old.secret == d.Secret {
 			keep[d.PublicKey] = old
 			continue
 		}
-		dev := &device{pub: d.PublicKey, keys: stealth.Derive(d.Secret, anchor), indexes: map[uint32]time.Time{}}
+		dev := &device{pub: d.PublicKey, secret: d.Secret, keys: stealth.Derive(d.Secret, anchor), indexes: map[uint32]time.Time{}}
 		dev.ss, dev.usable = g.resp.static(d.PublicKey)
 		dev.proofs, dev.spent = newBucket(deviceProofs, now), newBucket(deviceSpent, now)
 		keep[d.PublicKey] = dev
@@ -204,8 +208,13 @@ func (g *Gateway) Listen() error {
 	}
 	now := time.Now()
 	r, err := openReplay(g.cfg.ReplayFile, uint64(now.Unix()))
-	if err != nil {
-		g.log.Warn("no replay limit was found, so the gateway takes no opening for a minute", "error", err)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		// A gateway's first start, or its file was taken away: nothing says
+		// what an earlier run took, so nothing is taken for a minute.
+		g.log.Info("no replay limit is kept yet; the gateway takes openings from a minute from now")
+	case err != nil:
+		g.log.Error("the replay limit could not be read; the gateway takes openings from a minute from now", "error", err)
 	}
 	g.replay = r
 	addr, err := net.ResolveUDPAddr("udp", g.cfg.Listen)
@@ -249,6 +258,7 @@ func (g *Gateway) Serve(ctx context.Context) error {
 		}
 	}
 	g.slots, g.nslots = map[netip.AddrPort][]*slot{}, 0
+	clear(g.behind)
 	g.mu.Unlock()
 	g.wgSet.Wait()
 	return nil
@@ -735,6 +745,7 @@ func (g *Gateway) closeSlotLocked(s *slot) {
 	}
 	s.dev.nslots--
 	g.nslots--
+	delete(g.behind, s.wg.LocalAddr().String())
 	g.stats.ended.Add(1)
 	s.close()
 }
@@ -749,6 +760,7 @@ func (g *Gateway) newSlotLocked(dev *device, from netip.AddrPort, now time.Time)
 	s := &slot{source: from, dev: dev, wg: c, created: now, counters: map[uint32]uint64{}}
 	s.lastActive.Store(now.UnixNano())
 	g.slots[from] = append(g.slots[from], s)
+	g.behind[c.LocalAddr().String()] = from
 	g.nslots++
 	dev.nslots++
 	go func() {
@@ -765,6 +777,19 @@ func (g *Gateway) newSlotLocked(dev *device, from netip.AddrPort, now time.Time)
 		}
 	}()
 	return s, nil
+}
+
+// Source is the address a device really reaches the gateway from, for the
+// address the tunnel sees it at: the gateway's own socket on the loopback,
+// one per device and source. False for an address that is none of them.
+func (g *Gateway) Source(endpoint string) (string, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	src, ok := g.behind[endpoint]
+	if !ok {
+		return "", false
+	}
+	return src.String(), true
 }
 
 // Stats is what the gateway has done since it started, and holds now.

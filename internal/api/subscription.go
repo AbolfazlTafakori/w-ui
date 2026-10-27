@@ -97,7 +97,7 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, service.ErrUnknownFormat) {
-			http.Error(w, "unknown format; it is conf, base64, links or zip", http.StatusBadRequest)
+			http.Error(w, "unknown format; it is conf, base64, links, zip or wui", http.StatusBadRequest)
 			return
 		}
 		if errors.Is(err, service.ErrInvalid) {

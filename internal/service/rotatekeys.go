@@ -125,6 +125,7 @@ func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput)
 	type fresh struct {
 		id                              uint
 		private, public, preshared, sec string
+		stealth                         string
 		wg                              bool
 	}
 	out := make([]fresh, 0, len(chosen))
@@ -136,7 +137,12 @@ func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput)
 			if err != nil {
 				return 0, err
 			}
-			out = append(out, fresh{id: a.ID, wg: true,
+			// The transport secret is in the same file, and goes with it.
+			secret, err := newStealthSecret()
+			if err != nil {
+				return 0, err
+			}
+			out = append(out, fresh{id: a.ID, wg: true, stealth: secret,
 				private: pair.Private.String(), public: pair.Public.String(), preshared: pair.Preshared.String()})
 		case model.ProtocolOpenVPN, model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2, model.ProtocolOpenConnect:
 			secret, err := ovpnconf.NewSecret(16)
@@ -154,6 +160,7 @@ func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput)
 				cols["private_key"] = n.private
 				cols["public_key"] = n.public
 				cols["preshared_key"] = n.preshared
+				cols["stealth_secret"] = n.stealth
 			} else {
 				cols["secret"] = n.sec
 			}

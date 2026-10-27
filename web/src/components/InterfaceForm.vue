@@ -81,6 +81,9 @@ const form = ref(
         // A copy to edit; what is sent is compared with the tunnel's own.
         awg: { ...(props.iface.awg || {}) },
         awgLevel: usesAwg2(props.iface.awg) ? 'modern' : 'classic',
+        // wui-udp in front of a standard WireGuard tunnel; no port is off.
+        stealthOn: !!props.iface.stealth?.udpPort,
+        stealthPort: props.iface.stealth?.udpPort || '',
         enabled: props.iface.enabled,
       }
     : {
@@ -102,6 +105,8 @@ const form = ref(
         // Drawn by the panel for this server the moment AmneziaWG is chosen.
         awg: null,
         awgLevel: 'modern',
+        stealthOn: false,
+        stealthPort: '',
         enabled: true,
       },
 )
@@ -191,6 +196,13 @@ async function drawAwg(level = form.value.awgLevel) {
   }
 }
 const showsAwg = computed(() => isWireGuard.value && form.value.mode === 'amnezia')
+// wui-udp reads standard WireGuard only; AmneziaWG's packets are its own.
+const showsStealth = computed(() => !xrayNode.value && isWireGuard.value && form.value.mode !== 'amnezia')
+function toggleStealth(on) {
+  clearError('stealth.udpPort')
+  // A port to start from, beside the tunnel's own; the operator may move it.
+  if (on && !form.value.stealthPort) form.value.stealthPort = (Number(form.value.listenPort) || 51820) + 1
+}
 watch(
   () => [showsAwg.value, form.value.nodeId],
   ([on]) => {
@@ -498,6 +510,28 @@ defineExpose({ showError })
           />
           <div v-else-if="showsAwg && drawing" class="awg-wait"><AntIcon name="LoadingOutlined" class="spin" />{{ t('interface.awgDrawing') }}</div>
 
+          <!-- wui-udp: the same tunnel, also reached through a gateway on a
+               port of its own whose packets show nothing of WireGuard. The
+               tunnel and its .conf files stay as they are. -->
+          <div v-if="showsStealth" class="aform-item">
+            <div class="opt-card" :class="{ on: form.stealthOn, calm: form.stealthOn }" data-field="stealth" tabindex="-1">
+              <div class="opt-text">
+                <div class="opt-title">{{ t('interface.stealth') }} <HelpTip :text="t('interface.stealthHint')" /></div>
+                <div class="opt-desc">{{ t('interface.stealthShort') }}</div>
+              </div>
+              <Toggle v-model="form.stealthOn" :label="t('interface.stealth')" @update:model-value="toggleStealth" />
+            </div>
+            <Transition name="reveal">
+              <div v-if="form.stealthOn" class="stealth-port">
+                <label class="aform-label" for="if-stealth-port">{{ t('interface.stealthPort') }}</label>
+                <label class="ainput number" :class="{ invalid: fieldName === 'stealth.udpPort' }">
+                  <input id="if-stealth-port" v-model="form.stealthPort" data-field="stealth.udpPort" type="number" min="1" max="65535" class="ltr" @input="clearError('stealth.udpPort')" />
+                </label>
+              </div>
+            </Transition>
+            <p v-if="fieldName === 'stealth.udpPort'" class="field-error" role="alert">{{ fieldError }}</p>
+          </div>
+
           <!-- OpenVPN only: WireGuard and L2TP are UDP and have no other
                option, so offering the choice there would be offering a
                setting that does nothing. -->
@@ -782,6 +816,8 @@ defineExpose({ showError })
   outline: none;
 }
 .opt-card.on { border-color: var(--tag-orange-line); }
+.opt-card.on.calm { border-color: var(--accent); }
+.stealth-port { display: grid; gap: 4px; max-width: 220px; margin-top: 12px; }
 .opt-text { flex: 1; min-width: 0; }
 .opt-title { font-size: 14px; line-height: 22px; color: var(--ink); }
 .opt-desc { margin-top: 2px; font-size: 12px; line-height: 18px; color: var(--faint); }

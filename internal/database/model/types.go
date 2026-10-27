@@ -226,6 +226,16 @@ type OpenConnectParams struct {
 	CertSource string `json:"certSource,omitempty"`
 }
 
+// StealthParams holds a WireGuard tunnel's stealth transports.
+//
+// The tunnel itself is unchanged: a device that can, reaches the same
+// WireGuard through a gateway on another port that wraps every packet so
+// that nothing of WireGuard shows (package stealthgw). Zero is off.
+type StealthParams struct {
+	// UDPPort is where wui-udp listens.
+	UDPPort int `json:"udpPort,omitempty"`
+}
+
 // OpenVPNParams holds interface-scoped OpenVPN settings.
 //
 // The panel runs OpenVPN in credential-only mode: verify-client-cert none plus

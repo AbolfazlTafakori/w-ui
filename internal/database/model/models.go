@@ -180,6 +180,10 @@ type Interface struct {
 	// camouflage.
 	OpenConnect JSONField[OpenConnectParams] `gorm:"type:text;column:openconnect" json:"openconnect,omitzero"`
 
+	// Stealth is the stealth transports a WireGuard tunnel is also reached
+	// by, left out of the API while there are none.
+	Stealth JSONField[StealthParams] `gorm:"type:text;column:stealth" json:"stealth,omitzero"`
+
 	// XUI is the 3x-ui inbound this tunnel is, on a 3x-ui node.
 	XUI JSONField[XUIInbound] `gorm:"type:text;column:xui" json:"xui,omitzero"`
 
@@ -225,6 +229,16 @@ type Interface struct {
 
 // IsWireGuard reports whether this interface is served by the WireGuard backend.
 func (i *Interface) IsWireGuard() bool { return i.Protocol == ProtocolWireGuard }
+
+// StealthUDP is the port wui-udp takes for this tunnel, or zero. Only a
+// standard WireGuard tunnel has one: AmneziaWG's datagrams have other types
+// and sizes, which the gateway does not read.
+func (i *Interface) StealthUDP() int {
+	if i.Protocol != ProtocolWireGuard || i.Mode == ModeAmnezia {
+		return 0
+	}
+	return i.Stealth.V.UDPPort
+}
 
 // Client is the unit that gets sold. Quota, expiry and the device limit
 // live here and apply to the sum of the client's accounts, so a customer
@@ -388,6 +402,10 @@ type Account struct {
 	PrivateKey   string `gorm:"size:64" json:"-"`
 	PublicKey    string `gorm:"size:64;index" json:"publicKey,omitempty"`
 	PresharedKey string `gorm:"size:64" json:"-"`
+	// StealthSecret is the device's transport secret, base64: what lets its
+	// packets past a stealth transport. Drawn apart from its WireGuard keys,
+	// so a leak of one says nothing of the other.
+	StealthSecret string `gorm:"size:64" json:"-"`
 
 	// OpenVPN credentials.
 	//

@@ -123,6 +123,9 @@ type CreateInterfaceInput struct {
 	// given, one is drawn here, of AWGLevel: modern (the default) or classic.
 	AWG      *model.AWGParams `json:"awg"`
 	AWGLevel string           `json:"awgLevel"`
+
+	// Stealth is a WireGuard tunnel's stealth transports; none is off.
+	Stealth *model.StealthParams `json:"stealth"`
 }
 
 // Create validates and stores a new interface, generating the server key pair
@@ -177,6 +180,13 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		return nil, err
 	}
 
+	var stealthParams model.StealthParams
+	if in.Stealth != nil {
+		if stealthParams, err = s.checkStealth(ctx, nodeID, 0, in.Protocol, in.Mode, in.ListenPort, *in.Stealth, 0, node.Kind == model.KindLocal); err != nil {
+			return nil, err
+		}
+	}
+
 	iface := model.Interface{
 		Name:         in.Name,
 		NodeID:       nodeID,
@@ -189,6 +199,7 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 		NATInterface: in.NATInterface,
 		Mode:         in.Mode,
 		Enabled:      in.Enabled == nil || *in.Enabled,
+		Stealth:      model.JSON(stealthParams),
 	}
 
 	if in.Protocol == model.ProtocolWireGuard {
@@ -799,6 +810,10 @@ type UpdateInterfaceInput struct {
 	// certificate. Every session ends when it changes, except for a new
 	// certificate alone.
 	OpenConnect *OpenConnectInput `json:"openconnect"`
+
+	// Stealth replaces a WireGuard tunnel's stealth transports; a port of
+	// zero turns wui-udp off. A device needs its file again to use one.
+	Stealth *model.StealthParams `json:"stealth"`
 }
 
 // Update applies changes to an interface.
@@ -845,6 +860,9 @@ func (s *Interfaces) Update(ctx context.Context, id uint, in UpdateInterfaceInpu
 		return nil, err
 	}
 	if err := s.updateTransport(ctx, iface, in, fields); err != nil {
+		return nil, err
+	}
+	if err := s.updateStealth(ctx, iface, in, fields); err != nil {
 		return nil, err
 	}
 
@@ -905,6 +923,9 @@ func (s *Interfaces) updatePort(ctx context.Context, iface *model.Interface, in 
 		}
 		if err := s.checkPortClash(ctx, iface.NodeID, iface.ID, port, ifaceTransports(*iface)); err != nil {
 			return err
+		}
+		if port == iface.StealthUDP() && (in.Stealth == nil || in.Stealth.UDPPort == port) {
+			return invalidField("listenPort", "udp %d is this tunnel's wui-udp port", port)
 		}
 		proto := "udp"
 		if iface.Protocol == model.ProtocolOpenVPN && iface.OpenVPN.V.Transport == "tcp" ||

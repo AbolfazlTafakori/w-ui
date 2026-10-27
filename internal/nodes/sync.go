@@ -362,16 +362,17 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.
 				continue
 			}
 			na := fleet.NodeAccount{
-				OriginID:     a.ID,
-				DeviceName:   a.DeviceName,
-				IP:           a.IP,
-				Enabled:      a.Enabled,
-				PrivateKey:   a.PrivateKey,
-				PublicKey:    a.PublicKey,
-				PresharedKey: a.PresharedKey,
-				Username:     a.Username,
-				Secret:       a.Secret,
-				CertPEM:      a.CertPEM,
+				OriginID:      a.ID,
+				DeviceName:    a.DeviceName,
+				IP:            a.IP,
+				Enabled:       a.Enabled,
+				PrivateKey:    a.PrivateKey,
+				PublicKey:     a.PublicKey,
+				PresharedKey:  a.PresharedKey,
+				StealthSecret: a.StealthSecret,
+				Username:      a.Username,
+				Secret:        a.Secret,
+				CertPEM:       a.CertPEM,
 			}
 			if until, held := holds[a.ID]; held {
 				u := until
@@ -437,6 +438,9 @@ func interfaceState(iface model.Interface) fleet.NodeInterface {
 	if iface.Protocol == model.ProtocolL2TP {
 		v := iface.L2TP.V
 		out.L2TP = &v
+	}
+	if st := iface.Stealth.V; st != (model.StealthParams{}) {
+		out.Stealth = &st
 	}
 	if iface.Protocol == model.ProtocolIKEv2 {
 		v := iface.IKEv2.V

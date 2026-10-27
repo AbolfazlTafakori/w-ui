@@ -8,9 +8,40 @@ wui-udp carries a WireGuard tunnel over UDP in packets that have nothing the net
 
 WireGuard itself is not changed. Its handshake, keys and replay protection stay as they are; the wrapping adds concealment, never trust. On the server the gateway unwraps each datagram and hands it to the tunnel's own WireGuard, from a socket of its own per device and source, so WireGuard sees every device at an endpoint of its own and roams it exactly as it would on plain UDP.
 
-This page is the specification. The format is in `internal/stealth`, the server and the reference client in `internal/stealthgw`. `internal/stealth/testdata/udp.json` is a test vector, and `scripts/stealth/udp_vectors.py` checks it against this page with an implementation of its own.
+This page is the specification. The format is in `internal/stealth`, the server and the reference client in `internal/stealthgw`, and the panel's side in the reconciler. `internal/stealth/testdata/udp.json` is a test vector, and `scripts/stealth/udp_vectors.py` checks it against this page with an implementation of its own.
 
-The panel does not offer wui-udp on a tunnel yet; the protocol comes first.
+## On the panel
+
+A standard WireGuard tunnel turns wui-udp on in its form, with a UDP port of its own (`stealth.udpPort` in the API; zero is off). The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have none: their datagrams are not WireGuard's.
+
+The tunnel itself does not change. Its peers, its port and every `.conf` handed out stay as they were; the panel only starts a gateway beside it, gives it the devices the tunnel carries on every pass, and stops it when the tunnel no longer wants one. A device taken off the tunnel, out of its allowance or switched off, loses its gateway sessions with its peer. The online indicator and the sharing report see a device at its own address, not the gateway's.
+
+Every WireGuard device has a transport secret, drawn with its keys and replaced when they are rotated; devices made before wui-udp get one on the next pass. A remote node is given the setting and the secrets with the tunnel.
+
+### The profile
+
+An app of W-UI's own reads the customer's subscription with `?format=wui`:
+
+```json
+{
+  "version": 1,
+  "title": "the subscription's title",
+  "serverTime": 1700000000,
+  "tunnels": [
+    {
+      "name": "wg0",
+      "device": "phone",
+      "wireguard": "[Interface]
+PrivateKey = ...",
+      "transports": [
+        {"type": "wui-udp", "endpoints": ["vpn.example.com:2096"], "secret": "base64", "mtu": 1420}
+      ]
+    }
+  ]
+}
+```
+
+`wireguard` is the file a stock app gets, and its `[Peer]` public key is the anchor `A`. `endpoints` are every address the customer connects to, best first, on the wui-udp port. `serverTime` is the panel's clock when the profile was made, for a client to keep its offset. An app refuses a `version` it does not know.
 
 ## Notation
 

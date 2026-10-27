@@ -475,6 +475,9 @@ func (s *Clients) buildAccount(client *model.Client, iface *model.Interface, nam
 		acc.PrivateKey = pair.Private.String()
 		acc.PublicKey = pair.Public.String()
 		acc.PresharedKey = pair.Preshared.String()
+		if acc.StealthSecret, err = newStealthSecret(); err != nil {
+			return nil, err
+		}
 
 	case model.ProtocolOpenVPN, model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2, model.ProtocolOpenConnect:
 		// The same shape on both: a username and a password typed into the

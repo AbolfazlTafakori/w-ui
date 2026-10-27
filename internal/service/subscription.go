@@ -541,8 +541,10 @@ func (s *Subscriptions) bundle(ctx context.Context, c *model.Client, format stri
 		// What a link with no format gets, by another name some links carry.
 		format = ""
 	case "", "conf", "base64", "links", "zip":
+	case FormatWUI:
+		return s.wuiBundle(ctx, c, byID, cfg)
 	default:
-		return nil, fmt.Errorf("%w %q: it is conf, base64, links or zip", ErrUnknownFormat, format)
+		return nil, fmt.Errorf("%w %q: it is conf, base64, links, zip or wui", ErrUnknownFormat, format)
 	}
 
 	rendered, err := s.renderDevicesFor(ctx, c, byID, bundleFormatName(format))

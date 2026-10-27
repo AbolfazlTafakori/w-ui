@@ -49,6 +49,7 @@ type Tunnel struct {
 	PrivateKey   string                   `json:"privateKey,omitempty"`
 	PublicKey    string                   `json:"publicKey,omitempty"`
 	AWG          *model.AWGParams         `json:"awg,omitempty"`
+	Stealth      *model.StealthParams     `json:"stealth,omitempty"`
 	OpenVPN      *model.OpenVPNParams     `json:"openvpn,omitempty"`
 	L2TP         *model.L2TPParams        `json:"l2tp,omitempty"`
 	IKEv2        *model.IKEv2Params       `json:"ikev2,omitempty"`
@@ -95,6 +96,7 @@ type Account struct {
 	PrivateKey    string `json:"privateKey,omitempty"`
 	PublicKey     string `json:"publicKey,omitempty"`
 	PresharedKey  string `json:"presharedKey,omitempty"`
+	StealthSecret string `json:"stealthSecret,omitempty"`
 	Username      string `json:"username,omitempty"`
 	Secret        string `json:"secret,omitempty"`
 	CertPEM       string `json:"certPem,omitempty"`

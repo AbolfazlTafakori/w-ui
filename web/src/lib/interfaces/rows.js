@@ -129,6 +129,7 @@ export function exportable(i) {
     // every device already has.
     psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
     l2tpPlain: i.protocol === 'l2tp' && i.l2tp?.allowPlain ? true : undefined,
+    stealth: i.stealth?.udpPort ? { udpPort: i.stealth.udpPort } : undefined,
   }
 }
 

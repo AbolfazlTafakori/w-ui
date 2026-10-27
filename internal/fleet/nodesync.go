@@ -55,6 +55,8 @@ type NodeInterface struct {
 	// the panel that issues; and OpenConnect's certificate and camouflage.
 	IKEv2       *model.IKEv2Params       `json:"ikev2,omitempty"`
 	OpenConnect *model.OpenConnectParams `json:"openconnect,omitempty"`
+	// Stealth is a WireGuard tunnel's stealth transports; none is off.
+	Stealth *model.StealthParams `json:"stealth,omitempty"`
 }
 
 // NodeClient is one customer's presence on this node.
@@ -84,8 +86,10 @@ type NodeAccount struct {
 	PrivateKey   string `json:"privateKey,omitempty"`
 	PublicKey    string `json:"publicKey,omitempty"`
 	PresharedKey string `json:"presharedKey,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Secret       string `json:"secret,omitempty"`
+	// StealthSecret is a WireGuard device's transport secret.
+	StealthSecret string `json:"stealthSecret,omitempty"`
+	Username      string `json:"username,omitempty"`
+	Secret        string `json:"secret,omitempty"`
 	// CertPEM is an IKEv2 device's certificate, which the node pins the
 	// device to; its key stays with the panel, in the device's file.
 	CertPEM string `json:"certPem,omitempty"`
@@ -203,6 +207,12 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 	iface.PublicKey = in.PublicKey
 	if in.AWG != nil {
 		iface.AWG = model.JSON(*in.AWG)
+	}
+	// Taken as it comes, absence too: a stealth transport the panel turned
+	// off is off here.
+	iface.Stealth = model.JSONField[model.StealthParams]{}
+	if in.Stealth != nil {
+		iface.Stealth = model.JSON(*in.Stealth)
 	}
 	if in.OpenVPN != nil {
 		iface.OpenVPN = model.JSON(*in.OpenVPN)
@@ -392,6 +402,7 @@ func (s *NodeSync) upsertAccounts(
 		a.PrivateKey = wa.PrivateKey
 		a.PublicKey = wa.PublicKey
 		a.PresharedKey = wa.PresharedKey
+		a.StealthSecret = wa.StealthSecret
 		a.Username = wa.Username
 		a.Secret = wa.Secret
 		a.CertPEM = wa.CertPEM

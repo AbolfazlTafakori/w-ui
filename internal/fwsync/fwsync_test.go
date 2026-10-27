@@ -27,15 +27,19 @@ func TestEachTunnelIsLetInOnItsOwnPorts(t *testing.T) {
 	plain.L2TP.V.AllowPlain = true
 	off := iface(model.ProtocolWireGuard, 9999)
 	off.Enabled = false
+	hidden := iface(model.ProtocolWireGuard, 51821) // with wui-udp beside it
+	hidden.Stealth.V.UDPPort = 2096
+	awg := iface(model.ProtocolWireGuard, 51822) // which wui-udp does not read
+	awg.Mode, awg.Stealth.V.UDPPort = model.ModeAmnezia, 2097
 	got := ForInterfaces([]model.Interface{
 		iface(model.ProtocolWireGuard, 51820), iface(model.ProtocolOpenVPN, 1194), tcpOVPN, oc, plain,
-		iface(model.ProtocolIKEv2, 41500), iface(model.ProtocolPPTP, 41723), off,
+		iface(model.ProtocolIKEv2, 41500), iface(model.ProtocolPPTP, 41723), off, hidden, awg,
 	})
 	var s []string
 	for _, r := range got {
 		s = append(s, r.String())
 	}
-	want := "esp gre 443/tcp 1723/tcp 8443/tcp 500/udp 1194/udp 1701/udp 4500/udp 8443/udp 51820/udp"
+	want := "esp gre 443/tcp 1723/tcp 8443/tcp 500/udp 1194/udp 1701/udp 2096/udp 4500/udp 8443/udp 51820/udp 51821/udp 51822/udp"
 	if strings.Join(s, " ") != want {
 		t.Fatalf("got  %s\nwant %s", strings.Join(s, " "), want)
 	}

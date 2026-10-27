@@ -317,7 +317,7 @@ func (s *Clients) makeHandedOver(ctx context.Context, node model.Node, take []ha
 					acc := model.Account{
 						ClientID: client.ID, InterfaceID: made.tunnels[a.TunnelLocalID], NodeID: node.ID,
 						DeviceName: a.DeviceName, IP: a.IP, Enabled: a.Enabled,
-						PrivateKey: a.PrivateKey, PublicKey: a.PublicKey, PresharedKey: a.PresharedKey,
+						PrivateKey: a.PrivateKey, PublicKey: a.PublicKey, PresharedKey: a.PresharedKey, StealthSecret: a.StealthSecret,
 						Username: a.Username, Secret: a.Secret, CertPEM: a.CertPEM, CertKeyPEM: a.CertKeyPEM,
 						UpBytes: a.UpBytes, DownBytes: a.DownBytes,
 					}
@@ -365,6 +365,9 @@ func handedTunnel(nodeID uint, t handover.Tunnel) model.Interface {
 	}
 	if iface.Mode == "" {
 		iface.Mode = model.ModeStandard
+	}
+	if t.Stealth != nil {
+		iface.Stealth = model.JSON(*t.Stealth)
 	}
 	if t.AWG != nil {
 		iface.AWG = model.JSON(*t.AWG)

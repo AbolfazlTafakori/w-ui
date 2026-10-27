@@ -39,6 +39,9 @@ type DesiredAccount struct {
 	// WireGuard.
 	PublicKey    string
 	PresharedKey string
+	// StealthSecret is the device's transport secret, for a tunnel with a
+	// stealth transport in front of it.
+	StealthSecret string
 
 	// OpenVPN, L2TP, PPTP and IKEv2.
 	Username string

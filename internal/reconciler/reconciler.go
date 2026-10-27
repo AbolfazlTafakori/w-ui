@@ -169,6 +169,8 @@ type Reconciler struct {
 	dataDir string
 	// nodeEvery is how far apart a node's usage reports are.
 	nodeEvery time.Duration
+	// gws is the wui-udp gateways in front of this server's tunnels.
+	gws gateways
 }
 
 // New builds a reconciler.
@@ -225,6 +227,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				r.StopGateways()
 				return
 			case <-t.C:
 				r.Tick(ctx)
@@ -423,6 +426,9 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 		if err != nil {
 			r.log.Warn("driver stats unavailable", "interface", ifaceID, "error", err)
 			continue
+		}
+		for i := range stats {
+			stats[i].Endpoint = r.realEndpoint(ifaceID, stats[i].Endpoint)
 		}
 		r.conc.observe(stats, now)
 		for _, s := range stats {
@@ -660,6 +666,9 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 				"added", rep.Added, "removed", rep.Removed, "updated", rep.Updated)
 		}
 	}
+	// The gateways last: they stand beside tunnels that are up by now, and
+	// carry the devices the tunnels were just given.
+	r.keepStealth(d)
 	return d.clients, d.accounts, nil
 }
 
@@ -772,6 +781,9 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	}
 	if err := service.EnsureOpenConnectCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
 		r.log.Error("OpenConnect certificates", "error", err)
+	}
+	if err := service.EnsureStealthSecrets(ctx, r.db); err != nil {
+		r.log.Error("transport secrets", "error", err)
 	}
 	db := r.db.WithContext(ctx)
 
@@ -948,14 +960,15 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 				d.sessionRate[a.ID] = shaper.Client{Key: enforce.Key(c.ID), RateBitsPerSec: c.RateBitsPerSec}
 			}
 			d.perIface[a.InterfaceID] = append(d.perIface[a.InterfaceID], backend.DesiredAccount{
-				ID:           a.ID,
-				DeviceName:   a.DeviceName,
-				IP:           ip,
-				PublicKey:    a.PublicKey,
-				PresharedKey: a.PresharedKey,
-				Username:     a.Username,
-				Secret:       a.Secret,
-				Cert:         a.CertPEM,
+				ID:            a.ID,
+				DeviceName:    a.DeviceName,
+				IP:            ip,
+				PublicKey:     a.PublicKey,
+				PresharedKey:  a.PresharedKey,
+				StealthSecret: a.StealthSecret,
+				Username:      a.Username,
+				Secret:        a.Secret,
+				Cert:          a.CertPEM,
 			})
 		}
 	}
