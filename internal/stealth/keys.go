@@ -105,6 +105,10 @@ type DeviceKeys struct {
 	Bind []byte
 	// UDP is the root of every UDP session key.
 	UDP []byte
+	// Stream is mixed into every stream session's keys, beside what the
+	// proof's HPKE context exports, so that a stream's keys need the
+	// device's secret as well as the proof's ephemeral key.
+	Stream []byte
 }
 
 // Derive works out a device's keys for a tunnel.
@@ -117,6 +121,7 @@ func Derive(secret Secret, anchor Anchor) DeviceKeys {
 		tagKey: expand(prk, "tag", anchor[:]),
 		Bind:   expand(prk, "bind", anchor[:]),
 		UDP:    expand(prk, "udp", anchor[:]),
+		Stream: expand(prk, "stream", anchor[:]),
 	}
 	copy(k.Tag[:], mac(k.tagKey, []byte("device")))
 	return k

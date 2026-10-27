@@ -8,6 +8,6 @@
 // of its rules. Nothing about the tunnel changes for it: the kernel module or
 // the userspace daemon runs as it would on plain UDP.
 //
-// Only wui-udp is here so far. docs/reference/stealth.md is the
-// specification.
+// wui-udp is Gateway and Client; wui-ws is StreamGateway and StreamClient.
+// docs/reference/stealth.md is the specification.
 package stealthgw

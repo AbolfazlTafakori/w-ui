@@ -4,7 +4,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const t0 = 1_700_000_000
@@ -165,5 +168,40 @@ func TestOldSaltsLeaveTheCache(t *testing.T) {
 	r.expire(t0 + window - 4)
 	if _, _, n := r.state(); n != 5 {
 		t.Fatalf("%d salts left, want the 5 the window still admits", n)
+	}
+}
+
+// Two connections that carry the same proof are read by two goroutines;
+// only one of them may take it.
+func TestAProofIsClaimedOnceHoweverManyAskAtOnce(t *testing.T) {
+	now := uint64(time.Now().Unix())
+	path := filepath.Join(t.TempDir(), "replay")
+	if err := writeLimit(path, now+limitStep); err != nil {
+		t.Fatal(err)
+	}
+	r, err := openReplay(path, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.floor = now - window // as after a start a while ago
+	var salt [32]byte
+	salt[0] = 7
+	var won atomic.Int32
+	var wg sync.WaitGroup
+	for range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if v, _ := r.claim(salt, now, now); v == accepted {
+				won.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if won.Load() != 1 {
+		t.Fatalf("%d claims of one proof were taken", won.Load())
+	}
+	if v, _ := r.judge(salt, now, now); v != seenBefore {
+		t.Fatalf("a claimed proof is judged %v", v)
 	}
 }

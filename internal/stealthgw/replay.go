@@ -166,6 +166,10 @@ func (r *replay) judge(salt [32]byte, ts, now uint64) (v verdict, raise uint64) 
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.judgeLocked(salt, ts, now)
+}
+
+func (r *replay) judgeLocked(salt [32]byte, ts, now uint64) (v verdict, raise uint64) {
 	if ts <= r.floor {
 		return atFloor, 0
 	}
@@ -190,6 +194,10 @@ func (r *replay) judge(salt [32]byte, ts, now uint64) (v verdict, raise uint64) 
 func (r *replay) record(salt [32]byte, ts uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.recordLocked(salt, ts)
+}
+
+func (r *replay) recordLocked(salt [32]byte, ts uint64) {
 	if len(r.salts) >= cacheMax {
 		return
 	}
@@ -197,6 +205,21 @@ func (r *replay) record(salt [32]byte, ts uint64) {
 		r.oldest = ts
 	}
 	r.salts[salt] = ts
+}
+
+// claim is judge and record at once, under one hold of the lock: on a stream
+// gateway every connection is read by a goroutine of its own, and two that
+// carry the same proof must not both pass judge before either records it.
+func (r *replay) claim(salt [32]byte, ts, now uint64) (v verdict, raise uint64) {
+	if ts+window < now || ts > now+window {
+		return outsideWindow, 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if v, raise = r.judgeLocked(salt, ts, now); v == accepted {
+		r.recordLocked(salt, ts)
+	}
+	return v, raise
 }
 
 // expire lets go of salts whose timestamps the window no longer admits.
