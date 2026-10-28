@@ -153,6 +153,21 @@ type streamDevice struct {
 
 // NewStream prepares a gateway. Nothing listens until Serve.
 func NewStream(cfg StreamConfig) (*StreamGateway, error) {
+	decoy, err := newDecoy(cfg.Origin)
+	if err != nil {
+		return nil, err
+	}
+	g, err := newStreamGateway(cfg, stealth.WS)
+	if err != nil {
+		return nil, err
+	}
+	g.decoy = decoy
+	return g, nil
+}
+
+// newStreamGateway is the part of a gateway every stream transport has: the
+// proofs of transport, the devices, the sessions and their limits.
+func newStreamGateway(cfg StreamConfig, transport string) (*StreamGateway, error) {
 	if len(cfg.Path) < MinPath || cfg.Path[0] != '/' {
 		return nil, fmt.Errorf("stealthgw: a path of at least %d characters, from /, is needed", MinPath)
 	}
@@ -175,17 +190,13 @@ func NewStream(cfg StreamConfig) (*StreamGateway, error) {
 	}
 	var anchor stealth.Anchor
 	copy(anchor[:], resp.priv.PublicKey().Bytes())
-	proofs, err := stealth.NewProofServer(anchor, stealth.WS, cfg.TransportKeys...)
-	if err != nil {
-		return nil, err
-	}
-	decoy, err := newDecoy(cfg.Origin)
+	proofs, err := stealth.NewProofServer(anchor, transport, cfg.TransportKeys...)
 	if err != nil {
 		return nil, err
 	}
 	g := &StreamGateway{
-		cfg: cfg, log: cfg.Log.With("transport", stealth.WS, "listen", cfg.Listen),
-		proofs: proofs, resp: resp, wg: wg, decoy: decoy,
+		cfg: cfg, log: cfg.Log.With("transport", transport, "listen", cfg.Listen),
+		proofs: proofs, resp: resp, wg: wg,
 		path:    sha256.Sum256([]byte(cfg.Path)),
 		cookie:  cookieName(cfg.TransportKeys[0]),
 		proxies: cfg.Proxies, header: cfg.ClientHeader,
@@ -333,6 +344,16 @@ func (g *StreamGateway) Serve(ctx context.Context) error {
 		MaxHeaderBytes:    headerMax,
 		ErrorLog:          log.New(io.Discard, "", 0),
 	}
+	err := g.serve(ctx, func() error { return srv.Serve(g.ln) }, func() { srv.Close() })
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+// serve runs the gateway's timers beside accept, which takes connections
+// until stop is called when ctx ends, and ends every session after.
+func (g *StreamGateway) serve(ctx context.Context, accept func() error, stop func()) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	g.running.Add(1)
@@ -342,9 +363,9 @@ func (g *StreamGateway) Serve(ctx context.Context) error {
 	}()
 	go func() {
 		<-ctx.Done()
-		srv.Close()
+		stop()
 	}()
-	err := srv.Serve(g.ln)
+	err := accept()
 	cancel()
 	g.mu.Lock()
 	all := make([]*stream, 0, len(g.streams))
@@ -356,9 +377,6 @@ func (g *StreamGateway) Serve(ctx context.Context) error {
 		s.finish()
 	}
 	g.running.Wait()
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
 	return err
 }
 
@@ -446,7 +464,7 @@ func (g *StreamGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.release(dev)
 		return
 	}
-	g.run(dev, visitor, conn, brw.Reader, key, keys, now)
+	g.run(dev, visitor, conn, brw.Reader, g.upgrade(key, nil), keys, now)
 }
 
 func (g *StreamGateway) toDecoy(w http.ResponseWriter, r *http.Request) {
@@ -503,10 +521,20 @@ func (g *StreamGateway) visitor(r *http.Request, peer netip.Addr) netip.Addr {
 // place for its session. Every failure is a request like any other, so it
 // says nothing.
 func (g *StreamGateway) prove(token string, visitor netip.Addr, now time.Time) (*streamDevice, stealth.StreamKeys, bool) {
+	dev, p, keys, ok := g.open(token)
+	if !ok {
+		return nil, stealth.StreamKeys{}, false
+	}
+	return g.admit(dev, &p, keys, visitor, now)
+}
+
+// open reads a token and proves it against the device its tag finds,
+// without taking it: what the replay rule and the limits say comes after.
+func (g *StreamGateway) open(token string) (*streamDevice, stealth.Proof, stealth.StreamKeys, bool) {
 	p, err := g.proofs.Open(token)
 	if err != nil {
 		g.drop(dropUnopened)
-		return nil, stealth.StreamKeys{}, false
+		return nil, p, stealth.StreamKeys{}, false
 	}
 	dev := (*g.tags.Load())[p.Tag]
 	var dk *stealth.DeviceKeys
@@ -516,8 +544,14 @@ func (g *StreamGateway) prove(token string, visitor netip.Addr, now time.Time) (
 	keys, err := g.proofs.Check(&p, dk)
 	if err != nil {
 		g.drop(dropUnknown)
-		return nil, stealth.StreamKeys{}, false
+		return nil, p, stealth.StreamKeys{}, false
 	}
+	return dev, p, keys, true
+}
+
+// admit takes an opened proof: the replay rule, the limits, and a place for
+// its session.
+func (g *StreamGateway) admit(dev *streamDevice, p *stealth.Proof, keys stealth.StreamKeys, visitor netip.Addr, now time.Time) (*streamDevice, stealth.StreamKeys, bool) {
 	// The replay rule. A proof above the limit asks for a raise and waits
 	// for it a moment, since refusing it costs the client a connection.
 	v, raise := g.replay.judge(p.Enc, p.Timestamp, uint64(now.Unix()))
@@ -538,14 +572,14 @@ func (g *StreamGateway) prove(token string, visitor netip.Addr, now time.Time) (
 	}
 	if v != accepted {
 		if v == aboveLimit {
-			g.spend(dev, &p, now)
+			g.spend(dev, p, now)
 		}
 		g.drop(map[verdict]int{outsideWindow: dropWindow, atFloor: dropFloor, seenBefore: dropSeen, cacheFull: dropCacheFull, aboveLimit: dropLimit}[v])
 		return nil, stealth.StreamKeys{}, false
 	}
 	// The limits, and a place for the session.
 	if why := g.reserve(dev, visitor, now); why >= 0 {
-		g.spend(dev, &p, now)
+		g.spend(dev, p, now)
 		g.drop(why)
 		return nil, stealth.StreamKeys{}, false
 	}
@@ -704,7 +738,7 @@ func (s *stream) isLive() bool         { return s.state.Load() == stateLive }
 func (s *stream) active(now time.Time) { s.lastActive.Store(now.UnixNano()) }
 
 // run answers the upgrade and carries the session until it ends.
-func (g *StreamGateway) run(dev *streamDevice, visitor netip.Addr, conn net.Conn, r *bufio.Reader, wsKey string, keys stealth.StreamKeys, now time.Time) {
+func (g *StreamGateway) run(dev *streamDevice, visitor netip.Addr, conn net.Conn, r *bufio.Reader, answer string, keys stealth.StreamKeys, now time.Time) {
 	wg, err := net.DialUDP("udp", nil, g.wg)
 	if err != nil {
 		g.release(dev)
@@ -742,7 +776,7 @@ func (g *StreamGateway) run(dev *streamDevice, visitor netip.Addr, conn net.Conn
 	}
 	conn.SetDeadline(time.Time{})
 	conn.SetWriteDeadline(time.Now().Add(writeFor))
-	if _, err := io.WriteString(conn, g.upgrade(wsKey)); err != nil {
+	if _, err := io.WriteString(conn, answer); err != nil {
 		s.finish()
 		close(s.readDone)
 		conn.Close()
@@ -755,11 +789,26 @@ func (g *StreamGateway) run(dev *streamDevice, visitor netip.Addr, conn net.Conn
 
 // upgrade is the answer to a proof: the switch, the date, and a cookie whose
 // value is of a length drawn afresh, so no two answers are one length.
-func (g *StreamGateway) upgrade(key string) string {
+//
+// learned is nil behind a front, which writes its own fields around the
+// answer. A gateway that is the server itself gives the header lines it
+// learned from the decoy, possibly none: they lead, with the date after
+// them, as a web server writes its own first.
+func (g *StreamGateway) upgrade(key string, learned []string) string {
 	var b strings.Builder
-	b.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n")
+	date := "Date: " + time.Now().UTC().Format(http.TimeFormat) + "\r\n"
+	b.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
+	if learned != nil {
+		for _, l := range learned {
+			b.WriteString(l + "\r\n")
+		}
+		b.WriteString(date)
+	}
+	b.WriteString("Upgrade: websocket\r\nConnection: Upgrade\r\n")
 	b.WriteString("Sec-WebSocket-Accept: " + stealth.WebSocketAccept(key) + "\r\n")
-	b.WriteString("Date: " + time.Now().UTC().Format(http.TimeFormat) + "\r\n")
+	if learned == nil {
+		b.WriteString(date)
+	}
 	b.WriteString("Set-Cookie: " + g.cookie + "=" + cookieValue() + "; Path=/; HttpOnly; Secure; SameSite=Lax\r\n\r\n")
 	return b.String()
 }

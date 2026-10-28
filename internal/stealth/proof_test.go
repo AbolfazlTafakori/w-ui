@@ -115,6 +115,27 @@ func TestAProofIsBoundToItsTransportItsTunnelAndItsKey(t *testing.T) {
 	}
 }
 
+// wui-plain's proofs cross the network in the clear, so one is never good on
+// a covered transport, nor one of those on it, even under one key.
+func TestAPlainProofAndACoveredOneNeverOpenOnTheOther(t *testing.T) {
+	key, _ := NewTransportKey()
+	for _, pair := range [][2]string{{Plain, WS}, {Plain, TLS}, {WS, Plain}, {TLS, Plain}} {
+		c, err := NewProofClient(testSecret, testAnchor, pair[0], key.Public())
+		if err != nil {
+			t.Fatal(err)
+		}
+		token, _, _ := c.Token(testNow)
+		s, _ := NewProofServer(testAnchor, pair[1], key)
+		if _, err := s.Open(token); err != ErrProof {
+			t.Errorf("a %s token opened on %s", pair[0], pair[1])
+		}
+		own, _ := NewProofServer(testAnchor, pair[0], key)
+		if _, err := own.Open(token); err != nil {
+			t.Errorf("a %s token did not open on its own transport", pair[0])
+		}
+	}
+}
+
 func TestTheKeyBeforeStillOpensAProof(t *testing.T) {
 	c, _, old := newProofPair(t)
 	token, _, _ := c.Token(testNow)

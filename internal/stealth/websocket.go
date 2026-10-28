@@ -1,6 +1,8 @@
 package stealth
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
@@ -8,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/textproto"
 	"strings"
 )
 
@@ -68,6 +71,17 @@ func WebSocketKey(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return key, true
+}
+
+// WebSocketHeadKey is WebSocketKey for a GET whose header fields are head,
+// as they came after the request line up to and with the empty line: what a
+// server that reads requests itself has. Every other field is ignored.
+func WebSocketHeadKey(head []byte) (string, bool) {
+	h, err := textproto.NewReader(bufio.NewReader(bytes.NewReader(head))).ReadMIMEHeader()
+	if err != nil {
+		return "", false
+	}
+	return WebSocketKey(&http.Request{Method: http.MethodGet, Header: http.Header(h)})
 }
 
 func headerHas(h http.Header, name, token string) bool {

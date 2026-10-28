@@ -24,7 +24,10 @@ func TestAFrameReadsBackOnTheOtherSide(t *testing.T) {
 			if err != nil || op != OpBinary || !bytes.Equal(got, payload) {
 				t.Fatalf("%d bytes, masked %v: op %d, %v", n, mask, op, err)
 			}
-			if mask && n > 0 && bytes.Contains(f, payload) {
+			// The payload's own bytes, after the head and the key, and four of
+			// them at least: one byte may come out as it went in by chance,
+			// under a key byte of zero; four do once in 2^32.
+			if mask && n >= 4 && bytes.Equal(f[len(f)-n:], payload) {
 				t.Fatalf("%d bytes went out unmasked", n)
 			}
 		}

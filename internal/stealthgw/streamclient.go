@@ -18,10 +18,10 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-ws reference client.
+// The wui-ws, wui-tls and wui-plain reference client.
 //
 // A local UDP port a stock WireGuard sends to as if it were the server, and
-// the wui-ws side of it, written once here so that the gateway is tested
+// the stream side of it, written once here so that the gateway is tested
 // against the client rules and an app has a client to follow. Like the
 // wui-udp client it cannot make WireGuard send anything, so it opens a
 // session with the next handshake initiation or keepalive WireGuard sends,
@@ -47,17 +47,28 @@ const (
 	streamLiveness = 20 * time.Second
 )
 
-// StreamClientConfig is one device's wui-ws client for one tunnel.
+// StreamClientConfig is one device's wui-ws, wui-tls or wui-plain client
+// for one tunnel.
 type StreamClientConfig struct {
+	// Transport is stealth.WS, the default, stealth.TLS or stealth.Plain.
+	Transport string
 	// URL is the transport: ws:// or wss://, the front's name and the
-	// transport's path.
+	// transport's path. wui-tls is always wss://, at the gateway's own name
+	// or address, and wui-plain always ws://.
 	URL string
+	// Cookie is the name of the cookie wui-plain's token goes in.
+	Cookie string
 	// Dial is the address connected to, when it is not the URL's host: a
 	// CDN's address, say. The URL's host is still the name TLS and the
 	// request give.
 	Dial string
-	// TLS is the client's TLS for wss://; nil is the system's roots.
+	// TLS is the client's TLS for wss://; nil is the system's roots, or for
+	// wui-tls the pins.
 	TLS *tls.Config
+	// Pins are the keys a wui-tls server's certificate may have, and
+	// SelfSigned says they are all it is held to (ClientTLS).
+	Pins       []stealth.Pin
+	SelfSigned bool
 	// Listen is the local address WireGuard sends to; ":0" on the loopback
 	// is usual.
 	Listen string
@@ -72,7 +83,7 @@ type StreamClientConfig struct {
 	Wide, Normal int
 }
 
-// StreamClient is a running wui-ws reference client.
+// StreamClient is a running stream reference client.
 type StreamClient struct {
 	cfg    StreamClientConfig
 	url    *url.URL
@@ -107,7 +118,30 @@ func NewStreamClient(cfg StreamClientConfig) (*StreamClient, error) {
 	if err != nil || (u.Scheme != "ws" && u.Scheme != "wss") || u.Host == "" {
 		return nil, fmt.Errorf("stealthgw: %q is not a ws:// or wss:// address", cfg.URL)
 	}
-	proofs, err := stealth.NewProofClient(cfg.Secret, cfg.Anchor, stealth.WS, cfg.TransportKey)
+	switch cfg.Transport {
+	case "":
+		cfg.Transport = stealth.WS
+	case stealth.WS:
+	case stealth.Plain:
+		if u.Scheme != "ws" {
+			return nil, fmt.Errorf("stealthgw: wui-plain is ws://, not %q", cfg.URL)
+		}
+		if !stealth.CookieName(cfg.Cookie) {
+			return nil, fmt.Errorf("stealthgw: %q cannot name wui-plain's cookie", cfg.Cookie)
+		}
+	case stealth.TLS:
+		if u.Scheme != "wss" {
+			return nil, fmt.Errorf("stealthgw: wui-tls is wss://, not %q", cfg.URL)
+		}
+		if cfg.TLS == nil {
+			if cfg.TLS, err = ClientTLS(u.Hostname(), cfg.Pins, cfg.SelfSigned, nil); err != nil {
+				return nil, err
+			}
+		}
+	default:
+		return nil, fmt.Errorf("stealthgw: %q is no stream transport", cfg.Transport)
+	}
+	proofs, err := stealth.NewProofClient(cfg.Secret, cfg.Anchor, cfg.Transport, cfg.TransportKey)
 	if err != nil {
 		return nil, err
 	}
@@ -240,11 +274,7 @@ func (c *StreamClient) open() (*clientStream, error) {
 		return nil, err
 	}
 	wsKey := stealth.NewWebSocketKey()
-	path := c.url.EscapedPath()
-	req := "GET " + path + "?" + token + " HTTP/1.1\r\n" +
-		"Host: " + c.url.Host + "\r\n" +
-		"Upgrade: websocket\r\nConnection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: " + wsKey + "\r\nSec-WebSocket-Version: 13\r\n\r\n"
+	req := c.request(token, wsKey)
 	conn.SetDeadline(time.Now().Add(dialFor))
 	if _, err := io.WriteString(conn, req); err != nil {
 		conn.Close()
@@ -256,7 +286,10 @@ func (c *StreamClient) open() (*clientStream, error) {
 		conn.Close()
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusSwitchingProtocols || resp.Header.Get("Sec-WebSocket-Accept") != stealth.WebSocketAccept(wsKey) {
+	// No extension was asked for that a session could take, so an answer
+	// that takes one is not the gateway's.
+	if resp.StatusCode != http.StatusSwitchingProtocols || resp.Header.Get("Sec-WebSocket-Accept") != stealth.WebSocketAccept(wsKey) ||
+		len(resp.Header.Values("Sec-WebSocket-Extensions")) > 0 {
 		conn.Close()
 		return nil, fmt.Errorf("stealthgw: the server did not take the session: %s", resp.Status)
 	}
@@ -274,6 +307,43 @@ func (c *StreamClient) open() (*clientStream, error) {
 	s := &clientStream{conn: &bufConn{Conn: conn, r: br}, send: send, recv: recv, out: make(chan []byte, streamQueue), done: make(chan struct{})}
 	s.heard.Store(time.Now().UnixNano())
 	return s, nil
+}
+
+// browserAgent is the User-Agent of wui-plain's request, a desktop Chrome's.
+// An app sends its own platform's browser's.
+const browserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+
+// request is the upgrade that carries token. On wui-ws and wui-tls the token
+// is the query, under TLS. wui-plain's request crosses the network readable,
+// so it is a browser's upgrade from a page served over http://, its fields in
+// Chrome's order, and the token is a cookie among them: the target is the
+// path alone. Compression is offered as a browser offers it; the gateway
+// takes no extension, and an answer that takes one is refused.
+func (c *StreamClient) request(token, wsKey string) string {
+	path := c.url.EscapedPath()
+	if c.cfg.Transport != stealth.Plain {
+		return "GET " + path + "?" + token + " HTTP/1.1\r\n" +
+			"Host: " + c.url.Host + "\r\n" +
+			"Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+			"Sec-WebSocket-Key: " + wsKey + "\r\nSec-WebSocket-Version: 13\r\n\r\n"
+	}
+	host := c.url.Host
+	if c.url.Port() == "80" {
+		host = c.url.Hostname()
+	}
+	return "GET " + path + " HTTP/1.1\r\n" +
+		"Host: " + host + "\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Pragma: no-cache\r\n" +
+		"Cache-Control: no-cache\r\n" +
+		"User-Agent: " + browserAgent + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Origin: http://" + host + "\r\n" +
+		"Sec-WebSocket-Version: 13\r\n" +
+		"Accept-Encoding: gzip, deflate\r\n" +
+		"Cookie: " + c.cfg.Cookie + "=" + token + "\r\n" +
+		"Sec-WebSocket-Key: " + wsKey + "\r\n" +
+		"Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n"
 }
 
 // bufConn reads through the reader the upgrade was read with, which may

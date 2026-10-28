@@ -89,7 +89,30 @@ type wsVector struct {
 }
 
 func TestTheWSVectors(t *testing.T) {
-	cryptotest.SetGlobalRandom(t, 2)
+	checkVector(t, "ws.json", streamVector(t, WS, 2))
+}
+
+func TestTheTLSVectors(t *testing.T) {
+	checkVector(t, "tls.json", streamVector(t, TLS, 4))
+}
+
+// plainVector is wui-ws's vector for wui-plain, and the Cookie field its
+// request carries the token in.
+type plainVector struct {
+	wsVector
+	Cookie string `json:"cookie"`
+}
+
+func TestThePlainVectors(t *testing.T) {
+	v := streamVector(t, Plain, 3)
+	checkVector(t, "plain.json", plainVector{v, "sid=" + v.Token})
+}
+
+// streamVector is a stream transport's proof and a chunk each way, from
+// fixed inputs and the random source seed.
+func streamVector(t *testing.T, transport string, seed uint64) wsVector {
+	t.Helper()
+	cryptotest.SetGlobalRandom(t, seed)
 	secret, anchor, priv := Secret{}, Anchor{}, make([]byte, 32)
 	for i := range 32 {
 		secret[i], anchor[i], priv[i] = byte(i), byte(32+i), byte(64+i)
@@ -98,7 +121,7 @@ func TestTheWSVectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := NewProofClient(secret, anchor, WS, tk.Public())
+	c, err := NewProofClient(secret, anchor, transport, tk.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +141,7 @@ func TestTheWSVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := hex.EncodeToString
-	got := wsVector{h(secret[:]), h(anchor[:]), h(priv), WS, testNow.Unix(), token, h(keys.Up), h(keys.Down), h(d), h(cu), h(cd)}
-	checkVector(t, "ws.json", got)
+	return wsVector{h(secret[:]), h(anchor[:]), h(priv), transport, testNow.Unix(), token, h(keys.Up), h(keys.Down), h(d), h(cu), h(cd)}
 }
 
 func checkVector(t *testing.T, name string, v any) {

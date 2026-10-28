@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Checks internal/stealth/testdata/ws.json against docs/reference/stealth.md.
+"""Checks internal/stealth/testdata/ws.json, tls.json and plain.json against
+docs/reference/stealth.md.
 
-An implementation of the wui-ws proof and stream chunks of its own, written
-from the specification and from RFC 9180 and not from the Go code, HPKE
-included, so that what the panel sends and what the specification says are
-known to be the same. It opens the vector's token with the server's transport
-key, checks every field of the hello and its binder, derives the session's
-two keys again and opens the chunk each way, and fails on the first thing
-that differs.
+An implementation of the wui-ws, wui-tls and wui-plain proofs and stream chunks of its
+own, written from the specification and from RFC 9180 and not from the Go
+code, HPKE included, so that what the panel sends and what the specification
+says are known to be the same. It opens each vector's token with the server's
+transport key, checks every field of the hello and its binder, derives the
+session's two keys again and opens the chunk each way, and fails on the first
+thing that differs. For wui-plain it also reads the token back from the
+vector's Cookie field by the specification's rule, and checks that the token
+opens under no other transport's name.
 
     python3 scripts/stealth/ws_vectors.py
 
@@ -111,8 +114,34 @@ def open_chunk(key: bytes, n: int, sealed: bytes) -> list:
     return items
 
 
-def main() -> int:
-    path = pathlib.Path(__file__).resolve().parents[2] / "internal" / "stealth" / "testdata" / "ws.json"
+TOKEN_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+HTTP_TOKEN = TOKEN_CHARS | set("!#$%&'*+.^`|~")
+
+
+def cookie_token(field: str, name: str):
+    """The value of the cookie name in one Cookie field, or None: pairs joined
+    by "; ", every name an HTTP token, name there once, its value one or more
+    characters of base64url."""
+    found = None
+    for pair in field.split("; "):
+        key, eq, value = pair.partition("=")
+        if not eq or not key or not set(key) <= HTTP_TOKEN:
+            return None
+        if key == name:
+            if found is not None:
+                return None
+            found = value
+    if not found or not set(found) <= TOKEN_CHARS:
+        return None
+    return found
+
+
+def info_of(transport: str, anchor: bytes) -> bytes:
+    return LABEL + b"proof\x00" + transport.encode() + b"\x00" + anchor
+
+
+def check(name: str) -> None:
+    path = pathlib.Path(__file__).resolve().parents[2] / "internal" / "stealth" / "testdata" / name
     v = json.loads(path.read_text())
     h = bytes.fromhex
     secret, anchor = h(v["secret"]), h(v["anchor"])
@@ -120,14 +149,25 @@ def main() -> int:
 
     token = v["token"]
     assert 144 <= len(token) <= 272, "a token of the wrong length"
-    assert all(c.isalnum() or c in "-_" for c in token), "a token that is not unpadded base64url"
+    assert set(token) <= TOKEN_CHARS, "a token that is not unpadded base64url"
+    if v["transport"] == "wui-plain":
+        cookie = v["cookie"].partition("=")[0]
+        assert cookie_token(v["cookie"], cookie) == token, "the token does not read back from its Cookie field"
+        assert cookie_token(v["cookie"] + "; " + v["cookie"], cookie) is None, "a cookie named twice was read"
     raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
     enc, ct = raw[:32], raw[32:]
 
     sk = X25519PrivateKey.from_private_bytes(h(v["transportKey"]))
-    info = LABEL + b"proof\x00" + v["transport"].encode() + b"\x00" + anchor
-    r = Recipient(sk, enc, info)
+    r = Recipient(sk, enc, info_of(v["transport"], anchor))
     hello = r.open_first(ct)
+    for other in ("wui-ws", "wui-tls", "wui-plain", "wui-poll"):
+        if other == v["transport"]:
+            continue
+        try:
+            Recipient(sk, enc, info_of(other, anchor)).open_first(ct)
+        except Exception:
+            continue
+        raise AssertionError(f"a {v['transport']} token opened as {other}")
 
     assert 60 <= len(hello) <= 60 + PROOF_PAD, "a hello of the wrong length"
     assert hello[0] == 1 and hello[1:4] == b"\x00\x00\x00", "a bad version or reserved bytes"
@@ -144,7 +184,13 @@ def main() -> int:
     assert open_chunk(up, 0, h(v["chunkUp"])) == [h(v["datagram"])], "the chunk up differs"
     assert open_chunk(down, 0, h(v["chunkDown"])) == [], "the chunk down is not padding alone"
 
-    print("ws.json matches the specification")
+    print(f"{name} matches the specification")
+
+
+def main() -> int:
+    check("ws.json")
+    check("tls.json")
+    check("plain.json")
     return 0
 
 
