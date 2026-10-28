@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Checks internal/stealth/testdata/ws.json, tls.json and plain.json against
-docs/reference/stealth.md.
+"""Checks internal/stealth/testdata/ws.json, tls.json, plain.json and poll.json
+against docs/reference/stealth.md.
 
 An implementation of the wui-ws, wui-tls and wui-plain proofs and stream chunks of its
 own, written from the specification and from RFC 9180 and not from the Go
@@ -10,7 +10,9 @@ transport key, checks every field of the hello and its binder, derives the
 session's two keys again and opens the chunk each way, and fails on the first
 thing that differs. For wui-plain it also reads the token back from the
 vector's Cookie field by the specification's rule, and checks that the token
-opens under no other transport's name.
+opens under no other transport's name. For wui-poll it derives the session's
+id, reads the query of the first later request by the specification's rule,
+and opens a body each way, chunk by chunk behind their lengths.
 
     python3 scripts/stealth/ws_vectors.py
 
@@ -136,6 +138,34 @@ def cookie_token(field: str, name: str):
     return found
 
 
+def open_body(key: bytes, first: int, body: bytes) -> list:
+    """The chunks of a wui-poll body, at numbers from first: each behind its
+    length, all of them opening, the body 18 to 65 536 bytes."""
+    assert 18 <= len(body) <= 65536, "a body of the wrong length"
+    chunks, i, n = [], 0, first
+    while i < len(body):
+        assert i + 2 <= len(body), "a body that ends inside a length"
+        (size,) = struct.unpack(">H", body[i : i + 2])
+        assert 16 <= size <= 16016 and i + 2 + size <= len(body), "a chunk of the wrong length"
+        chunks.append(open_chunk(key, n, body[i + 2 : i + 2 + size]))
+        i, n = i + 2 + size, n + 1
+    return chunks
+
+
+def poll_query(q: str):
+    """The session id and number of a later wui-poll request, or None."""
+    text, dot, digits = q.partition(".")
+    if not dot or len(text) != 22 or not set(text) <= TOKEN_CHARS:
+        return None
+    raw = base64.urlsafe_b64decode(text + "==")
+    if len(raw) != 16 or base64.urlsafe_b64encode(raw).rstrip(b"=").decode() != text:
+        return None
+    if not (1 <= len(digits) <= 10) or not digits.isascii() or not digits.isdigit() or digits[0] == "0":
+        return None
+    n = int(digits)
+    return (raw, n) if n <= 0xFFFFFFFF else None
+
+
 def info_of(transport: str, anchor: bytes) -> bytes:
     return LABEL + b"proof\x00" + transport.encode() + b"\x00" + anchor
 
@@ -184,6 +214,15 @@ def check(name: str) -> None:
     assert open_chunk(up, 0, h(v["chunkUp"])) == [h(v["datagram"])], "the chunk up differs"
     assert open_chunk(down, 0, h(v["chunkDown"])) == [], "the chunk down is not padding alone"
 
+    if v["transport"] == "wui-poll":
+        sid = expand(prk, LABEL + b"stream id", 16)
+        assert sid == h(v["id"]), "the session id differs"
+        assert poll_query(v["query"]) == (sid, 1), "the query does not read back as the id and 1"
+        for bad in (v["query"] + "0" * 10, v["query"][:-1] + "0", v["query"][:-1] + "01", v["query"][1:]):
+            assert poll_query(bad) is None, f"{bad!r} was read as a later request"
+        assert open_body(up, 0, h(v["bodyUp"])) == [[h(v["datagram"])]], "the body up differs"
+        assert open_body(down, 0, h(v["bodyDown"])) == [[]], "the body down is not padding alone"
+
     print(f"{name} matches the specification")
 
 
@@ -191,6 +230,7 @@ def main() -> int:
     check("ws.json")
     check("tls.json")
     check("plain.json")
+    check("poll.json")
     return 0
 
 

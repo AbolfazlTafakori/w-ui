@@ -45,6 +45,7 @@ import (
 //	prk    = HKDF-Extract(salt = Export(L | "stream", 32), ikm = k_stream)
 //	k_up   = HKDF-Expand(prk, L | "stream up", 32)     client to server
 //	k_down = HKDF-Expand(prk, L | "stream down", 32)   server to client
+//	id     = HKDF-Expand(prk, L | "stream id", 16)     wui-poll's session id
 
 // Sizes of a proof.
 const (
@@ -131,10 +132,15 @@ func (k TransportKey) String() string {
 // Public is the public key in standard base64, as a profile carries it.
 func (k TransportKey) Public() string { return base64.StdEncoding.EncodeToString(k.pub[:]) }
 
-// StreamKeys are a stream session's two keys.
+// StreamKeys are a stream session's two keys, and the name wui-poll's later
+// requests give it.
 type StreamKeys struct {
 	Up   []byte // client to server
 	Down []byte // server to client
+	// ID is the session's id, as wui-poll's later requests name it. Only the
+	// proof's two ends can work it out, and it is no key: knowing it opens
+	// nothing (see PollBody).
+	ID [PollIDLen]byte
 }
 
 func streamKeys(exported, stream []byte) StreamKeys {
@@ -149,7 +155,13 @@ func streamKeys(exported, stream []byte) StreamKeys {
 		}
 		return k
 	}
-	return StreamKeys{Up: key("up"), Down: key("down")}
+	k := StreamKeys{Up: key("up"), Down: key("down")}
+	id, err := hkdf.Expand(sha256.New, prk, label+"stream id", PollIDLen)
+	if err != nil {
+		panic(err)
+	}
+	copy(k.ID[:], id)
+	return k
 }
 
 func export(ctx interface {

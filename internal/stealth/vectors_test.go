@@ -108,6 +108,70 @@ func TestThePlainVectors(t *testing.T) {
 	checkVector(t, "plain.json", plainVector{v, "sid=" + v.Token})
 }
 
+// pollVector is wui-ws's vector for wui-poll, with the session's id, the
+// query of its first later request, and a body each way: the opening's,
+// whose one chunk holds the datagram, and an answer of padding alone. The
+// bodies are sealed from the start of each direction, as the chunks are.
+type pollVector struct {
+	wsVector
+	ID       string `json:"id"`
+	Query    string `json:"query"`
+	BodyUp   string `json:"bodyUp"`
+	BodyDown string `json:"bodyDown"`
+}
+
+func TestThePollVectors(t *testing.T) {
+	v := streamVector(t, Poll, 5)
+	up, _ := hex.DecodeString(v.Up)
+	down, _ := hex.DecodeString(v.Down)
+	d, _ := hex.DecodeString(v.Datagram)
+	k := streamKeysOf(t, v)
+	su, _ := NewStreamSender(up, NewPadder(0, 0))
+	sd, _ := NewStreamSender(down, NewPadder(0, 0))
+	bu, err := su.AppendBody(nil, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bd, err := sd.AppendBody(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := hex.EncodeToString
+	checkVector(t, "poll.json", pollVector{v, h(k.ID[:]), PollQuery(k.ID, 1), h(bu), h(bd)})
+}
+
+// streamKeysOf opens a vector's token as the server does, for the keys a
+// vector does not carry.
+func streamKeysOf(t *testing.T, v wsVector) StreamKeys {
+	t.Helper()
+	b := func(s string) []byte { x, _ := hex.DecodeString(s); return x }
+	var secret Secret
+	var anchor Anchor
+	copy(secret[:], b(v.Secret))
+	copy(anchor[:], b(v.Anchor))
+	tk, err := ParseTransportKey(base64.StdEncoding.EncodeToString(b(v.TransportKey)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewProofServer(anchor, v.Transport, tk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Open(v.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dk := Derive(secret, anchor)
+	k, err := s.Check(&p, &dk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := hex.EncodeToString; h(k.Up) != v.Up || h(k.Down) != v.Down {
+		t.Fatal("the server's keys are not the client's")
+	}
+	return k
+}
+
 // streamVector is a stream transport's proof and a chunk each way, from
 // fixed inputs and the random source seed.
 func streamVector(t *testing.T, transport string, seed uint64) wsVector {

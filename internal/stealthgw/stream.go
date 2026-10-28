@@ -119,6 +119,8 @@ type StreamGateway struct {
 	proxies []netip.Prefix
 	header  string
 	ln      net.Listener
+	// perDevice is how many sessions one device may hold at once.
+	perDevice int
 
 	tags atomic.Pointer[map[stealth.Tag]*streamDevice]
 
@@ -127,13 +129,16 @@ type StreamGateway struct {
 	streams  map[*stream]struct{}
 	held     int // places for sessions, the running and the reserved
 	sources  map[netip.Addr]*bucket
-	behind   map[string]netip.Addr // a session socket's address -> its visitor
+	behind   map[string]netip.Addr               // a session socket's address -> its visitor
+	polls    map[[stealth.PollIDLen]byte]*stream // wui-poll's sessions by their id
 	askLimit uint64
 
-	stats   counters
-	decoyed atomic.Uint64
-	wake    chan struct{}
-	running sync.WaitGroup
+	stats    counters
+	decoyed  atomic.Uint64
+	polled   atomic.Uint64
+	repeated atomic.Uint64
+	wake     chan struct{}
+	running  sync.WaitGroup
 }
 
 // streamDevice is what the gateway knows of one device.
@@ -202,6 +207,7 @@ func newStreamGateway(cfg StreamConfig, transport string) (*StreamGateway, error
 		proxies: cfg.Proxies, header: cfg.ClientHeader,
 		devices: map[[32]byte]*streamDevice{}, streams: map[*stream]struct{}{},
 		sources: map[netip.Addr]*bucket{}, behind: map[string]netip.Addr{},
+		polls: map[[stealth.PollIDLen]byte]*stream{}, perDevice: deviceStreams,
 		wake: make(chan struct{}, 1),
 	}
 	if len(g.proxies) == 0 {
@@ -419,7 +425,7 @@ func (g *StreamGateway) sweep(now time.Time) {
 		switch {
 		case s.isPending() && now.Sub(s.opened) >= pendingFor:
 			ending = append(ending, s)
-		case now.Sub(time.Unix(0, s.lastActive.Load())) >= streamIdle:
+		case now.Sub(s.quietSince()) >= s.idleFor():
 			ending = append(ending, s)
 		}
 	}
@@ -602,7 +608,7 @@ func (g *StreamGateway) reserve(dev *streamDevice, visitor netip.Addr, now time.
 	switch {
 	case dev.gone:
 		return dropUnknown
-	case g.held >= g.cfg.Sessions || dev.streams >= deviceStreams:
+	case g.held >= g.cfg.Sessions || dev.streams >= g.perDevice:
 		return dropPool
 	case dev.pending >= devicePending:
 		return dropPending
@@ -682,8 +688,12 @@ type StreamStats struct {
 	Pool, Pending                  uint64
 	DeviceRate, SourceRate         uint64
 	Handshakes, Tunnel, Unsendable uint64
-	ReplayFloor, ReplayLimit       uint64
-	ReplaySalts                    int
+	// wui-poll's: requests taken and repeats answered from the answer
+	// kept, and requests that named no session in order or whose body was
+	// late or did not open.
+	Polls, Repeats, Unordered, Bodies uint64
+	ReplayFloor, ReplayLimit          uint64
+	ReplaySalts                       int
 }
 
 // Stats reads the counters.
@@ -699,14 +709,16 @@ func (g *StreamGateway) Stats() StreamStats {
 	st.Pool, st.Pending = d(dropPool), d(dropPending)
 	st.DeviceRate, st.SourceRate = d(dropDeviceRate), d(dropSourceRate)
 	st.Handshakes, st.Tunnel, st.Unsendable = d(dropHandshakes), d(dropTunnel), d(dropUnsendable)
+	st.Polls, st.Repeats, st.Unordered, st.Bodies = g.polled.Load(), g.repeated.Load(), d(dropUnordered), d(dropBody)
 	if g.replay != nil {
 		st.ReplayFloor, st.ReplayLimit, st.ReplaySalts = g.replay.state()
 	}
 	return st
 }
 
-// stream is one session: one WebSocket connection, and its socket to the
-// tunnel.
+// stream is one session: its socket to the tunnel, and on wui-ws, wui-tls
+// and wui-plain one WebSocket connection, or on wui-poll the requests that
+// name it.
 type stream struct {
 	g       *StreamGateway
 	dev     *streamDevice
@@ -715,7 +727,8 @@ type stream struct {
 	r       *bufio.Reader
 	wg      *net.UDPConn
 	recv    *stealth.StreamReceiver
-	send    *stealth.StreamSender // the writer's alone
+	send    *stealth.StreamSender // the writer's alone, or the request in flight's
+	poll    *pollSession          // wui-poll's, nil on the others
 
 	out chan []byte // datagrams for the client; nil is padding alone
 	ctl chan []byte // pong payloads
@@ -728,52 +741,97 @@ type stream struct {
 	sent       atomic.Uint64
 	first      bool // the reader's alone: no chunk has come yet
 
+	live     chan struct{} // closed when the session is established
 	done     chan struct{}
 	readDone chan struct{}
 	once     sync.Once
 }
 
 func (s *stream) isPending() bool      { return s.state.Load() == statePending }
+func (s *stream) isOver() bool         { return s.state.Load() == stateOver }
 func (s *stream) isLive() bool         { return s.state.Load() == stateLive }
 func (s *stream) active(now time.Time) { s.lastActive.Store(now.UnixNano()) }
 
-// run answers the upgrade and carries the session until it ends.
-func (g *StreamGateway) run(dev *streamDevice, visitor netip.Addr, conn net.Conn, r *bufio.Reader, answer string, keys stealth.StreamKeys, now time.Time) {
+// quietSince is the last moment the session was active: on wui-poll, the
+// last request taken, since the tunnel speaking to a client that stopped
+// asking keeps nothing alive.
+func (s *stream) quietSince() time.Time {
+	if s.poll != nil {
+		return time.Unix(0, s.poll.last.Load())
+	}
+	return time.Unix(0, s.lastActive.Load())
+}
+
+// idleFor is how long the session may be quiet.
+func (s *stream) idleFor() time.Duration {
+	if s.poll != nil {
+		return pollIdle
+	}
+	return streamIdle
+}
+
+// newSession is a session for a proof that was taken: its socket to the
+// tunnel and its sender, registered with the gateway, and on wui-poll
+// under its id. When the device went meanwhile, or the id is a live
+// session's, there is none, and the place the proof kept is given back.
+func (g *StreamGateway) newSession(dev *streamDevice, visitor netip.Addr, keys stealth.StreamKeys, now time.Time, poll *pollSession) (*stream, bool) {
 	wg, err := net.DialUDP("udp", nil, g.wg)
 	if err != nil {
 		g.release(dev)
 		g.drop(dropUnsendable)
-		conn.Close()
-		return
+		return nil, false
 	}
-	recv, err1 := stealth.NewStreamReceiver(keys.Up)
-	send, err2 := stealth.NewStreamSender(keys.Down, stealth.NewPadder(g.cfg.Wide, g.cfg.Normal))
-	if err1 != nil || err2 != nil {
+	send, err := stealth.NewStreamSender(keys.Down, stealth.NewPadder(g.cfg.Wide, g.cfg.Normal))
+	if err != nil {
 		g.release(dev)
 		wg.Close()
-		conn.Close()
-		return
+		return nil, false
 	}
 	s := &stream{
-		g: g, dev: dev, visitor: visitor, conn: conn, r: r, wg: wg, recv: recv, send: send,
+		g: g, dev: dev, visitor: visitor, wg: wg, send: send, poll: poll,
 		out: make(chan []byte, streamQueue), ctl: make(chan []byte, 4),
 		opened: now, handshakes: newBucket(sessionHandshakes, now), first: true,
-		done: make(chan struct{}), readDone: make(chan struct{}),
+		live: make(chan struct{}), done: make(chan struct{}), readDone: make(chan struct{}),
 	}
 	s.active(now)
 	g.mu.Lock()
-	gone := dev.gone
-	if !gone {
+	ok := !dev.gone
+	if ok && poll != nil {
+		// An id is 16 bytes of a fresh proof's export, so two are never
+		// one; should they be, the live session is left alone.
+		_, taken := g.polls[poll.id]
+		ok = !taken
+	}
+	if ok {
 		g.streams[s] = struct{}{}
 		g.behind[wg.LocalAddr().String()] = visitor
+		if poll != nil {
+			g.polls[poll.id] = s
+		}
 	}
 	g.mu.Unlock()
-	if gone {
+	if !ok {
 		g.release(dev)
 		wg.Close()
+		return nil, false
+	}
+	return s, true
+}
+
+// run answers the upgrade and carries the session until it ends.
+func (g *StreamGateway) run(dev *streamDevice, visitor netip.Addr, conn net.Conn, r *bufio.Reader, answer string, keys stealth.StreamKeys, now time.Time) {
+	recv, err := stealth.NewStreamReceiver(keys.Up)
+	if err != nil {
+		g.release(dev)
 		conn.Close()
 		return
 	}
+	s, ok := g.newSession(dev, visitor, keys, now, nil)
+	if !ok {
+		conn.Close()
+		return
+	}
+	s.conn, s.r, s.recv = conn, r, recv
 	conn.SetDeadline(time.Time{})
 	conn.SetWriteDeadline(time.Now().Add(writeFor))
 	if _, err := io.WriteString(conn, answer); err != nil {
@@ -835,6 +893,9 @@ func (s *stream) finish() {
 		if _, ok := g.streams[s]; ok {
 			delete(g.streams, s)
 			delete(g.behind, s.wg.LocalAddr().String())
+			if s.poll != nil && g.polls[s.poll.id] == s {
+				delete(g.polls, s.poll.id)
+			}
 			if prev == statePending {
 				s.dev.pending--
 			}
@@ -995,6 +1056,7 @@ func (s *stream) establish() bool {
 	}
 	s.dev.pending-- // registered: establish runs only once the session does
 	g.stats.established.Add(1)
+	close(s.live)
 	return true
 }
 

@@ -346,6 +346,8 @@ const (
 	dropHandshakes
 	dropTunnel
 	dropUnsendable
+	dropUnordered // a wui-poll request that is not its session's next or last
+	dropBody      // a wui-poll body that was late or did not open
 	drops
 )
 

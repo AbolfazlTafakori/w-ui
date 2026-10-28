@@ -9,7 +9,7 @@
 // the userspace daemon runs as it would on plain UDP.
 //
 // wui-udp is Gateway and Client; wui-ws is StreamGateway and StreamClient;
-// wui-tls is TLSGateway and StreamClient, with ClientTLS; wui-plain is
-// PlainGateway and StreamClient.
+// wui-tls is TLSGateway and StreamClient, with ClientTLS; wui-poll is
+// PollGateway and PollClient; wui-plain is PlainGateway and StreamClient.
 // docs/reference/stealth.md is the specification.
 package stealthgw
