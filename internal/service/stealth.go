@@ -63,14 +63,15 @@ func EnsureStealthSecrets(ctx context.Context, db *gorm.DB) error {
 // checkWireGuardTransport refuses a WireGuard transport there is none of.
 func checkWireGuardTransport(name string) error {
 	switch name {
-	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiWS:
+	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPlain:
 		return nil
 	}
-	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp or wui-ws, not %q", name)
+	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws or wui-plain, not %q", name)
 }
 
-// WSSettings is wui-ws's part of a WireGuard tunnel's transport, as the
-// form sends it. model.StealthParams says what each is.
+// WSSettings is the rest of a WireGuard tunnel's transport, wui-tls's,
+// wui-ws's or wui-plain's, as the form sends it. model.StealthParams says
+// what each is.
 type WSSettings struct {
 	Host         string `json:"host"`
 	FrontPort    int    `json:"frontPort"`
@@ -78,9 +79,14 @@ type WSSettings struct {
 	Origin       string `json:"origin"`
 	Proxies      string `json:"proxies"`
 	ClientHeader string `json:"clientHeader"`
+	// Cookie is wui-plain's alone.
+	Cookie string `json:"cookie"`
+	// UsePanelCert and ProxyProtocol are wui-tls's alone.
+	UsePanelCert  bool `json:"usePanelCert"`
+	ProxyProtocol bool `json:"proxyProtocol"`
 }
 
-// apply puts the settings on p. An empty path keeps p's.
+// apply puts the settings on p. An empty path or cookie keeps p's.
 func (w *WSSettings) apply(p *model.StealthParams) {
 	p.Host = strings.TrimSpace(w.Host)
 	p.FrontPort = w.FrontPort
@@ -90,12 +96,65 @@ func (w *WSSettings) apply(p *model.StealthParams) {
 	p.Origin = strings.TrimSpace(w.Origin)
 	p.Proxies = strings.TrimSpace(w.Proxies)
 	p.ClientHeader = strings.TrimSpace(w.ClientHeader)
+	if c := strings.TrimSpace(w.Cookie); c != "" {
+		p.Cookie = c
+	}
+	p.UsePanelCert, p.ProxyProtocol = w.UsePanelCert, w.ProxyProtocol
 }
 
-// wsKeyDays is how long a wui-ws transport key is used before the next is
-// drawn. The one before is still taken until then, so an app that fetches
+// wsKeyDays is how long a wui-ws or wui-tls transport key is used before
+// the next is drawn. The one before is still taken until then, so an app that fetches
 // its profile at least that often never meets a key it does not know.
 const wsKeyDays = 30
+
+// plainKeyDays is wui-plain's: every proof it opens crossed the network in
+// the clear, so a key that leaks opens the records of fewer of them. The
+// key only hides which device a proof is from; the session's keys need the
+// device's secret as well.
+const plainKeyDays = 7
+
+// keyDays is how long a transport's key is used.
+func keyDays(transport string) int {
+	if transport == model.TransportWuiPlain {
+		return plainKeyDays
+	}
+	return wsKeyDays
+}
+
+// newPlainCookie draws the name wui-plain's token travels under: 8 to 16
+// characters, as a site's session cookie might be named, and different on
+// every server, so no name is wui-plain's.
+func newPlainCookie() (string, error) {
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789_"
+	pick := func(n int) (int, error) {
+		for {
+			var r [1]byte
+			if _, err := rand.Read(r[:]); err != nil {
+				return 0, fmt.Errorf("service: read entropy: %w", err)
+			}
+			if lim := 256 - 256%n; int(r[0]) < lim { // no value more likely than another
+				return int(r[0]) % n, nil
+			}
+		}
+	}
+	extra, err := pick(9)
+	if err != nil {
+		return "", err
+	}
+	b := make([]byte, 8+extra)
+	for i := range b {
+		n := len(chars)
+		if i == 0 {
+			n = 26 // a letter first
+		}
+		c, err := pick(n)
+		if err != nil {
+			return "", err
+		}
+		b[i] = chars[c]
+	}
+	return string(b), nil
+}
 
 // wsPathLen is the length of a path the panel draws, past its slash.
 const wsPathLen = 20
@@ -129,21 +188,33 @@ func newWSKey() (string, error) {
 	return k.String(), nil
 }
 
-// checkWS checks wui-ws's settings and fills what the panel draws: a path
-// when none was given, and the transport's key when it has none. Whatever
-// wui-ws uses is cleared from a transport that is not it.
+// checkWS checks wui-tls's, wui-ws's or wui-plain's settings and fills
+// what the panel draws: a path when none was given, wui-plain's cookie
+// name, and the transport's key when it has none. Whatever they use is
+// cleared from a transport that is none of them, what a front needs from
+// wui-tls, wui-tls's own from the others, and the cookie from all but
+// wui-plain. wui-tls's certificate is tlsCertFor's.
 func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) {
-	if p.Transport != model.TransportWuiWS {
+	if !p.Proven() {
 		return model.StealthParams{Transport: p.Transport, Port: p.Port}, nil
 	}
+	plain, direct := p.Transport == model.TransportWuiPlain, p.Transport == model.TransportWuiTLS
 	host := strings.ToLower(strings.TrimSuffix(p.Host, "."))
 	switch {
+	case host == "" && direct:
+		return p, invalidField("transportWs.host", "the name or address devices reach this server at is needed for wui-tls")
 	case host == "":
-		return p, invalidField("transportWs.host", "wui-ws needs the name devices reach the front at: the web server's or the CDN's")
+		return p, invalidField("transportWs.host", "the name devices reach the front at is needed for %s: the web server's or the CDN's", p.Transport)
 	case !validHostName(host):
 		return p, invalidField("transportWs.host", "%q is not a host name or an address", p.Host)
 	}
 	p.Host = host
+	if direct {
+		// No front: devices reach the gateway on its own port.
+		p.FrontPort, p.Proxies, p.ClientHeader = 0, "", ""
+	} else {
+		p.Cert, p.CertKey, p.UsePanelCert, p.PanelCert, p.PanelCertKey, p.CertSource, p.ProxyProtocol = "", "", false, "", "", "", false
+	}
 	if p.FrontPort < 0 || p.FrontPort > 65535 {
 		return p, invalidField("transportWs.frontPort", "port %d is out of range", p.FrontPort)
 	}
@@ -162,13 +233,32 @@ func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) 
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.User != nil {
 			return p, invalidField("transportWs.origin", "the decoy is an address like http://127.0.0.1:8080, with no path: every request goes to its own path there")
 		}
+		if direct && u.Scheme != "http" {
+			return p, invalidField("transportWs.origin", "wui-tls hands a stranger's bytes to the decoy as they came, after its own TLS, so the decoy is an http:// address, like http://127.0.0.1:8080")
+		}
 		p.Origin = u.Scheme + "://" + u.Host
+	} else if direct {
+		return p, invalidField("transportWs.origin", "the decoy is needed for wui-tls: whoever is not a device is handed to your own site, so the port answers as a web server does")
+	} else if plain {
+		return p, invalidField("transportWs.origin", "the decoy is needed for wui-plain: a stranger's answer crosses the network in the clear, so it must be your site's own")
 	}
 	if _, err := ParseWSProxies(p.Proxies); err != nil {
 		return p, invalidField("transportWs.proxies", "%v", err)
 	}
 	if p.ClientHeader != "" && !validHeaderName(p.ClientHeader) {
 		return p, invalidField("transportWs.clientHeader", "%q is not a header name", p.ClientHeader)
+	}
+	switch {
+	case !plain:
+		p.Cookie = ""
+	case p.Cookie == "":
+		c, err := newPlainCookie()
+		if err != nil {
+			return p, err
+		}
+		p.Cookie = c
+	case !stealth.CookieName(p.Cookie):
+		return p, invalidField("transportWs.cookie", "the cookie's name is 1 to %d letters, digits, - and _; left empty, one is drawn", stealth.CookieMax)
 	}
 	if p.Key == "" {
 		key, err := newWSKey()
@@ -243,10 +333,10 @@ func validHeaderName(h string) bool {
 	return h != ""
 }
 
-// EnsureStealthKeys gives every wui-ws transport this panel manages a key
-// when it has none, and its next key when the one it has is wsKeyDays old,
-// keeping the one before. A tunnel another panel manages is that panel's to
-// keep, and its keys arrive with it.
+// EnsureStealthKeys gives every wui-tls, wui-ws and wui-plain transport
+// this panel manages a key when it has none, and its next key when the one it has is
+// keyDays old, keeping the one before. A tunnel another panel manages is
+// that panel's to keep, and its keys arrive with it.
 func EnsureStealthKeys(ctx context.Context, db *gorm.DB, now time.Time) error {
 	var ifaces []model.Interface
 	if err := db.WithContext(ctx).Where("protocol = ? AND managed = ? AND stealth IS NOT NULL AND stealth <> ''", model.ProtocolWireGuard, false).
@@ -255,10 +345,10 @@ func EnsureStealthKeys(ctx context.Context, db *gorm.DB, now time.Time) error {
 	}
 	for _, iface := range ifaces {
 		p := iface.Stealth.V
-		if p.Transport != model.TransportWuiWS {
+		if !p.Proven() {
 			continue
 		}
-		if p.Key != "" && now.Sub(time.Unix(p.KeyAt, 0)) < wsKeyDays*24*time.Hour {
+		if p.Key != "" && now.Sub(time.Unix(p.KeyAt, 0)) < time.Duration(keyDays(p.Transport))*24*time.Hour {
 			continue
 		}
 		key, err := newWSKey()
@@ -316,7 +406,53 @@ func (s *Interfaces) checkStealth(ctx context.Context, nodeID, selfID uint, mode
 			return p, &FieldError{Field: "transportPort", Err: err}
 		}
 	}
-	return checkWS(p, time.Now())
+	now := time.Now()
+	p, err := checkWS(p, now)
+	if err != nil {
+		return p, err
+	}
+	if p.Transport == model.TransportWuiTLS {
+		if !local && p.UsePanelCert {
+			return p, invalidField("transportWs.usePanelCert", "only a tunnel on the panel's own server takes the panel's certificate: its key would have to go to the node with it")
+		}
+		if _, err := tlsCertFor(&p, s.panelCert, now); err != nil {
+			return p, err
+		}
+	}
+	return p, s.plainApart(ctx, selfID, p)
+}
+
+// plainApart refuses a wui-plain transport whose front name or path is a
+// covered transport's -- wui-tls's or wui-ws's -- and a covered one whose
+// are a wui-plain's, on any tunnel of any server: the network reads
+// wui-plain's name and path in the clear, and one they shared would tie the
+// covered transport to it.
+func (s *Interfaces) plainApart(ctx context.Context, selfID uint, p model.StealthParams) error {
+	if !p.Proven() {
+		return nil
+	}
+	var others []model.Interface
+	q := s.db.WithContext(ctx).Where("protocol = ? AND stealth IS NOT NULL AND stealth <> ''", model.ProtocolWireGuard)
+	if selfID != 0 {
+		q = q.Where("id <> ?", selfID)
+	}
+	if err := q.Find(&others).Error; err != nil {
+		return fmt.Errorf("service: check the fronts: %w", err)
+	}
+	plain := p.Transport == model.TransportWuiPlain
+	for _, o := range others {
+		op := o.Stealth.V
+		if !op.Proven() || (op.Transport == model.TransportWuiPlain) == plain {
+			continue
+		}
+		switch {
+		case strings.EqualFold(op.Host, p.Host):
+			return invalidField("transportWs.host", "%s is the front of %s on the tunnel %q; wui-plain's front is read in the clear, so it never has a covered transport's name", p.Host, op.Transport, o.Name)
+		case op.Path == p.Path:
+			return invalidField("transportWs.path", "%s is the path of %s on the tunnel %q; wui-plain's path is read in the clear, so it never has a covered transport's", p.Path, op.Transport, o.Name)
+		}
+	}
+	return nil
 }
 
 // stealthClash is the tunnel on a server, other than selfID, whose stealth
@@ -358,12 +494,24 @@ func (s *Interfaces) updateStealth(ctx context.Context, iface *model.Interface, 
 		if want.Transport == model.TransportUDP || want.Transport == "" {
 			want = model.StealthParams{}
 		}
+		// A transport of another name starts with nothing of the old one's
+		// that is drawn: wui-plain's key, path and cookie are its own, and a
+		// covered transport never takes on what wui-plain showed in the
+		// clear.
+		if want.Transport != iface.Stealth.V.Transport {
+			want.Path, want.Cookie, want.Key, want.PreviousKey, want.KeyAt = "", "", "", "", 0
+		}
 	}
 	if in.TransportPort != nil && want.Transport != "" {
 		want.Port = *in.TransportPort
 	}
-	if in.TransportWS != nil && want.Transport == model.TransportWuiWS {
+	if in.TransportWS != nil && want.Proven() {
 		in.TransportWS.apply(&want)
+		// The old transport's path sent back with the new one's name is
+		// not taken: a path is a transport's own, like its key.
+		if had := iface.Stealth.V; want.Transport != had.Transport && want.Path == had.Path {
+			want.Path = ""
+		}
 	}
 	if want == iface.Stealth.V {
 		return nil

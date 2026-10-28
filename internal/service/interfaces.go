@@ -88,8 +88,8 @@ type CreateInterfaceInput struct {
 	// panel's own reconciler takes them to its kernel.
 	NodeID uint `json:"nodeId"`
 
-	// Transport is udp or tcp for OpenVPN, and udp, wui-udp or wui-ws for
-	// WireGuard. A WireGuard tunnel stays on plain UDP at its port whatever
+	// Transport is udp or tcp for OpenVPN, and udp, wui-udp, wui-ws or
+	// wui-plain for WireGuard. A WireGuard tunnel stays on plain UDP at its port whatever
 	// it is; a stealth transport adds a second way to it, on TransportPort.
 	//
 	// It is worth exposing because TCP on 443 is what gets through a network
@@ -127,8 +127,8 @@ type CreateInterfaceInput struct {
 
 	// TransportPort is where a WireGuard tunnel's stealth transport listens.
 	TransportPort int `json:"transportPort"`
-	// TransportWS is wui-ws's front, path and decoy, when Transport is
-	// wui-ws.
+	// TransportWS is wui-ws's or wui-plain's front, path and decoy, when
+	// Transport is one of them.
 	TransportWS *WSSettings `json:"transportWs"`
 }
 
@@ -831,8 +831,8 @@ type UpdateInterfaceInput struct {
 	// TransportPort moves a WireGuard tunnel's stealth transport, which
 	// Transport chooses. A device needs its file again to use one.
 	TransportPort *int `json:"transportPort"`
-	// TransportWS replaces wui-ws's front, path and decoy. An empty path
-	// keeps the one there is.
+	// TransportWS replaces wui-ws's or wui-plain's front, path and decoy. An
+	// empty path, or cookie, keeps the one there is.
 	TransportWS *WSSettings `json:"transportWs"`
 }
 

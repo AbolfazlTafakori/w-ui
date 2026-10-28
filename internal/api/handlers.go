@@ -160,10 +160,13 @@ func redactKeys(iface model.Interface) model.Interface {
 		iface.OpenConnect = model.JSON(k)
 	}
 
-	// A stealth transport's private keys: wui-ws's, which profiles carry the
-	// public half of.
-	if k := iface.Stealth.V; k.Key != "" || k.PreviousKey != "" {
-		k.Key, k.PreviousKey = "", ""
+	// A stealth transport's private keys: wui-tls's, wui-ws's and
+	// wui-plain's, which profiles carry the public half of, and wui-tls's
+	// certificate keys, whose holder can answer as this server to every
+	// device that pins it. The certificates themselves are public: every
+	// visitor is shown one.
+	if k := iface.Stealth.V; k.Key != "" || k.PreviousKey != "" || k.CertKey != "" || k.PanelCertKey != "" {
+		k.Key, k.PreviousKey, k.CertKey, k.PanelCertKey = "", "", "", ""
 		iface.Stealth = model.JSON(k)
 	}
 

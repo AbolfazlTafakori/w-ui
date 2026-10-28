@@ -133,9 +133,9 @@ export function exportable(i) {
     psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
     l2tpPlain: i.protocol === 'l2tp' && i.l2tp?.allowPlain ? true : undefined,
     ...(i.protocol === 'wireguard' && i.stealth?.transport ? { transport: i.stealth.transport, transportPort: i.stealth.port } : {}),
-    // wui-ws's front, path and decoy travel too; its key does not, and a
-    // tunnel made from this draws one of its own.
-    ...(i.protocol === 'wireguard' && i.stealth?.transport === 'wui-ws' ? { transportWs: wsPayload(wsOf(i.stealth)) } : {}),
+    // wui-tls's, wui-ws's or wui-plain's name, path and decoy travel too;
+    // its keys do not, and a tunnel made from this draws its own.
+    ...(i.protocol === 'wireguard' && proven(i.stealth?.transport) ? { transportWs: wsPayload(wsOf(i.stealth)) } : {}),
   }
 }
 
@@ -148,10 +148,24 @@ export function ocPayload(oc) {
   return out
 }
 
-// wui-ws's settings as the form holds them, from a tunnel's stealth block or
-// none. The transport's keys are the server's and never reach the form.
+// fronted says a WireGuard transport is behind the operator's web server:
+// wui-ws, or wui-plain without TLS.
+export function fronted(transport) {
+  return transport === 'wui-ws' || transport === 'wui-plain'
+}
+
+// proven says a WireGuard transport opens with a proof sealed to a key of
+// its own, and so has a name, a path and a decoy: wui-tls, which is the
+// server itself, or a fronted one.
+export function proven(transport) {
+  return transport === 'wui-tls' || fronted(transport)
+}
+
+// wui-tls's, wui-ws's or wui-plain's settings as the form holds them, from a
+// tunnel's stealth block or none. The transport's keys are the server's and
+// never reach the form; wui-plain's cookie name is no secret.
 export function wsOf(stealth) {
-  const s = stealth?.transport === 'wui-ws' ? stealth : {}
+  const s = proven(stealth?.transport) ? stealth : {}
   return {
     host: s.host || '',
     frontPort: s.frontPort || '',
@@ -159,11 +173,15 @@ export function wsOf(stealth) {
     origin: s.origin || '',
     proxies: s.proxies || '',
     clientHeader: s.clientHeader || '',
+    cookie: s.cookie || '',
+    usePanelCert: !!s.usePanelCert,
+    proxyProtocol: !!s.proxyProtocol,
   }
 }
 
-// What a WireGuard tunnel's form sends for wui-ws: a path left empty is
-// drawn by the server, or kept when it has one.
+// What a WireGuard tunnel's form sends for wui-tls, wui-ws or wui-plain: a
+// path or a cookie left empty is drawn by the server, or kept when it has
+// one.
 export function wsPayload(ws) {
   return {
     host: (ws?.host || '').trim(),
@@ -172,5 +190,8 @@ export function wsPayload(ws) {
     origin: (ws?.origin || '').trim(),
     proxies: (ws?.proxies || '').trim(),
     clientHeader: (ws?.clientHeader || '').trim(),
+    cookie: (ws?.cookie || '').trim(),
+    usePanelCert: !!ws?.usePanelCert,
+    proxyProtocol: !!ws?.proxyProtocol,
   }
 }

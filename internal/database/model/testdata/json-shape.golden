@@ -130,9 +130,17 @@ StealthParams
 	origin string omitempty
 	proxies string omitempty
 	clientHeader string omitempty
+	cookie string omitempty
 	key string omitempty
 	previousKey string omitempty
 	keyAt int64 omitempty
+	cert string omitempty
+	certKey string omitempty
+	usePanelCert bool omitempty
+	panelCert string omitempty
+	panelCertKey string omitempty
+	certSource string omitempty
+	proxyProtocol bool omitempty
 JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound]
 	V model.XUIInbound
 XUIInbound

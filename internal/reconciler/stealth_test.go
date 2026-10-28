@@ -1,10 +1,16 @@
 package reconciler
 
 import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"log/slog"
 	"net"
+	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -131,5 +137,121 @@ func TestAWSGatewayListensWhereItsFrontsAre(t *testing.T) {
 	r.keepStealth(d)
 	if r.gws.running[9] == second || r.gws.running[9].gw == nil {
 		t.Fatal("a new key did not start the gateway again")
+	}
+}
+
+// A tunnel with wui-plain has a plain gateway beside it, on the loopback
+// while no front elsewhere is trusted, started again when its cookie moves.
+func TestAPlainGatewayRunsBesideItsTunnel(t *testing.T) {
+	r := &Reconciler{dataDir: t.TempDir(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	defer r.StopGateways()
+	server, _ := wgkey.NewPair()
+	device, _ := wgkey.NewPair()
+	secret, _ := stealth.NewSecret()
+	key, _ := stealth.NewTransportKey()
+	p := model.StealthParams{Transport: model.TransportWuiPlain, Port: freeTCP(t), Host: "plain.example", Path: "/a1b2c3d4e5f6g7",
+		Origin: "http://127.0.0.1:8080", Cookie: "sid", Key: key.String()}
+	iface := model.Interface{ID: 10, Name: "wg2", Protocol: model.ProtocolWireGuard, ListenPort: 51822, MTU: 1420,
+		PrivateKey: server.Private.String(), Stealth: model.JSON(p)}
+	d := &desired{interfaces: []model.Interface{iface}, perIface: map[uint][]backend.DesiredAccount{
+		10: {{ID: 1, PublicKey: device.Public.String(), StealthSecret: secret.String()}},
+	}}
+
+	r.keepStealth(d)
+	first := r.gws.running[10]
+	gw, ok := first.gw.(*stealthgw.PlainGateway)
+	if !ok || gw.Stats().Devices != 1 {
+		t.Fatalf("no plain gateway, or not with the device: %T", first.gw)
+	}
+	if a := gw.Addr().(*net.TCPAddr); !a.IP.IsLoopback() {
+		t.Fatalf("with no front elsewhere the gateway listens at %s", a)
+	}
+	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "10.wui-plain.replay" {
+		t.Fatalf("the replay file is %s", got)
+	}
+
+	p.Cookie = "other"
+	d.interfaces[0].Stealth = model.JSON(p)
+	r.keepStealth(d)
+	if r.gws.running[10] == first {
+		t.Fatal("a new cookie did not start the gateway again")
+	}
+
+	// Without a decoy it does not start, and says so; the tunnel goes on.
+	p.Origin = ""
+	d.interfaces[0].Stealth = model.JSON(p)
+	r.keepStealth(d)
+	if r.gws.running[10].gw != nil || r.gws.running[10].failed == "" {
+		t.Fatal("a plain gateway started without a decoy")
+	}
+}
+
+// wui-tls's gateway is the server itself, on every address; a renewed
+// certificate is handed to it as it runs, so no session ends for it.
+func TestATLSGatewayTakesARenewedCertificateWithoutStopping(t *testing.T) {
+	r := &Reconciler{dataDir: t.TempDir(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	defer r.StopGateways()
+	server, _ := wgkey.NewPair()
+	key, _ := stealth.NewTransportKey()
+	certKey, _ := stealth.NewCertificateKey()
+	now := time.Now()
+	cert, _ := stealth.MakeCertificate(certKey, "edge.example", "", now)
+	p := model.StealthParams{Transport: model.TransportWuiTLS, Port: freeTCP(t), Host: "edge.example", Path: "/a1b2c3d4e5f6g7",
+		Origin: "http://127.0.0.1:8080", Key: key.String(), Cert: cert, CertKey: certKey, CertSource: model.CertSourceOwn}
+	iface := model.Interface{ID: 11, Name: "wg3", Protocol: model.ProtocolWireGuard, ListenPort: 51823, MTU: 1420,
+		PrivateKey: server.Private.String(), Stealth: model.JSON(p)}
+	d := &desired{interfaces: []model.Interface{iface}, perIface: map[uint][]backend.DesiredAccount{}}
+
+	r.keepStealth(d)
+	first := r.gws.running[11]
+	gw, ok := first.gw.(*stealthgw.TLSGateway)
+	if !ok {
+		t.Fatalf("no TLS gateway: %T %q", first.gw, first.failed)
+	}
+	if a := gw.Addr().(*net.TCPAddr); a.IP.IsLoopback() {
+		t.Fatalf("wui-tls listens at %s, not on every address", a)
+	}
+	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "11.wui-tls.replay" {
+		t.Fatalf("the replay file is %s", got)
+	}
+	served := func() *x509.Certificate {
+		c, err := tls.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p.Port)), &tls.Config{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		return c.ConnectionState().PeerCertificates[0]
+	}
+	before := served()
+
+	// Made again with the same key: the same gateway serves it.
+	renewed, _ := stealth.MakeCertificate(certKey, "edge.example", cert, now.Add(time.Hour))
+	p.Cert = renewed
+	d.interfaces[0].Stealth = model.JSON(p)
+	r.keepStealth(d)
+	if r.gws.running[11] != first {
+		t.Fatal("a renewed certificate started the gateway again")
+	}
+	after := served()
+	if bytes.Equal(after.Raw, before.Raw) || stealth.PinOf(after) != stealth.PinOf(before) {
+		t.Fatal("the renewed certificate is not the one served, or its pin changed")
+	}
+
+	// The decoy's PROXY header is what it was started with: a change starts
+	// it again.
+	p.ProxyProtocol = true
+	d.interfaces[0].Stealth = model.JSON(p)
+	r.keepStealth(d)
+	if r.gws.running[11] == first {
+		t.Fatal("the PROXY header turned on did not start the gateway again")
+	}
+
+	// A certificate that does not read stops nothing that runs, and is said.
+	running := r.gws.running[11]
+	p.Cert = "not a certificate"
+	d.interfaces[0].Stealth = model.JSON(p)
+	r.keepStealth(d)
+	if r.gws.running[11] != running || running.cert == p.Cert {
+		t.Fatal("a certificate that does not read was taken")
 	}
 }

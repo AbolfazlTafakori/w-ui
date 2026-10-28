@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportable, nextSort, ocPayload, protoTag, rowItems, sortRows, totals, transportTag, wsOf, wsPayload } from './rows.js'
+import { exportable, fronted, nextSort, ocPayload, proven, protoTag, rowItems, sortRows, totals, transportTag, wsOf, wsPayload } from './rows.js'
 
 describe('a tunnel’s row', () => {
   it('says what it carries its traffic over', () => {
@@ -49,15 +49,16 @@ describe('wui-ws in a tunnel’s form', () => {
   it('reads its front, path and decoy, and nothing of another transport', () => {
     expect(wsOf(stealth)).toEqual({
       host: 'cdn.example.com', frontPort: 8443, path: '/media/7f3a9c2e1b',
-      origin: 'http://127.0.0.1:8080', proxies: '198.51.100.0/24', clientHeader: 'CF-Connecting-IP',
+      origin: 'http://127.0.0.1:8080', proxies: '198.51.100.0/24', clientHeader: 'CF-Connecting-IP', cookie: '',
+      usePanelCert: false, proxyProtocol: false,
     })
-    expect(wsOf({ transport: 'wui-udp', port: 2096 })).toEqual({ host: '', frontPort: '', path: '', origin: '', proxies: '', clientHeader: '' })
+    expect(wsOf({ transport: 'wui-udp', port: 2096 })).toEqual({ host: '', frontPort: '', path: '', origin: '', proxies: '', clientHeader: '', cookie: '', usePanelCert: false, proxyProtocol: false })
     expect(wsOf(null).host).toBe('')
   })
 
   it('sends a port as a number and trims what was typed', () => {
     expect(wsPayload({ host: ' f.example ', frontPort: '', path: '', origin: '', proxies: ' 10.0.0.0/8 ', clientHeader: '' }))
-      .toEqual({ host: 'f.example', frontPort: 0, path: '', origin: '', proxies: '10.0.0.0/8', clientHeader: '' })
+      .toEqual({ host: 'f.example', frontPort: 0, path: '', origin: '', proxies: '10.0.0.0/8', clientHeader: '', cookie: '', usePanelCert: false, proxyProtocol: false })
   })
 
   it('travels in an export without its key', () => {
@@ -67,5 +68,50 @@ describe('wui-ws in a tunnel’s form', () => {
     expect(e.transportWs.path).toBe('/media/7f3a9c2e1b')
     expect(JSON.stringify(e)).not.toContain('secret')
     expect(transportTag({ protocol: 'wireguard', stealth })).toBe('UDP + wui-ws')
+  })
+})
+
+describe('wui-plain in a tunnel’s form', () => {
+  const stealth = {
+    transport: 'wui-plain', port: 8082, host: 'plain.example.com', path: '/static/a8d0c1e9f4',
+    origin: 'http://127.0.0.1:8080', cookie: 'sess_2b', keyAt: 7,
+  }
+
+  it('reads its front, its decoy and its cookie', () => {
+    expect(wsOf(stealth)).toMatchObject({ host: 'plain.example.com', path: '/static/a8d0c1e9f4', origin: 'http://127.0.0.1:8080', cookie: 'sess_2b' })
+    expect(fronted('wui-plain')).toBe(true)
+    expect(fronted('wui-udp')).toBe(false)
+  })
+
+  it('travels in an export with its cookie and without its keys', () => {
+    const e = exportable({ name: 'wg0', protocol: 'wireguard', stealth: { ...stealth, key: 'secret', previousKey: 'older' } })
+    expect(e.transport).toBe('wui-plain')
+    expect(e.transportWs.cookie).toBe('sess_2b')
+    expect(JSON.stringify(e)).not.toContain('secret')
+    expect(JSON.stringify(e)).not.toContain('older')
+    expect(transportTag({ protocol: 'wireguard', stealth })).toBe('UDP + wui-plain')
+  })
+})
+
+describe('wui-tls in a tunnel’s form', () => {
+  const stealth = {
+    transport: 'wui-tls', port: 443, host: 'edge.example.com', path: '/assets/c4e1a9b7f2',
+    origin: 'http://127.0.0.1:8080', usePanelCert: true, proxyProtocol: true, certSource: 'own', cert: 'CERT', keyAt: 7,
+  }
+
+  it('reads its name, path, decoy and certificate choice, and is no front', () => {
+    expect(wsOf(stealth)).toMatchObject({ host: 'edge.example.com', path: '/assets/c4e1a9b7f2', origin: 'http://127.0.0.1:8080', usePanelCert: true, proxyProtocol: true })
+    expect(proven('wui-tls')).toBe(true)
+    expect(proven('wui-ws')).toBe(true)
+    expect(proven('wui-udp')).toBe(false)
+    expect(fronted('wui-tls')).toBe(false)
+  })
+
+  it('travels in an export without its keys', () => {
+    const e = exportable({ name: 'wg0', protocol: 'wireguard', stealth: { ...stealth, key: 'secret', certKey: 'certsecret' } })
+    expect(e.transport).toBe('wui-tls')
+    expect(e.transportWs).toMatchObject({ host: 'edge.example.com', usePanelCert: true, proxyProtocol: true })
+    expect(JSON.stringify(e)).not.toContain('secret')
+    expect(transportTag({ protocol: 'wireguard', stealth })).toBe('UDP + wui-tls')
   })
 })

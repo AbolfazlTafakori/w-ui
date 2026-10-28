@@ -35,15 +35,22 @@ func TestEachTunnelIsLetInOnItsOwnPorts(t *testing.T) {
 	wsLocal.Stealth.V = model.StealthParams{Transport: model.TransportWuiWS, Port: 8081}
 	wsCDN := iface(model.ProtocolWireGuard, 51824) // wui-ws a CDN reaches
 	wsCDN.Stealth.V = model.StealthParams{Transport: model.TransportWuiWS, Port: 8082, Proxies: "198.51.100.0/24"}
+	plainLocal := iface(model.ProtocolWireGuard, 51825) // wui-plain behind a web server on this machine
+	plainLocal.Stealth.V = model.StealthParams{Transport: model.TransportWuiPlain, Port: 8083}
+	plainCDN := iface(model.ProtocolWireGuard, 51826) // wui-plain a front elsewhere reaches
+	plainCDN.Stealth.V = model.StealthParams{Transport: model.TransportWuiPlain, Port: 8084, Proxies: "198.51.100.0/24"}
+	direct := iface(model.ProtocolWireGuard, 51827) // wui-tls, the server itself
+	direct.Stealth.V = model.StealthParams{Transport: model.TransportWuiTLS, Port: 2053}
 	got := ForInterfaces([]model.Interface{
 		iface(model.ProtocolWireGuard, 51820), iface(model.ProtocolOpenVPN, 1194), tcpOVPN, oc, plain,
 		iface(model.ProtocolIKEv2, 41500), iface(model.ProtocolPPTP, 41723), off, hidden, awg, wsLocal, wsCDN,
+		plainLocal, plainCDN, direct,
 	})
 	var s []string
 	for _, r := range got {
 		s = append(s, r.String())
 	}
-	want := "esp gre 443/tcp 1723/tcp 8082/tcp 8443/tcp 500/udp 1194/udp 1701/udp 2096/udp 4500/udp 8443/udp 51820/udp 51821/udp 51822/udp 51823/udp 51824/udp"
+	want := "esp gre 443/tcp 1723/tcp 2053/tcp 8082/tcp 8084/tcp 8443/tcp 500/udp 1194/udp 1701/udp 2096/udp 4500/udp 8443/udp 51820/udp 51821/udp 51822/udp 51823/udp 51824/udp 51825/udp 51826/udp 51827/udp"
 	if strings.Join(s, " ") != want {
 		t.Fatalf("got  %s\nwant %s", strings.Join(s, " "), want)
 	}

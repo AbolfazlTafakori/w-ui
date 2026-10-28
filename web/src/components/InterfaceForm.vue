@@ -11,7 +11,7 @@ import AntIcon from './AntIcon.vue'
 import HelpTip from './HelpTip.vue'
 import Toggle from './Toggle.vue'
 import AwgEditor from './AwgEditor.vue'
-import { wsOf } from '../lib/interfaces/rows.js'
+import { fronted, proven, wsOf } from '../lib/interfaces/rows.js'
 
 const props = defineProps({
   // When present the dialog edits that interface instead of creating one.
@@ -73,8 +73,8 @@ const form = ref(
         // beside it on a port of its own.
         transport: props.iface.protocol === 'wireguard' ? props.iface.stealth?.transport || 'udp' : props.iface.openvpn?.transport || 'udp',
         transportPort: props.iface.stealth?.port || '',
-        // wui-ws's front, path and decoy; the transport's keys never leave
-        // the server.
+        // wui-tls's, wui-ws's or wui-plain's name, path and decoy; the
+        // transport's keys never leave the server.
         ws: wsOf(props.iface.stealth),
         psk: props.iface.l2tp?.psk || '',
         l2tpPlain: !!props.iface.l2tp?.allowPlain,
@@ -200,22 +200,44 @@ async function drawAwg(level = form.value.awgLevel) {
   }
 }
 const showsAwg = computed(() => isWireGuard.value && form.value.mode === 'amnezia')
-// WireGuard's transport menu: plain UDP, or wui-udp or wui-ws beside it. The
-// stealth transports read standard WireGuard only; AmneziaWG's packets are
-// its own.
+// WireGuard's transport menu: plain UDP, or wui-udp, wui-tls, wui-ws or
+// wui-plain beside it. The stealth transports read standard WireGuard only;
+// AmneziaWG's packets are its own.
 const wgTransports = computed(() => isWireGuard.value && form.value.mode !== 'amnezia')
 const showsTransport = computed(() => !xrayNode.value && (isOpenVPN.value || wgTransports.value))
 const stealthChosen = computed(() => wgTransports.value && form.value.transport !== 'udp')
-const wsChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-ws')
+// wui-tls, wui-ws and wui-plain share a name, a path and a decoy. wui-ws and
+// wui-plain are behind the operator's front and have its fields too;
+// wui-plain has no TLS, so its port is 80, its decoy is required, and its
+// token travels in a cookie of its own. wui-tls is the server itself, on its
+// own port, with a decoy that must be an http:// address and a certificate.
+const wsChosen = computed(() => stealthChosen.value && proven(form.value.transport))
+const frontChosen = computed(() => stealthChosen.value && fronted(form.value.transport))
+const plainChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-plain')
+const tlsChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-tls')
+// Whose certificate a saved wui-tls tunnel serves, when it is still the one
+// shown.
+const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'wui-tls' ? props.iface.stealth?.certSource || '' : ''))
 function chooseTransport() {
   clearError('transport')
   clearError('transportPort')
   // A port to start from, beside the tunnel's own; the operator may move it.
   if (stealthChosen.value && !form.value.transportPort) form.value.transportPort = (Number(form.value.listenPort) || 51820) + 1
+  // A path and a cookie are a transport's own: one switched to starts
+  // without and draws its own, and the tunnel's come back with its own
+  // transport. Nothing wui-plain showed in the clear goes on to wui-ws.
+  if (wsChosen.value) {
+    const saved = props.iface?.stealth
+    const own = saved?.transport === form.value.transport ? wsOf(saved) : null
+    form.value.ws.path = own?.path || ''
+    form.value.ws.cookie = own?.cookie || ''
+  }
 }
 const transportHint = computed(() => {
   if (isWireGuard.value) {
+    if (form.value.transport === 'wui-tls') return t('interface.transportWuiTlsHint')
     if (form.value.transport === 'wui-ws') return t('interface.transportWuiWsHint')
+    if (form.value.transport === 'wui-plain') return t('interface.transportWuiPlainHint')
     return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
   }
   return form.value.transport === 'tcp' ? t('interface.transportTcpHint') : t('interface.transportUdpHint')
@@ -545,7 +567,9 @@ defineExpose({ showError })
                     <template v-if="isWireGuard">
                       <option value="udp">{{ t('interface.transportWgUdp') }}</option>
                       <option value="wui-udp">{{ t('interface.transportWuiUdp') }}</option>
+                      <option value="wui-tls">{{ t('interface.transportWuiTls') }}</option>
                       <option value="wui-ws">{{ t('interface.transportWuiWs') }}</option>
+                      <option value="wui-plain">{{ t('interface.transportWuiPlain') }}</option>
                     </template>
                     <template v-else>
                       <option value="udp">{{ t('interface.transportUdp') }}</option>
@@ -559,8 +583,8 @@ defineExpose({ showError })
             <div v-if="stealthChosen" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport-port">
-                  {{ wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
-                  <HelpTip :text="wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
+                  {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
+                  <HelpTip :text="tlsChosen ? t('interface.transportPortTlsHint') : plainChosen ? t('interface.transportPortPlainHint') : wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
                 </label>
                 <label class="ainput number" :class="{ invalid: fieldName === 'transportPort' }">
                   <input id="if-transport-port" v-model="form.transportPort" data-field="transportPort" type="number" min="1" max="65535" class="ltr" @input="clearError('transportPort')" />
@@ -570,25 +594,28 @@ defineExpose({ showError })
             </div>
           </div>
 
-          <!-- wui-ws: the front devices reach, the path it sends on, and the
-               site every stranger sees. The path is drawn when left empty;
-               the operator's web server needs it, so it shows once saved. -->
+          <!-- wui-tls, wui-ws and wui-plain: the name devices reach, the
+               path they send on, and the site every stranger sees. The path
+               is drawn when left empty; the operator's web server needs it,
+               so it shows once saved. wui-ws and wui-plain add their front's
+               settings, wui-plain its cookie's name, and wui-tls whose
+               certificate it serves. -->
           <template v-if="wsChosen">
             <div class="arow16">
               <div class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="if-ws-host">{{ t('interface.wsHost') }} <HelpTip :text="t('interface.wsHostHint')" /></label>
+                  <label class="aform-label" for="if-ws-host">{{ tlsChosen ? t('interface.tlsHost') : t('interface.wsHost') }} <HelpTip :text="tlsChosen ? t('interface.tlsHostHint') : plainChosen ? t('interface.plainHostHint') : t('interface.wsHostHint')" /></label>
                   <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.host' }">
-                    <input id="if-ws-host" v-model.trim="form.ws.host" data-field="transportWs.host" class="ltr" placeholder="cdn.example.com" @input="clearError('transportWs.host')" />
+                    <input id="if-ws-host" v-model.trim="form.ws.host" data-field="transportWs.host" class="ltr" :placeholder="tlsChosen ? 'edge.example.com' : 'cdn.example.com'" @input="clearError('transportWs.host')" />
                   </label>
                   <p v-if="fieldName === 'transportWs.host'" class="field-error" role="alert">{{ fieldError }}</p>
                 </div>
               </div>
-              <div class="acol12">
+              <div v-if="frontChosen" class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="if-ws-front-port">{{ t('interface.wsFrontPort') }} <HelpTip :text="t('interface.wsFrontPortHint')" /></label>
+                  <label class="aform-label" for="if-ws-front-port">{{ t('interface.wsFrontPort') }} <HelpTip :text="plainChosen ? t('interface.plainFrontPortHint') : t('interface.wsFrontPortHint')" /></label>
                   <label class="ainput number" :class="{ invalid: fieldName === 'transportWs.frontPort' }">
-                    <input id="if-ws-front-port" v-model="form.ws.frontPort" data-field="transportWs.frontPort" type="number" min="1" max="65535" class="ltr" placeholder="443" @input="clearError('transportWs.frontPort')" />
+                    <input id="if-ws-front-port" v-model="form.ws.frontPort" data-field="transportWs.frontPort" type="number" min="1" max="65535" class="ltr" :placeholder="plainChosen ? '80' : '443'" @input="clearError('transportWs.frontPort')" />
                   </label>
                   <p v-if="fieldName === 'transportWs.frontPort'" class="field-error" role="alert">{{ fieldError }}</p>
                 </div>
@@ -606,15 +633,15 @@ defineExpose({ showError })
               </div>
               <div class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="if-ws-origin">{{ t('interface.wsOrigin') }} <HelpTip :text="t('interface.wsOriginHint')" /></label>
+                  <label class="aform-label" for="if-ws-origin">{{ t('interface.wsOrigin') }} <HelpTip :text="tlsChosen ? t('interface.tlsOriginHint') : plainChosen ? t('interface.plainOriginHint') : t('interface.wsOriginHint')" /></label>
                   <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.origin' }">
-                    <input id="if-ws-origin" v-model.trim="form.ws.origin" data-field="transportWs.origin" class="ltr" placeholder="http://127.0.0.1:8080" @input="clearError('transportWs.origin')" />
+                    <input id="if-ws-origin" v-model.trim="form.ws.origin" data-field="transportWs.origin" class="ltr" placeholder="http://127.0.0.1:8080" :required="plainChosen || tlsChosen" @input="clearError('transportWs.origin')" />
                   </label>
                   <p v-if="fieldName === 'transportWs.origin'" class="field-error" role="alert">{{ fieldError }}</p>
                 </div>
               </div>
             </div>
-            <div class="arow16">
+            <div v-if="frontChosen" class="arow16">
               <div class="acol12">
                 <div class="aform-item">
                   <label class="aform-label" for="if-ws-proxies">{{ t('interface.wsProxies') }} <HelpTip :text="t('interface.wsProxiesHint')" /></label>
@@ -634,6 +661,42 @@ defineExpose({ showError })
                 </div>
               </div>
             </div>
+            <div v-if="plainChosen" class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-cookie">{{ t('interface.plainCookie') }} <HelpTip :text="t('interface.plainCookieHint')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.cookie' }">
+                    <input id="if-ws-cookie" v-model.trim="form.ws.cookie" data-field="transportWs.cookie" class="ltr" maxlength="32" :placeholder="t('interface.wsPathDrawn')" @input="clearError('transportWs.cookie')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.cookie'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+            <template v-if="tlsChosen">
+              <div class="aform-item">
+                <div class="opt-card" :class="{ on: form.ws.usePanelCert }" data-field="transportWs.usePanelCert">
+                  <div class="opt-text">
+                    <div class="opt-title">{{ t('interface.tlsPanelCert') }}</div>
+                    <div class="opt-desc">{{ t('interface.tlsPanelCertDesc') }}</div>
+                  </div>
+                  <Toggle v-model="form.ws.usePanelCert" :label="t('interface.tlsPanelCert')" @update:model-value="clearError('transportWs.usePanelCert')" />
+                </div>
+                <p v-if="fieldName === 'transportWs.usePanelCert'" class="field-error" role="alert">{{ fieldError }}</p>
+                <div v-if="tlsCertSource" class="aalert slim" :class="tlsCertSource === 'panel' ? 'success' : 'info'">
+                  <AntIcon :name="tlsCertSource === 'panel' ? 'CheckCircleOutlined' : 'InfoCircleOutlined'" />
+                  <span>{{ t(tlsCertSource === 'panel' ? 'interface.tlsCertPanel' : 'interface.tlsCertOwn') }}</span>
+                </div>
+              </div>
+              <div class="aform-item">
+                <div class="opt-card" :class="{ on: form.ws.proxyProtocol }">
+                  <div class="opt-text">
+                    <div class="opt-title">{{ t('interface.tlsProxyProtocol') }}</div>
+                    <div class="opt-desc">{{ t('interface.tlsProxyProtocolDesc') }}</div>
+                  </div>
+                  <Toggle v-model="form.ws.proxyProtocol" :label="t('interface.tlsProxyProtocol')" />
+                </div>
+              </div>
+            </template>
           </template>
 
           <!-- L2TP only: the key every device types beside its own sign-in,

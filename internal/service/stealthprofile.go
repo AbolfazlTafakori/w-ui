@@ -60,13 +60,23 @@ type WUITransport struct {
 	// key, which every key is bound to, is the one in the file.
 	Secret string `json:"secret"`
 	MTU    int    `json:"mtu"`
-	// URL is a stream transport's address, wss:// with its path: the name
-	// TLS and the request give, which may differ from the endpoint
-	// connected to.
+	// URL is a stream transport's address, wss:// with its path, or ws://
+	// for wui-plain: the name TLS and the request give, which may differ
+	// from the endpoint connected to. An address in it is sent as no name.
 	URL string `json:"url,omitempty"`
+	// Pins are wui-tls's: the SHA-256 of the server certificate's
+	// SubjectPublicKeyInfo, standard base64. With SelfSigned the server is
+	// trusted for its pin alone, over TLS 1.3, and its chain, name and
+	// dates are not looked at; without, its certificate is checked as a
+	// browser checks it, and a pin, when there is one, is a second
+	// condition, never a way around the first.
+	Pins       []string `json:"pins,omitempty"`
+	SelfSigned bool     `json:"selfSigned,omitempty"`
 	// Key is a stream transport's public key, base64, which its proof is
 	// sealed to.
 	Key string `json:"key,omitempty"`
+	// Cookie is the name of the cookie wui-plain's token travels in.
+	Cookie string `json:"cookie,omitempty"`
 }
 
 // wuiBundle is a customer's W-UI profile.
@@ -104,12 +114,12 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 				Secret: acc.StealthSecret, MTU: max(iface.MTU, 0),
 			})
 		}
-		if iface.StealthWS() != 0 && acc.StealthSecret != "" {
+		if (iface.StealthTLS() != 0 || iface.StealthWS() != 0 || iface.StealthPlain() != 0) && acc.StealthSecret != "" {
 			if wt, ok := wsTransport(iface.Stealth.V); ok {
 				wt.Secret, wt.MTU = acc.StealthSecret, max(iface.MTU, 0)
 				t.Transports = append(t.Transports, wt)
 			} else {
-				s.log.Warn("a wui-ws transport has no usable key yet; profiles leave it out until it has", "interface", iface.Name)
+				s.log.Warn("a stealth transport has no usable key yet; profiles leave it out until it has", "interface", iface.Name, "transport", iface.Stealth.V.Transport)
 			}
 		}
 		p.Tunnels = append(p.Tunnels, t)
@@ -131,29 +141,60 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 	}, nil
 }
 
-// wsTransport is a tunnel's wui-ws as a profile gives it, but the device's
-// own secret: the front, which devices reach and TLS names, and the
-// transport's current public key. False when it has no key yet.
+// wsTransport is a tunnel's wui-tls, wui-ws or wui-plain as a profile gives
+// it, but the device's own secret: where devices reach it and the name TLS
+// gives, the transport's current public key, wui-plain's cookie, and
+// wui-tls's pin. False when it has no key or certificate yet.
 func wsTransport(p model.StealthParams) (WUITransport, bool) {
 	key, err := stealth.ParseTransportKey(p.Key)
 	if err != nil {
 		return WUITransport{}, false
 	}
+	scheme, name, usual := "wss://", stealth.WS, 443
 	port := p.FrontPortOr()
+	var pins []string
+	selfSigned := false
+	switch p.Transport {
+	case model.TransportWuiPlain:
+		if p.Cookie == "" {
+			return WUITransport{}, false
+		}
+		scheme, name, usual = "ws://", stealth.Plain, 80
+	case model.TransportWuiTLS:
+		// The gateway is the server, on its own port.
+		name, port = stealth.TLS, p.Port
+		cert, _ := p.ServedCert()
+		_, info, err := stealth.ReadCertificate(cert)
+		if err != nil {
+			return WUITransport{}, false
+		}
+		// The tunnel's own certificate is trusted for its pin alone; the
+		// panel's is checked as a browser checks it, and is given no pin,
+		// since each of its renewals brings a new key.
+		if p.CertSource != model.CertSourcePanel {
+			pins, selfSigned = []string{info.Pin.String()}, true
+		}
+	}
 	host := p.Host
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]" // an IPv6 address
 	}
-	u := "wss://" + host
-	if port != 443 {
+	u := scheme + host
+	if port != usual {
 		u += ":" + strconv.Itoa(port)
 	}
-	return WUITransport{
-		Type:      stealth.WS,
-		Endpoints: []string{net.JoinHostPort(p.Host, strconv.Itoa(port))},
-		URL:       u + p.Path,
-		Key:       key.Public(),
-	}, true
+	t := WUITransport{
+		Type:       name,
+		Endpoints:  []string{net.JoinHostPort(p.Host, strconv.Itoa(port))},
+		URL:        u + p.Path,
+		Key:        key.Public(),
+		Pins:       pins,
+		SelfSigned: selfSigned,
+	}
+	if name == stealth.Plain {
+		t.Cookie = p.Cookie
+	}
+	return t, true
 }
 
 // stealthEndpoints is where a tunnel's wui-udp is reached: every address the

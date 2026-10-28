@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,11 +23,14 @@ import (
 //
 // A WireGuard tunnel with a stealth transport on has a gateway beside it, on
 // a port of its own, that hands what it unwraps to the tunnel's own port on
-// the loopback: wui-udp's on UDP, wui-ws's on TCP behind the operator's web
-// server or CDN. The gateway is the panel's, like the tunnel's peers: started when
-// the tunnel wants one, given the devices the tunnel carries on every pass,
+// the loopback: wui-udp's on UDP, wui-tls's on TCP as the server itself,
+// wui-ws's and wui-plain's on TCP behind the operator's web server or CDN.
+// The gateway is the panel's, like the tunnel's peers: started when the
+// tunnel wants one, given the devices the tunnel carries on every pass,
 // restarted when what it was started with changes, and stopped when the
-// tunnel stops wanting it. WireGuard goes on as it was through all of it.
+// tunnel stops wanting it. wui-tls's certificate is the exception: a renewed
+// one is handed to the running gateway, so no session ends for it.
+// WireGuard goes on as it was through all of it.
 
 // stealthDir is where the gateways keep their replay limits, in the data
 // directory.
@@ -49,6 +53,7 @@ type gateway interface {
 
 type runningGateway struct {
 	key    string // what it was started with
+	cert   string // the certificate a wui-tls gateway serves, PEM
 	gw     gateway
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -60,9 +65,14 @@ type runningGateway struct {
 func gatewayKey(i model.Interface) string {
 	name, port := i.StealthTransport()
 	p := i.Stealth.V
-	if name == model.TransportWuiWS {
-		return fmt.Sprintf("%s|%d|%d|%s|%s|%s|%s|%s|%s|%s", name, port, i.ListenPort, i.PrivateKey,
-			p.Path, p.Origin, p.Proxies, p.ClientHeader, p.Key, p.PreviousKey)
+	if p.Proven() {
+		key := fmt.Sprintf("%s|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s", name, port, i.ListenPort, i.PrivateKey,
+			p.Path, p.Origin, p.Proxies, p.ClientHeader, p.Cookie, p.Key, p.PreviousKey)
+		if name == model.TransportWuiTLS {
+			// Not the certificate: keepStealth hands a new one over.
+			key += fmt.Sprintf("|%s|%t", p.Host, p.ProxyProtocol)
+		}
+		return key
 	}
 	return fmt.Sprintf("%s|%d|%d|%d|%s", name, port, i.ListenPort, i.MTU, i.PrivateKey)
 }
@@ -96,6 +106,7 @@ func (r *Reconciler) keepStealth(d *desired) {
 		}
 		if rg.gw != nil {
 			rg.gw.SetDevices(stealthDevices(d.perIface[iface.ID]))
+			r.keepCertificate(iface, rg)
 		}
 	}
 	for id, rg := range g.running {
@@ -131,8 +142,15 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 		Listen() error
 	}
 	switch name {
+	case model.TransportWuiTLS:
+		var tg *stealthgw.TLSGateway
+		if tg, err = r.newTLSGateway(iface, priv); err == nil {
+			gw, rg.cert = tg, servedCert(iface)
+		}
 	case model.TransportWuiWS:
 		gw, err = r.newWSGateway(iface, priv)
+	case model.TransportWuiPlain:
+		gw, err = r.newPlainGateway(iface, priv)
 	default:
 		gw, err = r.newUDPGateway(iface, priv)
 	}
@@ -180,15 +198,94 @@ func (r *Reconciler) newUDPGateway(iface model.Interface, priv []byte) (*stealth
 	return stealthgw.New(cfg)
 }
 
-// newWSGateway is wui-ws's gateway. With no front trusted but the loopback
-// it listens on the loopback alone, for a web server on this machine; a
-// front elsewhere has it listen on every address, and the firewall lets the
-// port through.
-func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthgw.StreamGateway, error) {
-	p := iface.Stealth.V
-	proxies, err := service.ParseWSProxies(p.Proxies)
+// newTLSGateway is wui-tls's gateway: the server itself, on every address,
+// ending TLS with the certificate the tunnel serves and handing whoever is
+// not a device to the decoy.
+func (r *Reconciler) newTLSGateway(iface model.Interface, priv []byte) (*stealthgw.TLSGateway, error) {
+	cfg, err := r.streamConfig(iface, priv)
 	if err != nil {
 		return nil, err
+	}
+	p := iface.Stealth.V
+	cert, err := stealth.TLSCertificate(p.ServedCert())
+	if err != nil {
+		return nil, err
+	}
+	_, port := iface.StealthTransport()
+	// The name the gateway's own requests give the decoy, as a visitor's
+	// browser would: the tunnel's name, with the port when it is not 443.
+	host := p.Host
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]" // an IPv6 address
+	}
+	if port != 443 {
+		host += ":" + strconv.Itoa(port)
+	}
+	return stealthgw.NewTLS(stealthgw.TLSConfig{
+		Listen: net.JoinHostPort("", strconv.Itoa(port)), Path: cfg.Path, Origin: cfg.Origin,
+		ProxyProtocol: p.ProxyProtocol, Host: host, Certificate: cert,
+		WireGuard: cfg.WireGuard, PrivateKey: cfg.PrivateKey, TransportKeys: cfg.TransportKeys,
+		ReplayFile: cfg.ReplayFile, Log: cfg.Log,
+	})
+}
+
+// servedCert is the certificate a tunnel's wui-tls gateway serves, PEM.
+func servedCert(iface model.Interface) string {
+	cert, _ := iface.Stealth.V.ServedCert()
+	return cert
+}
+
+// keepCertificate hands a running wui-tls gateway the tunnel's certificate
+// when it changed: renewed, or the panel's taken up or let go. Connections
+// there are keep the one they began with. One that does not read is said,
+// and the gateway keeps the one it has.
+func (r *Reconciler) keepCertificate(iface model.Interface, rg *runningGateway) {
+	tg, ok := rg.gw.(*stealthgw.TLSGateway)
+	if !ok {
+		return
+	}
+	served := servedCert(iface)
+	if served == rg.cert {
+		return
+	}
+	cert, err := stealth.TLSCertificate(iface.Stealth.V.ServedCert())
+	if err != nil {
+		r.log.Error("wui-tls's new certificate does not read; the gateway keeps the one it has", "interface", iface.Name, "error", err)
+		return
+	}
+	tg.SetCertificate(cert)
+	rg.cert = served
+	r.log.Info("wui-tls serves a new certificate", "interface", iface.Name, "source", iface.Stealth.V.CertSource)
+}
+
+// newWSGateway is wui-ws's gateway.
+func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthgw.StreamGateway, error) {
+	cfg, err := r.streamConfig(iface, priv)
+	if err != nil {
+		return nil, err
+	}
+	return stealthgw.NewStream(cfg)
+}
+
+// newPlainGateway is wui-plain's gateway: wui-ws's, with its cookie.
+func (r *Reconciler) newPlainGateway(iface model.Interface, priv []byte) (*stealthgw.PlainGateway, error) {
+	cfg, err := r.streamConfig(iface, priv)
+	if err != nil {
+		return nil, err
+	}
+	return stealthgw.NewPlain(stealthgw.PlainConfig{StreamConfig: cfg, Cookie: iface.Stealth.V.Cookie})
+}
+
+// streamConfig is what a gateway behind the operator's front is started
+// with. With no front trusted but the loopback it listens on the loopback
+// alone, for a web server on this machine; a front elsewhere has it listen
+// on every address, and the firewall lets the port through.
+func (r *Reconciler) streamConfig(iface model.Interface, priv []byte) (stealthgw.StreamConfig, error) {
+	p := iface.Stealth.V
+	_, port := iface.StealthTransport()
+	proxies, err := service.ParseWSProxies(p.Proxies)
+	if err != nil {
+		return stealthgw.StreamConfig{}, err
 	}
 	host := "127.0.0.1"
 	if len(proxies) > 0 {
@@ -202,12 +299,12 @@ func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthg
 		}
 		tk, err := stealth.ParseTransportKey(k)
 		if err != nil {
-			return nil, err
+			return stealthgw.StreamConfig{}, err
 		}
 		keys = append(keys, tk)
 	}
 	cfg := stealthgw.StreamConfig{
-		Listen:        net.JoinHostPort(host, strconv.Itoa(iface.StealthWS())),
+		Listen:        net.JoinHostPort(host, strconv.Itoa(port)),
 		Path:          p.Path,
 		Origin:        p.Origin,
 		Proxies:       proxies,
@@ -218,7 +315,7 @@ func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthg
 		Log:           r.log.With("interface", iface.Name),
 	}
 	copy(cfg.PrivateKey[:], priv)
-	return stealthgw.NewStream(cfg)
+	return cfg, nil
 }
 
 // stopGateway stops a gateway and waits, a while, for its port to be free.

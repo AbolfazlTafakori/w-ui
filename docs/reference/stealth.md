@@ -1,5 +1,5 @@
 ---
-description: "The stealth transports: wui-udp, WireGuard in UDP packets that look like random bytes, and wui-ws, WireGuard as WebSocket behind a web server or a CDN; the keys, the packets, the server's rules, and what a client must do."
+description: "The stealth transports: wui-udp, WireGuard in UDP packets that look like random bytes; wui-ws, WireGuard as WebSocket behind a web server or a CDN; wui-tls, the same with the gateway as the web server itself; and wui-plain, the same over plain HTTP where TLS itself is cut; the keys, the packets, the server's rules, and what a client must do."
 ---
 
 # Stealth transport: wui-udp
@@ -12,7 +12,7 @@ This page is the specification. The format is in `internal/stealth`, the server 
 
 ## On the panel
 
-A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **wui-udp** is WireGuard as it is on the tunnel's port and wui-udp beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `wui-udp`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. **wui-ws**, WebSocket behind a web server or a CDN, is the third choice, in a part of its own below. The other stealth transports join the same menu as they are built.
+A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **wui-udp** is WireGuard as it is on the tunnel's port and wui-udp beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `wui-udp`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. **wui-ws**, WebSocket behind a web server or a CDN, is the third choice, and **wui-plain**, the same over plain HTTP, the fourth, each in a part of its own below. The other stealth transports join the same menu as they are built.
 
 The tunnel itself does not change. Its peers, its port and every `.conf` handed out stay as they were; the panel only starts a gateway beside it, gives it the devices the tunnel carries on every pass, and stops it when the tunnel no longer wants one. A device taken off the tunnel, out of its allowance or switched off, loses its gateway sessions with its peer. The online indicator and the sharing report see a device at its own address, not the gateway's.
 
@@ -300,3 +300,194 @@ A stream cannot be replayed: its chunks open only in order, under a key of this 
 - Its timestamp is its clock plus the offset from the server, when it knows one.
 
 The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port, over `ws://` or `wss://`, with the address it dials apart from the name it gives.
+
+# Stealth transport: wui-tls
+
+wui-tls is wui-ws without a front: the gateway is the web server, on a port of its own, and ends TLS itself. With nobody in front to tell a device from a visitor, it decides from the bytes alone, as they arrive, and whoever is not a device is handed to the operator's own site -- every byte they sent, as they sent it, and from then on both ways with nothing read or made by the gateway. Devices trust the gateway's certificate by its pin, so no domain or authority is needed.
+
+The proof, the session and the chunk are wui-ws's, above, under the name `wui-tls`; only what happens before the proof differs. The request line is read in `internal/stealth/request.go`, the certificate is made in `internal/stealth/certificate.go`, and the server and the client's TLS are in `internal/stealthgw` (`tls.go`, `tlsclient.go`). `internal/stealth/testdata/tls.json` is a test vector, checked by `scripts/stealth/ws_vectors.py` with wui-ws's.
+
+## On the panel
+
+Choose **wui-tls** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with wui-udp.
+
+| Field | API | |
+|---|---|---|
+| wui-tls port | `transportPort` | The TCP port devices connect to, on every address, opened in the firewall. 443 looks most like a web server. |
+| Server name or address | `transportWs.host` | What devices connect to: a domain pointing at this server, or its address. Required. A domain is also what the certificate names and what devices send as the server name; with an address they send none. |
+| Path | `transportWs.path` | As wui-ws's: drawn when left empty, and kept when the settings are saved again with it empty. |
+| Decoy site | `transportWs.origin` | The operator's site, `http://` with no path. Required: the gateway hands every stranger to it as they came, after its own TLS, so it speaks plain HTTP to it. |
+| Use the panel's certificate | `transportWs.usePanelCert` | Serve the panel's own issued certificate when it is in date for the name, on a tunnel of the panel's own server. |
+| PROXY protocol to the decoy | `transportWs.proxyProtocol` | Open every connection to the decoy with a PROXY protocol v2 header naming the visitor, for a site set to expect one. |
+
+The transport's key is wui-ws's: drawn when wui-tls is chosen, the next one drawn every 30 days with the one before still taken, never shown by the API, and given to a remote node with the tunnel. A tunnel switched to wui-tls from another transport carries no path or key across, nor one switched away.
+
+### The certificate
+
+The tunnel has a certificate of its own, which nobody issued. The panel draws an ECDSA P-256 key for it once, when wui-tls is chosen, and keeps it for as long as the tunnel has wui-tls: devices trust the certificate by that key's pin alone, so a new key would be a new pin, and every app would need its profile again before it reached the tunnel. The certificate is made again with the same key when it is 20 days from its end, or claims to start more than a day from now, or names another name than the tunnel's -- none of which a device notices.
+
+Nothing in it says W-UI. It names the tunnel's domain, or, for an address, a name drawn once in a shape a private network's hosts have (`kemo-tiz.lan`, `rufa42.corp`) and kept across renewals. Its serial is 16 random bytes, it lives 80 days and up to 20 more, and it starts at a random moment of the week before it was made, so no two servers' certificates line up. It carries the extensions a server certificate usually has: a key usage of digital signature, an extended key usage of server authentication, no CA, the name as its alternative name, and a key identifier.
+
+With **Use the panel's certificate** on, the panel's own certificate is served instead while it is in date for the tunnel's name and the tunnel is on the panel's server; a node's tunnel never takes it, since its key would have to go to the node. Devices then check it as a browser does. When it stops covering the name, the tunnel's own is served again, and profiles say so. The reconciler's pass keeps either current, and a running gateway takes a new certificate from its next connection on, so no session ends for a renewal. The certificates' keys never leave the panel by the API; a remote node is given the tunnel's own with the tunnel.
+
+### The profile
+
+```json
+{"type": "wui-tls", "endpoints": ["edge.example.com:443"], "url": "wss://edge.example.com/41yg3dsw2u5h97g50uvl",
+ "pins": ["base64"], "selfSigned": true, "key": "base64", "secret": "base64", "mtu": 1420}
+```
+
+`url` is the name TLS and the request give, with the path and the port when it is not 443; an address in it is sent as no name. `pins` are the SHA-256 of the served certificate's SubjectPublicKeyInfo, in standard base64. With `selfSigned` the server is trusted for its pin alone; without it, for the panel's certificate, `pins` is empty and the certificate is checked as a browser checks it. `key` is the transport's current public key.
+
+## What the server does with a connection
+
+1. **TLS**, within 10 seconds of the accept. TLS 1.2 is offered only with ECDHE and an AEAD; ALPN is `http/1.1` alone. A handshake that fails or is too slow is closed as the system closes it.
+1. **The decoy, now.** A connection to the decoy is opened at once, before a byte is read, so the decoy's own timers run from the moment they would for a visitor who reached it directly; with the PROXY protocol on, it opens with a v2 header naming the visitor and the port they reached.
+1. **The request line**, as it arrives. It stays a candidate only while it can still become `GET /<target> HTTP/1.1` CR LF, with a target of the characters RFC 3986 lets a path and a query carry unescaped. The first byte that cannot belong to such a line, a line of 4096 bytes without its end, 10 seconds without a complete line, the peer closing, or the decoy saying anything or closing first, decides that the peer is a stranger. No secret is used for any of it, so the decision costs everyone the same.
+1. **A complete line** is a device's only when its path is the transport's, compared in constant time, its query is a proof that holds -- wui-ws's steps 3 to 7, under the name `wui-tls` -- and TLS 1.3 was spoken, which every client insists on. The token is opened whatever the path and the TLS version, so the work a line costs does not say which of them was wrong. A complete line is weighed whatever the decoy did meanwhile.
+1. **A device's head** is read, up to 16 KiB in all and 10 seconds, and the decoy's connection is closed unused. Only `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Version: 13` and `Sec-WebSocket-Key` are looked at; a head without them is closed with no answer -- TLS's close, then the connection's -- and its proof spent. The answer is wui-ws's, with the header fields the decoy's own answers carry (`Server`), learned by asking the decoy for its front page as a visitor would, every hour, or every minute while it fails. The session then runs as wui-ws's.
+1. **A stranger's bytes**, every one read so far, go to the decoy unchanged, and from then on the gateway relays both ways and reads nothing. A half-close passes through as it came, a reset from the decoy resets the visitor, and when the decoy closes the gateway lingers up to 5 seconds over the visitor's last bytes, as a web server does, so the visitor is not reset before it has read the answer. The gateway never writes a byte of its own to a stranger: no status, no error page. While the decoy cannot be reached a stranger is closed with nothing, which shows the gateway, and the log says so once a minute.
+
+| Limit | |
+|---|---|
+| Connections not yet decided | 512; 64 from one address. Over either, the oldest of that address, or of all, is decided at once as a stranger's: a stranger only ever displaces a stranger. |
+| Strangers relayed at once | 1024. Over it the one idle longest goes, if it has been idle a minute, else the oldest. |
+| When every place is taken | No connection is accepted until one is free; they wait in the system's queue, as at a busy server. |
+
+## What someone on the path can see
+
+- A TLS handshake on the gateway's port, and the certificate in it, which is the gateway's and not the decoy's. On a probe that compares the two, wui-tls shows. Behind a front, as wui-ws, it does not.
+- A relayed answer a hop later than the decoy's own would be.
+- What a device's connection looks like is the device's TLS. The reference client is Go's, which is not a browser's; W-UI's own app is to speak as a browser does.
+
+## What a client does
+
+- It holds the server's certificate to the check the profile says, never the one the server would like: with `selfSigned`, the leaf's key must be one of the pins and TLS 1.3 must be spoken, and the chain, the name and the dates are not looked at. TLS 1.3 has the server sign the handshake with that key, and the signature is checked all the same, so a server that shows the pinned certificate without holding its key fails. Without `selfSigned`, the chain must lead to a root the device trusts, for the URL's name, at the device's own time; with pins as well, the key must be one of them and TLS 1.3 spoken, a pin being a second condition and never a way around the first.
+- TLS 1.2, where it is taken, must end on ECDHE and an AEAD. Nothing that fails is tried again with less.
+- The rest is wui-ws's client: the proof, the session, its retries and its timers.
+
+# Stealth transport: wui-plain
+
+wui-plain is wui-ws for a network where TLS itself is what gets a connection cut: the device speaks plain HTTP to the operator's own web server, which hands the gateway the request exactly as wui-ws's front does. Nothing of the session is weaker. Its proof, its keys, its sealed chunks, its padding and its checks of WireGuard are wui-ws's, and a stranger still sees the operator's site and nothing else. What is weaker is what the network sees: with no TLS, everything between the device and the front can be read and written by whoever is on the path, and they can read that a request with a cookie of random text was upgraded to WebSocket. It is the weakest of the transports. An app uses it last, only where nothing covered gets through, and only once its user has agreed to.
+
+The format is wui-ws's, in `internal/stealth`, with the cookie in `cookie.go`; the server is `internal/stealthgw/plain.go`, and the reference client is wui-ws's. `internal/stealth/testdata/plain.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own, the cookie rule included.
+
+## On the panel
+
+Choose **wui-plain** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with the others.
+
+| Field | API | |
+|---|---|---|
+| wui-plain port | `transportPort` | The TCP port the web server sends the transport's path to. |
+| Front host | `transportWs.host` | The name devices connect to over plain HTTP. Required, and never a name a wui-ws transport uses (below). |
+| Front port | `transportWs.frontPort` | The front's HTTP port; 80 when empty. |
+| Path | `transportWs.path` | As wui-ws's: 12 to 256 characters, drawn when left empty, and never a wui-ws transport's (below). |
+| Decoy site | `transportWs.origin` | The operator's site, `http://` or `https://` with no path. **Required**: a stranger's answer crosses the network in the clear, so it must be the site's own, never one the gateway made. |
+| Trusted fronts | `transportWs.proxies` | As wui-ws's. |
+| Visitor header | `transportWs.clientHeader` | As wui-ws's. |
+| Cookie name | `transportWs.cookie` | The cookie a device's token travels in: 1 to 32 characters of `A-Z a-z 0-9 - _`. Left empty, one of 8 to 16 is drawn, a letter first, as a site's session cookie might be named, and kept when the settings are saved again with it empty and when the key turns over. |
+
+The listening rules are wui-ws's: on 127.0.0.1 alone and shut in the firewall with no front elsewhere, on every address and opened with one.
+
+The transport has a key pair of its own, drawn when wui-plain is chosen, and turned over every **7 days** with the one before still taken, where a covered transport's lasts 30: every proof wui-plain opens crossed the network in the clear, and a key that leaked would open the hellos recorded under it. A tunnel switched from one transport to another draws a new key, path and cookie, and never carries over the old transport's path, even if it is sent back: nothing wui-plain showed in the clear goes on to a covered transport, nor the other way round. The private keys never leave the panel by the API; a remote node is given them with the tunnel. The cookie's name is no secret, and the form shows it.
+
+A wui-plain front's name and path are read in the clear, so the panel refuses a wui-plain whose host or path is a wui-ws transport's, on any tunnel of any server, and a wui-ws whose are a wui-plain's: one they shared would tie the covered transport to the exposed one. Two wui-plain transports may share a front, on paths of their own.
+
+nginx on port 80 of the same machine, the transport on port 28082 and the site where it was:
+
+```nginx
+server {
+    listen 80;
+    server_name plain.example.com;
+
+    location = /gu7qym3a1quw18halvk7 {
+        proxy_pass http://127.0.0.1:28082;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;  # the site, which is also the decoy
+    }
+}
+```
+
+nginx passes the `Cookie` field on as it came, which is all the gateway needs. Do not add `$http_cookie` to an access log's format: a token is good once, but there is no reason to keep it.
+
+### The profile
+
+```json
+{"type": "wui-plain", "endpoints": ["plain.example.com:80"], "url": "ws://plain.example.com/gu7qym3a1quw18halvk7",
+ "cookie": "psgouzg_t", "key": "base64", "secret": "base64", "mtu": 1420}
+```
+
+`url` is always `ws://`, with the port when it is not 80. `cookie` is the name the token travels under. `key` is the transport's current public key, which is wui-plain's own. The secret and the anchor are wui-udp's.
+
+## The proof
+
+wui-plain's proof is wui-ws's, made for its own name:
+
+```
+info = L | "proof" | 0x00 | "wui-plain" | 0x00 | A
+```
+
+so a token seen on a plain path opens on no covered transport, and none of theirs opens here, even under one key. The hello, the binder and the session's keys are wui-ws's.
+
+The token is not in the target. A session opens with a GET for the path alone, with a WebSocket upgrade, and the token in a cookie:
+
+```
+GET /gu7qym3a1quw18halvk7 HTTP/1.1
+Host: plain.example.com
+...
+Cookie: psgouzg_t=<token>
+Sec-WebSocket-Key: ...
+```
+
+The cookie is read strictly, so that a request has one reading only:
+
+- The request has exactly one `Cookie` field.
+- The field is `name=value` pairs joined by `; `, a semicolon and one blank, with none at either end; every name is an HTTP token (RFC 9110).
+- The transport's cookie is among them exactly once, by its name as it is spelled.
+- Its value is 1 or more characters of `A-Z a-z 0-9 - _`, which is what a token is: no quotes, no blank, no `=`.
+
+Anything else is a stranger's request. A request whose target has a query of any kind, an empty `?` included, is a stranger's too.
+
+## The session
+
+The session is wui-ws's, byte for byte: one sealed chunk to a binary message, the same nonce, the same padding, the same frames refused, the same close. The answer to a proof is `101 Switching Protocols` with `Upgrade`, `Connection`, `Sec-WebSocket-Accept` and `Date`, and nothing more: no cookie, since on a plain path a cookie the client never sends back is one more thing to read, and no extension, whatever the request offered.
+
+## What the server does with a request
+
+wui-ws's steps, with two differences:
+
+1. From an address that is neither a trusted front nor the loopback: the decoy.
+1. A path other than the transport's, compared in constant time, no WebSocket upgrade, a query, or no cookie that reads by the rule above: the decoy.
+1. Open the cookie's token, as wui-ws opens the query's, under every transport key the gateway holds.
+1. The rest is wui-ws's: the device by its tag and its binder, the replay rule on `enc` in a file of its own, the limits, the proof taken once under one lock, and the answer.
+
+## What someone on the path can do
+
+They read, and can change, every byte between the device and the front. What that gives them:
+
+- **Who the device is: nothing.** The tag is inside the HPKE message, and only the transport key opens it. The cookie is random text, of a length drawn afresh.
+- **A token: nothing usable.** A token is taken once. Sent first, ahead of the device's own request, it is answered, but the session's keys need the device's secret as well as the token's own, so the first chunk they send fails to open and the session ends with a close of 1000. The device's request, coming second, is a stranger's, and it tries again with a new token.
+- **A frame: nothing reaches anyone.** A frame changed, added or cut fails to open or is refused, and the session ends; nothing of it reaches WireGuard, which on its side refuses anything it did not seal.
+- **A probe: the site.** Whatever is not a proof is answered by the decoy, and the gateway writes no byte of its own for a stranger.
+- **A leaked transport key** opens the hellos recorded under it, and so tells which recorded sessions were one device's, but not their keys, which need the device's secret, nor the tunnel, which is WireGuard's. The key turns over every 7 days, and the one before goes 7 days later.
+
+What they do see is that WebSocket was spoken, the sizes and times of the frames as padding leaves them, and the front's name.
+
+## What a client does
+
+wui-ws's rules, and:
+
+- It ranks wui-plain below every other transport of the profile, and uses it only once its user has agreed to a transport the network can see.
+- Its request is a browser's upgrade from a page served over `http://`, the fields in a browser's order, with the token in the cookie and nowhere else; the reference client sends a desktop Chrome's.
+- Nothing vouches for an answer on a plain path, so a 101 is no session: an answer that takes an extension, or a first frame that does not open under `k_down`, is a failure, and the session is the gateway's only once one of its chunks has opened.
+- It never sends a token twice.
+
+The reference client in `internal/stealthgw` does this with `Transport` set to `wui-plain`, over `ws://`.

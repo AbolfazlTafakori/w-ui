@@ -6,7 +6,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, notify } from '../lib/store.js'
-import { cmpText, generalItems, nextSort, ocPayload, sortRows, totals as totalsOf, wsOf, wsPayload } from '../lib/interfaces/rows.js'
+import { cmpText, generalItems, nextSort, ocPayload, proven, sortRows, totals as totalsOf, wsOf, wsPayload } from '../lib/interfaces/rows.js'
 import { useInterfaceActions } from '../lib/interfaces/actions.js'
 import ErrorState from '../components/ErrorState.vue'
 import InterfaceForm from '../components/InterfaceForm.vue'
@@ -177,21 +177,22 @@ function toggleOne(id, checked) {
 }
 
 // A WireGuard tunnel's transport as the form asks for it: plain UDP, or a
-// stealth one and its port, and wui-ws's front, path and decoy. AmneziaWG
-// has only plain UDP.
+// stealth one and its port, and wui-tls's, wui-ws's or wui-plain's name, path and
+// decoy. AmneziaWG has only plain UDP.
 function wgTransportOf(input) {
   if (input.mode === 'amnezia' || !input.transport || input.transport === 'udp') return { transport: 'udp', transportPort: 0 }
   const out = { transport: input.transport, transportPort: Number(input.transportPort) || 0 }
-  if (input.transport === 'wui-ws') out.transportWs = wsPayload(input.ws)
+  if (proven(input.transport)) out.transportWs = wsPayload(input.ws)
   return out
 }
 function wgTransportChanged(input, iface) {
   const want = wgTransportOf(input)
   if (want.transport !== (iface.stealth?.transport || 'udp') || want.transportPort !== (iface.stealth?.port || 0)) return true
-  // An empty path keeps the one there is, so it is no change.
+  // An empty path or cookie keeps the one there is, so it is no change.
   if (!want.transportWs) return false
   const had = wsPayload(wsOf(iface.stealth))
-  return Object.keys(want.transportWs).some((k) => !(k === 'path' && want.transportWs.path === '') && want.transportWs[k] !== had[k])
+  const kept = (k) => (k === 'path' || k === 'cookie') && want.transportWs[k] === ''
+  return Object.keys(want.transportWs).some((k) => !kept(k) && want.transportWs[k] !== had[k])
 }
 
 async function submitForm(input) {

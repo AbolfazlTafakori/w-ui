@@ -42,4 +42,27 @@ func TestAnInterfaceKeepsItsTransportKeysFromTheAPI(t *testing.T) {
 	if in.Stealth.V.Key != "current-private" {
 		t.Fatal("redacting changed the interface it was given")
 	}
+
+	// wui-plain's the same; its cookie's name is no secret, and the form
+	// shows it.
+	plain := model.Interface{Protocol: model.ProtocolWireGuard, Stealth: model.JSON(model.StealthParams{
+		Transport: model.TransportWuiPlain, Port: 8081, Host: "plain.example", Cookie: "sid", Key: "current-private", PreviousKey: "previous-private",
+	})}
+	if got := redactKeys(plain).Stealth.V; got.Key != "" || got.PreviousKey != "" || got.Cookie != "sid" {
+		t.Fatalf("wui-plain redacted: %+v", got)
+	}
+
+	// wui-tls's certificate keys go too, the tunnel's own and the panel's
+	// copy; the certificates, which every visitor is shown, stay.
+	direct := model.Interface{Protocol: model.ProtocolWireGuard, Stealth: model.JSON(model.StealthParams{
+		Transport: model.TransportWuiTLS, Port: 443, Host: "edge.example", Key: "current-private",
+		Cert: "own-cert", CertKey: "own-key", PanelCert: "panel-cert", PanelCertKey: "panel-key", CertSource: model.CertSourcePanel,
+	})}
+	got = redactKeys(direct).Stealth.V
+	if got.Key != "" || got.CertKey != "" || got.PanelCertKey != "" {
+		t.Fatalf("wui-tls's keys were left: %+v", got)
+	}
+	if got.Cert != "own-cert" || got.PanelCert != "panel-cert" || got.CertSource != model.CertSourcePanel {
+		t.Fatalf("more than wui-tls's keys went: %+v", got)
+	}
 }
