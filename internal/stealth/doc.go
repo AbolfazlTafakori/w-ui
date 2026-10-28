@@ -15,6 +15,7 @@
 //	wui-tls    WebSocket over TLS the server ends itself, a decoy behind it
 //	wui-ws     WebSocket behind the operator's web server or a CDN
 //	wui-poll   HTTP long polling, for a CDN that will not carry WebSocket
+//	wui-shape  wui-poll in requests of the operator's shape, or one stream
 //	wui-plain  WebSocket over plain HTTP, the proof in a cookie
 //
 // This package holds only the format: key derivation, the sealed chunk every
@@ -26,11 +27,12 @@ package stealth
 
 // Transport names, as profiles and proofs carry them.
 const (
-	UDP   = "wui-udp"
-	TLS   = "wui-tls"
-	WS    = "wui-ws"
-	Poll  = "wui-poll"
-	Plain = "wui-plain"
+	UDP    = "wui-udp"
+	TLS    = "wui-tls"
+	WS     = "wui-ws"
+	Poll   = "wui-poll"
+	Shaped = "wui-shape"
+	Plain  = "wui-plain"
 )
 
 // Version is the first byte of every sealed header and proof. A later format

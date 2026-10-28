@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Checks internal/stealth/testdata/ws.json, tls.json, plain.json and poll.json
-against docs/reference/stealth.md.
+"""Checks internal/stealth/testdata/ws.json, tls.json, plain.json, poll.json and
+shape.json against docs/reference/stealth.md.
 
 An implementation of the wui-ws, wui-tls and wui-plain proofs and stream chunks of its
 own, written from the specification and from RFC 9180 and not from the Go
@@ -12,7 +12,11 @@ thing that differs. For wui-plain it also reads the token back from the
 vector's Cookie field by the specification's rule, and checks that the token
 opens under no other transport's name. For wui-poll it derives the session's
 id, reads the query of the first later request by the specification's rule,
-and opens a body each way, chunk by chunk behind their lengths.
+and opens a body each way, chunk by chunk behind their lengths. For wui-shape
+it reads the shape and the request's target in their one form, opens the
+request and its answer at the numbers of request 1 and at no other, seals the
+late answer of request 1 itself and compares, and opens the event of a stream
+request at its own number.
 
     python3 scripts/stealth/ws_vectors.py
 
@@ -166,6 +170,83 @@ def poll_query(q: str):
     return (raw, n) if n <= 0xFFFFFFFF else None
 
 
+PER_REQUEST, LATE_INDEX, SHAPED_CHUNKS = 4096, 4095, 4095
+
+
+def shaped_open(key: bytes, n: int, lst: bytes) -> list:
+    """The chunks of a wui-shape list of request n: chunk i at n * 4096 + i,
+    never at index 4095."""
+    chunks = open_body(key, n * PER_REQUEST, lst)
+    assert len(chunks) <= SHAPED_CHUNKS, "a list of more than 4095 chunks"
+    return chunks
+
+
+def url_decode(text: str):
+    """The bytes of base64url without padding in its one form, or None."""
+    if not text or not set(text) <= TOKEN_CHARS or len(text) % 4 == 1:
+        return None
+    raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+    if base64.urlsafe_b64encode(raw).rstrip(b"=").decode() != text:
+        return None  # a bit beyond the bytes
+    return raw if 18 <= len(raw) <= 65536 else None
+
+
+def read_query(target: str, path: str):
+    """A query shape's target: the session id, the number and the list."""
+    req_path, q, query = target.partition("?")
+    if req_path != path or not q:
+        return None
+    sid_n, dot, text = query.rpartition(".")
+    who = poll_query(sid_n) if dot else None
+    data = url_decode(text)
+    if who is None or data is None or len(target) > 4000:
+        return None
+    return who[0], who[1], data
+
+
+def std_event(text: str):
+    """The sealed chunk of an event, standard base64 with padding in its one
+    form, or None."""
+    if not (text.startswith("data: ") and text.endswith("\n\n")):
+        return None
+    b64 = text[6:-2]
+    if not (24 <= len(b64) <= 21356) or len(b64) % 4:
+        return None
+    raw = base64.b64decode(b64, validate=True)
+    if base64.b64encode(raw).decode() != b64 or not (16 <= len(raw) <= 16016):
+        return None
+    return raw
+
+
+def check_shape(v: dict, down: bytes, up: bytes, sid: bytes) -> None:
+    h = bytes.fromhex
+    assert v["shape"] == {
+        "up": {"method": "GET", "in": "query", "limit": 4000, "inflight": 1, "gather": [10, 60]},
+        "down": {"mode": "poll"},
+    }, "the shape is not get-poll written out"
+    got = read_query(v["target"], v["path"])
+    assert got is not None, "the target does not read in its one form"
+    assert got[:2] == (sid, 1), "the target does not name the session and request 1"
+    assert got[2] == h(v["listUp"]), "the target's list is not the request's"
+    for bad in (v["target"] + "=", v["target"] + "&a=1", v["target"].replace("?", "?a=1&", 1), v["target"][:-1] + "_"):
+        assert read_query(bad, v["path"]) is None, f"{bad[-20:]!r} was read"
+    dg = h(v["datagram"])
+    assert shaped_open(up, 1, h(v["listUp"])) == [[dg], []], "request 1 differs"
+    for n in (0, 2):
+        try:
+            shaped_open(up, n, h(v["listUp"]))
+        except Exception:
+            continue
+        raise AssertionError(f"request 1 opened as request {n}")
+    assert shaped_open(down, 1, h(v["listDown"])) == [[]], "the answer is not padding alone"
+    nonce = b"\x00" * 4 + struct.pack("<Q", 1 * PER_REQUEST + LATE_INDEX)
+    late = ChaCha20Poly1305(down).encrypt(nonce, b"\x00" * 64, b"")
+    assert len(late) == 80 and late == h(v["late"]), "the late answer differs"
+    sealed = std_event(v["event"])
+    assert sealed is not None, "the event is not in its one form"
+    assert open_chunk(down, 3 * PER_REQUEST + 2, sealed) == [dg], "the event differs"
+
+
 def info_of(transport: str, anchor: bytes) -> bytes:
     return LABEL + b"proof\x00" + transport.encode() + b"\x00" + anchor
 
@@ -190,7 +271,7 @@ def check(name: str) -> None:
     sk = X25519PrivateKey.from_private_bytes(h(v["transportKey"]))
     r = Recipient(sk, enc, info_of(v["transport"], anchor))
     hello = r.open_first(ct)
-    for other in ("wui-ws", "wui-tls", "wui-plain", "wui-poll"):
+    for other in ("wui-ws", "wui-tls", "wui-plain", "wui-poll", "wui-shape"):
         if other == v["transport"]:
             continue
         try:
@@ -223,6 +304,11 @@ def check(name: str) -> None:
         assert open_body(up, 0, h(v["bodyUp"])) == [[h(v["datagram"])]], "the body up differs"
         assert open_body(down, 0, h(v["bodyDown"])) == [[]], "the body down is not padding alone"
 
+    if v["transport"] == "wui-shape":
+        sid = expand(prk, LABEL + b"stream id", 16)
+        assert sid == h(v["id"]), "the session id differs"
+        check_shape(v, down, up, sid)
+
     print(f"{name} matches the specification")
 
 
@@ -231,6 +317,7 @@ def main() -> int:
     check("tls.json")
     check("plain.json")
     check("poll.json")
+    check("shape.json")
     return 0
 
 

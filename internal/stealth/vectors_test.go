@@ -227,3 +227,129 @@ func checkVector(t *testing.T, name string, v any) {
 		t.Fatalf("the format is not what testdata/%s says; a change to the format is a new Version", name)
 	}
 }
+
+// shapeVector is a wui-shape proof, a chunk each way (as every stream
+// transport has), and the pieces a shaped session adds: the get-poll shape,
+// a request's list of chunks, the query target that carries it, the late
+// answer, and one stream event. testdata/shape.json pins the format and
+// scripts/stealth/ws_vectors.py checks it with an implementation of its own.
+type shapeVector struct {
+	Secret       string    `json:"secret"`
+	Anchor       string    `json:"anchor"`
+	TransportKey string    `json:"transportKey"`
+	Transport    string    `json:"transport"`
+	Timestamp    int64     `json:"timestamp"`
+	Token        string    `json:"token"`
+	Up           string    `json:"up"`
+	Down         string    `json:"down"`
+	Datagram     string    `json:"datagram"`
+	ChunkUp      string    `json:"chunkUp"`
+	ChunkDown    string    `json:"chunkDown"`
+	ID           string    `json:"id"`
+	Shape        shapeJSON `json:"shape"`
+	Path         string    `json:"path"`
+	ListUp       string    `json:"listUp"`
+	Target       string    `json:"target"`
+	ListDown     string    `json:"listDown"`
+	Late         string    `json:"late"`
+	Event        string    `json:"event"`
+}
+
+type shapeJSON struct {
+	Up   shapeJSONUp   `json:"up"`
+	Down shapeJSONDown `json:"down"`
+}
+
+type shapeJSONUp struct {
+	Method   string `json:"method"`
+	In       string `json:"in"`
+	Limit    int    `json:"limit"`
+	Inflight int    `json:"inflight"`
+	Gather   [2]int `json:"gather"`
+}
+
+type shapeJSONDown struct {
+	Mode string `json:"mode"`
+}
+
+func TestTheShapeVectors(t *testing.T) {
+	cryptotest.SetGlobalRandom(t, 6)
+	secret, anchor, priv := Secret{}, Anchor{}, make([]byte, 32)
+	for i := range 32 {
+		secret[i], anchor[i], priv[i] = byte(i), byte(32+i), byte(64+i)
+	}
+	tk, err := ParseTransportKey(base64.StdEncoding.EncodeToString(priv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewProofClient(secret, anchor, Shaped, tk.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, keys, err := c.Token(testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := keepalive()
+
+	// The generic stream chunk each way, at number 0, as on wui-ws.
+	up0, _ := NewStreamSender(keys.Up, NewPadder(0, 0))
+	down0, _ := NewStreamSender(keys.Down, NewPadder(0, 0))
+	cu, err := up0.Seal(nil, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cd, err := down0.Seal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shape, ok := Preset("get-poll")
+	if !ok {
+		t.Fatal("no get-poll preset")
+	}
+	const path = "/assets/sync-90be44f1.js"
+
+	// Request 1, upstream: a chunk with the datagram, then a padding chunk.
+	su, _ := NewShapeSender(keys.Up, NewPadder(0, 0))
+	listUp, err := su.AppendChunk(nil, 1, 0, false, ShapeDataMax, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listUp, err = su.AppendChunk(listUp, 1, 1, false, ShapeDataMax); err != nil {
+		t.Fatal(err)
+	}
+	parts, ok := BuildParts(shape, path, ShapeQuery(keys.ID, 1), listUp)
+	if !ok {
+		t.Fatal("the request is over its limit")
+	}
+
+	// The answer to request 1 is padding alone; then the late answer of
+	// request 1, and one stream event carrying the datagram.
+	sd, _ := NewShapeSender(keys.Down, NewPadder(0, 0))
+	listDown, err := sd.AppendChunk(nil, 1, 0, false, ShapeDataMax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := sd.LateAnswer(1)
+	ev, err := sd.SealEvent(nil, 3, 2, false, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := SseEvent(ev)
+
+	h := hex.EncodeToString
+	got := shapeVector{
+		Secret: h(secret[:]), Anchor: h(anchor[:]), TransportKey: h(priv),
+		Transport: Shaped, Timestamp: testNow.Unix(), Token: token,
+		Up: h(keys.Up), Down: h(keys.Down), Datagram: h(d),
+		ChunkUp: h(cu), ChunkDown: h(cd), ID: h(keys.ID[:]),
+		Shape: shapeJSON{
+			Up:   shapeJSONUp{shape.Method, shape.Place.Word(), shape.Limit, shape.Inflight, [2]int{int(shape.Gather.Lo), int(shape.Gather.Hi)}},
+			Down: shapeJSONDown{shape.Mode.Word()},
+		},
+		Path: path, ListUp: h(listUp), Target: parts.Target,
+		ListDown: h(listDown), Late: h(late), Event: string(event),
+	}
+	checkVector(t, "shape.json", got)
+}

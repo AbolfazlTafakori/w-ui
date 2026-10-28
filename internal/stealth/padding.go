@@ -52,6 +52,21 @@ func (p *Padder) Next(handshake bool) int {
 	return uniform(min(p.base, p.normal), p.normal)
 }
 
+// DrawWithin is the padding for the next chunk, clamped so a chunk whose
+// items use used bytes still fits room bytes of plaintext: wui-shape draws
+// within what is left of a request's limit, so a chunk whose items fit always
+// fits. handshake forces wide, as Next does. room must be at least used.
+func (p *Padder) DrawWithin(handshake bool, used, room int) int {
+	pad := p.Next(handshake)
+	if used+pad > room {
+		pad = room - used
+	}
+	if pad < 0 {
+		pad = 0
+	}
+	return pad
+}
+
 // Wide is a wide draw that is not counted among the direction's first
 // chunks: the padding of a UDP opening, which is always wide and is not one of
 // the data packets the first sixteen are counted over.
