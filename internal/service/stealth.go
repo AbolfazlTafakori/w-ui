@@ -63,14 +63,14 @@ func EnsureStealthSecrets(ctx context.Context, db *gorm.DB) error {
 // checkWireGuardTransport refuses a WireGuard transport there is none of.
 func checkWireGuardTransport(name string) error {
 	switch name {
-	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPlain:
+	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPoll, model.TransportWuiPlain:
 		return nil
 	}
-	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws or wui-plain, not %q", name)
+	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws, wui-poll or wui-plain, not %q", name)
 }
 
 // WSSettings is the rest of a WireGuard tunnel's transport, wui-tls's,
-// wui-ws's or wui-plain's, as the form sends it. model.StealthParams says
+// wui-ws's, wui-poll's or wui-plain's, as the form sends it. model.StealthParams says
 // what each is.
 type WSSettings struct {
 	Host         string `json:"host"`
@@ -102,7 +102,7 @@ func (w *WSSettings) apply(p *model.StealthParams) {
 	p.UsePanelCert, p.ProxyProtocol = w.UsePanelCert, w.ProxyProtocol
 }
 
-// wsKeyDays is how long a wui-ws or wui-tls transport key is used before
+// wsKeyDays is how long a wui-ws, wui-poll or wui-tls transport key is used before
 // the next is drawn. The one before is still taken until then, so an app that fetches
 // its profile at least that often never meets a key it does not know.
 const wsKeyDays = 30
@@ -188,7 +188,7 @@ func newWSKey() (string, error) {
 	return k.String(), nil
 }
 
-// checkWS checks wui-tls's, wui-ws's or wui-plain's settings and fills
+// checkWS checks wui-tls's, wui-ws's, wui-poll's or wui-plain's settings and fills
 // what the panel draws: a path when none was given, wui-plain's cookie
 // name, and the transport's key when it has none. Whatever they use is
 // cleared from a transport that is none of them, what a front needs from
@@ -333,7 +333,7 @@ func validHeaderName(h string) bool {
 	return h != ""
 }
 
-// EnsureStealthKeys gives every wui-tls, wui-ws and wui-plain transport
+// EnsureStealthKeys gives every wui-tls, wui-ws, wui-poll and wui-plain transport
 // this panel manages a key when it has none, and its next key when the one it has is
 // keyDays old, keeping the one before. A tunnel another panel manages is
 // that panel's to keep, and its keys arrive with it.
@@ -423,7 +423,7 @@ func (s *Interfaces) checkStealth(ctx context.Context, nodeID, selfID uint, mode
 }
 
 // plainApart refuses a wui-plain transport whose front name or path is a
-// covered transport's -- wui-tls's or wui-ws's -- and a covered one whose
+// covered transport's -- wui-tls's, wui-ws's or wui-poll's -- and a covered one whose
 // are a wui-plain's, on any tunnel of any server: the network reads
 // wui-plain's name and path in the clear, and one they shared would tie the
 // covered transport to it.

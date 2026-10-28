@@ -1,5 +1,5 @@
 ---
-description: "The stealth transports: wui-udp, WireGuard in UDP packets that look like random bytes; wui-ws, WireGuard as WebSocket behind a web server or a CDN; wui-tls, the same with the gateway as the web server itself; and wui-plain, the same over plain HTTP where TLS itself is cut; the keys, the packets, the server's rules, and what a client must do."
+description: "The stealth transports: wui-udp, WireGuard in UDP packets that look like random bytes; wui-ws, WireGuard as WebSocket behind a web server or a CDN; wui-poll, the same as HTTP requests for a CDN without WebSocket; wui-tls, the same with the gateway as the web server itself; and wui-plain, the same over plain HTTP where TLS itself is cut; the keys, the packets, the server's rules, and what a client must do."
 ---
 
 # Stealth transport: wui-udp
@@ -12,7 +12,7 @@ This page is the specification. The format is in `internal/stealth`, the server 
 
 ## On the panel
 
-A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **wui-udp** is WireGuard as it is on the tunnel's port and wui-udp beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `wui-udp`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. **wui-ws**, WebSocket behind a web server or a CDN, is the third choice, and **wui-plain**, the same over plain HTTP, the fourth, each in a part of its own below. The other stealth transports join the same menu as they are built.
+A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **wui-udp** is WireGuard as it is on the tunnel's port and wui-udp beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `wui-udp`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. **wui-ws**, WebSocket behind a web server or a CDN, **wui-poll**, the same as HTTP requests for a CDN without WebSocket, **wui-tls**, the gateway as the web server itself, and **wui-plain**, WebSocket over plain HTTP, are the others, each in a part of its own below.
 
 The tunnel itself does not change. Its peers, its port and every `.conf` handed out stay as they were; the panel only starts a gateway beside it, gives it the devices the tunnel carries on every pass, and stops it when the tunnel no longer wants one. A device taken off the tunnel, out of its allowance or switched off, loses its gateway sessions with its peer. The online indicator and the sharing report see a device at its own address, not the gateway's.
 
@@ -301,6 +301,94 @@ A stream cannot be replayed: its chunks open only in order, under a key of this 
 
 The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port, over `ws://` or `wss://`, with the address it dials apart from the name it gives.
 
+# Stealth transport: wui-poll
+
+wui-poll is wui-ws for a CDN that will not carry WebSocket. Behind the same front, the tunnel's datagrams travel in the bodies of ordinary POST requests to the transport's path and in the bodies of their answers: the device asks, one request at a time, and the gateway answers with whatever waits for it. To the network and to the CDN it is a page fetching from its own site. A request that proves nothing goes to the decoy as it came, body and all, exactly as on wui-ws.
+
+The keys, the chunk, its padding and the proof are wui-ws's, above, under wui-poll's own name. The format is in `internal/stealth/poll.go`, the server and the reference client in `internal/stealthgw` (`poll.go`, `pollclient.go`). `internal/stealth/testdata/poll.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own.
+
+## On the panel
+
+Choose **wui-poll** as a standard WireGuard tunnel's **Transport**. Its fields are wui-ws's: the wui-poll port, the front's host and port, the path, the decoy site, the trusted fronts and their visitor header, with the same rules and defaults. With no trusted front the gateway listens on 127.0.0.1 alone and its port stays shut in the firewall. The transport's key pair is its own, drawn when wui-poll is chosen and turned over every 30 days with the one before still taken. A tunnel switched to or from wui-poll carries no path or key across, and a wui-plain front never shares a wui-poll front's name or path.
+
+nginx in front on the same machine, the transport on port 28082:
+
+```nginx
+location /41yg3dsw2u5h97g50uvl {
+    proxy_pass http://127.0.0.1:28082;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_read_timeout 30s;
+}
+```
+
+A body is at most 64 KiB each way, inside nginx's default `client_max_body_size`. Behind a CDN, the CDN must pass POST bodies and the query string, must not cache the path, and must not change the body; most do none of that to a POST. Turning off buffering only shortens the wait: a front that buffers works too.
+
+### The profile
+
+```json
+{"type": "wui-poll", "endpoints": ["cdn.example.com:443"], "url": "https://cdn.example.com/41yg3dsw2u5h97g50uvl",
+ "key": "base64", "secret": "base64", "mtu": 1420}
+```
+
+As wui-ws's, with `https://`.
+
+## The requests
+
+The first request of a session is the proof: `POST <path>?<token>`, the token wui-ws's with `wui-poll` in its `info`. Its session has one more value, besides its keys:
+
+```
+id = HKDF-Expand(prk, L | "stream id", 16)
+```
+
+Every later request names the session by its id and its own number:
+
+```
+POST <path>?<base64url(id)>.<n>
+```
+
+The id is 22 characters of base64url without padding, in the one text that names 16 bytes, and `n` is decimal, 1 to 4 294 967 295, with no leading zero: 1 for the first request after the proof, one more for each request the gateway took. The id is no key: knowing it opens nothing.
+
+Every request, the proof included, has a body, exactly one `Content-Length` from 18 to 65 536, and no `Transfer-Encoding`. Every answer of the gateway is `200`, `Content-Type: application/octet-stream`, a `Content-Length`, and a body. A body, either way, is the session's sealed chunks, each behind its length, and never empty:
+
+```
+body = [be16(len) | sealed chunk] ...      1 or more, 18 to 65 536 bytes in all
+```
+
+A chunk is wui-ws's: sealed under its direction's key and the nonce `0x00000000 | le64(n)`, `n` running on from body to body in each direction, from 0. A side with nothing to send sends one padding-only chunk. The padding is wui-ws's.
+
+A body is taken whole or not at all. Every chunk must open at the next numbers before anything in it is used, and the numbers move on only when the body is taken. A body in which any chunk does not open changes nothing. A body whose every chunk opens and one does not parse can only be the peer's own, and ends the session.
+
+## What the server does with a request
+
+Whatever is not a device's goes to the decoy as it came, body included, and a counter says why.
+
+1. From an address that is neither a trusted front nor the loopback, a path other than the transport's, compared in constant time, not a POST, or a body framed otherwise than above: the decoy.
+1. A query that reads as `<id>.<n>`: the id must be a session of this gateway, the session must have no request in flight, and `n` must be one more than the last request taken, or the same number again. Otherwise the decoy, and the session is not touched. At most 4 bodies under one id are read at once.
+1. Any other query is a proof, judged as on wui-ws, steps 3 to 7, with at most 2 wui-poll sessions per device. A proof that is taken opens a pending session, whatever comes next.
+1. The body must arrive whole within 10 seconds. A late one goes to the decoy, which is given what arrives.
+1. A repeat of the last request taken, with the same body to the byte, gets the answer the gateway kept: a front may send a request twice. A repeat with another body is the decoy's.
+1. Open the body at the session's next numbers. A body that does not open: the decoy, and the session is as it was, so whoever learns an id can send what they like under it and change nothing. A body that opens and holds a chunk that does not parse ends the session, and the request goes to the decoy.
+1. On the proof's request, the first datagram must be a handshake initiation of the session's device, or a keepalive, as on wui-ws. Every datagram is checked and handed to the tunnel as on wui-ws.
+1. Answer. The proof's request is held until the session is live, since nothing is sent on a pending session; a session that never is ends after 10 seconds, and its request goes to the decoy. Any other request is answered as soon as something waits for the device, or after a hold of 250 ms with a padding-only chunk. The answer holds everything that waits and fits; what does not fit leads the next answer. It is kept before it is written, for a repeat.
+
+A session no request was taken on for 60 seconds ends. There are no echoes: a client's polls are the activity, and their answers the sign of life. A lone keepalive from the tunnel is held U(0..3 s), as on wui-ws.
+
+## What a client does
+
+- One request in flight. It sends at once when it has something to send and no request is in flight. With nothing to send it polls after a wait that starts at 100 ms, grows by half after every exchange that carried nothing either way up to 5 seconds, starts again after one that carried something, and is spread by a number drawn from 0.75 to 1.25; never more than a minute.
+- It opens a session with a WireGuard handshake initiation, or a keepalive, in the proof's body, and sends the proof once: a front's repeat of it is a spent proof. Anything but a `200` with a body that opens ends the attempt; a failed one is tried again after 250 ms, the wait doubling up to 8 seconds.
+- A later request whose connection ends before its answer is whole is sent again, the same bytes on a new connection, up to 3 times. With no answer within 10 seconds, or an answer that is not a `200` with a body that opens, the session is over.
+- A connection is kept from one request to the next, unless the answer says `Connection: close` or the front sent anything unasked between two answers.
+- It opens a new session before `n` would pass 4 294 967 295.
+- Its request is a browser's fetch from a page of the same site: `Content-Type: application/octet-stream`, and the `Origin`, `Referer` and `Sec-Fetch-*` fields of that fetch. An app sends its own platform's browser's fields, in that browser's order. An answer with a `Content-Encoding` is refused.
+
+The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port, over `https://`, or `http://` for a test, with the address it dials apart from the name it gives.
+
 # Stealth transport: wui-tls
 
 wui-tls is wui-ws without a front: the gateway is the web server, on a port of its own, and ends TLS itself. With nobody in front to tell a device from a visitor, it decides from the bytes alone, as they arrive, and whoever is not a device is handed to the operator's own site -- every byte they sent, as they sent it, and from then on both ways with nothing read or made by the gateway. Devices trust the gateway's certificate by its pin, so no domain or authority is needed.
@@ -391,7 +479,7 @@ The listening rules are wui-ws's: on 127.0.0.1 alone and shut in the firewall wi
 
 The transport has a key pair of its own, drawn when wui-plain is chosen, and turned over every **7 days** with the one before still taken, where a covered transport's lasts 30: every proof wui-plain opens crossed the network in the clear, and a key that leaked would open the hellos recorded under it. A tunnel switched from one transport to another draws a new key, path and cookie, and never carries over the old transport's path, even if it is sent back: nothing wui-plain showed in the clear goes on to a covered transport, nor the other way round. The private keys never leave the panel by the API; a remote node is given them with the tunnel. The cookie's name is no secret, and the form shows it.
 
-A wui-plain front's name and path are read in the clear, so the panel refuses a wui-plain whose host or path is a wui-ws transport's, on any tunnel of any server, and a wui-ws whose are a wui-plain's: one they shared would tie the covered transport to the exposed one. Two wui-plain transports may share a front, on paths of their own.
+A wui-plain front's name and path are read in the clear, so the panel refuses a wui-plain whose host or path is a covered transport's -- wui-tls's, wui-ws's or wui-poll's -- on any tunnel of any server, and a covered one whose are a wui-plain's: one they shared would tie the covered transport to the exposed one. Two wui-plain transports may share a front, on paths of their own.
 
 nginx on port 80 of the same machine, the transport on port 28082 and the site where it was:
 

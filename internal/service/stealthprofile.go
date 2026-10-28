@@ -60,9 +60,10 @@ type WUITransport struct {
 	// key, which every key is bound to, is the one in the file.
 	Secret string `json:"secret"`
 	MTU    int    `json:"mtu"`
-	// URL is a stream transport's address, wss:// with its path, or ws://
-	// for wui-plain: the name TLS and the request give, which may differ
-	// from the endpoint connected to. An address in it is sent as no name.
+	// URL is a stream transport's address, wss:// with its path, https://
+	// for wui-poll or ws:// for wui-plain: the name TLS and the request
+	// give, which may differ from the endpoint connected to. An address in
+	// it is sent as no name.
 	URL string `json:"url,omitempty"`
 	// Pins are wui-tls's: the SHA-256 of the server certificate's
 	// SubjectPublicKeyInfo, standard base64. With SelfSigned the server is
@@ -114,7 +115,7 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 				Secret: acc.StealthSecret, MTU: max(iface.MTU, 0),
 			})
 		}
-		if (iface.StealthTLS() != 0 || iface.StealthWS() != 0 || iface.StealthPlain() != 0) && acc.StealthSecret != "" {
+		if (iface.StealthTLS() != 0 || iface.StealthWS() != 0 || iface.StealthPoll() != 0 || iface.StealthPlain() != 0) && acc.StealthSecret != "" {
 			if wt, ok := wsTransport(iface.Stealth.V); ok {
 				wt.Secret, wt.MTU = acc.StealthSecret, max(iface.MTU, 0)
 				t.Transports = append(t.Transports, wt)
@@ -141,7 +142,7 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 	}, nil
 }
 
-// wsTransport is a tunnel's wui-tls, wui-ws or wui-plain as a profile gives
+// wsTransport is a tunnel's wui-tls, wui-ws, wui-poll or wui-plain as a profile gives
 // it, but the device's own secret: where devices reach it and the name TLS
 // gives, the transport's current public key, wui-plain's cookie, and
 // wui-tls's pin. False when it has no key or certificate yet.
@@ -155,6 +156,8 @@ func wsTransport(p model.StealthParams) (WUITransport, bool) {
 	var pins []string
 	selfSigned := false
 	switch p.Transport {
+	case model.TransportWuiPoll:
+		scheme, name = "https://", stealth.Poll
 	case model.TransportWuiPlain:
 		if p.Cookie == "" {
 			return WUITransport{}, false

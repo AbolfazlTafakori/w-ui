@@ -236,17 +236,18 @@ type OpenConnectParams struct {
 // The zero value is plain UDP.
 type StealthParams struct {
 	// Transport is the stealth transport, by its name: TransportWuiUDP,
-	// TransportWuiTLS, TransportWuiWS or TransportWuiPlain.
+	// TransportWuiTLS, TransportWuiWS, TransportWuiPoll or TransportWuiPlain.
 	Transport string `json:"transport,omitempty"`
 	// Port is where it listens.
 	Port int `json:"port,omitempty"`
 
-	// The rest is wui-ws's and wui-plain's: WebSocket behind the operator's
-	// own web server or a CDN, which hands the gateway plain HTTP on Port.
-	// In front of wui-ws it ends TLS; wui-plain has none.
+	// The rest is wui-ws's, wui-poll's and wui-plain's: WebSocket, or on
+	// wui-poll POST requests, behind the operator's own web server or a CDN,
+	// which hands the gateway plain HTTP on Port. In front of wui-ws and
+	// wui-poll it ends TLS; wui-plain has none.
 
-	// Host is the front's name: what devices connect to, and on wui-ws what
-	// TLS names.
+	// Host is the front's name: what devices connect to, and on wui-ws and
+	// wui-poll what TLS names.
 	Host string `json:"host,omitempty"`
 	// FrontPort is the front's port; 443 when zero, or 80 on wui-plain.
 	FrontPort int `json:"frontPort,omitempty"`
@@ -318,7 +319,7 @@ func (p StealthParams) ServedCert() (cert, key string) {
 }
 
 // Proven says whether the transport opens with a proof sealed to its own
-// key: wui-tls, wui-ws or wui-plain.
+// key: wui-tls, wui-ws, wui-poll or wui-plain.
 func (p StealthParams) Proven() bool {
 	return p.Transport == TransportWuiTLS || p.Fronted()
 }
@@ -336,9 +337,9 @@ func (p StealthParams) FrontPortOr() int {
 }
 
 // Fronted says whether the transport is behind the operator's web server:
-// wui-ws or wui-plain.
+// wui-ws, wui-poll or wui-plain.
 func (p StealthParams) Fronted() bool {
-	return p.Transport == TransportWuiWS || p.Transport == TransportWuiPlain
+	return p.Transport == TransportWuiWS || p.Transport == TransportWuiPoll || p.Transport == TransportWuiPlain
 }
 
 // WireGuard's transports, as a tunnel's form and the API name them. Plain
@@ -349,6 +350,7 @@ const (
 	TransportWuiUDP   = "wui-udp"
 	TransportWuiTLS   = "wui-tls"
 	TransportWuiWS    = "wui-ws"
+	TransportWuiPoll  = "wui-poll"
 	TransportWuiPlain = "wui-plain"
 )
 
@@ -358,7 +360,7 @@ func TransportNetwork(name string) string {
 	switch name {
 	case TransportWuiUDP:
 		return "udp"
-	case TransportWuiTLS, TransportWuiWS, TransportWuiPlain:
+	case TransportWuiTLS, TransportWuiWS, TransportWuiPoll, TransportWuiPlain:
 		return "tcp"
 	}
 	return ""

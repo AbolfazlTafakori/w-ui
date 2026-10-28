@@ -71,6 +71,30 @@ describe('wui-ws in a tunnel’s form', () => {
   })
 })
 
+describe('wui-poll in a tunnel’s form', () => {
+  const stealth = {
+    transport: 'wui-poll', port: 8085, host: 'cdn.example.com', path: '/media/7f3a9c2e1b',
+    origin: 'http://127.0.0.1:8080', proxies: '198.51.100.0/24', keyAt: 7,
+  }
+
+  it('is behind a front, with wui-ws’s settings', () => {
+    expect(fronted('wui-poll')).toBe(true)
+    expect(proven('wui-poll')).toBe(true)
+    expect(wsOf(stealth).host).toBe('cdn.example.com')
+    expect(wsOf(stealth).cookie).toBe('')
+  })
+
+  it('travels in an export without its key', () => {
+    const e = exportable({ name: 'wg0', protocol: 'wireguard', stealth: { ...stealth, key: 'secret', previousKey: 'older' } })
+    expect(e.transport).toBe('wui-poll')
+    expect(e.transportPort).toBe(8085)
+    expect(e.transportWs.path).toBe('/media/7f3a9c2e1b')
+    expect(JSON.stringify(e)).not.toContain('secret')
+    expect(JSON.stringify(e)).not.toContain('older')
+    expect(transportTag({ protocol: 'wireguard', stealth })).toBe('UDP + wui-poll')
+  })
+})
+
 describe('wui-plain in a tunnel’s form', () => {
   const stealth = {
     transport: 'wui-plain', port: 8082, host: 'plain.example.com', path: '/static/a8d0c1e9f4',

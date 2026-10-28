@@ -277,6 +277,14 @@ func (i *Interface) StealthWS() int {
 	return 0
 }
 
+// StealthPoll is the port wui-poll takes for this tunnel, or zero.
+func (i *Interface) StealthPoll() int {
+	if name, port := i.StealthTransport(); name == TransportWuiPoll {
+		return port
+	}
+	return 0
+}
+
 // StealthPlain is the port wui-plain takes for this tunnel, or zero.
 func (i *Interface) StealthPlain() int {
 	if name, port := i.StealthTransport(); name == TransportWuiPlain {
@@ -287,13 +295,14 @@ func (i *Interface) StealthPlain() int {
 
 // StealthOpen says whether this tunnel's stealth transport is reached from
 // outside the machine, so its port is let through the firewall: wui-udp
-// always, wui-ws and wui-plain only when a front elsewhere is trusted to
-// reach them. wui-tls is the server itself, always reached from outside.
+// always, wui-ws, wui-poll and wui-plain only when a front elsewhere is
+// trusted to reach them. wui-tls is the server itself, always reached from
+// outside.
 func (i *Interface) StealthOpen() bool {
 	switch name, _ := i.StealthTransport(); name {
 	case TransportWuiUDP, TransportWuiTLS:
 		return true
-	case TransportWuiWS, TransportWuiPlain:
+	case TransportWuiWS, TransportWuiPoll, TransportWuiPlain:
 		return strings.TrimSpace(i.Stealth.V.Proxies) != ""
 	}
 	return false

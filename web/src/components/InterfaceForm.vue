@@ -73,7 +73,7 @@ const form = ref(
         // beside it on a port of its own.
         transport: props.iface.protocol === 'wireguard' ? props.iface.stealth?.transport || 'udp' : props.iface.openvpn?.transport || 'udp',
         transportPort: props.iface.stealth?.port || '',
-        // wui-tls's, wui-ws's or wui-plain's name, path and decoy; the
+        // wui-tls's, wui-ws's, wui-poll's or wui-plain's name, path and decoy; the
         // transport's keys never leave the server.
         ws: wsOf(props.iface.stealth),
         psk: props.iface.l2tp?.psk || '',
@@ -200,14 +200,15 @@ async function drawAwg(level = form.value.awgLevel) {
   }
 }
 const showsAwg = computed(() => isWireGuard.value && form.value.mode === 'amnezia')
-// WireGuard's transport menu: plain UDP, or wui-udp, wui-tls, wui-ws or
-// wui-plain beside it. The stealth transports read standard WireGuard only;
+// WireGuard's transport menu: plain UDP, or wui-udp, wui-tls, wui-ws,
+// wui-poll or wui-plain beside it. The stealth transports read standard WireGuard only;
 // AmneziaWG's packets are its own.
 const wgTransports = computed(() => isWireGuard.value && form.value.mode !== 'amnezia')
 const showsTransport = computed(() => !xrayNode.value && (isOpenVPN.value || wgTransports.value))
 const stealthChosen = computed(() => wgTransports.value && form.value.transport !== 'udp')
-// wui-tls, wui-ws and wui-plain share a name, a path and a decoy. wui-ws and
-// wui-plain are behind the operator's front and have its fields too;
+// wui-tls, wui-ws, wui-poll and wui-plain share a name, a path and a decoy.
+// wui-ws, wui-poll and wui-plain are behind the operator's front and have
+// its fields too; wui-poll is wui-ws's settings for a CDN without WebSocket;
 // wui-plain has no TLS, so its port is 80, its decoy is required, and its
 // token travels in a cookie of its own. wui-tls is the server itself, on its
 // own port, with a decoy that must be an http:// address and a certificate.
@@ -215,6 +216,7 @@ const wsChosen = computed(() => stealthChosen.value && proven(form.value.transpo
 const frontChosen = computed(() => stealthChosen.value && fronted(form.value.transport))
 const plainChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-plain')
 const tlsChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-tls')
+const pollChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-poll')
 // Whose certificate a saved wui-tls tunnel serves, when it is still the one
 // shown.
 const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'wui-tls' ? props.iface.stealth?.certSource || '' : ''))
@@ -237,6 +239,7 @@ const transportHint = computed(() => {
   if (isWireGuard.value) {
     if (form.value.transport === 'wui-tls') return t('interface.transportWuiTlsHint')
     if (form.value.transport === 'wui-ws') return t('interface.transportWuiWsHint')
+    if (form.value.transport === 'wui-poll') return t('interface.transportWuiPollHint')
     if (form.value.transport === 'wui-plain') return t('interface.transportWuiPlainHint')
     return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
   }
@@ -569,6 +572,7 @@ defineExpose({ showError })
                       <option value="wui-udp">{{ t('interface.transportWuiUdp') }}</option>
                       <option value="wui-tls">{{ t('interface.transportWuiTls') }}</option>
                       <option value="wui-ws">{{ t('interface.transportWuiWs') }}</option>
+                      <option value="wui-poll">{{ t('interface.transportWuiPoll') }}</option>
                       <option value="wui-plain">{{ t('interface.transportWuiPlain') }}</option>
                     </template>
                     <template v-else>
@@ -583,8 +587,8 @@ defineExpose({ showError })
             <div v-if="stealthChosen" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport-port">
-                  {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
-                  <HelpTip :text="tlsChosen ? t('interface.transportPortTlsHint') : plainChosen ? t('interface.transportPortPlainHint') : wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
+                  {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : pollChosen ? t('interface.transportPortPoll') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
+                  <HelpTip :text="tlsChosen ? t('interface.transportPortTlsHint') : plainChosen ? t('interface.transportPortPlainHint') : pollChosen ? t('interface.transportPortPollHint') : wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
                 </label>
                 <label class="ainput number" :class="{ invalid: fieldName === 'transportPort' }">
                   <input id="if-transport-port" v-model="form.transportPort" data-field="transportPort" type="number" min="1" max="65535" class="ltr" @input="clearError('transportPort')" />
@@ -594,10 +598,11 @@ defineExpose({ showError })
             </div>
           </div>
 
-          <!-- wui-tls, wui-ws and wui-plain: the name devices reach, the
-               path they send on, and the site every stranger sees. The path
-               is drawn when left empty; the operator's web server needs it,
-               so it shows once saved. wui-ws and wui-plain add their front's
+          <!-- wui-tls, wui-ws, wui-poll and wui-plain: the name devices
+               reach, the path they send on, and the site every stranger sees.
+               The path is drawn when left empty; the operator's web server
+               needs it, so it shows once saved. wui-ws, wui-poll and
+               wui-plain add their front's
                settings, wui-plain its cookie's name, and wui-tls whose
                certificate it serves. -->
           <template v-if="wsChosen">
@@ -624,7 +629,7 @@ defineExpose({ showError })
             <div class="arow16">
               <div class="acol12">
                 <div class="aform-item">
-                  <label class="aform-label" for="if-ws-path">{{ t('interface.wsPath') }} <HelpTip :text="t('interface.wsPathHint')" /></label>
+                  <label class="aform-label" for="if-ws-path">{{ t('interface.wsPath') }} <HelpTip :text="pollChosen ? t('interface.pollPathHint') : t('interface.wsPathHint')" /></label>
                   <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.path' }">
                     <input id="if-ws-path" v-model.trim="form.ws.path" data-field="transportWs.path" class="ltr" :placeholder="t('interface.wsPathDrawn')" @input="clearError('transportWs.path')" />
                   </label>

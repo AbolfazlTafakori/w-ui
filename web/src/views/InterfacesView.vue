@@ -177,7 +177,7 @@ function toggleOne(id, checked) {
 }
 
 // A WireGuard tunnel's transport as the form asks for it: plain UDP, or a
-// stealth one and its port, and wui-tls's, wui-ws's or wui-plain's name, path and
+// stealth one and its port, and wui-tls's, wui-ws's, wui-poll's or wui-plain's name, path and
 // decoy. AmneziaWG has only plain UDP.
 function wgTransportOf(input) {
   if (input.mode === 'amnezia' || !input.transport || input.transport === 'udp') return { transport: 'udp', transportPort: 0 }

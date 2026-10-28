@@ -186,6 +186,42 @@ func TestAPlainGatewayRunsBesideItsTunnel(t *testing.T) {
 	}
 }
 
+// A tunnel with wui-poll has a poll gateway beside it, with a replay file
+// of its own, on the loopback while no front elsewhere is trusted.
+func TestAPollGatewayRunsBesideItsTunnel(t *testing.T) {
+	r := &Reconciler{dataDir: t.TempDir(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	defer r.StopGateways()
+	server, _ := wgkey.NewPair()
+	device, _ := wgkey.NewPair()
+	secret, _ := stealth.NewSecret()
+	key, _ := stealth.NewTransportKey()
+	p := model.StealthParams{Transport: model.TransportWuiPoll, Port: freeTCP(t), Host: "poll.example", Path: "/a1b2c3d4e5f6g7", Key: key.String()}
+	iface := model.Interface{ID: 11, Name: "wg3", Protocol: model.ProtocolWireGuard, ListenPort: 51823, MTU: 1420,
+		PrivateKey: server.Private.String(), Stealth: model.JSON(p)}
+	d := &desired{interfaces: []model.Interface{iface}, perIface: map[uint][]backend.DesiredAccount{
+		11: {{ID: 1, PublicKey: device.Public.String(), StealthSecret: secret.String()}},
+	}}
+
+	r.keepStealth(d)
+	first := r.gws.running[11]
+	gw, ok := first.gw.(*stealthgw.PollGateway)
+	if !ok || gw.Stats().Devices != 1 {
+		t.Fatalf("no poll gateway, or not with the device: %T", first.gw)
+	}
+	if a := gw.Addr().(*net.TCPAddr); !a.IP.IsLoopback() {
+		t.Fatalf("with no front elsewhere the gateway listens at %s", a)
+	}
+	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "11.wui-poll.replay" {
+		t.Fatalf("the replay file is %s", got)
+	}
+	p.Path = "/z9y8x7w6v5u4t3"
+	d.interfaces[0].Stealth = model.JSON(p)
+	r.keepStealth(d)
+	if r.gws.running[11] == first || r.gws.running[11].gw == nil {
+		t.Fatal("a new path did not start the gateway again")
+	}
+}
+
 // wui-tls's gateway is the server itself, on every address; a renewed
 // certificate is handed to it as it runs, so no session ends for it.
 func TestATLSGatewayTakesARenewedCertificateWithoutStopping(t *testing.T) {

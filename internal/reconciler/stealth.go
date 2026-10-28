@@ -24,7 +24,8 @@ import (
 // A WireGuard tunnel with a stealth transport on has a gateway beside it, on
 // a port of its own, that hands what it unwraps to the tunnel's own port on
 // the loopback: wui-udp's on UDP, wui-tls's on TCP as the server itself,
-// wui-ws's and wui-plain's on TCP behind the operator's web server or CDN.
+// wui-ws's, wui-poll's and wui-plain's on TCP behind the operator's web
+// server or CDN.
 // The gateway is the panel's, like the tunnel's peers: started when the
 // tunnel wants one, given the devices the tunnel carries on every pass,
 // restarted when what it was started with changes, and stopped when the
@@ -149,6 +150,8 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 		}
 	case model.TransportWuiWS:
 		gw, err = r.newWSGateway(iface, priv)
+	case model.TransportWuiPoll:
+		gw, err = r.newPollGateway(iface, priv)
 	case model.TransportWuiPlain:
 		gw, err = r.newPlainGateway(iface, priv)
 	default:
@@ -265,6 +268,16 @@ func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthg
 		return nil, err
 	}
 	return stealthgw.NewStream(cfg)
+}
+
+// newPollGateway is wui-poll's gateway: wui-ws's settings, the tunnel's
+// datagrams in POST requests.
+func (r *Reconciler) newPollGateway(iface model.Interface, priv []byte) (*stealthgw.PollGateway, error) {
+	cfg, err := r.streamConfig(iface, priv)
+	if err != nil {
+		return nil, err
+	}
+	return stealthgw.NewPoll(stealthgw.PollConfig{StreamConfig: cfg})
 }
 
 // newPlainGateway is wui-plain's gateway: wui-ws's, with its cookie.
