@@ -131,6 +131,7 @@ type StreamGateway struct {
 	sources  map[netip.Addr]*bucket
 	behind   map[string]netip.Addr               // a session socket's address -> its visitor
 	polls    map[[stealth.PollIDLen]byte]*stream // wui-poll's sessions by their id
+	shapes   map[[stealth.PollIDLen]byte]*stream // wui-shape's sessions by their id
 	askLimit uint64
 
 	stats    counters
@@ -207,7 +208,7 @@ func newStreamGateway(cfg StreamConfig, transport string) (*StreamGateway, error
 		proxies: cfg.Proxies, header: cfg.ClientHeader,
 		devices: map[[32]byte]*streamDevice{}, streams: map[*stream]struct{}{},
 		sources: map[netip.Addr]*bucket{}, behind: map[string]netip.Addr{},
-		polls: map[[stealth.PollIDLen]byte]*stream{}, perDevice: deviceStreams,
+		polls: map[[stealth.PollIDLen]byte]*stream{}, shapes: map[[stealth.PollIDLen]byte]*stream{}, perDevice: deviceStreams,
 		wake: make(chan struct{}, 1),
 	}
 	if len(g.proxies) == 0 {
@@ -729,6 +730,7 @@ type stream struct {
 	recv    *stealth.StreamReceiver
 	send    *stealth.StreamSender // the writer's alone, or the request in flight's
 	poll    *pollSession          // wui-poll's, nil on the others
+	shape   *shapeSession         // wui-shape's, nil on the others
 
 	out chan []byte // datagrams for the client; nil is padding alone
 	ctl chan []byte // pong payloads
@@ -759,6 +761,9 @@ func (s *stream) quietSince() time.Time {
 	if s.poll != nil {
 		return time.Unix(0, s.poll.last.Load())
 	}
+	if s.shape != nil {
+		return time.Unix(0, s.shape.last.Load())
+	}
 	return time.Unix(0, s.lastActive.Load())
 }
 
@@ -766,6 +771,9 @@ func (s *stream) quietSince() time.Time {
 func (s *stream) idleFor() time.Duration {
 	if s.poll != nil {
 		return pollIdle
+	}
+	if s.shape != nil {
+		return shapeIdle
 	}
 	return streamIdle
 }
@@ -895,6 +903,9 @@ func (s *stream) finish() {
 			delete(g.behind, s.wg.LocalAddr().String())
 			if s.poll != nil && g.polls[s.poll.id] == s {
 				delete(g.polls, s.poll.id)
+			}
+			if s.shape != nil && g.shapes[s.shape.id] == s {
+				delete(g.shapes, s.shape.id)
 			}
 			if prev == statePending {
 				s.dev.pending--

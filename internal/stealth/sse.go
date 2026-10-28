@@ -3,6 +3,7 @@ package stealth
 import (
 	"encoding/base64"
 	"strconv"
+	"time"
 )
 
 // The wui-shape stream.
@@ -27,6 +28,9 @@ import (
 
 // Stream limits.
 const (
+	// SseLifeMax is how long the gateway lets a stream run before it ends
+	// it itself.
+	SseLifeMax = 3600 * time.Second
 	// SseEvents is the most events one stream holds.
 	SseEvents = ShapeChunks
 	// sseEventMin and sseEventMax bound the base64 of an event: a sealed
