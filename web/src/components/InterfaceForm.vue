@@ -221,6 +221,10 @@ const shapeChosen = computed(() => stealthChosen.value && form.value.transport =
 // wui-faketls is the server on its own port that borrows a real site: no
 // front, no path, no decoy -- only the borrowed site's host:port.
 const fakeChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-faketls')
+// The advanced card gathers a tunnel's mode and transport (and AmneziaWG's
+// disguise), the settings beyond the plain connection. The protocols with a
+// section of their own -- L2TP, IKEv2, OpenConnect -- keep it.
+const showsAdvanced = computed(() => !xrayNode.value && (isWireGuard.value || showsTransport.value))
 // Whose certificate a saved wui-tls tunnel serves, when it is still the one
 // shown.
 const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'wui-tls' ? props.iface.stealth?.certSource || '' : ''))
@@ -412,8 +416,14 @@ defineExpose({ showError })
 <template>
   <div class="amodal-backdrop" @click.self="emit('close')">
     <div class="amodal w720" role="dialog" aria-modal="true" aria-labelledby="if-title">
-      <div class="amodal-head">
-        <h2 id="if-title" class="amodal-title">{{ editing ? t('interface.edit') : t('interface.create') }}</h2>
+      <div class="amodal-head if-head">
+        <div class="if-head-main">
+          <span class="if-head-badge" aria-hidden="true"><AntIcon name="DeploymentUnitOutlined" /></span>
+          <div class="if-head-text">
+            <h2 id="if-title" class="amodal-title">{{ editing ? t('interface.edit') : t('interface.create') }}</h2>
+            <p class="if-head-sub">{{ t('interface.formSubtitle') }}</p>
+          </div>
+        </div>
         <button class="amodal-close" :aria-label="t('action.cancel')" @click="emit('close')"><AntIcon name="CloseOutlined" /></button>
       </div>
 
@@ -426,6 +436,8 @@ defineExpose({ showError })
             <span class="enabled-text">{{ t('table.enabled') }}</span>
             <HelpTip :text="t('interface.enabledHint')" />
           </div>
+
+          <div class="section-head"><span>{{ t('interface.sectionBase') }}</span><span class="section-rule"></span></div>
 
           <div class="arow16">
             <!-- Fixed once the tunnel exists: every configuration handed out
@@ -482,6 +494,8 @@ defineExpose({ showError })
             </div>
           </div>
 
+          <div v-if="!isXray" class="section-head"><span>{{ t('interface.sectionNetwork') }}</span><span class="section-rule"></span></div>
+
           <div class="arow16">
             <div class="acol6">
               <div class="aform-item">
@@ -531,6 +545,12 @@ defineExpose({ showError })
               </div>
             </div>
           </div>
+
+          <div v-if="showsAdvanced" class="adv-box">
+            <div class="adv-head">
+              <span class="adv-head-main"><AntIcon name="ToolOutlined" />{{ t('interface.sectionAdvanced') }}</span>
+              <span class="adv-head-tag">{{ t('interface.sectionAdvancedTag') }}</span>
+            </div>
 
           <!-- WireGuard only: AmneziaWG's disguise. -->
           <div v-if="!xrayNode && isWireGuard" class="arow16">
@@ -742,6 +762,7 @@ defineExpose({ showError })
               </div>
             </template>
           </template>
+          </div>
 
           <!-- L2TP only: the key every device types beside its own sign-in,
                the routers that have no IPsec, and what customers connect
@@ -914,12 +935,15 @@ defineExpose({ showError })
         </form>
       </div>
 
-      <div class="amodal-foot">
-        <button class="abtn" type="button" @click="emit('close')">{{ t('action.cancel') }}</button>
-        <button class="abtn primary" type="submit" form="iface-form" :disabled="busy">
-          <AntIcon v-if="busy" name="LoadingOutlined" class="spin" />
-          <template v-else>{{ editing ? t('action.save') : t('action.create') }}</template>
-        </button>
+      <div class="amodal-foot if-foot">
+        <span class="if-status"><span class="if-status-dot" :class="{ busy }"></span>{{ busy ? t('interface.formSaving') : t('interface.formReady') }}</span>
+        <div class="if-foot-actions">
+          <button class="abtn" type="button" @click="emit('close')">{{ t('action.cancel') }}</button>
+          <button class="abtn primary" type="submit" form="iface-form" :disabled="busy">
+            <AntIcon v-if="busy" name="LoadingOutlined" class="spin" />
+            <template v-else>{{ editing ? t('action.save') : t('action.create') }}</template>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -959,6 +983,72 @@ defineExpose({ showError })
 
 .enabled-line { display: flex; align-items: center; gap: 8px; }
 .enabled-text { font-size: 14px; color: var(--ink); }
+
+/* The header: an icon badge, the title, and a line of context under it. */
+.if-head { align-items: flex-start; }
+.if-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.if-head-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; flex: none;
+  border-radius: 9px;
+  background: var(--accent-soft, var(--surface-2));
+  border: 1px solid var(--accent-line, var(--line));
+  color: var(--accent-text);
+  font-size: 18px;
+}
+.if-head-text { min-width: 0; }
+.if-head-sub { margin: 2px 0 0; font-size: 12px; line-height: 16px; color: var(--faint); }
+html[lang='fa'] .if-head-sub { unicode-bidi: plaintext; }
+
+/* A section's heading: a small upper-case label and a rule to the edge. */
+.section-head {
+  display: flex; align-items: center; gap: 12px;
+  margin: 4px 0 14px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--faint);
+}
+.section-head:not(:first-child) { margin-top: 20px; }
+.section-rule { height: 1px; flex: 1; background: var(--line); }
+
+/* The advanced card gathers mode and transport, set off like the protocol
+   sections below it. The rows inside give up their gutter to the padding. */
+.adv-box {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.adv-box .arow16 { margin-inline: 0; }
+.adv-box .arow16 > [class^='acol'] { padding-inline: 0; }
+.adv-box .arow16 > [class^='acol']:first-child { padding-inline-end: 8px; }
+.adv-box .arow16 > [class^='acol']:last-child { padding-inline-start: 8px; }
+.adv-box .ainput, .adv-box .aselect, .adv-box .opt-card { background: var(--surface); }
+.adv-box > .arow16:last-child .aform-item, .adv-box > .aform-item:last-child { margin-bottom: 0; }
+.adv-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.adv-head-main { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.adv-head-main .anticon { color: var(--accent-text); font-size: 15px; }
+.adv-head-tag {
+  font-size: 10px; letter-spacing: 0.04em;
+  color: var(--faint); background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 2px 8px; border-radius: 5px;
+  font-family: var(--mono);
+}
+html[lang='fa'] .adv-head-tag { font-family: inherit; }
+
+/* The footer: a status on one side, the actions on the other. */
+.if-foot { justify-content: space-between; }
+.if-foot-actions { display: inline-flex; align-items: center; gap: 12px; }
+.if-status { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.if-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tag-green-ink, #22c55e); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tag-green-ink, #22c55e) 20%, transparent); }
+.if-status-dot.busy { background: var(--accent-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-text) 20%, transparent); }
+@media (max-width: 520px) {
+  .if-status { display: none; }
+}
 
 .field-error { margin: 4px 0 0; font-size: 12px; color: var(--bad); }
 
