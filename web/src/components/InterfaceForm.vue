@@ -218,6 +218,9 @@ const plainChosen = computed(() => stealthChosen.value && form.value.transport =
 const tlsChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-tls')
 const pollChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-poll')
 const shapeChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-shape')
+// wui-faketls is the server on its own port that borrows a real site: no
+// front, no path, no decoy -- only the borrowed site's host:port.
+const fakeChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-faketls')
 // Whose certificate a saved wui-tls tunnel serves, when it is still the one
 // shown.
 const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'wui-tls' ? props.iface.stealth?.certSource || '' : ''))
@@ -244,6 +247,7 @@ const transportHint = computed(() => {
     if (form.value.transport === 'wui-poll') return t('interface.transportWuiPollHint')
     if (form.value.transport === 'wui-shape') return t('interface.transportWuiShapeHint')
     if (form.value.transport === 'wui-plain') return t('interface.transportWuiPlainHint')
+    if (form.value.transport === 'wui-faketls') return t('interface.transportWuiFakeTLSHint')
     return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
   }
   return form.value.transport === 'tcp' ? t('interface.transportTcpHint') : t('interface.transportUdpHint')
@@ -578,6 +582,7 @@ defineExpose({ showError })
                       <option value="wui-poll">{{ t('interface.transportWuiPoll') }}</option>
                       <option value="wui-shape">{{ t('interface.transportWuiShape') }}</option>
                       <option value="wui-plain">{{ t('interface.transportWuiPlain') }}</option>
+                      <option value="wui-faketls">{{ t('interface.transportWuiFakeTLS') }}</option>
                     </template>
                     <template v-else>
                       <option value="udp">{{ t('interface.transportUdp') }}</option>
@@ -591,8 +596,8 @@ defineExpose({ showError })
             <div v-if="stealthChosen" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport-port">
-                  {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : pollChosen ? t('interface.transportPortPoll') : shapeChosen ? t('interface.transportPortShape') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
-                  <HelpTip :text="tlsChosen ? t('interface.transportPortTlsHint') : plainChosen ? t('interface.transportPortPlainHint') : pollChosen ? t('interface.transportPortPollHint') : shapeChosen ? t('interface.transportPortShapeHint') : wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
+                  {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : pollChosen ? t('interface.transportPortPoll') : shapeChosen ? t('interface.transportPortShape') : fakeChosen ? t('interface.transportPortFakeTLS') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
+                  <HelpTip :text="tlsChosen ? t('interface.transportPortTlsHint') : plainChosen ? t('interface.transportPortPlainHint') : pollChosen ? t('interface.transportPortPollHint') : shapeChosen ? t('interface.transportPortShapeHint') : fakeChosen ? t('interface.transportPortFakeTLSHint') : wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
                 </label>
                 <label class="ainput number" :class="{ invalid: fieldName === 'transportPort' }">
                   <input id="if-transport-port" v-model="form.transportPort" data-field="transportPort" type="number" min="1" max="65535" class="ltr" @input="clearError('transportPort')" />
@@ -601,6 +606,22 @@ defineExpose({ showError })
               </div>
             </div>
           </div>
+
+          <!-- wui-faketls: the borrowed site every stranger is relayed to,
+               and whose name a device's hello asks for. -->
+          <template v-if="fakeChosen">
+            <div class="arow16">
+              <div class="acol24">
+                <div class="aform-item">
+                  <label class="aform-label required" for="if-fake-site">{{ t('interface.fakeSite') }} <HelpTip :text="t('interface.fakeSiteHint')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'transportWs.site' }">
+                    <input id="if-fake-site" v-model.trim="form.ws.site" data-field="transportWs.site" class="ltr" placeholder="www.wikipedia.org:443" required @input="clearError('transportWs.site')" />
+                  </label>
+                  <p v-if="fieldName === 'transportWs.site'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+          </template>
 
           <!-- wui-tls, wui-ws, wui-poll and wui-plain: the name devices
                reach, the path they send on, and the site every stranger sees.

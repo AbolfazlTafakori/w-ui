@@ -135,7 +135,7 @@ export function exportable(i) {
     ...(i.protocol === 'wireguard' && i.stealth?.transport ? { transport: i.stealth.transport, transportPort: i.stealth.port } : {}),
     // wui-tls's, wui-ws's, wui-poll's or wui-plain's name, path and decoy travel too;
     // its keys do not, and a tunnel made from this draws its own.
-    ...(i.protocol === 'wireguard' && proven(i.stealth?.transport) ? { transportWs: wsPayload(wsOf(i.stealth)) } : {}),
+    ...(i.protocol === 'wireguard' && hasWsFields(i.stealth?.transport) ? { transportWs: wsPayload(wsOf(i.stealth)) } : {}),
   }
 }
 
@@ -161,11 +161,18 @@ export function proven(transport) {
   return transport === 'wui-tls' || fronted(transport)
 }
 
+// hasWsFields says a transport's settings travel in the form's ws block:
+// the proven ones, and wui-faketls, which carries its borrowed site there.
+export function hasWsFields(transport) {
+  return proven(transport) || transport === 'wui-faketls'
+}
+
 // wui-tls's, wui-ws's, wui-poll's or wui-plain's settings as the form holds them, from a
-// tunnel's stealth block or none. The transport's keys are the server's and
-// never reach the form; wui-plain's cookie name is no secret.
+// tunnel's stealth block or none, with wui-faketls's borrowed site. The
+// transport's keys are the server's and never reach the form; wui-plain's
+// cookie name is no secret.
 export function wsOf(stealth) {
-  const s = proven(stealth?.transport) ? stealth : {}
+  const s = hasWsFields(stealth?.transport) ? stealth : {}
   return {
     host: s.host || '',
     frontPort: s.frontPort || '',
@@ -175,6 +182,7 @@ export function wsOf(stealth) {
     clientHeader: s.clientHeader || '',
     cookie: s.cookie || '',
     shape: shapePreset(s.shape),
+    site: s.site || '',
     usePanelCert: !!s.usePanelCert,
     proxyProtocol: !!s.proxyProtocol,
   }
@@ -209,6 +217,7 @@ export function wsPayload(ws) {
     clientHeader: (ws?.clientHeader || '').trim(),
     cookie: (ws?.cookie || '').trim(),
     shape: (ws?.shape || '').trim(),
+    site: (ws?.site || '').trim(),
     usePanelCert: !!ws?.usePanelCert,
     proxyProtocol: !!ws?.proxyProtocol,
   }

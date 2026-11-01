@@ -50,15 +50,15 @@ describe('wui-ws in a tunnel’s form', () => {
     expect(wsOf(stealth)).toEqual({
       host: 'cdn.example.com', frontPort: 8443, path: '/media/7f3a9c2e1b',
       origin: 'http://127.0.0.1:8080', proxies: '198.51.100.0/24', clientHeader: 'CF-Connecting-IP', cookie: '',
-      shape: 'get-poll', usePanelCert: false, proxyProtocol: false,
+      shape: 'get-poll', site: '', usePanelCert: false, proxyProtocol: false,
     })
-    expect(wsOf({ transport: 'wui-udp', port: 2096 })).toEqual({ host: '', frontPort: '', path: '', origin: '', proxies: '', clientHeader: '', cookie: '', shape: 'get-poll', usePanelCert: false, proxyProtocol: false })
+    expect(wsOf({ transport: 'wui-udp', port: 2096 })).toEqual({ host: '', frontPort: '', path: '', origin: '', proxies: '', clientHeader: '', cookie: '', shape: 'get-poll', site: '', usePanelCert: false, proxyProtocol: false })
     expect(wsOf(null).host).toBe('')
   })
 
   it('sends a port as a number and trims what was typed', () => {
     expect(wsPayload({ host: ' f.example ', frontPort: '', path: '', origin: '', proxies: ' 10.0.0.0/8 ', clientHeader: '' }))
-      .toEqual({ host: 'f.example', frontPort: 0, path: '', origin: '', proxies: '10.0.0.0/8', clientHeader: '', cookie: '', shape: '', usePanelCert: false, proxyProtocol: false })
+      .toEqual({ host: 'f.example', frontPort: 0, path: '', origin: '', proxies: '10.0.0.0/8', clientHeader: '', cookie: '', shape: '', site: '', usePanelCert: false, proxyProtocol: false })
   })
 
   it('travels in an export without its key', () => {
@@ -137,5 +137,20 @@ describe('wui-tls in a tunnel’s form', () => {
     expect(e.transportWs).toMatchObject({ host: 'edge.example.com', usePanelCert: true, proxyProtocol: true })
     expect(JSON.stringify(e)).not.toContain('secret')
     expect(transportTag({ protocol: 'wireguard', stealth })).toBe('UDP + wui-tls')
+  })
+})
+
+describe('wui-faketls in a tunnel’s form', () => {
+  const stealth = { transport: 'wui-faketls', port: 8443, site: 'www.wikipedia.org:443', nodeKey: 'NODEKEY', keyAt: 7 }
+
+  it('reads its borrowed site, and carries it in an export without its key', () => {
+    expect(wsOf(stealth)).toMatchObject({ site: 'www.wikipedia.org:443', host: '', path: '' })
+    expect(proven('wui-faketls')).toBe(false)
+    expect(fronted('wui-faketls')).toBe(false)
+    const e = exportable({ name: 'wg0', protocol: 'wireguard', stealth })
+    expect(e.transport).toBe('wui-faketls')
+    expect(e.transportWs.site).toBe('www.wikipedia.org:443')
+    expect(JSON.stringify(e)).not.toContain('NODEKEY')
+    expect(transportTag({ protocol: 'wireguard', stealth })).toBe('UDP + wui-faketls')
   })
 })

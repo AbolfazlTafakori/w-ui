@@ -182,7 +182,7 @@ function toggleOne(id, checked) {
 function wgTransportOf(input) {
   if (input.mode === 'amnezia' || !input.transport || input.transport === 'udp') return { transport: 'udp', transportPort: 0 }
   const out = { transport: input.transport, transportPort: Number(input.transportPort) || 0 }
-  if (proven(input.transport)) out.transportWs = wsPayload(input.ws)
+  if (proven(input.transport) || input.transport === 'wui-faketls') out.transportWs = wsPayload(input.ws)
   return out
 }
 function wgTransportChanged(input, iface) {
