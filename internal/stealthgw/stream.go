@@ -128,7 +128,7 @@ type StreamGateway struct {
 	devices  map[[32]byte]*streamDevice
 	streams  map[*stream]struct{}
 	fakes    map[*fakeStream]struct{} // wui-faketls's sessions
-	held     int // places for sessions, the running and the reserved
+	held     int                      // places for sessions, the running and the reserved
 	sources  map[netip.Addr]*bucket
 	behind   map[string]netip.Addr               // a session socket's address -> its visitor
 	polls    map[[stealth.PollIDLen]byte]*stream // wui-poll's sessions by their id

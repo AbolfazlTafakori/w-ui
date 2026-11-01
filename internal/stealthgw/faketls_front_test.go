@@ -167,7 +167,7 @@ func TestFakeTLSProvesDevice(t *testing.T) {
 	r := bufio.NewReader(c)
 	flight := readWholeFlight(t, r)
 	expected := client.Leaf(x, hello)
-	clientFin, cc, err := stealth.FakeClientFlight(hello, x, expected, flight)
+	clientFin, cc, err := stealth.FakeClientFlight(hello, x, nil, expected, flight)
 	if err != nil {
 		t.Fatalf("client flight: %v", err)
 	}

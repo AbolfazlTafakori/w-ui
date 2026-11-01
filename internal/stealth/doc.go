@@ -28,12 +28,12 @@ package stealth
 
 // Transport names, as profiles and proofs carry them.
 const (
-	UDP    = "wui-udp"
-	TLS    = "wui-tls"
-	WS     = "wui-ws"
-	Poll   = "wui-poll"
-	Shaped = "wui-shape"
-	Plain  = "wui-plain"
+	UDP     = "wui-udp"
+	TLS     = "wui-tls"
+	WS      = "wui-ws"
+	Poll    = "wui-poll"
+	Shaped  = "wui-shape"
+	Plain   = "wui-plain"
 	FakeTLS = "wui-faketls"
 )
 

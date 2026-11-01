@@ -170,7 +170,7 @@ func TestFakeStreamCarry(t *testing.T) {
 	ca := bufio.NewReader(a)
 	flight := readWholeFlight(t, ca)
 	expected := client.Leaf(x, hello)
-	clientFin, cc, err := stealth.FakeClientFlight(hello, x, expected, flight)
+	clientFin, cc, err := stealth.FakeClientFlight(hello, x, nil, expected, flight)
 	if err != nil {
 		t.Fatalf("client flight: %v", err)
 	}

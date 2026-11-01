@@ -2,6 +2,7 @@ package stealth
 
 import (
 	"bytes"
+	"crypto/mlkem"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestFakeHandshakeRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("suite %d: server flight: %v", suite, err)
 		}
-		clientFin, clientConn, err := FakeClientFlight(hello, x, leafPub, server.Flight)
+		clientFin, clientConn, err := FakeClientFlight(hello, x, nil, leafPub, server.Flight)
 		if err != nil {
 			t.Fatalf("suite %d: client flight: %v", suite, err)
 		}
@@ -69,7 +70,51 @@ func TestFakeHandshakeRejectsWrongLeaf(t *testing.T) {
 		other[i] = byte(0xA0 + i)
 	}
 	_, wrongPub := LeafKey(other)
-	if _, _, err := FakeClientFlight(hello, x, wrongPub, server.Flight); err == nil {
+	if _, _, err := FakeClientFlight(hello, x, nil, wrongPub, server.Flight); err == nil {
 		t.Fatal("the client took a flight whose leaf it did not expect")
+	}
+}
+
+func TestFakeFlightHybrid(t *testing.T) {
+	// A hybrid X25519MLKEM768 hello carries an ML-KEM encapsulation key before
+	// the X25519 share; the flight answers with the hybrid group and both ends
+	// reach the same keys.
+	x := make([]byte, 32)
+	for i := range x {
+		x[i] = byte(0x40 + i)
+	}
+	dk, err := mlkem.GenerateKey768()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hello, ok := FakeHelloHybrid("site.example", x, dk.EncapsulationKey().Bytes())
+	if !ok {
+		t.Fatal("hybrid hello did not build")
+	}
+	h, ok := ParseHello(hello)
+	if !ok || h.Group != GroupHybrid {
+		t.Fatalf("hybrid hello did not parse as hybrid: ok=%v group=%#x", ok, h.Group)
+	}
+	leaf, leafPub := LeafKey([40]byte{1, 2, 3, 4, 5})
+	server, err := FakeServerFlight(hello, h, SuiteChacha, leaf)
+	if err != nil {
+		t.Fatalf("server flight: %v", err)
+	}
+	clientFin, clientConn, err := FakeClientFlight(hello, x, dk.Bytes(), leafPub, server.Flight)
+	if err != nil {
+		t.Fatalf("client flight: %v", err)
+	}
+	serverConn, err := server.AcceptClientFinished(clientFin)
+	if err != nil {
+		t.Fatalf("accept client finished: %v", err)
+	}
+	// The application keys match: seal one way, open the other.
+	rec, ok := serverConn.Send.Seal(23, []byte("hybrid hi"), 0, nil)
+	if !ok {
+		t.Fatal("server seal")
+	}
+	kind, msg, ok := openRecord(clientConn.Recv, rec)
+	if !ok || kind != 23 || string(msg) != "hybrid hi" {
+		t.Fatalf("client did not open the server's record: ok=%v kind=%d msg=%q", ok, kind, msg)
 	}
 }

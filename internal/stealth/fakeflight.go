@@ -5,6 +5,7 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -120,18 +121,9 @@ func FakeServerFlight(clientHello []byte, h Hello, suite Suite, leaf *ecdsa.Priv
 	if h.Share+32 > len(clientHello) {
 		return nil, errors.New("stealth: hello has no share")
 	}
-	clientShare := clientHello[h.Share : h.Share+32]
-	serverEph, err := ecdh.X25519().GenerateKey(rand.Reader)
+	shared, serverKey, group, err := serverKEX(clientHello, h)
 	if err != nil {
 		return nil, err
-	}
-	peer, err := ecdh.X25519().NewPublicKey(clientShare)
-	if err != nil {
-		return nil, err
-	}
-	shared, err := serverEph.ECDH(peer)
-	if err != nil {
-		return nil, errors.New("stealth: the client share is low order")
 	}
 
 	session := clientHello[fakeSessionAt : fakeSessionAt+32]
@@ -139,7 +131,7 @@ func FakeServerFlight(clientHello []byte, h Hello, suite Suite, leaf *ecdsa.Priv
 	if _, err := rand.Read(random[:]); err != nil {
 		return nil, err
 	}
-	sh := WriteServerHello(session, suite, GroupX25519, false, random, serverEph.PublicKey().Bytes())
+	sh := WriteServerHello(session, suite, group, false, random, serverKey)
 
 	tr := append([]byte(nil), clientHello...)
 	tr = append(tr, sh...)
@@ -215,9 +207,11 @@ func (s *FakeServerSide) AcceptClientFinished(record []byte) (*FakeConn, error) 
 
 // FakeClientFlight reads the server's flight, checks the leaf against expected
 // and the server's Finished, and returns the client's Finished record to send
-// and the client's record layer for application data. x is the ephemeral
-// behind the hello's share, expected the leaf FakeClient.Leaf gives.
-func FakeClientFlight(clientHello []byte, x, expected, flight []byte) ([]byte, *FakeConn, error) {
+// and the client's record layer for application data. x is the X25519 scalar
+// behind the hello's share, expected the leaf FakeClient.Leaf gives. mlkemSeed
+// is the seed of the ML-KEM decapsulation key behind a hybrid hello, and nil
+// for a standalone X25519 one.
+func FakeClientFlight(clientHello, x, mlkemSeed, expected, flight []byte) ([]byte, *FakeConn, error) {
 	rd := &recordReader{b: flight}
 	// ServerHello, in a plaintext handshake record.
 	kind, sh, ok := rd.plain()
@@ -226,21 +220,13 @@ func FakeClientFlight(clientHello []byte, x, expected, flight []byte) ([]byte, *
 	}
 	session := clientHello[fakeSessionAt : fakeSessionAt+32]
 	hello, ok := ReadServerHello(sh, session)
-	if !ok || hello.Group != GroupX25519 {
+	if !ok || (hello.Group != GroupX25519 && hello.Group != GroupHybrid) {
 		return nil, nil, errors.New("stealth: the ServerHello is not one we take")
 	}
 	suite := hello.Suite
-	priv, err := ecdh.X25519().NewPrivateKey(x)
+	shared, err := clientKEX(hello.Group, hello.Key, x, mlkemSeed)
 	if err != nil {
 		return nil, nil, err
-	}
-	peer, err := ecdh.X25519().NewPublicKey(hello.Key)
-	if err != nil {
-		return nil, nil, err
-	}
-	shared, err := priv.ECDH(peer)
-	if err != nil {
-		return nil, nil, errors.New("stealth: the server share is low order")
 	}
 
 	tr := append([]byte(nil), clientHello...)
@@ -297,6 +283,85 @@ func FakeClientFlight(clientHello []byte, x, expected, flight []byte) ([]byte, *
 		return nil, nil, err
 	}
 	return record, &FakeConn{Send: send, Recv: recv}, nil
+}
+
+// serverKEX does the server's half of the key exchange for a hello of group
+// h.Group. For X25519 it is one ECDH; for the hybrid group it also
+// encapsulates against the client's ML-KEM key, and the shared secret is the
+// ML-KEM secret followed by the X25519 one, as the hybrid group defines. It
+// returns the shared secret, the key bytes the ServerHello carries, and the
+// group answered.
+func serverKEX(clientHello []byte, h Hello) (shared, serverKey []byte, group uint16, err error) {
+	serverEph, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	peer, err := ecdh.X25519().NewPublicKey(clientHello[h.Share : h.Share+32])
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	ssX, err := serverEph.ECDH(peer)
+	if err != nil {
+		return nil, nil, 0, errors.New("stealth: the client share is low order")
+	}
+	if h.Group != GroupHybrid {
+		return ssX, serverEph.PublicKey().Bytes(), GroupX25519, nil
+	}
+	start := h.Share - mlkem.EncapsulationKeySize768
+	if start < 0 {
+		return nil, nil, 0, errors.New("stealth: the hybrid share is short")
+	}
+	ek, err := mlkem.NewEncapsulationKey768(clientHello[start:h.Share])
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	ssK, ct := ek.Encapsulate()
+	shared = append(append([]byte(nil), ssK...), ssX...)
+	serverKey = append(append([]byte(nil), ct...), serverEph.PublicKey().Bytes()...)
+	return shared, serverKey, GroupHybrid, nil
+}
+
+// clientKEX does the client's half: X25519 against the server's share, and for
+// the hybrid group an ML-KEM decapsulation of the server's ciphertext first.
+// serverKey is the ServerHello's key bytes, mlkemSeed the client's ML-KEM
+// decapsulation seed (nil for the standalone group).
+func clientKEX(group uint16, serverKey, x, mlkemSeed []byte) ([]byte, error) {
+	priv, err := ecdh.X25519().NewPrivateKey(x)
+	if err != nil {
+		return nil, err
+	}
+	if group != GroupHybrid {
+		peer, err := ecdh.X25519().NewPublicKey(serverKey)
+		if err != nil {
+			return nil, err
+		}
+		ssX, err := priv.ECDH(peer)
+		if err != nil {
+			return nil, errors.New("stealth: the server share is low order")
+		}
+		return ssX, nil
+	}
+	if len(serverKey) != mlkem.CiphertextSize768+32 {
+		return nil, errors.New("stealth: the hybrid server share is the wrong length")
+	}
+	ct, serverX := serverKey[:mlkem.CiphertextSize768], serverKey[mlkem.CiphertextSize768:]
+	dk, err := mlkem.NewDecapsulationKey768(mlkemSeed)
+	if err != nil {
+		return nil, err
+	}
+	ssK, err := dk.Decapsulate(ct)
+	if err != nil {
+		return nil, errors.New("stealth: the server ciphertext did not decapsulate")
+	}
+	peer, err := ecdh.X25519().NewPublicKey(serverX)
+	if err != nil {
+		return nil, err
+	}
+	ssX, err := priv.ECDH(peer)
+	if err != nil {
+		return nil, errors.New("stealth: the server share is low order")
+	}
+	return append(append([]byte(nil), ssK...), ssX...), nil
 }
 
 // --- record and message helpers ---

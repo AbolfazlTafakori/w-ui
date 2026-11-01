@@ -3,6 +3,7 @@ package stealthgw
 import (
 	"bufio"
 	"context"
+	"crypto/mlkem"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -188,7 +189,15 @@ func (c *FakeTLSClient) open() (*fakeClientConn, error) {
 		conn.Close()
 		return nil, err
 	}
-	hello, ok := stealth.FakeHello(c.cfg.Name, x)
+	// The hybrid X25519MLKEM768 group, as a modern client offers: the proof is
+	// keyed to the X25519 half, the ML-KEM half makes the session's keys
+	// quantum-resistant.
+	dk, err := mlkem.GenerateKey768()
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	hello, ok := stealth.FakeHelloHybrid(c.cfg.Name, x, dk.EncapsulationKey().Bytes())
 	if !ok {
 		conn.Close()
 		return nil, errors.New("stealthgw: the hello did not build")
@@ -210,7 +219,7 @@ func (c *FakeTLSClient) open() (*fakeClientConn, error) {
 		return nil, err
 	}
 	expected := c.client.Leaf(x, hello)
-	clientFin, conn13, err := stealth.FakeClientFlight(hello, x, expected, flight)
+	clientFin, conn13, err := stealth.FakeClientFlight(hello, x, dk.Bytes(), expected, flight)
 	if err != nil {
 		conn.Close()
 		return nil, err

@@ -110,11 +110,11 @@ type FakeTLSGateway struct {
 	room     chan struct{}
 	done     chan struct{}
 
-	pmu     sync.Mutex
-	nextID  uint64
-	relays  map[uint64]net.Conn // a relayed peer's connection, for shutdown
-	siteAt  time.Time           // when a site that is down was last said to be
-	closed  bool
+	pmu    sync.Mutex
+	nextID uint64
+	relays map[uint64]net.Conn // a relayed peer's connection, for shutdown
+	siteAt time.Time           // when a site that is down was last said to be
+	closed bool
 
 	fstats struct {
 		accepted, proved, relayed, siteDown, helloBad, admitRefused atomic.Uint64
@@ -151,8 +151,8 @@ func NewFakeTLS(cfg FakeTLSConfig) (*FakeTLSGateway, error) {
 	inbound := sg.resp.priv.PublicKey().Bytes()
 	g := &FakeTLSGateway{
 		StreamGateway: sg, fcfg: cfg, site: cfg.Site,
-		node:   stealth.NewFakeNode(cfg.NodeKey[:], inbound, dummy[:]),
-		names:  nb, sizer: &fakeSizer{},
+		node:  stealth.NewFakeNode(cfg.NodeKey[:], inbound, dummy[:]),
+		names: nb, sizer: &fakeSizer{},
 		room:   make(chan struct{}, fakeAcceptMax+sg.cfg.Sessions),
 		done:   make(chan struct{}),
 		relays: map[uint64]net.Conn{},
@@ -600,9 +600,9 @@ func (z *recordSizer) feed(b []byte, sizer *fakeSizer) {
 type FakeTLSStats struct {
 	StreamStats
 	Accepted, Proved, Relayed uint64
-	SiteDown, HelloBad         uint64
-	AdmitRefused               uint64
-	Relaying                   int
+	SiteDown, HelloBad        uint64
+	AdmitRefused              uint64
+	Relaying                  int
 }
 
 // Stats reads the counters.

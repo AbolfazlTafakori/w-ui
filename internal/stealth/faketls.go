@@ -72,6 +72,10 @@ type Hello struct {
 	// Share is the offset of the 32-byte X25519 value the proof is keyed to:
 	// the standalone share, or the X25519 part of the hybrid share.
 	Share int
+	// Group is the key-exchange group the flight answers with: GroupX25519
+	// for a standalone share, GroupHybrid for an X25519MLKEM768 one. The proof
+	// is keyed to the X25519 part either way.
+	Group uint16
 }
 
 func be16(b []byte, at int) (int, bool) {
@@ -216,11 +220,11 @@ func ParseHello(message []byte) (Hello, bool) {
 	if !haveName || !haveS {
 		return Hello{}, false
 	}
-	share := standalone
+	share, group := standalone, GroupX25519
 	if share < 0 {
-		share = hybrid
+		share, group = hybrid, GroupHybrid
 	}
-	return Hello{Name: name, TLS13: tls13, Share: share}, true
+	return Hello{Name: name, TLS13: tls13, Share: share, Group: group}, true
 }
 
 // fakeCarrierBytes is the 64 bytes of the carrier: the random, then the
@@ -527,6 +531,52 @@ func FakeHello(name string, x []byte) ([]byte, bool) {
 	body = append(body, make([]byte, 32)...) // session id, sealed later
 	body = append(body, 0, 6, 0x13, 0x01, 0x13, 0x02, 0x13, 0x03)
 	body = append(body, 1, 0) // compression: null
+	body = append(body, byte(len(exts)>>8), byte(len(exts)))
+	body = append(body, exts...)
+
+	msg := []byte{1, byte(len(body) >> 16), byte(len(body) >> 8), byte(len(body))}
+	return append(msg, body...), true
+}
+
+// FakeHelloHybrid builds a ClientHello whose single key_share is the
+// X25519MLKEM768 hybrid group: the value is the ML-KEM-768 encapsulation key
+// ek (1184 bytes) followed by the X25519 public value of x. The proof is still
+// keyed to the X25519 part. ek is the client's own encapsulation key, kept so
+// the server's ciphertext can be decapsulated. The carrier is left zero for
+// Carry to seal.
+func FakeHelloHybrid(name string, x, ek []byte) ([]byte, bool) {
+	priv, err := ecdh.X25519().NewPrivateKey(x)
+	if err != nil || len(ek) != 1184 {
+		return nil, false
+	}
+	share := priv.PublicKey().Bytes()
+	ext := func(kind uint16, body []byte) []byte {
+		b := []byte{byte(kind >> 8), byte(kind), byte(len(body) >> 8), byte(len(body))}
+		return append(b, body...)
+	}
+	nameList := append([]byte{0, byte(len(name) >> 8), byte(len(name))}, name...)
+	sn := append([]byte{byte(len(nameList) >> 8), byte(len(nameList))}, nameList...)
+	sv := []byte{2, 3, 4}
+	sg := []byte{0, 2, 0x11, 0xec} // supported_groups: X25519MLKEM768
+	sa := []byte{0, 8, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x02, 0x01}
+	value := append(append([]byte(nil), ek...), share...)
+	ks := append([]byte{0x11, 0xec, byte(len(value) >> 8), byte(len(value))}, value...)
+	ksBody := append([]byte{byte(len(ks) >> 8), byte(len(ks))}, ks...)
+
+	exts := make([]byte, 0, 1400)
+	exts = append(exts, ext(0, sn)...)
+	exts = append(exts, ext(10, sg)...)
+	exts = append(exts, ext(13, sa)...)
+	exts = append(exts, ext(43, sv)...)
+	exts = append(exts, ext(51, ksBody)...)
+
+	body := make([]byte, 0, 1500)
+	body = append(body, 3, 3)
+	body = append(body, make([]byte, 32)...)
+	body = append(body, 32)
+	body = append(body, make([]byte, 32)...)
+	body = append(body, 0, 6, 0x13, 0x01, 0x13, 0x02, 0x13, 0x03)
+	body = append(body, 1, 0)
 	body = append(body, byte(len(exts)>>8), byte(len(exts)))
 	body = append(body, exts...)
 
