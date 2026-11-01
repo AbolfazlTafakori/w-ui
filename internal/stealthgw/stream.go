@@ -127,6 +127,7 @@ type StreamGateway struct {
 	mu       sync.Mutex
 	devices  map[[32]byte]*streamDevice
 	streams  map[*stream]struct{}
+	fakes    map[*fakeStream]struct{} // wui-faketls's sessions
 	held     int // places for sessions, the running and the reserved
 	sources  map[netip.Addr]*bucket
 	behind   map[string]netip.Addr               // a session socket's address -> its visitor
@@ -207,6 +208,7 @@ func newStreamGateway(cfg StreamConfig, transport string) (*StreamGateway, error
 		cookie:  cookieName(cfg.TransportKeys[0]),
 		proxies: cfg.Proxies, header: cfg.ClientHeader,
 		devices: map[[32]byte]*streamDevice{}, streams: map[*stream]struct{}{},
+		fakes:   map[*fakeStream]struct{}{},
 		sources: map[netip.Addr]*bucket{}, behind: map[string]netip.Addr{},
 		polls: map[[stealth.PollIDLen]byte]*stream{}, shapes: map[[stealth.PollIDLen]byte]*stream{}, perDevice: deviceStreams,
 		wake: make(chan struct{}, 1),
@@ -286,6 +288,12 @@ func (g *StreamGateway) SetDevices(list []Device) {
 			ending = append(ending, s)
 		}
 	}
+	var endingFakes []*fakeStream
+	for s := range g.fakes {
+		if s.dev.gone {
+			endingFakes = append(endingFakes, s)
+		}
+	}
 	g.devices = keep
 	tags := make(map[stealth.Tag]*streamDevice, len(keep))
 	collisions := 0
@@ -303,6 +311,9 @@ func (g *StreamGateway) SetDevices(list []Device) {
 		g.log.Error("two devices share a tag, so neither can open a session; their transport secrets are copies and must be replaced", "tags", collisions)
 	}
 	for _, s := range ending {
+		s.finish()
+	}
+	for _, s := range endingFakes {
 		s.finish()
 	}
 }
@@ -379,8 +390,15 @@ func (g *StreamGateway) serve(ctx context.Context, accept func() error, stop fun
 	for s := range g.streams {
 		all = append(all, s)
 	}
+	allFakes := make([]*fakeStream, 0, len(g.fakes))
+	for s := range g.fakes {
+		allFakes = append(allFakes, s)
+	}
 	g.mu.Unlock()
 	for _, s := range all {
+		s.finish()
+	}
+	for _, s := range allFakes {
 		s.finish()
 	}
 	g.running.Wait()
@@ -430,6 +448,12 @@ func (g *StreamGateway) sweep(now time.Time) {
 			ending = append(ending, s)
 		}
 	}
+	var endingFakes []*fakeStream
+	for s := range g.fakes {
+		if s.isPending() && now.Sub(s.opened) >= pendingFor || now.Sub(s.quietSince()) >= streamIdle {
+			endingFakes = append(endingFakes, s)
+		}
+	}
 	for a, b := range g.sources {
 		if b.full(sourceProofs, now) {
 			delete(g.sources, a)
@@ -437,6 +461,9 @@ func (g *StreamGateway) sweep(now time.Time) {
 	}
 	g.mu.Unlock()
 	for _, s := range ending {
+		s.finish()
+	}
+	for _, s := range endingFakes {
 		s.finish()
 	}
 }

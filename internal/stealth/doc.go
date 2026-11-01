@@ -17,6 +17,7 @@
 //	wui-poll   HTTP long polling, for a CDN that will not carry WebSocket
 //	wui-shape  wui-poll in requests of the operator's shape, or one stream
 //	wui-plain  WebSocket over plain HTTP, the proof in a cookie
+//	wui-faketls a borrowed site's TLS: the proof hidden in a ClientHello
 //
 // This package holds only the format: key derivation, the sealed chunk every
 // transport moves, the UDP packets, the proof a stream opens with, and the
@@ -33,6 +34,7 @@ const (
 	Poll   = "wui-poll"
 	Shaped = "wui-shape"
 	Plain  = "wui-plain"
+	FakeTLS = "wui-faketls"
 )
 
 // Version is the first byte of every sealed header and proof. A later format
