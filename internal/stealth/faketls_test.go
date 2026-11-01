@@ -141,3 +141,38 @@ func TestFakeStrangerAndRefused(t *testing.T) {
 		t.Fatalf("an unknown device was %v, not refused", out.Kind)
 	}
 }
+
+func TestFakeHelloRoundTrip(t *testing.T) {
+	secret, anchor, tPriv, tPub := fakeSetup(t)
+	const site = "cdn.example.net"
+	now := int64(1_700_000_000)
+	x := make([]byte, 32)
+	for i := range x {
+		x[i] = byte(0x11 + i)
+	}
+	hello, ok := FakeHello(site, x)
+	if !ok {
+		t.Fatal("FakeHello did not build")
+	}
+	h, ok := ParseHello(hello)
+	if !ok || !h.TLS13 || string(h.Name) != site {
+		t.Fatalf("the built hello did not parse: ok=%v name=%q tls13=%v", ok, h.Name, h.TLS13)
+	}
+	keys := Derive(secret, anchor)
+	inbound := x25519Base(make([]byte, 32)) // any 32-byte inbound; the same both sides
+	client := NewFakeClient(tPub, keys, inbound)
+	if !client.Carry(hello, x, now) {
+		t.Fatal("the client did not seal the built hello")
+	}
+	node := NewFakeNode(tPriv, inbound, []byte("0123456789abcdef0123456789abcdef"))
+	hour := FakeHourOf(now)
+	proof := node.Open(hello, [][]byte{[]byte(site)}, func(tag [TagLen]byte) (any, []byte, bool) {
+		if tag == keys.HourTag(hour) {
+			return "dev", keys.Bind, true
+		}
+		return nil, nil, false
+	})
+	if proof.Kind != FakeProved {
+		t.Fatalf("the built hello did not prove: kind %d", proof.Kind)
+	}
+}

@@ -485,6 +485,55 @@ func allZero(b []byte) bool {
 	return v == 0
 }
 
+// FakeHello builds a TLS 1.3 ClientHello the gateway reads: SNI name, a
+// standalone X25519 key_share of x's public value, the three TLS 1.3 suites,
+// and the extensions a real hello carries. The carrier bytes -- the random and
+// the legacy session id -- are left zero for Carry to seal. x is a 32-byte
+// X25519 scalar; a bad one is ok=false.
+func FakeHello(name string, x []byte) ([]byte, bool) {
+	priv, err := ecdh.X25519().NewPrivateKey(x)
+	if err != nil {
+		return nil, false
+	}
+	share := priv.PublicKey().Bytes()
+	ext := func(kind uint16, body []byte) []byte {
+		b := []byte{byte(kind >> 8), byte(kind), byte(len(body) >> 8), byte(len(body))}
+		return append(b, body...)
+	}
+	// server_name.
+	nameList := append([]byte{0, byte(len(name) >> 8), byte(len(name))}, name...)
+	sn := append([]byte{byte(len(nameList) >> 8), byte(len(nameList))}, nameList...)
+	// supported_versions: TLS 1.3 alone.
+	sv := []byte{2, 3, 4}
+	// supported_groups: x25519.
+	sg := []byte{0, 2, 0, 0x1d}
+	// signature_algorithms: a handful a real hello offers.
+	sa := []byte{0, 8, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x02, 0x01}
+	// key_share: one standalone x25519 value.
+	ks := append([]byte{0x00, 0x1d, 0x00, 0x20}, share...)
+	ksBody := append([]byte{byte(len(ks) >> 8), byte(len(ks))}, ks...)
+
+	exts := make([]byte, 0, 128)
+	exts = append(exts, ext(0, sn)...)
+	exts = append(exts, ext(10, sg)...)
+	exts = append(exts, ext(13, sa)...)
+	exts = append(exts, ext(43, sv)...)
+	exts = append(exts, ext(51, ksBody)...)
+
+	body := make([]byte, 0, 128)
+	body = append(body, 3, 3)                // legacy_version
+	body = append(body, make([]byte, 32)...) // random, sealed later
+	body = append(body, 32)                  // session id length
+	body = append(body, make([]byte, 32)...) // session id, sealed later
+	body = append(body, 0, 6, 0x13, 0x01, 0x13, 0x02, 0x13, 0x03)
+	body = append(body, 1, 0) // compression: null
+	body = append(body, byte(len(exts)>>8), byte(len(exts)))
+	body = append(body, exts...)
+
+	msg := []byte{1, byte(len(body) >> 16), byte(len(body) >> 8), byte(len(body))}
+	return append(msg, body...), true
+}
+
 // FakeClient is a device's side: it seals the proof into a ClientHello it has
 // built, and tells the client which leaf key to expect.
 type FakeClient struct {
