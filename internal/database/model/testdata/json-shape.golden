@@ -132,6 +132,8 @@ StealthParams
 	clientHeader string omitempty
 	cookie string omitempty
 	shape string omitempty
+	site string omitempty
+	nodeKey string omitempty
 	key string omitempty
 	previousKey string omitempty
 	keyAt int64 omitempty

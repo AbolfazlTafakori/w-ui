@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/ecdh"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -80,6 +82,10 @@ type WUITransport struct {
 	Cookie string `json:"cookie,omitempty"`
 	// Shape is wui-shape's: the request shape, written out in full.
 	Shape map[string]any `json:"shape,omitempty"`
+	// Site is wui-faketls's: the name a device's hello asks for, the borrowed
+	// site's. The endpoints are where the gateway is reached; Key is the
+	// gateway's public node key the proof is sealed against.
+	Site string `json:"site,omitempty"`
 }
 
 // wuiBundle is a customer's W-UI profile.
@@ -123,6 +129,14 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 				t.Transports = append(t.Transports, wt)
 			} else {
 				s.log.Warn("a stealth transport has no usable key yet; profiles leave it out until it has", "interface", iface.Name, "transport", iface.Stealth.V.Transport)
+			}
+		}
+		if iface.StealthFakeTLS() != 0 && acc.StealthSecret != "" {
+			if ft, ok := fakeTransport(iface.Stealth.V, variants); ok {
+				ft.Secret, ft.MTU = acc.StealthSecret, max(iface.MTU, 0)
+				t.Transports = append(t.Transports, ft)
+			} else {
+				s.log.Warn("wui-faketls has no usable node key yet; profiles leave it out until it has", "interface", iface.Name)
 			}
 		}
 		p.Tunnels = append(p.Tunnels, t)
@@ -209,6 +223,31 @@ func wsTransport(p model.StealthParams) (WUITransport, bool) {
 		t.Shape = sh.ProfileObject()
 	}
 	return t, true
+}
+
+// fakeTransport is a tunnel's wui-faketls as a profile gives it: where the
+// gateway is reached (the operator's hosts, on its port), the borrowed site's
+// name the hello asks for, and the gateway's public node key the proof is
+// sealed against. False when it has no node key yet.
+func fakeTransport(p model.StealthParams, variants []endpoints.HostVariant) (WUITransport, bool) {
+	priv, err := base64.StdEncoding.DecodeString(p.NodeKey)
+	if err != nil {
+		return WUITransport{}, false
+	}
+	k, err := ecdh.X25519().NewPrivateKey(priv)
+	if err != nil {
+		return WUITransport{}, false
+	}
+	host, _, err := net.SplitHostPort(p.Site)
+	if err != nil || host == "" {
+		return WUITransport{}, false
+	}
+	return WUITransport{
+		Type:      stealth.FakeTLS,
+		Endpoints: stealthEndpoints(variants, p.Port),
+		Site:      host,
+		Key:       base64.StdEncoding.EncodeToString(k.PublicKey().Bytes()),
+	}, true
 }
 
 // stealthEndpoints is where a tunnel's wui-udp is reached: every address the

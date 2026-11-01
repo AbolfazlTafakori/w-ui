@@ -75,6 +75,9 @@ func gatewayKey(i model.Interface) string {
 		}
 		return key
 	}
+	if name == model.TransportWuiFakeTLS {
+		return fmt.Sprintf("%s|%d|%d|%s|%s|%s", name, port, i.ListenPort, i.PrivateKey, p.Site, p.NodeKey)
+	}
 	return fmt.Sprintf("%s|%d|%d|%d|%s", name, port, i.ListenPort, i.MTU, i.PrivateKey)
 }
 
@@ -156,6 +159,8 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 		gw, err = r.newShapeGateway(iface, priv)
 	case model.TransportWuiPlain:
 		gw, err = r.newPlainGateway(iface, priv)
+	case model.TransportWuiFakeTLS:
+		gw, err = r.newFakeTLSGateway(iface, priv)
 	default:
 		gw, err = r.newUDPGateway(iface, priv)
 	}
@@ -303,6 +308,28 @@ func (r *Reconciler) newPlainGateway(iface model.Interface, priv []byte) (*steal
 		return nil, err
 	}
 	return stealthgw.NewPlain(stealthgw.PlainConfig{StreamConfig: cfg, Cookie: iface.Stealth.V.Cookie})
+}
+
+// newFakeTLSGateway is wui-faketls's gateway: the server itself, on its own
+// port, that borrows a real site. A device's ClientHello opens a session; any
+// other is relayed to the site byte for byte.
+func (r *Reconciler) newFakeTLSGateway(iface model.Interface, priv []byte) (*stealthgw.FakeTLSGateway, error) {
+	p := iface.Stealth.V
+	node, err := base64.StdEncoding.DecodeString(p.NodeKey)
+	if err != nil || len(node) != 32 {
+		return nil, fmt.Errorf("the node key is not an X25519 key")
+	}
+	_, port := iface.StealthTransport()
+	cfg := stealthgw.FakeTLSConfig{
+		Listen:     net.JoinHostPort("", strconv.Itoa(port)),
+		Site:       p.Site,
+		WireGuard:  net.JoinHostPort("127.0.0.1", strconv.Itoa(iface.ListenPort)),
+		ReplayFile: replayFile(r.dataDir, iface),
+		Log:        r.log.With("interface", iface.Name),
+	}
+	copy(cfg.PrivateKey[:], priv)
+	copy(cfg.NodeKey[:], node)
+	return stealthgw.NewFakeTLS(cfg)
 }
 
 // streamConfig is what a gateway behind the operator's front is started

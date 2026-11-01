@@ -301,6 +301,14 @@ func (i *Interface) StealthPlain() int {
 	return 0
 }
 
+// StealthFakeTLS is the port wui-faketls takes for this tunnel, or zero.
+func (i *Interface) StealthFakeTLS() int {
+	if name, port := i.StealthTransport(); name == TransportWuiFakeTLS {
+		return port
+	}
+	return 0
+}
+
 // StealthOpen says whether this tunnel's stealth transport is reached from
 // outside the machine, so its port is let through the firewall: wui-udp
 // always, wui-ws, wui-poll and wui-plain only when a front elsewhere is
@@ -308,7 +316,7 @@ func (i *Interface) StealthPlain() int {
 // outside.
 func (i *Interface) StealthOpen() bool {
 	switch name, _ := i.StealthTransport(); name {
-	case TransportWuiUDP, TransportWuiTLS:
+	case TransportWuiUDP, TransportWuiTLS, TransportWuiFakeTLS:
 		return true
 	case TransportWuiWS, TransportWuiPoll, TransportWuiShape, TransportWuiPlain:
 		return strings.TrimSpace(i.Stealth.V.Proxies) != ""

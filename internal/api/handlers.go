@@ -165,8 +165,8 @@ func redactKeys(iface model.Interface) model.Interface {
 	// certificate keys, whose holder can answer as this server to every
 	// device that pins it. The certificates themselves are public: every
 	// visitor is shown one.
-	if k := iface.Stealth.V; k.Key != "" || k.PreviousKey != "" || k.CertKey != "" || k.PanelCertKey != "" {
-		k.Key, k.PreviousKey, k.CertKey, k.PanelCertKey = "", "", "", ""
+	if k := iface.Stealth.V; k.Key != "" || k.PreviousKey != "" || k.CertKey != "" || k.PanelCertKey != "" || k.NodeKey != "" {
+		k.Key, k.PreviousKey, k.CertKey, k.PanelCertKey, k.NodeKey = "", "", "", "", ""
 		iface.Stealth = model.JSON(k)
 	}
 

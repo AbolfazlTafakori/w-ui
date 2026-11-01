@@ -2,12 +2,16 @@ package service
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -64,10 +68,10 @@ func EnsureStealthSecrets(ctx context.Context, db *gorm.DB) error {
 // checkWireGuardTransport refuses a WireGuard transport there is none of.
 func checkWireGuardTransport(name string) error {
 	switch name {
-	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPoll, model.TransportWuiShape, model.TransportWuiPlain:
+	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPoll, model.TransportWuiShape, model.TransportWuiPlain, model.TransportWuiFakeTLS:
 		return nil
 	}
-	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws, wui-poll, wui-shape or wui-plain, not %q", name)
+	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws, wui-poll, wui-shape, wui-plain or wui-faketls, not %q", name)
 }
 
 // WSSettings is the rest of a WireGuard tunnel's transport, wui-tls's,
@@ -84,6 +88,8 @@ type WSSettings struct {
 	Cookie string `json:"cookie"`
 	// Shape is wui-shape's: the request shape as a JSON object.
 	Shape string `json:"shape"`
+	// Site is wui-faketls's borrowed site, host:port.
+	Site string `json:"site"`
 	// UsePanelCert and ProxyProtocol are wui-tls's alone.
 	UsePanelCert  bool `json:"usePanelCert"`
 	ProxyProtocol bool `json:"proxyProtocol"`
@@ -103,6 +109,7 @@ func (w *WSSettings) apply(p *model.StealthParams) {
 		p.Cookie = c
 	}
 	p.Shape = strings.TrimSpace(w.Shape)
+	p.Site = strings.TrimSpace(w.Site)
 	p.UsePanelCert, p.ProxyProtocol = w.UsePanelCert, w.ProxyProtocol
 }
 
@@ -301,6 +308,47 @@ func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) 
 	return p, nil
 }
 
+// newNodeKey draws wui-faketls's transport key: a 32-byte X25519 private
+// value, base64. A device's hello is sealed against its public half.
+func newNodeKey() (string, error) {
+	k, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return "", fmt.Errorf("service: draw a node key: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(k.Bytes()), nil
+}
+
+// checkFakeTLS checks wui-faketls's settings and fills what the panel draws:
+// its node key when it has none. Everything the other transports use -- a
+// front, a path, a decoy, a certificate, a token key -- is cleared: wui-faketls
+// is the server on its own port, and opens a session from a ClientHello's
+// carrier, not from a token on a path.
+func checkFakeTLS(p model.StealthParams, now time.Time) (model.StealthParams, error) {
+	site := strings.TrimSpace(p.Site)
+	host, port, err := net.SplitHostPort(site)
+	if err != nil || host == "" || port == "" {
+		return p, invalidField("transportWs.site", "the borrowed site is a host:port, like www.example.com:443: devices relay to it, and its name is the one their hello asks for")
+	}
+	if !validHostName(strings.ToLower(strings.TrimSuffix(host, "."))) {
+		return p, invalidField("transportWs.site", "%q is not a host name or an address", host)
+	}
+	if n, perr := strconv.Atoi(port); perr != nil || n < 1 || n > 65535 {
+		return p, invalidField("transportWs.site", "the borrowed site's port %q is out of range", port)
+	}
+	kept := model.StealthParams{
+		Transport: p.Transport, Port: p.Port, Site: net.JoinHostPort(host, port),
+		NodeKey: p.NodeKey, KeyAt: p.KeyAt,
+	}
+	if kept.NodeKey == "" {
+		key, err := newNodeKey()
+		if err != nil {
+			return p, err
+		}
+		kept.NodeKey, kept.KeyAt = key, now.Unix()
+	}
+	return kept, nil
+}
+
 // checkWSPath takes a path of at least the gateway's least, of the
 // characters a path carries unescaped, from a slash.
 func checkWSPath(path string) error {
@@ -438,6 +486,9 @@ func (s *Interfaces) checkStealth(ctx context.Context, nodeID, selfID uint, mode
 		}
 	}
 	now := time.Now()
+	if p.Transport == model.TransportWuiFakeTLS {
+		return checkFakeTLS(p, now)
+	}
 	p, err := checkWS(p, now)
 	if err != nil {
 		return p, err
@@ -531,12 +582,13 @@ func (s *Interfaces) updateStealth(ctx context.Context, iface *model.Interface, 
 		// clear.
 		if want.Transport != iface.Stealth.V.Transport {
 			want.Path, want.Cookie, want.Key, want.PreviousKey, want.KeyAt = "", "", "", "", 0
+			want.Site, want.NodeKey = "", ""
 		}
 	}
 	if in.TransportPort != nil && want.Transport != "" {
 		want.Port = *in.TransportPort
 	}
-	if in.TransportWS != nil && want.Proven() {
+	if in.TransportWS != nil && (want.Proven() || want.Transport == model.TransportWuiFakeTLS) {
 		in.TransportWS.apply(&want)
 		// The old transport's path sent back with the new one's name is
 		// not taken: a path is a transport's own, like its key.

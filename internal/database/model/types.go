@@ -273,6 +273,14 @@ type StealthParams struct {
 	// operator chose, in its one canonical form. Empty on every other
 	// transport.
 	Shape string `json:"shape,omitempty"`
+	// Site is wui-faketls's borrowed site, host:port: whoever is not a device
+	// is relayed to it byte for byte, and its name is the SNI a device's hello
+	// asks for. Empty on every other transport.
+	Site string `json:"site,omitempty"`
+	// NodeKey is wui-faketls's transport key, base64 of a 32-byte X25519
+	// private value, drawn once and kept. A device's hello is sealed against
+	// its public half, which the profile carries. The API never shows it.
+	NodeKey string `json:"nodeKey,omitempty"`
 	// Key and PreviousKey are the transport's private keys, base64: the
 	// current one, which profiles name, and the one before, still taken
 	// from apps that have not fetched their profile since. KeyAt is when Key
@@ -355,8 +363,9 @@ const (
 	TransportWuiTLS   = "wui-tls"
 	TransportWuiWS    = "wui-ws"
 	TransportWuiPoll  = "wui-poll"
-	TransportWuiShape = "wui-shape"
-	TransportWuiPlain = "wui-plain"
+	TransportWuiShape   = "wui-shape"
+	TransportWuiPlain   = "wui-plain"
+	TransportWuiFakeTLS = "wui-faketls"
 )
 
 // TransportNetwork is the network a WireGuard transport listens on, or ""
@@ -365,7 +374,7 @@ func TransportNetwork(name string) string {
 	switch name {
 	case TransportWuiUDP:
 		return "udp"
-	case TransportWuiTLS, TransportWuiWS, TransportWuiPoll, TransportWuiShape, TransportWuiPlain:
+	case TransportWuiTLS, TransportWuiWS, TransportWuiPoll, TransportWuiShape, TransportWuiPlain, TransportWuiFakeTLS:
 		return "tcp"
 	}
 	return ""
