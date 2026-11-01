@@ -84,11 +84,15 @@ type fakeSizer struct {
 	next  uint64
 }
 
-// learn keeps the plaintext lengths a site's records showed.
-func (z *fakeSizer) learn(sizes []int) {
+// add keeps the plaintext lengths a site's records showed, the newest in
+// place of the oldest past a cap.
+func (z *fakeSizer) add(sizes []int) {
 	z.mu.Lock()
 	defer z.mu.Unlock()
-	z.sizes = append([]int(nil)[:0:0], sizes...)
+	z.sizes = append(z.sizes, sizes...)
+	if len(z.sizes) > fakeSizesMax {
+		z.sizes = append([]int(nil), z.sizes[len(z.sizes)-fakeSizesMax:]...)
+	}
 }
 
 // pad says how many zero bytes to add after data bytes of chunk plaintext, so

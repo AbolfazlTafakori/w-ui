@@ -175,11 +175,18 @@ func NewStream(cfg StreamConfig) (*StreamGateway, error) {
 // newStreamGateway is the part of a gateway every stream transport has: the
 // proofs of transport, the devices, the sessions and their limits.
 func newStreamGateway(cfg StreamConfig, transport string) (*StreamGateway, error) {
-	if len(cfg.Path) < MinPath || cfg.Path[0] != '/' {
-		return nil, fmt.Errorf("stealthgw: a path of at least %d characters, from /, is needed", MinPath)
-	}
-	if len(cfg.TransportKeys) == 0 {
-		return nil, errors.New("stealthgw: the transport has no key")
+	// wui-faketls opens its sessions from a ClientHello's carrier, not from a
+	// token on a path, so it needs neither a path nor a transport key and
+	// stands up no proof server; everything else a stream gateway is -- the
+	// devices, the sessions, their limits and the replay rule -- it keeps.
+	token := transport != stealth.FakeTLS
+	if token {
+		if len(cfg.Path) < MinPath || cfg.Path[0] != '/' {
+			return nil, fmt.Errorf("stealthgw: a path of at least %d characters, from /, is needed", MinPath)
+		}
+		if len(cfg.TransportKeys) == 0 {
+			return nil, errors.New("stealthgw: the transport has no key")
+		}
 	}
 	if cfg.Sessions <= 0 {
 		cfg.Sessions = defaultSlots
@@ -195,17 +202,22 @@ func newStreamGateway(cfg StreamConfig, transport string) (*StreamGateway, error
 	if err != nil {
 		return nil, fmt.Errorf("stealthgw: tunnel address: %w", err)
 	}
-	var anchor stealth.Anchor
-	copy(anchor[:], resp.priv.PublicKey().Bytes())
-	proofs, err := stealth.NewProofServer(anchor, transport, cfg.TransportKeys...)
-	if err != nil {
-		return nil, err
+	var proofs *stealth.ProofServer
+	cookie := ""
+	if token {
+		var anchor stealth.Anchor
+		copy(anchor[:], resp.priv.PublicKey().Bytes())
+		proofs, err = stealth.NewProofServer(anchor, transport, cfg.TransportKeys...)
+		if err != nil {
+			return nil, err
+		}
+		cookie = cookieName(cfg.TransportKeys[0])
 	}
 	g := &StreamGateway{
 		cfg: cfg, log: cfg.Log.With("transport", transport, "listen", cfg.Listen),
 		proofs: proofs, resp: resp, wg: wg,
 		path:    sha256.Sum256([]byte(cfg.Path)),
-		cookie:  cookieName(cfg.TransportKeys[0]),
+		cookie:  cookie,
 		proxies: cfg.Proxies, header: cfg.ClientHeader,
 		devices: map[[32]byte]*streamDevice{}, streams: map[*stream]struct{}{},
 		fakes:   map[*fakeStream]struct{}{},
