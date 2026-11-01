@@ -294,3 +294,55 @@ func TestShapeStream(t *testing.T) {
 		t.Fatalf("the first event did not carry the tunnel's response: %+v", ds)
 	}
 }
+
+// client wires a real WireGuard device to a running ShapeClient.
+func (f *shapeFixture) client(t *testing.T, s stealth.Secret, priv wgtypes.Key) (*wgEnd, *ShapeClient) {
+	t.Helper()
+	c, err := NewShapeClient(ShapeClientConfig{
+		URL: "http://" + f.gw.Addr().String() + testPath, Listen: "127.0.0.1:0",
+		Secret: s, Anchor: f.anchor(), TransportKey: f.key.Public(), Shape: f.shape,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go c.Serve(f.ctx)
+	return wireguard(t, priv, peer(f.server.key.PublicKey(), serverIP, "endpoint="+c.LocalAddr().String())), c
+}
+
+func TestShapePollRunsBothWays(t *testing.T) {
+	ck := key(t)
+	s := secret(t)
+	shape, _ := stealth.Preset("get-poll")
+	f := newShapeFixture(t, shape, ck)
+	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: s}})
+	cl, c := f.client(t, s, ck)
+
+	if !through(cl, f.server, tuntest.Ping(serverIP, clientIP), 15*time.Second) {
+		t.Fatalf("nothing reached the server: %+v", f.gw.Stats())
+	}
+	if !through(f.server, cl, tuntest.Ping(clientIP, serverIP), 10*time.Second) {
+		t.Fatalf("nothing reached the client: %+v", f.gw.Stats())
+	}
+	if c.Sessions() < 1 {
+		t.Fatalf("no session was opened")
+	}
+}
+
+func TestShapeStreamRunsBothWays(t *testing.T) {
+	ck := key(t)
+	s := secret(t)
+	shape, _ := stealth.Preset("post-stream")
+	f := newShapeFixture(t, shape, ck)
+	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: s}})
+	cl, c := f.client(t, s, ck)
+
+	if !through(cl, f.server, tuntest.Ping(serverIP, clientIP), 15*time.Second) {
+		t.Fatalf("nothing reached the server over the stream: %+v", f.gw.Stats())
+	}
+	if !through(f.server, cl, tuntest.Ping(clientIP, serverIP), 10*time.Second) {
+		t.Fatalf("nothing reached the client over the stream: %+v", f.gw.Stats())
+	}
+	if c.Sessions() < 1 {
+		t.Fatalf("no session was opened")
+	}
+}
