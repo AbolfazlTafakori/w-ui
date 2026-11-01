@@ -217,6 +217,7 @@ const frontChosen = computed(() => stealthChosen.value && fronted(form.value.tra
 const plainChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-plain')
 const tlsChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-tls')
 const pollChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-poll')
+const shapeChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-shape')
 // Whose certificate a saved wui-tls tunnel serves, when it is still the one
 // shown.
 const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'wui-tls' ? props.iface.stealth?.certSource || '' : ''))
@@ -233,6 +234,7 @@ function chooseTransport() {
     const own = saved?.transport === form.value.transport ? wsOf(saved) : null
     form.value.ws.path = own?.path || ''
     form.value.ws.cookie = own?.cookie || ''
+    form.value.ws.shape = own?.shape || 'get-poll'
   }
 }
 const transportHint = computed(() => {
@@ -240,6 +242,7 @@ const transportHint = computed(() => {
     if (form.value.transport === 'wui-tls') return t('interface.transportWuiTlsHint')
     if (form.value.transport === 'wui-ws') return t('interface.transportWuiWsHint')
     if (form.value.transport === 'wui-poll') return t('interface.transportWuiPollHint')
+    if (form.value.transport === 'wui-shape') return t('interface.transportWuiShapeHint')
     if (form.value.transport === 'wui-plain') return t('interface.transportWuiPlainHint')
     return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
   }
@@ -573,6 +576,7 @@ defineExpose({ showError })
                       <option value="wui-tls">{{ t('interface.transportWuiTls') }}</option>
                       <option value="wui-ws">{{ t('interface.transportWuiWs') }}</option>
                       <option value="wui-poll">{{ t('interface.transportWuiPoll') }}</option>
+                      <option value="wui-shape">{{ t('interface.transportWuiShape') }}</option>
                       <option value="wui-plain">{{ t('interface.transportWuiPlain') }}</option>
                     </template>
                     <template v-else>
@@ -587,8 +591,8 @@ defineExpose({ showError })
             <div v-if="stealthChosen" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport-port">
-                  {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : pollChosen ? t('interface.transportPortPoll') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
-                  <HelpTip :text="tlsChosen ? t('interface.transportPortTlsHint') : plainChosen ? t('interface.transportPortPlainHint') : pollChosen ? t('interface.transportPortPollHint') : wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
+                  {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : pollChosen ? t('interface.transportPortPoll') : shapeChosen ? t('interface.transportPortShape') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
+                  <HelpTip :text="tlsChosen ? t('interface.transportPortTlsHint') : plainChosen ? t('interface.transportPortPlainHint') : pollChosen ? t('interface.transportPortPollHint') : shapeChosen ? t('interface.transportPortShapeHint') : wsChosen ? t('interface.transportPortWsHint') : t('interface.transportPortHint')" />
                 </label>
                 <label class="ainput number" :class="{ invalid: fieldName === 'transportPort' }">
                   <input id="if-transport-port" v-model="form.transportPort" data-field="transportPort" type="number" min="1" max="65535" class="ltr" @input="clearError('transportPort')" />
@@ -634,6 +638,20 @@ defineExpose({ showError })
                     <input id="if-ws-path" v-model.trim="form.ws.path" data-field="transportWs.path" class="ltr" :placeholder="t('interface.wsPathDrawn')" @input="clearError('transportWs.path')" />
                   </label>
                   <p v-if="fieldName === 'transportWs.path'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+              <div v-if="shapeChosen" class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-ws-shape">{{ t('interface.wsShape') }} <HelpTip :text="t('interface.wsShapeHint')" /></label>
+                  <div class="aselect" :class="{ invalid: fieldName === 'transportWs.shape' }">
+                    <select id="if-ws-shape" v-model="form.ws.shape" data-field="transportWs.shape" @change="clearError('transportWs.shape')">
+                      <option value="get-poll">{{ t('interface.shapeGetPoll') }}</option>
+                      <option value="put-poll">{{ t('interface.shapePutPoll') }}</option>
+                      <option value="get-stream">{{ t('interface.shapeGetStream') }}</option>
+                      <option value="post-stream">{{ t('interface.shapePostStream') }}</option>
+                    </select>
+                  </div>
+                  <p v-if="fieldName === 'transportWs.shape'" class="field-error" role="alert">{{ fieldError }}</p>
                 </div>
               </div>
               <div class="acol12">

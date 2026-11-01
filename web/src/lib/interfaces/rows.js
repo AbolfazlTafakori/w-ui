@@ -151,7 +151,7 @@ export function ocPayload(oc) {
 // fronted says a WireGuard transport is behind the operator's web server:
 // wui-ws, wui-poll, or wui-plain without TLS.
 export function fronted(transport) {
-  return transport === 'wui-ws' || transport === 'wui-poll' || transport === 'wui-plain'
+  return transport === 'wui-ws' || transport === 'wui-poll' || transport === 'wui-shape' || transport === 'wui-plain'
 }
 
 // proven says a WireGuard transport opens with a proof sealed to a key of
@@ -174,9 +174,26 @@ export function wsOf(stealth) {
     proxies: s.proxies || '',
     clientHeader: s.clientHeader || '',
     cookie: s.cookie || '',
+    shape: shapePreset(s.shape),
     usePanelCert: !!s.usePanelCert,
     proxyProtocol: !!s.proxyProtocol,
   }
+}
+
+// shapePreset reads wui-shape's stored shape object back to the preset name
+// the form offers. The stored shape is a JSON string; anything unexpected is
+// get-poll, the mildest.
+export function shapePreset(shape) {
+  let o = shape
+  if (typeof shape === 'string') {
+    if (!shape) return 'get-poll'
+    try { o = JSON.parse(shape) } catch { return 'get-poll' }
+  }
+  const method = o?.up?.method, place = o?.up?.in, mode = o?.down?.mode
+  if (method === 'POST' && place === 'body' && mode === 'sse') return 'post-stream'
+  if (method === 'GET' && place === 'query' && mode === 'sse') return 'get-stream'
+  if (method === 'PUT' && place === 'body' && mode === 'poll') return 'put-poll'
+  return 'get-poll'
 }
 
 // What a WireGuard tunnel's form sends for wui-tls, wui-ws, wui-poll or wui-plain: a
@@ -191,6 +208,7 @@ export function wsPayload(ws) {
     proxies: (ws?.proxies || '').trim(),
     clientHeader: (ws?.clientHeader || '').trim(),
     cookie: (ws?.cookie || '').trim(),
+    shape: (ws?.shape || '').trim(),
     usePanelCert: !!ws?.usePanelCert,
     proxyProtocol: !!ws?.proxyProtocol,
   }

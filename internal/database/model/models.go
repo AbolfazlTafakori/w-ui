@@ -285,6 +285,14 @@ func (i *Interface) StealthPoll() int {
 	return 0
 }
 
+// StealthShape is the port wui-shape takes for this tunnel, or zero.
+func (i *Interface) StealthShape() int {
+	if name, port := i.StealthTransport(); name == TransportWuiShape {
+		return port
+	}
+	return 0
+}
+
 // StealthPlain is the port wui-plain takes for this tunnel, or zero.
 func (i *Interface) StealthPlain() int {
 	if name, port := i.StealthTransport(); name == TransportWuiPlain {
@@ -302,7 +310,7 @@ func (i *Interface) StealthOpen() bool {
 	switch name, _ := i.StealthTransport(); name {
 	case TransportWuiUDP, TransportWuiTLS:
 		return true
-	case TransportWuiWS, TransportWuiPoll, TransportWuiPlain:
+	case TransportWuiWS, TransportWuiPoll, TransportWuiShape, TransportWuiPlain:
 		return strings.TrimSpace(i.Stealth.V.Proxies) != ""
 	}
 	return false

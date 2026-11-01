@@ -152,6 +152,8 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 		gw, err = r.newWSGateway(iface, priv)
 	case model.TransportWuiPoll:
 		gw, err = r.newPollGateway(iface, priv)
+	case model.TransportWuiShape:
+		gw, err = r.newShapeGateway(iface, priv)
 	case model.TransportWuiPlain:
 		gw, err = r.newPlainGateway(iface, priv)
 	default:
@@ -278,6 +280,20 @@ func (r *Reconciler) newPollGateway(iface model.Interface, priv []byte) (*stealt
 		return nil, err
 	}
 	return stealthgw.NewPoll(stealthgw.PollConfig{StreamConfig: cfg})
+}
+
+// newShapeGateway is wui-shape's gateway: wui-poll's, with the operator's
+// request shape.
+func (r *Reconciler) newShapeGateway(iface model.Interface, priv []byte) (*stealthgw.ShapeGateway, error) {
+	cfg, err := r.streamConfig(iface, priv)
+	if err != nil {
+		return nil, err
+	}
+	shape, err := stealth.ParseShape([]byte(iface.Stealth.V.Shape))
+	if err != nil {
+		return nil, fmt.Errorf("the request shape is not valid: %w", err)
+	}
+	return stealthgw.NewShape(stealthgw.ShapeConfig{StreamConfig: cfg, Shape: shape})
 }
 
 // newPlainGateway is wui-plain's gateway: wui-ws's, with its cookie.

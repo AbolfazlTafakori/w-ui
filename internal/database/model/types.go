@@ -269,6 +269,10 @@ type StealthParams struct {
 	// Cookie is the name of the cookie wui-plain's token travels in, drawn
 	// by the panel and kept across its keys.
 	Cookie string `json:"cookie,omitempty"`
+	// Shape is wui-shape's: the JSON object of the request shape the
+	// operator chose, in its one canonical form. Empty on every other
+	// transport.
+	Shape string `json:"shape,omitempty"`
 	// Key and PreviousKey are the transport's private keys, base64: the
 	// current one, which profiles name, and the one before, still taken
 	// from apps that have not fetched their profile since. KeyAt is when Key
@@ -339,7 +343,7 @@ func (p StealthParams) FrontPortOr() int {
 // Fronted says whether the transport is behind the operator's web server:
 // wui-ws, wui-poll or wui-plain.
 func (p StealthParams) Fronted() bool {
-	return p.Transport == TransportWuiWS || p.Transport == TransportWuiPoll || p.Transport == TransportWuiPlain
+	return p.Transport == TransportWuiWS || p.Transport == TransportWuiPoll || p.Transport == TransportWuiShape || p.Transport == TransportWuiPlain
 }
 
 // WireGuard's transports, as a tunnel's form and the API name them. Plain
@@ -351,6 +355,7 @@ const (
 	TransportWuiTLS   = "wui-tls"
 	TransportWuiWS    = "wui-ws"
 	TransportWuiPoll  = "wui-poll"
+	TransportWuiShape = "wui-shape"
 	TransportWuiPlain = "wui-plain"
 )
 
@@ -360,7 +365,7 @@ func TransportNetwork(name string) string {
 	switch name {
 	case TransportWuiUDP:
 		return "udp"
-	case TransportWuiTLS, TransportWuiWS, TransportWuiPoll, TransportWuiPlain:
+	case TransportWuiTLS, TransportWuiWS, TransportWuiPoll, TransportWuiShape, TransportWuiPlain:
 		return "tcp"
 	}
 	return ""

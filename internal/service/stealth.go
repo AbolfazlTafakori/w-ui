@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"net/url"
@@ -63,10 +64,10 @@ func EnsureStealthSecrets(ctx context.Context, db *gorm.DB) error {
 // checkWireGuardTransport refuses a WireGuard transport there is none of.
 func checkWireGuardTransport(name string) error {
 	switch name {
-	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPoll, model.TransportWuiPlain:
+	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPoll, model.TransportWuiShape, model.TransportWuiPlain:
 		return nil
 	}
-	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws, wui-poll or wui-plain, not %q", name)
+	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws, wui-poll, wui-shape or wui-plain, not %q", name)
 }
 
 // WSSettings is the rest of a WireGuard tunnel's transport, wui-tls's,
@@ -81,6 +82,8 @@ type WSSettings struct {
 	ClientHeader string `json:"clientHeader"`
 	// Cookie is wui-plain's alone.
 	Cookie string `json:"cookie"`
+	// Shape is wui-shape's: the request shape as a JSON object.
+	Shape string `json:"shape"`
 	// UsePanelCert and ProxyProtocol are wui-tls's alone.
 	UsePanelCert  bool `json:"usePanelCert"`
 	ProxyProtocol bool `json:"proxyProtocol"`
@@ -99,6 +102,7 @@ func (w *WSSettings) apply(p *model.StealthParams) {
 	if c := strings.TrimSpace(w.Cookie); c != "" {
 		p.Cookie = c
 	}
+	p.Shape = strings.TrimSpace(w.Shape)
 	p.UsePanelCert, p.ProxyProtocol = w.UsePanelCert, w.ProxyProtocol
 }
 
@@ -247,6 +251,33 @@ func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) 
 	}
 	if p.ClientHeader != "" && !validHeaderName(p.ClientHeader) {
 		return p, invalidField("transportWs.clientHeader", "%q is not a header name", p.ClientHeader)
+	}
+	if p.Transport == model.TransportWuiShape {
+		// The shape is a preset name (what the form sends) or a full JSON
+		// object (what the panel stores and a doctor might paste). Either
+		// way it is stored as the object, in its one canonical form.
+		text := strings.TrimSpace(p.Shape)
+		var sh stealth.Shape
+		switch {
+		case text == "":
+			sh, _ = stealth.Preset("get-poll")
+		case text[0] == '{':
+			parsed, err := stealth.ParseShape([]byte(text))
+			if err != nil {
+				return p, invalidField("transportWs.shape", "the request shape is not valid: %v", err)
+			}
+			sh = parsed
+		default:
+			preset, ok := stealth.Preset(text)
+			if !ok {
+				return p, invalidField("transportWs.shape", "%q is no request shape; choose post-stream, get-stream, put-poll or get-poll", text)
+			}
+			sh = preset
+		}
+		obj, _ := json.Marshal(sh.ProfileObject())
+		p.Shape = string(obj)
+	} else {
+		p.Shape = ""
 	}
 	switch {
 	case !plain:

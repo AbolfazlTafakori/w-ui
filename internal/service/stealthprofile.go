@@ -78,6 +78,8 @@ type WUITransport struct {
 	Key string `json:"key,omitempty"`
 	// Cookie is the name of the cookie wui-plain's token travels in.
 	Cookie string `json:"cookie,omitempty"`
+	// Shape is wui-shape's: the request shape, written out in full.
+	Shape map[string]any `json:"shape,omitempty"`
 }
 
 // wuiBundle is a customer's W-UI profile.
@@ -115,7 +117,7 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 				Secret: acc.StealthSecret, MTU: max(iface.MTU, 0),
 			})
 		}
-		if (iface.StealthTLS() != 0 || iface.StealthWS() != 0 || iface.StealthPoll() != 0 || iface.StealthPlain() != 0) && acc.StealthSecret != "" {
+		if (iface.StealthTLS() != 0 || iface.StealthWS() != 0 || iface.StealthPoll() != 0 || iface.StealthShape() != 0 || iface.StealthPlain() != 0) && acc.StealthSecret != "" {
 			if wt, ok := wsTransport(iface.Stealth.V); ok {
 				wt.Secret, wt.MTU = acc.StealthSecret, max(iface.MTU, 0)
 				t.Transports = append(t.Transports, wt)
@@ -158,6 +160,8 @@ func wsTransport(p model.StealthParams) (WUITransport, bool) {
 	switch p.Transport {
 	case model.TransportWuiPoll:
 		scheme, name = "https://", stealth.Poll
+	case model.TransportWuiShape:
+		scheme, name = "https://", stealth.Shaped
 	case model.TransportWuiPlain:
 		if p.Cookie == "" {
 			return WUITransport{}, false
@@ -196,6 +200,13 @@ func wsTransport(p model.StealthParams) (WUITransport, bool) {
 	}
 	if name == stealth.Plain {
 		t.Cookie = p.Cookie
+	}
+	if name == stealth.Shaped {
+		sh, err := stealth.ParseShape([]byte(p.Shape))
+		if err != nil {
+			return WUITransport{}, false
+		}
+		t.Shape = sh.ProfileObject()
 	}
 	return t, true
 }

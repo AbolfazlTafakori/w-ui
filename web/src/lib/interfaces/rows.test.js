@@ -50,15 +50,15 @@ describe('wui-ws in a tunnel’s form', () => {
     expect(wsOf(stealth)).toEqual({
       host: 'cdn.example.com', frontPort: 8443, path: '/media/7f3a9c2e1b',
       origin: 'http://127.0.0.1:8080', proxies: '198.51.100.0/24', clientHeader: 'CF-Connecting-IP', cookie: '',
-      usePanelCert: false, proxyProtocol: false,
+      shape: 'get-poll', usePanelCert: false, proxyProtocol: false,
     })
-    expect(wsOf({ transport: 'wui-udp', port: 2096 })).toEqual({ host: '', frontPort: '', path: '', origin: '', proxies: '', clientHeader: '', cookie: '', usePanelCert: false, proxyProtocol: false })
+    expect(wsOf({ transport: 'wui-udp', port: 2096 })).toEqual({ host: '', frontPort: '', path: '', origin: '', proxies: '', clientHeader: '', cookie: '', shape: 'get-poll', usePanelCert: false, proxyProtocol: false })
     expect(wsOf(null).host).toBe('')
   })
 
   it('sends a port as a number and trims what was typed', () => {
     expect(wsPayload({ host: ' f.example ', frontPort: '', path: '', origin: '', proxies: ' 10.0.0.0/8 ', clientHeader: '' }))
-      .toEqual({ host: 'f.example', frontPort: 0, path: '', origin: '', proxies: '10.0.0.0/8', clientHeader: '', cookie: '', usePanelCert: false, proxyProtocol: false })
+      .toEqual({ host: 'f.example', frontPort: 0, path: '', origin: '', proxies: '10.0.0.0/8', clientHeader: '', cookie: '', shape: '', usePanelCert: false, proxyProtocol: false })
   })
 
   it('travels in an export without its key', () => {

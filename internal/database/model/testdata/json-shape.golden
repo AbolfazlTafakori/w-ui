@@ -131,6 +131,7 @@ StealthParams
 	proxies string omitempty
 	clientHeader string omitempty
 	cookie string omitempty
+	shape string omitempty
 	key string omitempty
 	previousKey string omitempty
 	keyAt int64 omitempty

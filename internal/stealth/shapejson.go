@@ -98,14 +98,25 @@ func ParseShape(text []byte) (Shape, error) {
 	})
 }
 
-// ShapeObject is the shape as a profile writes it: an object of exactly the
-// page's members, the defaults left out so a profile stays small. It round
-// trips through ParseShape.
-func (s Shape) ShapeObject() map[string]any {
-	up := map[string]any{"method": s.Method, "in": s.Place.Word()}
+// ProfileObject is the shape written out in full -- every resolved member --
+// as a profile carries it to a client, so the client needs no defaults and no
+// presets of its own. It round trips through ParseShape.
+func (s Shape) ProfileObject() map[string]any {
+	up := map[string]any{
+		"method":   s.Method,
+		"in":       s.Place.Word(),
+		"limit":    s.Limit,
+		"inflight": s.Inflight,
+		"gather":   []int{int(s.Gather.Lo), int(s.Gather.Hi)},
+	}
 	if s.Name != "" {
 		up["name"] = s.Name
 	}
 	down := map[string]any{"mode": s.Mode.Word()}
+	if s.Mode == ModeSse {
+		down["gather"] = []int{int(s.DownGather.Lo), int(s.DownGather.Hi)}
+		down["life"] = []int{int(s.Life.Lo), int(s.Life.Hi)}
+		down["fallback"] = s.Fallback
+	}
 	return map[string]any{"up": up, "down": down}
 }
