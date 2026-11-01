@@ -137,6 +137,19 @@ func (k DeviceKeys) EpochTag(epoch uint64) Tag {
 	return t
 }
 
+// HourTag is the device's wui-faketls tag for one hour: it names the device
+// inside the proof a client hides in its ClientHello. Like the UDP epoch tag
+// it has a time step, but of one hour, so a borrowed-site hello stays valid
+// across a clock a little off.
+func (k DeviceKeys) HourTag(hour uint64) [TagLen]byte {
+	var msg [12 + 8]byte
+	copy(msg[:], "faketls hour")
+	binary.BigEndian.PutUint64(msg[12:], hour)
+	var t [TagLen]byte
+	copy(t[:], mac(k.tagKey, msg[:]))
+	return t
+}
+
 // MaskKey is the tunnel's UDP mask key. It is public -- anyone with a profile
 // for the tunnel can work it out -- and is there only so that a tag on the
 // wire changes with every packet: a tag XORed with a mask drawn from the
