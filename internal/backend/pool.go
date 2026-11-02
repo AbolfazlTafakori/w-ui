@@ -155,10 +155,42 @@ func (p *Pool) CloseAll() {
 // The next reconcile brings it up again from the database, if it is still
 // there -- as a fresh device with whatever name, port and range it now has.
 func (p *Pool) Destroy(ctx context.Context, iface *model.Interface) {
+	p.takeDown(ctx, iface, true)
+}
+
+// Down takes a disabled interface's device off this machine.
+//
+// Dropping an interface from the desired set only closes its driver, and Close
+// deliberately leaves the kernel device up so a panel restart keeps customers
+// connected. A disable is the opposite intent -- an operator asking for the
+// tunnel to stop -- so here the device really goes, and its customers with it.
+// Nothing else does this: a disable writes only the database row, and the
+// reconciler on every node reads that row, which is why this belongs here
+// rather than on the panel's delete path alone.
+//
+// Unlike Destroy it leaves no "destroyed" mark: the row is still there to be
+// switched back on, and re-enabling it must bring the tunnel up on the very
+// next tick rather than wait out the window that stops a just-deleted interface
+// from being reopened by a pass that read it a moment too early. Called every
+// tick for each disabled interface, so it is idempotent -- the device may
+// already be gone.
+func (p *Pool) Down(ctx context.Context, iface *model.Interface) {
+	p.takeDown(ctx, iface, false)
+}
+
+// takeDown closes the driver if one is open, has it tear its own device down
+// when it can, and removes the device by name regardless -- the by-name pass
+// covering a driver that failed to open and a panel that came back to a device
+// it did not create this run, or its port stays taken. Shared by Destroy and
+// Down; forGood is what tells a deletion, which must not be reopened, from a
+// disable, which is brought back the moment it is enabled again.
+func (p *Pool) takeDown(ctx context.Context, iface *model.Interface, forGood bool) {
 	p.mu.Lock()
 	e, ok := p.open[iface.ID]
 	delete(p.open, iface.ID)
-	p.destroyed[iface.ID] = time.Now()
+	if forGood {
+		p.destroyed[iface.ID] = time.Now()
+	}
 	p.mu.Unlock()
 	if ok && e.drv != nil {
 		if d, can := e.drv.(Destroyer); can {
@@ -168,9 +200,6 @@ func (p *Pool) Destroy(ctx context.Context, iface *model.Interface) {
 		}
 		_ = e.drv.Close()
 	}
-	// With or without a driver in hand -- one that failed to open, or a
-	// panel that came back to a device it did not create this run -- the
-	// device itself has to go, or its port stays taken.
 	if err := Remove(ctx, iface); err != nil {
 		p.log.Warn("could not remove a tunnel's device", "interface", iface.Name, "error", err)
 	}

@@ -19,11 +19,12 @@ import (
 type Memory struct {
 	proto model.Protocol
 
-	mu       sync.Mutex
-	iface    *model.Interface
-	accounts map[uint]DesiredAccount
-	stats    map[uint]Stat
-	closed   bool
+	mu        sync.Mutex
+	iface     *model.Interface
+	accounts  map[uint]DesiredAccount
+	stats     map[uint]Stat
+	closed    bool
+	destroyed bool
 }
 
 // NewMemory builds an in-memory backend for the given protocol.
@@ -151,6 +152,25 @@ func (m *Memory) Close() error {
 	defer m.mu.Unlock()
 	m.closed = true
 	return nil
+}
+
+// Destroy stands in for a real driver taking its device down. Close leaves the
+// "device" standing, the way the kernel drivers leave a link up across a panel
+// restart; Destroy is the teardown that does not, so a test can tell the two
+// apart.
+func (m *Memory) Destroy(_ context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed = true
+	m.destroyed = true
+	return nil
+}
+
+// Destroyed reports whether Destroy was called. Test-only.
+func (m *Memory) Destroyed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.destroyed
 }
 
 // SetStat seeds observed counters for an account. Test-only.

@@ -481,10 +481,13 @@ func TestAnInterfaceCreatedWhileRunningGetsADriver(t *testing.T) {
 	}
 }
 
-func TestAnInterfaceSwitchedOffLosesItsDriver(t *testing.T) {
-	// A disabled interface should stop carrying traffic, not keep a live
-	// device that the panel no longer believes in.
-	r, db, _, _ := newRig(t)
+func TestAnInterfaceSwitchedOffIsTakenDown(t *testing.T) {
+	// A disabled interface should stop carrying traffic, not keep a live device
+	// that the panel no longer believes in. Dropping it from the desired set
+	// only closes the driver, and a close leaves the kernel device up so a panel
+	// restart keeps customers connected -- so the disable has to take the device
+	// down itself, or the tunnel keeps running while the panel shows it off.
+	r, db, _, drv := newRig(t)
 	r.Tick(context.Background())
 
 	if _, open := r.pool.Get(1); !open {
@@ -499,5 +502,8 @@ func TestAnInterfaceSwitchedOffLosesItsDriver(t *testing.T) {
 
 	if _, open := r.pool.Get(1); open {
 		t.Fatal("a disabled interface kept its driver open")
+	}
+	if !drv.Destroyed() {
+		t.Fatal("a disabled interface only lost its driver; its device was left up")
 	}
 }

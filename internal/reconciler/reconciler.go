@@ -575,7 +575,10 @@ func (r *Reconciler) announce(kind notify.Kind, title string, names []string, wh
 type desired struct {
 	// interfaces is what the pool is brought in line with.
 	interfaces []model.Interface
-	rules      []enforce.Rule
+	// disabled is the interfaces on this node switched off in the database,
+	// whose devices are taken down rather than left standing.
+	disabled []model.Interface
+	rules    []enforce.Rule
 	shaping    []shaper.Client
 	devices    []string
 	// sessionRate is the class of each device whose customer has a rate,
@@ -599,6 +602,13 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	// temporary, and the alternative is an interface that looks configured and
 	// silently carries nothing until the panel is restarted.
 	if r.pool != nil {
+		// Switched-off interfaces are taken down first, while their drivers are
+		// still open, so a driver that has its own teardown (an OpenVPN or IKEv2
+		// agent to stop) runs it rather than leaving the device for the by-name
+		// pass alone. Then the rest are brought in line.
+		for i := range d.disabled {
+			r.pool.Down(ctx, &d.disabled[i])
+		}
 		r.pool.Sync(ctx, d.interfaces)
 	}
 
@@ -809,6 +819,20 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		return nil, fmt.Errorf("load interfaces: %w", err)
 	}
 
+	// Interfaces switched off on this machine. They keep their database row --
+	// unlike a deleted one, which the panel's delete path takes down directly --
+	// so the reconciler can still see them, and must: dropping an interface from
+	// the desired set only closes its driver, and a close leaves the kernel
+	// device up (so a restart keeps customers connected). Without taking these
+	// down here, a disabled tunnel would keep carrying its customers while the
+	// panel showed it down -- and on a node, which learns of the switch only
+	// through this row, there is no other path that would ever stop it.
+	var disabled []model.Interface
+	if err := db.Where("enabled = ? AND node_id = ?", false, r.localNodeID).
+		Find(&disabled).Error; err != nil {
+		return nil, fmt.Errorf("load disabled interfaces: %w", err)
+	}
+
 	// An interface's other addresses -- a relay in front of this server, a
 	// spare name for when the first is blocked -- are what an L2TP or IKEv2
 	// tunnel has to answer on as well: xl2tpd listens for them and the
@@ -900,6 +924,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		clients:     len(clients),
 		accounts:    len(accounts),
 		interfaces:  interfaces,
+		disabled:    disabled,
 		devices:     shapedDevices(interfaces),
 	}
 
