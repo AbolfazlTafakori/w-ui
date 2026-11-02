@@ -1004,10 +1004,11 @@ defineExpose({ showError })
 .enabled-line { display: flex; align-items: center; gap: 8px; }
 .enabled-text { font-size: 14px; color: var(--ink); }
 
-/* The header: an icon badge, the title, and a line of context under it. */
-.if-head { align-items: center; }
-.if-head .amodal-close { align-self: center; flex: none; }
-.if-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* The header: an icon badge and the title on the left, the close button hard
+   against the right edge. */
+.if-head { align-items: center; justify-content: space-between; gap: 12px; }
+.if-head .amodal-close { align-self: center; flex: none; margin-inline-start: auto; }
+.if-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
 .if-head-badge {
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px; flex: none;
