@@ -1074,11 +1074,14 @@ html[lang='fa'] .field-hint { unicode-bidi: plaintext; }
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--faint); font-size: 15px; pointer-events: none; z-index: 1;
 }
-.aselect.has-ic > .in-ic { left: 12px; }
 .in-ic.ok { color: var(--tag-green-ink); }
 .in-ic.mono-ic { font-family: var(--mono); font-size: 13px; }
-.ainput.has-ic > input { padding-inline-start: 34px; }
-.aselect.has-ic > select { padding-inline-start: 36px; }
+.ainput.has-ic > input { padding-inline-start: 30px; }
+/* On a select the icon clearance is a text-indent, not padding, so only the
+   chosen value is pushed past the icon -- the open option list is not, and
+   has no empty gap on its left. */
+.aselect.has-ic > select { padding-inline-start: 11px; text-indent: 19px; }
+.aselect.has-ic > select option { text-indent: 0; }
 
 /* The "Kernel Accel" badge at the end of the protocol label. The label text
    (and the required asterisk before it) stay left; the badge alone goes right. */
