@@ -19,8 +19,8 @@ type downDriver struct {
 	closes, destroys int
 }
 
-func (d *downDriver) Protocol() model.Protocol                      { return downProto }
-func (d *downDriver) Open(context.Context, *model.Interface) error  { return nil }
+func (d *downDriver) Protocol() model.Protocol                     { return downProto }
+func (d *downDriver) Open(context.Context, *model.Interface) error { return nil }
 func (d *downDriver) Sync(context.Context, []DesiredAccount) (SyncReport, error) {
 	return SyncReport{}, nil
 }

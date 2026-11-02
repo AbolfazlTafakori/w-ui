@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/stealth"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"golang.zx2c4.com/wireguard/tun/tuntest"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // Load tests: many devices on one gateway at once, each a real wireguard-go
