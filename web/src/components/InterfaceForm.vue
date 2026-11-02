@@ -1046,8 +1046,11 @@ html[lang='fa'] .if-head-sub { unicode-bidi: plaintext; }
 .adv-box .arow16 > [class^='acol']:first-child { padding-inline-end: 8px; }
 .adv-box .arow16 > [class^='acol']:last-child { padding-inline-start: 8px; }
 /* A lone full-width control is flush with the card's edges, so it lines up
-   with the left of the first column and the right of the last one below it. */
-.adv-box .arow16 > .acol24 { padding-inline: 0; }
+   with the left of the first column and the right of the last one below it.
+   These match the first/last-child rules' specificity and come after, so the
+   8px gutter padding does not apply to it. */
+.adv-box .arow16 > .acol24:first-child { padding-inline-end: 0; }
+.adv-box .arow16 > .acol24:last-child { padding-inline-start: 0; }
 .adv-box .ainput, .adv-box .aselect, .adv-box .opt-card { background: var(--surface); }
 .adv-box > .arow16:last-child .aform-item, .adv-box > .aform-item:last-child { margin-bottom: 0; }
 .adv-head {
