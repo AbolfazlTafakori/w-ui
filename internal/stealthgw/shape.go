@@ -59,9 +59,6 @@ const (
 	// shapeReaders is how many bodies under one id are read at once while
 	// nothing is proven of them.
 	shapeReaders = 4
-	// sseFlushEvery bounds how long the live stream waits with nothing to
-	// write before it lets the heartbeat timer wake it.
-	sseBeatCheck = time.Second
 )
 
 // mold per-session allowances.

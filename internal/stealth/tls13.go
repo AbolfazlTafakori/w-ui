@@ -242,8 +242,7 @@ func NewTLSKeys(s Suite, secret []byte) (*TLSKeys, error) {
 func (k *TLSKeys) Number() uint64 { return k.number }
 
 func (k *TLSKeys) nonce() []byte {
-	var nonce [12]byte
-	nonce = k.iv
+	nonce := k.iv
 	var ctr [8]byte
 	binary.BigEndian.PutUint64(ctr[:], k.number)
 	for i := 0; i < 8; i++ {

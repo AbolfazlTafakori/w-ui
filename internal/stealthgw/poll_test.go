@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -490,7 +489,6 @@ type cutter struct {
 	ln   net.Listener
 	to   string
 	cuts atomic.Int32
-	wg   sync.WaitGroup
 }
 
 func newCutter(t *testing.T, to string) *cutter {

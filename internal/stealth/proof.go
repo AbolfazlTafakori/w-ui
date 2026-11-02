@@ -293,7 +293,7 @@ func (s *ProofServer) Open(token string) (Proof, error) {
 			hello, rcpt = h, r
 		}
 	}
-	if hello == nil || len(hello) < helloMin || hello[0] != Version || hello[1]|hello[2]|hello[3] != 0 {
+	if len(hello) < helloMin || hello[0] != Version || hello[1]|hello[2]|hello[3] != 0 {
 		return Proof{}, ErrProof
 	}
 	for _, b := range hello[helloMin:] {

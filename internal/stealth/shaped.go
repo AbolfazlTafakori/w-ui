@@ -374,7 +374,7 @@ func ReadTarget(s Shape, path []byte, line RequestLine, header []byte) (ShapeTar
 			}
 			return ShapeTarget{Who: who, bodied: true}, true
 		}
-		if header == nil || len(header) == 0 || len(header) > s.Limit || !dataOK(header) {
+		if len(header) == 0 || len(header) > s.Limit || !dataOK(header) {
 			return ShapeTarget{}, false
 		}
 		return ShapeTarget{Who: who, data: header}, true

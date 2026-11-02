@@ -249,8 +249,9 @@ func newDecoy(origin string) (http.Handler, error) {
 	return &httputil.ReverseProxy{
 		// The request goes on as it came, to its own path and with its own
 		// Host: the origin is the site the front serves.
-		Director: func(out *http.Request) {
-			out.URL.Scheme, out.URL.Host = u.Scheme, u.Host
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetXForwarded()
+			r.Out.URL.Scheme, r.Out.URL.Host = u.Scheme, u.Host
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
 			w.WriteHeader(http.StatusBadGateway)

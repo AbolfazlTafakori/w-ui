@@ -352,7 +352,9 @@ func LeafKey(seed [40]byte) (*ecdsa.PrivateKey, []byte) {
 	mod := new(big.Int).Sub(n, big.NewInt(1))
 	d := new(big.Int).Mod(c, mod)
 	d.Add(d, big.NewInt(1))
+	//lint:ignore SA1019 the throwaway leaf is built from a scalar derived in the proof; there is no non-deprecated way to make an ECDSA key from a raw scalar here
 	x, y := elliptic.P256().ScalarBaseMult(d.FillBytes(make([]byte, 32)))
+	//lint:ignore SA1019 the leaf key is assembled from that scalar and its point, for one throwaway signature
 	priv := &ecdsa.PrivateKey{PublicKey: ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, D: d}
 	point, err := ecdh.P256().NewPrivateKey(d.FillBytes(make([]byte, 32)))
 	if err != nil {

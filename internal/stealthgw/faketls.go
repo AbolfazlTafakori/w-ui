@@ -575,10 +575,9 @@ func (g *FakeTLSGateway) siteDown() {
 // recordSizer reads TLS record lengths from a byte stream, across reads, and
 // feeds the plaintext lengths they imply to the shaper.
 type recordSizer struct {
-	head    [stealth.TLSHeader]byte
-	have    int
-	left    int // bytes still to skip in the current record body
-	started bool
+	head [stealth.TLSHeader]byte
+	have int
+	left int // bytes still to skip in the current record body
 }
 
 func (z *recordSizer) feed(b []byte, sizer *fakeSizer) {

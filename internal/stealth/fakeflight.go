@@ -529,6 +529,7 @@ func verifyCertVerify(message, leafPub, transcriptHash []byte) bool {
 		return false
 	}
 	x, y := new(big.Int).SetBytes(key.Bytes()[1:33]), new(big.Int).SetBytes(key.Bytes()[33:65])
+	//lint:ignore SA1019 the leaf's public key comes in as raw coordinates to verify one throwaway signature
 	pub := &ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}
 	return ecdsa.VerifyASN1(pub, sha256Of(certVerifyContent(transcriptHash)), sig)
 }
