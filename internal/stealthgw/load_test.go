@@ -5,6 +5,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
@@ -81,6 +82,7 @@ func staggerFor() time.Duration {
 // tunnel that did not come up was rate-limited or just slow.
 func runTunnels(t *testing.T, name string, server *wgEnd, clients []*wgEnd, statsf func() string) {
 	var failUp, failDown atomic.Int64
+	up := make([]atomic.Bool, len(clients))
 	var wg sync.WaitGroup
 	stagger := staggerFor()
 	start := time.Now()
@@ -96,7 +98,9 @@ func runTunnels(t *testing.T, name string, server *wgEnd, clients []*wgEnd, stat
 			}
 			if !through(server, cl, tuntest.Ping(ip, serverIP), 60*time.Second) {
 				failDown.Add(1)
+				return
 			}
+			up[i].Store(true)
 		}(i, cl)
 	}
 	wg.Wait()
@@ -108,6 +112,147 @@ func runTunnels(t *testing.T, name string, server *wgEnd, clients []*wgEnd, stat
 	}
 	if failUp.Load() != 0 || failDown.Load() != 0 {
 		t.Errorf("%s: %d of %d tunnels did not carry data both ways", name, len(clients)-ok, len(clients))
+	}
+	// With WUI_LOADSECS set, blast real traffic through every tunnel that came
+	// up and see it stay alive under load.
+	if throughputSecs() > 0 {
+		var live []int
+		for i := range clients {
+			if up[i].Load() {
+				live = append(live, i)
+			}
+		}
+		blastTraffic(t, name, server, clients, live)
+	}
+}
+
+// throughputSecs is how long the traffic phase blasts, from WUI_LOADSECS; zero
+// (the default) turns the traffic phase off.
+func throughputSecs() time.Duration {
+	if v := os.Getenv("WUI_LOADSECS"); v != "" {
+		if x, err := strconv.Atoi(v); err == nil && x > 0 {
+			return time.Duration(x) * time.Second
+		}
+	}
+	return 0
+}
+
+// loadPayload is the UDP payload a traffic packet carries, so each one is a
+// full-size tunnel packet rather than a bare ping.
+const loadPayload = 1200
+
+// ipPacket builds an IPv4/UDP packet from src to dst with a payload of n zero
+// bytes. WireGuard routes it by dst on the way out and accepts it by src on the
+// way in, so src must be the sending device's address and dst the server's.
+func ipPacket(src, dst netip.Addr, n int) []byte {
+	total := 20 + 8 + n
+	p := make([]byte, total)
+	p[0] = 0x45 // IPv4, header length 5 words
+	binary.BigEndian.PutUint16(p[2:], uint16(total))
+	p[8] = 64 // TTL
+	p[9] = 17 // UDP
+	copy(p[12:16], src.AsSlice())
+	copy(p[16:20], dst.AsSlice())
+	var sum uint32
+	for i := 0; i < 20; i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(p[i:]))
+	}
+	for sum>>16 != 0 {
+		sum = sum&0xffff + sum>>16
+	}
+	binary.BigEndian.PutUint16(p[10:], ^uint16(sum))
+	// A minimal UDP header so the length adds up; the body stays zero.
+	binary.BigEndian.PutUint16(p[20:], 40000)
+	binary.BigEndian.PutUint16(p[22:], 40001)
+	binary.BigEndian.PutUint16(p[24:], uint16(8+n))
+	return p
+}
+
+// blastTraffic drives real download traffic through the live tunnels for the
+// window -- the server sends each client full-size packets, as a customer
+// pulling traffic down -- and reports how much got through and whether any
+// tunnel stopped carrying it. A drainer per client counts what it received, so
+// a tunnel that dies under load shows up as one that delivered nothing.
+func blastTraffic(t *testing.T, name string, server *wgEnd, clients []*wgEnd, live []int) {
+	if len(live) == 0 {
+		return
+	}
+	dur := throughputSecs()
+	recv := make([]atomic.Int64, len(clients))
+	var recvBytes, sent atomic.Int64
+	stop := make(chan struct{})
+	// One drainer per client counts what the server's traffic delivers to it,
+	// so a tunnel that stops carrying it shows up as one that got nothing.
+	var drain sync.WaitGroup
+	for _, idx := range live {
+		i, cl := idx, clients[idx]
+		drain.Add(1)
+		go func() {
+			defer drain.Done()
+			for {
+				select {
+				case <-stop:
+					for {
+						select {
+						case p := <-cl.tun.Inbound:
+							recv[i].Add(1)
+							recvBytes.Add(int64(len(p)))
+						default:
+							return
+						}
+					}
+				case p := <-cl.tun.Inbound:
+					recv[i].Add(1)
+					recvBytes.Add(int64(len(p)))
+				}
+			}
+		}()
+	}
+
+	deadline := time.Now().Add(dur)
+	start := time.Now()
+	var wg sync.WaitGroup
+	for _, idx := range live {
+		i := idx
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ip := netip.AddrFrom4([4]byte{10, 0, 0, byte(2 + i)})
+			tick := time.NewTicker(2 * time.Millisecond) // ~500 full-size packets/s/tunnel
+			defer tick.Stop()
+			for time.Now().Before(deadline) {
+				<-tick.C
+				select {
+				case server.tun.Outbound <- ipPacket(serverIP, ip, loadPayload):
+					sent.Add(1)
+				default:
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	time.Sleep(500 * time.Millisecond) // let the last packets arrive
+	close(stop)
+	drain.Wait()
+
+	el := time.Since(start)
+	var total, dead int64
+	minPer := int64(1) << 62
+	for _, idx := range live {
+		c := recv[idx].Load()
+		total += c
+		if c == 0 {
+			dead++
+		}
+		if c < minPer {
+			minPer = c
+		}
+	}
+	mb := float64(recvBytes.Load()) / (1 << 20)
+	t.Logf("%s traffic (download): %d sent, %d delivered over %d tunnels, %.1f MB in %s = %.1f MB/s; min/tunnel %d, dead %d",
+		name, sent.Load(), total, len(live), mb, el.Round(time.Millisecond), mb/el.Seconds(), minPer, dead)
+	if dead > 0 {
+		t.Errorf("%s: %d of %d tunnels stopped carrying traffic under load", name, dead, len(live))
 	}
 }
 
