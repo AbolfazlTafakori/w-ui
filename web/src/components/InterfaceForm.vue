@@ -566,7 +566,7 @@ defineExpose({ showError })
                 <p v-if="fieldName === 'mode'" class="field-error" role="alert">{{ fieldError }}</p>
               </div>
             </div>
-            <div v-if="showsTransport" class="acol12">
+            <div v-if="showsTransport" :class="(!xrayNode && isWireGuard) ? 'acol12' : 'acol24'">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport">{{ t('interface.transport') }} <HelpTip :text="transportHint" /></label>
                 <div class="aselect" :class="{ invalid: fieldName === 'transport' }">
