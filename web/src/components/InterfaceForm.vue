@@ -1080,9 +1080,11 @@ html[lang='fa'] .field-hint { unicode-bidi: plaintext; }
 .ainput.has-ic > input { padding-inline-start: 34px; }
 .aselect.has-ic > select { padding-inline-start: 36px; }
 
-/* The "Kernel Accel" badge at the end of the protocol label. */
-.proto-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* The "Kernel Accel" badge at the end of the protocol label. The label text
+   (and the required asterisk before it) stay left; the badge alone goes right. */
+.proto-label { display: flex; align-items: center; gap: 8px; }
 .proto-badge {
+  margin-inline-start: auto;
   font-size: 10px; letter-spacing: 0.02em;
   color: var(--tag-green-ink);
   background: var(--tag-green-bg, color-mix(in srgb, var(--tag-green-ink) 12%, transparent));
