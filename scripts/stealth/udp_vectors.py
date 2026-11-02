@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks internal/stealth/testdata/udp.json against docs/reference/stealth.md.
 
-An implementation of the wui-udp packets of its own, written from the
+An implementation of the veil packets of its own, written from the
 specification and not from the Go code, so that what the panel sends and what
 the specification says are known to be the same. It opens the opening and the
 two data packets of the vector, derives every key again, and fails on the

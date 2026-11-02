@@ -73,7 +73,7 @@ const form = ref(
         // beside it on a port of its own.
         transport: props.iface.protocol === 'wireguard' ? props.iface.stealth?.transport || 'udp' : props.iface.openvpn?.transport || 'udp',
         transportPort: props.iface.stealth?.port || '',
-        // wui-tls's, wui-ws's, wui-poll's or wui-plain's name, path and decoy; the
+        // anchor's, drift's, relay's or bare's name, path and decoy; the
         // transport's keys never leave the server.
         ws: wsOf(props.iface.stealth),
         psk: props.iface.l2tp?.psk || '',
@@ -200,35 +200,35 @@ async function drawAwg(level = form.value.awgLevel) {
   }
 }
 const showsAwg = computed(() => isWireGuard.value && form.value.mode === 'amnezia')
-// WireGuard's transport menu: plain UDP, or wui-udp, wui-tls, wui-ws,
-// wui-poll or wui-plain beside it. The stealth transports read standard WireGuard only;
+// WireGuard's transport menu: plain UDP, or veil, anchor, drift,
+// relay or bare beside it. The stealth transports read standard WireGuard only;
 // AmneziaWG's packets are its own.
 const wgTransports = computed(() => isWireGuard.value && form.value.mode !== 'amnezia')
 const showsTransport = computed(() => !xrayNode.value && (isOpenVPN.value || wgTransports.value))
 const stealthChosen = computed(() => wgTransports.value && form.value.transport !== 'udp')
-// wui-tls, wui-ws, wui-poll and wui-plain share a name, a path and a decoy.
-// wui-ws, wui-poll and wui-plain are behind the operator's front and have
-// its fields too; wui-poll is wui-ws's settings for a CDN without WebSocket;
-// wui-plain has no TLS, so its port is 80, its decoy is required, and its
-// token travels in a cookie of its own. wui-tls is the server itself, on its
+// anchor, drift, relay and bare share a name, a path and a decoy.
+// drift, relay and bare are behind the operator's front and have
+// its fields too; relay is drift's settings for a CDN without WebSocket;
+// bare has no TLS, so its port is 80, its decoy is required, and its
+// token travels in a cookie of its own. anchor is the server itself, on its
 // own port, with a decoy that must be an http:// address and a certificate.
 const wsChosen = computed(() => stealthChosen.value && proven(form.value.transport))
 const frontChosen = computed(() => stealthChosen.value && fronted(form.value.transport))
-const plainChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-plain')
-const tlsChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-tls')
-const pollChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-poll')
-const shapeChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-shape')
-// wui-faketls is the server on its own port that borrows a real site: no
+const plainChosen = computed(() => stealthChosen.value && form.value.transport === 'bare')
+const tlsChosen = computed(() => stealthChosen.value && form.value.transport === 'anchor')
+const pollChosen = computed(() => stealthChosen.value && form.value.transport === 'relay')
+const shapeChosen = computed(() => stealthChosen.value && form.value.transport === 'mold')
+// mirror is the server on its own port that borrows a real site: no
 // front, no path, no decoy -- only the borrowed site's host:port.
-const fakeChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-faketls')
+const fakeChosen = computed(() => stealthChosen.value && form.value.transport === 'mirror')
 // The advanced card gathers routing and MTU, and a WireGuard or OpenVPN
 // tunnel's mode and transport. Xray has none of these; everything else does.
 const showsAdvanced = computed(() => !isXray.value)
 // The line under the protocol select, a word on what it is.
 const protoHint = computed(() => t(isWireGuard.value ? 'interface.protoHintWg' : 'interface.protoHintGeneric'))
-// Whose certificate a saved wui-tls tunnel serves, when it is still the one
+// Whose certificate a saved anchor tunnel serves, when it is still the one
 // shown.
-const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'wui-tls' ? props.iface.stealth?.certSource || '' : ''))
+const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'anchor' ? props.iface.stealth?.certSource || '' : ''))
 function chooseTransport() {
   clearError('transport')
   clearError('transportPort')
@@ -236,7 +236,7 @@ function chooseTransport() {
   if (stealthChosen.value && !form.value.transportPort) form.value.transportPort = (Number(form.value.listenPort) || 51820) + 1
   // A path and a cookie are a transport's own: one switched to starts
   // without and draws its own, and the tunnel's come back with its own
-  // transport. Nothing wui-plain showed in the clear goes on to wui-ws.
+  // transport. Nothing bare showed in the clear goes on to drift.
   if (wsChosen.value) {
     const saved = props.iface?.stealth
     const own = saved?.transport === form.value.transport ? wsOf(saved) : null
@@ -247,13 +247,13 @@ function chooseTransport() {
 }
 const transportHint = computed(() => {
   if (isWireGuard.value) {
-    if (form.value.transport === 'wui-tls') return t('interface.transportWuiTlsHint')
-    if (form.value.transport === 'wui-ws') return t('interface.transportWuiWsHint')
-    if (form.value.transport === 'wui-poll') return t('interface.transportWuiPollHint')
-    if (form.value.transport === 'wui-shape') return t('interface.transportWuiShapeHint')
-    if (form.value.transport === 'wui-plain') return t('interface.transportWuiPlainHint')
-    if (form.value.transport === 'wui-faketls') return t('interface.transportWuiFakeTLSHint')
-    return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportWuiUdpHint')
+    if (form.value.transport === 'anchor') return t('interface.transportAnchorHint')
+    if (form.value.transport === 'drift') return t('interface.transportDriftHint')
+    if (form.value.transport === 'relay') return t('interface.transportRelayHint')
+    if (form.value.transport === 'mold') return t('interface.transportMoldHint')
+    if (form.value.transport === 'bare') return t('interface.transportBareHint')
+    if (form.value.transport === 'mirror') return t('interface.transportMirrorHint')
+    return form.value.transport === 'udp' ? t('interface.transportWgUdpHint') : t('interface.transportVeilHint')
   }
   return form.value.transport === 'tcp' ? t('interface.transportTcpHint') : t('interface.transportUdpHint')
 })
@@ -573,13 +573,13 @@ defineExpose({ showError })
                   <select id="if-transport" v-model="form.transport" data-field="transport" @change="chooseTransport">
                     <template v-if="isWireGuard">
                       <option value="udp">{{ t('interface.transportWgUdp') }}</option>
-                      <option value="wui-udp">{{ t('interface.transportWuiUdp') }}</option>
-                      <option value="wui-tls">{{ t('interface.transportWuiTls') }}</option>
-                      <option value="wui-ws">{{ t('interface.transportWuiWs') }}</option>
-                      <option value="wui-poll">{{ t('interface.transportWuiPoll') }}</option>
-                      <option value="wui-shape">{{ t('interface.transportWuiShape') }}</option>
-                      <option value="wui-plain">{{ t('interface.transportWuiPlain') }}</option>
-                      <option value="wui-faketls">{{ t('interface.transportWuiFakeTLS') }}</option>
+                      <option value="veil">{{ t('interface.transportVeil') }}</option>
+                      <option value="anchor">{{ t('interface.transportAnchor') }}</option>
+                      <option value="drift">{{ t('interface.transportDrift') }}</option>
+                      <option value="relay">{{ t('interface.transportRelay') }}</option>
+                      <option value="mold">{{ t('interface.transportMold') }}</option>
+                      <option value="bare">{{ t('interface.transportBare') }}</option>
+                      <option value="mirror">{{ t('interface.transportMirror') }}</option>
                     </template>
                     <template v-else>
                       <option value="udp">{{ t('interface.transportUdp') }}</option>
@@ -647,7 +647,7 @@ defineExpose({ showError })
             </div>
           </div>
 
-          <!-- wui-faketls: the borrowed site every stranger is relayed to,
+          <!-- mirror: the borrowed site every stranger is relayed to,
                and whose name a device's hello asks for. -->
           <template v-if="fakeChosen">
             <div class="arow16">
@@ -663,12 +663,12 @@ defineExpose({ showError })
             </div>
           </template>
 
-          <!-- wui-tls, wui-ws, wui-poll and wui-plain: the name devices
+          <!-- anchor, drift, relay and bare: the name devices
                reach, the path they send on, and the site every stranger sees.
                The path is drawn when left empty; the operator's web server
-               needs it, so it shows once saved. wui-ws, wui-poll and
-               wui-plain add their front's
-               settings, wui-plain its cookie's name, and wui-tls whose
+               needs it, so it shows once saved. drift, relay and
+               bare add their front's
+               settings, bare its cookie's name, and anchor whose
                certificate it serves. -->
           <template v-if="wsChosen">
             <div class="arow16">

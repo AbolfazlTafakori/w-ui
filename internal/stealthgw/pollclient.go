@@ -19,7 +19,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-poll reference client.
+// The relay reference client.
 //
 // The client's rules, as an app is to keep them:
 //
@@ -43,7 +43,7 @@ import (
 //   - There is no idle keepalive: the polls are the activity, and their
 //     answers the sign of life.
 
-// wui-poll client timers.
+// relay client timers.
 const (
 	pollFirst   = 100 * time.Millisecond
 	pollMost    = 5 * time.Second
@@ -51,7 +51,7 @@ const (
 	pollRepeats = 3
 )
 
-// PollClientConfig is one device's wui-poll client for one tunnel.
+// PollClientConfig is one device's relay client for one tunnel.
 type PollClientConfig struct {
 	// URL is the transport: https://, the front's name and the transport's
 	// path; http:// is for a test without a front.
@@ -69,7 +69,7 @@ type PollClientConfig struct {
 	Wide, Normal int
 }
 
-// PollClient is a running wui-poll reference client.
+// PollClient is a running relay reference client.
 type PollClient struct {
 	cfg    PollClientConfig
 	url    *url.URL
@@ -109,7 +109,7 @@ func NewPollClient(cfg PollClientConfig) (*PollClient, error) {
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return nil, fmt.Errorf("stealthgw: %q is not an https:// address", cfg.URL)
 	}
-	proofs, err := stealth.NewProofClient(cfg.Secret, cfg.Anchor, stealth.Poll, cfg.TransportKey)
+	proofs, err := stealth.NewProofClient(cfg.Secret, cfg.Anchor, stealth.Relay, cfg.TransportKey)
 	if err != nil {
 		return nil, err
 	}

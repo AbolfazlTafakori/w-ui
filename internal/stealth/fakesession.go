@@ -2,7 +2,7 @@ package stealth
 
 import "encoding/binary"
 
-// The wui-faketls session frames.
+// The mirror session frames.
 //
 // Inside the session the application records carry the tunnel's datagrams as
 //

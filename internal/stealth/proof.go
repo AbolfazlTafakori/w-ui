@@ -37,7 +37,7 @@ import (
 // is no token for another. The path is not bound: a CDN may rewrite it.
 //
 // A token is taken once. The server's replay rule keeps enc, which is fresh in
-// every token, the way wui-udp keeps an opening's salt.
+// every token, the way veil keeps an opening's salt.
 //
 // The session's keys need both the proof's ephemeral key, through the
 // export, and the device's secret:
@@ -45,7 +45,7 @@ import (
 //	prk    = HKDF-Extract(salt = Export(L | "stream", 32), ikm = k_stream)
 //	k_up   = HKDF-Expand(prk, L | "stream up", 32)     client to server
 //	k_down = HKDF-Expand(prk, L | "stream down", 32)   server to client
-//	id     = HKDF-Expand(prk, L | "stream id", 16)     wui-poll's session id
+//	id     = HKDF-Expand(prk, L | "stream id", 16)     relay's session id
 
 // Sizes of a proof.
 const (
@@ -132,12 +132,12 @@ func (k TransportKey) String() string {
 // Public is the public key in standard base64, as a profile carries it.
 func (k TransportKey) Public() string { return base64.StdEncoding.EncodeToString(k.pub[:]) }
 
-// StreamKeys are a stream session's two keys, and the name wui-poll's later
+// StreamKeys are a stream session's two keys, and the name relay's later
 // requests give it.
 type StreamKeys struct {
 	Up   []byte // client to server
 	Down []byte // server to client
-	// ID is the session's id, as wui-poll's later requests name it. Only the
+	// ID is the session's id, as relay's later requests name it. Only the
 	// proof's two ends can work it out, and it is no key: knowing it opens
 	// nothing (see PollBody).
 	ID [PollIDLen]byte

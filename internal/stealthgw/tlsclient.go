@@ -14,7 +14,7 @@ import (
 // A server's certificate is held to one of two checks, and which one is the
 // profile's to say, never the server's:
 //
-//   - Pinned alone, for wui-tls's own certificate: the key of the
+//   - Pinned alone, for anchor's own certificate: the key of the
 //     certificate the server shows must be one of the pins, and TLS 1.3
 //     must be spoken. Its chain, its name and its dates are not looked at --
 //     nobody issued it, and its name is drawn. TLS 1.3 has the server sign

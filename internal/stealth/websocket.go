@@ -16,7 +16,7 @@ import (
 
 // The WebSocket pieces.
 //
-// wui-ws speaks as little of WebSocket (RFC 6455) as a session needs, and
+// drift speaks as little of WebSocket (RFC 6455) as a session needs, and
 // refuses the rest: one sealed chunk is one binary message in a single frame.
 // A text message, a fragmented one, one longer than a sealed chunk can be, a
 // frame with a reserved bit, or a frame masked the wrong way for its side

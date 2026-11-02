@@ -23,11 +23,11 @@ func freeTCPPort(t *testing.T) int {
 }
 
 func wuiWS(in CreateInterfaceInput, port int, ws WSSettings) CreateInterfaceInput {
-	in.Transport, in.TransportPort, in.TransportWS = model.TransportWuiWS, port, &ws
+	in.Transport, in.TransportPort, in.TransportWS = model.TransportDrift, port, &ws
 	return in
 }
 
-// wui-ws is the third of a WireGuard tunnel's transports: a front, a path
+// drift is the third of a WireGuard tunnel's transports: a front, a path
 // the panel draws when none is given, and a key of the transport's own.
 func TestAWireGuardTunnelTakesWuiWSBehindAFront(t *testing.T) {
 	db := testDB(t)
@@ -41,7 +41,7 @@ func TestAWireGuardTunnelTakesWuiWSBehindAFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := wg0.Stealth.V
-	if wg0.WireGuardTransport() != model.TransportWuiWS || wg0.StealthWS() != tcp || p.Host != "front.example.com" || p.Origin != "http://127.0.0.1:8080" {
+	if wg0.WireGuardTransport() != model.TransportDrift || wg0.StealthWS() != tcp || p.Host != "front.example.com" || p.Origin != "http://127.0.0.1:8080" {
 		t.Fatalf("made as %s on %d: %+v", wg0.WireGuardTransport(), wg0.StealthWS(), p)
 	}
 	if len(p.Path) != 1+wsPathLen || p.Path[0] != '/' || p.FrontPortOr() != 443 {
@@ -86,18 +86,18 @@ func TestAWireGuardTunnelTakesWuiWSBehindAFront(t *testing.T) {
 		t.Fatalf("after new settings: %+v", q)
 	}
 
-	// wui-udp in its place leaves nothing of wui-ws.
-	udp := model.TransportWuiUDP
+	// veil in its place leaves nothing of drift.
+	udp := model.TransportVeil
 	if _, err := svc.Update(ctx, wg0.ID, UpdateInterfaceInput{Transport: &udp, TransportPort: &ports[1]}); err != nil {
 		t.Fatal(err)
 	}
 	db.First(&got, wg0.ID)
-	if got.Stealth.V != (model.StealthParams{Transport: model.TransportWuiUDP, Port: ports[1]}) {
-		t.Fatalf("wui-udp after wui-ws: %+v", got.Stealth.V)
+	if got.Stealth.V != (model.StealthParams{Transport: model.TransportVeil, Port: ports[1]}) {
+		t.Fatalf("veil after drift: %+v", got.Stealth.V)
 	}
 }
 
-// A wui-ws key turns over after wsKeyDays, and the one before is kept;
+// A drift key turns over after wsKeyDays, and the one before is kept;
 // a tunnel another panel manages keeps the keys it came with.
 func TestAWuiWSKeyTurnsOverAndTheOneBeforeStays(t *testing.T) {
 	db := testDB(t)
@@ -105,7 +105,7 @@ func TestAWuiWSKeyTurnsOverAndTheOneBeforeStays(t *testing.T) {
 	seed(t, db, 1)
 	old, _ := newWSKey()
 	start := time.Unix(1_700_000_000, 0)
-	ws := model.StealthParams{Transport: model.TransportWuiWS, Port: 8081, Host: "f.example", Path: "/abcdefghijklmn", Key: old, KeyAt: start.Unix()}
+	ws := model.StealthParams{Transport: model.TransportDrift, Port: 8081, Host: "f.example", Path: "/abcdefghijklmn", Key: old, KeyAt: start.Unix()}
 	db.Model(&model.Interface{}).Where("id = 1").Update("stealth", model.JSON(ws))
 	managed := model.Interface{Name: "far", Protocol: model.ProtocolWireGuard, ListenPort: 51900, Subnet: "10.90.0.0/24", Managed: true, Stealth: model.JSON(ws)}
 	if err := db.Create(&managed).Error; err != nil {
@@ -140,7 +140,7 @@ func TestTheWuiProfileCarriesWuiWS(t *testing.T) {
 	ctx := context.Background()
 	c := seed(t, db, 1)
 	key, _ := stealth.NewTransportKey()
-	ws := model.StealthParams{Transport: model.TransportWuiWS, Port: 8081, Host: "front.example.com", Path: "/media/7f3a9c2e1b", Key: key.String(), KeyAt: 1}
+	ws := model.StealthParams{Transport: model.TransportDrift, Port: 8081, Host: "front.example.com", Path: "/media/7f3a9c2e1b", Key: key.String(), KeyAt: 1}
 	db.Model(&model.Interface{}).Where("id = 1").Update("stealth", model.JSON(ws))
 	db.Model(&model.Account{}).Where("client_id = ?", c.ID).Update("private_key", "priv")
 	if err := EnsureStealthSecrets(ctx, db); err != nil {
@@ -159,7 +159,7 @@ func TestTheWuiProfileCarriesWuiWS(t *testing.T) {
 	tr := p.Tunnels[0].Transports[0]
 	var acc model.Account
 	db.Where("client_id = ?", c.ID).First(&acc)
-	if tr.Type != stealth.WS || tr.URL != "wss://front.example.com/media/7f3a9c2e1b" || tr.Key != key.Public() ||
+	if tr.Type != stealth.Drift || tr.URL != "wss://front.example.com/media/7f3a9c2e1b" || tr.Key != key.Public() ||
 		strings.Join(tr.Endpoints, " ") != "front.example.com:443" || tr.Secret != acc.StealthSecret || tr.MTU != 1420 {
 		t.Fatalf("transport: %+v", tr)
 	}

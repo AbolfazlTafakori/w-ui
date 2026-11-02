@@ -15,7 +15,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-plain gateway, tested as wui-ws's is, through the same fixture
+// The bare gateway, tested as drift's is, through the same fixture
 // with the gateway swapped: real WireGuard through the reference client, and
 // every stranger's request through to a decoy that must see it as it came.
 // On top, what a reader and writer of the plain path can try.
@@ -30,8 +30,8 @@ type plainFixture struct {
 func newPlainFixture(t *testing.T, peers ...wgtypes.Key) *plainFixture {
 	t.Helper()
 	var cfg StreamConfig
-	// The wui-ws fixture is made, and its settings taken for a wui-plain
-	// gateway on a port of its own; the wui-ws gateway is left unused.
+	// The drift fixture is made, and its settings taken for a bare
+	// gateway on a port of its own; the drift gateway is left unused.
 	f := newStreamFixture(t, func(c *StreamConfig) { cfg = *c }, peers...)
 	cfg.TransportKeys = []stealth.TransportKey{f.key}
 	cfg.ReplayFile += ".plain"
@@ -53,7 +53,7 @@ func newPlainFixture(t *testing.T, peers ...wgtypes.Key) *plainFixture {
 func (f *plainFixture) client(t *testing.T, secret stealth.Secret, priv wgtypes.Key) (*wgEnd, *StreamClient) {
 	t.Helper()
 	c, err := NewStreamClient(StreamClientConfig{
-		Transport: stealth.Plain, Cookie: testCookie,
+		Transport: stealth.Bare, Cookie: testCookie,
 		URL: f.url(), Listen: "127.0.0.1:0", Secret: secret, Anchor: f.anchor(), TransportKey: f.key.Public(),
 	})
 	if err != nil {
@@ -65,7 +65,7 @@ func (f *plainFixture) client(t *testing.T, secret stealth.Secret, priv wgtypes.
 
 func (f *plainFixture) plainToken(t *testing.T, s stealth.Secret) (string, stealth.StreamKeys) {
 	t.Helper()
-	pc, err := stealth.NewProofClient(s, f.anchor(), stealth.Plain, f.key.Public())
+	pc, err := stealth.NewProofClient(s, f.anchor(), stealth.Bare, f.key.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestEveryPlainStrangerReachesTheDecoyAsItCame(t *testing.T) {
 	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: s}})
 	stranger, _ := f.plainToken(t, secret(t))
 	fresh := func() string { tok, _ := f.plainToken(t, s); return tok }
-	ws := f.token(t, s) // the device's own wui-ws token
+	ws := f.token(t, s) // the device's own drift token
 	for _, tc := range []struct {
 		what    string
 		target  string
@@ -144,7 +144,7 @@ func TestEveryPlainStrangerReachesTheDecoyAsItCame(t *testing.T) {
 		{"the name twice", testPath, true, []string{cookie(fresh()) + "; " + testCookie + "=x"}},
 		{"a quoted token", testPath, true, []string{"Cookie: " + testCookie + "=\"" + fresh() + "\""}},
 		{"a device nobody has", testPath, true, []string{cookie(stranger)}},
-		{"a wui-ws token", testPath, true, []string{cookie(ws)}},
+		{"a drift token", testPath, true, []string{cookie(ws)}},
 		{"text that is no token", testPath, true, []string{cookie("aGVsbG8gd29ybGQ")}},
 	} {
 		resp, _, _ := f.ask(t, tc.target, tc.upgrade, tc.extra...)
@@ -266,7 +266,7 @@ func TestAPlainGatewayRefusesWhatCannotWork(t *testing.T) {
 func TestAPlainClientsRequestCarriesItsTokenInACookieAlone(t *testing.T) {
 	tk, _ := stealth.NewTransportKey()
 	c, err := NewStreamClient(StreamClientConfig{
-		Transport: stealth.Plain, Cookie: testCookie, URL: "ws://plain.example.com/media/7f3a9c2e1b",
+		Transport: stealth.Bare, Cookie: testCookie, URL: "ws://plain.example.com/media/7f3a9c2e1b",
 		Listen: "127.0.0.1:0", Secret: secret(t), TransportKey: tk.Public(),
 	})
 	if err != nil {
@@ -288,8 +288,8 @@ func TestAPlainClientsRequestCarriesItsTokenInACookieAlone(t *testing.T) {
 		t.Fatalf("not a browser's upgrade: %v", r.Header)
 	}
 	for name, cfg := range map[string]StreamClientConfig{
-		"wss://":    {Transport: stealth.Plain, Cookie: testCookie, URL: "wss://plain.example.com/media/7f3a9c2e1b"},
-		"no cookie": {Transport: stealth.Plain, URL: "ws://plain.example.com/media/7f3a9c2e1b"},
+		"wss://":    {Transport: stealth.Bare, Cookie: testCookie, URL: "wss://plain.example.com/media/7f3a9c2e1b"},
+		"no cookie": {Transport: stealth.Bare, URL: "ws://plain.example.com/media/7f3a9c2e1b"},
 	} {
 		cfg.Listen, cfg.TransportKey = "127.0.0.1:0", tk.Public()
 		if c, err := NewStreamClient(cfg); err == nil {

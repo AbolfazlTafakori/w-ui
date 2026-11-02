@@ -51,7 +51,7 @@ func fakeSite(t *testing.T, marker []byte, saw chan<- []byte) string {
 	return ln.Addr().String()
 }
 
-// newFrontGateway starts a wui-faketls gateway with a looped-back tunnel and a
+// newFrontGateway starts a mirror gateway with a looped-back tunnel and a
 // replay file low enough that fresh proofs are admitted at once.
 func newFrontGateway(t *testing.T, site string) (*FakeTLSGateway, [32]byte, stealth.Anchor) {
 	t.Helper()

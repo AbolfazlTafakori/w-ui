@@ -24,9 +24,9 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-ws gateway.
+// The drift gateway.
 //
-// wui-ws is WebSocket behind the operator's own web server or a CDN, which
+// drift is WebSocket behind the operator's own web server or a CDN, which
 // ends TLS and hands the gateway plain HTTP. Every request the gateway is
 // given is either a device's proof or somebody else's, and somebody else's
 // goes to the decoy, the operator's own site, as it came: the gateway makes
@@ -43,7 +43,7 @@ import (
 // it would on plain UDP. Nothing is sent on a session until WireGuard has
 // spoken on it.
 
-// StreamConfig is one tunnel's wui-ws gateway.
+// StreamConfig is one tunnel's drift gateway.
 type StreamConfig struct {
 	// Listen is the TCP address the front reaches the gateway at.
 	Listen string
@@ -105,7 +105,7 @@ const (
 	headerFor = 10 * time.Second
 )
 
-// StreamGateway is wui-ws in front of one WireGuard tunnel.
+// StreamGateway is drift in front of one WireGuard tunnel.
 type StreamGateway struct {
 	cfg     StreamConfig
 	log     *slog.Logger
@@ -127,12 +127,12 @@ type StreamGateway struct {
 	mu       sync.Mutex
 	devices  map[[32]byte]*streamDevice
 	streams  map[*stream]struct{}
-	fakes    map[*fakeStream]struct{} // wui-faketls's sessions
+	fakes    map[*fakeStream]struct{} // mirror's sessions
 	held     int                      // places for sessions, the running and the reserved
 	sources  map[netip.Addr]*bucket
 	behind   map[string]netip.Addr               // a session socket's address -> its visitor
-	polls    map[[stealth.PollIDLen]byte]*stream // wui-poll's sessions by their id
-	shapes   map[[stealth.PollIDLen]byte]*stream // wui-shape's sessions by their id
+	polls    map[[stealth.PollIDLen]byte]*stream // relay's sessions by their id
+	shapes   map[[stealth.PollIDLen]byte]*stream // mold's sessions by their id
 	askLimit uint64
 
 	stats    counters
@@ -164,7 +164,7 @@ func NewStream(cfg StreamConfig) (*StreamGateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	g, err := newStreamGateway(cfg, stealth.WS)
+	g, err := newStreamGateway(cfg, stealth.Drift)
 	if err != nil {
 		return nil, err
 	}
@@ -175,11 +175,11 @@ func NewStream(cfg StreamConfig) (*StreamGateway, error) {
 // newStreamGateway is the part of a gateway every stream transport has: the
 // proofs of transport, the devices, the sessions and their limits.
 func newStreamGateway(cfg StreamConfig, transport string) (*StreamGateway, error) {
-	// wui-faketls opens its sessions from a ClientHello's carrier, not from a
+	// mirror opens its sessions from a ClientHello's carrier, not from a
 	// token on a path, so it needs neither a path nor a transport key and
 	// stands up no proof server; everything else a stream gateway is -- the
 	// devices, the sessions, their limits and the replay rule -- it keeps.
-	token := transport != stealth.FakeTLS
+	token := transport != stealth.Mirror
 	if token {
 		if len(cfg.Path) < MinPath || cfg.Path[0] != '/' {
 			return nil, fmt.Errorf("stealthgw: a path of at least %d characters, from /, is needed", MinPath)
@@ -728,7 +728,7 @@ type StreamStats struct {
 	Pool, Pending                  uint64
 	DeviceRate, SourceRate         uint64
 	Handshakes, Tunnel, Unsendable uint64
-	// wui-poll's: requests taken and repeats answered from the answer
+	// relay's: requests taken and repeats answered from the answer
 	// kept, and requests that named no session in order or whose body was
 	// late or did not open.
 	Polls, Repeats, Unordered, Bodies uint64
@@ -756,8 +756,8 @@ func (g *StreamGateway) Stats() StreamStats {
 	return st
 }
 
-// stream is one session: its socket to the tunnel, and on wui-ws, wui-tls
-// and wui-plain one WebSocket connection, or on wui-poll the requests that
+// stream is one session: its socket to the tunnel, and on drift, anchor
+// and bare one WebSocket connection, or on relay the requests that
 // name it.
 type stream struct {
 	g       *StreamGateway
@@ -768,8 +768,8 @@ type stream struct {
 	wg      *net.UDPConn
 	recv    *stealth.StreamReceiver
 	send    *stealth.StreamSender // the writer's alone, or the request in flight's
-	poll    *pollSession          // wui-poll's, nil on the others
-	shape   *shapeSession         // wui-shape's, nil on the others
+	poll    *pollSession          // relay's, nil on the others
+	shape   *shapeSession         // mold's, nil on the others
 
 	out chan []byte // datagrams for the client; nil is padding alone
 	ctl chan []byte // pong payloads
@@ -793,7 +793,7 @@ func (s *stream) isOver() bool         { return s.state.Load() == stateOver }
 func (s *stream) isLive() bool         { return s.state.Load() == stateLive }
 func (s *stream) active(now time.Time) { s.lastActive.Store(now.UnixNano()) }
 
-// quietSince is the last moment the session was active: on wui-poll, the
+// quietSince is the last moment the session was active: on relay, the
 // last request taken, since the tunnel speaking to a client that stopped
 // asking keeps nothing alive.
 func (s *stream) quietSince() time.Time {
@@ -818,7 +818,7 @@ func (s *stream) idleFor() time.Duration {
 }
 
 // newSession is a session for a proof that was taken: its socket to the
-// tunnel and its sender, registered with the gateway, and on wui-poll
+// tunnel and its sender, registered with the gateway, and on relay
 // under its id. When the device went meanwhile, or the id is a live
 // session's, there is none, and the place the proof kept is given back.
 func (g *StreamGateway) newSession(dev *streamDevice, visitor netip.Addr, keys stealth.StreamKeys, now time.Time, poll *pollSession) (*stream, bool) {

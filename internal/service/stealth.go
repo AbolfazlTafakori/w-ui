@@ -68,14 +68,14 @@ func EnsureStealthSecrets(ctx context.Context, db *gorm.DB) error {
 // checkWireGuardTransport refuses a WireGuard transport there is none of.
 func checkWireGuardTransport(name string) error {
 	switch name {
-	case "", model.TransportUDP, model.TransportWuiUDP, model.TransportWuiTLS, model.TransportWuiWS, model.TransportWuiPoll, model.TransportWuiShape, model.TransportWuiPlain, model.TransportWuiFakeTLS:
+	case "", model.TransportUDP, model.TransportVeil, model.TransportAnchor, model.TransportDrift, model.TransportRelay, model.TransportMold, model.TransportBare, model.TransportMirror:
 		return nil
 	}
-	return invalidField("transport", "a WireGuard tunnel's transport is udp, wui-udp, wui-tls, wui-ws, wui-poll, wui-shape, wui-plain or wui-faketls, not %q", name)
+	return invalidField("transport", "a WireGuard tunnel's transport is udp, veil, anchor, drift, relay, mold, bare or mirror, not %q", name)
 }
 
-// WSSettings is the rest of a WireGuard tunnel's transport, wui-tls's,
-// wui-ws's, wui-poll's or wui-plain's, as the form sends it. model.StealthParams says
+// WSSettings is the rest of a WireGuard tunnel's transport, anchor's,
+// drift's, relay's or bare's, as the form sends it. model.StealthParams says
 // what each is.
 type WSSettings struct {
 	Host         string `json:"host"`
@@ -84,13 +84,13 @@ type WSSettings struct {
 	Origin       string `json:"origin"`
 	Proxies      string `json:"proxies"`
 	ClientHeader string `json:"clientHeader"`
-	// Cookie is wui-plain's alone.
+	// Cookie is bare's alone.
 	Cookie string `json:"cookie"`
-	// Shape is wui-shape's: the request shape as a JSON object.
+	// Shape is mold's: the request shape as a JSON object.
 	Shape string `json:"shape"`
-	// Site is wui-faketls's borrowed site, host:port.
+	// Site is mirror's borrowed site, host:port.
 	Site string `json:"site"`
-	// UsePanelCert and ProxyProtocol are wui-tls's alone.
+	// UsePanelCert and ProxyProtocol are anchor's alone.
 	UsePanelCert  bool `json:"usePanelCert"`
 	ProxyProtocol bool `json:"proxyProtocol"`
 }
@@ -113,12 +113,12 @@ func (w *WSSettings) apply(p *model.StealthParams) {
 	p.UsePanelCert, p.ProxyProtocol = w.UsePanelCert, w.ProxyProtocol
 }
 
-// wsKeyDays is how long a wui-ws, wui-poll or wui-tls transport key is used before
+// wsKeyDays is how long a drift, relay or anchor transport key is used before
 // the next is drawn. The one before is still taken until then, so an app that fetches
 // its profile at least that often never meets a key it does not know.
 const wsKeyDays = 30
 
-// plainKeyDays is wui-plain's: every proof it opens crossed the network in
+// plainKeyDays is bare's: every proof it opens crossed the network in
 // the clear, so a key that leaks opens the records of fewer of them. The
 // key only hides which device a proof is from; the session's keys need the
 // device's secret as well.
@@ -126,15 +126,15 @@ const plainKeyDays = 7
 
 // keyDays is how long a transport's key is used.
 func keyDays(transport string) int {
-	if transport == model.TransportWuiPlain {
+	if transport == model.TransportBare {
 		return plainKeyDays
 	}
 	return wsKeyDays
 }
 
-// newPlainCookie draws the name wui-plain's token travels under: 8 to 16
+// newPlainCookie draws the name bare's token travels under: 8 to 16
 // characters, as a site's session cookie might be named, and different on
-// every server, so no name is wui-plain's.
+// every server, so no name is bare's.
 func newPlainCookie() (string, error) {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789_"
 	pick := func(n int) (int, error) {
@@ -199,21 +199,21 @@ func newWSKey() (string, error) {
 	return k.String(), nil
 }
 
-// checkWS checks wui-tls's, wui-ws's, wui-poll's or wui-plain's settings and fills
-// what the panel draws: a path when none was given, wui-plain's cookie
+// checkWS checks anchor's, drift's, relay's or bare's settings and fills
+// what the panel draws: a path when none was given, bare's cookie
 // name, and the transport's key when it has none. Whatever they use is
 // cleared from a transport that is none of them, what a front needs from
-// wui-tls, wui-tls's own from the others, and the cookie from all but
-// wui-plain. wui-tls's certificate is tlsCertFor's.
+// anchor, anchor's own from the others, and the cookie from all but
+// bare. anchor's certificate is tlsCertFor's.
 func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) {
 	if !p.Proven() {
 		return model.StealthParams{Transport: p.Transport, Port: p.Port}, nil
 	}
-	plain, direct := p.Transport == model.TransportWuiPlain, p.Transport == model.TransportWuiTLS
+	plain, direct := p.Transport == model.TransportBare, p.Transport == model.TransportAnchor
 	host := strings.ToLower(strings.TrimSuffix(p.Host, "."))
 	switch {
 	case host == "" && direct:
-		return p, invalidField("transportWs.host", "the name or address devices reach this server at is needed for wui-tls")
+		return p, invalidField("transportWs.host", "the name or address devices reach this server at is needed for anchor")
 	case host == "":
 		return p, invalidField("transportWs.host", "the name devices reach the front at is needed for %s: the web server's or the CDN's", p.Transport)
 	case !validHostName(host):
@@ -245,13 +245,13 @@ func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) 
 			return p, invalidField("transportWs.origin", "the decoy is an address like http://127.0.0.1:8080, with no path: every request goes to its own path there")
 		}
 		if direct && u.Scheme != "http" {
-			return p, invalidField("transportWs.origin", "wui-tls hands a stranger's bytes to the decoy as they came, after its own TLS, so the decoy is an http:// address, like http://127.0.0.1:8080")
+			return p, invalidField("transportWs.origin", "anchor hands a stranger's bytes to the decoy as they came, after its own TLS, so the decoy is an http:// address, like http://127.0.0.1:8080")
 		}
 		p.Origin = u.Scheme + "://" + u.Host
 	} else if direct {
-		return p, invalidField("transportWs.origin", "the decoy is needed for wui-tls: whoever is not a device is handed to your own site, so the port answers as a web server does")
+		return p, invalidField("transportWs.origin", "the decoy is needed for anchor: whoever is not a device is handed to your own site, so the port answers as a web server does")
 	} else if plain {
-		return p, invalidField("transportWs.origin", "the decoy is needed for wui-plain: a stranger's answer crosses the network in the clear, so it must be your site's own")
+		return p, invalidField("transportWs.origin", "the decoy is needed for bare: a stranger's answer crosses the network in the clear, so it must be your site's own")
 	}
 	if _, err := ParseWSProxies(p.Proxies); err != nil {
 		return p, invalidField("transportWs.proxies", "%v", err)
@@ -259,7 +259,7 @@ func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) 
 	if p.ClientHeader != "" && !validHeaderName(p.ClientHeader) {
 		return p, invalidField("transportWs.clientHeader", "%q is not a header name", p.ClientHeader)
 	}
-	if p.Transport == model.TransportWuiShape {
+	if p.Transport == model.TransportMold {
 		// The shape is a preset name (what the form sends) or a full JSON
 		// object (what the panel stores and a doctor might paste). Either
 		// way it is stored as the object, in its one canonical form.
@@ -308,7 +308,7 @@ func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) 
 	return p, nil
 }
 
-// newNodeKey draws wui-faketls's transport key: a 32-byte X25519 private
+// newNodeKey draws mirror's transport key: a 32-byte X25519 private
 // value, base64. A device's hello is sealed against its public half.
 func newNodeKey() (string, error) {
 	k, err := ecdh.X25519().GenerateKey(rand.Reader)
@@ -318,9 +318,9 @@ func newNodeKey() (string, error) {
 	return base64.StdEncoding.EncodeToString(k.Bytes()), nil
 }
 
-// checkFakeTLS checks wui-faketls's settings and fills what the panel draws:
+// checkFakeTLS checks mirror's settings and fills what the panel draws:
 // its node key when it has none. Everything the other transports use -- a
-// front, a path, a decoy, a certificate, a token key -- is cleared: wui-faketls
+// front, a path, a decoy, a certificate, a token key -- is cleared: mirror
 // is the server on its own port, and opens a session from a ClientHello's
 // carrier, not from a token on a path.
 func checkFakeTLS(p model.StealthParams, now time.Time) (model.StealthParams, error) {
@@ -363,7 +363,7 @@ func checkWSPath(path string) error {
 	return nil
 }
 
-// ParseWSProxies reads the fronts a wui-ws gateway trusts: addresses and
+// ParseWSProxies reads the fronts a drift gateway trusts: addresses and
 // ranges, by commas or white space.
 func ParseWSProxies(v string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
@@ -412,7 +412,7 @@ func validHeaderName(h string) bool {
 	return h != ""
 }
 
-// EnsureStealthKeys gives every wui-tls, wui-ws, wui-poll and wui-plain transport
+// EnsureStealthKeys gives every anchor, drift, relay and bare transport
 // this panel manages a key when it has none, and its next key when the one it has is
 // keyDays old, keeping the one before. A tunnel another panel manages is
 // that panel's to keep, and its keys arrive with it.
@@ -486,14 +486,14 @@ func (s *Interfaces) checkStealth(ctx context.Context, nodeID, selfID uint, mode
 		}
 	}
 	now := time.Now()
-	if p.Transport == model.TransportWuiFakeTLS {
+	if p.Transport == model.TransportMirror {
 		return checkFakeTLS(p, now)
 	}
 	p, err := checkWS(p, now)
 	if err != nil {
 		return p, err
 	}
-	if p.Transport == model.TransportWuiTLS {
+	if p.Transport == model.TransportAnchor {
 		if !local && p.UsePanelCert {
 			return p, invalidField("transportWs.usePanelCert", "only a tunnel on the panel's own server takes the panel's certificate: its key would have to go to the node with it")
 		}
@@ -504,10 +504,10 @@ func (s *Interfaces) checkStealth(ctx context.Context, nodeID, selfID uint, mode
 	return p, s.plainApart(ctx, selfID, p)
 }
 
-// plainApart refuses a wui-plain transport whose front name or path is a
-// covered transport's -- wui-tls's, wui-ws's or wui-poll's -- and a covered one whose
-// are a wui-plain's, on any tunnel of any server: the network reads
-// wui-plain's name and path in the clear, and one they shared would tie the
+// plainApart refuses a bare transport whose front name or path is a
+// covered transport's -- anchor's, drift's or relay's -- and a covered one whose
+// are a bare's, on any tunnel of any server: the network reads
+// bare's name and path in the clear, and one they shared would tie the
 // covered transport to it.
 func (s *Interfaces) plainApart(ctx context.Context, selfID uint, p model.StealthParams) error {
 	if !p.Proven() {
@@ -521,17 +521,17 @@ func (s *Interfaces) plainApart(ctx context.Context, selfID uint, p model.Stealt
 	if err := q.Find(&others).Error; err != nil {
 		return fmt.Errorf("service: check the fronts: %w", err)
 	}
-	plain := p.Transport == model.TransportWuiPlain
+	plain := p.Transport == model.TransportBare
 	for _, o := range others {
 		op := o.Stealth.V
-		if !op.Proven() || (op.Transport == model.TransportWuiPlain) == plain {
+		if !op.Proven() || (op.Transport == model.TransportBare) == plain {
 			continue
 		}
 		switch {
 		case strings.EqualFold(op.Host, p.Host):
-			return invalidField("transportWs.host", "%s is the front of %s on the tunnel %q; wui-plain's front is read in the clear, so it never has a covered transport's name", p.Host, op.Transport, o.Name)
+			return invalidField("transportWs.host", "%s is the front of %s on the tunnel %q; bare's front is read in the clear, so it never has a covered transport's name", p.Host, op.Transport, o.Name)
 		case op.Path == p.Path:
-			return invalidField("transportWs.path", "%s is the path of %s on the tunnel %q; wui-plain's path is read in the clear, so it never has a covered transport's", p.Path, op.Transport, o.Name)
+			return invalidField("transportWs.path", "%s is the path of %s on the tunnel %q; bare's path is read in the clear, so it never has a covered transport's", p.Path, op.Transport, o.Name)
 		}
 	}
 	return nil
@@ -577,8 +577,8 @@ func (s *Interfaces) updateStealth(ctx context.Context, iface *model.Interface, 
 			want = model.StealthParams{}
 		}
 		// A transport of another name starts with nothing of the old one's
-		// that is drawn: wui-plain's key, path and cookie are its own, and a
-		// covered transport never takes on what wui-plain showed in the
+		// that is drawn: bare's key, path and cookie are its own, and a
+		// covered transport never takes on what bare showed in the
 		// clear.
 		if want.Transport != iface.Stealth.V.Transport {
 			want.Path, want.Cookie, want.Key, want.PreviousKey, want.KeyAt = "", "", "", "", 0
@@ -588,7 +588,7 @@ func (s *Interfaces) updateStealth(ctx context.Context, iface *model.Interface, 
 	if in.TransportPort != nil && want.Transport != "" {
 		want.Port = *in.TransportPort
 	}
-	if in.TransportWS != nil && (want.Proven() || want.Transport == model.TransportWuiFakeTLS) {
+	if in.TransportWS != nil && (want.Proven() || want.Transport == model.TransportMirror) {
 		in.TransportWS.apply(&want)
 		// The old transport's path sent back with the new one's name is
 		// not taken: a path is a transport's own, like its key.

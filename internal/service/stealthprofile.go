@@ -63,11 +63,11 @@ type WUITransport struct {
 	Secret string `json:"secret"`
 	MTU    int    `json:"mtu"`
 	// URL is a stream transport's address, wss:// with its path, https://
-	// for wui-poll or ws:// for wui-plain: the name TLS and the request
+	// for relay or ws:// for bare: the name TLS and the request
 	// give, which may differ from the endpoint connected to. An address in
 	// it is sent as no name.
 	URL string `json:"url,omitempty"`
-	// Pins are wui-tls's: the SHA-256 of the server certificate's
+	// Pins are anchor's: the SHA-256 of the server certificate's
 	// SubjectPublicKeyInfo, standard base64. With SelfSigned the server is
 	// trusted for its pin alone, over TLS 1.3, and its chain, name and
 	// dates are not looked at; without, its certificate is checked as a
@@ -78,11 +78,11 @@ type WUITransport struct {
 	// Key is a stream transport's public key, base64, which its proof is
 	// sealed to.
 	Key string `json:"key,omitempty"`
-	// Cookie is the name of the cookie wui-plain's token travels in.
+	// Cookie is the name of the cookie bare's token travels in.
 	Cookie string `json:"cookie,omitempty"`
-	// Shape is wui-shape's: the request shape, written out in full.
+	// Shape is mold's: the request shape, written out in full.
 	Shape map[string]any `json:"shape,omitempty"`
-	// Site is wui-faketls's: the name a device's hello asks for, the borrowed
+	// Site is mirror's: the name a device's hello asks for, the borrowed
 	// site's. The endpoints are where the gateway is reached; Key is the
 	// gateway's public node key the proof is sealed against.
 	Site string `json:"site,omitempty"`
@@ -105,7 +105,7 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 		}
 		// Where the customer connects, as every other format has it: the
 		// operator's hosts when there are any, the tunnel's own address
-		// when not. The file is for the first; wui-udp is on all of them.
+		// when not. The file is for the first; veil is on all of them.
 		variants := endpoints.VariantsFor(&iface, FormatWUI)
 		at := endpoints.WithEndpoint(iface, variants[0])
 		if title != "" {
@@ -119,7 +119,7 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 		t := WUITunnel{Name: iface.Name, Device: acc.DeviceName, WireGuard: string(file.Body), Transports: []WUITransport{}}
 		if port := iface.StealthUDP(); port != 0 && acc.StealthSecret != "" {
 			t.Transports = append(t.Transports, WUITransport{
-				Type: stealth.UDP, Endpoints: stealthEndpoints(variants, port),
+				Type: stealth.Veil, Endpoints: stealthEndpoints(variants, port),
 				Secret: acc.StealthSecret, MTU: max(iface.MTU, 0),
 			})
 		}
@@ -136,7 +136,7 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 				ft.Secret, ft.MTU = acc.StealthSecret, max(iface.MTU, 0)
 				t.Transports = append(t.Transports, ft)
 			} else {
-				s.log.Warn("wui-faketls has no usable node key yet; profiles leave it out until it has", "interface", iface.Name)
+				s.log.Warn("mirror has no usable node key yet; profiles leave it out until it has", "interface", iface.Name)
 			}
 		}
 		p.Tunnels = append(p.Tunnels, t)
@@ -158,32 +158,32 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 	}, nil
 }
 
-// wsTransport is a tunnel's wui-tls, wui-ws, wui-poll or wui-plain as a profile gives
+// wsTransport is a tunnel's anchor, drift, relay or bare as a profile gives
 // it, but the device's own secret: where devices reach it and the name TLS
-// gives, the transport's current public key, wui-plain's cookie, and
-// wui-tls's pin. False when it has no key or certificate yet.
+// gives, the transport's current public key, bare's cookie, and
+// anchor's pin. False when it has no key or certificate yet.
 func wsTransport(p model.StealthParams) (WUITransport, bool) {
 	key, err := stealth.ParseTransportKey(p.Key)
 	if err != nil {
 		return WUITransport{}, false
 	}
-	scheme, name, usual := "wss://", stealth.WS, 443
+	scheme, name, usual := "wss://", stealth.Drift, 443
 	port := p.FrontPortOr()
 	var pins []string
 	selfSigned := false
 	switch p.Transport {
-	case model.TransportWuiPoll:
-		scheme, name = "https://", stealth.Poll
-	case model.TransportWuiShape:
-		scheme, name = "https://", stealth.Shaped
-	case model.TransportWuiPlain:
+	case model.TransportRelay:
+		scheme, name = "https://", stealth.Relay
+	case model.TransportMold:
+		scheme, name = "https://", stealth.Mold
+	case model.TransportBare:
 		if p.Cookie == "" {
 			return WUITransport{}, false
 		}
-		scheme, name, usual = "ws://", stealth.Plain, 80
-	case model.TransportWuiTLS:
+		scheme, name, usual = "ws://", stealth.Bare, 80
+	case model.TransportAnchor:
 		// The gateway is the server, on its own port.
-		name, port = stealth.TLS, p.Port
+		name, port = stealth.Anchored, p.Port
 		cert, _ := p.ServedCert()
 		_, info, err := stealth.ReadCertificate(cert)
 		if err != nil {
@@ -212,10 +212,10 @@ func wsTransport(p model.StealthParams) (WUITransport, bool) {
 		Pins:       pins,
 		SelfSigned: selfSigned,
 	}
-	if name == stealth.Plain {
+	if name == stealth.Bare {
 		t.Cookie = p.Cookie
 	}
-	if name == stealth.Shaped {
+	if name == stealth.Mold {
 		sh, err := stealth.ParseShape([]byte(p.Shape))
 		if err != nil {
 			return WUITransport{}, false
@@ -225,7 +225,7 @@ func wsTransport(p model.StealthParams) (WUITransport, bool) {
 	return t, true
 }
 
-// fakeTransport is a tunnel's wui-faketls as a profile gives it: where the
+// fakeTransport is a tunnel's mirror as a profile gives it: where the
 // gateway is reached (the operator's hosts, on its port), the borrowed site's
 // name the hello asks for, and the gateway's public node key the proof is
 // sealed against. False when it has no node key yet.
@@ -243,15 +243,15 @@ func fakeTransport(p model.StealthParams, variants []endpoints.HostVariant) (WUI
 		return WUITransport{}, false
 	}
 	return WUITransport{
-		Type:      stealth.FakeTLS,
+		Type:      stealth.Mirror,
 		Endpoints: stealthEndpoints(variants, p.Port),
 		Site:      host,
 		Key:       base64.StdEncoding.EncodeToString(k.PublicKey().Bytes()),
 	}, true
 }
 
-// stealthEndpoints is where a tunnel's wui-udp is reached: every address the
-// customer connects to, on the wui-udp port. A host's own port is for
+// stealthEndpoints is where a tunnel's veil is reached: every address the
+// customer connects to, on the veil port. A host's own port is for
 // WireGuard through a forwarder, and says nothing of this one.
 func stealthEndpoints(variants []endpoints.HostVariant, port int) []string {
 	seen := map[string]bool{}

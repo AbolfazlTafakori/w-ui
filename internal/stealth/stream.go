@@ -6,7 +6,7 @@ import "fmt"
 //
 // On a stream transport a session's chunks travel in order, so the nonce is
 // the chunk's number (see Sealer) and nothing goes on the wire beside the
-// sealed chunk but the transport's own framing: on wui-ws, one binary
+// sealed chunk but the transport's own framing: on drift, one binary
 // WebSocket message per chunk. A chunk carries as many datagrams as are
 // waiting and fit, or none: a padding-only chunk is how a side answers
 // without saying anything.

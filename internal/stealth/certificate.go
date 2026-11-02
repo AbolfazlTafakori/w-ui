@@ -20,9 +20,9 @@ import (
 	"time"
 )
 
-// The certificate of wui-tls.
+// The certificate of anchor.
 //
-// A wui-tls server ends TLS with a certificate of its own, which nobody
+// A anchor server ends TLS with a certificate of its own, which nobody
 // issued: the panel draws an ECDSA P-256 key once, keeps it, and signs a
 // certificate with it. A device trusts it by its pin, the SHA-256 of the
 // key's SubjectPublicKeyInfo, which every profile carries, and by nothing

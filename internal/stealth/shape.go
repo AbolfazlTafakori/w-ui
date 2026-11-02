@@ -6,22 +6,22 @@ import (
 	"strings"
 )
 
-// The shape of a wui-shape transport.
+// The shape of a mold transport.
 //
-// wui-shape is wui-poll that need not look like wui-poll: the operator picks
+// mold is relay that need not look like relay: the operator picks
 // the "shape" of a request, the one form every request of the transport
 // takes. A shape says which method a request uses, where in the request the
 // tunnel's data rides (the body, the query, the path or a header field), and
 // whether the gateway answers each request with the downstream data (poll) or
 // writes it all to one long stream (sse). Everything below the shape -- the
-// keys, the chunk, its padding and the proof -- is wui-poll's, under
-// wui-shape's own name.
+// keys, the chunk, its padding and the proof -- is relay's, under
+// mold's own name.
 //
 // A shape is read once, from a profile or from the gateway's config, and both
 // sides end at the same rules (Resolve), so a shape one side takes the other
 // takes too. A shape that breaks a rule is refused outright: nothing is
 // repaired and nothing is guessed from a member that is missing but its
-// default. The rules are in docs/reference/stealth.md, "wui-shape".
+// default. The rules are in docs/reference/stealth.md, "mold".
 
 // Where the data of a request rides.
 type Place int
@@ -61,7 +61,7 @@ func readPlace(word string) (Place, bool) {
 type Mode int
 
 const (
-	// ModePoll answers every request with the data that waits, as wui-poll
+	// ModePoll answers every request with the data that waits, as relay
 	// does.
 	ModePoll Mode = iota
 	// ModeSse writes the downstream data to one Server-Sent-Events stream,

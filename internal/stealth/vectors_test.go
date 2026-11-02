@@ -70,7 +70,7 @@ func TestTheUDPVectors(t *testing.T) {
 	}
 }
 
-// wsVector is one wui-ws proof and a chunk each way, from fixed inputs and a
+// wsVector is one drift proof and a chunk each way, from fixed inputs and a
 // fixed random source. testdata/ws.json pins the format, and
 // scripts/stealth/ws_vectors.py checks it with an implementation of its own,
 // HPKE included.
@@ -89,14 +89,14 @@ type wsVector struct {
 }
 
 func TestTheWSVectors(t *testing.T) {
-	checkVector(t, "ws.json", streamVector(t, WS, 2))
+	checkVector(t, "ws.json", streamVector(t, Drift, 2))
 }
 
 func TestTheTLSVectors(t *testing.T) {
-	checkVector(t, "tls.json", streamVector(t, TLS, 4))
+	checkVector(t, "tls.json", streamVector(t, Anchored, 4))
 }
 
-// plainVector is wui-ws's vector for wui-plain, and the Cookie field its
+// plainVector is drift's vector for bare, and the Cookie field its
 // request carries the token in.
 type plainVector struct {
 	wsVector
@@ -104,11 +104,11 @@ type plainVector struct {
 }
 
 func TestThePlainVectors(t *testing.T) {
-	v := streamVector(t, Plain, 3)
+	v := streamVector(t, Bare, 3)
 	checkVector(t, "plain.json", plainVector{v, "sid=" + v.Token})
 }
 
-// pollVector is wui-ws's vector for wui-poll, with the session's id, the
+// pollVector is drift's vector for relay, with the session's id, the
 // query of its first later request, and a body each way: the opening's,
 // whose one chunk holds the datagram, and an answer of padding alone. The
 // bodies are sealed from the start of each direction, as the chunks are.
@@ -121,7 +121,7 @@ type pollVector struct {
 }
 
 func TestThePollVectors(t *testing.T) {
-	v := streamVector(t, Poll, 5)
+	v := streamVector(t, Relay, 5)
 	up, _ := hex.DecodeString(v.Up)
 	down, _ := hex.DecodeString(v.Down)
 	d, _ := hex.DecodeString(v.Datagram)
@@ -228,7 +228,7 @@ func checkVector(t *testing.T, name string, v any) {
 	}
 }
 
-// shapeVector is a wui-shape proof, a chunk each way (as every stream
+// shapeVector is a mold proof, a chunk each way (as every stream
 // transport has), and the pieces a shaped session adds: the get-poll shape,
 // a request's list of chunks, the query target that carries it, the late
 // answer, and one stream event. testdata/shape.json pins the format and
@@ -282,7 +282,7 @@ func TestTheShapeVectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := NewProofClient(secret, anchor, Shaped, tk.Public())
+	c, err := NewProofClient(secret, anchor, Mold, tk.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestTheShapeVectors(t *testing.T) {
 	}
 	d := keepalive()
 
-	// The generic stream chunk each way, at number 0, as on wui-ws.
+	// The generic stream chunk each way, at number 0, as on drift.
 	up0, _ := NewStreamSender(keys.Up, NewPadder(0, 0))
 	down0, _ := NewStreamSender(keys.Down, NewPadder(0, 0))
 	cu, err := up0.Seal(nil, d)
@@ -341,7 +341,7 @@ func TestTheShapeVectors(t *testing.T) {
 	h := hex.EncodeToString
 	got := shapeVector{
 		Secret: h(secret[:]), Anchor: h(anchor[:]), TransportKey: h(priv),
-		Transport: Shaped, Timestamp: testNow.Unix(), Token: token,
+		Transport: Mold, Timestamp: testNow.Unix(), Token: token,
 		Up: h(keys.Up), Down: h(keys.Down), Datagram: h(d),
 		ChunkUp: h(cu), ChunkDown: h(cd), ID: h(keys.ID[:]),
 		Shape: shapeJSON{

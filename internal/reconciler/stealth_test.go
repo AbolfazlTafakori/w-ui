@@ -29,7 +29,7 @@ func freeUDP(t *testing.T) int {
 	return c.LocalAddr().(*net.UDPAddr).Port
 }
 
-// A tunnel with wui-udp has a gateway beside it while it wants one, with
+// A tunnel with veil has a gateway beside it while it wants one, with
 // the devices it carries, started again when what it runs with changes.
 func TestTheGatewaysFollowTheTunnels(t *testing.T) {
 	r := &Reconciler{dataDir: t.TempDir(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
@@ -38,7 +38,7 @@ func TestTheGatewaysFollowTheTunnels(t *testing.T) {
 	device, _ := wgkey.NewPair()
 	secret, _ := stealth.NewSecret()
 	iface := model.Interface{ID: 7, Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: 51820, MTU: 1420,
-		PrivateKey: server.Private.String(), Stealth: model.JSON(model.StealthParams{Transport: model.TransportWuiUDP, Port: freeUDP(t)})}
+		PrivateKey: server.Private.String(), Stealth: model.JSON(model.StealthParams{Transport: model.TransportVeil, Port: freeUDP(t)})}
 	d := &desired{interfaces: []model.Interface{iface}, perIface: map[uint][]backend.DesiredAccount{
 		7: {{ID: 1, PublicKey: device.Public.String(), StealthSecret: secret.String()}, {ID: 2, PublicKey: "no secret"}},
 	}}
@@ -57,7 +57,7 @@ func TestTheGatewaysFollowTheTunnels(t *testing.T) {
 		return false
 	}
 	if !listening(iface.StealthUDP()) {
-		t.Fatal("nothing listens on the wui-udp port")
+		t.Fatal("nothing listens on the veil port")
 	}
 
 	// Another pass changes nothing; a new port is a new gateway.
@@ -66,7 +66,7 @@ func TestTheGatewaysFollowTheTunnels(t *testing.T) {
 		t.Fatal("a pass with nothing changed started the gateway again")
 	}
 	old := iface.StealthUDP()
-	d.interfaces[0].Stealth = model.JSON(model.StealthParams{Transport: model.TransportWuiUDP, Port: freeUDP(t)})
+	d.interfaces[0].Stealth = model.JSON(model.StealthParams{Transport: model.TransportVeil, Port: freeUDP(t)})
 	r.keepStealth(d)
 	if r.gws.running[7] == first || listening(old) {
 		t.Fatal("the gateway did not move to the new port")
@@ -93,7 +93,7 @@ func freeTCP(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-// A tunnel with wui-ws has a stream gateway beside it: on the loopback alone
+// A tunnel with drift has a stream gateway beside it: on the loopback alone
 // while no front elsewhere is trusted, on every address once one is, and
 // started again with the key when the key turns over.
 func TestAWSGatewayListensWhereItsFrontsAre(t *testing.T) {
@@ -103,7 +103,7 @@ func TestAWSGatewayListensWhereItsFrontsAre(t *testing.T) {
 	device, _ := wgkey.NewPair()
 	secret, _ := stealth.NewSecret()
 	key, _ := stealth.NewTransportKey()
-	ws := model.StealthParams{Transport: model.TransportWuiWS, Port: freeTCP(t), Host: "front.example", Path: "/a1b2c3d4e5f6g7", Key: key.String()}
+	ws := model.StealthParams{Transport: model.TransportDrift, Port: freeTCP(t), Host: "front.example", Path: "/a1b2c3d4e5f6g7", Key: key.String()}
 	iface := model.Interface{ID: 9, Name: "wg1", Protocol: model.ProtocolWireGuard, ListenPort: 51821, MTU: 1420,
 		PrivateKey: server.Private.String(), Stealth: model.JSON(ws)}
 	d := &desired{interfaces: []model.Interface{iface}, perIface: map[uint][]backend.DesiredAccount{
@@ -140,7 +140,7 @@ func TestAWSGatewayListensWhereItsFrontsAre(t *testing.T) {
 	}
 }
 
-// A tunnel with wui-plain has a plain gateway beside it, on the loopback
+// A tunnel with bare has a plain gateway beside it, on the loopback
 // while no front elsewhere is trusted, started again when its cookie moves.
 func TestAPlainGatewayRunsBesideItsTunnel(t *testing.T) {
 	r := &Reconciler{dataDir: t.TempDir(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
@@ -149,7 +149,7 @@ func TestAPlainGatewayRunsBesideItsTunnel(t *testing.T) {
 	device, _ := wgkey.NewPair()
 	secret, _ := stealth.NewSecret()
 	key, _ := stealth.NewTransportKey()
-	p := model.StealthParams{Transport: model.TransportWuiPlain, Port: freeTCP(t), Host: "plain.example", Path: "/a1b2c3d4e5f6g7",
+	p := model.StealthParams{Transport: model.TransportBare, Port: freeTCP(t), Host: "plain.example", Path: "/a1b2c3d4e5f6g7",
 		Origin: "http://127.0.0.1:8080", Cookie: "sid", Key: key.String()}
 	iface := model.Interface{ID: 10, Name: "wg2", Protocol: model.ProtocolWireGuard, ListenPort: 51822, MTU: 1420,
 		PrivateKey: server.Private.String(), Stealth: model.JSON(p)}
@@ -166,7 +166,7 @@ func TestAPlainGatewayRunsBesideItsTunnel(t *testing.T) {
 	if a := gw.Addr().(*net.TCPAddr); !a.IP.IsLoopback() {
 		t.Fatalf("with no front elsewhere the gateway listens at %s", a)
 	}
-	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "10.wui-plain.replay" {
+	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "10.bare.replay" {
 		t.Fatalf("the replay file is %s", got)
 	}
 
@@ -186,7 +186,7 @@ func TestAPlainGatewayRunsBesideItsTunnel(t *testing.T) {
 	}
 }
 
-// A tunnel with wui-poll has a poll gateway beside it, with a replay file
+// A tunnel with relay has a poll gateway beside it, with a replay file
 // of its own, on the loopback while no front elsewhere is trusted.
 func TestAPollGatewayRunsBesideItsTunnel(t *testing.T) {
 	r := &Reconciler{dataDir: t.TempDir(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
@@ -195,7 +195,7 @@ func TestAPollGatewayRunsBesideItsTunnel(t *testing.T) {
 	device, _ := wgkey.NewPair()
 	secret, _ := stealth.NewSecret()
 	key, _ := stealth.NewTransportKey()
-	p := model.StealthParams{Transport: model.TransportWuiPoll, Port: freeTCP(t), Host: "poll.example", Path: "/a1b2c3d4e5f6g7", Key: key.String()}
+	p := model.StealthParams{Transport: model.TransportRelay, Port: freeTCP(t), Host: "poll.example", Path: "/a1b2c3d4e5f6g7", Key: key.String()}
 	iface := model.Interface{ID: 11, Name: "wg3", Protocol: model.ProtocolWireGuard, ListenPort: 51823, MTU: 1420,
 		PrivateKey: server.Private.String(), Stealth: model.JSON(p)}
 	d := &desired{interfaces: []model.Interface{iface}, perIface: map[uint][]backend.DesiredAccount{
@@ -211,7 +211,7 @@ func TestAPollGatewayRunsBesideItsTunnel(t *testing.T) {
 	if a := gw.Addr().(*net.TCPAddr); !a.IP.IsLoopback() {
 		t.Fatalf("with no front elsewhere the gateway listens at %s", a)
 	}
-	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "11.wui-poll.replay" {
+	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "11.relay.replay" {
 		t.Fatalf("the replay file is %s", got)
 	}
 	p.Path = "/z9y8x7w6v5u4t3"
@@ -222,7 +222,7 @@ func TestAPollGatewayRunsBesideItsTunnel(t *testing.T) {
 	}
 }
 
-// wui-tls's gateway is the server itself, on every address; a renewed
+// anchor's gateway is the server itself, on every address; a renewed
 // certificate is handed to it as it runs, so no session ends for it.
 func TestATLSGatewayTakesARenewedCertificateWithoutStopping(t *testing.T) {
 	r := &Reconciler{dataDir: t.TempDir(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
@@ -232,7 +232,7 @@ func TestATLSGatewayTakesARenewedCertificateWithoutStopping(t *testing.T) {
 	certKey, _ := stealth.NewCertificateKey()
 	now := time.Now()
 	cert, _ := stealth.MakeCertificate(certKey, "edge.example", "", now)
-	p := model.StealthParams{Transport: model.TransportWuiTLS, Port: freeTCP(t), Host: "edge.example", Path: "/a1b2c3d4e5f6g7",
+	p := model.StealthParams{Transport: model.TransportAnchor, Port: freeTCP(t), Host: "edge.example", Path: "/a1b2c3d4e5f6g7",
 		Origin: "http://127.0.0.1:8080", Key: key.String(), Cert: cert, CertKey: certKey, CertSource: model.CertSourceOwn}
 	iface := model.Interface{ID: 11, Name: "wg3", Protocol: model.ProtocolWireGuard, ListenPort: 51823, MTU: 1420,
 		PrivateKey: server.Private.String(), Stealth: model.JSON(p)}
@@ -245,9 +245,9 @@ func TestATLSGatewayTakesARenewedCertificateWithoutStopping(t *testing.T) {
 		t.Fatalf("no TLS gateway: %T %q", first.gw, first.failed)
 	}
 	if a := gw.Addr().(*net.TCPAddr); a.IP.IsLoopback() {
-		t.Fatalf("wui-tls listens at %s, not on every address", a)
+		t.Fatalf("anchor listens at %s, not on every address", a)
 	}
-	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "11.wui-tls.replay" {
+	if got := replayFile(r.dataDir, iface); filepath.Base(got) != "11.anchor.replay" {
 		t.Fatalf("the replay file is %s", got)
 	}
 	served := func() *x509.Certificate {

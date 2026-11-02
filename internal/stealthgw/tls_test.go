@@ -23,7 +23,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-tls gateway, tested as wui-ws is -- real WireGuard through the
+// The anchor gateway, tested as drift is -- real WireGuard through the
 // reference client -- and, since it is the server itself, against a decoy
 // that records every byte it is given, so a stranger is seen to reach it
 // exactly as it came.
@@ -186,7 +186,7 @@ func (f *tlsFixture) anchor() stealth.Anchor { return stealth.Anchor(f.server.ke
 func (f *tlsFixture) client(t *testing.T, secret stealth.Secret, priv wgtypes.Key) (*wgEnd, *StreamClient) {
 	t.Helper()
 	c, err := NewStreamClient(StreamClientConfig{
-		Transport: stealth.TLS, URL: "wss://" + f.gw.Addr().String() + testPath,
+		Transport: stealth.Anchored, URL: "wss://" + f.gw.Addr().String() + testPath,
 		Pins: []stealth.Pin{f.pin}, SelfSigned: true,
 		Listen: "127.0.0.1:0", Secret: secret, Anchor: f.anchor(), TransportKey: f.key.Public(),
 	})
@@ -199,7 +199,7 @@ func (f *tlsFixture) client(t *testing.T, secret stealth.Secret, priv wgtypes.Ke
 
 func (f *tlsFixture) token(t *testing.T, s stealth.Secret) string {
 	t.Helper()
-	pc, err := stealth.NewProofClient(s, f.anchor(), stealth.TLS, f.key.Public())
+	pc, err := stealth.NewProofClient(s, f.anchor(), stealth.Anchored, f.key.Public())
 	if err != nil {
 		t.Fatal(err)
 	}

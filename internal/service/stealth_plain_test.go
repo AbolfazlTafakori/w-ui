@@ -12,11 +12,11 @@ import (
 )
 
 func wuiPlain(in CreateInterfaceInput, port int, ws WSSettings) CreateInterfaceInput {
-	in.Transport, in.TransportPort, in.TransportWS = model.TransportWuiPlain, port, &ws
+	in.Transport, in.TransportPort, in.TransportWS = model.TransportBare, port, &ws
 	return in
 }
 
-// wui-plain is the fourth of a WireGuard tunnel's transports: wui-ws's
+// bare is the fourth of a WireGuard tunnel's transports: drift's
 // front, on port 80, with a decoy that must be set, a cookie name the panel
 // draws, and a key of the transport's own.
 func TestAWireGuardTunnelTakesWuiPlainBehindAFront(t *testing.T) {
@@ -31,7 +31,7 @@ func TestAWireGuardTunnelTakesWuiPlainBehindAFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := wg0.Stealth.V
-	if wg0.WireGuardTransport() != model.TransportWuiPlain || wg0.StealthPlain() != tcp || wg0.StealthWS() != 0 || p.Host != "plain.example.com" {
+	if wg0.WireGuardTransport() != model.TransportBare || wg0.StealthPlain() != tcp || wg0.StealthWS() != 0 || p.Host != "plain.example.com" {
 		t.Fatalf("made as %s on %d: %+v", wg0.WireGuardTransport(), wg0.StealthPlain(), p)
 	}
 	if len(p.Path) != 1+wsPathLen || p.FrontPortOr() != 80 || !stealth.CookieName(p.Cookie) || len(p.Cookie) < 8 || len(p.Cookie) > 16 {
@@ -78,30 +78,30 @@ func TestAWireGuardTunnelTakesWuiPlainBehindAFront(t *testing.T) {
 		t.Fatalf("the cookie given: %q", got.Stealth.V.Cookie)
 	}
 
-	// wui-ws in its place draws its own key and path, and keeps no cookie:
-	// nothing wui-plain showed in the clear goes on to a covered transport.
-	wsName := model.TransportWuiWS
+	// drift in its place draws its own key and path, and keeps no cookie:
+	// nothing bare showed in the clear goes on to a covered transport.
+	wsName := model.TransportDrift
 	if _, err := svc.Update(ctx, wg0.ID, UpdateInterfaceInput{Transport: &wsName, TransportWS: &WSSettings{Host: "cdn.example.com"}}); err != nil {
 		t.Fatal(err)
 	}
 	db.First(&got, wg0.ID)
-	if q := got.Stealth.V; q.Transport != model.TransportWuiWS || q.Key == p.Key || q.Path == p.Path || q.Cookie != "" || q.PreviousKey != "" {
-		t.Fatalf("wui-ws after wui-plain: %+v", q)
+	if q := got.Stealth.V; q.Transport != model.TransportDrift || q.Key == p.Key || q.Path == p.Path || q.Cookie != "" || q.PreviousKey != "" {
+		t.Fatalf("drift after bare: %+v", q)
 	}
 
-	// Back to wui-plain, with wui-ws's path sent along as a form that kept
+	// Back to bare, with drift's path sent along as a form that kept
 	// it would: the path is not carried over.
-	plainName, wsPath := model.TransportWuiPlain, got.Stealth.V.Path
+	plainName, wsPath := model.TransportBare, got.Stealth.V.Path
 	if _, err := svc.Update(ctx, wg0.ID, UpdateInterfaceInput{Transport: &plainName, TransportWS: &WSSettings{Host: "plain.example.com", Path: wsPath, Origin: "http://127.0.0.1:8080"}}); err != nil {
 		t.Fatal(err)
 	}
 	db.First(&got, wg0.ID)
-	if q := got.Stealth.V; q.Transport != model.TransportWuiPlain || q.Path == wsPath || q.Path == "" || q.Cookie == "" {
-		t.Fatalf("wui-plain after wui-ws, its path sent along: %+v", q)
+	if q := got.Stealth.V; q.Transport != model.TransportBare || q.Path == wsPath || q.Path == "" || q.Cookie == "" {
+		t.Fatalf("bare after drift, its path sent along: %+v", q)
 	}
 }
 
-// A wui-plain front's name and path are read in the clear, so neither is a
+// A bare front's name and path are read in the clear, so neither is a
 // covered transport's, on any tunnel, whichever came first.
 func TestWuiPlainNeverSharesAFrontOrAPathWithWuiWS(t *testing.T) {
 	db := testDB(t)
@@ -118,8 +118,8 @@ func TestWuiPlainNeverSharesAFrontOrAPathWithWuiWS(t *testing.T) {
 		ws    WSSettings
 		field string
 	}{
-		{"wui-ws's front", WSSettings{Host: "FRONT.example.com", Origin: decoy}, "transportWs.host"},
-		{"wui-ws's path", WSSettings{Host: "plain.example.com", Path: "/media/7f3a9c2e1b", Origin: decoy}, "transportWs.path"},
+		{"drift's front", WSSettings{Host: "FRONT.example.com", Origin: decoy}, "transportWs.host"},
+		{"drift's path", WSSettings{Host: "plain.example.com", Path: "/media/7f3a9c2e1b", Origin: decoy}, "transportWs.path"},
 	} {
 		if _, err := svc.Create(ctx, wuiPlain(wgInput("wg1", ports[1], "10.67.0.0/24"), freeTCPPort(t), tc.ws)); FieldOf(err) != tc.field {
 			t.Errorf("%s: %v, field %q", tc.what, err, FieldOf(err))
@@ -130,25 +130,25 @@ func TestWuiPlainNeverSharesAFrontOrAPathWithWuiWS(t *testing.T) {
 	}
 	// And the other way: a covered transport made after it.
 	if _, err := svc.Create(ctx, wuiWS(wgInput("wg2", ports[2], "10.68.0.0/24"), freeTCPPort(t), WSSettings{Host: "plain.example.com"})); FieldOf(err) != "transportWs.host" {
-		t.Errorf("wui-ws on wui-plain's front: %v", err)
+		t.Errorf("drift on bare's front: %v", err)
 	}
 	if _, err := svc.Update(ctx, ws.ID, UpdateInterfaceInput{TransportWS: &WSSettings{Host: "front.example.com", Path: "/static/a8d0c1e9f4"}}); FieldOf(err) != "transportWs.path" {
-		t.Errorf("wui-ws moved to wui-plain's path: %v", err)
+		t.Errorf("drift moved to bare's path: %v", err)
 	}
-	// Two wui-plain transports may share a front, on paths of their own.
+	// Two bare transports may share a front, on paths of their own.
 	if _, err := svc.Create(ctx, wuiPlain(wgInput("wg3", ports[3], "10.69.0.0/24"), freeTCPPort(t), WSSettings{Host: "plain.example.com", Origin: decoy})); err != nil {
-		t.Errorf("a second wui-plain on the first one's front: %v", err)
+		t.Errorf("a second bare on the first one's front: %v", err)
 	}
 }
 
-// wui-plain's key turns over every plainKeyDays, sooner than wui-ws's.
+// bare's key turns over every plainKeyDays, sooner than drift's.
 func TestAWuiPlainKeyTurnsOverInAWeek(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
 	seed(t, db, 1)
 	old, _ := newWSKey()
 	start := time.Unix(1_700_000_000, 0)
-	p := model.StealthParams{Transport: model.TransportWuiPlain, Port: 8081, Host: "p.example", Path: "/abcdefghijklmn", Origin: "http://127.0.0.1:8080", Cookie: "sid", Key: old, KeyAt: start.Unix()}
+	p := model.StealthParams{Transport: model.TransportBare, Port: 8081, Host: "p.example", Path: "/abcdefghijklmn", Origin: "http://127.0.0.1:8080", Cookie: "sid", Key: old, KeyAt: start.Unix()}
 	db.Model(&model.Interface{}).Where("id = 1").Update("stealth", model.JSON(p))
 	read := func() model.StealthParams {
 		var i model.Interface
@@ -170,7 +170,7 @@ func TestTheWuiProfileCarriesWuiPlain(t *testing.T) {
 	ctx := context.Background()
 	c := seed(t, db, 1)
 	key, _ := stealth.NewTransportKey()
-	p := model.StealthParams{Transport: model.TransportWuiPlain, Port: 8081, Host: "plain.example.com", Path: "/static/a8d0c1e9f4",
+	p := model.StealthParams{Transport: model.TransportBare, Port: 8081, Host: "plain.example.com", Path: "/static/a8d0c1e9f4",
 		Origin: "http://127.0.0.1:8080", Cookie: "sess_2b", Key: key.String(), KeyAt: 1}
 	db.Model(&model.Interface{}).Where("id = 1").Update("stealth", model.JSON(p))
 	db.Model(&model.Account{}).Where("client_id = ?", c.ID).Update("private_key", "priv")
@@ -188,7 +188,7 @@ func TestTheWuiProfileCarriesWuiPlain(t *testing.T) {
 		t.Fatalf("profile: %+v %v", prof, err)
 	}
 	tr := prof.Tunnels[0].Transports[0]
-	if tr.Type != stealth.Plain || tr.URL != "ws://plain.example.com/static/a8d0c1e9f4" || tr.Key != key.Public() || tr.Cookie != "sess_2b" ||
+	if tr.Type != stealth.Bare || tr.URL != "ws://plain.example.com/static/a8d0c1e9f4" || tr.Key != key.Public() || tr.Cookie != "sess_2b" ||
 		strings.Join(tr.Endpoints, " ") != "plain.example.com:80" || tr.Secret == "" {
 		t.Fatalf("transport: %+v", tr)
 	}

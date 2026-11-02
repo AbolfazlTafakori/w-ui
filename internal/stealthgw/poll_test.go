@@ -24,7 +24,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-poll gateway, tested as wui-ws's is: real WireGuard through the
+// The relay gateway, tested as drift's is: real WireGuard through the
 // reference client, every stranger's request through to a decoy that must
 // see it as it came, body and all, and by hand what whoever learns a
 // session's id can try.
@@ -159,7 +159,7 @@ type handSession struct {
 // is the tunnel's response.
 func (f *pollFixture) open(t *testing.T, s stealth.Secret, priv wgtypes.Key) *handSession {
 	t.Helper()
-	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Poll, f.key.Public())
+	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Relay, f.key.Public())
 	tok, keys, _ := pc.Token(time.Now())
 	h := &handSession{keys: keys}
 	h.send, _ = stealth.NewStreamSender(keys.Up, stealth.NewPadder(0, 0))
@@ -221,9 +221,9 @@ func TestEveryPollStrangerReachesTheDecoyAsItCame(t *testing.T) {
 	ck := key(t)
 	f := newPollFixture(t, ck)
 	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: secret(t)}})
-	pc, _ := stealth.NewProofClient(secret(t), f.anchor(), stealth.Poll, f.key.Public())
+	pc, _ := stealth.NewProofClient(secret(t), f.anchor(), stealth.Relay, f.key.Public())
 	stranger, _, _ := pc.Token(time.Now())
-	ws := f.token(t, secret(t)) // a wui-ws token: no proof here
+	ws := f.token(t, secret(t)) // a drift token: no proof here
 	body := bytes.Repeat([]byte{7}, 40)
 	var id [stealth.PollIDLen]byte
 	for _, tc := range []struct {
@@ -414,7 +414,7 @@ func TestAPollProofOpensOnceAndAKeepaliveAloneOpensNothing(t *testing.T) {
 	f := newPollFixture(t, ck)
 	s := secret(t)
 	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: s}})
-	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Poll, f.key.Public())
+	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Relay, f.key.Public())
 	tok, keys, _ := pc.Token(time.Now())
 	send, _ := stealth.NewStreamSender(keys.Up, stealth.NewPadder(0, 0))
 	body, _ := send.AppendBody(nil, wgKeepalive(1))
@@ -445,7 +445,7 @@ func TestAPollSessionOpensOnlyOnAnInitiationOrAKeepalive(t *testing.T) {
 	f := newPollFixture(t, ck)
 	s := secret(t)
 	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: s}})
-	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Poll, f.key.Public())
+	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Relay, f.key.Public())
 	for _, first := range [][]byte{nil, append([]byte{4, 0, 0, 0, 9, 9, 9, 9}, make([]byte, 100)...)} {
 		tok, keys, _ := pc.Token(time.Now())
 		send, _ := stealth.NewStreamSender(keys.Up, stealth.NewPadder(0, 0))
@@ -473,7 +473,7 @@ func TestADeviceHoldsTwoPollSessions(t *testing.T) {
 	// other, and the test's come faster than a device's would.
 	time.Sleep(100 * time.Millisecond)
 	f.open(t, s, ck)
-	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Poll, f.key.Public())
+	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Relay, f.key.Public())
 	tok, keys, _ := pc.Token(time.Now())
 	send, _ := stealth.NewStreamSender(keys.Up, stealth.NewPadder(0, 0))
 	body, _ := send.AppendBody(nil, f.initiation(t, ck))
@@ -642,6 +642,6 @@ func TestAPollGatewayRefusesWhatCannotWork(t *testing.T) {
 		}
 	}
 	if _, err := NewPollClient(PollClientConfig{URL: "ws://x/y"}); err == nil {
-		t.Error("a ws:// address was taken for wui-poll")
+		t.Error("a ws:// address was taken for relay")
 	}
 }

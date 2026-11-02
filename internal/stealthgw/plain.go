@@ -14,19 +14,19 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-plain gateway.
+// The bare gateway.
 //
-// wui-plain is wui-ws for a network where TLS itself is what gets a
+// bare is drift for a network where TLS itself is what gets a
 // connection noticed or cut: the device speaks plain HTTP to the operator's
-// web server, which hands the gateway the request as wui-ws's front does.
+// web server, which hands the gateway the request as drift's front does.
 // Everything between the device and the front can be read and written by
-// whoever is on the path, so the transport differs from wui-ws in what the
+// whoever is on the path, so the transport differs from drift in what the
 // network sees, never in what protects the session:
 //
 //   - The token travels in a cookie, under a name of the transport's own,
 //     and the target is the path alone: a target is in every log on the
 //     way, and a request whose query holds anything is not a device's.
-//   - The proof names wui-plain, so a token seen here opens on no covered
+//   - The proof names bare, so a token seen here opens on no covered
 //     transport, and the transport has a key of its own, turned over more
 //     often than a covered one's, since every proof it opens was seen.
 //   - The answer to a proof sets no cookie: on a plain path a cookie the
@@ -41,7 +41,7 @@ import (
 // the token's own. A forged or changed frame ends the session; it never
 // reaches the tunnel.
 
-// PlainConfig is one tunnel's wui-plain gateway: wui-ws's settings, with a
+// PlainConfig is one tunnel's bare gateway: drift's settings, with a
 // decoy that must be set, and the cookie a device's token comes in.
 type PlainConfig struct {
 	StreamConfig
@@ -50,8 +50,8 @@ type PlainConfig struct {
 	Cookie string
 }
 
-// PlainGateway is wui-plain in front of one WireGuard tunnel. Its devices,
-// sessions, limits and replay rule are wui-ws's, and so is everything after
+// PlainGateway is bare in front of one WireGuard tunnel. Its devices,
+// sessions, limits and replay rule are drift's, and so is everything after
 // the upgrade.
 type PlainGateway struct {
 	*StreamGateway
@@ -61,16 +61,16 @@ type PlainGateway struct {
 // NewPlain prepares a gateway. Nothing listens until Serve.
 func NewPlain(cfg PlainConfig) (*PlainGateway, error) {
 	if !stealth.CookieName(cfg.Cookie) {
-		return nil, errors.New("stealthgw: wui-plain's cookie is named by 1 to 32 characters of A-Z a-z 0-9 - _")
+		return nil, errors.New("stealthgw: bare's cookie is named by 1 to 32 characters of A-Z a-z 0-9 - _")
 	}
 	if cfg.Origin == "" {
-		return nil, errors.New("stealthgw: wui-plain needs a decoy: a stranger's answer crosses the network in the clear, so it must be the site's own")
+		return nil, errors.New("stealthgw: bare needs a decoy: a stranger's answer crosses the network in the clear, so it must be the site's own")
 	}
 	decoy, err := newDecoy(cfg.Origin)
 	if err != nil {
 		return nil, err
 	}
-	g, err := newStreamGateway(cfg.StreamConfig, stealth.Plain)
+	g, err := newStreamGateway(cfg.StreamConfig, stealth.Bare)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (p *PlainGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.run(dev, visitor, conn, brw.Reader, plainUpgrade(key), keys, now)
 }
 
-// plainUpgrade is the answer to a wui-plain proof: wui-ws's, without the
+// plainUpgrade is the answer to a bare proof: drift's, without the
 // cookie. The front writes its own fields around it.
 func plainUpgrade(key string) string {
 	var b strings.Builder

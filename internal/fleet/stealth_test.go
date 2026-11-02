@@ -9,8 +9,8 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
-// A node is given a tunnel's wui-udp and every device's transport secret,
-// and loses wui-udp when the panel turns it off.
+// A node is given a tunnel's veil and every device's transport secret,
+// and loses veil when the panel turns it off.
 func TestANodeTakesWuiUDPAsThePanelHasIt(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
@@ -18,7 +18,7 @@ func TestANodeTakesWuiUDPAsThePanelHasIt(t *testing.T) {
 	state := NodeState{
 		Interface: NodeInterface{OriginID: 5, Name: "wg0", Protocol: model.ProtocolWireGuard, Enabled: true,
 			ListenPort: 51820, Subnet: "10.66.0.0/24", MTU: 1420, Mode: model.ModeStandard,
-			PrivateKey: "priv", PublicKey: "pub", Stealth: &model.StealthParams{Transport: model.TransportWuiUDP, Port: 2096}},
+			PrivateKey: "priv", PublicKey: "pub", Stealth: &model.StealthParams{Transport: model.TransportVeil, Port: 2096}},
 		Clients: []NodeClient{{OriginID: 9, Enabled: true, Accounts: []NodeAccount{{
 			OriginID: 11, DeviceName: "phone", IP: "10.66.0.2", Enabled: true,
 			PrivateKey: "p", PublicKey: "k", StealthSecret: "secret",
@@ -40,6 +40,6 @@ func TestANodeTakesWuiUDPAsThePanelHasIt(t *testing.T) {
 	}
 	db.Where("origin_id = 5").First(&iface)
 	if iface.StealthUDP() != 0 {
-		t.Fatal("wui-udp stayed on after the panel turned it off")
+		t.Fatal("veil stayed on after the panel turned it off")
 	}
 }

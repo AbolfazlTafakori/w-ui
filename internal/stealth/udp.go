@@ -17,7 +17,7 @@ import (
 
 // The UDP packets.
 //
-// wui-udp has two packets, and neither has a byte the network can name. An
+// veil has two packets, and neither has a byte the network can name. An
 // opening starts a session; data packets follow it, both ways.
 //
 //	opening = masked tag (16) | salt (32) | Seal(k_open, nonce 0, aad = the 48 bytes before,
@@ -62,7 +62,7 @@ const (
 	FirstAnswer = DataMin + 2 + 92
 	// UDPOverhead is what a full-size inner IP packet grows by on its way into
 	// a data packet: WireGuard's 32 bytes, then the nonce, the length and the
-	// seal. No wui-udp packet is larger than the tunnel's MTU plus this.
+	// seal. No veil packet is larger than the tunnel's MTU plus this.
 	UDPOverhead = 32 + udpNonce + 2 + Overhead
 	// ClientRenew is when a client opens a new session: this many packets
 	// sent or received on the one it has.

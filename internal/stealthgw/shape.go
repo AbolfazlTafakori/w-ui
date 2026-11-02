@@ -16,12 +16,12 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-shape gateway.
+// The mold gateway.
 //
-// wui-shape is wui-poll that need not look like wui-poll: the operator fixes
+// mold is relay that need not look like relay: the operator fixes
 // the shape of a request -- its method, where the tunnel's data rides, and
 // whether answers carry the downstream data (poll) or one long stream does
-// (sse). The keys, the chunk, its padding and the proof are wui-ws's; only
+// (sse). The keys, the chunk, its padding and the proof are drift's; only
 // the dress of a request and the numbering of its chunks differ (package
 // stealth).
 //
@@ -41,9 +41,9 @@ import (
 // data within a few seconds, gets the answer the gateway kept, or the late
 // answer; anything else is the decoy's.
 
-// wui-shape limits and timers.
+// mold limits and timers.
 const (
-	// deviceShapes is how many wui-shape sessions one device may hold.
+	// deviceShapes is how many mold sessions one device may hold.
 	deviceShapes = 2
 	// shapeIdle ends a session no request was accepted on for this long.
 	shapeIdle = 60 * time.Second
@@ -64,21 +64,21 @@ const (
 	sseBeatCheck = time.Second
 )
 
-// wui-shape per-session allowances.
+// mold per-session allowances.
 var (
 	shapeStarts  = allowance{burst: 4, rate: 1} // stream requests
 	shapeReplays = allowance{burst: 16, rate: 8}
 )
 
-// ShapeConfig is one tunnel's wui-shape gateway: wui-ws's settings, and the
+// ShapeConfig is one tunnel's mold gateway: drift's settings, and the
 // shape every request of the transport takes.
 type ShapeConfig struct {
 	StreamConfig
 	Shape stealth.Shape
 }
 
-// ShapeGateway is wui-shape in front of one WireGuard tunnel. Its devices,
-// limits, replay rule and sessions are wui-ws's; only how a session's
+// ShapeGateway is mold in front of one WireGuard tunnel. Its devices,
+// limits, replay rule and sessions are drift's; only how a session's
 // datagrams travel differs.
 type ShapeGateway struct {
 	*StreamGateway
@@ -92,7 +92,7 @@ func NewShape(cfg ShapeConfig) (*ShapeGateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	g, err := newStreamGateway(cfg.StreamConfig, stealth.Shaped)
+	g, err := newStreamGateway(cfg.StreamConfig, stealth.Mold)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ type shapeSlot struct {
 	size   int
 }
 
-// shapeSession is what a wui-shape session has besides the stream's.
+// shapeSession is what a mold session has besides the stream's.
 type shapeSession struct {
 	id    [stealth.PollIDLen]byte
 	shape stealth.Shape

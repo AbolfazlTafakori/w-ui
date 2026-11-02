@@ -19,7 +19,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-shape gateway, tested as wui-poll's is: a session opened by hand in
+// The mold gateway, tested as relay's is: a session opened by hand in
 // the operator's shape, a later request and its repeat, the stream, and every
 // stranger's request through to the decoy as it came.
 
@@ -135,7 +135,7 @@ type handShape struct {
 // answer carries the tunnel's response.
 func (f *shapeFixture) openSession(t *testing.T, s stealth.Secret, priv wgtypes.Key) *handShape {
 	t.Helper()
-	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Shaped, f.key.Public())
+	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Mold, f.key.Public())
 	tok, keys, _ := pc.Token(time.Now())
 	h := &handShape{keys: keys}
 	h.send, _ = stealth.NewShapeSender(keys.Up, stealth.NewPadder(0, 0))
@@ -237,7 +237,7 @@ func TestShapeStream(t *testing.T) {
 	f := newShapeFixture(t, shape, ck)
 	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: secret}})
 
-	pc, _ := stealth.NewProofClient(secret, f.anchor(), stealth.Shaped, f.key.Public())
+	pc, _ := stealth.NewProofClient(secret, f.anchor(), stealth.Mold, f.key.Public())
 	tok, keys, _ := pc.Token(time.Now())
 	send, _ := stealth.NewShapeSender(keys.Up, stealth.NewPadder(0, 0))
 	recv, _ := stealth.NewShapeReceiver(keys.Down)

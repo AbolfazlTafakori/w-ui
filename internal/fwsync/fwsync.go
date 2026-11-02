@@ -79,7 +79,7 @@ func ForInterfaces(ifaces []model.Interface) []Rule {
 		case model.ProtocolWireGuard:
 			add(Rule{"udp", i.ListenPort})
 			// Its stealth transport, beside it, when it is reached from
-			// outside: wui-ws or wui-poll behind a web server on this
+			// outside: drift or relay behind a web server on this
 			// machine is not.
 			if name, p := i.StealthTransport(); p != 0 && i.StealthOpen() {
 				add(Rule{model.TransportNetwork(name), p})

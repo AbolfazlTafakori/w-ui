@@ -22,9 +22,9 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-tls gateway.
+// The anchor gateway.
 //
-// wui-tls is wui-ws without a front: the gateway is the server, on a port of
+// anchor is drift without a front: the gateway is the server, on a port of
 // its own, and ends TLS itself with a certificate devices know by its pin.
 // With nothing in front of it, it must tell a device from everyone else by
 // the bytes alone, and must give everyone else exactly what the operator's
@@ -43,7 +43,7 @@ import (
 //     client insists on. The token is opened whatever the path, so the work
 //     a line costs does not say whether its path was right.
 //  5. A device's head is read, the decoy's connection closed unused, and the
-//     session runs as wui-ws's does.
+//     session runs as drift's does.
 //  6. Anyone else's bytes, every one read so far, go to the decoy unchanged,
 //     and from then on the gateway relays both ways and reads nothing:
 //     half-closes and resets pass through as they come. The gateway never
@@ -52,7 +52,7 @@ import (
 // What it cannot hide: the TLS handshake is the gateway's own, not the
 // decoy's, and a relayed answer is a hop later than the decoy's would be.
 
-// TLSConfig is one tunnel's wui-tls gateway.
+// TLSConfig is one tunnel's anchor gateway.
 type TLSConfig struct {
 	// Listen is the TCP address devices reach the gateway at.
 	Listen string
@@ -84,7 +84,7 @@ type TLSConfig struct {
 	Log           *slog.Logger
 }
 
-// wui-tls limits and timers.
+// anchor limits and timers.
 const (
 	// handshakeFor bounds TLS, from the accept.
 	handshakeFor = 10 * time.Second
@@ -130,7 +130,7 @@ var tls12Suites = []uint16{
 	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 }
 
-// TLSGateway is wui-tls in front of one WireGuard tunnel.
+// TLSGateway is anchor in front of one WireGuard tunnel.
 type TLSGateway struct {
 	*StreamGateway
 	tcfg    TLSConfig
@@ -187,7 +187,7 @@ func NewTLS(cfg TLSConfig) (*TLSGateway, error) {
 		Listen: cfg.Listen, Path: cfg.Path, WireGuard: cfg.WireGuard, PrivateKey: cfg.PrivateKey,
 		TransportKeys: cfg.TransportKeys, ReplayFile: cfg.ReplayFile, Sessions: cfg.Sessions,
 		Wide: cfg.Wide, Normal: cfg.Normal, Log: cfg.Log,
-	}, stealth.TLS)
+	}, stealth.Anchored)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func NewTLS(cfg TLSConfig) (*TLSGateway, error) {
 	case cfg.Certificate != nil:
 		g.cert.Store(cfg.Certificate)
 	default:
-		return nil, errors.New("stealthgw: wui-tls needs a certificate")
+		return nil, errors.New("stealthgw: anchor needs a certificate")
 	}
 	g.tlsConf = &tls.Config{
 		MinVersion:   tls.VersionTLS12,
@@ -1014,7 +1014,7 @@ func isReset(err error) bool {
 	return err != nil && errors.Is(err, connReset)
 }
 
-// TLSStats is what a wui-tls gateway has done since it started, and holds
+// TLSStats is what a anchor gateway has done since it started, and holds
 // now: its sessions' counters, and its own.
 type TLSStats struct {
 	StreamStats

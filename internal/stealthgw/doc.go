@@ -8,9 +8,9 @@
 // of its rules. Nothing about the tunnel changes for it: the kernel module or
 // the userspace daemon runs as it would on plain UDP.
 //
-// wui-udp is Gateway and Client; wui-ws is StreamGateway and StreamClient;
-// wui-tls is TLSGateway and StreamClient, with ClientTLS; wui-poll is
-// PollGateway and PollClient; wui-plain is PlainGateway and StreamClient;
-// wui-shape is ShapeGateway and ShapeClient.
+// veil is Gateway and Client; drift is StreamGateway and StreamClient;
+// anchor is TLSGateway and StreamClient, with ClientTLS; relay is
+// PollGateway and PollClient; bare is PlainGateway and StreamClient;
+// mold is ShapeGateway and ShapeClient.
 // docs/reference/stealth.md is the specification.
 package stealthgw

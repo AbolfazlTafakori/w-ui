@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// The wui-faketls handshake flight.
+// The mirror handshake flight.
 //
 // When a hello proves a device, the gateway answers with its own TLS 1.3
 // handshake, written here (not by any TLS library, so its records can be
@@ -92,7 +92,7 @@ func certVerifyContent(transcriptHash []byte) []byte {
 	return append(c, transcriptHash...)
 }
 
-// FakeConn is the two directions of a wui-faketls session's record layer,
+// FakeConn is the two directions of a mirror session's record layer,
 // after the handshake: application traffic keys the data rides under.
 type FakeConn struct {
 	Send *TLSKeys // what this side seals

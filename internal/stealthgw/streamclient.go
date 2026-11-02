@@ -18,12 +18,12 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-ws, wui-tls and wui-plain reference client.
+// The drift, anchor and bare reference client.
 //
 // A local UDP port a stock WireGuard sends to as if it were the server, and
 // the stream side of it, written once here so that the gateway is tested
 // against the client rules and an app has a client to follow. Like the
-// wui-udp client it cannot make WireGuard send anything, so it opens a
+// veil client it cannot make WireGuard send anything, so it opens a
 // session with the next handshake initiation or keepalive WireGuard sends,
 // and drops what comes while it has none.
 
@@ -41,31 +41,31 @@ const (
 	retryMin = 250 * time.Millisecond
 	retryMax = 8 * time.Second
 	// streamLiveness is how long a client waits for a word on a session it
-	// sent on before it takes the session for dead. Longer than wui-udp's:
+	// sent on before it takes the session for dead. Longer than veil's:
 	// on a one-way flow WireGuard's own keepalive comes after ten seconds,
 	// and the gateway holds it a moment more.
 	streamLiveness = 20 * time.Second
 )
 
-// StreamClientConfig is one device's wui-ws, wui-tls or wui-plain client
+// StreamClientConfig is one device's drift, anchor or bare client
 // for one tunnel.
 type StreamClientConfig struct {
-	// Transport is stealth.WS, the default, stealth.TLS or stealth.Plain.
+	// Transport is stealth.Drift, the default, stealth.Anchored or stealth.Bare.
 	Transport string
 	// URL is the transport: ws:// or wss://, the front's name and the
-	// transport's path. wui-tls is always wss://, at the gateway's own name
-	// or address, and wui-plain always ws://.
+	// transport's path. anchor is always wss://, at the gateway's own name
+	// or address, and bare always ws://.
 	URL string
-	// Cookie is the name of the cookie wui-plain's token goes in.
+	// Cookie is the name of the cookie bare's token goes in.
 	Cookie string
 	// Dial is the address connected to, when it is not the URL's host: a
 	// CDN's address, say. The URL's host is still the name TLS and the
 	// request give.
 	Dial string
 	// TLS is the client's TLS for wss://; nil is the system's roots, or for
-	// wui-tls the pins.
+	// anchor the pins.
 	TLS *tls.Config
-	// Pins are the keys a wui-tls server's certificate may have, and
+	// Pins are the keys a anchor server's certificate may have, and
 	// SelfSigned says they are all it is held to (ClientTLS).
 	Pins       []stealth.Pin
 	SelfSigned bool
@@ -120,18 +120,18 @@ func NewStreamClient(cfg StreamClientConfig) (*StreamClient, error) {
 	}
 	switch cfg.Transport {
 	case "":
-		cfg.Transport = stealth.WS
-	case stealth.WS:
-	case stealth.Plain:
+		cfg.Transport = stealth.Drift
+	case stealth.Drift:
+	case stealth.Bare:
 		if u.Scheme != "ws" {
-			return nil, fmt.Errorf("stealthgw: wui-plain is ws://, not %q", cfg.URL)
+			return nil, fmt.Errorf("stealthgw: bare is ws://, not %q", cfg.URL)
 		}
 		if !stealth.CookieName(cfg.Cookie) {
-			return nil, fmt.Errorf("stealthgw: %q cannot name wui-plain's cookie", cfg.Cookie)
+			return nil, fmt.Errorf("stealthgw: %q cannot name bare's cookie", cfg.Cookie)
 		}
-	case stealth.TLS:
+	case stealth.Anchored:
 		if u.Scheme != "wss" {
-			return nil, fmt.Errorf("stealthgw: wui-tls is wss://, not %q", cfg.URL)
+			return nil, fmt.Errorf("stealthgw: anchor is wss://, not %q", cfg.URL)
 		}
 		if cfg.TLS == nil {
 			if cfg.TLS, err = ClientTLS(u.Hostname(), cfg.Pins, cfg.SelfSigned, nil); err != nil {
@@ -309,19 +309,19 @@ func (c *StreamClient) open() (*clientStream, error) {
 	return s, nil
 }
 
-// browserAgent is the User-Agent of wui-plain's request, a desktop Chrome's.
+// browserAgent is the User-Agent of bare's request, a desktop Chrome's.
 // An app sends its own platform's browser's.
 const browserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
 
-// request is the upgrade that carries token. On wui-ws and wui-tls the token
-// is the query, under TLS. wui-plain's request crosses the network readable,
+// request is the upgrade that carries token. On drift and anchor the token
+// is the query, under TLS. bare's request crosses the network readable,
 // so it is a browser's upgrade from a page served over http://, its fields in
 // Chrome's order, and the token is a cookie among them: the target is the
 // path alone. Compression is offered as a browser offers it; the gateway
 // takes no extension, and an answer that takes one is refused.
 func (c *StreamClient) request(token, wsKey string) string {
 	path := c.url.EscapedPath()
-	if c.cfg.Transport != stealth.Plain {
+	if c.cfg.Transport != stealth.Bare {
 		return "GET " + path + "?" + token + " HTTP/1.1\r\n" +
 			"Host: " + c.url.Host + "\r\n" +
 			"Upgrade: websocket\r\nConnection: Upgrade\r\n" +

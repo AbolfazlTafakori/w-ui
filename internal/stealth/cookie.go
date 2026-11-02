@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// The cookie of wui-plain.
+// The cookie of bare.
 //
-// wui-plain has no TLS between the device and the front, so anything in the
+// bare has no TLS between the device and the front, so anything in the
 // request target is in every log on the way, the front's own included. Its
 // token travels in a cookie instead, under a name the panel draws for the
 // transport, and the target is the path alone.
@@ -18,10 +18,10 @@ import (
 // exactly once, and its value is one or more characters of A-Z a-z 0-9 - _,
 // which is what a token is. Anything else is a request like any other's.
 
-// CookieMax is the longest name a wui-plain cookie may have.
+// CookieMax is the longest name a bare cookie may have.
 const CookieMax = 32
 
-// CookieName says whether name may name a wui-plain cookie: 1 to CookieMax
+// CookieName says whether name may name a bare cookie: 1 to CookieMax
 // characters of A-Z a-z 0-9 - _.
 func CookieName(name string) bool {
 	return name != "" && len(name) <= CookieMax && strings.IndexFunc(name, notTokenChar) < 0

@@ -1,10 +1,10 @@
 ---
-description: "The stealth transports: wui-udp, WireGuard in UDP packets that look like random bytes; wui-ws, WireGuard as WebSocket behind a web server or a CDN; wui-poll, the same as HTTP requests for a CDN without WebSocket; wui-tls, the same with the gateway as the web server itself; and wui-plain, the same over plain HTTP where TLS itself is cut; the keys, the packets, the server's rules, and what a client must do."
+description: "The stealth transports: veil, WireGuard in UDP packets that look like random bytes; drift, WireGuard as WebSocket behind a web server or a CDN; relay, the same as HTTP requests for a CDN without WebSocket; anchor, the same with the gateway as the web server itself; and bare, the same over plain HTTP where TLS itself is cut; the keys, the packets, the server's rules, and what a client must do."
 ---
 
-# Stealth transport: wui-udp
+# Stealth transport: veil
 
-wui-udp carries a WireGuard tunnel over UDP in packets that have nothing the network can name: no fixed byte, no fixed size, no fixed rhythm. A server answers nobody who does not hold a device's secret, so a probe learns nothing, not even that something is listening.
+veil carries a WireGuard tunnel over UDP in packets that have nothing the network can name: no fixed byte, no fixed size, no fixed rhythm. A server answers nobody who does not hold a device's secret, so a probe learns nothing, not even that something is listening.
 
 WireGuard itself is not changed. Its handshake, keys and replay protection stay as they are; the wrapping adds concealment, never trust. On the server the gateway unwraps each datagram and hands it to the tunnel's own WireGuard, from a socket of its own per device and source, so WireGuard sees every device at an endpoint of its own and roams it exactly as it would on plain UDP.
 
@@ -12,11 +12,11 @@ This page is the specification. The format is in `internal/stealth`, the server 
 
 ## On the panel
 
-A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **wui-udp** is WireGuard as it is on the tunnel's port and wui-udp beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `wui-udp`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. **wui-ws**, WebSocket behind a web server or a CDN, **wui-poll**, the same as HTTP requests for a CDN without WebSocket, **wui-tls**, the gateway as the web server itself, and **wui-plain**, WebSocket over plain HTTP, are the others, each in a part of its own below.
+A standard WireGuard tunnel chooses its **Transport** in its form, as an OpenVPN tunnel chooses UDP or TCP: **UDP** is WireGuard as it is, and **veil** is WireGuard as it is on the tunnel's port and veil beside it, on a UDP port of its own. In the API they are `transport` (`udp` or `veil`) and `transportPort`. The port may be no other tunnel's on that server, and it is let through the firewall like the tunnel's own. AmneziaWG tunnels have UDP alone: their datagrams are not WireGuard's. **drift**, WebSocket behind a web server or a CDN, **relay**, the same as HTTP requests for a CDN without WebSocket, **anchor**, the gateway as the web server itself, and **bare**, WebSocket over plain HTTP, are the others, each in a part of its own below.
 
 The tunnel itself does not change. Its peers, its port and every `.conf` handed out stay as they were; the panel only starts a gateway beside it, gives it the devices the tunnel carries on every pass, and stops it when the tunnel no longer wants one. A device taken off the tunnel, out of its allowance or switched off, loses its gateway sessions with its peer. The online indicator and the sharing report see a device at its own address, not the gateway's.
 
-Every WireGuard device has a transport secret, drawn with its keys and replaced when they are rotated; devices made before wui-udp get one on the next pass. A remote node is given the setting and the secrets with the tunnel.
+Every WireGuard device has a transport secret, drawn with its keys and replaced when they are rotated; devices made before veil get one on the next pass. A remote node is given the setting and the secrets with the tunnel.
 
 ### The profile
 
@@ -34,14 +34,14 @@ An app of W-UI's own reads the customer's subscription with `?format=wui`:
       "wireguard": "[Interface]
 PrivateKey = ...",
       "transports": [
-        {"type": "wui-udp", "endpoints": ["vpn.example.com:2096"], "secret": "base64", "mtu": 1420}
+        {"type": "veil", "endpoints": ["vpn.example.com:2096"], "secret": "base64", "mtu": 1420}
       ]
     }
   ]
 }
 ```
 
-`wireguard` is the file a stock app gets, and its `[Peer]` public key is the anchor `A`. `endpoints` are every address the customer connects to, best first, on the wui-udp port. `serverTime` is the panel's clock when the profile was made, for a client to keep its offset. An app refuses a `version` it does not know.
+`wireguard` is the file a stock app gets, and its `[Peer]` public key is the anchor `A`. `endpoints` are every address the customer connects to, best first, on the veil port. `serverTime` is the panel's clock when the profile was made, for a client to keep its offset. An app refuses a `version` it does not know.
 
 ## Notation
 
@@ -73,7 +73,7 @@ What every stealth transport moves is a chunk: WireGuard datagrams, each behind 
 [len u16 big-endian][datagram] ... [0x00 ...]
 ```
 
-A datagram is 32 to 1600 bytes, so a zero length can never start one: the first zero length is where padding begins, and every byte after it must be zero. A chunk's plaintext is at most 16 000 bytes. A chunk that breaks any of this is refused whole. On wui-udp a chunk holds exactly one datagram in an opening, and one or none in a data packet; a chunk of two is refused.
+A datagram is 32 to 1600 bytes, so a zero length can never start one: the first zero length is where padding begins, and every byte after it must be zero. A chunk's plaintext is at most 16 000 bytes. A chunk that breaks any of this is refused whole. On veil a chunk holds exactly one datagram in an opening, and one or none in a data packet; a chunk of two is refused.
 
 ### Padding
 
@@ -181,19 +181,19 @@ Each is a token bucket, a burst and a rate per second, spent only by openings a 
 
 The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port.
 
-# Stealth transport: wui-ws
+# Stealth transport: drift
 
-wui-ws carries a WireGuard tunnel as WebSocket behind the operator's own web server or a CDN. The front ends TLS, so to the network a device is visiting a site; the gateway behind it takes plain HTTP and answers nobody who cannot prove a device's secret. A request that proves nothing goes to the operator's own site, the decoy, exactly as it came: the gateway never makes an answer of its own for a stranger, so a probe sees the site and nothing else.
+drift carries a WireGuard tunnel as WebSocket behind the operator's own web server or a CDN. The front ends TLS, so to the network a device is visiting a site; the gateway behind it takes plain HTTP and answers nobody who cannot prove a device's secret. A request that proves nothing goes to the operator's own site, the decoy, exactly as it came: the gateway never makes an answer of its own for a stranger, so a probe sees the site and nothing else.
 
-The keys, the chunk and its padding are wui-udp's, above. The format is in `internal/stealth` (`proof.go`, `stream.go`, `websocket.go`), the server and the reference client in `internal/stealthgw` (`stream.go`, `streamclient.go`). `internal/stealth/testdata/ws.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own, HPKE included.
+The keys, the chunk and its padding are veil's, above. The format is in `internal/stealth` (`proof.go`, `stream.go`, `websocket.go`), the server and the reference client in `internal/stealthgw` (`stream.go`, `streamclient.go`). `internal/stealth/testdata/ws.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own, HPKE included.
 
 ## On the panel
 
-Choose **wui-ws** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with wui-udp.
+Choose **drift** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with veil.
 
 | Field | API | |
 |---|---|---|
-| wui-ws port | `transportPort` | The TCP port the front sends the transport's path to, as plain HTTP. |
+| drift port | `transportPort` | The TCP port the front sends the transport's path to, as plain HTTP. |
 | Front host | `transportWs.host` | The name devices connect to and TLS names: the web server's domain or the CDN's. Required. |
 | Front port | `transportWs.frontPort` | The front's HTTPS port; 443 when empty. |
 | Path | `transportWs.path` | The path the front sends to the gateway: 12 to 256 characters of letters, digits and `/ - . _ ~`. Left empty, one of 20 characters is drawn, and kept when the settings are saved again with it empty. |
@@ -203,7 +203,7 @@ Choose **wui-ws** as a standard WireGuard tunnel's **Transport**. Plain WireGuar
 
 With no trusted front listed the gateway listens on 127.0.0.1 alone, for a web server on the same machine, and its port stays shut in the firewall. With one listed it listens on every address and its port is opened; a request from an address that is neither a trusted front nor the loopback is a stranger's, whatever it carries. The visitor is the last address in the visitor header that is not a trusted front, and the online indicator and the sharing report see the device there.
 
-The transport has a key pair of its own, drawn when wui-ws is chosen. The panel draws the next one every 30 days and keeps the one before, which the gateway still takes, so an app that fetches its profile at least that often never meets a key it does not know. The private keys never leave the panel by the API; a remote node is given them with the tunnel, since its gateway needs them.
+The transport has a key pair of its own, drawn when drift is chosen. The panel draws the next one every 30 days and keeps the one before, which the gateway still takes, so an app that fetches its profile at least that often never meets a key it does not know. The private keys never leave the panel by the API; a remote node is given them with the tunnel, since its gateway needs them.
 
 nginx in front on the same machine, the transport on port 28081 and the site where it was:
 
@@ -224,11 +224,11 @@ Every other location stays the site's. With the decoy set to the site's own addr
 ### The profile
 
 ```json
-{"type": "wui-ws", "endpoints": ["cdn.example.com:443"], "url": "wss://cdn.example.com/41yg3dsw2u5h97g50uvl",
+{"type": "drift", "endpoints": ["cdn.example.com:443"], "url": "wss://cdn.example.com/41yg3dsw2u5h97g50uvl",
  "key": "base64", "secret": "base64", "mtu": 1420}
 ```
 
-`url` is the name TLS and the request give, with the path; `endpoints` is where the app connects, and an app may connect to a CDN's address instead while it keeps `url`'s name for TLS. `key` is the transport's current public key. The secret and the anchor are wui-udp's.
+`url` is the name TLS and the request give, with the path; `endpoints` is where the app connects, and an app may connect to a CDN's address instead while it keeps `url`'s name for TLS. `key` is the transport's current public key. The secret and the anchor are veil's.
 
 ## The proof
 
@@ -236,7 +236,7 @@ A session opens with one request: a GET with a WebSocket upgrade (RFC 6455, vers
 
 ```
 token  = base64url without padding (enc (32) | HPKE-Seal(key, info, aad = "", hello))
-info   = L | "proof" | 0x00 | "wui-ws" | 0x00 | A
+info   = L | "proof" | 0x00 | "drift" | 0x00 | A
 hello  = 0x01 | 0x00 0x00 0x00 | be64(timestamp) | tag (16) | binder (32) | zero padding (0..96)
 binder = HMAC(k_bind, Export(L | "binder", 32) | hello[0..28])
 
@@ -257,7 +257,7 @@ k_down = HKDF-Expand(prk, L | "stream down", 32)   server to client
 
 ## The session
 
-Every binary WebSocket message is one sealed chunk, in a single frame; the client masks its frames and the server does not. A chunk is sealed with its direction's key under the nonce `0x00000000 | le64(n)`, `n` being the chunk's number in its direction from 0, with no associated data. A chunk holds as many datagrams as are waiting and fit, or none: padding alone is how a side answers without saying anything. The padding is wui-udp's, wide for a direction's first 16 chunks and for a chunk that carries a handshake message.
+Every binary WebSocket message is one sealed chunk, in a single frame; the client masks its frames and the server does not. A chunk is sealed with its direction's key under the nonce `0x00000000 | le64(n)`, `n` being the chunk's number in its direction from 0, with no associated data. A chunk holds as many datagrams as are waiting and fit, or none: padding alone is how a side answers without saying anything. The padding is veil's, wide for a direction's first 16 chunks and for a chunk that carries a handshake message.
 
 A text message, a fragmented one, one longer than 16 016 bytes, a frame with a reserved bit, a frame masked the wrong way for its side, or a chunk that does not open ends the session. Pings are answered and pongs ignored. However a session ends, the server sends a close of 1000 with no reason, waits up to 5 seconds for the client's close, and lets the connection go, so the cause cannot be read from outside.
 
@@ -271,8 +271,8 @@ Whatever is not a proof goes to the decoy as it came, and a counter says why.
 1. A path other than the transport's, compared in constant time, or no WebSocket upgrade: the decoy.
 1. Open the token under every transport key the gateway holds, current and previous, whether or not an earlier one opened it, and check the version byte, the three zero bytes and the padding. Any failure: the decoy.
 1. Find the device by its tag and check the binder. A tag no device has is checked against a stand-in, so a known tag and an unknown one cost the same. A failure: the decoy.
-1. wui-udp's replay rule, on `enc`, in a file of its own. A proof above the written limit asks for a raise and waits for it up to 2 seconds, since a refused stream costs its client a connection.
-1. The limits: at most 8 sessions per device, 2 pending per device, 4096 per gateway, and wui-udp's allowances for the device and for the visitor's address. No room: the decoy, and the proof is recorded while the device's allowance for that lasts.
+1. veil's replay rule, on `enc`, in a file of its own. A proof above the written limit asks for a raise and waits for it up to 2 seconds, since a refused stream costs its client a connection.
+1. The limits: at most 8 sessions per device, 2 pending per device, 4096 per gateway, and veil's allowances for the device and for the visitor's address. No room: the decoy, and the proof is recorded while the device's allowance for that lasts.
 1. The proof is taken, once, under one lock: of two connections that carry the same proof, only one gets past here.
 1. Answer the upgrade, open a socket of the session's own to the tunnel, and carry the session.
 
@@ -280,9 +280,9 @@ Whatever is not a proof goes to the decoy as it came, and a counter says why.
 
 A session is **pending** until WireGuard speaks on its socket, or until a transport message comes under an index the tunnel gave the device in a response the gateway carried, and nothing is sent on a pending session. When it becomes live it sends what the tunnel said, or a padding-only chunk.
 
-The first chunk of a session must hold a handshake initiation of this very device, or a keepalive; never user data. Anything else ends it. Every initiation is checked as on wui-udp, against the session's device, its static key and its timestamp, at most 3 at once and 1 a second after. Handshake responses must be 92 bytes, cookie replies 64, transport messages 32 or more, and a datagram of any other type ends the session.
+The first chunk of a session must hold a handshake initiation of this very device, or a keepalive; never user data. Anything else ends it. Every initiation is checked as on veil, against the session's device, its static key and its timestamp, at most 3 at once and 1 a second after. Handshake responses must be 92 bytes, cookie replies 64, transport messages 32 or more, and a datagram of any other type ends the session.
 
-A stream cannot be replayed: its chunks open only in order, under a key of this session alone. So every chunk that opens is activity, unlike wui-udp's data packets.
+A stream cannot be replayed: its chunks open only in order, under a key of this session alone. So every chunk that opens is activity, unlike veil's data packets.
 
 | Timer | |
 |---|---|
@@ -301,15 +301,15 @@ A stream cannot be replayed: its chunks open only in order, under a key of this 
 
 The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port, over `ws://` or `wss://`, with the address it dials apart from the name it gives.
 
-# Stealth transport: wui-poll
+# Stealth transport: relay
 
-wui-poll is wui-ws for a CDN that will not carry WebSocket. Behind the same front, the tunnel's datagrams travel in the bodies of ordinary POST requests to the transport's path and in the bodies of their answers: the device asks, one request at a time, and the gateway answers with whatever waits for it. To the network and to the CDN it is a page fetching from its own site. A request that proves nothing goes to the decoy as it came, body and all, exactly as on wui-ws.
+relay is drift for a CDN that will not carry WebSocket. Behind the same front, the tunnel's datagrams travel in the bodies of ordinary POST requests to the transport's path and in the bodies of their answers: the device asks, one request at a time, and the gateway answers with whatever waits for it. To the network and to the CDN it is a page fetching from its own site. A request that proves nothing goes to the decoy as it came, body and all, exactly as on drift.
 
-The keys, the chunk, its padding and the proof are wui-ws's, above, under wui-poll's own name. The format is in `internal/stealth/poll.go`, the server and the reference client in `internal/stealthgw` (`poll.go`, `pollclient.go`). `internal/stealth/testdata/poll.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own.
+The keys, the chunk, its padding and the proof are drift's, above, under relay's own name. The format is in `internal/stealth/poll.go`, the server and the reference client in `internal/stealthgw` (`poll.go`, `pollclient.go`). `internal/stealth/testdata/poll.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own.
 
 ## On the panel
 
-Choose **wui-poll** as a standard WireGuard tunnel's **Transport**. Its fields are wui-ws's: the wui-poll port, the front's host and port, the path, the decoy site, the trusted fronts and their visitor header, with the same rules and defaults. With no trusted front the gateway listens on 127.0.0.1 alone and its port stays shut in the firewall. The transport's key pair is its own, drawn when wui-poll is chosen and turned over every 30 days with the one before still taken. A tunnel switched to or from wui-poll carries no path or key across, and a wui-plain front never shares a wui-poll front's name or path.
+Choose **relay** as a standard WireGuard tunnel's **Transport**. Its fields are drift's: the relay port, the front's host and port, the path, the decoy site, the trusted fronts and their visitor header, with the same rules and defaults. With no trusted front the gateway listens on 127.0.0.1 alone and its port stays shut in the firewall. The transport's key pair is its own, drawn when relay is chosen and turned over every 30 days with the one before still taken. A tunnel switched to or from relay carries no path or key across, and a bare front never shares a relay front's name or path.
 
 nginx in front on the same machine, the transport on port 28082:
 
@@ -331,15 +331,15 @@ A body is at most 64 KiB each way, inside nginx's default `client_max_body_size`
 ### The profile
 
 ```json
-{"type": "wui-poll", "endpoints": ["cdn.example.com:443"], "url": "https://cdn.example.com/41yg3dsw2u5h97g50uvl",
+{"type": "relay", "endpoints": ["cdn.example.com:443"], "url": "https://cdn.example.com/41yg3dsw2u5h97g50uvl",
  "key": "base64", "secret": "base64", "mtu": 1420}
 ```
 
-As wui-ws's, with `https://`.
+As drift's, with `https://`.
 
 ## The requests
 
-The first request of a session is the proof: `POST <path>?<token>`, the token wui-ws's with `wui-poll` in its `info`. Its session has one more value, besides its keys:
+The first request of a session is the proof: `POST <path>?<token>`, the token drift's with `relay` in its `info`. Its session has one more value, besides its keys:
 
 ```
 id = HKDF-Expand(prk, L | "stream id", 16)
@@ -359,7 +359,7 @@ Every request, the proof included, has a body, exactly one `Content-Length` from
 body = [be16(len) | sealed chunk] ...      1 or more, 18 to 65 536 bytes in all
 ```
 
-A chunk is wui-ws's: sealed under its direction's key and the nonce `0x00000000 | le64(n)`, `n` running on from body to body in each direction, from 0. A side with nothing to send sends one padding-only chunk. The padding is wui-ws's.
+A chunk is drift's: sealed under its direction's key and the nonce `0x00000000 | le64(n)`, `n` running on from body to body in each direction, from 0. A side with nothing to send sends one padding-only chunk. The padding is drift's.
 
 A body is taken whole or not at all. Every chunk must open at the next numbers before anything in it is used, and the numbers move on only when the body is taken. A body in which any chunk does not open changes nothing. A body whose every chunk opens and one does not parse can only be the peer's own, and ends the session.
 
@@ -369,14 +369,14 @@ Whatever is not a device's goes to the decoy as it came, body included, and a co
 
 1. From an address that is neither a trusted front nor the loopback, a path other than the transport's, compared in constant time, not a POST, or a body framed otherwise than above: the decoy.
 1. A query that reads as `<id>.<n>`: the id must be a session of this gateway, the session must have no request in flight, and `n` must be one more than the last request taken, or the same number again. Otherwise the decoy, and the session is not touched. At most 4 bodies under one id are read at once.
-1. Any other query is a proof, judged as on wui-ws, steps 3 to 7, with at most 2 wui-poll sessions per device. A proof that is taken opens a pending session, whatever comes next.
+1. Any other query is a proof, judged as on drift, steps 3 to 7, with at most 2 relay sessions per device. A proof that is taken opens a pending session, whatever comes next.
 1. The body must arrive whole within 10 seconds. A late one goes to the decoy, which is given what arrives.
 1. A repeat of the last request taken, with the same body to the byte, gets the answer the gateway kept: a front may send a request twice. A repeat with another body is the decoy's.
 1. Open the body at the session's next numbers. A body that does not open: the decoy, and the session is as it was, so whoever learns an id can send what they like under it and change nothing. A body that opens and holds a chunk that does not parse ends the session, and the request goes to the decoy.
-1. On the proof's request, the first datagram must be a handshake initiation of the session's device, or a keepalive, as on wui-ws. Every datagram is checked and handed to the tunnel as on wui-ws.
+1. On the proof's request, the first datagram must be a handshake initiation of the session's device, or a keepalive, as on drift. Every datagram is checked and handed to the tunnel as on drift.
 1. Answer. The proof's request is held until the session is live, since nothing is sent on a pending session; a session that never is ends after 10 seconds, and its request goes to the decoy. Any other request is answered as soon as something waits for the device, or after a hold of 250 ms with a padding-only chunk. The answer holds everything that waits and fits; what does not fit leads the next answer. It is kept before it is written, for a repeat.
 
-A session no request was taken on for 60 seconds ends. There are no echoes: a client's polls are the activity, and their answers the sign of life. A lone keepalive from the tunnel is held U(0..3 s), as on wui-ws.
+A session no request was taken on for 60 seconds ends. There are no echoes: a client's polls are the activity, and their answers the sign of life. A lone keepalive from the tunnel is held U(0..3 s), as on drift.
 
 ## What a client does
 
@@ -389,30 +389,30 @@ A session no request was taken on for 60 seconds ends. There are no echoes: a cl
 
 The reference client in `internal/stealthgw` does this for a stock WireGuard that sends to a local port, over `https://`, or `http://` for a test, with the address it dials apart from the name it gives.
 
-# Stealth transport: wui-tls
+# Stealth transport: anchor
 
-wui-tls is wui-ws without a front: the gateway is the web server, on a port of its own, and ends TLS itself. With nobody in front to tell a device from a visitor, it decides from the bytes alone, as they arrive, and whoever is not a device is handed to the operator's own site -- every byte they sent, as they sent it, and from then on both ways with nothing read or made by the gateway. Devices trust the gateway's certificate by its pin, so no domain or authority is needed.
+anchor is drift without a front: the gateway is the web server, on a port of its own, and ends TLS itself. With nobody in front to tell a device from a visitor, it decides from the bytes alone, as they arrive, and whoever is not a device is handed to the operator's own site -- every byte they sent, as they sent it, and from then on both ways with nothing read or made by the gateway. Devices trust the gateway's certificate by its pin, so no domain or authority is needed.
 
-The proof, the session and the chunk are wui-ws's, above, under the name `wui-tls`; only what happens before the proof differs. The request line is read in `internal/stealth/request.go`, the certificate is made in `internal/stealth/certificate.go`, and the server and the client's TLS are in `internal/stealthgw` (`tls.go`, `tlsclient.go`). `internal/stealth/testdata/tls.json` is a test vector, checked by `scripts/stealth/ws_vectors.py` with wui-ws's.
+The proof, the session and the chunk are drift's, above, under the name `anchor`; only what happens before the proof differs. The request line is read in `internal/stealth/request.go`, the certificate is made in `internal/stealth/certificate.go`, and the server and the client's TLS are in `internal/stealthgw` (`tls.go`, `tlsclient.go`). `internal/stealth/testdata/tls.json` is a test vector, checked by `scripts/stealth/ws_vectors.py` with drift's.
 
 ## On the panel
 
-Choose **wui-tls** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with wui-udp.
+Choose **anchor** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with veil.
 
 | Field | API | |
 |---|---|---|
-| wui-tls port | `transportPort` | The TCP port devices connect to, on every address, opened in the firewall. 443 looks most like a web server. |
+| anchor port | `transportPort` | The TCP port devices connect to, on every address, opened in the firewall. 443 looks most like a web server. |
 | Server name or address | `transportWs.host` | What devices connect to: a domain pointing at this server, or its address. Required. A domain is also what the certificate names and what devices send as the server name; with an address they send none. |
-| Path | `transportWs.path` | As wui-ws's: drawn when left empty, and kept when the settings are saved again with it empty. |
+| Path | `transportWs.path` | As drift's: drawn when left empty, and kept when the settings are saved again with it empty. |
 | Decoy site | `transportWs.origin` | The operator's site, `http://` with no path. Required: the gateway hands every stranger to it as they came, after its own TLS, so it speaks plain HTTP to it. |
 | Use the panel's certificate | `transportWs.usePanelCert` | Serve the panel's own issued certificate when it is in date for the name, on a tunnel of the panel's own server. |
 | PROXY protocol to the decoy | `transportWs.proxyProtocol` | Open every connection to the decoy with a PROXY protocol v2 header naming the visitor, for a site set to expect one. |
 
-The transport's key is wui-ws's: drawn when wui-tls is chosen, the next one drawn every 30 days with the one before still taken, never shown by the API, and given to a remote node with the tunnel. A tunnel switched to wui-tls from another transport carries no path or key across, nor one switched away.
+The transport's key is drift's: drawn when anchor is chosen, the next one drawn every 30 days with the one before still taken, never shown by the API, and given to a remote node with the tunnel. A tunnel switched to anchor from another transport carries no path or key across, nor one switched away.
 
 ### The certificate
 
-The tunnel has a certificate of its own, which nobody issued. The panel draws an ECDSA P-256 key for it once, when wui-tls is chosen, and keeps it for as long as the tunnel has wui-tls: devices trust the certificate by that key's pin alone, so a new key would be a new pin, and every app would need its profile again before it reached the tunnel. The certificate is made again with the same key when it is 20 days from its end, or claims to start more than a day from now, or names another name than the tunnel's -- none of which a device notices.
+The tunnel has a certificate of its own, which nobody issued. The panel draws an ECDSA P-256 key for it once, when anchor is chosen, and keeps it for as long as the tunnel has anchor: devices trust the certificate by that key's pin alone, so a new key would be a new pin, and every app would need its profile again before it reached the tunnel. The certificate is made again with the same key when it is 20 days from its end, or claims to start more than a day from now, or names another name than the tunnel's -- none of which a device notices.
 
 Nothing in it says W-UI. It names the tunnel's domain, or, for an address, a name drawn once in a shape a private network's hosts have (`kemo-tiz.lan`, `rufa42.corp`) and kept across renewals. Its serial is 16 random bytes, it lives 80 days and up to 20 more, and it starts at a random moment of the week before it was made, so no two servers' certificates line up. It carries the extensions a server certificate usually has: a key usage of digital signature, an extended key usage of server authentication, no CA, the name as its alternative name, and a key identifier.
 
@@ -421,7 +421,7 @@ With **Use the panel's certificate** on, the panel's own certificate is served i
 ### The profile
 
 ```json
-{"type": "wui-tls", "endpoints": ["edge.example.com:443"], "url": "wss://edge.example.com/41yg3dsw2u5h97g50uvl",
+{"type": "anchor", "endpoints": ["edge.example.com:443"], "url": "wss://edge.example.com/41yg3dsw2u5h97g50uvl",
  "pins": ["base64"], "selfSigned": true, "key": "base64", "secret": "base64", "mtu": 1420}
 ```
 
@@ -432,8 +432,8 @@ With **Use the panel's certificate** on, the panel's own certificate is served i
 1. **TLS**, within 10 seconds of the accept. TLS 1.2 is offered only with ECDHE and an AEAD; ALPN is `http/1.1` alone. A handshake that fails or is too slow is closed as the system closes it.
 1. **The decoy, now.** A connection to the decoy is opened at once, before a byte is read, so the decoy's own timers run from the moment they would for a visitor who reached it directly; with the PROXY protocol on, it opens with a v2 header naming the visitor and the port they reached.
 1. **The request line**, as it arrives. It stays a candidate only while it can still become `GET /<target> HTTP/1.1` CR LF, with a target of the characters RFC 3986 lets a path and a query carry unescaped. The first byte that cannot belong to such a line, a line of 4096 bytes without its end, 10 seconds without a complete line, the peer closing, or the decoy saying anything or closing first, decides that the peer is a stranger. No secret is used for any of it, so the decision costs everyone the same.
-1. **A complete line** is a device's only when its path is the transport's, compared in constant time, its query is a proof that holds -- wui-ws's steps 3 to 7, under the name `wui-tls` -- and TLS 1.3 was spoken, which every client insists on. The token is opened whatever the path and the TLS version, so the work a line costs does not say which of them was wrong. A complete line is weighed whatever the decoy did meanwhile.
-1. **A device's head** is read, up to 16 KiB in all and 10 seconds, and the decoy's connection is closed unused. Only `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Version: 13` and `Sec-WebSocket-Key` are looked at; a head without them is closed with no answer -- TLS's close, then the connection's -- and its proof spent. The answer is wui-ws's, with the header fields the decoy's own answers carry (`Server`), learned by asking the decoy for its front page as a visitor would, every hour, or every minute while it fails. The session then runs as wui-ws's.
+1. **A complete line** is a device's only when its path is the transport's, compared in constant time, its query is a proof that holds -- drift's steps 3 to 7, under the name `anchor` -- and TLS 1.3 was spoken, which every client insists on. The token is opened whatever the path and the TLS version, so the work a line costs does not say which of them was wrong. A complete line is weighed whatever the decoy did meanwhile.
+1. **A device's head** is read, up to 16 KiB in all and 10 seconds, and the decoy's connection is closed unused. Only `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Version: 13` and `Sec-WebSocket-Key` are looked at; a head without them is closed with no answer -- TLS's close, then the connection's -- and its proof spent. The answer is drift's, with the header fields the decoy's own answers carry (`Server`), learned by asking the decoy for its front page as a visitor would, every hour, or every minute while it fails. The session then runs as drift's.
 1. **A stranger's bytes**, every one read so far, go to the decoy unchanged, and from then on the gateway relays both ways and reads nothing. A half-close passes through as it came, a reset from the decoy resets the visitor, and when the decoy closes the gateway lingers up to 5 seconds over the visitor's last bytes, as a web server does, so the visitor is not reset before it has read the answer. The gateway never writes a byte of its own to a stranger: no status, no error page. While the decoy cannot be reached a stranger is closed with nothing, which shows the gateway, and the log says so once a minute.
 
 | Limit | |
@@ -444,7 +444,7 @@ With **Use the panel's certificate** on, the panel's own certificate is served i
 
 ## What someone on the path can see
 
-- A TLS handshake on the gateway's port, and the certificate in it, which is the gateway's and not the decoy's. On a probe that compares the two, wui-tls shows. Behind a front, as wui-ws, it does not.
+- A TLS handshake on the gateway's port, and the certificate in it, which is the gateway's and not the decoy's. On a probe that compares the two, anchor shows. Behind a front, as drift, it does not.
 - A relayed answer a hop later than the decoy's own would be.
 - What a device's connection looks like is the device's TLS. The reference client is Go's, which is not a browser's; W-UI's own app is to speak as a browser does.
 
@@ -452,34 +452,34 @@ With **Use the panel's certificate** on, the panel's own certificate is served i
 
 - It holds the server's certificate to the check the profile says, never the one the server would like: with `selfSigned`, the leaf's key must be one of the pins and TLS 1.3 must be spoken, and the chain, the name and the dates are not looked at. TLS 1.3 has the server sign the handshake with that key, and the signature is checked all the same, so a server that shows the pinned certificate without holding its key fails. Without `selfSigned`, the chain must lead to a root the device trusts, for the URL's name, at the device's own time; with pins as well, the key must be one of them and TLS 1.3 spoken, a pin being a second condition and never a way around the first.
 - TLS 1.2, where it is taken, must end on ECDHE and an AEAD. Nothing that fails is tried again with less.
-- The rest is wui-ws's client: the proof, the session, its retries and its timers.
+- The rest is drift's client: the proof, the session, its retries and its timers.
 
-# Stealth transport: wui-plain
+# Stealth transport: bare
 
-wui-plain is wui-ws for a network where TLS itself is what gets a connection cut: the device speaks plain HTTP to the operator's own web server, which hands the gateway the request exactly as wui-ws's front does. Nothing of the session is weaker. Its proof, its keys, its sealed chunks, its padding and its checks of WireGuard are wui-ws's, and a stranger still sees the operator's site and nothing else. What is weaker is what the network sees: with no TLS, everything between the device and the front can be read and written by whoever is on the path, and they can read that a request with a cookie of random text was upgraded to WebSocket. It is the weakest of the transports. An app uses it last, only where nothing covered gets through, and only once its user has agreed to.
+bare is drift for a network where TLS itself is what gets a connection cut: the device speaks plain HTTP to the operator's own web server, which hands the gateway the request exactly as drift's front does. Nothing of the session is weaker. Its proof, its keys, its sealed chunks, its padding and its checks of WireGuard are drift's, and a stranger still sees the operator's site and nothing else. What is weaker is what the network sees: with no TLS, everything between the device and the front can be read and written by whoever is on the path, and they can read that a request with a cookie of random text was upgraded to WebSocket. It is the weakest of the transports. An app uses it last, only where nothing covered gets through, and only once its user has agreed to.
 
-The format is wui-ws's, in `internal/stealth`, with the cookie in `cookie.go`; the server is `internal/stealthgw/plain.go`, and the reference client is wui-ws's. `internal/stealth/testdata/plain.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own, the cookie rule included.
+The format is drift's, in `internal/stealth`, with the cookie in `cookie.go`; the server is `internal/stealthgw/plain.go`, and the reference client is drift's. `internal/stealth/testdata/plain.json` is a test vector, and `scripts/stealth/ws_vectors.py` checks it against this page with an implementation of its own, the cookie rule included.
 
 ## On the panel
 
-Choose **wui-plain** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with the others.
+Choose **bare** as a standard WireGuard tunnel's **Transport**. Plain WireGuard stays on the tunnel's port, as with the others.
 
 | Field | API | |
 |---|---|---|
-| wui-plain port | `transportPort` | The TCP port the web server sends the transport's path to. |
-| Front host | `transportWs.host` | The name devices connect to over plain HTTP. Required, and never a name a wui-ws transport uses (below). |
+| bare port | `transportPort` | The TCP port the web server sends the transport's path to. |
+| Front host | `transportWs.host` | The name devices connect to over plain HTTP. Required, and never a name a drift transport uses (below). |
 | Front port | `transportWs.frontPort` | The front's HTTP port; 80 when empty. |
-| Path | `transportWs.path` | As wui-ws's: 12 to 256 characters, drawn when left empty, and never a wui-ws transport's (below). |
+| Path | `transportWs.path` | As drift's: 12 to 256 characters, drawn when left empty, and never a drift transport's (below). |
 | Decoy site | `transportWs.origin` | The operator's site, `http://` or `https://` with no path. **Required**: a stranger's answer crosses the network in the clear, so it must be the site's own, never one the gateway made. |
-| Trusted fronts | `transportWs.proxies` | As wui-ws's. |
-| Visitor header | `transportWs.clientHeader` | As wui-ws's. |
+| Trusted fronts | `transportWs.proxies` | As drift's. |
+| Visitor header | `transportWs.clientHeader` | As drift's. |
 | Cookie name | `transportWs.cookie` | The cookie a device's token travels in: 1 to 32 characters of `A-Z a-z 0-9 - _`. Left empty, one of 8 to 16 is drawn, a letter first, as a site's session cookie might be named, and kept when the settings are saved again with it empty and when the key turns over. |
 
-The listening rules are wui-ws's: on 127.0.0.1 alone and shut in the firewall with no front elsewhere, on every address and opened with one.
+The listening rules are drift's: on 127.0.0.1 alone and shut in the firewall with no front elsewhere, on every address and opened with one.
 
-The transport has a key pair of its own, drawn when wui-plain is chosen, and turned over every **7 days** with the one before still taken, where a covered transport's lasts 30: every proof wui-plain opens crossed the network in the clear, and a key that leaked would open the hellos recorded under it. A tunnel switched from one transport to another draws a new key, path and cookie, and never carries over the old transport's path, even if it is sent back: nothing wui-plain showed in the clear goes on to a covered transport, nor the other way round. The private keys never leave the panel by the API; a remote node is given them with the tunnel. The cookie's name is no secret, and the form shows it.
+The transport has a key pair of its own, drawn when bare is chosen, and turned over every **7 days** with the one before still taken, where a covered transport's lasts 30: every proof bare opens crossed the network in the clear, and a key that leaked would open the hellos recorded under it. A tunnel switched from one transport to another draws a new key, path and cookie, and never carries over the old transport's path, even if it is sent back: nothing bare showed in the clear goes on to a covered transport, nor the other way round. The private keys never leave the panel by the API; a remote node is given them with the tunnel. The cookie's name is no secret, and the form shows it.
 
-A wui-plain front's name and path are read in the clear, so the panel refuses a wui-plain whose host or path is a covered transport's -- wui-tls's, wui-ws's or wui-poll's -- on any tunnel of any server, and a covered one whose are a wui-plain's: one they shared would tie the covered transport to the exposed one. Two wui-plain transports may share a front, on paths of their own.
+A bare front's name and path are read in the clear, so the panel refuses a bare whose host or path is a covered transport's -- anchor's, drift's or relay's -- on any tunnel of any server, and a covered one whose are a bare's: one they shared would tie the covered transport to the exposed one. Two bare transports may share a front, on paths of their own.
 
 nginx on port 80 of the same machine, the transport on port 28082 and the site where it was:
 
@@ -509,21 +509,21 @@ nginx passes the `Cookie` field on as it came, which is all the gateway needs. D
 ### The profile
 
 ```json
-{"type": "wui-plain", "endpoints": ["plain.example.com:80"], "url": "ws://plain.example.com/gu7qym3a1quw18halvk7",
+{"type": "bare", "endpoints": ["plain.example.com:80"], "url": "ws://plain.example.com/gu7qym3a1quw18halvk7",
  "cookie": "psgouzg_t", "key": "base64", "secret": "base64", "mtu": 1420}
 ```
 
-`url` is always `ws://`, with the port when it is not 80. `cookie` is the name the token travels under. `key` is the transport's current public key, which is wui-plain's own. The secret and the anchor are wui-udp's.
+`url` is always `ws://`, with the port when it is not 80. `cookie` is the name the token travels under. `key` is the transport's current public key, which is bare's own. The secret and the anchor are veil's.
 
 ## The proof
 
-wui-plain's proof is wui-ws's, made for its own name:
+bare's proof is drift's, made for its own name:
 
 ```
-info = L | "proof" | 0x00 | "wui-plain" | 0x00 | A
+info = L | "proof" | 0x00 | "bare" | 0x00 | A
 ```
 
-so a token seen on a plain path opens on no covered transport, and none of theirs opens here, even under one key. The hello, the binder and the session's keys are wui-ws's.
+so a token seen on a plain path opens on no covered transport, and none of theirs opens here, even under one key. The hello, the binder and the session's keys are drift's.
 
 The token is not in the target. A session opens with a GET for the path alone, with a WebSocket upgrade, and the token in a cookie:
 
@@ -546,16 +546,16 @@ Anything else is a stranger's request. A request whose target has a query of any
 
 ## The session
 
-The session is wui-ws's, byte for byte: one sealed chunk to a binary message, the same nonce, the same padding, the same frames refused, the same close. The answer to a proof is `101 Switching Protocols` with `Upgrade`, `Connection`, `Sec-WebSocket-Accept` and `Date`, and nothing more: no cookie, since on a plain path a cookie the client never sends back is one more thing to read, and no extension, whatever the request offered.
+The session is drift's, byte for byte: one sealed chunk to a binary message, the same nonce, the same padding, the same frames refused, the same close. The answer to a proof is `101 Switching Protocols` with `Upgrade`, `Connection`, `Sec-WebSocket-Accept` and `Date`, and nothing more: no cookie, since on a plain path a cookie the client never sends back is one more thing to read, and no extension, whatever the request offered.
 
 ## What the server does with a request
 
-wui-ws's steps, with two differences:
+drift's steps, with two differences:
 
 1. From an address that is neither a trusted front nor the loopback: the decoy.
 1. A path other than the transport's, compared in constant time, no WebSocket upgrade, a query, or no cookie that reads by the rule above: the decoy.
-1. Open the cookie's token, as wui-ws opens the query's, under every transport key the gateway holds.
-1. The rest is wui-ws's: the device by its tag and its binder, the replay rule on `enc` in a file of its own, the limits, the proof taken once under one lock, and the answer.
+1. Open the cookie's token, as drift opens the query's, under every transport key the gateway holds.
+1. The rest is drift's: the device by its tag and its binder, the replay rule on `enc` in a file of its own, the limits, the proof taken once under one lock, and the answer.
 
 ## What someone on the path can do
 
@@ -571,11 +571,11 @@ What they do see is that WebSocket was spoken, the sizes and times of the frames
 
 ## What a client does
 
-wui-ws's rules, and:
+drift's rules, and:
 
-- It ranks wui-plain below every other transport of the profile, and uses it only once its user has agreed to a transport the network can see.
+- It ranks bare below every other transport of the profile, and uses it only once its user has agreed to a transport the network can see.
 - Its request is a browser's upgrade from a page served over `http://`, the fields in a browser's order, with the token in the cookie and nowhere else; the reference client sends a desktop Chrome's.
 - Nothing vouches for an answer on a plain path, so a 101 is no session: an answer that takes an extension, or a first frame that does not open under `k_down`, is a failure, and the session is the gateway's only once one of its chunks has opened.
 - It never sends a token twice.
 
-The reference client in `internal/stealthgw` does this with `Transport` set to `wui-plain`, over `ws://`.
+The reference client in `internal/stealthgw` does this with `Transport` set to `bare`, over `ws://`.

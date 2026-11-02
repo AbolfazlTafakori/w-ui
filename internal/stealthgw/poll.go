@@ -18,9 +18,9 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-poll gateway.
+// The relay gateway.
 //
-// wui-poll is wui-ws for a CDN that carries no WebSocket: behind the same
+// relay is drift for a CDN that carries no WebSocket: behind the same
 // front, the tunnel's datagrams travel in the bodies of POST requests to the
 // transport's path and in the bodies of their answers (package stealth). The
 // first request is the proof, and the session it opens is a row the later
@@ -38,7 +38,7 @@ import (
 //     this gateway's, have no request in flight, and the number must be
 //     the one after the last taken, or that one again. Otherwise the
 //     decoy's, and the session is not touched.
-//  3. Any other query is a proof, judged as wui-ws judges one; a proof
+//  3. Any other query is a proof, judged as drift judges one; a proof
 //     that is taken opens a pending session, whatever comes next.
 //  4. The body must arrive within pollBodyFor.
 //  5. A repeat of the last request taken, with the same body to the byte,
@@ -50,7 +50,7 @@ import (
 //     that opens and holds a chunk that does not parse is the device's own
 //     fault, and ends the session.
 //  7. The opening request's first datagram is a handshake initiation of the
-//     session's device or a keepalive, as on wui-ws, and its answer waits
+//     session's device or a keepalive, as on drift, and its answer waits
 //     until the tunnel has spoken, since nothing is sent on a pending
 //     session. A session that never is established ends, and the request
 //     goes to the decoy.
@@ -59,7 +59,7 @@ import (
 // the gateway keeps is the last one, stored before it is written, so a
 // request whose answer never reached the front is answered again.
 
-// PollConfig is one tunnel's wui-poll gateway: wui-ws's settings.
+// PollConfig is one tunnel's relay gateway: drift's settings.
 type PollConfig struct {
 	StreamConfig
 }
@@ -67,7 +67,7 @@ type PollConfig struct {
 // pollBodyFor is how long a body may take to arrive. A test shortens it.
 var pollBodyFor = 10 * time.Second
 
-// wui-poll's limits and timers.
+// relay's limits and timers.
 const (
 	// pollHold is how long a request is held for something to answer it
 	// with.
@@ -75,7 +75,7 @@ const (
 	// pollIdle ends a session no request was taken on for this long: a
 	// client polls at least every few seconds.
 	pollIdle = 60 * time.Second
-	// devicePolls is how many wui-poll sessions one device may hold at once.
+	// devicePolls is how many relay sessions one device may hold at once.
 	devicePolls = 2
 	// pollReaders is how many bodies under one session's id are read at
 	// once while nothing is proven of them: whoever learns an id holds no
@@ -83,8 +83,8 @@ const (
 	pollReaders = 4
 )
 
-// PollGateway is wui-poll in front of one WireGuard tunnel. Its devices,
-// limits, replay rule and sessions are wui-ws's; only how a session's
+// PollGateway is relay in front of one WireGuard tunnel. Its devices,
+// limits, replay rule and sessions are drift's; only how a session's
 // datagrams travel differs.
 type PollGateway struct {
 	*StreamGateway
@@ -96,7 +96,7 @@ func NewPoll(cfg PollConfig) (*PollGateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	g, err := newStreamGateway(cfg.StreamConfig, stealth.Poll)
+	g, err := newStreamGateway(cfg.StreamConfig, stealth.Relay)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (p *PollGateway) Serve(ctx context.Context) error {
 	return err
 }
 
-// pollSession is what a wui-poll session has besides the stream's.
+// pollSession is what a relay session has besides the stream's.
 type pollSession struct {
 	id   [stealth.PollIDLen]byte
 	last atomic.Int64 // when the last request was taken, Unix nanoseconds

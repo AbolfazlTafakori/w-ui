@@ -11,13 +11,13 @@
 //
 // The transports, by the name a profile gives them:
 //
-//	wui-udp    UDP, every packet indistinguishable from random bytes
-//	wui-tls    WebSocket over TLS the server ends itself, a decoy behind it
-//	wui-ws     WebSocket behind the operator's web server or a CDN
-//	wui-poll   HTTP long polling, for a CDN that will not carry WebSocket
-//	wui-shape  wui-poll in requests of the operator's shape, or one stream
-//	wui-plain  WebSocket over plain HTTP, the proof in a cookie
-//	wui-faketls a borrowed site's TLS: the proof hidden in a ClientHello
+//	veil    UDP, every packet indistinguishable from random bytes
+//	anchor    WebSocket over TLS the server ends itself, a decoy behind it
+//	drift     WebSocket behind the operator's web server or a CDN
+//	relay   HTTP long polling, for a CDN that will not carry WebSocket
+//	mold  relay in requests of the operator's shape, or one stream
+//	bare  WebSocket over plain HTTP, the proof in a cookie
+//	mirror a borrowed site's TLS: the proof hidden in a ClientHello
 //
 // This package holds only the format: key derivation, the sealed chunk every
 // transport moves, the UDP packets, the proof a stream opens with, and the
@@ -28,13 +28,13 @@ package stealth
 
 // Transport names, as profiles and proofs carry them.
 const (
-	UDP     = "wui-udp"
-	TLS     = "wui-tls"
-	WS      = "wui-ws"
-	Poll    = "wui-poll"
-	Shaped  = "wui-shape"
-	Plain   = "wui-plain"
-	FakeTLS = "wui-faketls"
+	Veil     = "veil"
+	Anchored = "anchor"
+	Drift    = "drift"
+	Relay    = "relay"
+	Mold     = "mold"
+	Bare     = "bare"
+	Mirror   = "mirror"
 )
 
 // Version is the first byte of every sealed header and proof. A later format

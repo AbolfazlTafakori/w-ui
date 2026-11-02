@@ -53,7 +53,7 @@ func (p *Padder) Next(handshake bool) int {
 }
 
 // DrawWithin is the padding for the next chunk, clamped so a chunk whose
-// items use used bytes still fits room bytes of plaintext: wui-shape draws
+// items use used bytes still fits room bytes of plaintext: mold draws
 // within what is left of a request's limit, so a chunk whose items fit always
 // fits. handshake forces wide, as Next does. room must be at least used.
 func (p *Padder) DrawWithin(handshake bool, used, room int) int {

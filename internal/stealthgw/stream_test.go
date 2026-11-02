@@ -21,7 +21,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-ws gateway, tested against real WireGuard as wui-udp is: the
+// The drift gateway, tested against real WireGuard as veil is: the
 // client's datagrams through the reference stream client, and every
 // stranger's request through to a decoy that must see it as it came.
 
@@ -100,7 +100,7 @@ func (f *streamFixture) client(t *testing.T, secret stealth.Secret, priv wgtypes
 
 func (f *streamFixture) token(t *testing.T, s stealth.Secret) string {
 	t.Helper()
-	pc, err := stealth.NewProofClient(s, f.anchor(), stealth.WS, f.key.Public())
+	pc, err := stealth.NewProofClient(s, f.anchor(), stealth.Drift, f.key.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestASessionOpensOnlyOnAnInitiationOrAKeepalive(t *testing.T) {
 	f := newStreamFixture(t, nil, ck)
 	s := secret(t)
 	f.gw.SetDevices([]Device{{PublicKey: ck.PublicKey(), Secret: s}})
-	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.WS, f.key.Public())
+	pc, _ := stealth.NewProofClient(s, f.anchor(), stealth.Drift, f.key.Public())
 	tok, keys, _ := pc.Token(time.Now())
 	resp, conn, br := f.ask(t, testPath+"?"+tok, true)
 	if resp.StatusCode != http.StatusSwitchingProtocols {

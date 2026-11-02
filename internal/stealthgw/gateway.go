@@ -17,7 +17,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// Config is one tunnel's wui-udp gateway.
+// Config is one tunnel's veil gateway.
 type Config struct {
 	// Listen is the UDP address clients reach the gateway at.
 	Listen string
@@ -47,7 +47,7 @@ type Device struct {
 	Secret    stealth.Secret
 }
 
-// Gateway is wui-udp in front of one WireGuard tunnel.
+// Gateway is veil in front of one WireGuard tunnel.
 //
 // Each source address and device gets a socket of its own to the tunnel, so
 // that WireGuard sees every device at an endpoint of its own and roams it
@@ -126,7 +126,7 @@ func New(cfg Config) (*Gateway, error) {
 	var anchor stealth.Anchor
 	copy(anchor[:], resp.priv.PublicKey().Bytes())
 	g := &Gateway{
-		cfg: cfg, log: cfg.Log.With("transport", stealth.UDP, "listen", cfg.Listen),
+		cfg: cfg, log: cfg.Log.With("transport", stealth.Veil, "listen", cfg.Listen),
 		server: stealth.NewUDPServer(anchor), resp: resp, wg: wg,
 		room:    cfg.MTU + stealth.UDPOverhead,
 		devices: map[[32]byte]*device{}, slots: map[netip.AddrPort][]*slot{}, sources: map[netip.Addr]*bucket{},
@@ -346,8 +346,8 @@ const (
 	dropHandshakes
 	dropTunnel
 	dropUnsendable
-	dropUnordered // a wui-poll request that is not its session's next or last
-	dropBody      // a wui-poll body that was late or did not open
+	dropUnordered // a relay request that is not its session's next or last
+	dropBody      // a relay body that was late or did not open
 	drops
 )
 

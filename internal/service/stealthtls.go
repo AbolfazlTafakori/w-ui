@@ -11,12 +11,12 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// wui-tls's certificate.
+// anchor's certificate.
 //
-// A wui-tls gateway ends TLS itself, with one of two certificates:
+// A anchor gateway ends TLS itself, with one of two certificates:
 //
 //   - The tunnel's own, which the panel makes. Its key is drawn once and
-//     kept for as long as the tunnel has wui-tls: devices trust the
+//     kept for as long as the tunnel has anchor: devices trust the
 //     certificate by that key's pin alone, so a new key would be a new pin,
 //     and every app would need its profile again before it reached the
 //     tunnel. The certificate is made again with the same key before it runs
@@ -29,7 +29,7 @@ import (
 //     bring new keys, need nothing from them. When it stops covering Host
 //     the tunnel's own is served again, and profiles say so.
 
-// tlsCertFor gives a wui-tls transport the certificate it should have: its
+// tlsCertFor gives a anchor transport the certificate it should have: its
 // own key when it has none, its own certificate when that is due, and the
 // panel's when it is wanted and covers Host -- panel is the zero value for
 // a tunnel that is not on the panel's server. It reports whether anything
@@ -50,13 +50,13 @@ func tlsCertFor(p *model.StealthParams, panel PanelCert, now time.Time) (bool, e
 	if stealth.CertificateDue(p.Cert, p.CertKey, name, now) {
 		// A key that does not read is never replaced here: it is the one
 		// every profile pins, and a new one is the operator's to ask for by
-		// turning wui-tls off and on.
+		// turning anchor off and on.
 		if _, err := stealth.CertificateKeyPin(p.CertKey); err != nil {
-			return false, fmt.Errorf("service: wui-tls's certificate key: %w", err)
+			return false, fmt.Errorf("service: anchor's certificate key: %w", err)
 		}
 		cert, err := stealth.MakeCertificate(p.CertKey, name, p.Cert, now)
 		if err != nil {
-			return false, fmt.Errorf("service: make wui-tls's certificate: %w", err)
+			return false, fmt.Errorf("service: make anchor's certificate: %w", err)
 		}
 		p.Cert = cert
 	}
@@ -69,7 +69,7 @@ func tlsCertFor(p *model.StealthParams, panel PanelCert, now time.Time) (bool, e
 	return *p != before, nil
 }
 
-// EnsureStealthCerts keeps every wui-tls transport this panel manages in
+// EnsureStealthCerts keeps every anchor transport this panel manages in
 // its certificate: its own made again before it runs out, and the panel's
 // taken up, renewed or let go. panel is the panel's own certificate, which
 // only a tunnel on localNodeID takes. A tunnel another panel manages is
@@ -78,11 +78,11 @@ func EnsureStealthCerts(ctx context.Context, db *gorm.DB, localNodeID uint, pane
 	var ifaces []model.Interface
 	if err := db.WithContext(ctx).Where("protocol = ? AND managed = ? AND stealth IS NOT NULL AND stealth <> ''", model.ProtocolWireGuard, false).
 		Find(&ifaces).Error; err != nil {
-		return fmt.Errorf("service: find wui-tls transports: %w", err)
+		return fmt.Errorf("service: find anchor transports: %w", err)
 	}
 	for _, iface := range ifaces {
 		p := iface.Stealth.V
-		if p.Transport != model.TransportWuiTLS {
+		if p.Transport != model.TransportAnchor {
 			continue
 		}
 		served := panel

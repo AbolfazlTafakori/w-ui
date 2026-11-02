@@ -15,7 +15,7 @@ import (
 // The reference client.
 //
 // A local UDP port a stock WireGuard sends to as if it were the server, and
-// the wui-udp side of it: what an app does, written once here so that the
+// the veil side of it: what an app does, written once here so that the
 // gateway is tested against the client rules and an app has a client to
 // follow. It cannot make WireGuard send anything, so it opens a session with
 // the next handshake initiation or keepalive WireGuard sends; an app that

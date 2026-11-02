@@ -253,72 +253,72 @@ func (i *Interface) WireGuardTransport() string {
 	return TransportUDP
 }
 
-// StealthUDP is the port wui-udp takes for this tunnel, or zero.
+// StealthUDP is the port veil takes for this tunnel, or zero.
 func (i *Interface) StealthUDP() int {
-	if name, port := i.StealthTransport(); name == TransportWuiUDP {
+	if name, port := i.StealthTransport(); name == TransportVeil {
 		return port
 	}
 	return 0
 }
 
-// StealthTLS is the port wui-tls takes for this tunnel, or zero.
+// StealthTLS is the port anchor takes for this tunnel, or zero.
 func (i *Interface) StealthTLS() int {
-	if name, port := i.StealthTransport(); name == TransportWuiTLS {
+	if name, port := i.StealthTransport(); name == TransportAnchor {
 		return port
 	}
 	return 0
 }
 
-// StealthWS is the port wui-ws takes for this tunnel, or zero.
+// StealthWS is the port drift takes for this tunnel, or zero.
 func (i *Interface) StealthWS() int {
-	if name, port := i.StealthTransport(); name == TransportWuiWS {
+	if name, port := i.StealthTransport(); name == TransportDrift {
 		return port
 	}
 	return 0
 }
 
-// StealthPoll is the port wui-poll takes for this tunnel, or zero.
+// StealthPoll is the port relay takes for this tunnel, or zero.
 func (i *Interface) StealthPoll() int {
-	if name, port := i.StealthTransport(); name == TransportWuiPoll {
+	if name, port := i.StealthTransport(); name == TransportRelay {
 		return port
 	}
 	return 0
 }
 
-// StealthShape is the port wui-shape takes for this tunnel, or zero.
+// StealthShape is the port mold takes for this tunnel, or zero.
 func (i *Interface) StealthShape() int {
-	if name, port := i.StealthTransport(); name == TransportWuiShape {
+	if name, port := i.StealthTransport(); name == TransportMold {
 		return port
 	}
 	return 0
 }
 
-// StealthPlain is the port wui-plain takes for this tunnel, or zero.
+// StealthPlain is the port bare takes for this tunnel, or zero.
 func (i *Interface) StealthPlain() int {
-	if name, port := i.StealthTransport(); name == TransportWuiPlain {
+	if name, port := i.StealthTransport(); name == TransportBare {
 		return port
 	}
 	return 0
 }
 
-// StealthFakeTLS is the port wui-faketls takes for this tunnel, or zero.
+// StealthFakeTLS is the port mirror takes for this tunnel, or zero.
 func (i *Interface) StealthFakeTLS() int {
-	if name, port := i.StealthTransport(); name == TransportWuiFakeTLS {
+	if name, port := i.StealthTransport(); name == TransportMirror {
 		return port
 	}
 	return 0
 }
 
 // StealthOpen says whether this tunnel's stealth transport is reached from
-// outside the machine, so its port is let through the firewall: wui-udp
-// always, wui-ws, wui-poll and wui-plain only when a front elsewhere is
-// trusted to reach them. wui-tls is the server itself, always reached from
+// outside the machine, so its port is let through the firewall: veil
+// always, drift, relay and bare only when a front elsewhere is
+// trusted to reach them. anchor is the server itself, always reached from
 // outside.
 func (i *Interface) StealthOpen() bool {
 	switch name, _ := i.StealthTransport(); name {
-	case TransportWuiUDP, TransportWuiTLS, TransportWuiFakeTLS:
+	case TransportVeil, TransportAnchor, TransportMirror:
 		return true
-	case TransportWuiWS, TransportWuiPoll, TransportWuiShape, TransportWuiPlain:
+	case TransportDrift, TransportRelay, TransportMold, TransportBare:
 		return strings.TrimSpace(i.Stealth.V.Proxies) != ""
 	}
 	return false

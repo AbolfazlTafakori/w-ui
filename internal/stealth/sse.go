@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// The wui-shape stream.
+// The mold stream.
 //
 // When a shape's down.mode is sse, the gateway answers one request -- a
 // stream request -- with a never-ending HTTP response of Content-Type

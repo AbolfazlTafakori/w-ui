@@ -14,7 +14,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-faketls session carry.
+// The mirror session carry.
 //
 // Once a hello has proved a device and the two ends hold the same application
 // traffic keys (package stealth, the handshake flight), the session is a run
@@ -23,11 +23,11 @@ import (
 // WireGuard datagrams the device sent and their padding; each record the
 // gateway seals carries the tunnel's datagrams back the same way, padded to a
 // length drawn from the sizes the borrowed site's own records showed. The loop
-// is wui-ws's -- a socket of its own to the tunnel, nothing sent before
+// is drift's -- a socket of its own to the tunnel, nothing sent before
 // WireGuard has spoken, a pending session made live by the first authentic
 // word -- over the record layer in place of WebSocket frames.
 
-// wui-faketls record limits.
+// mirror record limits.
 const (
 	// fakeRecordInner is the most chunk plaintext one record carries, well
 	// under a TLS record's 16 KiB so the content type, padding and tag fit.
@@ -40,7 +40,7 @@ const (
 	fakeRecordMax = (16 << 10) + 256
 )
 
-// fakeStream is one wui-faketls session.
+// fakeStream is one mirror session.
 type fakeStream struct {
 	g       *StreamGateway
 	dev     *streamDevice
@@ -298,7 +298,7 @@ func (s *fakeStream) frames(plain []byte, carry *[]byte, now time.Time) bool {
 }
 
 // datagram is one datagram from the client: it goes to the tunnel as the
-// session's device's, or the session ends. It is wui-ws's rule, unchanged.
+// session's device's, or the session ends. It is drift's rule, unchanged.
 func (s *fakeStream) datagram(d []byte, now time.Time) bool {
 	g := s.g
 	switch wgType(d) {

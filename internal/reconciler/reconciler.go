@@ -169,7 +169,7 @@ type Reconciler struct {
 	dataDir string
 	// nodeEvery is how far apart a node's usage reports are.
 	nodeEvery time.Duration
-	// gws is the wui-udp gateways in front of this server's tunnels.
+	// gws is the veil gateways in front of this server's tunnels.
 	gws gateways
 }
 
@@ -579,8 +579,8 @@ type desired struct {
 	// whose devices are taken down rather than left standing.
 	disabled []model.Interface
 	rules    []enforce.Rule
-	shaping    []shaper.Client
-	devices    []string
+	shaping  []shaper.Client
+	devices  []string
 	// sessionRate is the class of each device whose customer has a rate,
 	// for tunnels that carry each session on a link of its own.
 	sessionRate map[uint]shaper.Client
@@ -799,7 +799,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		r.log.Error("transport keys", "error", err)
 	}
 	if err := service.EnsureStealthCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
-		r.log.Error("wui-tls certificates", "error", err)
+		r.log.Error("anchor certificates", "error", err)
 	}
 	db := r.db.WithContext(ctx)
 

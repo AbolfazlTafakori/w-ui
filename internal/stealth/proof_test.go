@@ -13,11 +13,11 @@ func newProofPair(t *testing.T) (*ProofClient, *ProofServer, TransportKey) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := NewProofClient(testSecret, testAnchor, WS, key.Public())
+	c, err := NewProofClient(testSecret, testAnchor, Drift, key.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewProofServer(testAnchor, WS, key)
+	s, err := NewProofServer(testAnchor, Drift, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,9 +101,9 @@ func TestAProofIsBoundToItsTransportItsTunnelAndItsKey(t *testing.T) {
 	token, _, _ := c.Token(testNow)
 	otherKey, _ := NewTransportKey()
 	for name, s := range map[string]func() (*ProofServer, error){
-		"another transport": func() (*ProofServer, error) { return NewProofServer(testAnchor, TLS, key) },
-		"another tunnel":    func() (*ProofServer, error) { return NewProofServer(Anchor(bytes.Repeat([]byte{9}, 32)), WS, key) },
-		"another key":       func() (*ProofServer, error) { return NewProofServer(testAnchor, WS, otherKey) },
+		"another transport": func() (*ProofServer, error) { return NewProofServer(testAnchor, Anchored, key) },
+		"another tunnel":    func() (*ProofServer, error) { return NewProofServer(Anchor(bytes.Repeat([]byte{9}, 32)), Drift, key) },
+		"another key":       func() (*ProofServer, error) { return NewProofServer(testAnchor, Drift, otherKey) },
 	} {
 		srv, err := s()
 		if err != nil {
@@ -115,11 +115,11 @@ func TestAProofIsBoundToItsTransportItsTunnelAndItsKey(t *testing.T) {
 	}
 }
 
-// wui-plain's proofs cross the network in the clear, so one is never good on
+// bare's proofs cross the network in the clear, so one is never good on
 // a covered transport, nor one of those on it, even under one key.
 func TestAPlainProofAndACoveredOneNeverOpenOnTheOther(t *testing.T) {
 	key, _ := NewTransportKey()
-	for _, pair := range [][2]string{{Plain, WS}, {Plain, TLS}, {WS, Plain}, {TLS, Plain}} {
+	for _, pair := range [][2]string{{Bare, Drift}, {Bare, Anchored}, {Drift, Bare}, {Anchored, Bare}} {
 		c, err := NewProofClient(testSecret, testAnchor, pair[0], key.Public())
 		if err != nil {
 			t.Fatal(err)
@@ -140,7 +140,7 @@ func TestTheKeyBeforeStillOpensAProof(t *testing.T) {
 	c, _, old := newProofPair(t)
 	token, _, _ := c.Token(testNow)
 	current, _ := NewTransportKey()
-	s, err := NewProofServer(testAnchor, WS, current, old)
+	s, err := NewProofServer(testAnchor, Drift, current, old)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestATransportKeyReadsBackAsItWasWritten(t *testing.T) {
 	if _, err := ParseTransportKey("bm90IGEga2V5"); err == nil {
 		t.Fatal("a short key was read")
 	}
-	if _, err := NewProofClient(testSecret, testAnchor, WS, "AAAA"); err == nil {
+	if _, err := NewProofClient(testSecret, testAnchor, Drift, "AAAA"); err == nil {
 		t.Fatal("a client took a server key that is none")
 	}
 }

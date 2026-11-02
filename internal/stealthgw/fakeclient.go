@@ -17,7 +17,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-faketls reference client.
+// The mirror reference client.
 //
 // A local UDP port a stock WireGuard sends to as if it were the server, and
 // the faketls side of it, written once here so the gateway is tested against
@@ -27,7 +27,7 @@ import (
 // comes while it has none. A session is a device's ClientHello, sealed with the
 // proof, then the gateway's hand-written flight, then the record carry.
 
-// FakeTLSClientConfig is one device's wui-faketls client for one tunnel.
+// FakeTLSClientConfig is one device's mirror client for one tunnel.
 type FakeTLSClientConfig struct {
 	// Dial is the gateway's address, host:port.
 	Dial string
@@ -47,7 +47,7 @@ type FakeTLSClientConfig struct {
 	Wide, Normal int
 }
 
-// FakeTLSClient is a running wui-faketls reference client.
+// FakeTLSClient is a running mirror reference client.
 type FakeTLSClient struct {
 	cfg    FakeTLSClientConfig
 	client *stealth.FakeClient

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// The pieces of TLS 1.3 (RFC 8446) that wui-faketls writes itself, because no
+// The pieces of TLS 1.3 (RFC 8446) that mirror writes itself, because no
 // TLS library lets it set the sizes of records or the bytes of a hello: the
 // three suites, the key schedule of section 7.1, the record protection of
 // section 5 with record padding (section 5.4), and the ServerHello of section

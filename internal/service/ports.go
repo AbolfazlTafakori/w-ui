@@ -66,7 +66,7 @@ func (s *Interfaces) checkPortClash(ctx context.Context, nodeID, selfID uint, po
 	return s.portClash(ctx, nodeID, selfID, port, transports, "listenPort")
 }
 
-// portClash is checkPortClash, reported against field. A tunnel's wui-udp
+// portClash is checkPortClash, reported against field. A tunnel's veil
 // port is one of the UDP ports it takes.
 func (s *Interfaces) portClash(ctx context.Context, nodeID, selfID uint, port int, transports []string, field string) error {
 	var others []model.Interface

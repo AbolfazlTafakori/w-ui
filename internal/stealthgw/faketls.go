@@ -18,9 +18,9 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-faketls gateway.
+// The mirror gateway.
 //
-// wui-faketls borrows a real site. The gateway is the server, on a port of its
+// mirror borrows a real site. The gateway is the server, on a port of its
 // own, and every connection opens with a TLS 1.3 ClientHello. A device's hello
 // carries a proof in its random and legacy session id (package stealth); any
 // other hello carries none. So:
@@ -52,7 +52,7 @@ import (
 // Only someone who cannot tell a device's hello from a visitor's -- which is
 // everyone without a device's secret -- is kept out by the proof alone.
 
-// FakeTLSConfig is one tunnel's wui-faketls gateway.
+// FakeTLSConfig is one tunnel's mirror gateway.
 type FakeTLSConfig struct {
 	// Listen is the TCP address devices and visitors reach the gateway at.
 	Listen string
@@ -74,7 +74,7 @@ type FakeTLSConfig struct {
 	Log          *slog.Logger
 }
 
-// wui-faketls limits and timers.
+// mirror limits and timers.
 const (
 	// fakeHelloFor bounds the read of the ClientHello, from the accept.
 	fakeHelloFor = 10 * time.Second
@@ -95,9 +95,13 @@ const (
 	fakeSizesMax = 64
 	// fakeSayAgain is how often a site that stays down is said to be.
 	fakeSayAgain = time.Minute
+	// fakeRelayIdle tears a relay down when no byte has crossed it either way
+	// for this long, so a half-closed peer that then goes silent does not hold
+	// its place until the gateway stops.
+	fakeRelayIdle = 60 * time.Second
 )
 
-// FakeTLSGateway is wui-faketls in front of one WireGuard tunnel.
+// FakeTLSGateway is mirror in front of one WireGuard tunnel.
 type FakeTLSGateway struct {
 	*StreamGateway
 	fcfg  FakeTLSConfig
@@ -130,7 +134,7 @@ func NewFakeTLS(cfg FakeTLSConfig) (*FakeTLSGateway, error) {
 	sg, err := newStreamGateway(StreamConfig{
 		Listen: cfg.Listen, WireGuard: cfg.WireGuard, PrivateKey: cfg.PrivateKey,
 		ReplayFile: cfg.ReplayFile, Sessions: cfg.Sessions, Wide: cfg.Wide, Normal: cfg.Normal, Log: cfg.Log,
-	}, stealth.FakeTLS)
+	}, stealth.Mirror)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +468,17 @@ func (g *FakeTLSGateway) relay(raw net.Conn, dial *siteDial, sent []byte) {
 		return
 	}
 	g.fstats.relayed.Add(1)
-	raw.SetDeadline(time.Time{})
+	raw.SetWriteDeadline(time.Time{})
+	// A byte crossing either way keeps both sides' reads alive; a relay silent
+	// both ways for fakeRelayIdle times out and is let go, so neither a
+	// half-closed peer nor a stalled site holds its place. A one-way transfer
+	// is not idle: the busy direction keeps refreshing the deadline for both.
+	touch := func() {
+		dl := time.Now().Add(fakeRelayIdle)
+		raw.SetReadDeadline(dl)
+		site.SetReadDeadline(dl)
+	}
+	touch()
 
 	if len(sent) > 0 {
 		if _, err := site.Write(sent); err != nil {
@@ -479,6 +493,7 @@ func (g *FakeTLSGateway) relay(raw net.Conn, dial *siteDial, sent []byte) {
 		for {
 			n, err := raw.Read(buf)
 			if n > 0 {
+				touch()
 				if _, werr := site.Write(buf[:n]); werr != nil {
 					return
 				}
@@ -499,6 +514,7 @@ func (g *FakeTLSGateway) relay(raw net.Conn, dial *siteDial, sent []byte) {
 		for {
 			n, err := site.Read(buf)
 			if n > 0 {
+				touch()
 				sizer.feed(buf[:n], g.sizer)
 				if _, werr := raw.Write(buf[:n]); werr != nil {
 					return
@@ -596,7 +612,7 @@ func (z *recordSizer) feed(b []byte, sizer *fakeSizer) {
 	}
 }
 
-// FakeTLSStats is what a wui-faketls gateway has done since it started.
+// FakeTLSStats is what a mirror gateway has done since it started.
 type FakeTLSStats struct {
 	StreamStats
 	Accepted, Proved, Relayed uint64

@@ -88,7 +88,7 @@ func TestFakeStreamCarry(t *testing.T) {
 	g, err := newStreamGateway(StreamConfig{
 		Path: "/faketls-path", WireGuard: echo.String(), PrivateKey: priv,
 		TransportKeys: []stealth.TransportKey{tk}, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}, stealth.FakeTLS)
+	}, stealth.Mirror)
 	if err != nil {
 		t.Fatal(err)
 	}

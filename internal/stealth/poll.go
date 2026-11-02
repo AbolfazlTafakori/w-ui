@@ -11,12 +11,12 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// The wui-poll requests.
+// The relay requests.
 //
-// wui-poll is for a CDN that will not carry WebSocket: the tunnel's
+// relay is for a CDN that will not carry WebSocket: the tunnel's
 // datagrams travel in the bodies of ordinary POST requests to the
 // transport's path, one request in flight at a time, and in the bodies of
-// their answers. The first request is the proof, as wui-ws's upgrade is; every
+// their answers. The first request is the proof, as drift's upgrade is; every
 // later one names the session the proof opened and its own number:
 //
 //	opening  POST <path>?<token>
@@ -33,7 +33,7 @@ import (
 //
 //	[len u16 BE][sealed chunk] ... [len u16 BE][sealed chunk]
 //
-// The numbers run on across bodies in each direction as on wui-ws, and a
+// The numbers run on across bodies in each direction as on drift, and a
 // body is taken whole or not at all: every chunk must open at the next
 // numbers before anything in it is used, and the numbers move on only when
 // the body is taken. A body that does not open leaves the session exactly as
@@ -41,7 +41,7 @@ import (
 // and change nothing. A body whose every chunk opens and one of them does
 // not parse can only be the device's own, and ends the session.
 
-// Sizes of wui-poll's requests.
+// Sizes of relay's requests.
 const (
 	// PollIDLen is the length of a session's id.
 	PollIDLen = 16
@@ -100,7 +100,7 @@ func ParsePollQuery(q string) (id [PollIDLen]byte, n uint32, ok bool) {
 var ErrBodyFull = errors.New("stealth: the body is full")
 
 // AppendBody appends one chunk holding datagrams, behind its length, to a
-// wui-poll body; none makes a padding-only chunk. A chunk that might not fit
+// relay body; none makes a padding-only chunk. A chunk that might not fit
 // within PollBodyMax is ErrBodyFull.
 func (s *StreamSender) AppendBody(body []byte, datagrams ...[]byte) ([]byte, error) {
 	return s.AppendBodyWithin(body, PollBodyMax, datagrams...)
@@ -137,7 +137,7 @@ var (
 	ErrBodyEnded = errors.New("stealth: the session's peer sent a bad chunk")
 )
 
-// PollReceiver opens one direction of a wui-poll session: the server's for
+// PollReceiver opens one direction of a relay session: the server's for
 // request bodies, the client's for answers. It is not safe for concurrent
 // use.
 type PollReceiver struct {

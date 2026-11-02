@@ -5,9 +5,9 @@ import (
 	"crypto/subtle"
 )
 
-// The request line of wui-tls.
+// The request line of anchor.
 //
-// A wui-tls server ends TLS itself, so nothing in front of it has read the
+// A anchor server ends TLS itself, so nothing in front of it has read the
 // request yet, and it must decide who it is talking to from the bytes alone.
 // It reads the request line as the bytes arrive, and the line stays a
 // candidate only while it can still become

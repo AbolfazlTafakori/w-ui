@@ -18,26 +18,26 @@ import (
 	"github.com/abolfazl/w-ui/internal/stealth"
 )
 
-// The wui-shape reference client.
+// The mold reference client.
 //
-// It is wui-poll's client dressed in the operator's shape: it opens a session
+// It is relay's client dressed in the operator's shape: it opens a session
 // with the proof in the one place a token may go for the shape, numbers the
 // chunks of request n at n*4096, and either polls (one request in flight, its
 // answer carrying what waits) or, for a stream shape, opens one long
 // Server-Sent-Events response that carries all the downstream data while its
 // upstream rides later requests the gateway answers with padding alone.
 //
-// The rules an app keeps are wui-poll's, with the shape on top:
+// The rules an app keeps are relay's, with the shape on top:
 //   - The opening request carries the proof and is sent once. For a poll
 //     shape its answer opens the session; for a stream shape the opening is
 //     the stream request, and its first event carries the tunnel's response.
-//   - Poll: one request in flight, the poll wait of wui-poll. Stream: the
+//   - Poll: one request in flight, the poll wait of relay. Stream: the
 //     stream carries the downstream; upstream datagrams go in later requests,
 //     each answered with a padding-only chunk.
 //   - A stream that ends falls back to polling when the shape allows it;
 //     otherwise the session is over and a fresh one is opened.
 
-// ShapeClientConfig is one device's wui-shape client for one tunnel.
+// ShapeClientConfig is one device's mold client for one tunnel.
 type ShapeClientConfig struct {
 	URL          string
 	Dial         string
@@ -52,7 +52,7 @@ type ShapeClientConfig struct {
 	Shape stealth.Shape
 }
 
-// ShapeClient is a running wui-shape reference client.
+// ShapeClient is a running mold reference client.
 type ShapeClient struct {
 	cfg    ShapeClientConfig
 	url    *url.URL
@@ -93,7 +93,7 @@ func NewShapeClient(cfg ShapeClientConfig) (*ShapeClient, error) {
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return nil, fmt.Errorf("stealthgw: %q is not an https:// address", cfg.URL)
 	}
-	proofs, err := stealth.NewProofClient(cfg.Secret, cfg.Anchor, stealth.Shaped, cfg.TransportKey)
+	proofs, err := stealth.NewProofClient(cfg.Secret, cfg.Anchor, stealth.Mold, cfg.TransportKey)
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +498,7 @@ func readStreamHead(br *bufio.Reader) error {
 }
 
 // exchange writes one request and reads its answer's body, retrying a
-// connection that ends before the answer is whole, as wui-poll's does.
+// connection that ends before the answer is whole, as relay's does.
 func (c *ShapeClient) exchange(conn **pollConn, req []byte, deadline time.Time, repeats int) ([]byte, error) {
 	if *conn != nil && (*conn).stale() {
 		(*conn).Close()

@@ -10,11 +10,11 @@ import (
 )
 
 func wuiShape(in CreateInterfaceInput, port int, ws WSSettings) CreateInterfaceInput {
-	in.Transport, in.TransportPort, in.TransportWS = model.TransportWuiShape, port, &ws
+	in.Transport, in.TransportPort, in.TransportWS = model.TransportMold, port, &ws
 	return in
 }
 
-// wui-shape takes wui-poll's settings and one more: the request shape, given
+// mold takes relay's settings and one more: the request shape, given
 // as a preset name and stored as the full object, in its one canonical form.
 func TestAWireGuardTunnelTakesWuiShapeBehindAFront(t *testing.T) {
 	db := testDB(t)
@@ -28,11 +28,11 @@ func TestAWireGuardTunnelTakesWuiShapeBehindAFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := wg0.Stealth.V
-	if wg0.WireGuardTransport() != model.TransportWuiShape || wg0.StealthShape() != tcp || !p.Fronted() || !p.Proven() {
+	if wg0.WireGuardTransport() != model.TransportMold || wg0.StealthShape() != tcp || !p.Fronted() || !p.Proven() {
 		t.Fatalf("made as %s on %d: %+v", wg0.WireGuardTransport(), wg0.StealthShape(), p)
 	}
-	if model.TransportNetwork(model.TransportWuiShape) != "tcp" {
-		t.Fatal("wui-shape is a tcp transport")
+	if model.TransportNetwork(model.TransportMold) != "tcp" {
+		t.Fatal("mold is a tcp transport")
 	}
 	// The preset was resolved and stored as the full canonical object.
 	sh, err := stealth.ParseShape([]byte(p.Shape))

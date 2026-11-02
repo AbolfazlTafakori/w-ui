@@ -24,11 +24,11 @@ func TestALogKeepsNoSecretOfAPath(t *testing.T) {
 	}
 }
 
-// A wui-ws transport's private keys never leave the panel by the API; what
+// A drift transport's private keys never leave the panel by the API; what
 // else it has, the form shows.
 func TestAnInterfaceKeepsItsTransportKeysFromTheAPI(t *testing.T) {
 	in := model.Interface{Protocol: model.ProtocolWireGuard, Stealth: model.JSON(model.StealthParams{
-		Transport: model.TransportWuiWS, Port: 8081, Host: "front.example", Path: "/abcdefghijklmn",
+		Transport: model.TransportDrift, Port: 8081, Host: "front.example", Path: "/abcdefghijklmn",
 		Key: "current-private", PreviousKey: "previous-private", KeyAt: 7,
 	})}
 	out := redactKeys(in)
@@ -43,26 +43,26 @@ func TestAnInterfaceKeepsItsTransportKeysFromTheAPI(t *testing.T) {
 		t.Fatal("redacting changed the interface it was given")
 	}
 
-	// wui-plain's the same; its cookie's name is no secret, and the form
+	// bare's the same; its cookie's name is no secret, and the form
 	// shows it.
 	plain := model.Interface{Protocol: model.ProtocolWireGuard, Stealth: model.JSON(model.StealthParams{
-		Transport: model.TransportWuiPlain, Port: 8081, Host: "plain.example", Cookie: "sid", Key: "current-private", PreviousKey: "previous-private",
+		Transport: model.TransportBare, Port: 8081, Host: "plain.example", Cookie: "sid", Key: "current-private", PreviousKey: "previous-private",
 	})}
 	if got := redactKeys(plain).Stealth.V; got.Key != "" || got.PreviousKey != "" || got.Cookie != "sid" {
-		t.Fatalf("wui-plain redacted: %+v", got)
+		t.Fatalf("bare redacted: %+v", got)
 	}
 
-	// wui-tls's certificate keys go too, the tunnel's own and the panel's
+	// anchor's certificate keys go too, the tunnel's own and the panel's
 	// copy; the certificates, which every visitor is shown, stay.
 	direct := model.Interface{Protocol: model.ProtocolWireGuard, Stealth: model.JSON(model.StealthParams{
-		Transport: model.TransportWuiTLS, Port: 443, Host: "edge.example", Key: "current-private",
+		Transport: model.TransportAnchor, Port: 443, Host: "edge.example", Key: "current-private",
 		Cert: "own-cert", CertKey: "own-key", PanelCert: "panel-cert", PanelCertKey: "panel-key", CertSource: model.CertSourcePanel,
 	})}
 	got = redactKeys(direct).Stealth.V
 	if got.Key != "" || got.CertKey != "" || got.PanelCertKey != "" {
-		t.Fatalf("wui-tls's keys were left: %+v", got)
+		t.Fatalf("anchor's keys were left: %+v", got)
 	}
 	if got.Cert != "own-cert" || got.PanelCert != "panel-cert" || got.CertSource != model.CertSourcePanel {
-		t.Fatalf("more than wui-tls's keys went: %+v", got)
+		t.Fatalf("more than anchor's keys went: %+v", got)
 	}
 }

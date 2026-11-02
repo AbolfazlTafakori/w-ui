@@ -2,17 +2,17 @@
 """Checks internal/stealth/testdata/ws.json, tls.json, plain.json, poll.json and
 shape.json against docs/reference/stealth.md.
 
-An implementation of the wui-ws, wui-tls and wui-plain proofs and stream chunks of its
+An implementation of the drift, anchor and bare proofs and stream chunks of its
 own, written from the specification and from RFC 9180 and not from the Go
 code, HPKE included, so that what the panel sends and what the specification
 says are known to be the same. It opens each vector's token with the server's
 transport key, checks every field of the hello and its binder, derives the
 session's two keys again and opens the chunk each way, and fails on the first
-thing that differs. For wui-plain it also reads the token back from the
+thing that differs. For bare it also reads the token back from the
 vector's Cookie field by the specification's rule, and checks that the token
-opens under no other transport's name. For wui-poll it derives the session's
+opens under no other transport's name. For relay it derives the session's
 id, reads the query of the first later request by the specification's rule,
-and opens a body each way, chunk by chunk behind their lengths. For wui-shape
+and opens a body each way, chunk by chunk behind their lengths. For mold
 it reads the shape and the request's target in their one form, opens the
 request and its answer at the numbers of request 1 and at no other, seals the
 late answer of request 1 itself and compares, and opens the event of a stream
@@ -143,7 +143,7 @@ def cookie_token(field: str, name: str):
 
 
 def open_body(key: bytes, first: int, body: bytes) -> list:
-    """The chunks of a wui-poll body, at numbers from first: each behind its
+    """The chunks of a relay body, at numbers from first: each behind its
     length, all of them opening, the body 18 to 65 536 bytes."""
     assert 18 <= len(body) <= 65536, "a body of the wrong length"
     chunks, i, n = [], 0, first
@@ -157,7 +157,7 @@ def open_body(key: bytes, first: int, body: bytes) -> list:
 
 
 def poll_query(q: str):
-    """The session id and number of a later wui-poll request, or None."""
+    """The session id and number of a later relay request, or None."""
     text, dot, digits = q.partition(".")
     if not dot or len(text) != 22 or not set(text) <= TOKEN_CHARS:
         return None
@@ -174,7 +174,7 @@ PER_REQUEST, LATE_INDEX, SHAPED_CHUNKS = 4096, 4095, 4095
 
 
 def shaped_open(key: bytes, n: int, lst: bytes) -> list:
-    """The chunks of a wui-shape list of request n: chunk i at n * 4096 + i,
+    """The chunks of a mold list of request n: chunk i at n * 4096 + i,
     never at index 4095."""
     chunks = open_body(key, n * PER_REQUEST, lst)
     assert len(chunks) <= SHAPED_CHUNKS, "a list of more than 4095 chunks"
@@ -261,7 +261,7 @@ def check(name: str) -> None:
     token = v["token"]
     assert 144 <= len(token) <= 272, "a token of the wrong length"
     assert set(token) <= TOKEN_CHARS, "a token that is not unpadded base64url"
-    if v["transport"] == "wui-plain":
+    if v["transport"] == "bare":
         cookie = v["cookie"].partition("=")[0]
         assert cookie_token(v["cookie"], cookie) == token, "the token does not read back from its Cookie field"
         assert cookie_token(v["cookie"] + "; " + v["cookie"], cookie) is None, "a cookie named twice was read"
@@ -271,7 +271,7 @@ def check(name: str) -> None:
     sk = X25519PrivateKey.from_private_bytes(h(v["transportKey"]))
     r = Recipient(sk, enc, info_of(v["transport"], anchor))
     hello = r.open_first(ct)
-    for other in ("wui-ws", "wui-tls", "wui-plain", "wui-poll", "wui-shape"):
+    for other in ("drift", "anchor", "bare", "relay", "mold"):
         if other == v["transport"]:
             continue
         try:
@@ -295,7 +295,7 @@ def check(name: str) -> None:
     assert open_chunk(up, 0, h(v["chunkUp"])) == [h(v["datagram"])], "the chunk up differs"
     assert open_chunk(down, 0, h(v["chunkDown"])) == [], "the chunk down is not padding alone"
 
-    if v["transport"] == "wui-poll":
+    if v["transport"] == "relay":
         sid = expand(prk, LABEL + b"stream id", 16)
         assert sid == h(v["id"]), "the session id differs"
         assert poll_query(v["query"]) == (sid, 1), "the query does not read back as the id and 1"
@@ -304,7 +304,7 @@ def check(name: str) -> None:
         assert open_body(up, 0, h(v["bodyUp"])) == [[h(v["datagram"])]], "the body up differs"
         assert open_body(down, 0, h(v["bodyDown"])) == [[]], "the body down is not padding alone"
 
-    if v["transport"] == "wui-shape":
+    if v["transport"] == "mold":
         sid = expand(prk, LABEL + b"stream id", 16)
         assert sid == h(v["id"]), "the session id differs"
         check_shape(v, down, up, sid)

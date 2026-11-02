@@ -10,10 +10,10 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// The wui-shape requests and answers.
+// The mold requests and answers.
 //
-// wui-shape carries wui-poll's chunks, but where wui-poll numbers a stream's
-// chunks straight across its bodies, wui-shape ties each chunk's number to
+// mold carries relay's chunks, but where relay numbers a stream's
+// chunks straight across its bodies, mold ties each chunk's number to
 // the request it rides in: the chunk at index i of request n has number
 //
 //	n*ShapePerRequest + i        i = 0 .. ShapeChunks-1
@@ -24,7 +24,7 @@ import (
 // kept for the "late answer" alone and is used for nothing else.
 //
 // A request has one canonical form. Its data -- a list of framed chunks,
-// exactly as a wui-poll body is framed -- is base64url without padding when
+// exactly as a relay body is framed -- is base64url without padding when
 // it rides in a query, a path or a header, and the raw bytes when it rides in
 // a body. In a path the text is cut into segments joined by '/'. The gateway
 // reads a request strictly and decodes its data only when it is needed, and a
@@ -59,7 +59,7 @@ const (
 	ShapeInflight = 4
 	// ShapeDataMax is the most bytes of framed data one request carries.
 	ShapeDataMax = PollBodyMax
-	// ShapeDataMin is the least: wui-poll's shortest body.
+	// ShapeDataMin is the least: relay's shortest body.
 	ShapeDataMin = PollBodyMin
 
 	segMin, segMax = 8, 64
@@ -448,7 +448,7 @@ func (t ShapeTarget) Data() []byte {
 	}
 }
 
-// ShapeSender seals one direction of a wui-shape session, sealing each chunk
+// ShapeSender seals one direction of a mold session, sealing each chunk
 // at the number of its request and index, and keeping the padding of its
 // direction. It is not safe for concurrent use.
 type ShapeSender struct {
@@ -560,7 +560,7 @@ func (s *ShapeReceiver) IsLate(n uint32, body []byte) bool {
 	return true
 }
 
-// ShapeReceiver opens one direction of a wui-shape session: request lists
+// ShapeReceiver opens one direction of a mold session: request lists
 // (chunks at n*ShapePerRequest), stream events (at an explicit number) and
 // late answers. Unlike a stream's Opener it keeps no running counter -- the
 // number is the request's -- so a list that does not open leaves it as it

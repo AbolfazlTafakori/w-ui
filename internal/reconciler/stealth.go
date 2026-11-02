@@ -23,13 +23,13 @@ import (
 //
 // A WireGuard tunnel with a stealth transport on has a gateway beside it, on
 // a port of its own, that hands what it unwraps to the tunnel's own port on
-// the loopback: wui-udp's on UDP, wui-tls's on TCP as the server itself,
-// wui-ws's, wui-poll's and wui-plain's on TCP behind the operator's web
+// the loopback: veil's on UDP, anchor's on TCP as the server itself,
+// drift's, relay's and bare's on TCP behind the operator's web
 // server or CDN.
 // The gateway is the panel's, like the tunnel's peers: started when the
 // tunnel wants one, given the devices the tunnel carries on every pass,
 // restarted when what it was started with changes, and stopped when the
-// tunnel stops wanting it. wui-tls's certificate is the exception: a renewed
+// tunnel stops wanting it. anchor's certificate is the exception: a renewed
 // one is handed to the running gateway, so no session ends for it.
 // WireGuard goes on as it was through all of it.
 
@@ -54,7 +54,7 @@ type gateway interface {
 
 type runningGateway struct {
 	key    string // what it was started with
-	cert   string // the certificate a wui-tls gateway serves, PEM
+	cert   string // the certificate a anchor gateway serves, PEM
 	gw     gateway
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -69,13 +69,13 @@ func gatewayKey(i model.Interface) string {
 	if p.Proven() {
 		key := fmt.Sprintf("%s|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s", name, port, i.ListenPort, i.PrivateKey,
 			p.Path, p.Origin, p.Proxies, p.ClientHeader, p.Cookie, p.Key, p.PreviousKey)
-		if name == model.TransportWuiTLS {
+		if name == model.TransportAnchor {
 			// Not the certificate: keepStealth hands a new one over.
 			key += fmt.Sprintf("|%s|%t", p.Host, p.ProxyProtocol)
 		}
 		return key
 	}
-	if name == model.TransportWuiFakeTLS {
+	if name == model.TransportMirror {
 		return fmt.Sprintf("%s|%d|%d|%s|%s|%s", name, port, i.ListenPort, i.PrivateKey, p.Site, p.NodeKey)
 	}
 	return fmt.Sprintf("%s|%d|%d|%d|%s", name, port, i.ListenPort, i.MTU, i.PrivateKey)
@@ -146,20 +146,20 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 		Listen() error
 	}
 	switch name {
-	case model.TransportWuiTLS:
+	case model.TransportAnchor:
 		var tg *stealthgw.TLSGateway
 		if tg, err = r.newTLSGateway(iface, priv); err == nil {
 			gw, rg.cert = tg, servedCert(iface)
 		}
-	case model.TransportWuiWS:
+	case model.TransportDrift:
 		gw, err = r.newWSGateway(iface, priv)
-	case model.TransportWuiPoll:
+	case model.TransportRelay:
 		gw, err = r.newPollGateway(iface, priv)
-	case model.TransportWuiShape:
+	case model.TransportMold:
 		gw, err = r.newShapeGateway(iface, priv)
-	case model.TransportWuiPlain:
+	case model.TransportBare:
 		gw, err = r.newPlainGateway(iface, priv)
-	case model.TransportWuiFakeTLS:
+	case model.TransportMirror:
 		gw, err = r.newFakeTLSGateway(iface, priv)
 	default:
 		gw, err = r.newUDPGateway(iface, priv)
@@ -186,8 +186,8 @@ func (r *Reconciler) startGateway(iface model.Interface, key string, before *run
 // per transport, since each judges its own openings or proofs.
 func replayFile(dataDir string, iface model.Interface) string {
 	name, _ := iface.StealthTransport()
-	if name == model.TransportWuiUDP {
-		return filepath.Join(dataDir, stealthDir, fmt.Sprintf("%d.replay", iface.ID)) // as wui-udp has always kept it
+	if name == model.TransportVeil {
+		return filepath.Join(dataDir, stealthDir, fmt.Sprintf("%d.replay", iface.ID)) // as veil has always kept it
 	}
 	return filepath.Join(dataDir, stealthDir, fmt.Sprintf("%d.%s.replay", iface.ID, name))
 }
@@ -208,7 +208,7 @@ func (r *Reconciler) newUDPGateway(iface model.Interface, priv []byte) (*stealth
 	return stealthgw.New(cfg)
 }
 
-// newTLSGateway is wui-tls's gateway: the server itself, on every address,
+// newTLSGateway is anchor's gateway: the server itself, on every address,
 // ending TLS with the certificate the tunnel serves and handing whoever is
 // not a device to the decoy.
 func (r *Reconciler) newTLSGateway(iface model.Interface, priv []byte) (*stealthgw.TLSGateway, error) {
@@ -239,13 +239,13 @@ func (r *Reconciler) newTLSGateway(iface model.Interface, priv []byte) (*stealth
 	})
 }
 
-// servedCert is the certificate a tunnel's wui-tls gateway serves, PEM.
+// servedCert is the certificate a tunnel's anchor gateway serves, PEM.
 func servedCert(iface model.Interface) string {
 	cert, _ := iface.Stealth.V.ServedCert()
 	return cert
 }
 
-// keepCertificate hands a running wui-tls gateway the tunnel's certificate
+// keepCertificate hands a running anchor gateway the tunnel's certificate
 // when it changed: renewed, or the panel's taken up or let go. Connections
 // there are keep the one they began with. One that does not read is said,
 // and the gateway keeps the one it has.
@@ -260,15 +260,15 @@ func (r *Reconciler) keepCertificate(iface model.Interface, rg *runningGateway) 
 	}
 	cert, err := stealth.TLSCertificate(iface.Stealth.V.ServedCert())
 	if err != nil {
-		r.log.Error("wui-tls's new certificate does not read; the gateway keeps the one it has", "interface", iface.Name, "error", err)
+		r.log.Error("anchor's new certificate does not read; the gateway keeps the one it has", "interface", iface.Name, "error", err)
 		return
 	}
 	tg.SetCertificate(cert)
 	rg.cert = served
-	r.log.Info("wui-tls serves a new certificate", "interface", iface.Name, "source", iface.Stealth.V.CertSource)
+	r.log.Info("anchor serves a new certificate", "interface", iface.Name, "source", iface.Stealth.V.CertSource)
 }
 
-// newWSGateway is wui-ws's gateway.
+// newWSGateway is drift's gateway.
 func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthgw.StreamGateway, error) {
 	cfg, err := r.streamConfig(iface, priv)
 	if err != nil {
@@ -277,7 +277,7 @@ func (r *Reconciler) newWSGateway(iface model.Interface, priv []byte) (*stealthg
 	return stealthgw.NewStream(cfg)
 }
 
-// newPollGateway is wui-poll's gateway: wui-ws's settings, the tunnel's
+// newPollGateway is relay's gateway: drift's settings, the tunnel's
 // datagrams in POST requests.
 func (r *Reconciler) newPollGateway(iface model.Interface, priv []byte) (*stealthgw.PollGateway, error) {
 	cfg, err := r.streamConfig(iface, priv)
@@ -287,7 +287,7 @@ func (r *Reconciler) newPollGateway(iface model.Interface, priv []byte) (*stealt
 	return stealthgw.NewPoll(stealthgw.PollConfig{StreamConfig: cfg})
 }
 
-// newShapeGateway is wui-shape's gateway: wui-poll's, with the operator's
+// newShapeGateway is mold's gateway: relay's, with the operator's
 // request shape.
 func (r *Reconciler) newShapeGateway(iface model.Interface, priv []byte) (*stealthgw.ShapeGateway, error) {
 	cfg, err := r.streamConfig(iface, priv)
@@ -301,7 +301,7 @@ func (r *Reconciler) newShapeGateway(iface model.Interface, priv []byte) (*steal
 	return stealthgw.NewShape(stealthgw.ShapeConfig{StreamConfig: cfg, Shape: shape})
 }
 
-// newPlainGateway is wui-plain's gateway: wui-ws's, with its cookie.
+// newPlainGateway is bare's gateway: drift's, with its cookie.
 func (r *Reconciler) newPlainGateway(iface model.Interface, priv []byte) (*stealthgw.PlainGateway, error) {
 	cfg, err := r.streamConfig(iface, priv)
 	if err != nil {
@@ -310,7 +310,7 @@ func (r *Reconciler) newPlainGateway(iface model.Interface, priv []byte) (*steal
 	return stealthgw.NewPlain(stealthgw.PlainConfig{StreamConfig: cfg, Cookie: iface.Stealth.V.Cookie})
 }
 
-// newFakeTLSGateway is wui-faketls's gateway: the server itself, on its own
+// newFakeTLSGateway is mirror's gateway: the server itself, on its own
 // port, that borrows a real site. A device's ClientHello opens a session; any
 // other is relayed to the site byte for byte.
 func (r *Reconciler) newFakeTLSGateway(iface model.Interface, priv []byte) (*stealthgw.FakeTLSGateway, error) {

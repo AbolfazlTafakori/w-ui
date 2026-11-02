@@ -14,9 +14,9 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// The wui-faketls proof.
+// The mirror proof.
 //
-// wui-faketls is the borrowed-site mode: a device opens a session by sending
+// mirror is the borrowed-site mode: a device opens a session by sending
 // a real-looking TLS 1.3 ClientHello whose SNI is a site the operator chose,
 // and hides its proof in the 64 bytes a ClientHello spends on random (32) and
 // its legacy session id (32). A connection that proves nothing is relayed to
@@ -40,7 +40,7 @@ import (
 // X25519MLKEM768 hybrid share), x the ephemeral behind it, and T the
 // transport's key.
 
-// wui-faketls sizes and constants.
+// mirror sizes and constants.
 const (
 	// FakeHour is how long a proof's hour tag stays good.
 	FakeHour = 3600
@@ -250,7 +250,7 @@ func fakeScrubbed(message []byte) []byte {
 	return aad
 }
 
-// The wui-faketls labels, in W-UI's own scheme.
+// The mirror labels, in W-UI's own scheme.
 var (
 	fakeSalt       = []byte(label + "faketls")
 	fakeSealInfo   = label + "faketls seal"

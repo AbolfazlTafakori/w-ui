@@ -137,7 +137,7 @@ func (k DeviceKeys) EpochTag(epoch uint64) Tag {
 	return t
 }
 
-// HourTag is the device's wui-faketls tag for one hour: it names the device
+// HourTag is the device's mirror tag for one hour: it names the device
 // inside the proof a client hides in its ClientHello. Like the UDP epoch tag
 // it has a time step, but of one hour, so a borrowed-site hello stays valid
 // across a clock a little off.

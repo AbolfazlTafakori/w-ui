@@ -133,7 +133,7 @@ export function exportable(i) {
     psk: i.protocol === 'l2tp' ? i.l2tp?.psk : undefined,
     l2tpPlain: i.protocol === 'l2tp' && i.l2tp?.allowPlain ? true : undefined,
     ...(i.protocol === 'wireguard' && i.stealth?.transport ? { transport: i.stealth.transport, transportPort: i.stealth.port } : {}),
-    // wui-tls's, wui-ws's, wui-poll's or wui-plain's name, path and decoy travel too;
+    // anchor's, drift's, relay's or bare's name, path and decoy travel too;
     // its keys do not, and a tunnel made from this draws its own.
     ...(i.protocol === 'wireguard' && hasWsFields(i.stealth?.transport) ? { transportWs: wsPayload(wsOf(i.stealth)) } : {}),
   }
@@ -149,27 +149,27 @@ export function ocPayload(oc) {
 }
 
 // fronted says a WireGuard transport is behind the operator's web server:
-// wui-ws, wui-poll, or wui-plain without TLS.
+// drift, relay, or bare without TLS.
 export function fronted(transport) {
-  return transport === 'wui-ws' || transport === 'wui-poll' || transport === 'wui-shape' || transport === 'wui-plain'
+  return transport === 'drift' || transport === 'relay' || transport === 'mold' || transport === 'bare'
 }
 
 // proven says a WireGuard transport opens with a proof sealed to a key of
-// its own, and so has a name, a path and a decoy: wui-tls, which is the
+// its own, and so has a name, a path and a decoy: anchor, which is the
 // server itself, or a fronted one.
 export function proven(transport) {
-  return transport === 'wui-tls' || fronted(transport)
+  return transport === 'anchor' || fronted(transport)
 }
 
 // hasWsFields says a transport's settings travel in the form's ws block:
-// the proven ones, and wui-faketls, which carries its borrowed site there.
+// the proven ones, and mirror, which carries its borrowed site there.
 export function hasWsFields(transport) {
-  return proven(transport) || transport === 'wui-faketls'
+  return proven(transport) || transport === 'mirror'
 }
 
-// wui-tls's, wui-ws's, wui-poll's or wui-plain's settings as the form holds them, from a
-// tunnel's stealth block or none, with wui-faketls's borrowed site. The
-// transport's keys are the server's and never reach the form; wui-plain's
+// anchor's, drift's, relay's or bare's settings as the form holds them, from a
+// tunnel's stealth block or none, with mirror's borrowed site. The
+// transport's keys are the server's and never reach the form; bare's
 // cookie name is no secret.
 export function wsOf(stealth) {
   const s = hasWsFields(stealth?.transport) ? stealth : {}
@@ -188,7 +188,7 @@ export function wsOf(stealth) {
   }
 }
 
-// shapePreset reads wui-shape's stored shape object back to the preset name
+// shapePreset reads mold's stored shape object back to the preset name
 // the form offers. The stored shape is a JSON string; anything unexpected is
 // get-poll, the mildest.
 export function shapePreset(shape) {
@@ -204,7 +204,7 @@ export function shapePreset(shape) {
   return 'get-poll'
 }
 
-// What a WireGuard tunnel's form sends for wui-tls, wui-ws, wui-poll or wui-plain: a
+// What a WireGuard tunnel's form sends for anchor, drift, relay or bare: a
 // path or a cookie left empty is drawn by the server, or kept when it has
 // one.
 export function wsPayload(ws) {

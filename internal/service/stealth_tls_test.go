@@ -15,11 +15,11 @@ import (
 )
 
 func wuiTLS(in CreateInterfaceInput, port int, ws WSSettings) CreateInterfaceInput {
-	in.Transport, in.TransportPort, in.TransportWS = model.TransportWuiTLS, port, &ws
+	in.Transport, in.TransportPort, in.TransportWS = model.TransportAnchor, port, &ws
 	return in
 }
 
-// pinOf is the pin of a wui-tls transport's own certificate.
+// pinOf is the pin of a anchor transport's own certificate.
 func pinOf(t *testing.T, p model.StealthParams) stealth.Pin {
 	t.Helper()
 	_, info, err := stealth.ReadCertificate(p.Cert)
@@ -29,7 +29,7 @@ func pinOf(t *testing.T, p model.StealthParams) stealth.Pin {
 	return info.Pin
 }
 
-// wui-tls is the server itself: no front, a decoy that must be an http://
+// anchor is the server itself: no front, a decoy that must be an http://
 // address, a path and a key the panel draws, and a certificate of the
 // tunnel's own whose key is drawn once.
 func TestAWireGuardTunnelTakesWuiTLSAsTheServer(t *testing.T) {
@@ -41,14 +41,14 @@ func TestAWireGuardTunnelTakesWuiTLSAsTheServer(t *testing.T) {
 
 	wg0, err := svc.Create(ctx, wuiTLS(wgInput("wg0", ports[0], "10.66.0.0/24"), tcp, WSSettings{
 		Host: "Edge.Example.com.", Origin: "http://127.0.0.1:8080/",
-		// What a front needs is no wui-tls's, and is not kept.
+		// What a front needs is no anchor's, and is not kept.
 		FrontPort: 8443, Proxies: "10.0.0.0/8", ClientHeader: "X-Real-IP",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := wg0.Stealth.V
-	if wg0.WireGuardTransport() != model.TransportWuiTLS || wg0.StealthTLS() != tcp || wg0.StealthWS() != 0 || p.Host != "edge.example.com" || p.Origin != "http://127.0.0.1:8080" {
+	if wg0.WireGuardTransport() != model.TransportAnchor || wg0.StealthTLS() != tcp || wg0.StealthWS() != 0 || p.Host != "edge.example.com" || p.Origin != "http://127.0.0.1:8080" {
 		t.Fatalf("made as %s on %d: %+v", wg0.WireGuardTransport(), wg0.StealthTLS(), p)
 	}
 	if p.FrontPort != 0 || p.Proxies != "" || p.ClientHeader != "" || p.Cookie != "" {
@@ -61,7 +61,7 @@ func TestAWireGuardTunnelTakesWuiTLSAsTheServer(t *testing.T) {
 		t.Fatalf("the transport's key: %v", err)
 	}
 	if !wg0.StealthOpen() {
-		t.Fatal("wui-tls is the server, and its port is not opened")
+		t.Fatal("anchor is the server, and its port is not opened")
 	}
 	_, info, err := stealth.ReadCertificate(p.Cert)
 	if err != nil || p.CertSource != model.CertSourceOwn || info.Name != "edge.example.com" {
@@ -108,15 +108,15 @@ func TestAWireGuardTunnelTakesWuiTLSAsTheServer(t *testing.T) {
 		t.Fatalf("after a new name: %+v, named %q", q, info2.Name)
 	}
 
-	// wui-ws in its place starts with nothing of wui-tls's.
-	wsT := model.TransportWuiWS
+	// drift in its place starts with nothing of anchor's.
+	wsT := model.TransportDrift
 	front := WSSettings{Host: "front.example.com"}
 	if _, err := svc.Update(ctx, wg0.ID, UpdateInterfaceInput{Transport: &wsT, TransportWS: &front}); err != nil {
 		t.Fatal(err)
 	}
 	db.First(&got, wg0.ID)
 	if r := got.Stealth.V; r.Cert != "" || r.CertKey != "" || r.CertSource != "" || r.ProxyProtocol || r.Key == p.Key || r.Path == p.Path {
-		t.Fatalf("wui-ws after wui-tls: %+v", r)
+		t.Fatalf("drift after anchor: %+v", r)
 	}
 }
 
@@ -127,7 +127,7 @@ func TestAWuiTLSCertificateIsMadeAgainWithTheSameKey(t *testing.T) {
 	ctx := context.Background()
 	seed(t, db, 1)
 	start := time.Now()
-	p := model.StealthParams{Transport: model.TransportWuiTLS, Port: 8443, Host: "edge.example.com", Path: "/abcdefghijklmn", Origin: "http://127.0.0.1:8080"}
+	p := model.StealthParams{Transport: model.TransportAnchor, Port: 8443, Host: "edge.example.com", Path: "/abcdefghijklmn", Origin: "http://127.0.0.1:8080"}
 	if _, err := tlsCertFor(&p, PanelCert{}, start); err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestAWuiTLSTunnelTakesThePanelsCertificate(t *testing.T) {
 
 	// A tunnel on another server never takes it: its key would go there.
 	if _, err := svc.checkStealth(ctx, local.ID, 0, model.ModeStandard, 51820, model.StealthParams{
-		Transport: model.TransportWuiTLS, Port: 8443, Host: "edge.example.com", Origin: "http://127.0.0.1:8080", UsePanelCert: true,
+		Transport: model.TransportAnchor, Port: 8443, Host: "edge.example.com", Origin: "http://127.0.0.1:8080", UsePanelCert: true,
 	}, 0, false); FieldOf(err) != "transportWs.usePanelCert" {
 		t.Fatalf("the panel's certificate for another server: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestTheWuiProfileCarriesWuiTLS(t *testing.T) {
 	ctx := context.Background()
 	c := seed(t, db, 1)
 	key, _ := stealth.NewTransportKey()
-	p := model.StealthParams{Transport: model.TransportWuiTLS, Port: 8443, Host: "edge.example.com", Path: "/media/7f3a9c2e1b", Origin: "http://127.0.0.1:8080", Key: key.String(), KeyAt: 1}
+	p := model.StealthParams{Transport: model.TransportAnchor, Port: 8443, Host: "edge.example.com", Path: "/media/7f3a9c2e1b", Origin: "http://127.0.0.1:8080", Key: key.String(), KeyAt: 1}
 	if _, err := tlsCertFor(&p, PanelCert{}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestTheWuiProfileCarriesWuiTLS(t *testing.T) {
 	tr := prof.Tunnels[0].Transports[0]
 	var acc model.Account
 	db.Where("client_id = ?", c.ID).First(&acc)
-	if tr.Type != stealth.TLS || tr.URL != "wss://edge.example.com:8443/media/7f3a9c2e1b" || tr.Key != key.Public() ||
+	if tr.Type != stealth.Anchored || tr.URL != "wss://edge.example.com:8443/media/7f3a9c2e1b" || tr.Key != key.Public() ||
 		strings.Join(tr.Endpoints, " ") != "edge.example.com:8443" || tr.Secret != acc.StealthSecret ||
 		!tr.SelfSigned || len(tr.Pins) != 1 || tr.Pins[0] != pinOf(t, p).String() {
 		t.Fatalf("transport: %+v", tr)
@@ -287,7 +287,7 @@ func TestTheWuiProfileCarriesWuiTLS(t *testing.T) {
 	}
 }
 
-// wui-plain's name and path, read in the clear, are never wui-tls's.
+// bare's name and path, read in the clear, are never anchor's.
 func TestWuiPlainStaysApartFromWuiTLS(t *testing.T) {
 	db := testDB(t)
 	svc := newInterfaces(t, db)
@@ -306,7 +306,7 @@ func TestWuiPlainStaysApartFromWuiTLS(t *testing.T) {
 		{"its path", WSSettings{Host: "plain.example.com", Origin: "http://127.0.0.1:8080", Path: wg0.Stealth.V.Path}, "transportWs.path"},
 	} {
 		if _, err := svc.Create(ctx, wuiPlain(wgInput("wg1", ports[1], "10.67.0.0/24"), freeTCPPort(t), tc.ws)); FieldOf(err) != tc.field {
-			t.Errorf("wui-plain with wui-tls's %s: %v", tc.what, err)
+			t.Errorf("bare with anchor's %s: %v", tc.what, err)
 		}
 	}
 }
