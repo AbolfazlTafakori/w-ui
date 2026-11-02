@@ -551,9 +551,10 @@ defineExpose({ showError })
               <span class="adv-head-tag">{{ t('interface.sectionAdvancedTag') }}</span>
             </div>
 
-          <!-- WireGuard only: AmneziaWG's disguise. -->
-          <div v-if="!xrayNode && isWireGuard" class="arow16">
-            <div class="acol12">
+          <!-- Mode and transport side by side, as the comp has them. Mode is
+               WireGuard's alone; transport is WireGuard's and OpenVPN's. -->
+          <div v-if="(!xrayNode && isWireGuard) || showsTransport" class="arow16">
+            <div v-if="!xrayNode && isWireGuard" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-mode">{{ t('interface.mode') }} <HelpTip :text="t('interface.modeHint')" /></label>
                 <div class="aselect" :class="{ invalid: fieldName === 'mode' }">
@@ -565,30 +566,7 @@ defineExpose({ showError })
                 <p v-if="fieldName === 'mode'" class="field-error" role="alert">{{ fieldError }}</p>
               </div>
             </div>
-          </div>
-
-          <!-- An AmneziaWG tunnel's profile, every value editable. A tunnel
-               being made gets one drawn for it; it is edited once it exists. -->
-          <AwgEditor
-            v-if="showsAwg && form.awg"
-            v-model="form.awg"
-            v-model:level="form.awgLevel"
-            :drawing="drawing"
-            :editing="editing && props.iface.mode === 'amnezia'"
-            :field-name="fieldName"
-            :field-error="fieldError"
-            @draw="(lv) => drawAwg(lv || form.awgLevel)"
-            @clear="clearError"
-          />
-          <div v-else-if="showsAwg && drawing" class="awg-wait"><AntIcon name="LoadingOutlined" class="spin" />{{ t('interface.awgDrawing') }}</div>
-
-          <!-- OpenVPN and standard WireGuard: the others have one transport,
-               so offering the choice there would be offering a setting that
-               does nothing. WireGuard stays on plain UDP at its own port
-               whatever is chosen; a stealth transport is a second way to the
-               same tunnel, on a port of its own. -->
-          <div v-if="showsTransport" class="arow16">
-            <div class="acol12">
+            <div v-if="showsTransport" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport">{{ t('interface.transport') }} <HelpTip :text="transportHint" /></label>
                 <div class="aselect" :class="{ invalid: fieldName === 'transport' }">
@@ -612,7 +590,11 @@ defineExpose({ showError })
                 <p v-if="fieldName === 'transport'" class="field-error" role="alert">{{ fieldError }}</p>
               </div>
             </div>
-            <div v-if="stealthChosen" class="acol12">
+          </div>
+
+          <!-- The stealth transport's own port, beside the tunnel's. -->
+          <div v-if="stealthChosen" class="arow16">
+            <div class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-transport-port">
                   {{ tlsChosen ? t('interface.transportPortTls') : plainChosen ? t('interface.transportPortPlain') : pollChosen ? t('interface.transportPortPoll') : shapeChosen ? t('interface.transportPortShape') : fakeChosen ? t('interface.transportPortFakeTLS') : wsChosen ? t('interface.transportPortWs') : t('interface.transportPort') }}
@@ -625,6 +607,21 @@ defineExpose({ showError })
               </div>
             </div>
           </div>
+
+          <!-- An AmneziaWG tunnel's profile, every value editable. A tunnel
+               being made gets one drawn for it; it is edited once it exists. -->
+          <AwgEditor
+            v-if="showsAwg && form.awg"
+            v-model="form.awg"
+            v-model:level="form.awgLevel"
+            :drawing="drawing"
+            :editing="editing && props.iface.mode === 'amnezia'"
+            :field-name="fieldName"
+            :field-error="fieldError"
+            @draw="(lv) => drawAwg(lv || form.awgLevel)"
+            @clear="clearError"
+          />
+          <div v-else-if="showsAwg && drawing" class="awg-wait"><AntIcon name="LoadingOutlined" class="spin" />{{ t('interface.awgDrawing') }}</div>
 
           <div v-if="!isXray" class="arow16">
             <div class="acol12">
@@ -1008,7 +1005,8 @@ defineExpose({ showError })
 .enabled-text { font-size: 14px; color: var(--ink); }
 
 /* The header: an icon badge, the title, and a line of context under it. */
-.if-head { align-items: flex-start; }
+.if-head { align-items: center; }
+.if-head .amodal-close { align-self: center; flex: none; }
 .if-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .if-head-badge {
   display: inline-flex; align-items: center; justify-content: center;
