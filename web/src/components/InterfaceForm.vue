@@ -221,10 +221,11 @@ const shapeChosen = computed(() => stealthChosen.value && form.value.transport =
 // wui-faketls is the server on its own port that borrows a real site: no
 // front, no path, no decoy -- only the borrowed site's host:port.
 const fakeChosen = computed(() => stealthChosen.value && form.value.transport === 'wui-faketls')
-// The advanced card gathers a tunnel's mode and transport (and AmneziaWG's
-// disguise), the settings beyond the plain connection. The protocols with a
-// section of their own -- L2TP, IKEv2, OpenConnect -- keep it.
-const showsAdvanced = computed(() => !xrayNode.value && (isWireGuard.value || showsTransport.value))
+// The advanced card gathers routing and MTU, and a WireGuard or OpenVPN
+// tunnel's mode and transport. Xray has none of these; everything else does.
+const showsAdvanced = computed(() => !isXray.value)
+// The line under the protocol select, a word on what it is.
+const protoHint = computed(() => t(isWireGuard.value ? 'interface.protoHintWg' : 'interface.protoHintGeneric'))
 // Whose certificate a saved wui-tls tunnel serves, when it is still the one
 // shown.
 const tlsCertSource = computed(() => (editing.value && tlsChosen.value && props.iface.stealth?.transport === 'wui-tls' ? props.iface.stealth?.certSource || '' : ''))
@@ -440,63 +441,80 @@ defineExpose({ showError })
           <div class="section-head"><span>{{ t('interface.sectionBase') }}</span><span class="section-rule"></span></div>
 
           <div class="arow16">
-            <!-- Fixed once the tunnel exists: every configuration handed out
-                 speaks this protocol. -->
-            <!-- Which server terminates this tunnel. A tunnel on another node is
-                 programmed by the panel running there: this one pushes it the
-                 interface and the peers. Fixed after creation, because moving a
-                 live tunnel between machines would strand every customer on it. -->
-            <div v-if="canChooseNode" class="acol12">
+            <!-- The server that terminates this tunnel. Fixed after creation,
+                 because moving a live tunnel between machines would strand
+                 every customer on it. -->
+            <div v-if="!xrayNode" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="if-node">{{ t('interface.node') }} <HelpTip v-if="editing" :text="t('interface.nodeLocked')" /></label>
-                <div class="aselect" :class="{ disabled: editing, invalid: fieldName === 'nodeId' }">
-                  <select id="if-node" v-model="form.nodeId" data-field="nodeId" :disabled="editing" @change="clearError('nodeId')">
-                    <option v-for="n in nodes" :key="n.id" :value="n.id">
-                      {{ n.name }}{{ n.kind === 'local' ? ` — ${t('interface.thisServer')}` : '' }}
-                    </option>
+                <div class="aselect has-ic" :class="{ disabled: editing || !canChooseNode, invalid: fieldName === 'nodeId' }">
+                  <span class="in-ic"><AntIcon name="CloudServerOutlined" /></span>
+                  <select id="if-node" v-model="form.nodeId" data-field="nodeId" :disabled="editing || !canChooseNode" @change="clearError('nodeId')">
+                    <option v-for="n in nodes" :key="n.id" :value="n.id">{{ n.name }}{{ n.kind === 'local' ? ` — ${t('interface.thisServer')}` : '' }}</option>
                   </select>
                 </div>
                 <p v-if="fieldName === 'nodeId'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else class="field-hint">{{ t('interface.serverHint') }}</p>
               </div>
             </div>
-            <div v-if="!xrayNode" :class="canChooseNode ? 'acol12' : 'acol24'">
+            <div v-if="!xrayNode" class="acol12">
               <div class="aform-item">
-                <label class="aform-label required" for="if-proto">{{ t('client.protocol') }}</label>
-                <div class="aselect" :class="{ disabled: editing, invalid: fieldName === 'protocol' }">
+                <label class="aform-label required proto-label" for="if-proto">
+                  <span>{{ t('client.protocol') }}</span>
+                  <span v-if="isWireGuard" class="proto-badge">{{ t('interface.protoBadge') }}</span>
+                </label>
+                <div class="aselect has-ic" :class="{ disabled: editing, invalid: fieldName === 'protocol' }">
+                  <span class="in-ic ok"><AntIcon name="SafetyCertificateOutlined" /></span>
                   <select id="if-proto" :value="form.protocol" data-field="protocol" :disabled="editing" @change="chooseProtocol($event.target.value)">
                     <option v-for="p in protocols" :key="p" :value="p">{{ t(`protocol.${p}`) }}</option>
                   </select>
                 </div>
                 <p v-if="fieldName === 'protocol'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else class="field-hint">{{ protoHint }}</p>
               </div>
             </div>
 
           </div>
 
           <div class="arow16">
-            <div class="acol12">
+            <div v-if="!isXray" class="acol12">
               <div class="aform-item">
                 <label class="aform-label required" for="if-name">{{ t('interface.name') }}</label>
-                <label class="ainput block" :class="{ invalid: fieldName === 'name' }">
+                <label class="ainput block has-ic" :class="{ invalid: fieldName === 'name' }">
+                  <span class="in-ic mono-ic">#</span>
                   <input id="if-name" v-model="form.name" data-field="name" class="ltr" required @input="clearError('name')" />
                 </label>
                 <p v-if="fieldName === 'name'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else class="field-hint">{{ t('interface.nameHint') }}</p>
               </div>
             </div>
             <div v-if="!isXray" class="acol12">
               <div class="aform-item">
                 <label class="aform-label required" for="if-host">{{ t('interface.endpoint') }} <HelpTip :text="t('interface.endpointHint')" /></label>
-                <label class="ainput block" :class="{ invalid: fieldName === 'endpointHost' }">
+                <label class="ainput block has-ic" :class="{ invalid: fieldName === 'endpointHost' }">
+                  <span class="in-ic"><AntIcon name="LinkOutlined" /></span>
                   <input id="if-host" v-model="form.endpointHost" data-field="endpointHost" class="ltr" placeholder="vpn.example.com" required @input="clearError('endpointHost')" />
                 </label>
                 <p v-if="fieldName === 'endpointHost'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else class="field-hint">{{ t('interface.endpointSub') }}</p>
               </div>
             </div>
           </div>
 
           <div v-if="!isXray" class="section-head"><span>{{ t('interface.sectionNetwork') }}</span><span class="section-rule"></span></div>
 
-          <div class="arow16">
+          <div v-if="!isXray" class="arow16">
+            <div class="acol12">
+              <div class="aform-item">
+                <label class="aform-label required" for="if-subnet">{{ t('interface.subnet') }} <HelpTip :text="t('interface.subnetHint')" /></label>
+                <label class="ainput block has-ic" :class="{ invalid: fieldName === 'subnet' }">
+                  <span class="in-ic"><AntIcon name="DeploymentUnitOutlined" /></span>
+                  <input id="if-subnet" v-model="form.subnet" data-field="subnet" class="ltr" required @input="clearError('subnet')" />
+                </label>
+                <p v-if="fieldName === 'subnet'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else class="field-hint">{{ t('interface.subnetSub') }}</p>
+              </div>
+            </div>
             <div class="acol6">
               <div class="aform-item">
                 <label class="aform-label required" for="if-port">{{ t('interface.port') }} <HelpTip v-if="fixedPort" :text="t(isPPTP ? 'interface.pptpPortHint' : isIKEv2 ? 'interface.ikev2PortHint' : 'interface.l2tpPortHint')" /></label>
@@ -505,25 +523,14 @@ defineExpose({ showError })
                 </label>
                 <p v-if="fieldName === 'listenPort'" class="field-error" role="alert">{{ fieldError }}</p>
                 <p v-else-if="ownPort" class="aalert warning slim port-own"><AntIcon name="WarningOutlined" /><span>{{ t('interface.portNotStandard', { port: form.listenPort, std: standardPort }) }}</span></p>
+                <p v-else class="field-hint">{{ t('interface.portSub') }}</p>
               </div>
             </div>
-            <div v-if="!isXray" class="acol6">
+            <div class="acol6">
               <div class="aform-item">
-                <label class="aform-label" for="if-mtu">MTU</label>
-                <label class="ainput number" :class="{ invalid: fieldName === 'mtu' }">
-                  <input id="if-mtu" v-model="form.mtu" data-field="mtu" type="number" min="576" max="9000" class="ltr" @input="clearError('mtu'); mtuTouched = true" />
-                </label>
-                <p v-if="fieldName === 'mtu'" class="field-error" role="alert">{{ fieldError }}</p>
-                <p v-else-if="showsAwg && linkMtu" class="aform-extra">{{ t('interface.awgLinkMtu').replace('{n}', linkMtu) }}</p>
-              </div>
-            </div>
-            <div v-if="!isXray" class="acol12">
-              <div class="aform-item">
-                <label class="aform-label required" for="if-subnet">{{ t('interface.subnet') }} <HelpTip :text="t('interface.subnetHint')" /></label>
-                <label class="ainput block" :class="{ invalid: fieldName === 'subnet' }">
-                  <input id="if-subnet" v-model="form.subnet" data-field="subnet" class="ltr" required @input="clearError('subnet')" />
-                </label>
-                <p v-if="fieldName === 'subnet'" class="field-error" role="alert">{{ fieldError }}</p>
+                <label class="aform-label" for="if-nat">{{ t('interface.natInterface') }}</label>
+                <label class="ainput block"><input id="if-nat" v-model="form.natInterface" class="ltr" placeholder="eth0" /></label>
+                <p class="field-hint">{{ t('interface.egressSub') }}</p>
               </div>
             </div>
           </div>
@@ -531,24 +538,16 @@ defineExpose({ showError })
           <XrayInboundForm v-if="xrayNode" ref="xin" :node="chosenNode" :port="form.listenPort"
             @port="(v) => (form.listenPort = v)" @name="(v) => (form.name = v)" @error="(m) => (fieldError = m)" />
 
-          <div v-if="!isXray" class="arow16">
-            <div class="acol12">
-              <div class="aform-item">
-                <label class="aform-label" for="if-dns">DNS</label>
-                <label class="ainput block"><input id="if-dns" v-model="form.dns" class="ltr" placeholder="1.1.1.1" /></label>
-              </div>
-            </div>
-            <div class="acol12">
-              <div class="aform-item">
-                <label class="aform-label" for="if-nat">{{ t('interface.natInterface') }}</label>
-                <label class="ainput block"><input id="if-nat" v-model="form.natInterface" class="ltr" placeholder="eth0" /></label>
-              </div>
-            </div>
-          </div>
-
           <div v-if="showsAdvanced" class="adv-box">
             <div class="adv-head">
-              <span class="adv-head-main"><AntIcon name="ToolOutlined" />{{ t('interface.sectionAdvanced') }}</span>
+              <span class="adv-head-main">
+                <svg class="adv-ic" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="4" y1="7" x2="20" y2="7" /><circle cx="9" cy="7" r="2.3" fill="var(--surface-2)" />
+                  <line x1="4" y1="12" x2="20" y2="12" /><circle cx="15" cy="12" r="2.3" fill="var(--surface-2)" />
+                  <line x1="4" y1="17" x2="20" y2="17" /><circle cx="8" cy="17" r="2.3" fill="var(--surface-2)" />
+                </svg>
+                {{ t('interface.sectionAdvanced') }}
+              </span>
               <span class="adv-head-tag">{{ t('interface.sectionAdvancedTag') }}</span>
             </div>
 
@@ -623,6 +622,30 @@ defineExpose({ showError })
                   <input id="if-transport-port" v-model="form.transportPort" data-field="transportPort" type="number" min="1" max="65535" class="ltr" @input="clearError('transportPort')" />
                 </label>
                 <p v-if="fieldName === 'transportPort'" class="field-error" role="alert">{{ fieldError }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="!isXray" class="arow16">
+            <div class="acol12">
+              <div class="aform-item">
+                <label class="aform-label" for="if-dns">DNS</label>
+                <label class="ainput block has-ic">
+                  <span class="in-ic"><AntIcon name="GlobalOutlined" /></span>
+                  <input id="if-dns" v-model="form.dns" class="ltr" placeholder="1.1.1.1" />
+                </label>
+                <p class="field-hint">{{ t('interface.dnsSub') }}</p>
+              </div>
+            </div>
+            <div class="acol12">
+              <div class="aform-item">
+                <label class="aform-label" for="if-mtu">MTU</label>
+                <label class="ainput number" :class="{ invalid: fieldName === 'mtu' }">
+                  <input id="if-mtu" v-model="form.mtu" data-field="mtu" type="number" min="576" max="9000" class="ltr" @input="clearError('mtu'); mtuTouched = true" />
+                </label>
+                <p v-if="fieldName === 'mtu'" class="field-error" role="alert">{{ fieldError }}</p>
+                <p v-else-if="showsAwg && linkMtu" class="aform-extra">{{ t('interface.awgLinkMtu').replace('{n}', linkMtu) }}</p>
+                <p v-else class="field-hint">{{ t('interface.mtuSub') }}</p>
               </div>
             </div>
           </div>
@@ -941,7 +964,7 @@ defineExpose({ showError })
           <button class="abtn" type="button" @click="emit('close')">{{ t('action.cancel') }}</button>
           <button class="abtn primary" type="submit" form="iface-form" :disabled="busy">
             <AntIcon v-if="busy" name="LoadingOutlined" class="spin" />
-            <template v-else>{{ editing ? t('action.save') : t('action.create') }}</template>
+            <template v-else><AntIcon v-if="!editing" name="PlusOutlined" />{{ editing ? t('action.save') : t('action.create') }}</template>
           </button>
         </div>
       </div>
@@ -1029,16 +1052,46 @@ html[lang='fa'] .if-head-sub { unicode-bidi: plaintext; }
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 14px;
 }
-.adv-head-main { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
-.adv-head-main .anticon { color: var(--accent-text); font-size: 15px; }
+.adv-head-main { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.adv-head-main .adv-ic { color: var(--accent-text); flex: none; }
 .adv-head-tag {
-  font-size: 10px; letter-spacing: 0.04em;
+  font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--faint); background: var(--surface);
   border: 1px solid var(--line);
   padding: 2px 8px; border-radius: 5px;
   font-family: var(--mono);
 }
 html[lang='fa'] .adv-head-tag { font-family: inherit; }
+
+/* A line of grey helper text under a field, where no error is shown. */
+.field-hint { margin: 5px 0 0; font-size: 11px; line-height: 15px; color: var(--faint); }
+html[lang='fa'] .field-hint { unicode-bidi: plaintext; }
+
+/* An icon tucked inside an input or select, with the control padded to clear
+   it. The page is not mirrored, so the icon stays on the left. */
+.ainput.has-ic, .aselect.has-ic { position: relative; }
+.ainput.has-ic > .in-ic, .aselect.has-ic > .in-ic {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--faint); font-size: 15px; pointer-events: none; z-index: 1;
+}
+.aselect.has-ic > .in-ic { left: 12px; }
+.in-ic.ok { color: var(--tag-green-ink); }
+.in-ic.mono-ic { font-family: var(--mono); font-size: 13px; }
+.ainput.has-ic > input { padding-inline-start: 34px; }
+.aselect.has-ic > select { padding-inline-start: 36px; }
+
+/* The "Kernel Accel" badge at the end of the protocol label. */
+.proto-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.proto-badge {
+  font-size: 10px; letter-spacing: 0.02em;
+  color: var(--tag-green-ink);
+  background: var(--tag-green-bg, color-mix(in srgb, var(--tag-green-ink) 12%, transparent));
+  border: 1px solid var(--tag-green-line, color-mix(in srgb, var(--tag-green-ink) 30%, transparent));
+  padding: 1px 7px; border-radius: 5px;
+  font-family: var(--mono); font-weight: 500;
+}
+html[lang='fa'] .proto-badge { font-family: inherit; }
 
 /* The footer: a status on one side, the actions on the other. */
 .if-foot { justify-content: space-between; }
