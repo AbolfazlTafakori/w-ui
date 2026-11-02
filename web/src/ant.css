@@ -461,6 +461,17 @@ th.sorted.asc .sorter .up, th.sorted.desc .sorter .down { color: var(--accent-te
   cursor: pointer;
 }
 .aselect select:focus { outline: none; box-shadow: none; }
+/* The native drop-down list: themed to our surface and left-aligned, so it is
+   not the browser's own grey box. */
+.aselect select option {
+  background: var(--surface);
+  color: var(--ink);
+  text-align: start;
+}
+.aselect select option:checked {
+  background: var(--accent-soft, var(--surface-2));
+  color: var(--ink);
+}
 .aselect::after {
   content: '';
   position: absolute;
