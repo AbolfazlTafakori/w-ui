@@ -27,6 +27,10 @@ const props = defineProps({
   admin: { type: Object, default: null },
   // Group names already on the panel, offered for the label.
   groupNames: { type: Array, default: () => [] },
+  // The role a new operator is fixed to, from the page that opened the form:
+  // 'admin' or 'reseller'. Set, the role picker is gone -- the resellers page
+  // never offers the admin role, and the admins page never offers reseller.
+  forceRole: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'saved'])
 
@@ -71,7 +75,7 @@ const form = ref({
   // box that looked full would be saved unchanged and read as "the
   // password still works" when it had just been cleared.
   password: a ? '' : newPassword(),
-  role: a ? a.role : 'reseller',
+  role: a ? a.role : (props.forceRole || 'reseller'),
   enabled: a ? !!a.enabled : true,
   clientLimit: a?.clientLimit || '',
   quota: q.value,
@@ -98,7 +102,15 @@ const form = ref({
 // chooses the role -- every operator they create is a reseller -- so the
 // picker, and the admin option with it, is the owner's alone.
 const ownerView = computed(() => !!store.admin?.managesAdmins)
+// The picker shows only when the page did not fix the role and the viewer is
+// the owner. Each operator page fixes the role, so the picker stays hidden and
+// neither page offers the other's role.
+const showRolePicker = computed(() => !props.forceRole && ownerView.value)
 const hasCeiling = computed(() => form.value.role !== 'owner')
+const heading = computed(() => {
+  if (form.value.role === 'admin') return editing.value ? t('admins.editAdmin') : t('admins.addAdmin')
+  return editing.value ? t('admins.edit') : t('admins.add')
+})
 const isReseller = computed(() => form.value.role === 'reseller')
 const isAdmin = computed(() => form.value.role === 'admin')
 // The server picker is moot for an admin let loose on every tunnel.
@@ -225,7 +237,7 @@ async function submit() {
   <div class="amodal-backdrop" @click.self="emit('close')">
     <div class="amodal w720" role="dialog" aria-modal="true" aria-labelledby="rf-title">
       <div class="amodal-head">
-        <h2 id="rf-title" class="amodal-title">{{ editing ? t('admins.edit') : t('admins.add') }}</h2>
+        <h2 id="rf-title" class="amodal-title">{{ heading }}</h2>
         <button class="amodal-close" :aria-label="t('action.cancel')" @click="emit('close')"><AntIcon name="CloseOutlined" /></button>
       </div>
 
@@ -268,7 +280,7 @@ async function submit() {
           </div>
 
           <div class="arow16">
-            <div v-if="ownerView" class="acol8">
+            <div v-if="showRolePicker" class="acol8">
               <div class="aform-item">
                 <label class="aform-label" for="rf-role">{{ t('admins.roleColumn') }} <HelpTip :text="isReseller ? t('admins.role.resellerHint') : t('admins.role.adminHint')" /></label>
                 <div class="aselect"><select id="rf-role" v-model="form.role">

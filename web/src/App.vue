@@ -36,9 +36,12 @@ const nav = [
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true, menu: 'clients' },
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
   { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true, menu: 'groups' },
-  // The operator list, already named "Resellers": for an admin the backend
-  // narrows it to their own resellers, so the page reads as theirs.
-  { to: '/admins', key: 'nav.admins', icon: 'ShopOutlined', menu: 'resellers' },
+  // Two tiers, two pages. Admins is the owner's alone -- no menu grant and no
+  // sells flag, so only the owner sees it. Resellers is the owner's and an
+  // admin's (the backend narrows it to their own), gated by the resellers
+  // page grant for an admin.
+  { to: '/admins', key: 'nav.admins', icon: 'SafetyOutlined' },
+  { to: '/resellers', key: 'nav.resellers', icon: 'ShopOutlined', menu: 'resellers' },
   { to: '/nodes', key: 'nav.nodes', icon: 'ClusterOutlined' },
   { to: '/hosts', key: 'nav.hosts', icon: 'GlobalOutlined' },
   { to: '/outbounds', key: 'nav.outbounds', icon: 'ExportOutlined' },

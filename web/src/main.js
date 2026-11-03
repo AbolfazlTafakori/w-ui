@@ -73,8 +73,11 @@ const router = createRouter({
     { path: '/sharing', name: 'sharing', component: SharingView },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },
-    // Who sells on this panel, in the menu proper rather than under settings.
-    { path: '/admins', name: 'admins', component: AdminsView },
+    // Who runs and sells on this panel, each tier its own page: admins (the
+    // owner's own second tier) and resellers. The same list, filtered to one
+    // role, so each page is one job.
+    { path: '/admins', name: 'admins', component: AdminsView, props: { kind: 'admin' } },
+    { path: '/resellers', name: 'resellers', component: AdminsView, props: { kind: 'reseller' } },
     // Where it used to live. Kept so a bookmark or an open tab still lands on
     // the page rather than on a settings section that does not exist -- and
     // ahead of the :tab route below, which would otherwise swallow it.

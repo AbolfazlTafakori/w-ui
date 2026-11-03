@@ -30,6 +30,21 @@ import ResellerCards from '../components/resellers/ResellerCards.vue'
 import RemoveDialog from '../components/resellers/RemoveDialog.vue'
 import BulkDialog from '../components/resellers/BulkDialog.vue'
 
+// Which tier this page is: the admins the owner creates, or the resellers.
+// The same list and the same controls, filtered to one role.
+const props = defineProps({
+  kind: { type: String, default: 'reseller' },
+})
+
+// The labels that name the tier: the title, the add button, and the empty
+// line. Everything else -- the status filters, the bulk actions -- reads the
+// same for both.
+const L = computed(() =>
+  props.kind === 'admin'
+    ? { title: t('nav.admins'), add: t('admins.addAdmin'), none: t('admins.noneAdmins') }
+    : { title: t('nav.resellers'), add: t('admins.add'), none: t('admins.none') },
+)
+
 const isMobile = useIsMobile()
 const route = useRoute()
 const router = useRouter()
@@ -67,8 +82,9 @@ async function load({ quiet = false } = {}) {
 }
 onMounted(load)
 
-// Everybody but the owner.
-const rows = computed(() => operators.value.filter((a) => a.role !== 'owner'))
+// This tier only: the admins the owner manages, or the resellers. Never the
+// owner, who is a row with every column empty.
+const rows = computed(() => operators.value.filter((a) => a.role === props.kind))
 
 // --- Finding one. -----------------------------------------------------------
 //
@@ -311,8 +327,8 @@ async function saved() {
         <div class="acard-body">
           <div class="arow six">
             <div class="acol">
-              <div class="stat-title">{{ t('nav.admins') }}</div>
-              <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="ShopOutlined" /></span><span>{{ nf(summary.total) }}</span></div>
+              <div class="stat-title">{{ L.title }}</div>
+              <div class="stat-content ltr"><span class="stat-prefix"><AntIcon :name="kind === 'admin' ? 'SafetyOutlined' : 'ShopOutlined'" /></span><span>{{ nf(summary.total) }}</span></div>
             </div>
             <div class="acol">
               <button type="button" class="stat-button" :class="{ on: statusFilter === 'active' }" :aria-pressed="statusFilter === 'active'" @click="showBucket('active')">
@@ -348,7 +364,7 @@ async function saved() {
         <div class="acard-head">
           <div class="card-toolbar">
             <button v-if="!selected.size" class="abtn primary" :disabled="!servers.length" :title="servers.length ? '' : t('interface.noneYet')" @click="formFor = {}">
-              <AntIcon name="PlusOutlined" /><span>{{ t('admins.add') }}</span>
+              <AntIcon name="PlusOutlined" /><span>{{ L.add }}</span>
             </button>
             <template v-else>
               <span class="atag blue closable" style="padding: 4px 8px; font-size: 13px">
@@ -402,8 +418,8 @@ async function saved() {
           </div>
 
           <div v-if="!rows.length" class="resellers-empty">
-            <AntIcon name="ShopOutlined" :size="32" />
-            <div>{{ t('admins.none') }}</div>
+            <AntIcon :name="kind === 'admin' ? 'SafetyOutlined' : 'ShopOutlined'" :size="32" />
+            <div>{{ L.none }}</div>
           </div>
           <div v-else-if="!shown.length" class="resellers-empty">
             <AntIcon name="SearchOutlined" :size="32" />
@@ -450,6 +466,7 @@ async function saved() {
     :interfaces="servers"
     :admin="formFor.admin || null"
     :group-names="groupNames"
+    :force-role="kind"
     @close="formFor = null"
     @saved="saved"
   />
