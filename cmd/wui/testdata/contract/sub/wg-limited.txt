@@ -6,7 +6,7 @@ Profile-Update-Interval: 1
 Profile-Title: base64:Vy1VSQ==
 Cache-Control: no-store
 
---- wg-limit-user-1.conf (2026-10-01T10:54:40Z)
+--- wg-limit-user-1.conf (<time>)
 [Interface]
 PrivateKey = kC8xzUUteuauHXA/InslXIDUuCYsLauTILrvX2ZtM3E=
 Address = 10.71.0.2/32
@@ -19,7 +19,7 @@ PresharedKey = a/WxX0z6RgzRlIOYy95ANfLwHVnL1jPfDrpXmwTfOTs=
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = vpn.example.test:51901
 PersistentKeepalive = 25
---- wg-limit-user-2.conf (2026-10-01T10:54:40Z)
+--- wg-limit-user-2.conf (<time>)
 [Interface]
 PrivateKey = yGAo3RL+cDygFhdj1bpz9DsnSjDQO+YMN9gD1X/IW1k=
 Address = 10.71.0.3/32

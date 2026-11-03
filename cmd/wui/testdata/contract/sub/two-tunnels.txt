@@ -6,7 +6,7 @@ Profile-Update-Interval: 1
 Profile-Title: base64:Vy1VSQ==
 Cache-Control: no-store
 
---- fx-wg-user-1.conf (2026-10-01T10:54:40Z)
+--- fx-wg-user-1.conf (<time>)
 [Interface]
 PrivateKey = KIXPke1xDOguHmqhhZ2z7Yc6pUt7aHT6l8rxhfWEa3s=
 Address = 10.71.0.6/32
@@ -19,7 +19,7 @@ PresharedKey = L6BICDeK0cpdQeJEjsVWlgr/6sWS6QuK86/pK3rmnHs=
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = vpn.example.test:51901
 PersistentKeepalive = 25
---- fx-wg-user-2.conf (2026-10-01T10:54:40Z)
+--- fx-wg-user-2.conf (<time>)
 [Interface]
 PrivateKey = mG66r0UiyRPZGEbEEaiBbpHWSlsaJSOWN3vY4n5Nrmg=
 Address = 10.71.0.7/32
@@ -32,7 +32,7 @@ PresharedKey = 9SiVfL9YD/T4QpsVhujHiB3/zjPaFvK8L7/fFNEgb0I=
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = vpn.example.test:51901
 PersistentKeepalive = 25
---- fx-wg-user-3.conf (2026-10-01T10:54:40Z)
+--- fx-wg-user-3.conf (<time>)
 [Interface]
 PrivateKey = YG43WB7D+3iTgXrvVPLkq61/tU2pFdeZeQzae5qE53k=
 Address = 10.71.0.8/32
@@ -45,7 +45,7 @@ PresharedKey = Mlak7wey2ZOxEkKipZU5mdTkqNWLSln7CsZPABzMN/E=
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = vpn.example.test:51901
 PersistentKeepalive = 25
---- fx-awg-user-1.conf (2026-10-01T10:54:40Z)
+--- fx-awg-user-1.conf (<time>)
 [Interface]
 PrivateKey = KJ/6YZWZYPw8Ay53P8tcEQ+fgfHNDjbLSCIeYjexPFE=
 Address = 10.72.0.3/32
@@ -71,7 +71,7 @@ PresharedKey = vHUItcbqv4ZAM1F0kkk5z8mr8qtQ94kAoaM20TtYMEU=
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = vpn.example.test:51902
 PersistentKeepalive = 25
---- fx-awg-user-2.conf (2026-10-01T10:54:40Z)
+--- fx-awg-user-2.conf (<time>)
 [Interface]
 PrivateKey = UKMqe9rJ6yN6h202J/MeDf3mT7GtjYFrLbvtAMI2/HQ=
 Address = 10.72.0.4/32
@@ -97,7 +97,7 @@ PresharedKey = AUNKPV3zht0Mr2PU6C1m3JOeeswAvjJxER/1OivqD0Y=
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = vpn.example.test:51902
 PersistentKeepalive = 25
---- fx-awg-user-3.conf (2026-10-01T10:54:40Z)
+--- fx-awg-user-3.conf (<time>)
 [Interface]
 PrivateKey = 0Bg66ergEQQroRVjzMJbYZ6MOa3jM5rXDYTZSepuhk8=
 Address = 10.72.0.5/32

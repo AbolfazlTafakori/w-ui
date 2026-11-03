@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/abolfazl/w-ui/internal/upgradecheck"
@@ -199,7 +198,10 @@ func subscriptionAnswer(f *upgradecheck.Fetched) []byte {
 		return b.Bytes()
 	}
 	for _, zf := range zr.File {
-		fmt.Fprintf(&b, "--- %s (%s)\n", zf.Name, zf.Modified.UTC().Format(time.RFC3339))
+		// The entry's modified time is the moment the zip was built, not
+		// anything in the data: masked, like the clock fields in the JSON, so
+		// the golden does not drift with the day it is run.
+		fmt.Fprintf(&b, "--- %s (%s)\n", zf.Name, "<time>")
 		rc, err := zf.Open()
 		if err != nil {
 			fmt.Fprintf(&b, "does not open: %v\n", err)
