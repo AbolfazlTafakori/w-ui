@@ -231,6 +231,7 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 	}
 
 	admin.InterfaceIDs = idset.Unique(in.InterfaceIDs)
+	admin.MenuIDs = menus
 	s.log.Info("operator created", "username", admin.Username, "role", admin.Role)
 	return &admin, nil
 }
