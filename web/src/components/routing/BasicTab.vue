@@ -48,71 +48,9 @@ const SERVICE_SUGGESTIONS = [
   { value: 'reddit.com', label: 'Reddit' },
   { value: 'speedtest.net', label: 'Speedtest' },
 ]
-
-// The split list takes both addresses and names, so it offers both sets.
-const splitSuggestions = computed(() => [...ipSuggestions.value, ...SERVICE_SUGGESTIONS])
-
-// The line under the list that spells out what the chosen mode does, so an
-// operator is never guessing which way round "split" runs.
-const splitHint = computed(() => {
-  if (basic.value.splitMode === 'include') return t('routing.splitIncludeDesc')
-  if (basic.value.splitMode === 'exclude') return t('routing.splitExcludeDesc')
-  return t('routing.splitOffDesc')
-})
 </script>
 
 <template>
-  <div class="setting-list mb-12">
-    <div class="setting-item">
-      <div class="setting-meta">
-        <div class="setting-title">{{ t('routing.splitMode') }}</div>
-        <div class="setting-desc">{{ splitHint }}</div>
-      </div>
-      <div class="setting-ctl">
-        <select id="split-mode" v-model="basic.splitMode">
-          <option value="">{{ t('routing.splitOff') }}</option>
-          <option value="exclude">{{ t('routing.splitExclude') }}</option>
-          <option value="include">{{ t('routing.splitInclude') }}</option>
-        </select>
-        <p v-if="fieldError.splitMode" class="field-error">{{ fieldError.splitMode }}</p>
-      </div>
-    </div>
-
-    <template v-if="basic.splitMode">
-      <div class="setting-item">
-        <div class="setting-meta">
-          <div class="setting-title">{{ t('routing.splitOutbound') }}</div>
-          <div class="setting-desc">{{ t('routing.splitOutboundHint') }}</div>
-        </div>
-        <div class="setting-ctl">
-          <select id="split-ob" v-model="basic.splitOutbound">
-            <option value="">{{ t('routing.splitOutboundDefault') }}</option>
-            <option
-              v-for="o in outbounds"
-              :key="o.id"
-              :value="o.tag"
-              :disabled="!o.enabled || o.tag === 'blocked'"
-            >
-              {{ o.tag }}
-            </option>
-          </select>
-          <p v-if="fieldError.splitOutbound" class="field-error">{{ fieldError.splitOutbound }}</p>
-        </div>
-      </div>
-
-      <div class="setting-item">
-        <div class="setting-meta">
-          <div class="setting-title">{{ t('routing.splitList') }}</div>
-          <div class="setting-desc">{{ t('routing.splitListHint') }}</div>
-        </div>
-        <div class="setting-ctl">
-          <TagInput v-model="basic.splitList" :suggestions="splitSuggestions" />
-          <p v-if="fieldError.splitList" class="field-error">{{ fieldError.splitList }}</p>
-        </div>
-      </div>
-    </template>
-  </div>
-
   <div class="alert warning block centered mb-12">
     <Icon name="alert" :size="14" />
     <span>{{ t('routing.blockNotice') }}</span>

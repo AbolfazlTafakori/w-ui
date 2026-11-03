@@ -10,6 +10,7 @@ import BasicTab from '../components/routing/BasicTab.vue'
 import RulesTab from '../components/routing/RulesTab.vue'
 import BalancersTab from '../components/routing/BalancersTab.vue'
 import TesterTab from '../components/routing/TesterTab.vue'
+import SplitTunnelTab from '../components/routing/SplitTunnelTab.vue'
 import { useIsMobile } from '../lib/mobile.js'
 
 // The routing page, laid out the way the classic panel lays its own out: the Save bar
@@ -29,6 +30,7 @@ const tabs = [
   { key: 'rules', icon: 'menu' },
   { key: 'balancers', icon: 'swap' },
   { key: 'tester', icon: 'zap' },
+  { key: 'split', icon: 'route' },
 ]
 const tab = computed({
   get: () => (tabs.some((x) => x.key === route.hash.slice(1)) ? route.hash.slice(1) : 'basic'),
@@ -64,6 +66,9 @@ const basic = ref({
   directDomains: [],
   ipv4Domains: [],
   defaultOutbound: 'direct',
+  splitMode: '',
+  splitList: [],
+  splitOutbound: '',
 })
 // What was loaded, so Save can be offered only when something actually changed.
 const clean = ref('')
@@ -118,7 +123,8 @@ async function save() {
   } catch (err) {
     if (err.field) {
       fieldError.value = { [err.field]: err.message }
-      tab.value = 'basic'
+      // Send the operator to the tab that owns the field it failed on.
+      tab.value = err.field.startsWith('split') ? 'split' : 'basic'
     } else notify(err.message, 'error')
   } finally {
     saving.value = false
@@ -222,6 +228,11 @@ function showDecidingRule() {
         <KeepAlive>
           <TesterTab v-if="tab === 'tester'" :interfaces="interfaces" @decided="(id) => (decidedBy = id)" @show-rule="showDecidingRule" />
         </KeepAlive>
+
+        <!-- ── Split Tunnel ──────────────────────────────────────────── -->
+        <template v-if="tab === 'split'">
+          <SplitTunnelTab v-model:basic="basic" :outbounds="outbounds" :groups="groups" :field-error="fieldError" />
+        </template>
       </div>
     </div>
 
