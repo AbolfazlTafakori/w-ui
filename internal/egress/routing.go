@@ -32,6 +32,25 @@ const (
 	keyDefaultOutbound = "routing.defaultOutbound"
 	keyIPv4Domains     = "routing.ipv4Domains"
 	keyFailClosed      = "routing.failClosed"
+	keySplitMode       = "routing.splitMode"
+	keySplitList       = "routing.splitList"
+	keySplitOutbound   = "routing.splitOutbound"
+)
+
+// Split-tunnel modes. A whole-panel routing switch that turns one list into a
+// policy, either way round:
+//
+//   - SplitExclude sends the list direct and tunnels everything else, the
+//     classic "these bypass the VPN" bypass list.
+//   - SplitInclude tunnels only the list and drops everything else, the
+//     "only these go through the VPN" allowlist.
+//
+// SplitOff leaves the Basic page's own fields to describe the routing, as they
+// did before the switch existed.
+const (
+	SplitOff     = ""
+	SplitInclude = "include"
+	SplitExclude = "exclude"
 )
 
 // domainRefresh is how often blocked and pinned names are looked up again.
@@ -60,6 +79,20 @@ type BasicRouting struct {
 	// outbound unreachable, rather than quietly sent from the server's own
 	// address -- which is the address the outbound exists to hide.
 	FailClosed bool `json:"failClosed"`
+
+	// SplitMode turns the lists above into a whole-panel split tunnel:
+	// SplitOff leaves routing as the other fields describe it, SplitExclude
+	// sends SplitList direct and tunnels the rest, SplitInclude tunnels only
+	// SplitList and drops the rest.
+	SplitMode string `json:"splitMode"`
+	// SplitList are the destinations the split tunnel names: domains,
+	// addresses, ranges, "geoip:" entries or named groups, in one list the
+	// way a customer would read it.
+	SplitList []string `json:"splitList"`
+	// SplitOutbound is the outbound that counts as "the tunnel" while a split
+	// mode is on. Empty falls back to DefaultOutbound, so the operator who
+	// has only one exit need not pick it twice.
+	SplitOutbound string `json:"splitOutbound"`
 }
 
 // Routing owns the policy: what is blocked, what is pinned, and which outbound
@@ -146,6 +179,9 @@ func (s *Routing) Basic(ctx context.Context) (BasicRouting, error) {
 	} else {
 		out.FailClosed = true
 	}
+	out.SplitMode = normalizeSplitMode(stored[keySplitMode])
+	out.SplitList = listfield.Split(stored[keySplitList])
+	out.SplitOutbound = strings.TrimSpace(stored[keySplitOutbound])
 	// The default is the first outbound in the list, as Xray's is: moving a
 	// hop to the top of the outbounds page makes it carry everything not
 	// matched by a rule. Nothing is stored for it; the order is the setting.
@@ -216,6 +252,42 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 		}
 	}
 
+	splitMode := normalizeSplitMode(in.SplitMode)
+	if in.SplitMode != "" && splitMode == SplitOff && strings.TrimSpace(in.SplitMode) != SplitOff {
+		return BasicRouting{}, invalidField("splitMode",
+			"%q is not a split-tunnel mode; use \"include\", \"exclude\" or none", in.SplitMode)
+	}
+	splitOutbound := strings.TrimSpace(in.SplitOutbound)
+	if splitMode != SplitOff {
+		addrTargets, domains := partitionSplit(in.SplitList)
+		if _, err := routing.ParseTargets(addrTargets, s.countries); err != nil {
+			return BasicRouting{}, fieldWrap("splitList", err)
+		}
+		for _, d := range domains {
+			if err := checkDomain(d); err != nil {
+				return BasicRouting{}, invalidField("splitList",
+					"%q is not a domain name or an address", d)
+			}
+		}
+		// The tunnel has to be somewhere traffic can actually go. Blocked is
+		// not an exit, and a switched-off outbound would route nothing.
+		if splitOutbound != "" && splitOutbound != TagDirect {
+			if splitOutbound == TagBlocked {
+				return BasicRouting{}, invalidField("splitOutbound",
+					"the tunnel cannot be the blocked outbound; pick an exit traffic can leave through")
+			}
+			if enabled, ok, err := s.targetExists(ctx, splitOutbound); err != nil {
+				return BasicRouting{}, err
+			} else if !ok {
+				return BasicRouting{}, invalidField("splitOutbound",
+					"there is no outbound or balancer called %q", splitOutbound)
+			} else if !enabled {
+				return BasicRouting{}, invalidField("splitOutbound",
+					"%q is switched off, so the split tunnel would route nothing", splitOutbound)
+			}
+		}
+	}
+
 	tag := strings.TrimSpace(in.DefaultOutbound)
 	if tag == "" {
 		tag = TagDirect
@@ -240,6 +312,9 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 		keyIPv4Domains:     listfield.Join(in.IPv4Domains),
 		keyDefaultOutbound: tag,
 		keyFailClosed:      strconv.FormatBool(in.FailClosed),
+		keySplitMode:       splitMode,
+		keySplitList:       listfield.Join(in.SplitList),
+		keySplitOutbound:   splitOutbound,
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -589,6 +664,17 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	}
 	s.mu.RUnlock()
 
+	// Split tunnel. In exclude mode the list is pinned direct, exactly like
+	// the Direct lists above; in include mode it is marked for the tunnel
+	// further down, next to the rules. The addresses are resolved once here.
+	var splitAddrs []netip.Prefix
+	if basic.SplitMode == SplitExclude || basic.SplitMode == SplitInclude {
+		splitAddrs = s.splitPrefixes(basic)
+		if basic.SplitMode == SplitExclude {
+			p.DirectAddrs = append(p.DirectAddrs, splitAddrs...)
+		}
+	}
+
 	db := s.db.WithContext(ctx)
 
 	// The tunnel subnets. Marking is confined to these, which is what keeps
@@ -670,14 +756,24 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 		byTag[b.Tag] = target{mark: b.Mark, enabled: b.Enabled && (hop.Device != "" || len(hop.Nexthops) > 0)}
 	}
 
-	if def, ok := byTag[basic.DefaultOutbound]; ok && def.enabled {
-		p.DefaultMark = def.mark
-	} else if basic.DefaultOutbound != TagDirect && basic.DefaultOutbound != TagBlocked && basic.FailClosed {
-		// The chosen exit is down. Nothing unmatched leaves until it is back:
-		// a customer's connection failing is what they would see from an Xray
-		// whose outbound is unreachable, and it is better than every one of
-		// them suddenly appearing from the server's own address.
+	// In include mode only the list is tunnelled, so there is no default exit:
+	// everything the list does not name is dropped, and the list's own mark is
+	// set with the rules below. Otherwise the default is the tunnel in exclude
+	// mode and the operator's chosen outbound the rest of the time.
+	if basic.SplitMode == SplitInclude {
 		p.DropUnmatched = true
+	} else {
+		defaultTag := s.tunnelTag(basic)
+		if def, ok := byTag[defaultTag]; ok && def.enabled {
+			p.DefaultMark = def.mark
+		} else if defaultTag != TagDirect && defaultTag != TagBlocked && basic.FailClosed {
+			// The chosen exit is down. Nothing unmatched leaves until it is
+			// back: a customer's connection failing is what they would see
+			// from an Xray whose outbound is unreachable, and it is better
+			// than every one of them suddenly appearing from the server's own
+			// address.
+			p.DropUnmatched = true
+		}
 	}
 	s.mu.Lock()
 	s.defaultMark = p.DefaultMark
@@ -719,6 +815,18 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 			continue
 		}
 		p.Rules = append(p.Rules, mr)
+	}
+
+	// Include mode: the list goes to the tunnel ahead of everything else, so a
+	// customer's own rules cannot divert a destination the operator chose to
+	// allow. Everything the list does not cover falls through to the drop set
+	// above. A tunnel that is gone or off leaves the list to be dropped too,
+	// which is the fail-closed behaviour an allowlist is chosen for.
+	if basic.SplitMode == SplitInclude && len(splitAddrs) > 0 {
+		if tg, ok := byTag[s.tunnelTag(basic)]; ok && tg.enabled {
+			mr := routing.MarkRule{Mark: tg.mark, Drop: tg.drop, Addrs: splitAddrs}
+			p.Rules = append([]routing.MarkRule{mr}, p.Rules...)
+		}
 	}
 
 	return p, nil
@@ -977,6 +1085,15 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 	for _, d := range append(append(append([]string{}, basic.BlockDomains...), basic.DirectDomains...), basic.IPv4Domains...) {
 		names[d] = true
 	}
+	// The split-tunnel list carries its own domains, which have to be resolved
+	// for the policy to cover them.
+	if basic.SplitMode != SplitOff {
+		if _, splitDomains := partitionSplit(basic.SplitList); len(splitDomains) > 0 {
+			for _, d := range splitDomains {
+				names[d] = true
+			}
+		}
+	}
 	if rules, err := s.ListRules(ctx); err == nil {
 		for _, r := range rules {
 			if r.Enabled {
@@ -1200,6 +1317,25 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 		return ans, nil
 	}
 
+	// 3.5 Split tunnel, which decides the destination ahead of the rules in
+	// both directions: the exclude list is pinned direct, the include list is
+	// pinned to the tunnel.
+	if basic.SplitMode == SplitExclude || basic.SplitMode == SplitInclude {
+		if p, hit := firstMatch(addrs, s.splitPrefixes(basic)); hit {
+			if basic.SplitMode == SplitExclude {
+				ans.Outbound = TagDirect
+				ans.Reason = fmt.Sprintf("split tunnel sends %s direct", p)
+				note("on the split-tunnel bypass list")
+				return ans, nil
+			}
+			ans.Outbound = s.tunnelTag(basic)
+			ans.Reason = fmt.Sprintf("split tunnel routes %s through the tunnel", p)
+			note("on the split-tunnel include list")
+			s.resolveBalancer(ctx, ans)
+			return ans, nil
+		}
+	}
+
 	// 4. Rules, in order.
 	rules, err := s.ListRules(ctx)
 	if err != nil {
@@ -1220,8 +1356,15 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 		}
 	}
 
-	// 5. Whatever carries the rest.
-	ans.Outbound = basic.DefaultOutbound
+	// 5. Whatever carries the rest. Include mode drops it: the destination is
+	// not on the allowlist, so nothing routes it.
+	if basic.SplitMode == SplitInclude {
+		ans.Outbound, ans.Blocked = TagBlocked, true
+		ans.Reason = "split tunnel is in include mode and this is not on the list"
+		note("dropped: not on the split-tunnel include list")
+		return ans, nil
+	}
+	ans.Outbound = s.tunnelTag(basic)
 	ans.Reason = "no rule matched, so the default outbound carries it"
 	s.resolveBalancer(ctx, ans)
 	return ans, nil
@@ -1373,6 +1516,85 @@ func joinAddrs(addrs []netip.Addr) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, ", ")
+}
+
+// normalizeSplitMode maps stored or submitted text to a known mode, treating
+// anything unrecognised -- including the empty string and the literal "off" an
+// older page might send -- as the switch being off.
+func normalizeSplitMode(v string) string {
+	switch strings.TrimSpace(v) {
+	case SplitInclude:
+		return SplitInclude
+	case SplitExclude:
+		return SplitExclude
+	default:
+		return SplitOff
+	}
+}
+
+// partitionSplit sorts a split-tunnel list into address targets (addresses,
+// ranges, "geoip:" entries and named groups) and domain names, the way the
+// Basic page keeps its IP and domain lists in separate fields. Blank entries
+// are dropped.
+func partitionSplit(list []string) (addrs, domains []string) {
+	for _, e := range list {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if isAddrTarget(e) {
+			addrs = append(addrs, e)
+		} else {
+			domains = append(domains, e)
+		}
+	}
+	return addrs, domains
+}
+
+// isAddrTarget reports whether an entry is something ParseTargets resolves to
+// addresses -- a bare address, a CIDR, a "geoip:" country or a named group --
+// rather than a domain the resolver has to look up. It does not need the
+// country lists to decide, so it is safe to call before they are loaded.
+func isAddrTarget(e string) bool {
+	if strings.HasPrefix(e, routing.GeoIPPrefix) {
+		return true
+	}
+	if _, err := netip.ParseAddr(e); err == nil {
+		return true
+	}
+	if _, err := netip.ParsePrefix(e); err == nil {
+		return true
+	}
+	for _, g := range routing.GroupNames() {
+		if e == g {
+			return true
+		}
+	}
+	return false
+}
+
+// splitPrefixes resolves the split-tunnel list to the addresses it currently
+// covers: the address targets parsed directly, the domains taken from whatever
+// the resolver last saw. A name not yet resolved contributes nothing, the same
+// as a domain in the Block or Direct lists.
+func (s *Routing) splitPrefixes(basic BasicRouting) []netip.Prefix {
+	addrTargets, domains := partitionSplit(basic.SplitList)
+	out, _ := routing.ParseTargets(addrTargets, s.countries)
+	s.mu.RLock()
+	for _, d := range domains {
+		out = append(out, s.resolved[d]...)
+	}
+	s.mu.RUnlock()
+	return out
+}
+
+// tunnelTag is the outbound a split mode treats as the tunnel: the one the
+// operator named, or the default outbound when they left it blank.
+func (s *Routing) tunnelTag(basic BasicRouting) string {
+	if t := strings.TrimSpace(basic.SplitOutbound); t != "" {
+		return t
+	}
+	return basic.DefaultOutbound
 }
 
 // checkDomain rejects what is plainly not a name, without trying to be a full
