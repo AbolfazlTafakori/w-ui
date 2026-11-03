@@ -194,7 +194,12 @@ func (w *trafficWriter) flush(ctx context.Context) {
 	// demand: the page that shows it and the sweep that enforces it both
 	// read it every pass, and a panel with a hundred thousand customers
 	// cannot aggregate that each time.
+	// A customer's usage is charged to their direct owner, and admins is the
+	// admin above that owner when the owner is a reseller -- the parent whose
+	// pool the reseller's traffic also deducts from. Both are kept as running
+	// totals rather than summed on demand, for the reason above.
 	owners := map[uint]uint{}
+	admins := map[uint]uint{}
 	if len(usage) > 0 {
 		ids := make([]uint, 0, len(usage))
 		for id := range usage {
@@ -203,18 +208,20 @@ func (w *trafficWriter) flush(ctx context.Context) {
 		var rows []struct {
 			ID      uint
 			OwnerID uint
+			AdminID uint
 		}
-		if err := db.Model(&model.Client{}).Select("id, owner_id").
-			Where("id IN ? AND owner_id <> 0", ids).Scan(&rows).Error; err != nil {
+		if err := db.Model(&model.Client{}).Select("id, owner_id, admin_id").
+			Where("id IN ? AND (owner_id <> 0 OR admin_id <> 0)", ids).Scan(&rows).Error; err != nil {
 			w.log.Warn("could not read which operator these customers belong to", "error", err)
 		}
 		for _, row := range rows {
 			owners[row.ID] = row.OwnerID
+			admins[row.ID] = row.AdminID
 		}
 	}
 	// Written a few hundred rows to a statement (traffic_batch.go).
 	err := db.Transaction(func(tx *gorm.DB) error {
-		return writeFlush(tx, usage, devices, liveness, owners, bucket)
+		return writeFlush(tx, usage, devices, liveness, owners, admins, bucket)
 	})
 	if err != nil {
 		// The transaction wrote nothing, so everything it carried goes back

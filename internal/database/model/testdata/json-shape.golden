@@ -167,6 +167,7 @@ Client
 	note string
 	protocol model.Protocol
 	ownerId uint
+	adminId uint
 	originId uint omitempty
 	group string
 	groups []string (not stored)
@@ -238,6 +239,9 @@ Admin
 	lastLoginAt *time.Time
 	lastLoginIp string
 	role model.AdminRole
+	parentAdminId uint
+	canViewAllInterfaces bool
+	canViewAllClients bool
 	note string
 	enabled bool
 	clientLimit int
@@ -249,11 +253,15 @@ Admin
 	interfaceIds []uint (not stored)
 	clients int64 (not stored)
 	users int64 (not stored)
+	menuIds []string (not stored)
 	createdAt time.Time
 	updatedAt time.Time
 AdminInterface
 	adminId uint
 	interfaceId uint
+AdminMenuPermission
+	adminId uint
+	menu string
 APIToken
 	id uint
 	name string

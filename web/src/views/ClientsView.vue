@@ -36,6 +36,23 @@ const interfaces = ref([])
 const groupNames = ref([])
 const loading = ref(true)
 
+// The operators above each customer, by id, so the owner's list can tag a
+// customer with the admin and the reseller they belong to. The owner alone
+// sees this; a reseller and an admin are served only their own tree, so the
+// map stays empty and no tags are drawn.
+const operators = ref(null)
+async function loadOperators() {
+  if (!store.admin?.managesPanel) return
+  try {
+    const list = await api.admins()
+    const map = {}
+    for (const op of list) map[op.id] = op
+    operators.value = map
+  } catch {
+    /* the ownership tags simply stay hidden */
+  }
+}
+
 const search = ref(route.query.search || '')
 const statusFilter = ref('')
 const groupFilter = ref('')
@@ -193,7 +210,7 @@ onMounted(async () => {
   } catch (err) {
     notify(err.message, 'error')
   }
-  await Promise.all([load(), loadGroups()])
+  await Promise.all([load(), loadGroups(), loadOperators()])
 })
 
 
@@ -408,7 +425,7 @@ async function submitForm(input) {
 
       <ClientCards
         v-else-if="isMobile"
-        :items="page?.items || []" :selected="selected" :all-selected="allSelected" :pending="pending" :interfaces="interfaces"
+        :items="page?.items || []" :selected="selected" :all-selected="allSelected" :pending="pending" :interfaces="interfaces" :operators="operators"
         @toggle="toggleOne" @toggle-all="toggleAll" @qr="(c) => (shareFor = c)" @info="(c) => (infoFor = c)"
         @rotate="rotateKeysFor" @reset="resetOne" @edit="(c) => (formFor = { client: c })" @remove="removeOne"
         @enable="setEnabled" @group="(g) => (groupFilter = g)"
@@ -417,7 +434,7 @@ async function submitForm(input) {
 
       <template v-else>
         <ClientsTable
-          :items="page?.items || []" :selected="selected" :all-selected="allSelected" :pending="pending" :interfaces="interfaces"
+          :items="page?.items || []" :selected="selected" :all-selected="allSelected" :pending="pending" :interfaces="interfaces" :operators="operators"
           @toggle="toggleOne" @toggle-all="toggleAll" @qr="(c) => (shareFor = c)" @info="(c) => (infoFor = c)"
           @rotate="rotateKeysFor" @reset="resetOne" @edit="(c) => (formFor = { client: c })" @remove="removeOne"
           @enable="setEnabled" @group="(g) => (groupFilter = g)"

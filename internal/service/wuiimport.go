@@ -284,6 +284,7 @@ func (s *Clients) makeHandedOver(ctx context.Context, node model.Node, take []ha
 		subnets: map[uint]string{}, ips: map[uint][]string{}}
 	var claim handover.Claim
 	owner := OwnerOf(ctx)
+	adminStamp := AdminStampOf(ctx)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		protocols := map[uint]model.Protocol{}
 		for _, g := range take {
@@ -300,7 +301,7 @@ func (s *Clients) makeHandedOver(ctx context.Context, node model.Node, take []ha
 		}
 		for _, g := range take {
 			for _, c := range g.clients {
-				client, err := s.handedClient(tx, owner, c, protocols)
+				client, err := s.handedClient(tx, owner, adminStamp, c, protocols)
 				if err != nil {
 					return err
 				}
@@ -390,9 +391,9 @@ func handedTunnel(nodeID uint, t handover.Tunnel) model.Interface {
 // handedClient is a node's customer as a row here, with their plan as it
 // stood there. Their subscription id comes too, unless a customer here
 // already has it.
-func (s *Clients) handedClient(tx *gorm.DB, owner uint, c handover.Client, protocols map[uint]model.Protocol) (model.Client, error) {
+func (s *Clients) handedClient(tx *gorm.DB, owner, adminStamp uint, c handover.Client, protocols map[uint]model.Protocol) (model.Client, error) {
 	client := model.Client{
-		OwnerID: owner, Name: importName(c.Name, wuiKey(c.LocalID)), Note: c.Note,
+		OwnerID: owner, AdminID: adminStamp, Name: importName(c.Name, wuiKey(c.LocalID)), Note: c.Note,
 		Group: firstGroup(c.Groups), TelegramID: c.TelegramID, BaleID: c.BaleID,
 		Protocol:   protocols[c.Accounts[0].TunnelLocalID],
 		QuotaBytes: c.QuotaBytes, UsedBytes: c.UsedBytes, UpBytes: c.UpBytes, DownBytes: c.DownBytes,

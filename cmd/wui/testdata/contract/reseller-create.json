@@ -1,5 +1,7 @@
 {
   "body": {
+    "canViewAllClients": false,
+    "canViewAllInterfaces": false,
     "clientLimit": 5,
     "clients": 0,
     "createdAt": "\u003cstring\u003e",
@@ -12,7 +14,9 @@
     "lastLoginAt": null,
     "lastLoginIp": "",
     "locale": "en",
+    "menuIds": null,
     "note": "",
+    "parentAdminId": 0,
     "quotaBytes": 0,
     "role": "reseller",
     "updatedAt": "\u003cstring\u003e",

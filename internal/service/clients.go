@@ -196,6 +196,7 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 
 	client := model.Client{
 		OwnerID:        OwnerOf(ctx),
+		AdminID:        AdminStampOf(ctx),
 		Name:           in.Name,
 		Note:           in.Note,
 		Group:          firstGroup(groupsOf(in.Groups, in.Group)),
@@ -1923,7 +1924,7 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 	devices := db.Model(&model.Account{})
 	if sc.Restricted {
 		devices = devices.Where(
-			"client_id IN (SELECT id FROM clients WHERE owner_id = ?)", sc.AdminID)
+			"client_id IN (SELECT id FROM clients WHERE owner_id IN ?)", sc.OwnerList())
 	}
 	if err := devices.Count(&o.Devices).Error; err != nil {
 		return nil, err
@@ -1947,7 +1948,7 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 	case sc.Restricted:
 		online := db.Model(&model.Account{}).
 			Where("last_handshake > ?", cutoff).
-			Where("client_id IN (SELECT id FROM clients WHERE owner_id = ?)", sc.AdminID)
+			Where("client_id IN (SELECT id FROM clients WHERE owner_id IN ?)", sc.OwnerList())
 		if err := online.Count(&o.Online).Error; err != nil {
 			return nil, err
 		}

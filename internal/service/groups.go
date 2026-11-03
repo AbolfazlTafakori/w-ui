@@ -129,7 +129,7 @@ func ownerCond(ctx context.Context, alias string) (string, []any) {
 	if !sc.Restricted {
 		return "", nil
 	}
-	return " AND " + alias + ".owner_id = ?", []any{sc.AdminID}
+	return " AND " + alias + ".owner_id IN ?", []any{sc.OwnerList()}
 }
 
 // hiddenCond leaves the owner's own label for this operator's customers out
@@ -163,7 +163,7 @@ func callerMembers(ctx context.Context, q *gorm.DB) *gorm.DB {
 	if !sc.Restricted {
 		return q
 	}
-	return q.Where("client_id IN (SELECT id FROM clients WHERE owner_id = ?)", sc.AdminID)
+	return q.Where("client_id IN (SELECT id FROM clients WHERE owner_id IN ?)", sc.OwnerList())
 }
 
 // ownGroups narrows the group rows themselves to the caller's.
@@ -177,7 +177,7 @@ func ownGroups(ctx context.Context) func(*gorm.DB) *gorm.DB {
 		if !sc.Restricted {
 			return db
 		}
-		return db.Where("owner_id = ?", sc.AdminID)
+		return db.Where("owner_id IN ?", sc.OwnerList())
 	}
 }
 
@@ -363,13 +363,13 @@ func (s *Clients) ListGroupNames(ctx context.Context) ([]string, error) {
 		q = `
 		SELECT g FROM (
 			SELECT DISTINCT cg.name AS g FROM client_groups cg
-			  JOIN clients c ON c.id = cg.client_id AND c.owner_id = ?
+			  JOIN clients c ON c.id = cg.client_id AND c.owner_id IN ?
 			UNION
-			SELECT name AS g FROM groups WHERE owner_id = ?
+			SELECT name AS g FROM groups WHERE owner_id IN ?
 		) AS all_groups
 		WHERE COALESCE(g, '') <> '' AND g <> ?
 		ORDER BY g ASC`
-		args = []any{sc.AdminID, sc.AdminID, sc.Hidden}
+		args = []any{sc.OwnerList(), sc.OwnerList(), sc.Hidden}
 	} else {
 		q = `
 		SELECT g FROM (

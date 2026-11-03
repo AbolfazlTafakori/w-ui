@@ -119,7 +119,11 @@ func TestBulkRefusesTheOwnerAndChangesTheRest(t *testing.T) {
 	}
 }
 
-func TestBulkCeilingActionsSkipAPanelAdministrator(t *testing.T) {
+// A panel admin holds a ceiling of their own now, so the owner's bulk
+// ceiling actions land on them rather than being refused -- the ones with
+// something to change do, and the rest are an unremarkable no-op, neither a
+// change nor a failure.
+func TestBulkCeilingActionsApplyToAnAdmin(t *testing.T) {
 	r := newBulkRig(t)
 	gb := uint64(100) << 30
 	five := 5
@@ -132,9 +136,13 @@ func TestBulkCeilingActionsSkipAPanelAdministrator(t *testing.T) {
 	} {
 		in.IDs = adminIDs(r.admin)
 		res := r.run(t, in)
-		if res.Changed != 0 || res.Failures["helper"] == "" {
-			t.Errorf("%s on a panel administrator: %+v", in.Action, res)
+		if len(res.Failures) != 0 {
+			t.Errorf("%s on an admin was refused: %+v", in.Action, res)
 		}
+	}
+	// The ceilings the actions set are on the row afterwards.
+	if got := r.reload(t, r.admin); got.QuotaBytes != gb || got.ClientLimit != five {
+		t.Errorf("the admin's ceiling after the bulk actions: quota %d, limit %d", got.QuotaBytes, got.ClientLimit)
 	}
 }
 

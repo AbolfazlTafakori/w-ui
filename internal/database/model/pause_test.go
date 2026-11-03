@@ -41,13 +41,14 @@ func TestPauseReasonInEveryCase(t *testing.T) {
 		{"switched off and out of traffic", Admin{Role: RoleReseller, QuotaBytes: 1, UsedBytes: 1}, PauseSwitchedOff},
 		{"out of time and out of traffic", Admin{Role: RoleReseller, Enabled: true, ExpiresAt: &past, QuotaBytes: 1, UsedBytes: 1}, PauseTermEnded},
 
-		// Other roles. The owner is never paused, whatever the row says; a
-		// panel administrator holds no ceiling, so only the switch applies.
+		// Other roles. The owner is never paused, whatever the row says; an
+		// admin holds a ceiling like a reseller, so the switch, the term and
+		// the traffic all pause them.
 		{"the owner, with the switch off", Admin{Role: RoleOwner}, ""},
 		{"the owner, with a date in the past", Admin{Role: RoleOwner, Enabled: true, ExpiresAt: &past}, ""},
 		{"an administrator switched off", Admin{Role: RoleAdmin}, PauseSwitchedOff},
-		{"an administrator with a date in the past", Admin{Role: RoleAdmin, Enabled: true, ExpiresAt: &past}, ""},
-		{"an administrator with traffic used", Admin{Role: RoleAdmin, Enabled: true, QuotaBytes: 1, UsedBytes: 5}, ""},
+		{"an administrator with a date in the past", Admin{Role: RoleAdmin, Enabled: true, ExpiresAt: &past}, PauseTermEnded},
+		{"an administrator with traffic used", Admin{Role: RoleAdmin, Enabled: true, QuotaBytes: 1, UsedBytes: 5}, PauseTrafficUsed},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

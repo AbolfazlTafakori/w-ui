@@ -159,6 +159,16 @@ func routeTableServer(t *testing.T) (*Server, map[string]string) {
 		if err := db.Create(&a).Error; err != nil {
 			t.Fatal(err)
 		}
+		// The admin is provisioned with every page, so the table shows what an
+		// admin the owner has set up reaches -- not one left without any page,
+		// which the menu gate would refuse everywhere.
+		if a.Role == model.RoleAdmin {
+			for _, m := range model.GrantableMenus() {
+				if err := db.Create(&model.AdminMenuPermission{AdminID: a.ID, Menu: m}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
 	}
 	issued, err := s.nodes.IssueToken(context.Background(), "route table")
 	if err != nil {

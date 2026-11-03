@@ -9,7 +9,6 @@ package operators
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -81,6 +80,13 @@ type AdminInput struct {
 	// on creation takes the default, reseller:<username>. Nil leaves it
 	// alone.
 	GroupName *string `json:"groupName"`
+
+	// MenuIDs is the pages an admin may reach, set by the owner. Nil leaves
+	// the grants alone on an update, and on creating an admin takes the
+	// default of every page; a non-nil list, empty included, is used as
+	// given. Only an admin has menu grants -- it is ignored for a reseller,
+	// whose menu is fixed, and the owner, who reaches everything.
+	MenuIDs []string `json:"menuIds"`
 }
 
 // MaxTermDays bounds a term on hold. Ten years is past any plan anybody
@@ -108,8 +114,36 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 	if in.Role == model.RoleOwner {
 		return nil, fault.Field("role", "the panel has one owner and it cannot be handed over from here")
 	}
+	// An admin may create resellers only, under themselves, and may not hand
+	// down a tunnel or an allowance larger than their own.
+	parentAdmin := uint(0)
+	if caller := scopedTo(ctx); caller != nil {
+		if in.Role != model.RoleReseller {
+			return nil, fault.Field("role", "an admin may create resellers only")
+		}
+		parentAdmin = caller.ID
+		if err := s.checkHandDown(ctx, in.InterfaceIDs, in.QuotaBytes); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.checkInterfaces(ctx, 0, in.Role, in.InterfaceIDs); err != nil {
 		return nil, err
+	}
+
+	// An admin's pages: the set the owner checked, or every page when none
+	// was said. Settled before the row is written so a bad page is refused
+	// before anything is created.
+	var menus []string
+	if in.Role == model.RoleAdmin {
+		if in.MenuIDs == nil {
+			menus = model.GrantableMenus()
+		} else {
+			clean, err := cleanMenus(in.MenuIDs)
+			if err != nil {
+				return nil, err
+			}
+			menus = clean
+		}
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
@@ -118,13 +152,14 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 	}
 
 	admin := model.Admin{
-		Username:     username,
-		PasswordHash: string(hash),
-		Note:         strings.TrimSpace(in.Note),
-		Role:         in.Role,
-		Locale:       "en",
-		Enabled:      in.Enabled == nil || *in.Enabled,
-		SessionEpoch: 1,
+		Username:      username,
+		PasswordHash:  string(hash),
+		Note:          strings.TrimSpace(in.Note),
+		Role:          in.Role,
+		ParentAdminID: parentAdmin,
+		Locale:        "en",
+		Enabled:       in.Enabled == nil || *in.Enabled,
+		SessionEpoch:  1,
 	}
 	if in.Role.Capped() {
 		if in.ClientLimit != nil {
@@ -148,7 +183,9 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 	}
 
 	wantGroup := ""
-	if in.Role.Capped() && in.GroupName != nil {
+	// The hidden owner-label is a reseller mechanism: an admin's tree is
+	// traced by admin_id, not by a group the owner hides from them.
+	if in.Role == model.RoleReseller && in.GroupName != nil {
 		wantGroup = strings.TrimSpace(*in.GroupName)
 		if wantGroup != "" {
 			if err := s.checkOwnerGroup(ctx, 0, wantGroup); err != nil {
@@ -163,7 +200,7 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 			return fmt.Errorf("create operator: %w", err)
 		}
 		admin.Enabled = enabled
-		if admin.Role.Capped() {
+		if admin.Role == model.RoleReseller {
 			var (
 				name string
 				err  error
@@ -181,7 +218,13 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 			}
 			admin.GroupName = name
 		}
-		return s.setInterfaces(tx, admin.ID, in.InterfaceIDs)
+		if err := s.setInterfaces(tx, admin.ID, in.InterfaceIDs); err != nil {
+			return err
+		}
+		if admin.Role == model.RoleAdmin {
+			return setMenus(tx, admin.ID, menus)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("service: %w", err)
@@ -322,12 +365,23 @@ func dropOwnerGroupIfUnused(tx *gorm.DB, name string, except uint) error {
 
 // Update changes an operator.
 func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Admin, error) {
-	var admin model.Admin
-	if err := s.db.WithContext(ctx).First(&admin, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fault.ErrNotFound
+	// For an admin this refuses anything but their own resellers -- their own
+	// row among them, an admin being no reseller of theirs -- so an admin can
+	// neither reach another operator nor raise their own ceiling here.
+	adminPtr, err := s.ownedReseller(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	admin := *adminPtr
+
+	// An admin may not promote a reseller out of being one.
+	if caller := scopedTo(ctx); caller != nil {
+		if in.Role != "" && in.Role != model.RoleReseller {
+			return nil, fault.Field("role", "an admin cannot change a reseller's role")
 		}
-		return nil, fmt.Errorf("service: load operator: %w", err)
+		if err := s.checkHandDown(ctx, in.InterfaceIDs, in.QuotaBytes); err != nil {
+			return nil, err
+		}
 	}
 
 	fields := map[string]any{}
@@ -421,9 +475,10 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 		fields["duration_days"] = 0
 	}
 
-	// The label moves only for a reseller, and only when it changes.
+	// The label moves only for a reseller, and only when it changes. It is a
+	// reseller mechanism: an admin's tree is traced by admin_id, not a label.
 	newGroup := ""
-	if role.Capped() && admin.Role.Capped() && in.GroupName != nil {
+	if role == model.RoleReseller && admin.Role == model.RoleReseller && in.GroupName != nil {
 		want := strings.TrimSpace(*in.GroupName)
 		if want == "" {
 			return nil, fault.Field("groupName", "a reseller's customers have to be filed under something")
@@ -440,7 +495,20 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 		return nil, err
 	}
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// An admin's pages change only when the owner sends a list; nil leaves
+	// them. An empty list is the owner unchecking every page, which is a real
+	// thing to want. Only an admin has pages to change.
+	var menusUpdate []string
+	setMenusUpdate := admin.Role == model.RoleAdmin && in.MenuIDs != nil
+	if setMenusUpdate {
+		clean, err := cleanMenus(in.MenuIDs)
+		if err != nil {
+			return nil, err
+		}
+		menusUpdate = clean
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if newGroup != "" {
 			canonical, err := ensureOwnerGroup(tx, newGroup, admin.Username)
 			if err != nil {
@@ -465,7 +533,12 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 			}
 		}
 		if in.InterfaceIDs != nil {
-			return s.setInterfaces(tx, admin.ID, in.InterfaceIDs)
+			if err := s.setInterfaces(tx, admin.ID, in.InterfaceIDs); err != nil {
+				return err
+			}
+		}
+		if setMenusUpdate {
+			return setMenus(tx, admin.ID, menusUpdate)
 		}
 		return nil
 	})
@@ -504,19 +577,17 @@ type Customers interface {
 }
 
 func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients Customers) error {
-	var admin model.Admin
-	if err := s.db.WithContext(ctx).First(&admin, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fault.ErrNotFound
-		}
-		return fmt.Errorf("service: load operator: %w", err)
+	adminPtr, err := s.ownedReseller(ctx, id)
+	if err != nil {
+		return err
 	}
+	admin := *adminPtr
 	if admin.Role == model.RoleOwner {
 		return fmt.Errorf("%w: the panel's owner cannot be deleted", fault.ErrInvalid)
 	}
 
 	var held int64
-	err := s.db.WithContext(ctx).Model(&model.Client{}).
+	err = s.db.WithContext(ctx).Model(&model.Client{}).
 		Where("owner_id = ?", admin.ID).Count(&held).Error
 	if err != nil {
 		return fmt.Errorf("service: count the operator's customers: %w", err)
@@ -575,23 +646,27 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients C
 
 // Get returns one operator with their tunnels and customer count filled in.
 func (s *Admins) Get(ctx context.Context, id uint) (*model.Admin, error) {
-	var admin model.Admin
-	if err := s.db.WithContext(ctx).First(&admin, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fault.ErrNotFound
-		}
-		return nil, fmt.Errorf("service: load operator: %w", err)
-	}
-	if err := s.fill(ctx, []*model.Admin{&admin}); err != nil {
+	admin, err := s.ownedReseller(ctx, id)
+	if err != nil {
 		return nil, err
 	}
-	return &admin, nil
+	if err := s.fill(ctx, []*model.Admin{admin}); err != nil {
+		return nil, err
+	}
+	return admin, nil
 }
 
 // List returns every operator, the owner first and the rest by name.
 func (s *Admins) List(ctx context.Context) ([]model.Admin, error) {
+	q := s.db.WithContext(ctx)
+	// An admin sees only the resellers they created -- never another admin,
+	// never the owner, so the admins page itself is empty of anyone but their
+	// own resellers however they reach it.
+	if caller := scopedTo(ctx); caller != nil {
+		q = q.Where("role = ? AND parent_admin_id = ?", model.RoleReseller, caller.ID)
+	}
 	var admins []model.Admin
-	err := s.db.WithContext(ctx).
+	err := q.
 		Order("CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, username ASC").
 		Find(&admins).Error
 	if err != nil {
@@ -629,6 +704,30 @@ func (s *Admins) fill(ctx context.Context, admins []*model.Admin) error {
 	for _, l := range links {
 		if a := byID[l.AdminID]; a != nil {
 			a.InterfaceIDs = append(a.InterfaceIDs, l.InterfaceID)
+		}
+	}
+
+	// An admin's granted pages, in menu order, for the form that edits them.
+	var grants []model.AdminMenuPermission
+	if err := s.db.WithContext(ctx).Where("admin_id IN ?", ids).Find(&grants).Error; err != nil {
+		return fmt.Errorf("service: load operator pages: %w", err)
+	}
+	has := map[uint]map[string]bool{}
+	for _, g := range grants {
+		if has[g.AdminID] == nil {
+			has[g.AdminID] = map[string]bool{}
+		}
+		has[g.AdminID][g.Menu] = true
+	}
+	for _, a := range admins {
+		if a.Role != model.RoleAdmin {
+			continue
+		}
+		a.MenuIDs = []string{}
+		for _, m := range model.GrantableMenus() {
+			if has[a.ID][m] {
+				a.MenuIDs = append(a.MenuIDs, m)
+			}
 		}
 	}
 
@@ -751,6 +850,11 @@ func (s *Admins) AllowedInterfaces(ctx context.Context, admin *model.Admin) (map
 	if admin == nil || !admin.Role.Capped() {
 		return nil, nil
 	}
+	// An admin the owner has let sell every tunnel is held to no set, the
+	// same as the owner: nil, not the assigned rows.
+	if admin.Role == model.RoleAdmin && admin.CanViewAllInterfaces {
+		return nil, nil
+	}
 	var ids []uint
 	err := s.db.WithContext(ctx).Model(&model.AdminInterface{}).
 		Where("admin_id = ?", admin.ID).Pluck("interface_id", &ids).Error
@@ -767,11 +871,34 @@ func (s *Admins) AllowedInterfaces(ctx context.Context, admin *model.Admin) (map
 	return out, nil
 }
 
+// ResellerIDs is the ids of the resellers an admin created, for narrowing a
+// request to the admin's whole tree. Empty for anyone but an admin.
+//
+// Read per request rather than denormalised onto the admin: the set changes
+// as the admin makes and removes resellers, and it is a single indexed read
+// on parent_admin_id, the kind the sign-in path already does for interfaces.
+func (s *Admins) ResellerIDs(ctx context.Context, adminID uint) ([]uint, error) {
+	if adminID == 0 {
+		return nil, nil
+	}
+	var ids []uint
+	err := s.db.WithContext(ctx).Model(&model.Admin{}).
+		Where("parent_admin_id = ? AND role = ?", adminID, model.RoleReseller).
+		Pluck("id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("service: load an admin's resellers: %w", err)
+	}
+	return ids, nil
+}
+
 // ResetUsage puts one reseller's counter back to zero -- the owner topping
 // them up for another month. Their customers' own counters are left alone:
 // each customer's plan is theirs, and a reseller renewing their allowance with
 // the owner does not renew every plan they sold.
 func (s *Admins) ResetUsage(ctx context.Context, id uint) error {
+	if _, err := s.ownedReseller(ctx, id); err != nil {
+		return err
+	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Admin{}).Where("id = ?", id).
 			Update("used_bytes", 0).Error; err != nil {

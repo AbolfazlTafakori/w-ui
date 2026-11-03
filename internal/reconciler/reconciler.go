@@ -776,10 +776,15 @@ func (r *Reconciler) lastSuspended(read map[uint]bool, err error) map[uint]bool 
 }
 
 // serviceableFor reports whether this customer's devices belong on the
-// tunnels right now: their own plan says so, and the operator who sold it
-// to them is still in good standing.
+// tunnels right now: their own plan says so, and every operator above them
+// is still in good standing.
+//
+// Above them is their direct owner -- a reseller or an admin -- and, for a
+// reseller's customer, the admin over that reseller: AdminID is the top of
+// the chain, zero when there is none. Suspending the admin thus stops their
+// resellers' customers too, without a row on any of them being touched.
 func serviceableFor(c *model.Client, suspended map[uint]bool) bool {
-	return c.Status.Serviceable() && !suspended[c.OwnerID]
+	return c.Status.Serviceable() && !suspended[c.OwnerID] && !suspended[c.AdminID]
 }
 
 // readDesired builds the target state from the database in two queries.

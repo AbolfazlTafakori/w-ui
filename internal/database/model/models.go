@@ -345,6 +345,18 @@ type Client struct {
 	// without a backfill that has to guess.
 	OwnerID uint `gorm:"index;not null;default:0" json:"ownerId"`
 
+	// AdminID is the admin at the top of this customer's ownership chain, or
+	// zero when there is none.
+	//
+	// OwnerID is who created the customer -- an admin, or a reseller; AdminID
+	// is the admin above that reseller, or the admin themselves when they
+	// created the customer directly. Keeping both lets the owner's panel show
+	// a customer's parent admin and assigned reseller at once, and lets an
+	// admin's whole tree be narrowed by this one column. Zero for the owner's
+	// own customers and for a reseller the owner created directly, which is
+	// every customer on a panel from before admins existed.
+	AdminID uint `gorm:"index;not null;default:0" json:"adminId"`
+
 	// OriginID is this customer's id on the panel that owns them.
 	//
 	// Only set on a node. A node is handed the peers it must serve and nothing
@@ -601,6 +613,29 @@ type Admin struct {
 	// everything they had when this column appears under them.
 	Role AdminRole `gorm:"size:16;not null;default:owner;index" json:"role"`
 
+	// ParentAdminID is the admin a reseller was created under, or zero when
+	// they are directly the owner's.
+	//
+	// It is the middle link in Owner -> Admin -> Reseller: a reseller's
+	// customers and allowance deduct from this admin's pool, and switching
+	// the admin off switches the reseller off with them. Zero for the owner,
+	// for an admin, and for a reseller the owner created directly -- so the
+	// panels that existed before admins keep their resellers directly under
+	// the owner without a backfill.
+	ParentAdminID uint `gorm:"index;not null;default:0" json:"parentAdminId"`
+
+	// CanViewAllInterfaces lets an admin place customers on every tunnel
+	// rather than only the ones assigned to them. Default false: an admin is
+	// held to their assigned interfaces exactly as a reseller is, and the
+	// backend refuses an unassigned interface whatever the form sends.
+	CanViewAllInterfaces bool `gorm:"not null;default:false" json:"canViewAllInterfaces"`
+
+	// CanViewAllClients lets an admin read every customer on the panel.
+	// Default false: an admin sees only their own customers and those of the
+	// resellers they created, and never another admin's. Ignored for the
+	// owner, who sees everyone regardless, and for a reseller, who never does.
+	CanViewAllClients bool `gorm:"not null;default:false" json:"canViewAllClients"`
+
 	Note string `gorm:"size:256" json:"note"`
 
 	// Enabled is the owner's switch over a reseller.
@@ -658,6 +693,13 @@ type Admin struct {
 	Clients int64 `gorm:"-" json:"clients"`
 	Users   int64 `gorm:"-" json:"users"`
 
+	// MenuIDs is the pages this admin may reach, from AdminMenuPermission.
+	// Not stored here -- the rows are -- and filled on the way out, for the
+	// form that grants them and the menu the admin is shown. Only an admin
+	// has any; empty for the owner, who reaches everything, and a reseller,
+	// whose menu is fixed.
+	MenuIDs []string `gorm:"-" json:"menuIds"`
+
 	// SessionEpoch is what makes a session endable.
 	//
 	// A signed token is valid until it expires, and nothing an operator can do
@@ -679,6 +721,16 @@ func (a *Admin) QuotaExceeded() bool {
 // Expired reports whether the reseller's own term is up.
 func (a *Admin) Expired(now time.Time) bool {
 	return a.Role.Capped() && a.ExpiresAt != nil && !a.ExpiresAt.After(now)
+}
+
+// RemainingBytes is how much of a capped operator's allowance is left, or 0
+// for an operator with no limit. It is what an admin has left to hand down:
+// a reseller the admin creates may not be given more than this.
+func (a *Admin) RemainingBytes() uint64 {
+	if a.QuotaBytes == 0 || a.UsedBytes >= a.QuotaBytes {
+		return 0
+	}
+	return a.QuotaBytes - a.UsedBytes
 }
 
 // Suspended reports whether this operator's customers should be off right
@@ -742,6 +794,23 @@ func (a *Admin) PauseReason(now time.Time) string {
 type AdminInterface struct {
 	AdminID     uint `gorm:"primaryKey;autoIncrement:false" json:"adminId"`
 	InterfaceID uint `gorm:"primaryKey;autoIncrement:false" json:"interfaceId"`
+}
+
+// AdminMenuPermission is one menu an admin has been allowed to reach.
+//
+// A row rather than a list on the operator, like AdminInterface: the set is
+// read as a join when the admin's menu is drawn and checked when one of the
+// pages behind it is hit, and a menu the panel stops having should take its
+// grants with it rather than leaving names behind that no longer resolve.
+//
+// Only an admin ever has rows here. The owner reaches everything; a reseller
+// has a fixed menu of their own. And the owner's blacklist -- settings,
+// routing, the engine, and the admins page itself -- is never written here
+// and never offered in the checklist, so no admin can be granted it even by
+// a payload that names it.
+type AdminMenuPermission struct {
+	AdminID uint   `gorm:"primaryKey;autoIncrement:false" json:"adminId"`
+	Menu    string `gorm:"size:32;primaryKey" json:"menu"`
 }
 
 // Setting is a key/value row for panel configuration that an operator can
@@ -854,6 +923,7 @@ func AllModels() []any {
 		&IPLease{},
 		&Admin{},
 		&AdminInterface{},
+		&AdminMenuPermission{},
 		&APIToken{},
 		&Group{},
 		&ClientGroup{},

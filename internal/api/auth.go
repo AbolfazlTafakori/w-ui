@@ -15,6 +15,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
+	"github.com/abolfazl/w-ui/internal/operators"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/totp"
 )
@@ -297,6 +298,16 @@ func (s *Server) scopeFor(ctx context.Context, admin *model.Admin) (service.Scop
 	sc.Interfaces = allowed
 	sc.ClientLimit = admin.ClientLimit
 	sc.Barred = model.PauseMessage(admin.PauseReason(time.Now().UTC()))
+	// An admin reaches their resellers' customers too: their ids widen the
+	// owner-set the narrowing matches against. A reseller has none, and the
+	// set stays their own id alone.
+	if admin.Role == model.RoleAdmin {
+		resellers, err := s.admins.ResellerIDs(ctx, admin.ID)
+		if err != nil {
+			return sc, err
+		}
+		sc.Owners = append(sc.Owners, resellers...)
+	}
 	return sc, nil
 }
 
@@ -356,6 +367,49 @@ func (s *Server) requireAdminManager(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// requireResellerManager admits the owner and an admin to the operator
+// endpoints, and refuses a reseller. The owner manages every operator; an
+// admin is held to the resellers they created, which is enforced in the
+// operators service by the caller this attaches to the request. The admins
+// page stays the owner's: an admin reaching the operator list through here
+// is scoped to their own resellers and sees no admin at all.
+func (s *Server) requireResellerManager(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		admin := adminFrom(r.Context())
+		if admin == nil || !admin.Role.ManagesResellers() {
+			writeError(w, http.StatusForbidden, "only the owner and admins manage resellers")
+			return
+		}
+		next(w, r.WithContext(operators.WithCaller(r.Context(), admin)))
+	}
+}
+
+// requireMenu refuses an admin a page the owner left unchecked for them.
+//
+// It is the backstop under the hidden menu: hiding a page keeps an admin
+// from clicking to it, this keeps a request to it from succeeding anyway.
+// Only an admin is gated -- the owner reaches everything, and a reseller's
+// own pages are theirs by role, not by grant. The customers table narrows
+// itself regardless, so this is about which of an admin's own pages they may
+// open, never about whose data they see.
+func (s *Server) requireMenu(menu string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		admin := adminFrom(r.Context())
+		if admin != nil && admin.Role == model.RoleAdmin {
+			ok, err := s.admins.HasMenu(r.Context(), admin.ID, menu)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "could not check your pages")
+				return
+			}
+			if !ok {
+				writeError(w, http.StatusForbidden, "this page is not one of yours")
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
 // requireOperator refuses a machine token: what is behind it is an
 // administrator's to do. Runs inside requireAuth, so the context carries
 // the admin when there is one.
@@ -395,10 +449,11 @@ func adminFrom(ctx context.Context) *model.Admin {
 // pages that are theirs on it, rather than a menu of things that refuse them.
 type adminView struct {
 	*model.Admin
-	TwoFactor     bool `json:"twoFactor"`
-	ManagesPanel  bool `json:"managesPanel"`
-	ManagesAdmins bool `json:"managesAdmins"`
-	SeesEveryone  bool `json:"seesEveryone"`
+	TwoFactor        bool `json:"twoFactor"`
+	ManagesPanel     bool `json:"managesPanel"`
+	ManagesAdmins    bool `json:"managesAdmins"`
+	ManagesResellers bool `json:"managesResellers"`
+	SeesEveryone     bool `json:"seesEveryone"`
 }
 
 // adminView builds it. Sign-in and the /me call both answer with this: an
@@ -406,11 +461,15 @@ type adminView struct {
 // somebody else until the first time they reloaded the page.
 func (s *Server) adminView(ctx context.Context, admin *model.Admin) *adminView {
 	view := &adminView{
-		Admin:         admin,
-		TwoFactor:     admin.TOTPSecret != "",
-		ManagesPanel:  admin.Role.ManagesPanel(),
-		ManagesAdmins: admin.Role.ManagesAdmins(),
-		SeesEveryone:  admin.Role.SeesEveryone(),
+		Admin:            admin,
+		TwoFactor:        admin.TOTPSecret != "",
+		ManagesPanel:     admin.Role.ManagesPanel(),
+		ManagesAdmins:    admin.Role.ManagesAdmins(),
+		ManagesResellers: admin.Role.ManagesResellers(),
+		// The effective reach: the owner always, and an admin the owner has
+		// let see every customer. The menu draws from this, so a scoped admin
+		// is shown their own tree and an unleashed one the whole panel.
+		SeesEveryone: admin.Role.SeesEveryone() || (admin.Role == model.RoleAdmin && admin.CanViewAllClients),
 	}
 	// The label the owner files this operator's customers under is not
 	// theirs to see, and it is on the row that answers this call.
@@ -422,6 +481,13 @@ func (s *Server) adminView(ctx context.Context, admin *model.Admin) *adminView {
 	if admin.Role.Capped() {
 		if held, err := s.admins.Held(ctx, admin.ID); err == nil {
 			view.Admin.Clients = held
+		}
+	}
+	// The pages this admin may reach, so the menu shows only what the owner
+	// granted. The backend refuses the rest regardless (requireMenu).
+	if admin.Role == model.RoleAdmin {
+		if menus, err := s.admins.MenuIDs(ctx, admin.ID); err == nil {
+			view.Admin.MenuIDs = menus
 		}
 	}
 	if ids, err := s.admins.AllowedInterfaces(ctx, admin); err == nil && ids != nil {

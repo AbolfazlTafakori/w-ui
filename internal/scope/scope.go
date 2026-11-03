@@ -29,12 +29,33 @@ type key struct{}
 // the reconciler, the subscription service, the Telegram bot and the CLI all
 // work across the whole panel and none of them is acting for an operator.
 type Scope struct {
-	// AdminID is whose customers these are. Zero with Restricted set is the
+	// AdminID is the operator this request is served for -- their own id.
+	// It is what a new row is stamped with as its owner, and what the
+	// per-operator state keyed by operator (the subscription-clash cooldown,
+	// the barred message) is filed under. Zero with Restricted set is the
 	// owner's own customers, which is a real and different thing from "no
 	// restriction" -- hence the separate flag rather than a sentinel.
 	AdminID uint
 
-	// Restricted narrows every customer and group query to AdminID.
+	// Owners is the set of operator ids whose customers this request may
+	// reach, and the set the automatic narrowing matches owner_id against.
+	//
+	// A reseller's set is their own id alone, so they behave exactly as
+	// before this field existed. An admin's is their own id and every
+	// reseller they created, so one admin reads the whole of their tree
+	// through the same single mechanism. Empty falls back to AdminID, so a
+	// scope built the old way -- AdminID with Restricted and no Owners --
+	// still narrows to that one id.
+	Owners []uint
+
+	// AdminStamp is the admin_id to write on a customer this request creates:
+	// the admin at the top of the creator's chain. An admin stamps their own
+	// id; a reseller stamps the admin above them; the owner stamps zero. Kept
+	// apart from AdminID because a reseller's owner_id is their own id while
+	// the admin_id they stamp is their parent's.
+	AdminStamp uint
+
+	// Restricted narrows every customer and group query to Owners.
 	Restricted bool
 
 	// Hidden is the group the owner puts this operator's customers in and
@@ -64,6 +85,18 @@ type Scope struct {
 	// because an operator whose form silently failed would open a support
 	// ticket rather than pay for more.
 	Barred string
+}
+
+// OwnerList is the operator ids this scope narrows to: Owners when it is
+// set, and the one AdminID otherwise. Everything that narrows -- the
+// automatic callback and the hand-written aggregates alike -- reads the set
+// through here, so a reseller (one id) and an admin (their tree) are the
+// same query with a longer list.
+func (s Scope) OwnerList() []uint {
+	if len(s.Owners) > 0 {
+		return s.Owners
+	}
+	return []uint{s.AdminID}
 }
 
 // Allows reports whether this operator may sell the given tunnel.
@@ -109,6 +142,10 @@ func Of(ctx context.Context) Scope {
 // OwnerOf is the id to stamp on something this request creates.
 func OwnerOf(ctx context.Context) uint { return Of(ctx).AdminID }
 
+// AdminStampOf is the admin_id to stamp on a customer this request creates:
+// the admin at the top of the creator's chain, or zero when there is none.
+func AdminStampOf(ctx context.Context) uint { return Of(ctx).AdminStamp }
+
 // Narrow applies the caller's own-customers condition to a query builder.
 //
 // Used where the table is not the one Register can see -- a count over
@@ -119,7 +156,7 @@ func Narrow(ctx context.Context, q *gorm.DB, column string) *gorm.DB {
 	if !s.Restricted {
 		return q
 	}
-	return q.Where(column+" = ?", s.AdminID)
+	return q.Where(column+" IN ?", s.OwnerList())
 }
 
 // Register makes the narrowing automatic for the customers table.
@@ -143,10 +180,15 @@ func Register(db *gorm.DB) error {
 			(tx.Statement.Schema == nil || tx.Statement.Schema.Table != "clients") {
 			return
 		}
+		ids := s.OwnerList()
+		values := make([]any, len(ids))
+		for i, id := range ids {
+			values[i] = id
+		}
 		tx.Statement.AddClause(clause.Where{Exprs: []clause.Expression{
-			clause.Eq{
+			clause.IN{
 				Column: clause.Column{Table: "clients", Name: "owner_id"},
-				Value:  s.AdminID,
+				Values: values,
 			},
 		}})
 	}

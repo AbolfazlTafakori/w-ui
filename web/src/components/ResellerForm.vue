@@ -11,7 +11,7 @@
 // one go, ready for a message.
 import { computed, ref, watch } from 'vue'
 import { api } from '../lib/api.js'
-import { t, notify } from '../lib/store.js'
+import { t, notify, store } from '../lib/store.js'
 import { quotaToUnit, unitToBytes } from '../lib/format.js'
 import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
@@ -59,6 +59,10 @@ function monthFromToday() {
   return localDay(d.toISOString())
 }
 
+// The pages an admin can be granted, in menu order; must match the backend's
+// GrantableMenus.
+const ALL_MENUS = ['clients', 'groups', 'resellers']
+
 const a = props.admin
 const q = quotaToUnit(a?.quotaBytes)
 const form = ref({
@@ -80,9 +84,25 @@ const form = ref({
   groupName: a?.groupName || '',
   note: a?.note || '',
   interfaceIds: [...(a?.interfaceIds || (props.interfaces[0] ? [props.interfaces[0].id] : []))],
+  // Admin-only. A new admin is shown every page checked and sees nothing
+  // outside their own tree until the owner widens it.
+  canViewAllClients: !!a?.canViewAllClients,
+  canViewAllInterfaces: !!a?.canViewAllInterfaces,
+  menuIds: [...(a?.menuIds || ALL_MENUS)],
 })
 
-const capped = computed(() => form.value.role === 'reseller')
+// A reseller and an admin both hold a ceiling and sell on chosen servers; the
+// owner is never built here. The hidden group label is a reseller's alone,
+// and the pages and the see-all switches an admin's alone.
+// Only the owner mints admins. An admin managing their own resellers never
+// chooses the role -- every operator they create is a reseller -- so the
+// picker, and the admin option with it, is the owner's alone.
+const ownerView = computed(() => !!store.admin?.managesAdmins)
+const hasCeiling = computed(() => form.value.role !== 'owner')
+const isReseller = computed(() => form.value.role === 'reseller')
+const isAdmin = computed(() => form.value.role === 'admin')
+// The server picker is moot for an admin let loose on every tunnel.
+const showServers = computed(() => hasCeiling.value && !(isAdmin.value && form.value.canViewAllInterfaces))
 
 const serverOptions = computed(() =>
   props.interfaces.map((i) => ({
@@ -142,7 +162,7 @@ function validate() {
   const u = form.value.username.trim()
   if (u.length < 3 || u.length > 64 || !/^[A-Za-z0-9._-]+$/.test(u)) e.username = t('admins.usernameRule')
   if ((!editing.value || form.value.password) && form.value.password.length < 8) e.password = t('admins.passwordRule')
-  if (capped.value && form.value.onHold) {
+  if (hasCeiling.value && form.value.onHold) {
     const d = Number(form.value.durationDays)
     if (!Number.isInteger(d) || d < 1 || d > 3650) e.term = t('admins.daysRequired')
   }
@@ -161,7 +181,7 @@ async function submit() {
     enabled: f.enabled,
   }
   if (f.password) body.password = f.password
-  if (capped.value) {
+  if (hasCeiling.value) {
     body.interfaceIds = f.interfaceIds
     body.clientLimit = Math.max(0, Math.floor(Number(f.clientLimit) || 0))
     body.quotaBytes = unitToBytes(f.quota, f.quotaUnit)
@@ -173,8 +193,15 @@ async function submit() {
       // The day chosen is theirs to the end of it, in the owner's own time.
       body.expiresAt = f.expiresOn ? new Date(`${f.expiresOn}T23:59:59`).toISOString() : null
     }
+  }
+  if (isReseller.value) {
     const label = f.groupName.trim()
     if (label && label !== (props.admin?.groupName || '')) body.groupName = label
+  }
+  if (isAdmin.value) {
+    body.canViewAllClients = f.canViewAllClients
+    body.canViewAllInterfaces = f.canViewAllInterfaces
+    body.menuIds = ALL_MENUS.filter((m) => f.menuIds.includes(m))
   }
   busy.value = true
   try {
@@ -241,16 +268,16 @@ async function submit() {
           </div>
 
           <div class="arow16">
-            <div class="acol8">
+            <div v-if="ownerView" class="acol8">
               <div class="aform-item">
-                <label class="aform-label" for="rf-role">{{ t('admins.roleColumn') }} <HelpTip :text="capped ? t('admins.role.resellerHint') : t('admins.role.adminHint')" /></label>
+                <label class="aform-label" for="rf-role">{{ t('admins.roleColumn') }} <HelpTip :text="isReseller ? t('admins.role.resellerHint') : t('admins.role.adminHint')" /></label>
                 <div class="aselect"><select id="rf-role" v-model="form.role">
                   <option value="reseller">{{ t('admins.role.reseller') }}</option>
                   <option value="admin">{{ t('admins.role.admin') }}</option>
                 </select></div>
               </div>
             </div>
-            <template v-if="capped">
+            <template v-if="hasCeiling">
               <div class="acol8">
                 <div class="aform-item">
                   <label class="aform-label" for="rf-limit">{{ t('admins.clientLimit') }} <HelpTip :text="t('admins.limitHint')" /></label>
@@ -269,7 +296,7 @@ async function submit() {
             </template>
           </div>
 
-          <div v-if="capped" class="arow16">
+          <div v-if="hasCeiling" class="arow16">
             <div class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="rf-term">
@@ -299,14 +326,14 @@ async function submit() {
           </div>
 
           <div class="arow16">
-            <div v-if="capped" class="acol12">
+            <div v-if="isReseller" class="acol12">
               <div class="aform-item">
                 <label class="aform-label" for="rf-group">{{ t('admins.group') }} <HelpTip :text="t('admins.groupHint')" /></label>
                 <AutoComplete id="rf-group" v-model="form.groupName" :options="groupNames" :placeholder="editing ? '' : `reseller:${form.username.trim() || '…'}`" :empty="t('admins.noGroupsYet')" />
                 <p v-if="fieldError.groupName" class="field-error">{{ fieldError.groupName }}</p>
               </div>
             </div>
-            <div :class="capped ? 'acol12' : 'acol24'">
+            <div :class="isReseller ? 'acol12' : 'acol24'">
               <div class="aform-item">
                 <label class="aform-label" for="rf-note">{{ t('admins.note') }}</label>
                 <label class="ainput block"><input id="rf-note" v-model="form.note" maxlength="256" :placeholder="t('client.notePlaceholder')" /></label>
@@ -317,7 +344,7 @@ async function submit() {
           <!-- The servers they may sell, picked as a customer's are. What is
                chosen here is exactly what their own customer form offers:
                nothing more, and nothing missing. -->
-          <div v-if="capped" class="aform-item">
+          <div v-if="showServers" class="aform-item">
             <label class="aform-label">{{ t('admins.servers') }} <HelpTip :text="t('admins.serversHint')" /></label>
             <div class="bulk">
               <button type="button" class="abtn small" :disabled="allChosen" @click="chooseAll">{{ t('client.selectAll') }}</button>
@@ -328,10 +355,35 @@ async function submit() {
             <p v-else-if="!form.interfaceIds.length" class="hint warn-hint">{{ t('admins.noServersWarn') }}</p>
           </div>
 
-          <div v-if="!capped" class="aform-item enabled-line">
-            <Toggle v-model="form.enabled" :label="t('admins.enabled')" />
-            <span class="enabled-text">{{ t('admins.enabled') }}</span>
-          </div>
+          <!-- An admin's reach and their pages. The see-all switches widen the
+               default -- their own tree, their chosen servers -- to the whole
+               panel; the checklist is the pages they may open, the machine
+               pages never among them. -->
+          <template v-if="isAdmin">
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label">{{ t('admins.canViewAllClients') }} <HelpTip :text="t('admins.canViewAllClientsHint')" /></label>
+                  <div class="switch-line"><Toggle v-model="form.canViewAllClients" :label="t('admins.canViewAllClients')" /></div>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label">{{ t('admins.canViewAllInterfaces') }} <HelpTip :text="t('admins.canViewAllInterfacesHint')" /></label>
+                  <div class="switch-line"><Toggle v-model="form.canViewAllInterfaces" :label="t('admins.canViewAllInterfaces')" /></div>
+                </div>
+              </div>
+            </div>
+            <div class="aform-item">
+              <label class="aform-label">{{ t('admins.pages') }} <HelpTip :text="t('admins.pagesHint')" /></label>
+              <div class="menu-grid">
+                <label v-for="m in ALL_MENUS" :key="m" class="menu-check">
+                  <input type="checkbox" :value="m" v-model="form.menuIds" />
+                  <span>{{ t(`admins.page.${m}`) }}</span>
+                </label>
+              </div>
+            </div>
+          </template>
         </form>
       </div>
 
@@ -375,6 +427,9 @@ async function submit() {
 .enabled-line { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .enabled-text { font-size: 14px; color: var(--ink); }
 .bulk { display: flex; gap: 8px; margin-bottom: 8px; }
+.menu-grid { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.menu-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); cursor: pointer; }
+.menu-check input { width: 16px; height: 16px; accent-color: var(--accent); }
 .presets { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .presets-label { font-size: 12px; color: var(--faint); }
 .presets .anticon { margin-inline-start: 3px; font-size: 12px; }

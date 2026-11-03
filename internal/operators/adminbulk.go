@@ -86,8 +86,14 @@ func (s *Admins) Bulk(ctx context.Context, in AdminBulkInput, clients Customers)
 		return nil, err
 	}
 
+	q := s.db.WithContext(ctx).Where("id IN ?", ids)
+	// An admin's selection reaches only their own resellers; any other id in
+	// it is simply not found, and counted unchanged below.
+	if caller := scopedTo(ctx); caller != nil {
+		q = q.Where("role = ? AND parent_admin_id = ?", model.RoleReseller, caller.ID)
+	}
 	var admins []model.Admin
-	if err := s.db.WithContext(ctx).Where("id IN ?", ids).Find(&admins).Error; err != nil {
+	if err := q.Find(&admins).Error; err != nil {
 		return nil, fmt.Errorf("service: load the selection: %w", err)
 	}
 	if err := s.fill(ctx, adminPtrs(admins)); err != nil {

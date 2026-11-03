@@ -113,6 +113,26 @@ export function expiryTitle(c) {
   return t('client.neverExpires')
 }
 
+// For the owner's list only: the operators above a customer -- the admin at
+// the top of their chain, and the reseller who sold them -- so a customer
+// made under an admin's reseller is traceable to both at a glance. `operators`
+// is a map of id to the operator row. Empty for the owner's own customers and
+// when no map is given (a reseller or an admin, whom the server never hands
+// another operator's ids anyway).
+export function ownerTags(c, operators) {
+  if (!operators) return []
+  const out = []
+  if (c.adminId) {
+    const a = operators[c.adminId]
+    out.push({ kind: 'admin', label: t('client.parentAdmin'), name: a ? a.username : `#${c.adminId}` })
+  }
+  if (c.ownerId && c.ownerId !== c.adminId) {
+    const r = operators[c.ownerId]
+    out.push({ kind: 'reseller', label: t('client.assignedReseller'), name: r ? r.username : `#${c.ownerId}` })
+  }
+  return out
+}
+
 // How many of a customer's tunnels or groups a row names before the rest fold
 // into a +N, so a customer on five is still one row high.
 export const INBOUND_CHIP_LIMIT = 1

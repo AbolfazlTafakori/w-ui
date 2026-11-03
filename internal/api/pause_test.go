@@ -161,20 +161,28 @@ func TestAPausedResellerIsToldWhyOnEveryChange(t *testing.T) {
 	}
 }
 
-// The owner and a panel administrator are never paused, and are never barred
-// from changing anything.
-func TestTheOwnerAndAnAdministratorAreNeverBarred(t *testing.T) {
+// The owner is never restricted. An admin is restricted to their own tree
+// unless the owner has let them see every customer. A good-standing operator
+// of any kind is not barred.
+func TestWhoIsRestrictedAndBarred(t *testing.T) {
 	srv, _, _ := pauseServer(t)
-	for _, a := range []model.Admin{
-		{ID: 1, Role: model.RoleOwner},
-		{ID: 2, Role: model.RoleAdmin, Enabled: true},
+	for _, tc := range []struct {
+		admin      model.Admin
+		restricted bool
+	}{
+		{model.Admin{ID: 1, Role: model.RoleOwner}, false},
+		{model.Admin{ID: 2, Role: model.RoleAdmin, Enabled: true}, true},
+		{model.Admin{ID: 3, Role: model.RoleAdmin, Enabled: true, CanViewAllClients: true}, false},
 	} {
-		sc, err := srv.scopeFor(context.Background(), &a)
+		sc, err := srv.scopeFor(context.Background(), &tc.admin)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if sc.Barred != "" || sc.Restricted {
-			t.Errorf("%s is served under %+v", a.Role, sc)
+		if sc.Restricted != tc.restricted {
+			t.Errorf("%s (seesAll=%v): restricted=%v, want %v", tc.admin.Role, tc.admin.CanViewAllClients, sc.Restricted, tc.restricted)
+		}
+		if sc.Barred != "" {
+			t.Errorf("%s in good standing is barred: %q", tc.admin.Role, sc.Barred)
 		}
 	}
 }

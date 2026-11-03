@@ -21,11 +21,16 @@ import (
 // writeRowByRow is how a flush was written before writeFlush: a statement a
 // row, through the model. Kept here as what writeFlush must equal.
 func writeRowByRow(tx *gorm.DB, usage, devices map[uint]usageDelta, liveness map[uint]trafficUpdate,
-	owners map[uint]uint, bucket time.Time) error {
+	owners, admins map[uint]uint, bucket time.Time) error {
 	byOwner := map[uint]uint64{}
+	byAdmin := map[uint]uint64{}
 	for id, d := range usage {
-		if owner := owners[id]; owner != 0 {
+		owner := owners[id]
+		if owner != 0 {
 			byOwner[owner] += d.Bytes
+		}
+		if admin := admins[id]; admin != 0 && admin != owner {
+			byAdmin[admin] += d.Bytes
 		}
 		cols := map[string]any{"used_bytes": gorm.Expr("used_bytes + ?", d.Bytes)}
 		if d.Up > 0 {
@@ -71,10 +76,12 @@ func writeRowByRow(tx *gorm.DB, usage, devices map[uint]usageDelta, liveness map
 			return err
 		}
 	}
-	for ownerID, delta := range byOwner {
-		if err := tx.Model(&model.Admin{}).Where("id = ?", ownerID).
-			UpdateColumn("used_bytes", gorm.Expr("used_bytes + ?", delta)).Error; err != nil {
-			return err
+	for _, m := range []map[uint]uint64{byOwner, byAdmin} {
+		for id, delta := range m {
+			if err := tx.Model(&model.Admin{}).Where("id = ?", id).
+				UpdateColumn("used_bytes", gorm.Expr("used_bytes + ?", delta)).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -84,7 +91,13 @@ func writeRowByRow(tx *gorm.DB, usage, devices map[uint]usageDelta, liveness map
 // earlier samples.
 func seedFlushDB(t *testing.T, db *gorm.DB, customers int) {
 	t.Helper()
-	for _, a := range []model.Admin{{Username: "r1", PasswordHash: "x", Role: model.RoleReseller}, {Username: "r2", PasswordHash: "x", Role: model.RoleReseller}} {
+	// r1 (id 1) and r2 (id 2) are resellers; a1 (id 3) is the admin above
+	// them, whose pool their customers' traffic also charges.
+	for _, a := range []model.Admin{
+		{Username: "r1", PasswordHash: "x", Role: model.RoleReseller, ParentAdminID: 3},
+		{Username: "r2", PasswordHash: "x", Role: model.RoleReseller, ParentAdminID: 3},
+		{Username: "a1", PasswordHash: "x", Role: model.RoleAdmin},
+	} {
 		if err := db.Create(&a).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -123,14 +136,15 @@ func seedFlushDB(t *testing.T, db *gorm.DB, customers int) {
 }
 
 // flushes is the same sequence of flushes, from one seed, for both writers.
-func flushes(seed int64, customers, accounts int) []func(w func(*gorm.DB, map[uint]usageDelta, map[uint]usageDelta, map[uint]trafficUpdate, map[uint]uint, time.Time) error, db *gorm.DB) error {
+func flushes(seed int64, customers, accounts int) []func(w func(*gorm.DB, map[uint]usageDelta, map[uint]usageDelta, map[uint]trafficUpdate, map[uint]uint, map[uint]uint, time.Time) error, db *gorm.DB) error {
 	rng := rand.New(rand.NewSource(seed))
 	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	var out []func(w func(*gorm.DB, map[uint]usageDelta, map[uint]usageDelta, map[uint]trafficUpdate, map[uint]uint, time.Time) error, db *gorm.DB) error
+	var out []func(w func(*gorm.DB, map[uint]usageDelta, map[uint]usageDelta, map[uint]trafficUpdate, map[uint]uint, map[uint]uint, time.Time) error, db *gorm.DB) error
 	for f := 0; f < 6; f++ {
 		usage, devices := map[uint]usageDelta{}, map[uint]usageDelta{}
 		liveness := map[uint]trafficUpdate{}
 		owners := map[uint]uint{}
+		admins := map[uint]uint{}
 		for id := 1; id <= customers; id++ {
 			if rng.Intn(3) == 0 {
 				continue
@@ -142,6 +156,9 @@ func flushes(seed int64, customers, accounts int) []func(w func(*gorm.DB, map[ui
 			usage[uint(id)] = usageDelta{Bytes: up + down, Up: up, Down: down}
 			if id%3 != 0 {
 				owners[uint(id)] = uint(id % 3)
+				// Both resellers sit under one parent admin (id 3), so a
+				// reseller's customer charges that admin's pool as well.
+				admins[uint(id)] = 3
 			}
 		}
 		for id := 1; id <= accounts; id++ {
@@ -161,8 +178,8 @@ func flushes(seed int64, customers, accounts int) []func(w func(*gorm.DB, map[ui
 		}
 		// Two flushes share a bucket, so the second finds the first's samples.
 		bucket := base.Add(time.Duration(f/2) * 5 * time.Minute)
-		out = append(out, func(w func(*gorm.DB, map[uint]usageDelta, map[uint]usageDelta, map[uint]trafficUpdate, map[uint]uint, time.Time) error, db *gorm.DB) error {
-			return db.Transaction(func(tx *gorm.DB) error { return w(tx, usage, devices, liveness, owners, bucket) })
+		out = append(out, func(w func(*gorm.DB, map[uint]usageDelta, map[uint]usageDelta, map[uint]trafficUpdate, map[uint]uint, map[uint]uint, time.Time) error, db *gorm.DB) error {
+			return db.Transaction(func(tx *gorm.DB) error { return w(tx, usage, devices, liveness, owners, admins, bucket) })
 		})
 	}
 	return out

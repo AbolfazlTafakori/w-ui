@@ -167,9 +167,17 @@ const (
 	// cannot be deleted or switched off, and everything is theirs to see.
 	RoleOwner AdminRole = "owner"
 
-	// RoleAdmin is a second pair of hands over every customer, without the
-	// machine underneath: no interfaces, no nodes, no routing, no settings,
-	// and no say over who administers the panel.
+	// RoleAdmin sits between the owner and the resellers: the owner's own
+	// tier of operator, with a ceiling like a reseller's and resellers of
+	// their own beneath them.
+	//
+	// An admin creates and manages their own resellers and their own
+	// customers, and by default sees only that tree -- their customers and
+	// their resellers' -- never another admin's. Two switches the owner sets
+	// widen this: one to see every customer, one to sell every tunnel. The
+	// machine stays the owner's: no nodes, no routing, no engine, no
+	// settings, and no say over who administers the panel, including no sight
+	// of the admins page itself.
 	RoleAdmin AdminRole = "admin"
 
 	// RoleReseller sells the panel's capacity as their own. They see their
@@ -187,23 +195,57 @@ func (r AdminRole) Valid() bool {
 	return false
 }
 
+// The pages an admin can be granted or kept from, by the owner, with a
+// checkbox each. An unchecked page is hidden from the admin and refused to
+// them in the backend.
+//
+// Only these are grantable. The machine -- settings, routing, the engine,
+// nodes, tunnels -- and the admins page itself are never here and never an
+// admin's, whatever is stored: those stay the owner's, enforced by the
+// owner-only middleware, so no stored row can hand one over.
+const (
+	MenuClients   = "clients"   // the admin's customers
+	MenuGroups    = "groups"    // their customer groups
+	MenuResellers = "resellers" // the resellers they created
+)
+
+// GrantableMenus is every page the owner may grant an admin, in menu order.
+func GrantableMenus() []string { return []string{MenuClients, MenuGroups, MenuResellers} }
+
+// ValidMenu reports whether m is a page that can be granted.
+func ValidMenu(m string) bool {
+	switch m {
+	case MenuClients, MenuGroups, MenuResellers:
+		return true
+	}
+	return false
+}
+
 func (r AdminRole) String() string { return string(r) }
 
 // ManagesPanel reports whether the role reaches the machine itself --
 // interfaces, nodes, outbounds, routing, the engine, settings and backups.
 func (r AdminRole) ManagesPanel() bool { return r == RoleOwner }
 
-// ManagesAdmins reports whether the role may add, change or remove operators.
-// Only the owner does: an administrator who could mint administrators is an
-// owner with extra steps.
+// ManagesAdmins reports whether the role may add, change or remove admins.
+// Only the owner does: an admin who could mint admins is an owner with extra
+// steps, so the admins page stays the owner's alone.
 func (r AdminRole) ManagesAdmins() bool { return r == RoleOwner }
 
-// SeesEveryone reports whether the role reads every customer and every group
-// rather than only their own.
-func (r AdminRole) SeesEveryone() bool { return r == RoleOwner || r == RoleAdmin }
+// ManagesResellers reports whether the role may add, change or remove
+// resellers. The owner and an admin do -- an admin only the resellers they
+// created, enforced where the action is carried out -- and a reseller never
+// does: a reseller who could make resellers would be an admin.
+func (r AdminRole) ManagesResellers() bool { return r == RoleOwner || r == RoleAdmin }
+
+// SeesEveryone reports whether the role, on its own, reads every customer and
+// every group rather than only their own tree. Only the owner does; an
+// admin's reach across the whole panel is a switch the owner sets on the
+// admin (CanViewAllClients), not a property of the role.
+func (r AdminRole) SeesEveryone() bool { return r == RoleOwner }
 
 // Capped reports whether the role is held to a ceiling -- a customer count, a
-// transfer allowance and an expiry. Only a reseller is: a ceiling on the
-// owner would be a ceiling they set on themselves, and an administrator sells
-// nothing of their own.
-func (r AdminRole) Capped() bool { return r == RoleReseller }
+// transfer allowance, an expiry, and the tunnels they may sell. A reseller
+// and an admin are; the owner is not, a ceiling they set on themselves being
+// no ceiling at all.
+func (r AdminRole) Capped() bool { return r == RoleReseller || r == RoleAdmin }

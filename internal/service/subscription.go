@@ -901,11 +901,18 @@ func bundleFormatName(format string) string {
 // It says they are off -- and not why: the reseller's standing with the
 // owner is not the customer's business.
 func (s *Subscriptions) statusShown(ctx context.Context, c *model.Client) string {
-	if c.OwnerID != 0 && c.Status.Serviceable() {
-		var a model.Admin
-		if err := s.db.WithContext(ctx).First(&a, c.OwnerID).Error; err == nil &&
-			a.Suspended(time.Now().UTC()) {
-			return string(model.StatusDisabled)
+	if c.Status.Serviceable() {
+		// The direct owner, and the admin above a reseller: either being
+		// suspended takes the customer off, so either is enough to say so.
+		now := time.Now().UTC()
+		for _, id := range []uint{c.OwnerID, c.AdminID} {
+			if id == 0 {
+				continue
+			}
+			var a model.Admin
+			if err := s.db.WithContext(ctx).First(&a, id).Error; err == nil && a.Suspended(now) {
+				return string(model.StatusDisabled)
+			}
 		}
 	}
 	return string(c.Status)

@@ -33,10 +33,12 @@ const signedIn = computed(() => !!store.admin)
 const nav = [
   { to: '/', key: 'nav.overview', icon: 'DashboardOutlined', exact: true, everyone: true },
   { to: '/interfaces', key: 'nav.interfaces', icon: 'ImportOutlined' },
-  { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true },
+  { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true, menu: 'clients' },
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
-  { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true },
-  { to: '/admins', key: 'nav.admins', icon: 'ShopOutlined' },
+  { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true, menu: 'groups' },
+  // The operator list, already named "Resellers": for an admin the backend
+  // narrows it to their own resellers, so the page reads as theirs.
+  { to: '/admins', key: 'nav.admins', icon: 'ShopOutlined', menu: 'resellers' },
   { to: '/nodes', key: 'nav.nodes', icon: 'ClusterOutlined' },
   { to: '/hosts', key: 'nav.hosts', icon: 'GlobalOutlined' },
   { to: '/outbounds', key: 'nav.outbounds', icon: 'ExportOutlined' },
@@ -102,7 +104,14 @@ watch(pageTitle, (name) => {
 const visibleNav = computed(() => {
   const me = store.admin
   if (!me || me.managesPanel) return nav
-  const keep = (item) => (me.seesEveryone ? item.everyone || item.sells : item.sells)
+  const grants = me.menuIds || []
+  const keep = (item) => {
+    // An admin: the overview always, plus the pages the owner granted. A page
+    // the owner left unchecked is not here, and the backend refuses it too.
+    if (me.managesResellers) return item.everyone || (item.menu && grants.includes(item.menu))
+    // A reseller: the fixed two pages that are theirs.
+    return item.sells
+  }
   return nav.filter((item) => !item.children && keep(item))
 })
 

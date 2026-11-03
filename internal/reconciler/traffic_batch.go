@@ -87,11 +87,21 @@ func addToRows(tx *gorm.DB, table string, columns []string, ids []uint, rows fun
 
 // writeFlush is a flush's writes, inside its transaction.
 func writeFlush(tx *gorm.DB, usage, devices map[uint]usageDelta, liveness map[uint]trafficUpdate,
-	owners map[uint]uint, bucket time.Time) error {
+	owners, admins map[uint]uint, bucket time.Time) error {
+	// byOwner charges each customer to their direct owner; byAdmin charges a
+	// reseller's customer to the admin above them as well, so the same bytes
+	// deduct from both the reseller's ceiling and the admin's pool. A
+	// customer an admin created directly has the admin as its owner already,
+	// so it is charged once -- byAdmin skips it where the admin is the owner.
 	byOwner := map[uint]uint64{}
+	byAdmin := map[uint]uint64{}
 	for id, d := range usage {
-		if owner := owners[id]; owner != 0 {
+		owner := owners[id]
+		if owner != 0 {
 			byOwner[owner] += d.Bytes
+		}
+		if admin := admins[id]; admin != 0 && admin != owner {
+			byAdmin[admin] += d.Bytes
 		}
 	}
 
@@ -170,16 +180,20 @@ func writeFlush(tx *gorm.DB, usage, devices map[uint]usageDelta, liveness map[ui
 		return err
 	}
 
-	// The resellers' running totals, with the same deltas in the same
-	// transaction; a handful of rows.
-	for _, ownerID := range sortedIDs(byOwner) {
-		delta := byOwner[ownerID]
-		if delta == 0 {
-			continue
-		}
-		if err := tx.Model(&model.Admin{}).Where("id = ?", ownerID).
-			UpdateColumn("used_bytes", gorm.Expr("used_bytes + ?", delta)).Error; err != nil {
-			return err
+	// The operators' running totals, with the same deltas in the same
+	// transaction; a handful of rows. Direct owners first, then the admins
+	// above any resellers, both added onto used_bytes in SQL so a reset from
+	// the UI meanwhile is not undone.
+	for _, m := range []map[uint]uint64{byOwner, byAdmin} {
+		for _, id := range sortedIDs(m) {
+			delta := m[id]
+			if delta == 0 {
+				continue
+			}
+			if err := tx.Model(&model.Admin{}).Where("id = ?", id).
+				UpdateColumn("used_bytes", gorm.Expr("used_bytes + ?", delta)).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil

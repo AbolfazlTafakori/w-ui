@@ -107,6 +107,7 @@
           }
         ],
         "activatedAt": null,
+        "adminId": 0,
         "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 3,
@@ -156,6 +157,7 @@
           }
         ],
         "activatedAt": null,
+        "adminId": 0,
         "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
@@ -208,6 +210,7 @@
           }
         ],
         "activatedAt": null,
+        "adminId": 0,
         "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
@@ -257,6 +260,7 @@
           }
         ],
         "activatedAt": null,
+        "adminId": 0,
         "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
@@ -306,6 +310,7 @@
           }
         ],
         "activatedAt": null,
+        "adminId": 0,
         "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 1,
@@ -372,6 +377,7 @@
           }
         ],
         "activatedAt": null,
+        "adminId": 0,
         "baleId": 0,
         "createdAt": "\u003cstring\u003e",
         "deviceLimit": 2,

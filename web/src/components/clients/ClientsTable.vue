@@ -3,7 +3,7 @@
 import { store, t } from '../../lib/store.js'
 import { bytes } from '../../lib/format.js'
 import {
-  INBOUND_CHIP_LIMIT, barColor, expiryTag, expiryTitle, inboundChips, lastOnlineTitle, remainingTag, speedActive, speedText,
+  INBOUND_CHIP_LIMIT, barColor, expiryTag, expiryTitle, inboundChips, lastOnlineTitle, ownerTags, remainingTag, speedActive, speedText,
   statusTag, usedPercent,
 } from '../../lib/clientRow.js'
 import AntIcon from '../AntIcon.vue'
@@ -17,6 +17,9 @@ defineProps({
   // Rows with a change in flight, whose switch spins.
   pending: { type: Object, required: true },
   interfaces: { type: Array, default: () => [] },
+  // The operators above each customer, by id, for the owner's ownership
+  // tags; null for anyone the server does not hand other operators' ids.
+  operators: { type: Object, default: null },
   // Whether any customer has a group, which adds that column.
   hasGroups: { type: Boolean, default: false },
   groupFilter: { type: String, default: '' },
@@ -86,6 +89,11 @@ const emit = defineEmits(['toggle', 'toggle-all', 'qr', 'info', 'rotate', 'reset
                 {{ c.onlineNow || 0 }} / {{ c.deviceLimit || '∞' }}
               </span>
               <span v-if="c.note" class="sub" :title="c.note">{{ c.note }}</span>
+              <!-- The owner's traceability: the admin at the top of this
+                   customer's chain, and the reseller who sold them. -->
+              <span v-for="tag in ownerTags(c, operators)" :key="tag.kind"
+                    class="atag" :class="tag.kind === 'admin' ? 'purple' : 'geekblue'"
+                    style="margin: 2px 2px 0 0" :title="`${tag.label}: ${tag.name}`">{{ tag.label }}: {{ tag.name }}</span>
             </div>
           </td>
           <td v-if="hasGroups">

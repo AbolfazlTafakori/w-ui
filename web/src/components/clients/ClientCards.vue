@@ -4,7 +4,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { store, t } from '../../lib/store.js'
 import { bytes } from '../../lib/format.js'
 import {
-  barColor, expiryTag, remainingTag, speedActive, speedText, statusTag, usedPercent,
+  barColor, expiryTag, ownerTags, remainingTag, speedActive, speedText, statusTag, usedPercent,
 } from '../../lib/clientRow.js'
 import AntIcon from '../AntIcon.vue'
 import Toggle from '../Toggle.vue'
@@ -18,6 +18,8 @@ defineProps({
   // Rows with a change in flight, whose switch spins.
   pending: { type: Object, required: true },
   interfaces: { type: Array, default: () => [] },
+  // The operators above each customer, by id, for the owner's ownership tags.
+  operators: { type: Object, default: null },
   total: { type: Number, default: 0 },
   page: { type: Number, default: 1 },
   pageSize: { type: Number, default: 25 },
@@ -87,6 +89,10 @@ onUnmounted(() => {
         </div>
       </div>
       <span v-if="c.note" class="client-card-comment">{{ c.note }}</span>
+      <!-- The owner's traceability: the admin and reseller above this customer. -->
+      <span v-for="tag in ownerTags(c, operators)" :key="tag.kind"
+            class="atag" :class="tag.kind === 'admin' ? 'purple' : 'geekblue'"
+            style="margin: 2px 2px 0 0" :title="`${tag.label}: ${tag.name}`">{{ tag.label }}: {{ tag.name }}</span>
       <div class="client-traffic-cell is-compact" :class="{ 'is-unlimited': !c.quotaBytes }">
         <span class="client-traffic-cell-used ltr">{{ bytes(c.usedBytes, store.locale) }}</span>
         <span class="aprogress client-traffic-cell-bar"><span :style="{ width: (c.quotaBytes ? Math.min(100, usedPercent(c) ?? 0) : 100) + '%', background: barColor(c) }"></span></span>

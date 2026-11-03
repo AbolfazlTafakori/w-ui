@@ -26,7 +26,25 @@ func ScopeFor(admin *model.Admin) Scope {
 	if admin == nil || admin.Role.SeesEveryone() {
 		return Scope{}
 	}
-	return Scope{AdminID: admin.ID, Restricted: true, Hidden: admin.GroupName}
+	// An admin the owner has let see every customer is unrestricted too --
+	// one scope that matches no condition rather than a condition over the
+	// whole panel that could be got wrong.
+	if admin.Role == model.RoleAdmin && admin.CanViewAllClients {
+		return Scope{}
+	}
+	// Owners is the set the narrowing matches against. A reseller's is their
+	// own id alone; an admin's starts with their own id and gains their
+	// resellers where the DB is reachable (the API layer appends them). The
+	// admin_id stamped on anything created is the admin at the top of the
+	// chain: an admin themselves, a reseller their parent.
+	s := Scope{AdminID: admin.ID, Restricted: true, Hidden: admin.GroupName, Owners: []uint{admin.ID}}
+	switch admin.Role {
+	case model.RoleAdmin:
+		s.AdminStamp = admin.ID
+	case model.RoleReseller:
+		s.AdminStamp = admin.ParentAdminID
+	}
+	return s
 }
 
 // WithScope attaches a scope to a context.
@@ -38,23 +56,31 @@ func ScopeOf(ctx context.Context) Scope { return scope.Of(ctx) }
 // OwnerOf is the id to stamp on something this request creates.
 func OwnerOf(ctx context.Context) uint { return scope.OwnerOf(ctx) }
 
+// AdminStampOf is the admin_id to stamp on a customer this request creates.
+func AdminStampOf(ctx context.Context) uint { return scope.AdminStampOf(ctx) }
+
 // fillOwnerPause marks each customer whose reseller is paused, and why.
 //
 // Read from the operators table, which is not narrowed to the caller: a
 // reseller reading their own customers is asking about their own row, and
 // the owner is asking about everyone's. One query for the page.
 func fillOwnerPause(ctx context.Context, db *gorm.DB, items []model.Client) error {
-	owners := map[uint]bool{}
+	// Both the direct owner and the admin above a reseller can be the reason
+	// a customer is off, so both are read.
+	operators := map[uint]bool{}
 	for i := range items {
 		if items[i].OwnerID != 0 {
-			owners[items[i].OwnerID] = true
+			operators[items[i].OwnerID] = true
+		}
+		if items[i].AdminID != 0 {
+			operators[items[i].AdminID] = true
 		}
 	}
-	if len(owners) == 0 {
+	if len(operators) == 0 {
 		return nil
 	}
-	ids := make([]uint, 0, len(owners))
-	for id := range owners {
+	ids := make([]uint, 0, len(operators))
+	for id := range operators {
 		ids = append(ids, id)
 	}
 	var admins []model.Admin
@@ -66,8 +92,15 @@ func fillOwnerPause(ctx context.Context, db *gorm.DB, items []model.Client) erro
 	for i := range admins {
 		why[admins[i].ID] = admins[i].PauseReason(now)
 	}
+	// The direct owner's reason first; failing that, the admin above them --
+	// a reseller in good standing whose admin is switched off is still off,
+	// and the panel says why.
 	for i := range items {
-		items[i].OwnerPaused = why[items[i].OwnerID]
+		if r := why[items[i].OwnerID]; r != "" {
+			items[i].OwnerPaused = r
+		} else {
+			items[i].OwnerPaused = why[items[i].AdminID]
+		}
 	}
 	return nil
 }

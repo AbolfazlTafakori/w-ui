@@ -149,6 +149,42 @@ func TestTheScopeSaysWhatItAllows(t *testing.T) {
 	}
 }
 
+// An admin reaches the whole of their tree -- their own customers and
+// those of every reseller under them -- through the one Owners set, by the
+// same automatic narrowing a reseller gets, a reseller being a set of one.
+func TestAnOwnerSetReachesSeveralResellers(t *testing.T) {
+	db := panel(t)
+	// Reza (7) and Sara (9) are this admin's resellers; the owner's own
+	// customer (owner_id 0) stays out.
+	admin := With(context.Background(), Scope{AdminID: 7, Restricted: true, Owners: []uint{7, 9}})
+
+	var mine []client
+	if err := db.WithContext(admin).Find(&mine).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(mine) != 3 {
+		t.Fatalf("the admin read %d customers: %+v", len(mine), mine)
+	}
+	// The owner's own is unreachable by id, like any row outside the set.
+	var owners client
+	if err := db.WithContext(admin).First(&owners, 1).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("the admin read the owner's customer: %+v, %v", owners, err)
+	}
+	// A change lands on a reseller's customer under them, and nowhere else.
+	if res := db.WithContext(admin).Model(&client{}).Where("id = ?", 4).Update("name", "moved"); res.RowsAffected != 1 {
+		t.Fatalf("the admin could not change their reseller's customer: %v", res.Error)
+	}
+	if res := db.WithContext(admin).Model(&client{}).Where("id = ?", 1).Update("name", "nope"); res.RowsAffected != 0 {
+		t.Fatalf("the admin changed the owner's customer: %d", res.RowsAffected)
+	}
+	// The hand-written aggregate path narrows to the same set.
+	var n int64
+	q := db.Model(&account{}).Joins("JOIN clients c ON c.id = accounts.client_id")
+	if err := Narrow(admin, q, "c.owner_id").Count(&n).Error; err != nil || n != 3 {
+		t.Fatalf("the admin's accounts: %d, %v", n, err)
+	}
+}
+
 // Narrow puts the same condition on a table Register does not see.
 func TestNarrowTakesTheConditionToAnotherTable(t *testing.T) {
 	db := panel(t)

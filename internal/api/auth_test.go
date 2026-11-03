@@ -242,3 +242,34 @@ func TestAResellersTermStartsAtFirstSignIn(t *testing.T) {
 		t.Fatal("a second sign-in moved the term")
 	}
 }
+
+// requireMenu refuses an admin a page the owner left unchecked, and lets
+// them through one that is checked. The owner and a reseller pass whatever
+// the grants say -- this gate is an admin's alone.
+func TestRequireMenuGatesAnAdminByTheirGrants(t *testing.T) {
+	s, db := authServer(t)
+	ad := admin(t, db, model.Admin{Username: "ali", Role: model.RoleAdmin, Enabled: true}, "a long password")
+	// Granted the groups page only.
+	if err := db.Create(&model.AdminMenuPermission{AdminID: ad.ID, Menu: model.MenuGroups}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	pass := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
+	run := func(a *model.Admin, menu string) int {
+		rec := httptest.NewRecorder()
+		s.requireMenu(menu, pass)(rec, asAdmin(a, http.MethodGet, "/x", nil))
+		return rec.Code
+	}
+
+	if code := run(ad, model.MenuGroups); code != http.StatusOK {
+		t.Errorf("the granted groups page was refused: %d", code)
+	}
+	if code := run(ad, model.MenuClients); code != http.StatusForbidden {
+		t.Errorf("the ungranted clients page was allowed: %d", code)
+	}
+	// The owner is never gated by this, whatever is stored.
+	owner := &model.Admin{ID: 999, Role: model.RoleOwner}
+	if code := run(owner, model.MenuClients); code != http.StatusOK {
+		t.Errorf("the owner was gated by a page grant: %d", code)
+	}
+}

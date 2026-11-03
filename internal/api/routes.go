@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
 // The route table is data, not a sequence of registration calls.
@@ -902,6 +904,17 @@ var (
 	}
 )
 
+// menuForGroup maps an operator route heading to the admin page that gates
+// it, or "" when the heading is not one an admin's menu can hide. An admin
+// the owner left without that page is refused these routes (requireMenu);
+// the owner and a reseller are not gated this way.
+var menuForGroup = map[string]string{
+	"Customers": model.MenuClients,
+	"Clients":   model.MenuClients,
+	"Groups":    model.MenuGroups,
+	"Operators": model.MenuResellers,
+}
+
 // forOwner reports whether a route is the owner's alone.
 func (r Route) forOwner() bool {
 	if r.Group == "Operators" {
@@ -920,10 +933,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux, routes []Route) {
 	for _, r := range routes {
 		h := r.handler
 		if r.Group == "Operators" {
-			h = s.requireAdminManager(h)
+			h = s.requireResellerManager(h)
 		} else if r.forOwner() && (r.Auth || r.Operator) {
 			// An open route has nobody signed in to be the owner.
 			h = s.requireManager(h)
+		}
+		// Under the signed-in operator, refuse an admin a page the owner left
+		// unchecked. Inside requireAuth (wrapped below), so the admin is known.
+		if m := menuForGroup[r.Group]; m != "" {
+			h = s.requireMenu(m, h)
 		}
 		if r.Operator {
 			h = s.requireOperator(h)
