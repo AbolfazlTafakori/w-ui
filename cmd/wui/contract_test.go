@@ -154,12 +154,23 @@ func contractJSON(t *testing.T, status int, raw []byte) []byte {
 	return append(out, '\n')
 }
 
+// alwaysVaries are fields whose value AND whether it is set at all depend on
+// when the test runs. A usage reset is reconciled on startup and may or may
+// not land before the contract is read, so lastResetAt comes back either as a
+// date or as null from one run to the next -- so both the value and its
+// null-ness are flattened to one token, where volatile masks only the value.
+var alwaysVaries = map[string]bool{"lastResetAt": true}
+
 // mask replaces volatile values, and secrets the panel generates fresh (the
 // keys a rotation issues), with their kind.
 func mask(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, val := range x {
+			if alwaysVaries[k] {
+				x[k] = "<varies>"
+				continue
+			}
 			if volatile[k] && val != nil {
 				x[k] = fmt.Sprintf("<%T>", val)
 				continue
