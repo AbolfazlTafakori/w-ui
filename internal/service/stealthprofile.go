@@ -41,6 +41,9 @@ type WUIProfile struct {
 	// take keeps the difference and adds it.
 	ServerTime int64       `json:"serverTime"`
 	Tunnels    []WUITunnel `json:"tunnels"`
+	// Agents are the customer's IKEv2, OpenConnect, L2TP and PPTP devices
+	// (see WUIAgent); left out when there are none.
+	Agents []WUIAgent `json:"agents,omitempty"`
 }
 
 // WUITunnel is one WireGuard file and the ways to its tunnel.
@@ -95,6 +98,16 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 	for i := range c.Accounts {
 		acc := c.Accounts[i]
 		iface, ok := byID[acc.InterfaceID]
+		if ok && iface.Protocol.ByAgent() {
+			if _, err := s.renderer(acc.InterfaceID, iface.Protocol); err != nil {
+				s.log.Warn("no driver could render a configuration", "client", c.Name, "account", acc.ID, "error", err)
+				continue
+			}
+			if a, ok := wuiAgent(&acc, iface); ok {
+				p.Agents = append(p.Agents, a)
+			}
+			continue
+		}
 		if !ok || iface.Protocol != model.ProtocolWireGuard || acc.PrivateKey == "" {
 			continue
 		}
@@ -141,8 +154,8 @@ func (s *Subscriptions) wuiBundle(ctx context.Context, c *model.Client, byID map
 		}
 		p.Tunnels = append(p.Tunnels, t)
 	}
-	if len(p.Tunnels) == 0 {
-		return nil, fmt.Errorf("%w: %s has no WireGuard file", ErrNotFound, c.Name)
+	if len(p.Tunnels) == 0 && len(p.Agents) == 0 {
+		return nil, fmt.Errorf("%w: %s has no WireGuard file or agent device", ErrNotFound, c.Name)
 	}
 	body, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
