@@ -888,6 +888,7 @@
   "interface.formReady": "Daemon ready",
   "interface.formSaving": "Saving…",
   "interface.formSubtitle": "Configure mesh endpoint and tunnel routing",
+  "interface.hookHint": "One command per line. %i stands for the interface name. Runs on the server as root; leave blank unless you need it.",
   "interface.ikev2Mode.eap-tls": "Certificate in EAP (EAP-TLS)",
   "interface.ikev2Mode.mschapv2": "Username and password (MSCHAPv2)",
   "interface.ikev2Mode.psk": "Key (PSK)",

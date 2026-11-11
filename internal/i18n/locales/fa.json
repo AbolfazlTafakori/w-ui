@@ -888,6 +888,7 @@
   "interface.formReady": "آماده",
   "interface.formSaving": "در حال ذخیره…",
   "interface.formSubtitle": "پیکربندی اندپوینت و مسیریابی تونل",
+  "interface.hookHint": "هر خط یک دستور. %i نامِ اینترفیس است. روی سرور با دسترسی root اجرا می‌شود؛ اگر لازم نداری خالی بگذار.",
   "interface.ikev2Mode.eap-tls": "گواهی در EAP (EAP-TLS)",
   "interface.ikev2Mode.mschapv2": "نام کاربری و رمز (MSCHAPv2)",
   "interface.ikev2Mode.psk": "کلید (PSK)",
