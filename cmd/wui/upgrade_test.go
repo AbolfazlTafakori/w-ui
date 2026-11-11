@@ -296,6 +296,8 @@ var newSinceNewestFixture = map[string]string{
 	// The Bale bot, beside the Telegram one.
 	"bale.enabled": "3.1.0", "bale.botToken": "3.1.0", "bale.chatId": "3.1.0", "bale.kinds": "3.1.0",
 	"bale.lang": "3.1.0", "bale.runTime": "3.1.0", "bale.backup": "3.1.0", "bale.backupTime": "3.1.0",
+	// Whole-panel split tunnel: include or exclude, and where the rest goes.
+	"routing.splitMode": "3.2.0", "routing.splitList": "3.2.0", "routing.splitOutbound": "3.2.0",
 }
 
 // runtimeKeys are kept by the panel for itself, not set by an operator.
