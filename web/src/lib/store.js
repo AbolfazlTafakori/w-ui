@@ -104,6 +104,24 @@ export async function loadMessages(locale) {
   }
 }
 
+// setLocale changes the interface language and remembers the choice. For a
+// signed-in operator it is written to their account, so the language follows
+// them to another browser and is not undone at the next sign-in -- which is
+// what made a switch here look like it never stuck. Persisting is quiet on
+// failure: the local change already took effect, and the account write is only
+// about carrying it across sessions.
+export async function setLocale(locale) {
+  if (!locale || locale === store.locale) return
+  await loadMessages(locale)
+  if (store.admin) {
+    try {
+      store.admin = await api.updateMe({ locale })
+    } catch {
+      /* the local choice stands; it just will not follow to another browser */
+    }
+  }
+}
+
 export async function bootstrap() {
   store.meta = await api.meta()
   await loadMessages(store.locale)
@@ -111,6 +129,11 @@ export async function bootstrap() {
   if (getToken()) {
     try {
       store.admin = await api.me()
+      // The account's own language is authoritative once signed in, so a
+      // reload lands on the language the operator chose, on any browser.
+      if (store.admin?.locale && store.admin.locale !== store.locale) {
+        await loadMessages(store.admin.locale)
+      }
       loadPanelSettings()
     } catch {
       store.admin = null

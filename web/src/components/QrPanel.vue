@@ -18,17 +18,32 @@ const props = defineProps({
 const svg = ref('')
 const canvas = ref(null)
 
+// A module must not fall below this many pixels on screen, or a phone camera
+// cannot resolve it. A dense profile -- an AmneziaWG tunnel runs to a hundred
+// modules a side once its obfuscation fields are in -- is therefore drawn
+// larger than the caller's nominal size rather than crushed into it; the cap
+// keeps even the densest code to something a dialog can hold.
+const MIN_MODULE_PX = 4
+const MAX_QR_PX = 480
+const MARGIN_MODULES = 4
+
+// The size the code is actually shown and exported at: the caller's size when
+// the profile is short, grown toward a readable density when it is long.
+const displaySize = ref(props.size)
+
 async function draw() {
   if (!props.showQr || !props.value) {
     svg.value = ''
     return
   }
   try {
+    const across = QRCode.create(props.value, { errorCorrectionLevel: 'L' }).modules.size + MARGIN_MODULES * 2
+    displaySize.value = Math.min(MAX_QR_PX, Math.max(props.size, across * MIN_MODULE_PX))
     // Their QRCode: errorLevel L, four modules of margin, black on white.
     svg.value = await QRCode.toString(props.value, {
       type: 'svg',
       errorCorrectionLevel: 'L',
-      margin: 4,
+      margin: MARGIN_MODULES,
       color: { dark: '#000000', light: '#ffffff' },
     })
   } catch (e) {
@@ -66,12 +81,12 @@ function toPng() {
     const img = new Image()
     img.onload = () => {
       const c = document.createElement('canvas')
-      c.width = props.size
-      c.height = props.size
+      c.width = displaySize.value
+      c.height = displaySize.value
       const ctx = c.getContext('2d')
       ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, props.size, props.size)
-      ctx.drawImage(img, 0, 0, props.size, props.size)
+      ctx.fillRect(0, 0, displaySize.value, displaySize.value)
+      ctx.drawImage(img, 0, 0, displaySize.value, displaySize.value)
       URL.revokeObjectURL(url)
       c.toBlob((b) => resolve(b), 'image/png')
     }
@@ -118,7 +133,7 @@ async function downloadImage() {
       <button v-if="downloadName" class="abtn small icon" :title="t('action.download')" :aria-label="t('action.download')" @click="downloadText"><AntIcon name="DownloadOutlined" /></button>
     </div>
     <div v-if="showQr" ref="canvas" class="qr-panel-canvas" role="button" tabindex="0" :aria-label="t('action.copy')" :title="t('action.copy')" @click="copyImage" @keydown.enter="copyImage">
-      <div class="qr-code" :style="{ width: size + 'px', maxWidth: '100%' }" v-html="svg"></div>
+      <div class="qr-code" :style="{ width: displaySize + 'px', maxWidth: '100%' }" v-html="svg"></div>
     </div>
   </div>
 </template>
@@ -137,5 +152,5 @@ async function downloadImage() {
 .qr-remark { margin: 0; }
 .qr-panel-canvas { display: flex; justify-content: center; padding: 6px 0; }
 .qr-panel-canvas .qr-code { cursor: pointer; background: #fff; border-radius: 4px; line-height: 0; }
-.qr-panel-canvas .qr-code svg { display: block; width: 100%; height: auto; max-width: 360px; }
+.qr-panel-canvas .qr-code svg { display: block; width: 100%; height: auto; }
 </style>

@@ -36,6 +36,12 @@ const emit = defineEmits(['close', 'saved'])
 
 const editing = computed(() => !!props.admin)
 
+// An admin's dialog is two tabs: Account (who they are and what they are sold)
+// and Access (how far they reach and which pages they open). A reseller has no
+// pages to grant and no reach to widen, so it stays one scroll and the strip
+// never shows. '1' is Account, '2' is Access.
+const tab = ref('1')
+
 // The same alphabets the customer dialog draws from. A username a reseller
 // can read over the phone; a password nobody has to.
 function draw(n, alphabet) {
@@ -179,6 +185,9 @@ function validate() {
     if (!Number.isInteger(d) || d < 1 || d > 3650) e.term = t('admins.daysRequired')
   }
   fieldError.value = e
+  // Every validated field lives on the Account tab, so a hidden error never
+  // leaves the save looking like it did nothing.
+  if (Object.keys(e).length) tab.value = '1'
   return !Object.keys(e).length
 }
 
@@ -224,6 +233,9 @@ async function submit() {
     const where = { interfaceIds: 'servers', durationDays: 'term', expiresAt: 'term' }[err.field] || err.field
     if (where && ['username', 'password', 'servers', 'term', 'groupName', 'role'].includes(where)) {
       fieldError.value = { [where]: err.message }
+      // Bring the tab holding the flagged field forward: servers sit under
+      // Access for an admin, everything else under Account.
+      tab.value = isAdmin.value && where === 'servers' ? '2' : '1'
     } else {
       notify(err.message, 'error')
     }
@@ -243,6 +255,14 @@ async function submit() {
 
       <div class="amodal-body rf-body">
         <form id="reseller-form" @submit.prevent="submit">
+          <!-- Admins split in two: who they are, then what they may reach. A
+               reseller has neither reach nor pages, so no strip. -->
+          <div v-if="isAdmin" class="atabs-nav"><div class="atabs-list">
+            <button type="button" class="atab" :class="{ active: tab === '1' }" @click="tab = '1'"><AntIcon name="IdcardOutlined" /><span>{{ t('admins.tab.account') }}</span></button>
+            <button type="button" class="atab" :class="{ active: tab === '2' }" @click="tab = '2'"><AntIcon name="SafetyOutlined" /><span>{{ t('admins.tab.access') }}</span></button>
+          </div></div>
+
+          <div v-show="!isAdmin || tab === '1'" class="rf-pane">
           <div v-if="!editing" class="presets">
             <span class="presets-label">{{ t('client.presets') }}</span>
             <button v-for="p in presets" :key="`${p.days}-${p.gb}`" type="button" class="abtn small" @click="applyPreset(p)">
@@ -353,10 +373,36 @@ async function submit() {
             </div>
           </div>
 
+          </div><!-- /Account pane -->
+
+          <div v-show="!isAdmin || tab === '2'" class="rf-pane">
+          <!-- An admin's reach, as a list of plain choices rather than a row of
+               switches with the explanation hidden behind a mark. Off
+               everywhere, they see only their own tree and sell only the
+               servers chosen below. -->
+          <p v-if="isAdmin" class="access-intro">{{ t('admins.accessIntro') }}</p>
+
+          <div v-if="isAdmin" class="perm-list">
+            <label class="perm-item">
+              <div class="perm-meta">
+                <div class="perm-title">{{ t('admins.canViewAllClients') }}</div>
+                <div class="perm-desc">{{ t('admins.canViewAllClientsHint') }}</div>
+              </div>
+              <Toggle v-model="form.canViewAllClients" :label="t('admins.canViewAllClients')" />
+            </label>
+            <label class="perm-item">
+              <div class="perm-meta">
+                <div class="perm-title">{{ t('admins.canViewAllInterfaces') }}</div>
+                <div class="perm-desc">{{ t('admins.canViewAllInterfacesHint') }}</div>
+              </div>
+              <Toggle v-model="form.canViewAllInterfaces" :label="t('admins.canViewAllInterfaces')" />
+            </label>
+          </div>
+
           <!-- The servers they may sell, picked as a customer's are. What is
                chosen here is exactly what their own customer form offers:
                nothing more, and nothing missing. -->
-          <div v-if="showServers" class="aform-item">
+          <div v-if="showServers" class="aform-item perm-block">
             <label class="aform-label">{{ t('admins.servers') }} <HelpTip :text="t('admins.serversHint')" /></label>
             <div class="bulk">
               <button type="button" class="abtn small" :disabled="allChosen" @click="chooseAll">{{ t('client.selectAll') }}</button>
@@ -367,35 +413,22 @@ async function submit() {
             <p v-else-if="!form.interfaceIds.length" class="hint warn-hint">{{ t('admins.noServersWarn') }}</p>
           </div>
 
-          <!-- An admin's reach and their pages. The see-all switches widen the
-               default -- their own tree, their chosen servers -- to the whole
-               panel; the checklist is the pages they may open, the machine
-               pages never among them. -->
-          <template v-if="isAdmin">
-            <div class="arow16">
-              <div class="acol12">
-                <div class="aform-item">
-                  <label class="aform-label">{{ t('admins.canViewAllClients') }} <HelpTip :text="t('admins.canViewAllClientsHint')" /></label>
-                  <div class="switch-line"><Toggle v-model="form.canViewAllClients" :label="t('admins.canViewAllClients')" /></div>
+          <!-- The pages this admin may open. Each a row with what it holds, so
+               a grant reads as a decision rather than a word in a grid. The
+               machine pages are never among them. -->
+          <div v-if="isAdmin" class="aform-item perm-block">
+            <label class="aform-label">{{ t('admins.pages') }} <HelpTip :text="t('admins.pagesHint')" /></label>
+            <div class="perm-list">
+              <label v-for="m in ALL_MENUS" :key="m" class="perm-item">
+                <div class="perm-meta">
+                  <div class="perm-title">{{ t(`admins.page.${m}`) }}</div>
+                  <div class="perm-desc">{{ t(`admins.page.${m}.desc`) }}</div>
                 </div>
-              </div>
-              <div class="acol12">
-                <div class="aform-item">
-                  <label class="aform-label">{{ t('admins.canViewAllInterfaces') }} <HelpTip :text="t('admins.canViewAllInterfacesHint')" /></label>
-                  <div class="switch-line"><Toggle v-model="form.canViewAllInterfaces" :label="t('admins.canViewAllInterfaces')" /></div>
-                </div>
-              </div>
+                <input type="checkbox" class="perm-box" :value="m" v-model="form.menuIds" />
+              </label>
             </div>
-            <div class="aform-item">
-              <label class="aform-label">{{ t('admins.pages') }} <HelpTip :text="t('admins.pagesHint')" /></label>
-              <div class="menu-grid">
-                <label v-for="m in ALL_MENUS" :key="m" class="menu-check">
-                  <input type="checkbox" :value="m" v-model="form.menuIds" />
-                  <span>{{ t(`admins.page.${m}`) }}</span>
-                </label>
-              </div>
-            </div>
-          </template>
+          </div>
+          </div><!-- /Access pane -->
         </form>
       </div>
 
@@ -439,9 +472,25 @@ async function submit() {
 .enabled-line { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .enabled-text { font-size: 14px; color: var(--ink); }
 .bulk { display: flex; gap: 8px; margin-bottom: 8px; }
-.menu-grid { display: flex; flex-wrap: wrap; gap: 8px 20px; }
-.menu-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); cursor: pointer; }
-.menu-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* Access tab: reach and page grants as a readable list -- each choice a row
+   with its own one-line account of what it does, the control on the end. */
+.rf-pane { min-width: 0; }
+.access-intro { margin: 0 0 12px; font-size: 13px; color: var(--muted); line-height: 1.55; }
+.perm-block { margin-top: 18px; }
+.perm-list { display: flex; flex-direction: column; gap: 8px; }
+.perm-item {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft); border-radius: 8px;
+  background: var(--surface-2, transparent);
+  cursor: pointer;
+}
+.perm-item:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line-soft)); }
+.perm-meta { flex: 1 1 auto; min-width: 0; }
+.perm-title { font-size: 14px; font-weight: 500; color: var(--ink); }
+.perm-desc { margin-top: 2px; font-size: 12px; color: var(--faint); line-height: 1.5; }
+.perm-box { flex: 0 0 auto; width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
 .presets { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .presets-label { font-size: 12px; color: var(--faint); }
 .presets .anticon { margin-inline-start: 3px; font-size: 12px; }

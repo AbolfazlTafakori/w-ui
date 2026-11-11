@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
-import { store, t, notify, signOut } from './lib/store.js'
+import { store, t, notify, signOut, setLocale } from './lib/store.js'
+import { localeName, localeFlag } from './lib/locales.js'
 import Icon from './components/Icon.vue'
 import AntIcon from './components/AntIcon.vue'
 import { themeMode, cycleTheme } from './lib/theme.js'
@@ -10,6 +11,29 @@ const router = useRouter()
 const route = useRoute()
 
 const signedIn = computed(() => !!store.admin)
+
+// The interface language, switchable from the rail and the mobile drawer. The
+// list is the catalog's, so a locale added to the build appears on its own; a
+// one-entry list hides the control, since there is nothing to switch to. The
+// choice is written to the operator's account (setLocale), so it is kept
+// rather than snapping back at the next sign-in.
+const localeList = computed(() => store.meta?.locales || ['en'])
+const langOpen = ref(false)
+async function pickLocale(l) {
+  langOpen.value = false
+  await setLocale(l)
+}
+function toggleLang() {
+  langOpen.value = !langOpen.value
+}
+// A click anywhere else closes the open menu, the way a real dropdown does.
+function closeLangOnOutside(e) {
+  if (!e.target.closest?.('.sider-lang-wrap, .drawer-lang-wrap')) langOpen.value = false
+}
+watch(langOpen, (open) => {
+  if (open) document.addEventListener('click', closeLangOnOutside, true)
+  else document.removeEventListener('click', closeLangOnOutside, true)
+})
 
 // The order traffic actually flows in: what comes in, who it belongs to, then
 // where it goes out and by which route. Settings and the config templates sit
@@ -176,6 +200,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   window.removeEventListener('wui:busy', onBusy)
+  document.removeEventListener('click', closeLangOnOutside, true)
 })
 
 function togglePinned() {
@@ -337,6 +362,16 @@ function reload() {
           <button class="sidebar-theme-cycle" type="button" :title="t('nav.theme')" :aria-label="t('nav.theme')" @click="cycleTheme">
             <AntIcon :name="themeMode === 'light' ? 'SunOutlined' : themeMode === 'dark' ? 'MoonOutlined' : 'MoonFilled'" />
           </button>
+          <div v-if="localeList.length > 1" class="sider-lang-wrap">
+            <button class="sidebar-lang" type="button" :title="t('settings.language')" :aria-label="t('settings.language')" :aria-expanded="langOpen" @click.stop="toggleLang">
+              <AntIcon name="TranslationOutlined" />
+            </button>
+            <div v-if="langOpen" class="amenu sider-lang-menu" role="menu">
+              <button v-for="l in localeList" :key="l" class="amenu-item" :class="{ selected: l === store.locale }" type="button" role="menuitem" @click="pickLocale(l)">
+                <span aria-hidden="true">{{ localeFlag(l) }}</span><span>{{ localeName(l) }}</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -409,6 +444,16 @@ function reload() {
               <button class="sidebar-theme-cycle" type="button" :title="t('nav.theme')" @click="cycleTheme">
                 <AntIcon :name="themeMode === 'light' ? 'SunOutlined' : themeMode === 'dark' ? 'MoonOutlined' : 'MoonFilled'" />
               </button>
+              <div v-if="localeList.length > 1" class="drawer-lang-wrap">
+                <button class="sidebar-theme-cycle" type="button" :title="t('settings.language')" :aria-label="t('settings.language')" :aria-expanded="langOpen" @click.stop="toggleLang">
+                  <AntIcon name="TranslationOutlined" />
+                </button>
+                <div v-if="langOpen" class="amenu drawer-lang-menu" role="menu">
+                  <button v-for="l in localeList" :key="l" class="amenu-item" :class="{ selected: l === store.locale }" type="button" role="menuitem" @click="pickLocale(l)">
+                    <span aria-hidden="true">{{ localeFlag(l) }}</span><span>{{ localeName(l) }}</span>
+                  </button>
+                </div>
+              </div>
               <button class="drawer-close" type="button" :aria-label="t('common.close')" @click="drawerOpen = false"><AntIcon name="CloseOutlined" /></button>
             </div>
           </div>
@@ -520,6 +565,73 @@ function reload() {
    only has to stay out of its way. */
 .auth-shell {
   min-height: 100%;
+}
+
+/* Language switcher. The wrapper is a positioning context only, not one of the
+   round action buttons, so it undoes the circle its parent would give it; the
+   trigger inside carries the same look as the theme toggle beside it. */
+.sider-lang-wrap,
+.drawer-lang-wrap {
+  position: relative;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  transform: none;
+}
+.sider-lang-wrap:hover,
+.drawer-lang-wrap:hover,
+.sider-lang-wrap:focus-within,
+.drawer-lang-wrap:focus-within {
+  background: transparent;
+  transform: none;
+}
+.sidebar-lang {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    transform 0.15s,
+    color 0.2s;
+}
+.sidebar-lang:hover,
+.sidebar-lang:focus-visible {
+  background-color: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-text);
+  transform: scale(1.08);
+  outline: none;
+}
+.sider-lang-menu,
+.drawer-lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 40;
+  min-width: 150px;
+  padding: 4px;
+  box-shadow: var(--shadow-2, 0 6px 20px rgba(0, 0, 0, 0.18));
+}
+.sider-lang-menu .amenu-item,
+.drawer-lang-menu .amenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.sider-lang-menu .amenu-item.selected,
+.drawer-lang-menu .amenu-item.selected {
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .fade-enter-active,

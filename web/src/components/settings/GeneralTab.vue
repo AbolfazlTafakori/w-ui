@@ -4,9 +4,14 @@
 // customer starts with.
 import { computed } from 'vue'
 import { useSettings, sanitizePath } from './context.js'
-import { t } from '../../lib/store.js'
+import { t, store } from '../../lib/store.js'
+import { localeName, localeFlag } from '../../lib/locales.js'
 import AntIcon from '../AntIcon.vue'
 import Toggle from '../Toggle.vue'
+
+// The languages this build ships, named for the select. Driven by the catalog
+// so a locale added to the backend appears here on its own.
+const localeOptions = computed(() => store.meta?.locales || ['en'])
 
 const { form, inner, isDefault, outboundTags, balancerTags } = useSettings()
 
@@ -76,8 +81,7 @@ const rateMbit = computed({
       <div class="setting-list-item"><div class="arow">
         <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.language') }}</div></div></div>
         <div class="acol"><div class="aselect"><select v-model="form.defaultLocale" :aria-label="t('set.language')">
-          <option value="en">🇬🇧&nbsp;&nbsp;English</option>
-          <option value="fa">🇮🇷&nbsp;&nbsp;فارسی</option>
+          <option v-for="l in localeOptions" :key="l" :value="l">{{ localeFlag(l) }}&nbsp;&nbsp;{{ localeName(l) }}</option>
         </select></div></div>
       </div></div>
     </template>

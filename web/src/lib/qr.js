@@ -25,6 +25,15 @@ const correction = 'L'
 // keep the modules on whole pixels, so it is a target rather than a width.
 const targetPx = 340
 
+// The floor, in whole pixels, under which a module stops being one a phone
+// camera can resolve. A short WireGuard profile is well clear of it; an
+// AmneziaWG one is not -- its obfuscation fields (Jc, Jmin, Jmax, S1, S2,
+// H1-H4) push the profile past five hundred bytes and the code past a hundred
+// modules a side, where the old target would have squeezed it to three pixels
+// a module and the camera gave up. Below this we grow the image instead, so a
+// dense code comes out larger rather than unreadable.
+const minModulePx = 4
+
 // makeQR returns the image and the size it must be shown at.
 //
 // Both are needed together: showing the image at any other size reintroduces
@@ -32,7 +41,7 @@ const targetPx = 340
 export async function makeQR(text) {
   const shape = QRCode.create(text, { errorCorrectionLevel: correction })
   const across = shape.modules.size + quietZone * 2
-  const scale = Math.max(3, Math.round(targetPx / across))
+  const scale = Math.max(minModulePx, Math.round(targetPx / across))
 
   return {
     dataUrl: await QRCode.toDataURL(text, {
