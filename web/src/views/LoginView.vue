@@ -2,7 +2,7 @@
 import logo from '../assets/logo.png'
 import { nextTick, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { store, t, signIn, loadMessages } from '../lib/store.js'
+import { store, t, signIn, pickLoginLocale } from '../lib/store.js'
 import { localeName, localeFlag } from '../lib/locales.js'
 import AntIcon from '../components/AntIcon.vue'
 import { themeMode, cycleTheme } from '../lib/theme.js'
@@ -61,7 +61,7 @@ async function submit() {
 
 async function pickLocale(l) {
   langOpen.value = false
-  await loadMessages(l)
+  await pickLoginLocale(l)
 }
 
 const locales = computed(() => store.meta?.locales || ['en'])

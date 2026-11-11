@@ -122,6 +122,19 @@ export async function setLocale(locale) {
   }
 }
 
+// True once the operator has picked a language on the sign-in screen this
+// session. It separates a deliberate choice from a tag merely left in local
+// storage, so the choice carries into the session and onto the account while an
+// account's stored language still wins when nobody picked. Reset after sign-in.
+let localePicked = false
+
+// pickLoginLocale is the sign-in screen's language switch: it changes the
+// language now and marks the choice so signIn keeps it.
+export async function pickLoginLocale(locale) {
+  localePicked = true
+  await loadMessages(locale)
+}
+
 export async function bootstrap() {
   store.meta = await api.meta()
   await loadMessages(store.locale)
@@ -155,9 +168,20 @@ export async function signIn(username, password, code) {
   // The server says more about itself to someone signed in -- the version,
   // the state of the kernel engines -- so ask again now that we are.
   api.meta({ background: true }).then((m) => { store.meta = m }).catch(() => {})
-  if (res.admin?.locale && res.admin.locale !== store.locale) {
+  if (localePicked && store.locale !== res.admin?.locale) {
+    // They chose a language on the sign-in screen on purpose. Honour it and
+    // write it to the account, so it is not undone here and follows them on.
+    // (A language merely left over in local storage is not a choice, so an
+    // account's own language still wins when nobody picked.)
+    try {
+      store.admin = await api.updateMe({ locale: store.locale })
+    } catch {
+      /* the local choice stands even if the account write did not */
+    }
+  } else if (res.admin?.locale && res.admin.locale !== store.locale) {
     await loadMessages(res.admin.locale)
   }
+  localePicked = false
   return res.admin
 }
 
