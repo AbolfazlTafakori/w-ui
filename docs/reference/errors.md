@@ -293,7 +293,7 @@ These end the process; `journalctl -u wui -n 30` shows them.
 | Message | Meaning | What to do |
 |---|---|---|
 | `another W-UI panel is already running here: …` `Two panels on one machine overwrite each other's firewall rules, and neither notices, so this one will not start` | A second copy was started. | Stop the other, or use it. Running `wui` by hand while the service runs does this. |
-| `config: WUI_LISTEN must not be empty` / `config: unknown database driver "…", want sqlite or postgres` / `config: WUI_DB_SOURCE is required for driver "…"` / `config: unsupported locale "…", want en or fa` | Environment in `/etc/systemd/system/wui.service` or `/etc/wui/*.env`. | Fix the variable. |
+| `config: WUI_LISTEN must not be empty` / `config: unknown database driver "…", want sqlite or postgres` / `config: WUI_DB_SOURCE is required for driver "…"` / `config: unsupported locale "…", want one of en, fa, zh, ru, tr` | Environment in `/etc/systemd/system/wui.service` or `/etc/wui/*.env`. | Fix the variable. |
 | `config: WUI_BASE_PATH "…" must be a single path segment` / `config: WUI_BASE_PATH "…" may only contain letters, digits, and - _ . ~` / `config: WUI_BASE_PATH may not be "…"; it collides with the API` | | |
 | `config: WUI_TLS_CERT is set without WUI_TLS_KEY` / `config: WUI_TLS_KEY is set without WUI_TLS_CERT` / `config: the certificate and key do not form a usable pair: …` | | Both files, matching. |
 | `config: WUI_COLLECT_INTERVAL is …, minimum is 1s` | | |
