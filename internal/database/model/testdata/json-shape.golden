@@ -50,6 +50,7 @@ Interface
 	ikev2 model.JSONField[github.com/abolfazl/w-ui/internal/database/model.IKEv2Params] omitzero
 	openconnect model.JSONField[github.com/abolfazl/w-ui/internal/database/model.OpenConnectParams] omitzero
 	stealth model.JSONField[github.com/abolfazl/w-ui/internal/database/model.StealthParams] omitzero
+	wgAdvanced model.JSONField[github.com/abolfazl/w-ui/internal/database/model.WGAdvancedParams] omitzero
 	xui model.JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound] omitzero
 	configured bool (not stored)
 	originId uint omitempty
@@ -144,6 +145,14 @@ StealthParams
 	panelCertKey string omitempty
 	certSource string omitempty
 	proxyProtocol bool omitempty
+JSONField[github.com/abolfazl/w-ui/internal/database/model.WGAdvancedParams]
+	V model.WGAdvancedParams
+WGAdvancedParams
+	keepalive int omitempty
+	allowedIps string omitempty
+	mtu int omitempty
+	postUp string omitempty
+	postDown string omitempty
 JSONField[github.com/abolfazl/w-ui/internal/database/model.XUIInbound]
 	V model.XUIInbound
 XUIInbound
