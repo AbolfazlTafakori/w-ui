@@ -203,16 +203,24 @@ function wgAdvancedForSend(a) {
     keepalive: Number(a?.keepalive) || 0,
     allowedIps: (a?.allowedIps || '').trim(),
     mtu: Number(a?.mtu) || 0,
+    postUp: (a?.postUp || '').trim(),
+    postDown: (a?.postDown || '').trim(),
   }
 }
 function wgAdvancedNonEmpty(a) {
   const v = wgAdvancedForSend(a)
-  return !!(v.keepalive || v.mtu || v.allowedIps)
+  return !!(v.keepalive || v.mtu || v.allowedIps || v.postUp || v.postDown)
 }
 function wgAdvancedChanged(input, iface) {
   const want = wgAdvancedForSend(input.wgAdvanced)
   const had = wgAdvancedForSend(iface.wgAdvanced)
-  return want.keepalive !== had.keepalive || want.allowedIps !== had.allowedIps || want.mtu !== had.mtu
+  return (
+    want.keepalive !== had.keepalive ||
+    want.allowedIps !== had.allowedIps ||
+    want.mtu !== had.mtu ||
+    want.postUp !== had.postUp ||
+    want.postDown !== had.postDown
+  )
 }
 
 async function submitForm(input) {

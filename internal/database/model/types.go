@@ -251,6 +251,17 @@ type WGAdvancedParams struct {
 	// interface's own MTU, as it always did; set, it overrides it for clients
 	// without touching the server interface.
 	MTU int `json:"mtu,omitempty"`
+
+	// PostUp and PostDown are shell run on the server when the panel brings the
+	// interface up for the first time and when it tears it down, the way
+	// wg-quick's own lines would -- for custom NAT, forwarding or routing an
+	// operator keeps outside the panel. One command per line; "%i" stands for
+	// the interface name. They run as the panel does (root), are the owner's
+	// alone to set, and never reach a client's config. PostUp does not re-run
+	// on a panel restart that finds the interface already up, so rules are not
+	// stacked twice.
+	PostUp   string `json:"postUp,omitempty"`
+	PostDown string `json:"postDown,omitempty"`
 }
 
 type StealthParams struct {
