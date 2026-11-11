@@ -694,27 +694,24 @@ defineExpose({ showError })
               </div>
             </div>
             <div class="arow16">
-              <div class="acol12">
+              <div class="acol24">
                 <div class="aform-item">
                   <label class="aform-label" for="if-postup">PostUp <HelpTip :text="t('interface.postUpSub')" /></label>
-                  <label class="ainput block" :class="{ invalid: fieldName === 'wgAdvanced.postUp' }">
-                    <textarea id="if-postup" v-model="form.wgAdvanced.postUp" data-field="wgAdvanced.postUp" class="ltr mono" rows="3" spellcheck="false" :placeholder="'iptables -A FORWARD -i %i -j ACCEPT'" @input="clearError('wgAdvanced.postUp')"></textarea>
-                  </label>
+                  <textarea id="if-postup" v-model="form.wgAdvanced.postUp" data-field="wgAdvanced.postUp" class="hook-area ltr" :class="{ invalid: fieldName === 'wgAdvanced.postUp' }" rows="3" spellcheck="false" placeholder="iptables -A FORWARD -i %i -j ACCEPT" @input="clearError('wgAdvanced.postUp')"></textarea>
                   <p v-if="fieldName === 'wgAdvanced.postUp'" class="field-error" role="alert">{{ fieldError }}</p>
-                  <p v-else class="field-hint">{{ t('interface.postUpSub') }}</p>
-                </div>
-              </div>
-              <div class="acol12">
-                <div class="aform-item">
-                  <label class="aform-label" for="if-postdown">PostDown <HelpTip :text="t('interface.postDownSub')" /></label>
-                  <label class="ainput block" :class="{ invalid: fieldName === 'wgAdvanced.postDown' }">
-                    <textarea id="if-postdown" v-model="form.wgAdvanced.postDown" data-field="wgAdvanced.postDown" class="ltr mono" rows="3" spellcheck="false" :placeholder="'iptables -D FORWARD -i %i -j ACCEPT'" @input="clearError('wgAdvanced.postDown')"></textarea>
-                  </label>
-                  <p v-if="fieldName === 'wgAdvanced.postDown'" class="field-error" role="alert">{{ fieldError }}</p>
-                  <p v-else class="field-hint">{{ t('interface.postDownSub') }}</p>
                 </div>
               </div>
             </div>
+            <div class="arow16">
+              <div class="acol24">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-postdown">PostDown <HelpTip :text="t('interface.postDownSub')" /></label>
+                  <textarea id="if-postdown" v-model="form.wgAdvanced.postDown" data-field="wgAdvanced.postDown" class="hook-area ltr" :class="{ invalid: fieldName === 'wgAdvanced.postDown' }" rows="3" spellcheck="false" placeholder="iptables -D FORWARD -i %i -j ACCEPT" @input="clearError('wgAdvanced.postDown')"></textarea>
+                  <p v-if="fieldName === 'wgAdvanced.postDown'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+            <p class="field-hint hook-hint">{{ t('interface.hookHint') }}</p>
           </template>
 
           <!-- mirror: the borrowed site every stranger is relayed to,
@@ -1141,6 +1138,24 @@ html[lang='fa'] .adv-head-tag { font-family: inherit; }
 /* A line of grey helper text under a field, where no error is shown. */
 .field-hint { margin: 5px 0 0; font-size: 11px; line-height: 15px; color: var(--faint); }
 html[lang='fa'] .field-hint { unicode-bidi: plaintext; }
+
+/* PostUp/PostDown: a proper multi-line command box, full width and monospace,
+   that wraps a long command onto the next line rather than clipping it, and
+   can be dragged taller. */
+.hook-area {
+  width: 100%;
+  min-height: 70px;
+  padding: 8px 11px;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+.hook-area.invalid, .hook-area.invalid:focus { border-color: var(--bad); }
+/* One note for both boxes, rather than the same sentence twice under each. */
+.hook-hint { margin-top: 2px; }
 
 /* An icon tucked inside an input or select, with the control padded to clear
    it. The page is not mirrored, so the icon stays on the left. */
