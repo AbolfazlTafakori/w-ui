@@ -3,6 +3,7 @@ import logo from '../assets/logo.png'
 import { nextTick, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { store, t, signIn, loadMessages } from '../lib/store.js'
+import { localeName, localeFlag } from '../lib/locales.js'
 import AntIcon from '../components/AntIcon.vue'
 import { themeMode, cycleTheme } from '../lib/theme.js'
 
@@ -64,8 +65,7 @@ async function pickLocale(l) {
 }
 
 const locales = computed(() => store.meta?.locales || ['en'])
-const localeName = (l) => (l === 'fa' ? 'فارسی' : 'English')
-const localeIcon = (l) => (l === 'fa' ? '🇮🇷' : '🇬🇧')
+const localeIcon = localeFlag
 </script>
 
 <template>

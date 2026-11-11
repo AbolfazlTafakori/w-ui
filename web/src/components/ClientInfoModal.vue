@@ -380,7 +380,9 @@ const expiryText = computed(() => {
 .config-block { margin-bottom: 8px; }
 .config-block-actions { display: flex; gap: 4px; }
 .config-block-text { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
-.qr-popover { width: 244px; }
+/* Grows with the code: a short profile stays this narrow, a dense AmneziaWG
+   one widens so its modules stay large enough to scan. */
+.qr-popover { width: max-content; max-width: min(92vw, 440px); }
 .ip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
 .ip-row:last-child { border-bottom: 0; }
 .ip-name { font-weight: 500; }

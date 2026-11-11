@@ -165,9 +165,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("config: WUI_COLLECT_INTERVAL is %s, minimum is 1s", c.CollectInterval)
 	}
 	switch c.DefaultLocale {
-	case "en", "fa":
+	case "en", "fa", "zh", "ru", "tr":
 	default:
-		return fmt.Errorf("config: unsupported locale %q, want en or fa", c.DefaultLocale)
+		return fmt.Errorf("config: unsupported locale %q, want one of en, fa, zh, ru, tr", c.DefaultLocale)
 	}
 	if err := c.validateBase(); err != nil {
 		return err
