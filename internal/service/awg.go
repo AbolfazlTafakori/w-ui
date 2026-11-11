@@ -427,29 +427,56 @@ func drawAWG(mtu, link int, level string, taken awgTaken) model.AWGParams {
 		}
 	}
 	if level == AWGModern {
-		presets := AWGPresets()
-		// Only a packet the link carries whole: one split on the way is not
-		// the protocol it is dressed as.
-		var fits, free []AWGPreset
-		for _, pr := range presets {
+		// Only packets the link carries whole: one split on the way is not the
+		// protocol it is dressed as.
+		var fits []AWGPreset
+		for _, pr := range AWGPresets() {
 			if specialSize(pr.Value)+20+8 <= link {
 				fits = append(fits, pr)
 			}
 		}
-		for _, pr := range fits {
-			if !taken.specials[pr.Value] {
-				free = append(free, pr)
+		// Shuffle, so the order a profile fills its slots is its own.
+		for i := len(fits) - 1; i > 0; i-- {
+			j := randBetween(0, i)
+			fits[i], fits[j] = fits[j], fits[i]
+		}
+		// Lead with one no other tunnel on this server sends, so two tunnels do
+		// not open with the same packet.
+		for i := range fits {
+			if !taken.specials[fits[i].Value] {
+				fits[0], fits[i] = fits[i], fits[0]
+				break
 			}
 		}
-		if len(free) == 0 {
-			free = fits
+		// Every slot filled, not just the first: Auto draws a complete profile,
+		// with no blank box to puzzle over. There are fewer ready packets than
+		// slots, so the panel repeats them -- a repeated decoy is still a decoy.
+		if len(fits) > 0 {
+			slots := []*string{&p.I1, &p.I2, &p.I3, &p.I4, &p.I5}
+			for i, s := range slots {
+				*s = fits[i%len(fits)].Value
+			}
 		}
-		if len(free) == 0 {
-			return p
+		// Header protection too, when the padding has room for its 12-byte nonce
+		// (S1-S4 >= 12). A small link that forced S4 lower leaves it off rather
+		// than drawing a key the profile would then be refused for.
+		if p.S1 >= 12 && p.S2 >= 12 && p.S3 >= 12 && p.S4 >= 12 {
+			if key, err := newAWGHeaderKey(); err == nil {
+				p.HeaderProtectionKey = key
+			}
 		}
-		p.I1 = free[randBetween(0, len(free)-1)].Value
 	}
 	return p
+}
+
+// newAWGHeaderKey draws a 32-byte AmneziaWG header-protection key, in base64 as
+// a WireGuard key is written.
+func newAWGHeaderKey() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
 }
 
 // randBetween is a number from lo to hi, both included, from the kernel's
