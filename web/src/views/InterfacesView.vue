@@ -195,6 +195,26 @@ function wgTransportChanged(input, iface) {
   return Object.keys(want.transportWs).some((k) => !kept(k) && want.transportWs[k] !== had[k])
 }
 
+// The advanced WireGuard overrides, as the server takes them: blanks become
+// zeros, which it reads as "use the default". A zero keepalive and MTU and an
+// empty AllowedIPs are exactly the defaults, so clearing a field restores them.
+function wgAdvancedForSend(a) {
+  return {
+    keepalive: Number(a?.keepalive) || 0,
+    allowedIps: (a?.allowedIps || '').trim(),
+    mtu: Number(a?.mtu) || 0,
+  }
+}
+function wgAdvancedNonEmpty(a) {
+  const v = wgAdvancedForSend(a)
+  return !!(v.keepalive || v.mtu || v.allowedIps)
+}
+function wgAdvancedChanged(input, iface) {
+  const want = wgAdvancedForSend(input.wgAdvanced)
+  const had = wgAdvancedForSend(iface.wgAdvanced)
+  return want.keepalive !== had.keepalive || want.allowedIps !== had.allowedIps || want.mtu !== had.mtu
+}
+
 async function submitForm(input) {
   try {
     if (formFor.value?.iface) {
@@ -222,6 +242,9 @@ async function submitForm(input) {
         ...(input.protocol === 'wireguard' && wgTransportChanged(input, formFor.value.iface) ? wgTransportOf(input) : {}),
         // Only when it moved: a new profile means new files for everyone.
         ...(input.mode === 'amnezia' && input.awg && JSON.stringify(input.awg) !== JSON.stringify(formFor.value.iface.awg || {}) ? { awg: input.awg } : {}),
+        // Keepalive, AllowedIPs and client MTU, only when they moved: each
+        // change means a device needs its file again.
+        ...(input.protocol === 'wireguard' && wgAdvancedChanged(input, formFor.value.iface) ? { wgAdvanced: wgAdvancedForSend(input.wgAdvanced) } : {}),
       })
       notify(t('interface.updated'), 'success')
     } else {
@@ -229,7 +252,7 @@ async function submitForm(input) {
       // a WireGuard interface must not carry the form's default along with it.
       // The same for psk, which is L2TP's.
       // eslint-disable-next-line no-unused-vars -- taken out of rest, sent by protocol below
-      const { transport, transportPort, ws, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, ...rest } = input
+      const { transport, transportPort, ws, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, wgAdvanced, ...rest } = input
       if (xray) {
         // An inbound on a 3x-ui or Pasarguard node, made there as that
         // panel's own form would make it.
@@ -254,6 +277,9 @@ async function submitForm(input) {
         // The profile the form shows, as drawn for this server and perhaps
         // changed: what is created is what the operator saw.
         ...(input.protocol === 'wireguard' && input.mode === 'amnezia' ? (awg ? { awg } : { awgLevel }) : {}),
+        // Only when the operator set one of them: a bare tunnel keeps the
+        // defaults and stores nothing.
+        ...(input.protocol === 'wireguard' && wgAdvancedNonEmpty(wgAdvanced) ? { wgAdvanced: wgAdvancedForSend(wgAdvanced) } : {}),
       })
       notify(t('interface.created'), 'success')
     }

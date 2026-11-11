@@ -234,6 +234,25 @@ type OpenConnectParams struct {
 // the same tunnel: a gateway on a port of its own that wraps every packet so
 // that nothing of WireGuard shows (package stealthgw), for W-UI's own app.
 // The zero value is plain UDP.
+// WGAdvancedParams holds the WireGuard client-configuration values an operator
+// may override on a tunnel, from an advanced section of its form. Each zero
+// value means "the default", so a tunnel that sets none of them renders exactly
+// as it did before this existed: a 25-second keepalive, the whole internet in
+// AllowedIPs, and the client MTU inherited from the interface. Only a WireGuard
+// tunnel (standard or AmneziaWG) has these.
+type WGAdvancedParams struct {
+	// Keepalive is PersistentKeepalive in seconds, written into each device's
+	// [Peer]. Zero means the default of 25.
+	Keepalive int `json:"keepalive,omitempty"`
+	// AllowedIPs is the client-side [Peer] AllowedIPs: what a device routes
+	// into the tunnel. Empty means the whole internet, "0.0.0.0/0, ::/0".
+	AllowedIPs string `json:"allowedIps,omitempty"`
+	// MTU is the client [Interface] MTU. Zero means the device inherits the
+	// interface's own MTU, as it always did; set, it overrides it for clients
+	// without touching the server interface.
+	MTU int `json:"mtu,omitempty"`
+}
+
 type StealthParams struct {
 	// Transport is the stealth transport, by its name: TransportVeil,
 	// TransportAnchor, TransportDrift, TransportRelay or TransportBare.

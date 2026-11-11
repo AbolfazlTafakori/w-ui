@@ -48,11 +48,11 @@ func guideValues(acc *model.Account, iface *model.Interface, file string) devgui
 			PrivateKey:   acc.PrivateKey,
 			Address:      acc.IP + "/32",
 			DNS:          tunneldns.For(iface),
-			MTU:          iface.MTU,
+			MTU:          wgconf.ClientMTU(iface),
 			PublicKey:    iface.PublicKey,
 			PresharedKey: acc.PresharedKey,
-			AllowedIPs:   "0.0.0.0/0, ::/0",
-			Keepalive:    wgconf.DefaultKeepalive,
+			AllowedIPs:   wgconf.ClientAllowedIPs(iface),
+			Keepalive:    wgconf.ClientKeepalive(iface),
 			Amnezia:      iface.Mode == model.ModeAmnezia,
 		}
 	case model.ProtocolOpenVPN:

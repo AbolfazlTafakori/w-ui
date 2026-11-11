@@ -23,6 +23,36 @@ import (
 // thirty.
 const DefaultKeepalive = 25
 
+// DefaultAllowedIPs routes the whole internet into the tunnel: what a client
+// sends when nothing on the interface overrides it.
+const DefaultAllowedIPs = "0.0.0.0/0, ::/0"
+
+// ClientKeepalive, ClientAllowedIPs and ClientMTU resolve a tunnel's client
+// settings, taking the operator's override on the interface when there is one
+// and the default otherwise. Both the rendered .conf (RenderClient) and the
+// on-screen device guide read through these, so the file a customer imports and
+// the guide beside it can never disagree.
+func ClientKeepalive(iface *model.Interface) int {
+	if k := iface.WGAdvanced.V.Keepalive; k > 0 {
+		return k
+	}
+	return DefaultKeepalive
+}
+
+func ClientAllowedIPs(iface *model.Interface) string {
+	if s := strings.TrimSpace(iface.WGAdvanced.V.AllowedIPs); s != "" {
+		return s
+	}
+	return DefaultAllowedIPs
+}
+
+func ClientMTU(iface *model.Interface) int {
+	if m := iface.WGAdvanced.V.MTU; m > 0 {
+		return m
+	}
+	return iface.MTU
+}
+
 // Peer is one device as the server needs to know it.
 type Peer struct {
 	PublicKey    string
@@ -94,8 +124,8 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 	if dns := tunneldns.For(iface); dns != "" {
 		fmt.Fprintf(&b, "DNS = %s\n", dns)
 	}
-	if iface.MTU > 0 {
-		fmt.Fprintf(&b, "MTU = %d\n", iface.MTU)
+	if mtu := ClientMTU(iface); mtu > 0 {
+		fmt.Fprintf(&b, "MTU = %d\n", mtu)
 	}
 
 	if iface.Mode == model.ModeAmnezia {
@@ -110,9 +140,9 @@ func RenderClient(acc *model.Account, iface *model.Interface) string {
 	if acc.PresharedKey != "" {
 		fmt.Fprintf(&b, "PresharedKey = %s\n", acc.PresharedKey)
 	}
-	b.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
+	fmt.Fprintf(&b, "AllowedIPs = %s\n", ClientAllowedIPs(iface))
 	fmt.Fprintf(&b, "Endpoint = %s:%d\n", iface.EndpointHost, iface.ListenPort)
-	fmt.Fprintf(&b, "PersistentKeepalive = %d\n", DefaultKeepalive)
+	fmt.Fprintf(&b, "PersistentKeepalive = %d\n", ClientKeepalive(iface))
 
 	return b.String()
 }

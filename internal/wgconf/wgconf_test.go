@@ -26,6 +26,39 @@ func testAccount() *model.Account {
 	}
 }
 
+func TestClientOverridesReplaceTheDefaults(t *testing.T) {
+	iface := testIface(model.ModeStandard)
+	iface.WGAdvanced = model.JSON(model.WGAdvancedParams{
+		Keepalive:  15,
+		AllowedIPs: "10.0.0.0/8, 192.168.0.0/16",
+		MTU:        1280,
+	})
+	got := RenderClient(testAccount(), iface)
+	for _, want := range []string{
+		"MTU = 1280", // the client MTU, not the interface's 1420
+		"AllowedIPs = 10.0.0.0/8, 192.168.0.0/16", // the split tunnel, not the whole internet
+		"PersistentKeepalive = 15",                // the operator's interval, not 25
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("client config is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "MTU = 1420") {
+		t.Errorf("client kept the interface MTU instead of the override:\n%s", got)
+	}
+}
+
+func TestClientWithoutOverridesKeepsTheDefaults(t *testing.T) {
+	// An interface that sets nothing renders exactly as it did before the
+	// overrides existed.
+	got := RenderClient(testAccount(), testIface(model.ModeStandard))
+	for _, want := range []string{"MTU = 1420", "AllowedIPs = 0.0.0.0/0, ::/0", "PersistentKeepalive = 25"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("default client config is missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestGatewayIsTheFirstUsableAddress(t *testing.T) {
 	addr, bits, err := Gateway("10.66.0.0/16")
 	if err != nil {
