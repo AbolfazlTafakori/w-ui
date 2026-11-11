@@ -112,7 +112,8 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 		return fmt.Errorf("%w: ip (install iproute2)", ErrNoTool)
 	}
 
-	if err := d.ensureLink(ctx, iface); err != nil {
+	created, err := d.ensureLink(ctx, iface)
+	if err != nil {
 		return err
 	}
 	if err := d.configureDevice(ctx, iface); err != nil {
@@ -120,6 +121,12 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	}
 	if err := d.run(ctx, "ip", "link", "set", "up", "dev", iface.Name); err != nil {
 		return fmt.Errorf("%w: bringing %s up: %v", ErrLinkFailed, iface.Name, err)
+	}
+	// PostUp hooks, only on a real create -- a restart that found the interface
+	// already up must not run them again. A hook that fails is logged, not
+	// fatal: the tunnel is up, and the operator's script is theirs to fix.
+	if created {
+		runHooks(ctx, d.log, iface.Name, "PostUp", iface.WGAdvanced.V.PostUp)
 	}
 
 	if !d.amnezia {
@@ -137,8 +144,11 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	return nil
 }
 
-// ensureLink creates the interface if it is not already there.
-func (d *Driver) ensureLink(ctx context.Context, iface *model.Interface) error {
+// ensureLink creates the interface if it is not already there. It reports
+// whether the link was created this call, which is false when it was already
+// present: the caller runs the interface's PostUp hooks only on a real create,
+// so a panel restart that finds the tunnel still up does not stack them twice.
+func (d *Driver) ensureLink(ctx context.Context, iface *model.Interface) (created bool, err error) {
 	exists := d.run(ctx, "ip", "link", "show", "dev", iface.Name) == nil
 
 	if exists {
@@ -148,37 +158,39 @@ func (d *Driver) ensureLink(ctx context.Context, iface *model.Interface) error {
 		// overwrite its key, its port and its entire peer list, taking that
 		// deployment down without a word.
 		if err := d.assertOurs(ctx, iface); err != nil {
-			return err
+			return false, err
 		}
 	} else {
-		err := d.run(ctx, "ip", "link", "add", "dev", iface.Name,
+		addErr := d.run(ctx, "ip", "link", "add", "dev", iface.Name,
 			"type", linkType(iface))
 		switch {
-		case err == nil:
+		case addErr == nil:
+			created = true
 			d.log.Info("created interface", "interface", iface.Name, "type", linkType(iface))
 		case iface.Mode == model.ModeAmnezia:
 			// No amneziawg module on this kernel. There is a userspace
 			// implementation for exactly this, and refusing here would leave
 			// the panel unable to offer obfuscation on any machine whose
 			// kernel is newer than the module's packages.
-			if err := d.startUserspace(ctx, iface, err); err != nil {
-				return err
+			if err := d.startUserspace(ctx, iface, addErr); err != nil {
+				return false, err
 			}
+			created = true
 		default:
-			return fmt.Errorf("%w: creating %s (%s): %v",
-				ErrLinkFailed, iface.Name, linkType(iface), err)
+			return false, fmt.Errorf("%w: creating %s (%s): %v",
+				ErrLinkFailed, iface.Name, linkType(iface), addErr)
 		}
 	}
 
 	gw, bits, err := wgconf.Gateway(iface.Subnet)
 	if err != nil {
-		return err
+		return created, err
 	}
 	// `addr replace` rather than `add`: re-running must not fail on an address
 	// that is already there, and must still correct one that has changed.
 	if err := d.run(ctx, "ip", "addr", "replace",
 		fmt.Sprintf("%s/%d", gw, bits), "dev", iface.Name); err != nil {
-		return fmt.Errorf("%w: addressing %s: %v", ErrLinkFailed, iface.Name, err)
+		return created, fmt.Errorf("%w: addressing %s: %v", ErrLinkFailed, iface.Name, err)
 	}
 	if iface.MTU > 0 {
 		if err := d.run(ctx, "ip", "link", "set", "mtu",
@@ -186,7 +198,7 @@ func (d *Driver) ensureLink(ctx context.Context, iface *model.Interface) error {
 			d.log.Warn("could not set MTU", "interface", iface.Name, "error", err)
 		}
 	}
-	return nil
+	return created, nil
 }
 
 // assertOurs refuses to take over a tunnel this panel did not create.
@@ -727,7 +739,29 @@ func RemoveLink(ctx context.Context, iface *model.Interface) error {
 	// A userspace device dies with its link; the process notices and exits.
 	// Any that did not is told to.
 	_ = exec.CommandContext(ctx, "pkill", "-f", "^"+userspaceTool+" "+iface.Name+"$").Run()
+	// PostDown hooks, now that the interface is gone, the way wg-quick runs its
+	// own after taking an interface down.
+	runHooks(ctx, slog.Default(), iface.Name, "PostDown", iface.WGAdvanced.V.PostDown)
 	return nil
+}
+
+// runHooks runs an interface's PostUp or PostDown block: one command a line,
+// each through a shell, with "%i" standing for the interface name the way
+// wg-quick treats it. Blank lines and ones starting with "#" are skipped. A
+// command that fails is logged and the rest still run -- these are the
+// operator's own, and the tunnel does not depend on them.
+func runHooks(ctx context.Context, log *slog.Logger, name, phase, script string) {
+	for _, line := range strings.Split(script, "\n") {
+		cmd := strings.TrimSpace(line)
+		if cmd == "" || strings.HasPrefix(cmd, "#") {
+			continue
+		}
+		cmd = strings.ReplaceAll(cmd, "%i", name)
+		if out, err := exec.CommandContext(ctx, "sh", "-c", cmd).CombinedOutput(); err != nil && log != nil {
+			log.Warn("interface hook failed", "interface", name, "phase", phase,
+				"command", cmd, "error", err, "output", strings.TrimSpace(string(out)))
+		}
+	}
 }
 
 func init() {

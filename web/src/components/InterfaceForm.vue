@@ -94,6 +94,8 @@ const form = ref(
           keepalive: props.iface.wgAdvanced?.keepalive || '',
           allowedIps: props.iface.wgAdvanced?.allowedIps || '',
           mtu: props.iface.wgAdvanced?.mtu || '',
+          postUp: props.iface.wgAdvanced?.postUp || '',
+          postDown: props.iface.wgAdvanced?.postDown || '',
         },
         enabled: props.iface.enabled,
       }
@@ -118,7 +120,7 @@ const form = ref(
         // Drawn by the panel for this server the moment AmneziaWG is chosen.
         awg: null,
         awgLevel: 'modern',
-        wgAdvanced: { keepalive: '', allowedIps: '', mtu: '' },
+        wgAdvanced: { keepalive: '', allowedIps: '', mtu: '', postUp: '', postDown: '' },
         enabled: true,
       },
 )
@@ -688,6 +690,28 @@ defineExpose({ showError })
                     <input id="if-aips" v-model="form.wgAdvanced.allowedIps" data-field="wgAdvanced.allowedIps" class="ltr" placeholder="0.0.0.0/0, ::/0" @input="clearError('wgAdvanced.allowedIps')" />
                   </label>
                   <p v-if="fieldName === 'wgAdvanced.allowedIps'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-postup">PostUp <HelpTip :text="t('interface.postUpSub')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'wgAdvanced.postUp' }">
+                    <textarea id="if-postup" v-model="form.wgAdvanced.postUp" data-field="wgAdvanced.postUp" class="ltr mono" rows="3" spellcheck="false" :placeholder="'iptables -A FORWARD -i %i -j ACCEPT'" @input="clearError('wgAdvanced.postUp')"></textarea>
+                  </label>
+                  <p v-if="fieldName === 'wgAdvanced.postUp'" class="field-error" role="alert">{{ fieldError }}</p>
+                  <p v-else class="field-hint">{{ t('interface.postUpSub') }}</p>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-postdown">PostDown <HelpTip :text="t('interface.postDownSub')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'wgAdvanced.postDown' }">
+                    <textarea id="if-postdown" v-model="form.wgAdvanced.postDown" data-field="wgAdvanced.postDown" class="ltr mono" rows="3" spellcheck="false" :placeholder="'iptables -D FORWARD -i %i -j ACCEPT'" @input="clearError('wgAdvanced.postDown')"></textarea>
+                  </label>
+                  <p v-if="fieldName === 'wgAdvanced.postDown'" class="field-error" role="alert">{{ fieldError }}</p>
+                  <p v-else class="field-hint">{{ t('interface.postDownSub') }}</p>
                 </div>
               </div>
             </div>

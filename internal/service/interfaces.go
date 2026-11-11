@@ -1734,7 +1734,35 @@ func checkWGAdvanced(p *model.WGAdvancedParams) error {
 	} else {
 		p.AllowedIPs = ""
 	}
+	if hook, err := cleanHook("wgAdvanced.postUp", p.PostUp); err != nil {
+		return err
+	} else {
+		p.PostUp = hook
+	}
+	if hook, err := cleanHook("wgAdvanced.postDown", p.PostDown); err != nil {
+		return err
+	} else {
+		p.PostDown = hook
+	}
 	return nil
+}
+
+// cleanHook tidies a PostUp/PostDown block and guards its size. The commands
+// themselves are the owner's to write -- the panel already runs as root -- so
+// this only trims the block, rejects the NUL that a shell cannot carry, and
+// caps the length so a stray paste cannot fill a row.
+func cleanHook(field, hook string) (string, error) {
+	hook = strings.TrimSpace(hook)
+	if hook == "" {
+		return "", nil
+	}
+	if strings.ContainsRune(hook, 0) {
+		return "", invalidField(field, "a command may not contain a null byte")
+	}
+	if len(hook) > 4000 {
+		return "", invalidField(field, "the hook is %d characters; keep it under 4000", len(hook))
+	}
+	return hook, nil
 }
 
 // checkL2TPSubnet is the subnet an L2TP tunnel can take: pppd hands out IPv4

@@ -948,6 +948,8 @@
   "interface.port": "Port",
   "interface.portNotStandard": "Port {port} is redirected to {std}, which stays open too. The VPN built into Windows, iPhone, macOS and Android cannot be given a port: those devices still dial {std}. Only clients with a port setting use {port}.",
   "interface.portSub": "Listen port",
+  "interface.postDownSub": "Commands the server runs when this tunnel is removed, one per line; %i is the interface name. Usually the rules that undo PostUp.",
+  "interface.postUpSub": "Commands the server runs when this tunnel first comes up, one per line; %i is the interface name. For custom NAT or firewall rules the panel does not manage.",
   "interface.pptpPortHint": "The standard is TCP 1723 with its data in GRE beside it, and it always stays open: the clients built into Windows and most routers have no setting for another port. Another port is for clients that take one. A server carries one PPTP tunnel.",
   "interface.pptpWarn": "PPTP’s encryption (MS-CHAPv2 with MPPE) has been broken for years: a recording of a session can be read. Offer it only for routers and modems that have nothing else, and prefer WireGuard, OpenVPN or L2TP/IPsec wherever a device has one.",
   "interface.profileDownloaded": "Downloaded. Give this one file to every customer on this tunnel; their username and password is what identifies them.",
