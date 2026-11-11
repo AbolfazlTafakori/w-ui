@@ -19,16 +19,27 @@ const signedIn = computed(() => !!store.admin)
 // rather than snapping back at the next sign-in.
 const localeList = computed(() => store.meta?.locales || ['en'])
 const langOpen = ref(false)
+// The menu is drawn on the body, not under its button: the rail's header clips
+// its overflow, and a dropdown left inside it was cut off to a sliver. So it is
+// teleported out and placed against the button's own screen position.
+const langPos = ref({ top: 0, right: 0 })
 async function pickLocale(l) {
   langOpen.value = false
   await setLocale(l)
 }
-function toggleLang() {
-  langOpen.value = !langOpen.value
+function toggleLang(e) {
+  if (langOpen.value) {
+    langOpen.value = false
+    return
+  }
+  const r = e.currentTarget.getBoundingClientRect()
+  langPos.value = { top: Math.round(r.bottom + 6), right: Math.round(window.innerWidth - r.right) }
+  langOpen.value = true
 }
-// A click anywhere else closes the open menu, the way a real dropdown does.
+// A click anywhere but the menu or a trigger closes it, the way a real dropdown
+// does. The menu lives on the body now, so it is matched by class too.
 function closeLangOnOutside(e) {
-  if (!e.target.closest?.('.sider-lang-wrap, .drawer-lang-wrap')) langOpen.value = false
+  if (!e.target.closest?.('.lang-trigger, .lang-float')) langOpen.value = false
 }
 watch(langOpen, (open) => {
   if (open) document.addEventListener('click', closeLangOnOutside, true)
@@ -362,16 +373,9 @@ function reload() {
           <button class="sidebar-theme-cycle" type="button" :title="t('nav.theme')" :aria-label="t('nav.theme')" @click="cycleTheme">
             <AntIcon :name="themeMode === 'light' ? 'SunOutlined' : themeMode === 'dark' ? 'MoonOutlined' : 'MoonFilled'" />
           </button>
-          <div v-if="localeList.length > 1" class="sider-lang-wrap">
-            <button class="sidebar-lang" type="button" :title="t('settings.language')" :aria-label="t('settings.language')" :aria-expanded="langOpen" @click.stop="toggleLang">
-              <AntIcon name="TranslationOutlined" />
-            </button>
-            <div v-if="langOpen" class="amenu sider-lang-menu" role="menu">
-              <button v-for="l in localeList" :key="l" class="amenu-item" :class="{ selected: l === store.locale }" type="button" role="menuitem" @click="pickLocale(l)">
-                <span aria-hidden="true">{{ localeFlag(l) }}</span><span>{{ localeName(l) }}</span>
-              </button>
-            </div>
-          </div>
+          <button v-if="localeList.length > 1" class="sidebar-lang lang-trigger" type="button" :title="t('settings.language')" :aria-label="t('settings.language')" :aria-expanded="langOpen" @click.stop="toggleLang">
+            <AntIcon name="TranslationOutlined" />
+          </button>
         </div>
       </div>
 
@@ -433,6 +437,16 @@ function reload() {
       </ul>
     </Teleport>
 
+    <!-- Language menu, on the body so the rail's clipped header cannot cut it
+         off, placed against the button that opened it. -->
+    <Teleport to="body">
+      <div v-if="langOpen" class="amenu lang-float" role="menu" :style="{ top: langPos.top + 'px', insetInlineEnd: langPos.right + 'px' }">
+        <button v-for="l in localeList" :key="l" class="amenu-item" :class="{ selected: l === store.locale }" type="button" role="menuitem" @click="pickLocale(l)">
+          <span aria-hidden="true">{{ localeFlag(l) }}</span><span>{{ localeName(l) }}</span>
+        </button>
+      </div>
+    </Teleport>
+
     <!-- Phone drawer: their Drawer, with the same menu laid out at 48px rows. -->
     <Transition name="drawer">
       <div v-if="drawerOpen" class="drawer-scrim" @click="drawerOpen = false">
@@ -444,16 +458,9 @@ function reload() {
               <button class="sidebar-theme-cycle" type="button" :title="t('nav.theme')" @click="cycleTheme">
                 <AntIcon :name="themeMode === 'light' ? 'SunOutlined' : themeMode === 'dark' ? 'MoonOutlined' : 'MoonFilled'" />
               </button>
-              <div v-if="localeList.length > 1" class="drawer-lang-wrap">
-                <button class="sidebar-theme-cycle" type="button" :title="t('settings.language')" :aria-label="t('settings.language')" :aria-expanded="langOpen" @click.stop="toggleLang">
-                  <AntIcon name="TranslationOutlined" />
-                </button>
-                <div v-if="langOpen" class="amenu drawer-lang-menu" role="menu">
-                  <button v-for="l in localeList" :key="l" class="amenu-item" :class="{ selected: l === store.locale }" type="button" role="menuitem" @click="pickLocale(l)">
-                    <span aria-hidden="true">{{ localeFlag(l) }}</span><span>{{ localeName(l) }}</span>
-                  </button>
-                </div>
-              </div>
+              <button v-if="localeList.length > 1" class="sidebar-theme-cycle lang-trigger" type="button" :title="t('settings.language')" :aria-label="t('settings.language')" :aria-expanded="langOpen" @click.stop="toggleLang">
+                <AntIcon name="TranslationOutlined" />
+              </button>
               <button class="drawer-close" type="button" :aria-label="t('common.close')" @click="drawerOpen = false"><AntIcon name="CloseOutlined" /></button>
             </div>
           </div>
@@ -567,25 +574,9 @@ function reload() {
   min-height: 100%;
 }
 
-/* Language switcher. The wrapper is a positioning context only, not one of the
-   round action buttons, so it undoes the circle its parent would give it; the
-   trigger inside carries the same look as the theme toggle beside it. */
-.sider-lang-wrap,
-.drawer-lang-wrap {
-  position: relative;
-  width: auto;
-  height: auto;
-  border-radius: 0;
-  background: transparent;
-  transform: none;
-}
-.sider-lang-wrap:hover,
-.drawer-lang-wrap:hover,
-.sider-lang-wrap:focus-within,
-.drawer-lang-wrap:focus-within {
-  background: transparent;
-  transform: none;
-}
+/* Language switcher. The trigger carries the same look as the theme toggle
+   beside it; the menu itself is teleported to the body (.lang-float) so the
+   rail's clipped header cannot cut it off. */
 .sidebar-lang {
   display: inline-flex;
   align-items: center;
@@ -611,25 +602,20 @@ function reload() {
   transform: scale(1.08);
   outline: none;
 }
-.sider-lang-menu,
-.drawer-lang-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  inset-inline-end: 0;
-  z-index: 40;
+.lang-float {
+  position: fixed;
+  z-index: 2000;
   min-width: 150px;
   padding: 4px;
   box-shadow: var(--shadow-2, 0 6px 20px rgba(0, 0, 0, 0.18));
 }
-.sider-lang-menu .amenu-item,
-.drawer-lang-menu .amenu-item {
+.lang-float .amenu-item {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
 }
-.sider-lang-menu .amenu-item.selected,
-.drawer-lang-menu .amenu-item.selected {
+.lang-float .amenu-item.selected {
   color: var(--accent-text);
   background: var(--accent-soft);
 }
