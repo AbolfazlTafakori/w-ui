@@ -30,6 +30,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/occonf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
+	"github.com/abolfazl/w-ui/internal/wgconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
@@ -124,6 +125,11 @@ type CreateInterfaceInput struct {
 	// given, one is drawn here, of AWGLevel: modern (the default) or classic.
 	AWG      *model.AWGParams `json:"awg"`
 	AWGLevel string           `json:"awgLevel"`
+
+	// WGAdvanced is a WireGuard tunnel's optional client-config overrides:
+	// keepalive, AllowedIPs and a separate client MTU. Omitted leaves every
+	// client on the defaults.
+	WGAdvanced *model.WGAdvancedParams `json:"wgAdvanced"`
 
 	// TransportPort is where a WireGuard tunnel's stealth transport listens.
 	TransportPort int `json:"transportPort"`
@@ -226,6 +232,9 @@ func (s *Interfaces) Create(ctx context.Context, in CreateInterfaceInput) (*mode
 				return nil, err
 			}
 			iface.AWG = model.JSON(p)
+		}
+		if in.WGAdvanced != nil {
+			iface.WGAdvanced = model.JSON(*in.WGAdvanced)
 		}
 	} else if in.Protocol == model.ProtocolL2TP {
 		// The key every device types in beside its own sign-in. Handed to
@@ -544,6 +553,14 @@ func checkAddressing(in *CreateInterfaceInput) error {
 	if in.NATInterface == "" {
 		in.NATInterface = "eth0"
 	}
+	if in.WGAdvanced != nil {
+		if in.Protocol != model.ProtocolWireGuard {
+			return invalidField("wgAdvanced", "advanced WireGuard options apply to WireGuard tunnels only")
+		}
+		if err := checkWGAdvanced(in.WGAdvanced); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -819,6 +836,11 @@ type UpdateInterfaceInput struct {
 	AWG           *model.AWGParams `json:"awg"`
 	RegenerateAWG bool             `json:"regenerateAwg"`
 
+	// WGAdvanced replaces a WireGuard tunnel's client-config overrides
+	// (keepalive, AllowedIPs, client MTU). Every customer needs their file
+	// again afterwards, as with any change to what their config carries.
+	WGAdvanced *model.WGAdvancedParams `json:"wgAdvanced"`
+
 	// IKEv2Modes replaces the ways into an IKEv2 tunnel. A device signed in
 	// by a way taken away is ended.
 	IKEv2Modes *[]string `json:"ikev2Modes"`
@@ -1043,6 +1065,15 @@ func (s *Interfaces) updateLink(ctx context.Context, iface *model.Interface, in 
 			return err
 		}
 		fields["mtu"] = *in.MTU
+	}
+	if in.WGAdvanced != nil {
+		if iface.Protocol != model.ProtocolWireGuard {
+			return invalidField("wgAdvanced", "advanced WireGuard options apply to WireGuard tunnels only")
+		}
+		if err := checkWGAdvanced(in.WGAdvanced); err != nil {
+			return err
+		}
+		fields["wg_advanced"] = model.JSON(*in.WGAdvanced)
 	}
 	if in.AWG != nil || in.RegenerateAWG {
 		if err := s.updateAWG(ctx, iface, in, fields); err != nil {
@@ -1669,6 +1700,39 @@ func checkMTU(p model.Protocol, mtu int) error {
 	}
 	if mtu < 576 || mtu > 9000 {
 		return invalidField("mtu", "MTU %d is out of range (576-9000)", mtu)
+	}
+	return nil
+}
+
+// checkWGAdvanced validates a WireGuard tunnel's client-config overrides and
+// tidies them in place: a zero keepalive, empty AllowedIPs or zero MTU each mean
+// "the default", and AllowedIPs is re-joined so what is stored is exactly what a
+// config will carry. It mutates the input, so a caller stores the cleaned value.
+func checkWGAdvanced(p *model.WGAdvancedParams) error {
+	if p == nil {
+		return nil
+	}
+	if p.Keepalive < 0 || p.Keepalive > 65535 {
+		return invalidField("wgAdvanced.keepalive", "persistent keepalive is 0 to 65535 seconds; 0 keeps the default of %d", wgconf.DefaultKeepalive)
+	}
+	if p.MTU != 0 && (p.MTU < 576 || p.MTU > 9000) {
+		return invalidField("wgAdvanced.mtu", "a client MTU is 576 to 9000, or 0 to inherit the interface MTU; %d is out of range", p.MTU)
+	}
+	if s := strings.TrimSpace(p.AllowedIPs); s != "" {
+		parts := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' })
+		clean := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if part == "" {
+				continue
+			}
+			if _, err := netip.ParsePrefix(part); err != nil {
+				return invalidField("wgAdvanced.allowedIps", "AllowedIPs %q is not a valid CIDR: %v", part, err)
+			}
+			clean = append(clean, part)
+		}
+		p.AllowedIPs = strings.Join(clean, ", ")
+	} else {
+		p.AllowedIPs = ""
 	}
 	return nil
 }

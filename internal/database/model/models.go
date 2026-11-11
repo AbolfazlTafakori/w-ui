@@ -187,6 +187,12 @@ type Interface struct {
 	// by, left out of the API while there are none.
 	Stealth JSONField[StealthParams] `gorm:"type:text;column:stealth" json:"stealth,omitzero"`
 
+	// WGAdvanced is a WireGuard tunnel's optional client-config overrides
+	// (keepalive, AllowedIPs, a separate client MTU). Empty for every other
+	// protocol, and empty by default, where the renderers use their own
+	// defaults.
+	WGAdvanced JSONField[WGAdvancedParams] `gorm:"type:text;column:wg_advanced" json:"wgAdvanced,omitzero"`
+
 	// XUI is the 3x-ui inbound this tunnel is, on a 3x-ui node.
 	XUI JSONField[XUIInbound] `gorm:"type:text;column:xui" json:"xui,omitzero"`
 

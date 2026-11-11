@@ -88,6 +88,13 @@ const form = ref(
         // A copy to edit; what is sent is compared with the tunnel's own.
         awg: { ...(props.iface.awg || {}) },
         awgLevel: usesAwg2(props.iface.awg) ? 'modern' : 'classic',
+        // The advanced client-config overrides, blank unless the tunnel sets
+        // them. Kept as strings so an empty box reads as "the default".
+        wgAdvanced: {
+          keepalive: props.iface.wgAdvanced?.keepalive || '',
+          allowedIps: props.iface.wgAdvanced?.allowedIps || '',
+          mtu: props.iface.wgAdvanced?.mtu || '',
+        },
         enabled: props.iface.enabled,
       }
     : {
@@ -111,6 +118,7 @@ const form = ref(
         // Drawn by the panel for this server the moment AmneziaWG is chosen.
         awg: null,
         awgLevel: 'modern',
+        wgAdvanced: { keepalive: '', allowedIps: '', mtu: '' },
         enabled: true,
       },
 )
@@ -646,6 +654,44 @@ defineExpose({ showError })
               </div>
             </div>
           </div>
+
+          <!-- WireGuard client-config overrides. Left blank they are the
+               defaults clients always had; set, they ride into every device's
+               config (and the guide beside it) for this tunnel. -->
+          <template v-if="isWireGuard">
+            <div class="section-head"><span>{{ t('interface.sectionWgAdvanced') }}</span><span class="section-rule"></span></div>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-keepalive">{{ t('interface.keepalive') }} <HelpTip :text="t('interface.keepaliveSub')" /></label>
+                  <label class="ainput number" :class="{ invalid: fieldName === 'wgAdvanced.keepalive' }">
+                    <input id="if-keepalive" v-model="form.wgAdvanced.keepalive" data-field="wgAdvanced.keepalive" type="number" min="0" max="65535" class="ltr" placeholder="25" @input="clearError('wgAdvanced.keepalive')" />
+                  </label>
+                  <p v-if="fieldName === 'wgAdvanced.keepalive'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-cmtu">{{ t('interface.clientMtu') }} <HelpTip :text="t('interface.clientMtuSub')" /></label>
+                  <label class="ainput number" :class="{ invalid: fieldName === 'wgAdvanced.mtu' }">
+                    <input id="if-cmtu" v-model="form.wgAdvanced.mtu" data-field="wgAdvanced.mtu" type="number" min="576" max="9000" class="ltr" :placeholder="String(form.mtu || 1420)" @input="clearError('wgAdvanced.mtu')" />
+                  </label>
+                  <p v-if="fieldName === 'wgAdvanced.mtu'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="arow16">
+              <div class="acol24">
+                <div class="aform-item">
+                  <label class="aform-label" for="if-aips">{{ t('interface.clientAllowedIps') }} <HelpTip :text="t('interface.clientAllowedIpsSub')" /></label>
+                  <label class="ainput block" :class="{ invalid: fieldName === 'wgAdvanced.allowedIps' }">
+                    <input id="if-aips" v-model="form.wgAdvanced.allowedIps" data-field="wgAdvanced.allowedIps" class="ltr" placeholder="0.0.0.0/0, ::/0" @input="clearError('wgAdvanced.allowedIps')" />
+                  </label>
+                  <p v-if="fieldName === 'wgAdvanced.allowedIps'" class="field-error" role="alert">{{ fieldError }}</p>
+                </div>
+              </div>
+            </div>
+          </template>
 
           <!-- mirror: the borrowed site every stranger is relayed to,
                and whose name a device's hello asks for. -->

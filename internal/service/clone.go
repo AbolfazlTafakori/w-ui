@@ -73,6 +73,13 @@ func (s *Interfaces) Clone(ctx context.Context, id uint, in CloneInput) (*model.
 		Mode:         src.Mode,
 	}
 
+	// The client-config overrides are behaviour, not identity, so unlike the
+	// obfuscation profile they are copied: a clone keeps the same keepalive,
+	// AllowedIPs and client MTU the operator set on the original.
+	if wga := src.WGAdvanced.V; wga != (model.WGAdvancedParams{}) {
+		create.WGAdvanced = &wga
+	}
+
 	if ovpn := src.OpenVPN.V; ovpn.Transport != "" {
 		create.Transport = string(ovpn.Transport)
 	}
