@@ -293,7 +293,7 @@ description: "هر پیامی که پنل، نصب‌کننده، اسکریپت
 | پیام | معنی | چه کنید |
 |---|---|---|
 | `another W-UI panel is already running here: …` `Two panels on one machine overwrite each other's firewall rules, and neither notices, so this one will not start` | نسخهٔ دومی استارت شده. | دیگری را متوقف کنید، یا از همان استفاده کنید. اجرای دستی `wui` وقتی سرویس بالاست همین را می‌دهد. |
-| `config: WUI_LISTEN must not be empty` / `config: unknown database driver "…", want sqlite or postgres` / `config: WUI_DB_SOURCE is required for driver "…"` / `config: unsupported locale "…", want en or fa` | محیط در `/etc/systemd/system/wui.service` یا `/etc/wui/*.env`. | متغیر را درست کنید. |
+| `config: WUI_LISTEN must not be empty` / `config: unknown database driver "…", want sqlite or postgres` / `config: WUI_DB_SOURCE is required for driver "…"` / `config: unsupported locale "…", want one of en, fa, zh, ru, tr` | محیط در `/etc/systemd/system/wui.service` یا `/etc/wui/*.env`. | متغیر را درست کنید. |
 | `config: WUI_BASE_PATH "…" must be a single path segment` / `config: WUI_BASE_PATH "…" may only contain letters, digits, and - _ . ~` / `config: WUI_BASE_PATH may not be "…"; it collides with the API` |  |  |
 | `config: WUI_TLS_CERT is set without WUI_TLS_KEY` / `config: WUI_TLS_KEY is set without WUI_TLS_CERT` / `config: the certificate and key do not form a usable pair: …` |  | هر دو فایل، هم‌خوان. |
 | `config: WUI_COLLECT_INTERVAL is …, minimum is 1s` |  |  |
