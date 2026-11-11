@@ -61,6 +61,10 @@ type AWGDraw struct {
 	model.AWGParams
 	LinkMTU int `json:"linkMtu"`
 	MTU     int `json:"mtu"`
+	// Level is the profile actually drawn: the one asked for, or classic when
+	// a server too old for the stronger profile forced it down. The form reads
+	// it to tell the operator the server could not take the one they picked.
+	Level string `json:"level"`
 }
 
 // linkMTUOf is the MTU of a server's way out: read on this one, and taken
@@ -376,7 +380,7 @@ func (s *Interfaces) DrawAWGFor(ctx context.Context, nodeID, except uint, mtu in
 	if err != nil {
 		return AWGDraw{}, err
 	}
-	return AWGDraw{AWGParams: p, LinkMTU: link, MTU: awgMTUFor(link)}, nil
+	return AWGDraw{AWGParams: p, LinkMTU: link, MTU: awgMTUFor(link), Level: level}, nil
 }
 
 func drawAWG(mtu, link int, level string, taken awgTaken) model.AWGParams {

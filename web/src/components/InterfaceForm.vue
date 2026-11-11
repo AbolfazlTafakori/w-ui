@@ -88,6 +88,9 @@ const form = ref(
         // A copy to edit; what is sent is compared with the tunnel's own.
         awg: { ...(props.iface.awg || {}) },
         awgLevel: usesAwg2(props.iface.awg) ? 'modern' : 'classic',
+        // An existing tunnel opens in Manual: its drawn values are on show to
+        // read or adjust, never re-rolled out from under its customers.
+        awgMode: 'manual',
         // The advanced client-config overrides, blank unless the tunnel sets
         // them. Kept as strings so an empty box reads as "the default".
         wgAdvanced: {
@@ -120,6 +123,9 @@ const form = ref(
         // Drawn by the panel for this server the moment AmneziaWG is chosen.
         awg: null,
         awgLevel: 'modern',
+        // A new tunnel starts in Auto: the panel draws a profile fitted to the
+        // server the moment AmneziaWG is chosen.
+        awgMode: 'auto',
         wgAdvanced: { keepalive: '', allowedIps: '', mtu: '', postUp: '', postDown: '' },
         enabled: true,
       },
@@ -182,6 +188,9 @@ const drawing = ref(false)
 // than replacing.
 const linkMtu = ref(0)
 const mtuTouched = ref(false)
+// Set when AmneziaWG 3 was asked for but the server could only take 2: the
+// editor says so, and the choice snaps to what was actually drawn.
+const downgraded = ref(false)
 let drawSeq = 0
 async function drawAwg(level = form.value.awgLevel) {
   const seq = ++drawSeq
@@ -196,11 +205,13 @@ async function drawAwg(level = form.value.awgLevel) {
       level,
       except: String(props.iface?.id || 0),
     })
-    const { linkMtu: link, mtu, ...p } = await api.get(`/api/interfaces/awg-draw?${q}`)
+    const { linkMtu: link, mtu, level: drawnLevel, ...p } = await api.get(`/api/interfaces/awg-draw?${q}`)
     if (seq !== drawSeq) return
     linkMtu.value = link || 0
     if (fit && mtu) form.value.mtu = mtu
-    form.value.awgLevel = level
+    // The server may have handed back the lighter profile; show what it drew.
+    downgraded.value = !!drawnLevel && drawnLevel !== level
+    form.value.awgLevel = drawnLevel || level
     form.value.awg = p
     for (const k of Object.keys(p)) clearError(`awg.${k}`)
   } catch (e) {
@@ -270,14 +281,20 @@ const transportHint = computed(() => {
 watch(
   () => [showsAwg.value, form.value.nodeId],
   ([on]) => {
-    if (on && !editing.value) drawAwg()
+    // Auto only: Manual keeps the operator's own values rather than drawing
+    // over them when the server changes.
+    if (on && !editing.value && form.value.awgMode === 'auto') drawAwg()
   },
 )
 watch(
   () => form.value.mode,
   (m) => {
-    // An existing tunnel switched to AmneziaWG has no profile yet.
-    if (editing.value && m === 'amnezia' && props.iface.mode !== 'amnezia') drawAwg()
+    // An existing tunnel switched to AmneziaWG has no profile yet: draw one and
+    // open in Auto so there is something filled to start from.
+    if (editing.value && m === 'amnezia' && props.iface.mode !== 'amnezia') {
+      form.value.awgMode = 'auto'
+      drawAwg()
+    }
   },
 )
 // A larger MTU leaves less room for the data packets' padding: the drawn
@@ -285,7 +302,7 @@ watch(
 watch(
   () => form.value.mtu,
   (m) => {
-    if (!showsAwg.value || !form.value.awg || editing.value) return
+    if (!showsAwg.value || !form.value.awg || editing.value || form.value.awgMode !== 'auto') return
     // The link less IPv4, UDP and WireGuard's own header, less the MTU.
     const room = Math.max(0, (linkMtu.value || 1500) - 60 - Number(m))
     if ((form.value.awg.s4 || 0) > room) drawAwg()
@@ -624,7 +641,9 @@ defineExpose({ showError })
             v-if="showsAwg && form.awg"
             v-model="form.awg"
             v-model:level="form.awgLevel"
+            v-model:mode="form.awgMode"
             :drawing="drawing"
+            :downgraded="downgraded"
             :editing="editing && props.iface.mode === 'amnezia'"
             :field-name="fieldName"
             :field-error="fieldError"
