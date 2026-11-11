@@ -57,9 +57,9 @@ const num = (key) => (e) => {
 const str = (key) => (e) => set(key, e.target.value)
 
 const auto = computed(() => props.mode === 'auto')
-// Ranges and I1-I5 belong to the stronger profile: shown for AmneziaWG 3, and
-// in manual where the operator decides what to use.
-const strong = computed(() => props.mode === 'manual' || props.level === 'modern')
+// Ranges and I1-I5 are AmneziaWG 3's; AmneziaWG 2 has neither. The strength is
+// chosen in both modes, so this follows the level alone.
+const strong = computed(() => props.level === 'modern')
 
 function setMode(m) {
   if (m === props.mode) return
@@ -71,7 +71,17 @@ function setMode(m) {
 function pickLevel(lv) {
   if (lv === props.level && !props.downgraded) return
   emit('update:level', lv)
-  emit('draw', lv)
+  if (auto.value) {
+    emit('draw', lv)
+    return
+  }
+  // Manual: choosing AmneziaWG 2 drops the fields it does not have, so what is
+  // saved is a real AmneziaWG 2 profile and not a 3 with its extras hidden.
+  if (lv === 'classic') {
+    const cleared = { ...latest, h1Max: 0, h2Max: 0, h3Max: 0, h4Max: 0, i1: '', i2: '', i3: '', i4: '', i5: '' }
+    latest = cleared
+    emit('update:modelValue', cleared)
+  }
 }
 
 const NUMBERS = [
@@ -109,28 +119,26 @@ const invalid = (key) => props.fieldName === `awg.${key}`
     </div>
 
     <!-- Auto draws every value for this server; Manual is the operator's to
-         write. -->
+         write. The row of two is the panel's standard segmented control. -->
     <div class="aradio-group" role="radiogroup" :aria-label="t('interface.awgMode')">
       <button type="button" role="radio" class="aradio-btn" :class="{ active: mode === 'auto' }" :aria-checked="mode === 'auto'" :disabled="drawing" @click="setMode('auto')">{{ t('interface.awgMode.auto') }}</button>
       <button type="button" role="radio" class="aradio-btn" :class="{ active: mode === 'manual' }" :aria-checked="mode === 'manual'" :disabled="drawing" @click="setMode('manual')">{{ t('interface.awgMode.manual') }}</button>
     </div>
 
-    <!-- Auto: pick the strength, and the panel fits a profile to the server. -->
-    <template v-if="auto">
-      <div class="aradio-group awg-ver" role="radiogroup" :aria-label="t('interface.awgLevel')">
-        <button type="button" role="radio" class="aradio-btn ver" :class="{ active: level === 'classic' }" :aria-checked="level === 'classic'" :disabled="drawing" @click="pickLevel('classic')">
-          <span class="ver-name">{{ t('interface.awgLevel.classic') }}</span>
-          <span class="ver-sub">{{ t('interface.awgLevelSub.classic') }}</span>
-        </button>
-        <button type="button" role="radio" class="aradio-btn ver" :class="{ active: level === 'modern' }" :aria-checked="level === 'modern'" :disabled="drawing" @click="pickLevel('modern')">
-          <span class="ver-name">{{ t('interface.awgLevel.modern') }}</span>
-          <span class="ver-sub">{{ t('interface.awgLevelSub.modern') }}</span>
-        </button>
-      </div>
-      <div v-if="downgraded" class="aalert warning slim"><AntIcon name="WarningOutlined" /><span>{{ t('interface.awgDowngraded') }}</span></div>
-      <p class="awg-level-note">{{ t('interface.awgAutoNote') }}</p>
-    </template>
-    <p v-else class="awg-level-note">{{ t('interface.awgManualNote') }}</p>
+    <!-- The strength, in both modes: Auto draws it, Manual shows the fields it
+         uses. Two plain selectable cards, selected softly rather than filled. -->
+    <div class="awg-ver" role="radiogroup" :aria-label="t('interface.awgLevel')">
+      <button type="button" role="radio" class="awg-ver-card" :class="{ selected: level === 'classic' }" :aria-checked="level === 'classic'" :disabled="drawing" @click="pickLevel('classic')">
+        <span class="ver-name">{{ t('interface.awgLevel.classic') }}</span>
+        <span class="ver-sub">{{ t('interface.awgLevelSub.classic') }}</span>
+      </button>
+      <button type="button" role="radio" class="awg-ver-card" :class="{ selected: level === 'modern' }" :aria-checked="level === 'modern'" :disabled="drawing" @click="pickLevel('modern')">
+        <span class="ver-name">{{ t('interface.awgLevel.modern') }}</span>
+        <span class="ver-sub">{{ t('interface.awgLevelSub.modern') }}</span>
+      </button>
+    </div>
+    <div v-if="auto && downgraded" class="aalert warning slim"><AntIcon name="WarningOutlined" /><span>{{ t('interface.awgDowngraded') }}</span></div>
+    <p class="awg-level-note">{{ auto ? t('interface.awgAutoNote') : t('interface.awgManualNote') }}</p>
 
     <div v-if="editing" class="aalert warning slim"><AntIcon name="WarningOutlined" /><span>{{ t('interface.awgEditWarn') }}</span></div>
     <p v-if="fieldName === 'awg'" class="field-error" role="alert">{{ fieldError }}</p>
@@ -201,10 +209,33 @@ const invalid = (key) => props.fieldName === `awg.${key}`
 .awg-regen { margin-inline-start: auto; }
 .aradio-group { display: flex; }
 .aradio-group .aradio-btn { flex: 1 1 0; }
-.awg-ver .aradio-btn.ver { flex-direction: column; align-items: flex-start; gap: 2px; padding-block: 8px; height: auto; text-align: start; }
-.ver-name { font-weight: 600; }
-.ver-sub { font-size: 11px; opacity: 0.8; font-weight: 400; }
+/* Two plain selectable cards for the strength, selected with a soft accent
+   wash and border rather than a loud fill. */
+.awg-ver { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.awg-ver-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  text-align: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2, transparent);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.awg-ver-card:hover:not(:disabled) { border-color: var(--faint); }
+.awg-ver-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 12%, transparent));
+}
+.awg-ver-card.selected .ver-name { color: var(--accent-text); }
+.awg-ver-card:disabled { cursor: default; }
+.ver-name { font-weight: 600; font-size: 13px; }
+.ver-sub { font-size: 11px; color: var(--muted); line-height: 1.5; }
 .awg-level-note { margin: -4px 0 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 520px) { .awg-ver { grid-template-columns: 1fr; } }
 .spin { animation: awg-spin 0.8s linear infinite; }
 @keyframes awg-spin { to { transform: rotate(360deg); } }
 .awg-fields { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 12px; }
