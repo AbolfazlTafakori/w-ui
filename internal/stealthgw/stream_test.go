@@ -157,6 +157,9 @@ func TestATunnelRunsThroughWSBothWays(t *testing.T) {
 	if !through(f.server, cl, tuntest.Ping(clientIP, serverIP), 5*time.Second) {
 		t.Fatalf("nothing reached the client: %+v", f.gw.Stats())
 	}
+	// Sent counts a hair behind the ping it carried, so let it settle rather
+	// than reading it the instant the ping arrives.
+	waitFor(t, func() bool { return f.gw.Stats().Sent >= 2 })
 	st := f.gw.Stats()
 	if st.Opened != 1 || st.Established != 1 || st.Sessions != 1 || st.Sent < 2 || st.Tunnel != 0 || st.Unopened != 0 {
 		t.Fatalf("figures after a tunnel came up: %+v", st)

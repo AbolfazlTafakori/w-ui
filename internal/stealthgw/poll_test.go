@@ -207,6 +207,9 @@ func TestATunnelRunsThroughPollBothWays(t *testing.T) {
 	if !through(f.server, cl, tuntest.Ping(clientIP, serverIP), 10*time.Second) {
 		t.Fatal("the tunnel stopped after a burst")
 	}
+	// The poll count settles a hair behind the burst it carried, so wait for it
+	// rather than reading it the instant the last ping arrives.
+	waitFor(t, func() bool { return f.gw.Stats().Polls >= 3 })
 	st := f.gw.Stats()
 	if st.Opened != 1 || st.Established != 1 || st.Sessions != 1 || st.Polls < 3 || st.Tunnel != 0 || st.Bodies != 0 || st.Unordered != 0 {
 		t.Fatalf("figures after a tunnel came up: %+v", st)
