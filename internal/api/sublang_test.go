@@ -130,9 +130,9 @@ func TestTheLanguageMenuOffersEveryLanguage(t *testing.T) {
 	}
 }
 
-// A plan shared by several users says, beside its figures, that the total
-// and the remaining are everyone's; a user's own page also says what they
-// spent; a plan for one says nothing of it.
+// A plan shared by several users marks its total and remaining as shared,
+// with what that means on hover; a user's own page also has a row with
+// what they spent; a plan for one is as it was.
 func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 	render := func(p *service.SubPage) string {
 		var buf strings.Builder
@@ -148,7 +148,7 @@ func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 	plan := base()
 	plan.PlanUsers = 3
 	html := render(plan)
-	for _, want := range []string{`data-i="sharedPlan"`, `data-i="sharedNote"`, `data-i="sharedTag"`} {
+	for _, want := range []string{`data-i-title="sharedNote"`, `data-i="sharedTag"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the plan's page has no %s", want)
 		}
@@ -160,7 +160,7 @@ func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 	mine := base()
 	mine.PlanUsers, mine.OwnUser, mine.OwnUsedBytes = 3, 2, 10<<30
 	html = render(mine)
-	for _, want := range []string{`data-i="sharedNoteUser"`, `id="lv-own">10.00 GiB<`, `20.00 GiB`} {
+	for _, want := range []string{`data-i-title="sharedNoteUser"`, `data-i="yourUsage"`, `id="lv-own">10.00 GiB<`, `20.00 GiB`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("a user's page has no %s", want)
 		}
@@ -169,7 +169,7 @@ func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 	one := base()
 	one.PlanUsers = 1
 	html = render(one)
-	if strings.Contains(html, "shared-note") || strings.Contains(html, "sharedTag") {
+	if strings.Contains(html, "sharedTag") || strings.Contains(html, "yourUsage") {
 		t.Error("a plan for one says it is shared")
 	}
 }

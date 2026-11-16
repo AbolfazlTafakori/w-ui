@@ -105,12 +105,12 @@ func init() {
 
 var subPageExtra = map[string]map[string]string{
 	"en": {
-		"sharedPlan": "Shared plan", "sharedTag": "shared", "yourUsage": "Your usage",
+		"sharedTag": "shared", "yourUsage": "Your usage",
 		"sharedNote":     "The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.",
 		"sharedNoteUser": "This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.",
 	},
 	"fa": {
-		"sharedPlan": "پلن اشتراکی", "sharedTag": "مشترک", "yourUsage": "مصرف شما",
+		"sharedTag": "مشترک", "yourUsage": "مصرف شما",
 		"sharedNote":     "حجم کل و باقی‌مانده برای همهٔ کاربران این پلن با هم است: هر چه یک کاربر مصرف کند از باقی‌ماندهٔ همه کم می‌شود.",
 		"sharedNoteUser": "حجم این پلن بین همهٔ کاربرانش مشترک است: حجم کل و باقی‌مانده برای همه با هم است، نه فقط برای شما. هر چه یک کاربر مصرف کند از باقی‌ماندهٔ همه کم می‌شود.",
 	},
@@ -126,7 +126,7 @@ var subPageExtra = map[string]map[string]string{
 		"usageTable": "Трафик по пользователям и туннелям", "usageSince": "По пользователям с", "total": "Итого", "allUsers": "Все пользователи", "tunnel": "Туннель",
 		"live": "Сейчас", "online": "Онлайн", "idle": "Простой", "offline": "Офлайн",
 		"subSettings": "Подписка", "tapToClose": "Нажмите вне окна, чтобы закрыть", "amneziaKeyHint": "Для приложения AmneziaVPN: скопируйте ключ или отсканируйте его.",
-		"sharedPlan": "Общий тариф", "sharedTag": "общий", "yourUsage": "Ваш трафик",
+		"sharedTag": "общий", "yourUsage": "Ваш трафик",
 		"sharedNote":     "Общий объём и остаток — на всех пользователей тарифа вместе: то, что тратит один, уходит из общего остатка.",
 		"sharedNoteUser": "Объём этого тарифа общий для всех его пользователей: общий объём и остаток — на всех вместе, а не только на вас. То, что тратит один, уходит из общего остатка.",
 	},
@@ -142,7 +142,7 @@ var subPageExtra = map[string]map[string]string{
 		"usageTable": "Kullanıcı ve tünele göre kullanım", "usageSince": "Kullanıcıya göre ayrım başlangıcı", "total": "Toplam", "allUsers": "Tüm kullanıcılar", "tunnel": "Tünel",
 		"live": "Canlı", "online": "Çevrimiçi", "idle": "Boşta", "offline": "Kapalı",
 		"subSettings": "Abonelik", "tapToClose": "Kapatmak için dışarıya dokunun", "amneziaKeyHint": "AmneziaVPN uygulaması için: anahtarı kopyalayın ya da tarayın.",
-		"sharedPlan": "Ortak plan", "sharedTag": "ortak", "yourUsage": "Sizin kullanımınız",
+		"sharedTag": "ortak", "yourUsage": "Sizin kullanımınız",
 		"sharedNote":     "Toplam kota ve kalan, bu planın tüm kullanıcıları içindir: bir kullanıcının harcadığı herkesin kalanından düşer.",
 		"sharedNoteUser": "Bu planın kotası tüm kullanıcıları arasında ortaktır: toplam ve kalan yalnızca sizin değil, herkesin birlikte. Bir kullanıcının harcadığı herkesin kalanından düşer.",
 	},
@@ -158,7 +158,7 @@ var subPageExtra = map[string]map[string]string{
 		"usageTable": "按用户和隧道统计用量", "usageSince": "按用户统计起始于", "total": "合计", "allUsers": "全部用户", "tunnel": "隧道",
 		"live": "实时", "online": "在线", "idle": "空闲", "offline": "离线",
 		"subSettings": "订阅", "tapToClose": "点击外部关闭", "amneziaKeyHint": "用于 AmneziaVPN 应用：复制密钥或扫码。",
-		"sharedPlan": "共享套餐", "sharedTag": "共享", "yourUsage": "您的用量",
+		"sharedTag": "共享", "yourUsage": "您的用量",
 		"sharedNote":     "总流量和剩余流量属于本套餐的全部用户：任何一个用户的用量都会从大家的剩余中扣除。",
 		"sharedNoteUser": "本套餐的流量由全部用户共享：总流量和剩余流量属于所有人，而不只是您。任何一个用户的用量都会从大家的剩余中扣除。",
 	},

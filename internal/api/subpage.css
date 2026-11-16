@@ -170,14 +170,9 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-user.open .cfg-user-body { display: block; }
 .cfg-user .btn.show .anticon { transition: transform .3s; }
 .cfg-user.open .btn.show .anticon { transform: rotate(90deg); }
-/* A plan whose allowance several users share. */
-.shared-note { margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--tag-orange-line); border-radius: 8px; background: var(--tag-orange-bg); color: var(--ink); font-size: 13px; line-height: 20px; }
-.shared-tag { margin-inline-start: 6px; font-size: 11px; line-height: 18px; padding: 0 6px; }
-.shared-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.shared-head .tag { margin: 0; font-weight: 600; }
-.shared-count { font-size: 12px; color: var(--muted); }
-.shared-note p { margin: 0; }
-.shared-own { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--tag-orange-line); }
+/* A plan whose allowance several users share: a quiet mark beside the
+   figures, its explanation on hover. */
+.shared-tag { margin-inline-start: 6px; font-size: 11px; line-height: 18px; padding: 0 6px; cursor: help; }
 /* The plan's own link, opening on each user's own. */
 .sub-tree .cfg-head .row-title { flex: 1; min-width: 0; }
 .sub-tree .cfg-head .cfg-count { margin-inline-start: 0; }

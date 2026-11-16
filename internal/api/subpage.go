@@ -1010,8 +1010,9 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
         <tr><th data-i="downloaded">Downloaded</th><td dir="ltr" id="lv-down">{{ bytes .Page.DownBytes }}</td></tr>
         <tr><th data-i="uploaded">Uploaded</th><td dir="ltr" id="lv-up">{{ bytes .Page.UpBytes }}</td></tr>
         <tr><th data-i="usage">Usage</th><td dir="ltr" id="lv-used">{{ .Used }}</td></tr>
-        {{ if .PlanUsers }}<tr><th data-i="totalQuota">Total Quota</th><td><span dir="ltr">{{ .Total }}</span> <span class="tag orange shared-tag" data-i="sharedTag">shared</span></td></tr>
-        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td><span dir="ltr" id="lv-remained">{{ .Remained }}</span> <span class="tag orange shared-tag" data-i="sharedTag">shared</span></td></tr>{{ end }}{{ else }}<tr><th data-i="totalQuota">Total Quota</th><td dir="ltr">{{ .Total }}</td></tr>
+        {{ if .PlanUsers }}{{ if .OwnUser }}<tr><th data-i="yourUsage">Your usage</th><td dir="ltr" id="lv-own">{{ .OwnUsed }}</td></tr>
+        {{ end }}<tr><th data-i="totalQuota">Total Quota</th><td><span dir="ltr">{{ .Total }}</span> <span class="tag shared-tag" data-i="sharedTag" data-i-title="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}" title="{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}">shared</span></td></tr>
+        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td><span dir="ltr" id="lv-remained">{{ .Remained }}</span> <span class="tag shared-tag" data-i="sharedTag" data-i-title="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}" title="{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}">shared</span></td></tr>{{ end }}{{ else }}<tr><th data-i="totalQuota">Total Quota</th><td dir="ltr">{{ .Total }}</td></tr>
         {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td dir="ltr" id="lv-remained">{{ .Remained }}</td></tr>{{ end }}{{ end }}
         <tr><th data-i="lastOnline">Last Online</th><td dir="ltr" id="lv-last">{{ if .LastOnline }}{{ .LastOnline }}{{ else }}-{{ end }}</td></tr>
         <tr><th data-i="expiry">Expiry</th><td dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</td></tr>
@@ -1029,16 +1030,6 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
         <div class="usage-foot">{{ if .HasQuota }}<span dir="ltr" id="lv-foot-remained">{{ .Remained }}</span><span class="usage-pct" dir="ltr" id="lv-foot-pct">{{ .PercentTxt }}%</span>{{ end }}</div>
       </div>
 
-      {{ if .PlanUsers }}
-      <!-- One allowance for several people: the total above and what
-           remains of it are the whole plan's, shared, not each user's. Said
-           where the figures are, so nobody reads 50 GiB left as theirs. -->
-      <div class="shared-note" role="note">
-        <div class="shared-head"><span class="tag orange" data-i="sharedPlan">Shared plan</span><span class="shared-count"><span dir="ltr">{{ .PlanUsers }}</span> <span data-i="users">users</span></span></div>
-        <p data-i="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}">{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}</p>
-        {{ if .OwnUser }}<div class="shared-own"><span data-i="yourUsage">Your usage</span><b dir="ltr" id="lv-own">{{ .OwnUsed }}</b></div>{{ end }}
-      </div>
-      {{ end }}
       {{ if .Usage }}
       <!-- Who spent what, and where: a row per user, a column per tunnel,
            a total at the end of each row and under each column. A plan
