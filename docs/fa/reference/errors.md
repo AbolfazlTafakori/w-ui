@@ -375,7 +375,10 @@ description: "هر پیامی که پنل، نصب‌کننده، اسکریپت
 | `Failed to install acme.sh` / `Install acme failed, please check logs.` / `Installation of acme.sh failed.` / `install socat failed, please check logs` |  | شبکه؛ `curl https://get.acme.sh` دستی. |
 | `Auto renew failed, certificate details:` / `Auto update setup failed, script exiting...` | hook تمدید یا آپگرید acme.sh. | جزئیات چاپ‌شده زیرش. |
 | `Backup failed: …` / `backup failed: …` / `Restore failed: …` / `restore failed: …` | از `wui backup`؛ متن بعد از دونقطه پیام خود پنل است، در بخش *بکاپ و بازگردانی*. |  |
-| `The panel did not come back; see: journalctl -u … -n 50` / `the panel did not come up on …; see: …` | بعد از بازگردانی یا جابه‌جایی بین موتورها. | لاگ؛ وضعیت قبلی نگه داشته شده؛ خطی که همراهش چاپ شده می‌گوید چطور برگردید. |
+| `The panel did not come back; see: journalctl -u … -n 50` | بعد از بازگردانی. | لاگ؛ وضعیت قبلی نگه داشته شده. |
+| `the backup does not check out, so nothing was moved: …` / `restore failed, so nothing was moved: …` | جابه‌جایی بین موتورها، پیش از هر تغییری. | متن بعد از دونقطه؛ پنل همان‌طور که بود مانده. |
+| `the panel could not load the data into …` / `the panel stopped while loading the data into …` | جابه‌جایی بین موتورها. پنل خودکار به موتور و داده‌ی قبلی‌اش برگردانده شده. | خطوطی که زیرش چاپ شده و `journalctl -u wui`. |
+| `the panel has not finished loading after 30 minutes; it is left running on …` | جابه‌جایی پنلی خیلی بزرگ، یا سرور دیتابیسی که بیش از حد کند است. | `journalctl -u wui`؛ خط بعدی می‌گوید چطور برگردید. |
 | `PostgreSQL is not installed` / `PostgreSQL is not set up for the panel yet; choose 1 first` / `PostgreSQL install failed` |  | اول گزینهٔ ۲۵ ← 1. |
 | `No such file` | مسیر بازگردانی وجود ندارد. |  |
 | `ERROR: You must be root to run this script!` |  | `sudo w-ui`. |

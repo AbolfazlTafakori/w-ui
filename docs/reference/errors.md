@@ -375,7 +375,10 @@ These end the process; `journalctl -u wui -n 30` shows them.
 | `Failed to install acme.sh` / `Install acme failed, please check logs.` / `Installation of acme.sh failed.` / `install socat failed, please check logs` | | Network; `curl https://get.acme.sh` by hand. |
 | `Auto renew failed, certificate details:` / `Auto update setup failed, script exiting...` | acme.sh's renewal or upgrade hook. | The details printed under it. |
 | `Backup failed: …` / `backup failed: …` / `Restore failed: …` / `restore failed: …` | From `wui backup`; the text after the colon is the panel's own message, listed under *Backup and restore*. | |
-| `The panel did not come back; see: journalctl -u … -n 50` / `the panel did not come up on …; see: …` | After a restore or a move between engines. | The log; the previous state was kept, and the line printed with it says how to go back. |
+| `The panel did not come back; see: journalctl -u … -n 50` | After a restore. | The log; the previous state was kept. |
+| `the backup does not check out, so nothing was moved: …` / `restore failed, so nothing was moved: …` | A move between engines, before anything changed. | The text after the colon; the panel is as it was. |
+| `the panel could not load the data into …` / `the panel stopped while loading the data into …` | A move between engines. The panel has already been put back on the engine and data it had. | The lines printed under it, and `journalctl -u wui`. |
+| `the panel has not finished loading after 30 minutes; it is left running on …` | A move of a very large panel, or a database server that is too slow. | `journalctl -u wui`; the next line says how to go back. |
 | `PostgreSQL is not installed` / `PostgreSQL is not set up for the panel yet; choose 1 first` / `PostgreSQL install failed` | | Option 25 → 1 first. |
 | `No such file` | The restore path does not exist. | |
 | `ERROR: You must be root to run this script!` | | `sudo w-ui`. |
