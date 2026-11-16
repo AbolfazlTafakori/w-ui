@@ -798,7 +798,11 @@ func (s *Clients) RemoveDevice(ctx context.Context, accountID uint) error {
 			Update("to_ts", now).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&model.Account{}, acc.ID).Error
+		if err := tx.Delete(&model.Account{}, acc.ID).Error; err != nil {
+			return err
+		}
+		// The user's own link goes with their last file.
+		return dropUserLink(tx, acc.ClientID, acc.DeviceName)
 	})
 	if err != nil {
 		return fmt.Errorf("service: remove device: %w", err)
@@ -2273,6 +2277,16 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 	}
 	if err := q.Count(&n).Error; err != nil {
 		return "", fmt.Errorf("service: check subscription id: %w", err)
+	}
+	// A user's own link is a link too, and one id cannot be two.
+	if n == 0 {
+		taken, err := userTokenTaken(s.db.WithContext(ctx), id)
+		if err != nil {
+			return "", fmt.Errorf("service: check subscription id: %w", err)
+		}
+		if taken {
+			n = 1
+		}
 	}
 	if n > 0 {
 		if sc.Restricted {

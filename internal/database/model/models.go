@@ -455,6 +455,11 @@ type Client struct {
 
 	Accounts []Account `gorm:"foreignKey:ClientID;constraint:OnDelete:CASCADE" json:"accounts,omitempty"`
 
+	// UserSubs are the links each user of the plan has of their own. They go
+	// with the customer: a link left behind could name a row id SQLite hands
+	// to the next customer made.
+	UserSubs []UserSub `gorm:"foreignKey:ClientID;constraint:OnDelete:CASCADE" json:"-"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -851,6 +856,28 @@ type Group struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// UserSub is one user's own subscription link inside a customer's plan.
+//
+// A plan for several is one customer with several users, and a user is a
+// file name: "user-2" is that user's file on every tunnel the plan reaches.
+// The customer's own link, Client.SubToken, carries every user's files and
+// is untouched by these. A user's link carries that user's files alone, so
+// one of them can be given out, or taken back, without the others.
+//
+// The name is stored and not a position or the files: a user whose file is
+// reissued, or who gains a tunnel, keeps their link, and one removed from
+// the plan does not pass theirs to the user after them. Device is the name
+// lower-cased, the way the panel compares file names.
+type UserSub struct {
+	ID       uint   `gorm:"primaryKey" json:"-"`
+	ClientID uint   `gorm:"not null;uniqueIndex:idx_user_sub_device" json:"clientId"`
+	Device   string `gorm:"size:64;not null;uniqueIndex:idx_user_sub_device" json:"device"`
+	Token    string `gorm:"size:64;not null;uniqueIndex" json:"-"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // ClientGroup is one customer's membership of one group. A customer in
 // three groups has three rows; a group with nobody in it has none, and
 // lives on as a Group row.
@@ -925,6 +952,7 @@ func AllModels() []any {
 		&Interface{},
 		&Client{},
 		&Account{},
+		&UserSub{},
 		&TrafficSample{},
 		&IPLease{},
 		&Admin{},

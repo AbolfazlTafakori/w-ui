@@ -587,6 +587,13 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/clients/{id}/subscription/rotate", Group: "Subscriptions", Auth: true,
 			Summary: "Issue a new link. Every copy of the old one stops working at once.",
 			handler: s.handleRotateSubscription},
+		{Method: "GET", Path: "/api/clients/{id}/subscription/users", Group: "Subscriptions", Auth: true,
+			Summary: "Each user's own link in a plan for several, issuing the ones not issued yet.",
+			Note:    "A user's link carries that user's files alone, as a page in a browser and as configurations in an app. The customer's own link still carries every user's.",
+			handler: s.handleUserSubscriptions},
+		{Method: "POST", Path: "/api/clients/{id}/subscription/users/{user}/rotate", Group: "Subscriptions", Auth: true,
+			Summary: "Issue one user a new link. Their old one stops working at once; the customer's and the other users' do not change.",
+			handler: s.handleRotateUserSubscription},
 
 		// ── Nodes ──
 		{Method: "GET", Path: "/api/nodes", Group: "Nodes", Auth: true,
@@ -901,6 +908,10 @@ var (
 		// One customer's subscription link, and reissuing it.
 		"GET /api/clients/{id}/subscription":         true,
 		"POST /api/clients/{id}/subscription/rotate": true,
+		// Each user's own link in their customers' plans, and reissuing one;
+		// narrowed to the operator's own customers like the link itself.
+		"GET /api/clients/{id}/subscription/users":                true,
+		"POST /api/clients/{id}/subscription/users/{user}/rotate": true,
 	}
 )
 

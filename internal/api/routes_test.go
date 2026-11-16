@@ -82,45 +82,46 @@ func TestRoutesThatTakeABodyShowOne(t *testing.T) {
 	// A POST or PATCH documented with no example leaves the caller guessing at
 	// field names, which is the one thing the page exists to prevent.
 	exempt := map[string]bool{
-		"POST /api/clients/{id}/reset":               true, // no body
-		"POST /api/clients/reset-all":                true,
-		"POST /api/backups":                          true,
-		"POST /api/settings/notify/test":             true,
-		"POST /api/settings/mail/test":               true, // uses the saved settings
-		"POST /api/settings/bale/test":               true, // uses the saved settings
-		"POST /api/node/handover":                    true, // a read of this panel's own; nothing to send
-		"POST /api/auth/totp/start":                  true,
-		"POST /api/nodes/{id}/probe":                 true, // asks a node; nothing to send
-		"POST /api/interfaces/{id}/restart":          true,
-		"POST /api/outbounds/{id}/check":             true, // measures; nothing to send
-		"POST /api/outbounds/check":                  true,
-		"POST /api/outbounds/{id}/reset":             true, // acts on the id in the path
-		"POST /api/outbounds/reset":                  true,
-		"POST /api/routing/apply":                    true, // there is nothing to choose
-		"POST /api/outbound-subs/{id}/refresh":       true, // acts on the id in the path
-		"POST /api/outbound-subs/refresh":            true,
-		"POST /api/providers/warp/register":          true, // the panel makes the key
-		"POST /api/providers/warp/change-ip":         true,
-		"POST /api/providers/warp/outbound":          true,
-		"POST /api/providers/nord/countries":         true, // asks the provider; nothing to send
-		"POST /api/providers/pia/regions":            true,
-		"POST /api/hosts/{id}/check":                 true,
-		"POST /api/clients/{id}/subscription/rotate": true, // acts on the id in the path
-		"POST /api/node/usage":                       true, // drains counters; nothing to send
-		"POST /api/node/sessions":                    true, // a read of what is live; nothing to send
-		"POST /api/backups/{name}/restore":           true, // acts on the name in the path
-		"POST /api/backups/upload":                   true, // a file, not JSON; the Note says so
-		"POST /api/tunnels/restart":                  true, // acts on this server; nothing to send
-		"POST /api/interfaces/{id}/reset-usage":      true, // the tunnel is the whole request
-		"POST /api/system/update":                    true, // there is nothing to choose
-		"POST /api/nodes/{id}/update":                true, // the node is the whole request
-		"POST /api/interfaces/{id}/clear":            true,
-		"POST /api/tunnels/stop":                     true,
-		"POST /api/tunnels/start":                    true,
-		"POST /api/panel/restart":                    true, // acts on this process; nothing to send
-		"POST /api/engine/reset":                     true, // the defaults are the whole request
-		"POST /api/admins/{id}/reset-usage":          true, // the operator is the whole request
-		"POST /api/sharing/history/import":           true, // reads this server's log; nothing to send
+		"POST /api/clients/{id}/reset":                            true, // no body
+		"POST /api/clients/reset-all":                             true,
+		"POST /api/backups":                                       true,
+		"POST /api/settings/notify/test":                          true,
+		"POST /api/settings/mail/test":                            true, // uses the saved settings
+		"POST /api/settings/bale/test":                            true, // uses the saved settings
+		"POST /api/node/handover":                                 true, // a read of this panel's own; nothing to send
+		"POST /api/auth/totp/start":                               true,
+		"POST /api/nodes/{id}/probe":                              true, // asks a node; nothing to send
+		"POST /api/interfaces/{id}/restart":                       true,
+		"POST /api/outbounds/{id}/check":                          true, // measures; nothing to send
+		"POST /api/outbounds/check":                               true,
+		"POST /api/outbounds/{id}/reset":                          true, // acts on the id in the path
+		"POST /api/outbounds/reset":                               true,
+		"POST /api/routing/apply":                                 true, // there is nothing to choose
+		"POST /api/outbound-subs/{id}/refresh":                    true, // acts on the id in the path
+		"POST /api/outbound-subs/refresh":                         true,
+		"POST /api/providers/warp/register":                       true, // the panel makes the key
+		"POST /api/providers/warp/change-ip":                      true,
+		"POST /api/providers/warp/outbound":                       true,
+		"POST /api/providers/nord/countries":                      true, // asks the provider; nothing to send
+		"POST /api/providers/pia/regions":                         true,
+		"POST /api/hosts/{id}/check":                              true,
+		"POST /api/clients/{id}/subscription/rotate":              true, // acts on the id in the path
+		"POST /api/clients/{id}/subscription/users/{user}/rotate": true, // the customer and user in the path
+		"POST /api/node/usage":                                    true, // drains counters; nothing to send
+		"POST /api/node/sessions":                                 true, // a read of what is live; nothing to send
+		"POST /api/backups/{name}/restore":                        true, // acts on the name in the path
+		"POST /api/backups/upload":                                true, // a file, not JSON; the Note says so
+		"POST /api/tunnels/restart":                               true, // acts on this server; nothing to send
+		"POST /api/interfaces/{id}/reset-usage":                   true, // the tunnel is the whole request
+		"POST /api/system/update":                                 true, // there is nothing to choose
+		"POST /api/nodes/{id}/update":                             true, // the node is the whole request
+		"POST /api/interfaces/{id}/clear":                         true,
+		"POST /api/tunnels/stop":                                  true,
+		"POST /api/tunnels/start":                                 true,
+		"POST /api/panel/restart":                                 true, // acts on this process; nothing to send
+		"POST /api/engine/reset":                                  true, // the defaults are the whole request
+		"POST /api/admins/{id}/reset-usage":                       true, // the operator is the whole request
+		"POST /api/sharing/history/import":                        true, // reads this server's log; nothing to send
 	}
 	for _, r := range newRouteServer().routes() {
 		if r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodPut {

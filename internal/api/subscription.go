@@ -211,6 +211,42 @@ func (s *Server) handleRotateSubscription(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"link": link, "token": token})
 }
 
+// handleUserSubscriptions lists each user's own link for one customer,
+// issuing the ones not issued yet.
+func (s *Server) handleUserSubscriptions(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	users, err := s.subs.UserLinks(r.Context(), id, r.Host)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+// handleRotateUserSubscription gives one user a new link. The customer's
+// own link and the other users' keep working.
+func (s *Server) handleRotateUserSubscription(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	raw := r.PathValue("user")
+	user, err := strconv.Atoi(raw)
+	if err != nil || user < 1 {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid user %q", raw))
+		return
+	}
+	u, err := s.subs.RotateUserLink(r.Context(), id, user, r.Host)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
+}
+
 // SubscriptionRouter puts the subscription service in front of everything else.
 //
 // The path is configurable, so it cannot be registered on a mux once at

@@ -21,9 +21,14 @@ import (
 type subHub struct {
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
+	// byAddr is how many streams each address holds, so one address --
+	// one link opened in a loop -- cannot take every stream there is.
+	byAddr map[string]int
 }
 
-func newSubHub() *subHub { return &subHub{subs: map[chan struct{}]struct{}{}} }
+func newSubHub() *subHub {
+	return &subHub{subs: map[chan struct{}]struct{}{}, byAddr: map[string]int{}}
+}
 
 // Broadcast wakes every open page. Non-blocking: a page that has not yet
 // read its last wake gets no second one, and one wake is enough.
@@ -38,23 +43,44 @@ func (h *subHub) Broadcast() {
 	}
 }
 
-func (h *subHub) subscribe() chan struct{} {
-	ch := make(chan struct{}, 1)
+// admit opens a stream for a page at addr, or says no: the panel holds
+// maxSubStreams at most, and one address maxSubStreamsPerAddr of them.
+// Checked and taken under one lock, so a burst cannot slip past either.
+func (h *subHub) admit(addr string) (chan struct{}, bool) {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.subs) >= maxSubStreams || (addr != "" && h.byAddr[addr] >= maxSubStreamsPerAddr) {
+		return nil, false
+	}
+	ch := make(chan struct{}, 1)
 	h.subs[ch] = struct{}{}
-	h.mu.Unlock()
-	return ch
+	if addr != "" {
+		h.byAddr[addr]++
+	}
+	return ch, true
 }
 
-func (h *subHub) unsubscribe(ch chan struct{}) {
+func (h *subHub) release(ch chan struct{}, addr string) {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	delete(h.subs, ch)
-	h.mu.Unlock()
+	if addr != "" {
+		if h.byAddr[addr] <= 1 {
+			delete(h.byAddr, addr)
+		} else {
+			h.byAddr[addr]--
+		}
+	}
 }
 
 // maxSubStreams bounds how many pages may hold a stream at once; the
 // pages beyond it fall back to polling, which they do anyway.
 const maxSubStreams = 2000
+
+// maxSubStreamsPerAddr is how many of them one address may hold. Generous,
+// since many customers can share one address behind a carrier's NAT; a page
+// refused falls back to polling and works as before.
+const maxSubStreamsPerAddr = 32
 
 func (h *subHub) count() int {
 	h.mu.Lock()
@@ -70,10 +96,13 @@ func (s *Server) serveSubEvents(w http.ResponseWriter, r *http.Request) {
 	// Through whatever wrapped the writer on the way here.
 	rc := http.NewResponseController(w)
 	flusher := http.Flusher(flushVia{rc})
-	if s.subHub.count() >= maxSubStreams {
+	addr := clientIP(r)
+	ch, ok := s.subHub.admit(addr)
+	if !ok {
 		http.Error(w, "streaming unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	defer s.subHub.release(ch, addr)
 	// The server's write deadline is for requests that answer and finish;
 	// this one stays open on purpose, so its deadline is lifted.
 	_ = rc.SetWriteDeadline(time.Time{})
@@ -86,8 +115,6 @@ func (s *Server) serveSubEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "retry: 3000\n\n")
 	flusher.Flush()
 
-	ch := s.subHub.subscribe()
-	defer s.subHub.unsubscribe(ch)
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
 	for {

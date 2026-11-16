@@ -8,6 +8,7 @@
 // is one screen tall and the code is always in view.
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api.js'
+import { userNumbers } from '../lib/users.js'
 import { t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
@@ -56,9 +57,10 @@ onMounted(async () => {
         /* no link: the segment is simply not offered */
       }
     }
-    // Files by tunnel, in the order they were issued: the first on a tunnel
-    // is user 1, as the subscription page counts them.
+    // Files by tunnel, in the order they were issued, each numbered as its
+    // user is on the subscription page and their own link.
     const accounts = [...(fresh.accounts || [])].sort((a, b) => a.id - b.id)
+    const numbers = userNumbers(accounts)
     const groups = new Map()
     for (const d of accounts) {
       const iface = byId[d.interfaceId] || {}
@@ -71,12 +73,12 @@ onMounted(async () => {
       const wg = g.protocol === 'wireguard'
       const several = g.accounts.length > 1
       const entries = []
-      for (const [i, d] of g.accounts.entries()) {
+      for (const d of g.accounts) {
         try {
           // One file per host on the tunnel, as the subscription hands them
           // out; one when it has no hosts.
           const list = await api.get(`/api/devices/${d.id}/profiles`, { background: true })
-          const who = several ? t('client.userN', { n: i + 1 }) : fresh.name
+          const who = several ? t('client.userN', { n: numbers[d.id] }) : fresh.name
           for (const p of list) {
             entries.push({
               key: `dev-${d.id}-${p.hostId || 0}`,

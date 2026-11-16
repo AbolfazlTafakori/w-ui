@@ -226,6 +226,11 @@ Account
 	lastSeenAt *time.Time
 	createdAt time.Time
 	updatedAt time.Time
+UserSub
+	clientId uint
+	device string
+	createdAt time.Time
+	updatedAt time.Time
 TrafficSample
 	id uint
 	clientId uint

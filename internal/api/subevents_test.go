@@ -46,3 +46,25 @@ func TestOpenPagesAreToldTheMomentSomethingChanges(t *testing.T) {
 		t.Fatal("the page was not unsubscribed")
 	}
 }
+
+func TestOneAddressCannotTakeEveryStream(t *testing.T) {
+	h := newSubHub()
+	var held []chan struct{}
+	for i := 0; i < maxSubStreamsPerAddr; i++ {
+		ch, ok := h.admit("203.0.113.9")
+		if !ok {
+			t.Fatalf("stream %d refused under the limit", i+1)
+		}
+		held = append(held, ch)
+	}
+	if _, ok := h.admit("203.0.113.9"); ok {
+		t.Fatal("one address held more streams than its share")
+	}
+	if _, ok := h.admit("198.51.100.4"); !ok {
+		t.Fatal("another address was refused because of the first")
+	}
+	h.release(held[0], "203.0.113.9")
+	if _, ok := h.admit("203.0.113.9"); !ok {
+		t.Fatal("a stream closed was not given back")
+	}
+}

@@ -77,6 +77,9 @@ type subPageView struct {
 	ExpiryCls  string
 	LastOnline string
 	SubQR      string // subQR
+	// UserLinks are each user's own link, on the plan's page of a plan for
+	// several, each with its QR.
+	UserLinks []subUserLink
 	// CSSPath and StringsPath are the page's styles and its words in both
 	// languages, for the language button: files of their own (subassets.go).
 	CSSPath     string
@@ -95,6 +98,14 @@ type subPageView struct {
 	// page rendered from sample figures for the settings page.
 	Template string
 	Preview  bool
+}
+
+// subUserLink is one user's own link on the plan's page.
+type subUserLink struct {
+	User  int
+	Token string
+	Link  string
+	QR    string
 }
 
 type subPageDevice struct {
@@ -356,6 +367,9 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	// Each QR is its pattern, drawn by the page when it is opened (subqr.go).
 	v.SubQR = subQR(page.SubURL)
+	for _, u := range page.Users {
+		v.UserLinks = append(v.UserLinks, subUserLink{User: u.User, Token: u.Token, Link: u.Link, QR: subQR(u.Link)})
+	}
 	for _, d := range page.Devices {
 		entry := subPageDevice{SubPageDevice: d}
 		ppp := d.Protocol == "l2tp" || d.Protocol == "pptp" || d.Protocol == "ikev2" || d.Protocol == "openconnect"
@@ -1029,7 +1043,38 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
 
       {{ if .Page.SubURL }}
       <div class="divider"><span data-i="title">Subscription info</span></div>
-      <div class="links">
+      <div class="links">{{ if .UserLinks }}
+        <!-- A plan for several: the plan's own link is a menu that opens on
+             each user's own link, carrying that user's files and nobody
+             else's, for the plan's holder to hand out. -->
+        <div class="cfg cfg-group sub-tree">
+          <div class="cfg-head">
+            <span class="anticon caret">{{ index .Icons "RightOutlined" }}</span>
+            <span class="tag green row-tag">SUB</span>
+            <a class="row-title" href="{{ .Page.SubURL }}" target="_blank" rel="noopener noreferrer" title="{{ .Page.SubURL }}" dir="ltr">{{ .SubID }}</a>
+            <span class="cfg-count"><span dir="ltr">{{ len .UserLinks }}</span> <span data-i="users">users</span></span>
+            <div class="row-actions">
+              <button class="btn sm copy" type="button" data-text="{{ .Page.SubURL }}" data-i-title="copy"><span class="anticon">{{ index .Icons "CopyOutlined" }}</span></button>
+              {{ if .SubQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index .Icons "QrcodeOutlined" }}</span></button>
+              <div class="pop"><div class="pop-card"><span class="tag green qr-tag" data-i="subSettings">Subscription</span><img data-qr="{{ .SubQR }}" width="240" height="240" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
+            </div>
+          </div>
+          <div class="cfg-body cfg-users">
+            {{ range .UserLinks }}
+            <div class="cfg-user">
+              <div class="cfg-user-head">
+                <span class="tag blue row-tag"><span data-i="user">User</span> <span dir="ltr">{{ .User }}</span></span>
+                <a class="row-title" href="{{ .Link }}" target="_blank" rel="noopener noreferrer" title="{{ .Link }}" dir="ltr">{{ .Token }}</a>
+                <div class="row-actions">
+                  <button class="btn sm copy" type="button" data-text="{{ .Link }}" data-i-title="copy"><span class="anticon">{{ index $.Icons "CopyOutlined" }}</span></button>
+                  {{ if .QR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index $.Icons "QrcodeOutlined" }}</span></button>
+                  <div class="pop"><div class="pop-card"><span class="tag blue qr-tag"><span data-i="user">User</span> <span dir="ltr">{{ .User }}</span></span><img data-qr="{{ .QR }}" width="240" height="240" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
+                </div>
+              </div>
+            </div>
+            {{ end }}
+          </div>
+        </div>{{ else }}
         <div class="row">
           <span class="tag green row-tag">SUB</span>
           <a class="row-title" href="{{ .Page.SubURL }}" target="_blank" rel="noopener noreferrer" title="{{ .Page.SubURL }}" dir="ltr">{{ .SubID }}</a>
@@ -1038,7 +1083,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
             {{ if .SubQR }}<button class="btn sm qr" type="button" title="QR"><span class="anticon">{{ index .Icons "QrcodeOutlined" }}</span></button>
             <div class="pop"><div class="pop-card"><span class="tag green qr-tag" data-i="subSettings">Subscription</span><img data-qr="{{ .SubQR }}" width="240" height="240" alt="QR"><span class="pop-hint" data-i="tapToClose">Tap outside to close</span></div></div>{{ end }}
           </div>
-        </div>
+        </div>{{ end }}
       </div>
       {{ end }}
 
@@ -1275,7 +1320,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
   }
   $('button.qr').forEach(function (b) { b.addEventListener('click', function (e) { e.stopPropagation(); var p = b.nextElementSibling; var was = p.classList.contains('open'); closeMenus(); if (!was) { var img = p.querySelector('img[data-qr]'); if (img) { try { img.src = drawQR(img.getAttribute('data-qr')); } catch (err) {} img.removeAttribute('data-qr'); } p.classList.add('open'); } }); });
   $('.cfg-head').forEach(function (h) { h.addEventListener('click', function () { h.parentNode.classList.toggle('open'); }); });
-  $('.cfg-head .row-actions').forEach(function (a) { a.addEventListener('click', function (e) { e.stopPropagation(); }); });
+  $('.cfg-head .row-actions, .cfg-head a').forEach(function (a) { a.addEventListener('click', function (e) { e.stopPropagation(); }); });
   $('.cfg-user .btn.show').forEach(function (b) { b.addEventListener('click', function () { b.closest('.cfg-user').classList.toggle('open'); }); });
   $('.pop').forEach(function (p) { p.addEventListener('click', function (e) { if (e.target === p) closeMenus(); }); });
   $('.pop-card').forEach(function (c) { c.addEventListener('click', function (e) { e.stopPropagation(); }); });

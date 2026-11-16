@@ -71,6 +71,16 @@ When the subscription service sits on its own port, the link carries that port a
 
 **Listen Domain**, when set, is the only host the service answers to, and any other name gets a 404; it is also the host the link is built with. Leave it blank to answer on every name and IP. **Reverse Proxy URI** overrides both for the link, when the service is reached through a proxy.
 
+## Each user's own link
+
+A plan for several users has one more link per user, beside the customer's own. A user's link carries that user's files and nobody else's: opened in a browser it is their own page, with only their files and only their row of the usage table; fetched by an app, including W-UI's own, it is only their configurations. The plan's quota and expiry are shared, so their app shows what is left of the plan.
+
+The customer's own link does not change and still carries every user's files. Its page lists the users' links under it, each with a copy button and a QR code, for whoever holds the plan to hand out. A user's page lists no other link.
+
+In the panel, **Client Information** shows the same list: each user, the tunnels they are on, what they used, when they were last online, and their link to copy, show as a QR code, or replace. **New link** gives that one user a new link and stops their old one at once; the customer's link and the other users' keep working. The API is `GET /api/clients/{id}/subscription/users` and `POST /api/clients/{id}/subscription/users/{user}/rotate`, and a reseller reaches only their own customers' users.
+
+A user's link belongs to that user's files, not to a place in the list. A user taken off the plan, by lowering its users or deleting their files, takes their link with them, and a user added later gets a new one, never the old one. Deleting the customer removes every user's link with it.
+
 ## Always current
 
 Nothing is stored for the link. Every fetch renders the configurations from the records at that moment. Whatever changed in the panel, whether an endpoint or port, the DNS, a host added, a device renamed, an OpenVPN username or password, or a customer moved to another server, is in the next fetch. The answer is sent with `Cache-Control: no-store`, so nothing in between keeps an old copy.

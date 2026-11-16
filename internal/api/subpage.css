@@ -170,6 +170,10 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-user.open .cfg-user-body { display: block; }
 .cfg-user .btn.show .anticon { transition: transform .3s; }
 .cfg-user.open .btn.show .anticon { transform: rotate(90deg); }
+/* The plan's own link, opening on each user's own. */
+.sub-tree .cfg-head .row-title { flex: 1; min-width: 0; }
+.sub-tree .cfg-head .cfg-count { margin-inline-start: 0; }
+.sub-tree .cfg-user-head .row-title { flex: 1; min-width: 0; }
 .cfg-text { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
 
 /* The usage table. One container -- the fold-out panel -- and nothing

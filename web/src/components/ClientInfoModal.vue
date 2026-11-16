@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from 'vue'
 import { api, subscriptionText } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, isOnline } from '../lib/format.js'
+import { userNumbers } from '../lib/users.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
 import DeviceSetup from './DeviceSetup.vue'
@@ -18,6 +19,11 @@ const emit = defineEmits(['close'])
 
 const c = ref(props.client)
 const sub = ref(null) // { link, token }
+// Each user's own link, in a plan for several: their files alone.
+const users = ref([]) // { user, device, token, link, tunnels, upBytes, downBytes, lastOnline }
+const rotating = ref(0)
+// The plan's link is a menu that opens on its users' links.
+const subOpen = ref(false)
 const configs = ref([]) // { device, body, filename }
 const openCfg = ref(new Set())
 // Every tunnel is a menu, as on the subscription page: one row per
@@ -62,19 +68,20 @@ async function load() {
     c.value = fresh
     if (subs?.enabled) {
       sub.value = await api.get(`/api/clients/${props.client.id}/subscription`, { background: true }).catch(() => null)
+      const list = await api.get(`/api/clients/${props.client.id}/subscription/users`, { background: true }).catch(() => null)
+      users.value = list?.users || []
     }
     const out = []
-    // Files in the order they were issued, so the first on a tunnel is
-    // user 1, as the subscription page counts them.
+    // Files in the order they were issued, each numbered as its user is on
+    // the subscription page and their own link.
     const accounts = [...(fresh.accounts || [])].sort((a, b) => a.id - b.id)
-    const nth = {}
+    const numbers = userNumbers(accounts)
     const perTunnel = {}
     for (const d of accounts) perTunnel[d.interfaceId] = (perTunnel[d.interfaceId] || 0) + 1
     for (const d of accounts) {
       const iface = ifaceById.value[d.interfaceId] || {}
       const protocol = iface.protocol || fresh.protocol || 'wireguard'
-      nth[d.interfaceId] = (nth[d.interfaceId] || 0) + 1
-      const who = perTunnel[d.interfaceId] > 1 ? t('client.userN', { n: nth[d.interfaceId] }) : fresh.name
+      const who = perTunnel[d.interfaceId] > 1 ? t('client.userN', { n: numbers[d.id] }) : fresh.name
       try {
         // One block per host on the device's inbound, as the subscription
         // hands them out.
@@ -123,6 +130,20 @@ async function downloadSub() {
     downloadText(await subscriptionText(sub.value.link), 'subscription-standard.txt')
   } catch (e) {
     notify(e.message, 'error')
+  }
+}
+async function rotateUser(u) {
+  if (!window.confirm(t('client.rotateUserLinkConfirm', { n: u.user }))) return
+  rotating.value = u.user
+  try {
+    const fresh = await api.post(`/api/clients/${props.client.id}/subscription/users/${u.user}/rotate`)
+    users.value = users.value.map((x) => (x.user === fresh.user ? fresh : x))
+    if (qrFor.value?.key === `user-${u.user}`) qrFor.value = null
+    notify(t('client.userLinkRotated', { n: u.user }), 'success')
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    rotating.value = 0
   }
 }
 function toggleQr(key, value, remark, e) {
@@ -270,13 +291,40 @@ const expiryText = computed(() => {
 
         <template v-if="sub?.link">
           <div class="adivider"><span class="adivider-text">{{ t('client.subscriptionTitle') }}</span></div>
-          <div class="link-row">
+          <div class="link-row" :class="{ 'sub-menu': users.length > 1, open: subOpen }" @click="users.length > 1 && (subOpen = !subOpen)">
+            <button v-if="users.length > 1" class="sub-caret" type="button" :aria-expanded="subOpen" :aria-label="t('client.userLinks')"><AntIcon name="RightOutlined" /></button>
             <span class="atag green link-row-tag">SUB</span>
-            <a :href="sub.link" target="_blank" rel="noopener noreferrer" class="link-row-title link-row-title-anchor ltr" :title="sub.link">{{ sub.token }}</a>
-            <div class="link-row-actions">
+            <a :href="sub.link" target="_blank" rel="noopener noreferrer" class="link-row-title link-row-title-anchor ltr" :title="sub.link" @click.stop>{{ sub.token }}</a>
+            <span v-if="users.length > 1" class="cfg-count">{{ t('client.nUsers', { n: users.length }) }}</span>
+            <div class="link-row-actions" @click.stop>
               <button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(sub.link)"><AntIcon name="CopyOutlined" /></button>
               <button class="abtn small icon" :title="t('action.download')" :aria-label="t('action.download')" @click="downloadSub"><AntIcon name="DownloadOutlined" /></button>
               <button class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr('sub', sub.link, `${c.name} — ${t('client.subscriptionTitle')}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
+            </div>
+          </div>
+        </template>
+
+        <!-- A plan for several: each user's own link under the customer's,
+             carrying that user's files and nobody else's. One row a user:
+             who, where they are, what they used, and their link. -->
+        <template v-if="sub?.link && users.length > 1 && subOpen">
+          <p class="user-links-hint">{{ t('client.userLinksHint') }}</p>
+          <div class="user-links">
+            <div v-for="u in users" :key="u.user" class="link-row user-link">
+              <span class="atag blue link-row-tag">{{ t('client.userN', { n: u.user }) }}</span>
+              <div class="user-link-main">
+                <a :href="u.link" target="_blank" rel="noopener noreferrer" class="link-row-title link-row-title-anchor ltr" :title="u.link">{{ u.token }}</a>
+                <span class="user-link-meta">
+                  <span v-if="u.tunnels.length">{{ u.tunnels.join(' · ') }}</span>
+                  <span class="ltr">↑ {{ bytes(u.upBytes, store.locale) }} / ↓ {{ bytes(u.downBytes, store.locale) }}</span>
+                  <span :class="{ 'user-online': isOnline(u.lastOnline) }">{{ isOnline(u.lastOnline) ? t('client.online') : u.lastOnline ? relative(u.lastOnline, store.locale) : t('client.offline') }}</span>
+                </span>
+              </div>
+              <div class="link-row-actions">
+                <button class="abtn small icon" :title="t('action.copy')" :aria-label="t('action.copy')" @click="copy(u.link)"><AntIcon name="CopyOutlined" /></button>
+                <button class="abtn small icon" :title="t('client.qrCode')" :aria-label="t('client.qrCode')" @click="toggleQr(`user-${u.user}`, u.link, `${c.name} — ${t('client.userN', { n: u.user })}`, $event)"><AntIcon name="QrcodeOutlined" /></button>
+                <button class="abtn small icon" :title="t('client.rotateUserLink')" :aria-label="t('client.rotateUserLink')" :disabled="rotating === u.user" @click="rotateUser(u)"><AntIcon name="ReloadOutlined" /></button>
+              </div>
             </div>
           </div>
         </template>
@@ -377,6 +425,18 @@ const expiryText = computed(() => {
 .link-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .link-row-title-anchor { color: var(--accent-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); transition: text-decoration-color 120ms ease; }
 .link-row-title-anchor:hover { text-decoration-color: var(--accent); }
+.sub-menu { cursor: pointer; user-select: none; }
+.sub-caret { display: inline-flex; align-items: center; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font-size: 12px; }
+.sub-caret .anticon { transition: transform 0.3s; }
+.sub-menu.open .sub-caret .anticon { transform: rotate(90deg); }
+.sub-menu .cfg-count { margin-inline-start: 0; }
+.user-links-hint { margin: 0 0 8px; padding-inline-start: 16px; font-size: 12px; color: var(--muted); }
+/* Indented under the plan's link they belong to. */
+.user-links { max-height: 360px; overflow-y: auto; padding-inline-start: 16px; }
+.user-link-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.user-link-main .link-row-title { flex: none; }
+.user-link-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+.user-online { color: var(--ok); }
 .config-block { margin-bottom: 8px; }
 .config-block-actions { display: flex; gap: 4px; }
 .config-block-text { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }

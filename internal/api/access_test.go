@@ -68,6 +68,8 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		"GET /api/overview",
 		"GET /api/clients/{id}/subscription",
 		"POST /api/clients/{id}/subscription/rotate",
+		"GET /api/clients/{id}/subscription/users",
+		"POST /api/clients/{id}/subscription/users/{user}/rotate",
 	}
 	sort.Strings(want)
 

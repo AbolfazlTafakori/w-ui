@@ -233,7 +233,11 @@ var (
 	nonce   = regexp.MustCompile(`nonce="[^"]*"|'nonce-[^']*'`)
 	pngData = regexp.MustCompile(`data:image/png;base64,(?:[A-Za-z0-9+/=]|&#43;)+`)
 	// The time left on a plan, counted from now: "1552d", "12 days left".
-	timeLeft = regexp.MustCompile(`([>\s])\d+(d|h|m| days left| hours left| minutes left)([<\s])`)
+	// Each user's own link on a plan's page is drawn when the page is first
+	// opened, at random: its token, and the QR of its link, are masked.
+	userToken = regexp.MustCompile(`(/subscribe/|dir="ltr">)([A-Za-z0-9_-]{32})`)
+	userQR    = regexp.MustCompile(`(<span class="tag blue qr-tag">.*?<img data-qr=")[^"]*`)
+	timeLeft  = regexp.MustCompile(`([>\s])\d+(d|h|m| days left| hours left| minutes left)([<\s])`)
 )
 
 // fetchPage is the customer's page as a browser gets it, nonces masked.
@@ -252,6 +256,15 @@ func fetchPage(t *testing.T, link string) []byte {
 		t.Fatalf("the customer's page: %s", resp.Status)
 	}
 	raw = nonce.ReplaceAll(raw, []byte("nonce=<masked>"))
+	own := link[strings.LastIndex(link, "/")+1:]
+	raw = userToken.ReplaceAllFunc(raw, func(m []byte) []byte {
+		g := userToken.FindSubmatch(m)
+		if string(g[2]) == own {
+			return m
+		}
+		return append(append([]byte{}, g[1]...), "<user-token>"...)
+	})
+	raw = userQR.ReplaceAll(raw, []byte("${1}<masked>"))
 	// The QR codes are PNGs, and how a PNG is compressed differs between Go
 	// releases; what they encode -- the links -- is in the page as text. In
 	// the page a "+" of the base64 is written &#43;.

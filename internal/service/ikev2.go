@@ -168,8 +168,15 @@ func (s *Subscriptions) IKEv2FileFor(ctx context.Context, token string, accountI
 	if err != nil {
 		return "", nil, err
 	}
+	// Among the files the link carries, not merely the customer's: a user's
+	// own link reaches that user's files and no other user's.
 	var acc model.Account
-	if err := s.db.WithContext(ctx).Where("id = ? AND client_id = ?", accountID, c.ID).First(&acc).Error; err != nil {
+	for _, a := range c.Accounts {
+		if a.ID == accountID {
+			acc = a
+		}
+	}
+	if acc.ID == 0 {
 		return "", nil, fmt.Errorf("%w: file", ErrNotFound)
 	}
 	var iface model.Interface

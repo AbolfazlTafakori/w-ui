@@ -129,6 +129,8 @@ PUT    /api/subscription                              Subscriptions  auth=true  
 POST   /api/subscription/preview                      Subscriptions  auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/clients/{id}/subscription                 Subscriptions  auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/clients/{id}/subscription/rotate          Subscriptions  auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
+GET    /api/clients/{id}/subscription/users           Subscriptions  auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
+POST   /api/clients/{id}/subscription/users/{user}/rotate Subscriptions  auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 GET    /api/nodes                                     Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/nodes                                     Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 PATCH  /api/nodes/{id}                                Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes

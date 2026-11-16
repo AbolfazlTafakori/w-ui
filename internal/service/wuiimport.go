@@ -413,6 +413,14 @@ func (s *Clients) handedClient(tx *gorm.DB, owner, adminStamp uint, c handover.C
 			return client, err
 		}
 		taken = n > 0
+		if !taken {
+			// A user's own link is a link too, and one id cannot be two.
+			user, err := userTokenTaken(tx, client.SubToken)
+			if err != nil {
+				return client, err
+			}
+			taken = user
+		}
 	}
 	if taken {
 		tok, err := newSubToken()

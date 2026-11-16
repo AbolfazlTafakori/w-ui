@@ -54,15 +54,11 @@ func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput)
 	for _, id := range accountIDs {
 		want[id] = true
 	}
-	// A user is their place among the files on each tunnel, in the order
-	// the files were issued -- the same counting the subscription page
-	// uses, so "user 2" means the same thing in both places.
-	nth := map[uint]int{}
-	seat := map[uint]int{}
-	for _, a := range sortedByID(client.Accounts) {
-		nth[a.InterfaceID]++
-		seat[a.ID] = nth[a.InterfaceID]
-	}
+	// A user is the place of their file's name among the customer's, in
+	// the order the files were issued -- the same counting the subscription
+	// page and the users' own links use, so "user 2" means the same thing
+	// in every place.
+	seat := userNumbers(client.Accounts)
 
 	var chosen []model.Account
 	for _, a := range client.Accounts {

@@ -392,8 +392,14 @@ func (s *Subscriptions) LinkFor(ctx context.Context, token, requestHost string) 
 	if err != nil {
 		return "", err
 	}
+	return linkWith(cfg, token, requestHost), nil
+}
+
+// linkWith builds a link from settings already read, so a list of links
+// reads them once and not once a link.
+func linkWith(cfg SubSettings, token, requestHost string) string {
 	if cfg.ReverseProxyURI != "" {
-		return strings.TrimRight(cfg.ReverseProxyURI, "/") + cfg.Path + token, nil
+		return strings.TrimRight(cfg.ReverseProxyURI, "/") + cfg.Path + token
 	}
 	host := strings.TrimRight(cfg.Host, "/")
 	if host == "" {
@@ -417,7 +423,7 @@ func (s *Subscriptions) LinkFor(ctx context.Context, token, requestHost string) 
 		}
 		host = withPort(host, cfg.Port)
 	}
-	return scheme + host + cfg.Path + token, nil
+	return scheme + host + cfg.Path + token
 }
 
 // stripPort takes the port off a host that names one.
@@ -814,11 +820,22 @@ type SubPage struct {
 	// client app rather than download a file.
 	SubURL  string
 	Devices []SubPageDevice
+	// Users are each user's own link, on the customer's own page of a plan
+	// for several: whoever holds the plan hands them out. Never on a user's
+	// own page, which is theirs alone.
+	Users []SubPageUser
 	// FilesSince is when the files' usage starts counting, when that is
 	// after the customer's current period began: their per-user table then
 	// covers less than their usage, and says from when. Nil when the table
 	// covers the whole period and adds up to the usage.
 	FilesSince *time.Time
+}
+
+// SubPageUser is one user's own link, as the plan's page lists it.
+type SubPageUser struct {
+	User  int
+	Token string
+	Link  string
 }
 
 // SubPageDevice is one row on that page.
@@ -979,7 +996,7 @@ func (s *Subscriptions) StatusFor(ctx context.Context, token string) (*SubPage, 
 }
 
 func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*SubPage, error) {
-	c, err := s.byToken(ctx, token)
+	c, only, err := s.resolve(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -1019,7 +1036,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 	}
 	page.UpBytes, page.DownBytes = c.UpDown()
 	several := len(deviceNames(c.Accounts)) > 1
-	nth := map[uint]int{}
+	numbers := userNumbers(c.Accounts)
 	for _, d := range rendered {
 		if hs := d.Account.LastHandshake; hs != nil && (page.LastOnline == nil || hs.After(*page.LastOnline)) {
 			t := *hs
@@ -1034,13 +1051,18 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 			tunnel = iface.Name
 			label += " · " + iface.Name
 		}
-		// In a plan for several, a user is their place among the files on
-		// that tunnel, in the order they were issued: the file a customer
-		// had as a plan of one is user 1 whatever it was called.
+		// In a plan for several, a user is the place of their file's name
+		// among the customer's, in the order the files were issued: the file
+		// a customer had as a plan of one is user 1 whatever it was called.
+		// Counted per file and not per entry, so a tunnel with spare hosts
+		// does not number one user's entries as several users. A user's own
+		// link is one user of the plan, numbered as the plan numbers them.
 		user := 0
-		if several {
-			nth[d.Account.InterfaceID]++
-			user = nth[d.Account.InterfaceID]
+		switch {
+		case only > 0:
+			user = only
+		case several:
+			user = numbers[d.Account.ID]
 		}
 		dev := SubPageDevice{
 			ID:        d.Account.ID,
@@ -1077,7 +1099,31 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		}
 		page.Devices = append(page.Devices, dev)
 	}
+	if only == 0 && subURL != "" && strings.HasSuffix(subURL, token) {
+		if page.Users, err = s.pageUsers(ctx, c, strings.TrimSuffix(subURL, token)); err != nil {
+			return nil, err
+		}
+	}
 	return page, nil
+}
+
+// pageUsers is each user's own link for the plan's page, on the address the
+// plan's own link was given: a plan for one has none to list.
+func (s *Subscriptions) pageUsers(ctx context.Context, c *model.Client, base string) ([]SubPageUser, error) {
+	names := deviceNames(sortedByID(c.Accounts))
+	if len(names) < 2 {
+		return nil, nil
+	}
+	tokens, err := s.ensureUserTokens(ctx, c.ID, c.Accounts)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SubPageUser, 0, len(names))
+	for i, n := range names {
+		tok := tokens[userKey(n)]
+		out = append(out, SubPageUser{User: i + 1, Token: tok, Link: base + tok})
+	}
+	return out, nil
 }
 
 // DeviceConfig returns one device's configuration, for a customer downloading a
@@ -1128,22 +1174,11 @@ func (s *Subscriptions) DeviceConfig(
 	return nil, fmt.Errorf("%w: no such device on this subscription", ErrNotFound)
 }
 
-// byToken finds the client a subscription token belongs to.
+// byToken finds the client a subscription token belongs to: all of the
+// customer's files for their own link, one user's for a user's (resolve).
 func (s *Subscriptions) byToken(ctx context.Context, token string) (*model.Client, error) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return nil, fmt.Errorf("%w: no subscription token", ErrNotFound)
-	}
-	var c model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts").
-		Where("sub_token = ?", token).Limit(1).Find(&c).Error; err != nil {
-		return nil, fmt.Errorf("service: read subscription: %w", err)
-	}
-	if c.ID == 0 {
-		// Deliberately the same answer as a token that never existed.
-		return nil, fmt.Errorf("%w: no such subscription", ErrNotFound)
-	}
-	return &c, nil
+	c, _, err := s.resolve(ctx, token)
+	return c, err
 }
 
 // encodeBundle puts the configurations into the shape asked for.
@@ -1488,8 +1523,9 @@ func fileParts(accounts []model.Account, acc model.Account, tunnel string, v end
 	return parts
 }
 
-// TokenExists reports whether a link's secret belongs to a customer, for
-// the throttle on guessed links; it is one indexed lookup.
+// TokenExists reports whether a link's secret belongs to a customer or to
+// one of their users, for the throttle on guessed links; it is one or two
+// indexed lookups.
 func (s *Subscriptions) TokenExists(ctx context.Context, token string) (bool, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -1499,7 +1535,14 @@ func (s *Subscriptions) TokenExists(ctx context.Context, token string) (bool, er
 	if err := s.db.WithContext(ctx).Model(&model.Client{}).Where("sub_token = ?", token).Count(&n).Error; err != nil {
 		return false, fmt.Errorf("service: read subscription: %w", err)
 	}
-	return n > 0, nil
+	if n > 0 {
+		return true, nil
+	}
+	taken, err := userTokenTaken(s.db.WithContext(ctx), token)
+	if err != nil {
+		return false, fmt.Errorf("service: read subscription: %w", err)
+	}
+	return taken, nil
 }
 
 // revision is a fingerprint of what the customer's page and files are made
