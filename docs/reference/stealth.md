@@ -579,3 +579,83 @@ drift's rules, and:
 - It never sends a token twice.
 
 The reference client in `internal/stealthgw` does this with `Transport` set to `bare`, over `ws://`.
+
+# Stealth transport: mold
+
+mold is relay that need not look like relay. The operator picks the **shape** of a request, the one form every request of the transport takes: which method it uses, where in the request the tunnel's data rides (the body, the query, the path or one header field), and whether the gateway answers each request with the data that waits (**poll**) or writes all of it to one long stream (**sse**, Server-Sent Events). Everything below the shape (the keys, the chunk, its padding and the proof) is relay's, under mold's own name, and a request that proves nothing goes to the decoy as it came, as on drift and relay.
+
+The shape is in `internal/stealth/shape.go`, the requests and answers in `shaped.go`, the stream in `sse.go`, and the server and reference client in `internal/stealthgw`.
+
+## On the panel
+
+Choose **mold** as a standard WireGuard tunnel's **Transport**. Its fields are relay's (the mold port, the front's host and port, the path, the decoy site, the trusted fronts and their header), and a **Request shape**:
+
+| Shape | Method | Data rides in | Downstream |
+|---|---|---|---|
+| `get-poll` | GET | the query | each request is answered with what waits |
+| `put-poll` | PUT | the body | each request is answered with what waits |
+| `get-stream` | GET | the query | one long `text/event-stream` answer |
+| `post-stream` | POST | the body | one long `text/event-stream` answer |
+
+With no trusted front the gateway listens on 127.0.0.1 alone and its port stays shut in the firewall. The nginx block is relay's; for a stream shape, keep `proxy_buffering off` and a `proxy_read_timeout` above an hour, the longest a stream runs.
+
+### The shape
+
+A shape that breaks a rule is refused whole: nothing is repaired, and no missing member is guessed.
+
+- **Method:** 3 to 16 upper-case letters; never CONNECT, TRACE, HEAD or OPTIONS, which a front treats specially. Only POST, PUT, PATCH and custom methods carry a body.
+- **Place:** `body`, `query`, `path` (the text cut into segments of 8 to 64 by `/`) or `header`. A header's name is 1 to 32 letters, digits or `-`, and is never one a client always writes or a front rewrites (`Host`, `Cookie`, `User-Agent`, `Content-Type`, `X-Forwarded-For` and the like, or any `Sec-` or `Proxy-` name).
+- **Limit:** the most one request carries: 1024 to 65536 bytes of body (65536 by default), 1024 to 8000 of request target (4000), or 1024 to 4096 of header value (3000).
+- **In flight:** how many requests of a session are read at once: always 1 for poll; 1 to 4 beside a stream, 2 by default.
+- **Gather:** how long a side waits to collect datagrams into one request (10 to 60 ms by default) or one event (0 to 20 ms), at most 250 ms.
+- **Stream life:** drawn per stream from 30 to 3600 seconds, 120 to 900 by default; a client may fall back to polling when a stream will not hold (on by default). These three stream members are refused on a poll shape.
+
+Data in a query, a path or a header is base64url without padding; in a body, the raw bytes. Each chunk's number is tied to the request it rides in (`n × 4096 + i`), so a replayed request cannot slip a chunk under a number the gateway has moved past, and a front's retry of the same request does not shift the numbers. In a stream, each chunk is one event, `data: <base64>`, with heartbeats between; every other request of the session is answered at once with one padding-only chunk.
+
+### The profile
+
+```json
+{"type": "mold", "endpoints": ["cdn.example.com:443"], "url": "https://cdn.example.com/41yg3dsw2u5h97g50uvl",
+ "key": "base64", "secret": "base64", "mtu": 1420,
+ "shape": {"up": {"method": "POST", "place": "body", "limit": 65536, "inflight": 2, "gather": [10, 60]},
+           "down": {"mode": "sse", "gather": [0, 20], "life": [120, 900], "fallback": true}}}
+```
+
+As relay's, with the shape written out in full.
+
+# Stealth transport: mirror
+
+mirror borrows a real site. The gateway is the server on a TCP port of its own. A device opens with a real-looking TLS 1.3 ClientHello that asks for the borrowed site's name and hides its proof in the 64 bytes a hello spends on its random and legacy session id. A connection that proves nothing (an ordinary visitor, or a probe) is relayed to the borrowed site byte for byte, so it gets the site's own certificate and page, and nothing of the gateway's. A connection that proves a device's secret is answered by the gateway's own TLS 1.3 handshake, written by hand with a throwaway certificate whose key only the two ends can work out, its records shaped after the site's.
+
+The proof is in `internal/stealth/faketls.go`, the handshake in `fakeflight.go` and `tls13.go`, the session frames in `fakesession.go`, and the gateway in `internal/stealthgw`.
+
+## On the panel
+
+Choose **mirror** as a standard WireGuard tunnel's **Transport**, then:
+
+- **mirror port:** the TCP port the gateway is the server on, opened in the firewall. Devices reach it on the tunnel's hosts.
+- **Borrowed site:** a real site's `host:port`, such as `www.wikipedia.org:443`. Its name is the one a device's hello asks for, and whoever is not a device is relayed to it. Choose a busy site that is normal to reach from your customers' network and is not blocked there.
+
+No domain, certificate or web server of your own is needed.
+
+## The proof
+
+```
+carrier    = ChaCha20-Poly1305(k_seal, plaintext, nonce 0, aad = label | hello with the carrier zeroed)
+plaintext  = 0x01 | 0 0 0 | timestamp(8) | hour tag(16) | binder(16) | 0 0 0 0      (48 bytes)
+binder     = HMAC-SHA-256(k_bind, b | plaintext[0:28])[0:16],  b = Expand(prk_f, "faketls binder" | X)
+k_seal     = Expand(prk_f, "faketls seal" | X | T_pub | inbound_pub)
+prk_f      = HKDF-Extract(salt "w-ui stealth v1 faketls", ikm = X25519(x, T))
+node seed  = Expand(prk_f, "faketls node" | X | carrier),  the throwaway leaf's key
+```
+
+X is the hello's X25519 share (or the X25519 part of its X25519MLKEM768 hybrid), x the ephemeral behind it, and T the transport's key. The 64-byte carrier is the hello's random (32) and legacy session id (32). The hour tag names the device for one hour, so a proof is good for that hour alone. A hello that is no proof costs the gateway the same work as one that is.
+
+### The profile
+
+```json
+{"type": "mirror", "endpoints": ["203.0.113.5:8443"], "site": "www.wikipedia.org",
+ "key": "base64", "secret": "base64", "mtu": 1420}
+```
+
+`endpoints` are where the gateway is reached; `site` is the name the hello asks for. A tunnel on a node whose key the panel does not have yet is left out of profiles until it has one.

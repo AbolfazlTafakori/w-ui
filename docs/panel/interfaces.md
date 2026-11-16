@@ -98,7 +98,7 @@ An interface that still has customers cannot be deleted. The panel says how many
 | **Interface** (name) * | `wg0` / `ovpn0` | Its name, which is also the network device's name on the server. | Up to 15 characters, no spaces or slashes; unique on its server. |
 | **Endpoint** * | | The hostname or IP address customers connect to, written into every configuration. | A hostname or an IP; an IPv6 address goes in brackets, `[2001:db8::1]`. |
 | **Port** * | 51820 / 1194 | The port it listens on. | 1 to 65535. Refused when something on this server already listens on it, checked for the right transport. Not checked for a tunnel on a node. |
-| **Transport** | UDP | OpenVPN only. **UDP** is faster; **TCP** gets through networks that block UDP, and on port 443 looks like an ordinary HTTPS connection. | WireGuard is always UDP. |
+| **Transport** | UDP | **OpenVPN:** **UDP** is faster; **TCP** gets through networks that block UDP, and on port 443 looks like an ordinary HTTPS connection. **Standard WireGuard:** **UDP** is WireGuard as it is; veil, anchor, mirror, drift, relay, mold and bare add a [stealth transport](#stealth-transports-wireguard) beside it. | AmneziaWG is always UDP. |
 | **Subnet** * | `10.66.0.0/16` / `10.8.0.0/16` | The range customer addresses come from. A /16 holds about 65,000 devices, and freed addresses are reused. | IPv4, from /10 (about 4 million) to /30. It cannot overlap another interface on the same server, or a network another program uses there, such as Docker, another VPN or the server's own. |
 | **MTU** | 1420 / 1500 | The largest packet. Lower it, to 1280 for example, when some sites hang for some customers. | 576 to 9000. |
 | **DNS** | `1.1.1.1` | The DNS servers handed to customers. | One or more IP addresses, separated by commas. |
@@ -107,6 +107,41 @@ An interface that still has customers cannot be deleted. The panel says how many
 | **Pre-shared key (IPsec)** | Generated | L2TP/IPsec only. Every device types it in beside its own username and password. | Left empty, a strong key is generated. Some routers take at most 32 characters, such as the TP-Link Archer AX23's VPN client. Changing it later means every device needs the new key, and every session on the tunnel ends. |
 
 Each protocol's own settings follow.
+
+### Stealth transports (WireGuard)
+
+Where WireGuard itself is blocked, a standard WireGuard tunnel can carry a stealth transport. Plain WireGuard stays on the tunnel's port for every stock app, and every `.conf` already handed out keeps working. Beside it, a gateway carries the **same tunnel** in a form a filter does not take for a VPN, and answers nobody who cannot prove a device's secret. Only W-UI's own app ([Android and Windows](/guide/client-apps#the-w-ui-app)) speaks them; it reads them from the subscription's profile at `?format=wui`, so the customer changes nothing.
+
+| Transport | What the network sees | In front of it | Its port |
+|---|---|---|---|
+| **veil** | UDP packets that show nothing of WireGuard: no fixed byte, size or rhythm | nothing | a UDP port of its own, opened in the firewall |
+| **anchor** | a web server with TLS of its own, WebSocket inside | nothing; no domain needed | a TCP port of its own (443 looks most like a web server), opened |
+| **mirror** | a real site's TLS: a device's proof hides in the TLS 1.3 hello, everyone else is relayed to the borrowed site and gets its real certificate | nothing | a TCP port of its own, opened |
+| **drift** | a visit to your site: WebSocket | your web server (nginx) or a CDN, which ends TLS | the gateway's port, on 127.0.0.1 alone unless a front is elsewhere |
+| **relay** | a visit to your site: ordinary POST requests, one at a time, for a CDN that will not carry WebSocket | your web server or a CDN | as drift |
+| **mold** | HTTP in a shape you choose: `get-poll`, `put-poll`, `get-stream` or `post-stream` (SSE) | your web server or a CDN | as drift |
+| **bare** | WebSocket over plain HTTP, for a network that cuts TLS itself; the session is still sealed end to end | your web server, over HTTP | as drift |
+
+What the form asks for each:
+
+- **veil:** the veil port only. The panel gives each WireGuard device a transport secret of its own with its keys, and a new one when they are rotated.
+- **drift, relay, mold, bare:** the front's name and port (what devices connect to), the **path** the front sends to the gateway (drawn when left empty; shown once saved, for your web server's config), the **decoy site** that whoever proves nothing is handed to as they came, and the fronts trusted to name the visitor with their header. mold also takes the **request shape**. bare's token travels in a cookie of a name the panel draws, and needs a site of yours, since its answers cross the network in the clear.
+- **anchor:** the server name or address devices connect to, your own site (an `http://` address) that strangers are handed to byte for byte, and the certificate: the tunnel's own (an ECDSA key drawn once and kept, so the pin in devices' profiles never changes, renewed before it runs out) or, on the panel's own server, **Use the panel's certificate**, which devices check as a browser does. **PROXY protocol to the decoy** adds a PROXY v2 header naming the visitor, for a site set up to expect it.
+- **mirror:** the **borrowed site**, a real site's `host:port` such as `www.wikipedia.org:443`. Pick a busy site that is normal to reach from the network and not blocked.
+
+The transport's own key is drawn by the panel, turned over on a schedule with the one before still accepted, never shown by the API, and handed to a remote node with the tunnel. Each transport is specified, with test vectors, in [Stealth transports](/reference/stealth). The sharing report sees each device at its own address behind any of them.
+
+### Advanced (WireGuard)
+
+The **Advanced (WireGuard)** section of a WireGuard or AmneziaWG tunnel's form sets defaults every device on it inherits. Blank keeps what devices have always had.
+
+| Field | What it is |
+|---|---|
+| **Persistent keepalive** | Seconds between keepalive packets, written into each device. Blank is 25. |
+| **Client AllowedIPs** | What each device routes into the tunnel. Blank sends everything: `0.0.0.0/0, ::/0`. |
+| **Client MTU** | The MTU written into devices' files, apart from the interface's own. Blank inherits the interface MTU. |
+| **PostUp** | Shell commands the server runs when the tunnel first comes up, one per line; `%i` is the interface's name. For NAT, forwarding or routing you keep outside the panel. |
+| **PostDown** | Commands run when the tunnel is removed, usually the ones that undo PostUp. |
 
 ### L2TP/IPsec and PPTP
 
@@ -133,7 +168,10 @@ Choosing AmneziaWG opens the obfuscation values in the form, already filled in. 
 
 They are fitted to the server, too. On this server the panel reads what its way out to the internet carries (the MTU of the device its default route leaves by) and sets the tunnel's MTU to what fits it, as WireGuard's 1420 fits a 1500-byte link; the form says the number under the MTU field. On a cloud network that carries 1450 or 1400 the tunnel gets a smaller MTU, so no packet, padding included, is split on the way. Type an MTU of your own and the values are fitted to that instead. A node's link is taken to be 1500.
 
-There are two kinds of profile. **Modern (AmneziaWG 2)** has identifier ranges and a disguised packet before each handshake, which the current AmneziaWG and AmneziaVPN apps read. **Compatible (every app)** is what every AmneziaWG app has ever read, for devices that cannot be updated. A node running W-UI before 3.0 always gets a compatible one.
+The profile is set in one of two ways:
+
+- **Auto:** the panel fills every value, fitted to this server, with nothing left blank (all five I-slots and a header-protection key included). Pick a strength: **AmneziaWG 2**, lighter, read by every AmneziaWG app and easy on a weak server; or **AmneziaWG 3**, stronger, with identifier ranges and a disguised packet before each handshake, read by the current AmneziaWG and AmneziaVPN apps. A server too old for AmneziaWG 3 gets AmneziaWG 2, and the form says so. A node running W-UI before 3.0 always gets AmneziaWG 2.
+- **Manual:** every field is yours to write. Each is still checked against AmneziaWG's rules, and choosing AmneziaWG 2 drops the fields it does not have, so what is saved is a real AmneziaWG 2 profile.
 
 The values:
 
@@ -183,11 +221,13 @@ With ufw or firewalld on, a tunnel's port is dropped there whatever the panel's 
 Everything except the protocol and the server can be changed after creation.
 
 - **Endpoint, DNS, MTU and egress interface** apply in place and disconnect nobody. Customers' subscription links carry the new values; a configuration already imported into an app keeps the old ones until it is fetched again.
-- **Name, port, subnet, mode and transport** take the tunnel down and bring it up again as new. Every customer on it needs their configuration again. The subscription link already carries the new one, so a customer who uses the link only has to refresh it.
+- **A stealth transport** added, changed or removed leaves plain WireGuard and every customer's `.conf` as they are; W-UI's app picks the change up from the subscription.
+- **Name, port, subnet, mode and OpenVPN's transport** take the tunnel down and bring it up again as new. Every customer on it needs their configuration again. The subscription link already carries the new one, so a customer who uses the link only has to refresh it.
 - **A new subnet** also gives every device a new address, and is refused when it is too small for the devices already on it.
 
 ## Good to know
 
 - **Several interfaces, one customer.** A customer on WireGuard and OpenVPN gets a configuration for each, and spends one allowance and one number of users across both.
 - **A second interface as a fallback.** An AmneziaWG clone, OpenVPN over TCP 443, or OpenConnect on 443 keeps customers connected where plain WireGuard is filtered.
+- **A stealth transport instead of a second tunnel.** For customers on W-UI's app, a transport on the tunnel they already have does the same without a second address, file or allowance.
 - **Interfaces on nodes** are run by the node's own panel; this panel sends it the interface and the customers. See [Nodes](/panel/nodes).

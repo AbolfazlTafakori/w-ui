@@ -76,6 +76,8 @@ On a phone the table becomes cards with the same information.
 
 A stored secret is shown as *(unchanged)*. Leave it as it is to keep it.
 
+**Interfaces** sends everyone on the chosen tunnels out through this outbound. It is saved as a routing rule, so [Routing](/panel/routing) shows it and a narrower rule above it still comes first. A tunnel moved to another outbound or balancer leaves this one, and your own rules are never changed. The balancer form has the same field.
+
 **What runs each kind.** A WireGuard hop is a network device the kernel runs. An OpenVPN hop needs `openvpn` on the server, which the installer adds along with OpenVPN. The VLESS, VMess, Trojan, Shadowsocks, Hysteria, SOCKS and HTTP kinds are run by an **`xray`** process and joined to the routing by **`sing-box`**. The installer and the update script put both on the server, at the versions W-UI was tested with, and check each against its published checksum. Without them the hop stays down, and its check says *xray is not installed on this server*.
 
 ## WARP, NordVPN and PIA

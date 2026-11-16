@@ -14,7 +14,7 @@ Ubuntu 22.04, 24.04 and 26.04, Debian 12 and 13, AlmaLinux 9, Rocky Linux 9 and 
 
 ## Which protocols does it serve?
 
-WireGuard, AmneziaWG (an obfuscated WireGuard), OpenVPN, OpenConnect (the Cisco AnyConnect protocol), IKEv2, L2TP/IPsec and PPTP. The last four need no app on most devices, since phones, computers and routers have them built in. Through a 3x-ui or Pasarguard [node](/panel/nodes), a customer's one subscription can also carry VLESS, VMess, Trojan, Shadowsocks and the other Xray protocols.
+WireGuard, AmneziaWG (an obfuscated WireGuard), OpenVPN, OpenConnect (the Cisco AnyConnect protocol), IKEv2, L2TP/IPsec and PPTP. The last four need no app on most devices, since phones, computers and routers have them built in. A standard WireGuard tunnel can also carry a [stealth transport](/reference/stealth) (veil, anchor, mirror, drift, relay, mold or bare) for W-UI's own app, where WireGuard itself is blocked. Through a 3x-ui or Pasarguard [node](/panel/nodes), a customer's one subscription can also carry VLESS, VMess, Trojan, Shadowsocks and the other Xray protocols.
 
 ## How is it different from an Xray panel?
 
@@ -24,7 +24,7 @@ It does not replace an Xray panel; it can sit over one. Add a 3x-ui or Pasarguar
 
 ## Can several people run one panel?
 
-Yes. There is one owner, any number of panel administrators who look after every customer, and [resellers](/panel/operators) who sell within a ceiling of customers, traffic and time that you set.
+Yes. There is one owner, any number of admins, who sell and can create resellers of their own within a ceiling you set, and [resellers](/panel/operators) who sell within a ceiling of customers, traffic and time.
 
 ## Which client apps work?
 

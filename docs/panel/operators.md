@@ -10,17 +10,20 @@ A panel with more capacity than customers gets sold on, and a reseller is how. T
 
 ## The three roles
 
-| | Owner | Panel administrator | Reseller |
+Owner → Admin → Reseller.
+
+| | Owner | Admin | Reseller |
 |---|---|---|---|
 | Interfaces, nodes, hosts, outbounds, routing, engine, settings, backups | ✅ | | |
-| Resellers | ✅ | | |
-| Clients and Groups | every one | every one | their own only |
-| Ceiling on customers, traffic and time | | | ✅ |
-| Menu they see | everything | Overview, Clients, Groups | Clients, Groups |
+| Admins page | ✅ | | |
+| Resellers | every one | the ones they created, if given the page | |
+| Customers and Groups | every one | their own and their resellers', or every one with *See every customer* | their own only |
+| Servers they sell | all | the ones chosen for them, or all with *Sell every server* | the ones chosen for them |
+| Ceiling on customers, traffic and time | | ✅ | ✅ |
 
-There is exactly one owner. It cannot be deleted, switched off or handed over, and it is not listed on the Resellers page.
+There is exactly one owner. It cannot be deleted, switched off or handed over, and it is listed on neither page.
 
-A **panel administrator** is a second pair of hands over the customers: every customer on the panel, with no ceiling, and nothing about the server itself. A **reseller** is a customer of yours who sells on.
+An **admin** is a second pair of hands: they sell, and can create resellers of their own. Their resellers' customers and traffic count against the admin's own ceiling, and switching an admin off switches their resellers off with them. A **reseller** is a customer of yours who sells on. Admins are managed on the **Admins** page, the owner's alone; resellers on **Resellers**, which an admin reaches too, narrowed to their own.
 
 ## The page
 
@@ -39,7 +42,7 @@ On a phone each reseller is a card with the same figures.
 
 ## Adding a reseller
 
-The dialog is laid out like the customer dialog.
+The dialog has two tabs. **Account** holds who they are and their ceiling; **Access** holds how far they reach: the servers they sell and, for an admin, the switches and pages below. The **Account** tab is laid out like the customer dialog.
 
 - **Username and password** are drawn for you, and the button beside each draws another. The copy button puts the panel's address, the username and the password on the clipboard together, ready to send.
 - **Users:** how many users they may sell in all. A customer counts for the users their plan is for, so a limit of 100 is a hundred one-user customers, or twenty-five customers with four users each, or any mix that adds up to 100. Raising a customer's users counts against the limit too, and lowering them frees what they held. A reseller with a limit cannot sell a customer an unlimited number of users. Empty is no limit.
@@ -50,6 +53,12 @@ The dialog is laid out like the customer dialog.
 - **Servers:** the tunnels they may put a customer on. Their own customer form offers exactly these, nothing more and nothing missing. Choose nothing and they cannot sell at all. A node reserved for one reseller, through the node's `ownerId` in the API, carries nobody else's customers.
 
 The presets fill in a typical reseller plan in one click.
+
+For an **admin**, the **Access** tab also has:
+
+- **See every customer:** off, they see only their own customers and those of the resellers they created, never another admin's. On, every customer on the panel.
+- **Sell every server:** off, they sell only the servers chosen above, as a reseller does, and the backend refuses any other. On, any server.
+- **Pages:** which of *Customers*, *Groups* and *Resellers* they may open. An unchecked page is hidden and refused by the backend. Settings, routing, the engine and the Admins page are never an admin's.
 
 Changing the group later moves all their existing customers to the new name.
 

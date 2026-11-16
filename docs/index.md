@@ -30,6 +30,16 @@ features:
     details: WireGuard, and AmneziaWG where DPI blocks plain WireGuard; OpenVPN; L2TP/IPsec, IKEv2 and PPTP for the VPN built into Windows, iPhone, Android and routers; and OpenConnect for the Cisco app. Several tunnels of each on one server.
     link: /panel/interfaces
     linkText: Tunnels
+  - icon: 🥷
+    title: WireGuard where WireGuard is blocked
+    details: Seven stealth transports beside a WireGuard tunnel (veil, anchor, mirror, drift, relay, mold, bare), from UDP that looks like nothing to a visit to your own site behind a CDN. Plain WireGuard and every file handed out stay as they are.
+    link: /reference/stealth
+    linkText: Stealth transports
+  - icon: 📱
+    title: Its own app, for Android and Windows
+    details: The customer adds the subscription link once and gets every server, protocol and stealth transport, kept current by itself.
+    link: /guide/client-apps#the-w-ui-app
+    linkText: Client apps
   - icon: 🌐
     title: Other servers, from this panel
     details: Other W-UI servers, and 3x-ui and Pasarguard panels, become nodes of this one. You make a customer once and put them on whichever servers you choose.
@@ -46,11 +56,13 @@ features:
     link: /guide/certificates
     linkText: Certificates
   - icon: 🤖
-    title: A Telegram bot for you and your customers
-    details: It tells you when a customer is running out of data and when a backup lands. Any customer whose Telegram id is on their plan can ask it about their own account.
+    title: A Telegram and a Bale bot for you and your customers
+    details: They tell you when a customer is running out of data and when a backup lands. Any customer whose Telegram or Bale ID is on their plan can ask about their own account. Bale is reached from inside Iran with no relay.
+    link: /panel/telegram
+    linkText: Bots
   - icon: 🌍
-    title: English and Persian
-    details: Every string in both languages and both directions, three themes (light, dark and pure black), and a subscription page in each customer's own language.
+    title: Five languages
+    details: English, Persian, Chinese, Russian and Turkish, each operator in their own, both directions; three themes (light, dark and pure black); and a subscription page in each customer's own language.
 ---
 
 ## Why another panel?

@@ -38,7 +38,7 @@ Before changing the port or the path, write down the new address. After the rest
 | **Trusted proxy CIDRs** | The addresses allowed to tell the panel the real client address, host and scheme, through the `X-Forwarded-*` headers. Only for a reverse proxy in front of the panel. | Comma-separated. At restart. |
 | **Panel Outbound** | The [outbound](/panel/outbounds) the panel's own traffic leaves through: its checks, the Telegram bot, and talking to nodes. | Must exist. |
 | **Pagination Size** | Rows per page in the tables. | `0` shows everything. |
-| **Language** | The language new sessions start in. | |
+| **Language** | The language the panel opens in: English, Persian (فارسی), Chinese (中文), Russian (Русский) or Turkish (Türkçe). The same menu is in the sidebar and the mobile drawer. | Saved to your account, so it follows you to another browser; a choice made on the sign-in screen is kept too. |
 
 ### Notifications
 

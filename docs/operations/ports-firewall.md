@@ -22,6 +22,9 @@ Open only what you use.
 | ESP (IP protocol 50) | | IPsec for a client not behind NAT. Behind NAT it travels inside UDP 4500. |
 | `1723` | TCP | PPTP's control connection. |
 | GRE (IP protocol 47) | | PPTP's data. Without it, a PPTP client connects and then carries nothing. |
+| *veil port* | UDP | A WireGuard tunnel's veil transport. Opened by the panel. |
+| *anchor / mirror port* | TCP | A WireGuard tunnel's anchor or mirror transport (443 looks most like a web server). Opened by the panel. |
+| `443` on your web server | TCP | drift, relay, mold and bare reach their gateway through your web server or CDN. The gateway's own port listens on 127.0.0.1 and stays shut, unless the front is on another machine. |
 | *own port* | as the protocol | An L2TP, PPTP or IKEv2 tunnel given a port of its own. The standard port stays needed too; see [Interfaces](/panel/interfaces#ports-of-their-own-l2tp-pptp-and-ikev2). |
 
 ## ufw
