@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 )
@@ -714,7 +715,23 @@ func PlainText(v Values) string {
 
 // Strings is every word the customer's page shows for these devices, keyed
 // for its language switch.
+//
+// Made once and kept: the catalogue does not change while the panel runs,
+// and a page with a setup card asks for it on every render -- five
+// languages of several hundred words each, rebuilt per request, was a cost
+// every busy page paid. The maps are shared; callers read them and never
+// write to them.
 func Strings() map[string]map[string]string {
+	stringsOnce.Do(func() { stringsMade = makeStrings() })
+	return stringsMade
+}
+
+var (
+	stringsOnce sync.Once
+	stringsMade map[string]map[string]string
+)
+
+func makeStrings() map[string]map[string]string {
 	out := make(map[string]map[string]string, len(Langs))
 	for _, l := range Langs {
 		out[l] = map[string]string{}
