@@ -75,7 +75,7 @@ func (s *Clients) moveServers(ctx context.Context, ids, interfaceIDs []uint, add
 	}
 
 	var clients []model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts").
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).
 		Where("id IN ?", ids).Find(&clients).Error; err != nil {
 		return nil, fmt.Errorf("service: load customers: %w", err)
 	}

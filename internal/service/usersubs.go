@@ -45,6 +45,13 @@ type UserLink struct {
 	LastOnline *time.Time `json:"lastOnline"`
 }
 
+// accountsInOrder loads a customer's files in the order they were issued.
+// Without it SQLite happens to return them so and PostgreSQL returns them as
+// they lie on disk, which moves every time a usage counter is written: on a
+// PostgreSQL panel a customer's link listed their files in a new order from
+// one fetch to the next, and the user numbers that follow that order with it.
+func accountsInOrder(db *gorm.DB) *gorm.DB { return db.Order("accounts.id") }
+
 // userKey is how a user is told apart inside one customer: their file name,
 // the way the panel compares those.
 func userKey(device string) string { return strings.ToLower(strings.TrimSpace(device)) }
@@ -99,7 +106,7 @@ func (s *Subscriptions) resolve(ctx context.Context, token string) (*model.Clien
 		return nil, none, fmt.Errorf("%w: no subscription token", ErrNotFound)
 	}
 	var whole model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts").
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).
 		Where("sub_token = ?", token).Limit(1).Find(&whole).Error; err != nil {
 		return nil, none, fmt.Errorf("service: read subscription: %w", err)
 	}
@@ -116,7 +123,7 @@ func (s *Subscriptions) resolve(ctx context.Context, token string) (*model.Clien
 		return nil, none, fmt.Errorf("%w: no such subscription", ErrNotFound)
 	}
 	var owner model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts").
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).
 		Where("id = ?", us.ClientID).Limit(1).Find(&owner).Error; err != nil {
 		return nil, none, fmt.Errorf("service: read subscription: %w", err)
 	}
@@ -158,7 +165,7 @@ func linkHolds(us model.UserSub, files []model.Account) bool {
 // only their own customers' users; a customer they cannot see is not found.
 func (s *Subscriptions) UserLinks(ctx context.Context, clientID uint, requestHost string) ([]UserLink, error) {
 	var c model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts").
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).
 		Where("id = ?", clientID).Limit(1).Find(&c).Error; err != nil {
 		return nil, fmt.Errorf("service: read client: %w", err)
 	}

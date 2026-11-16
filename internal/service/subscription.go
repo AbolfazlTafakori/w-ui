@@ -515,7 +515,7 @@ func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundl
 // handle that customer's token to do it.
 func (s *Subscriptions) BundleForClient(ctx context.Context, id uint, format string) (*Bundle, error) {
 	var c model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts").
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).
 		Where("id = ?", id).Limit(1).Find(&c).Error; err != nil {
 		return nil, fmt.Errorf("service: read client: %w", err)
 	}

@@ -941,7 +941,7 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	}
 
 	var items []model.Client
-	err := q.Preload("Accounts").
+	err := q.Preload("Accounts", accountsInOrder).
 		Order(f.orderBy()).
 		Offset((f.Page - 1) * f.PerPage).
 		Limit(f.PerPage).
@@ -1119,7 +1119,7 @@ func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error
 // Get loads one client with its devices.
 func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 	var client model.Client
-	err := s.db.WithContext(ctx).Preload("Accounts").First(&client, id).Error
+	err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).First(&client, id).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("%w: client %d", ErrNotFound, id)
 	}
@@ -2039,7 +2039,7 @@ func (s *Clients) ByTelegramID(ctx context.Context, id int64) ([]model.Client, e
 	if id == 0 {
 		return out, nil
 	}
-	if err := s.db.WithContext(ctx).Preload("Accounts").Where("telegram_id = ?", id).Order("name").Find(&out).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).Where("telegram_id = ?", id).Order("name").Find(&out).Error; err != nil {
 		return nil, fmt.Errorf("service: find by telegram id: %w", err)
 	}
 	return out, nil
@@ -2051,7 +2051,7 @@ func (s *Clients) ByBaleID(ctx context.Context, id int64) ([]model.Client, error
 	if id == 0 {
 		return out, nil
 	}
-	if err := s.db.WithContext(ctx).Preload("Accounts").Where("bale_id = ?", id).Order("name").Find(&out).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).Where("bale_id = ?", id).Order("name").Find(&out).Error; err != nil {
 		return nil, fmt.Errorf("service: find by bale id: %w", err)
 	}
 	return out, nil
@@ -2060,7 +2060,7 @@ func (s *Clients) ByBaleID(ctx context.Context, id int64) ([]model.Client, error
 // ByName finds one customer by exact name, case-insensitively.
 func (s *Clients) ByName(ctx context.Context, name string) (*model.Client, error) {
 	var c model.Client
-	err := s.db.WithContext(ctx).Preload("Accounts").Where("LOWER(name) = LOWER(?)", strings.TrimSpace(name)).First(&c).Error
+	err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).Where("LOWER(name) = LOWER(?)", strings.TrimSpace(name)).First(&c).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("%w: no customer called %q", ErrNotFound, name)
 	}

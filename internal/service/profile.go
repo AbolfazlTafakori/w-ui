@@ -63,7 +63,7 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 	// The file is named after the customer, so what lands in their app is
 	// the name the operator gave them rather than "device-1".
 	var owner model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts").First(&owner, acc.ClientID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).First(&owner, acc.ClientID).Error; err != nil {
 		return nil, fmt.Errorf("%w: customer %d", ErrNotFound, acc.ClientID)
 	}
 	var hosts []model.Host

@@ -293,7 +293,7 @@ func (s *NodeSync) oneOf(tx *gorm.DB, nodeID uint, in NodeInterface, what string
 
 func (s *NodeSync) upsertClients(tx *gorm.DB, iface *model.Interface, want []NodeClient) error {
 	var existing []model.Client
-	if err := tx.Preload("Accounts").
+	if err := tx.Preload("Accounts", accountsInOrder).
 		Where("origin_id > 0").Find(&existing).Error; err != nil {
 		return fmt.Errorf("read managed clients: %w", err)
 	}
@@ -561,3 +561,10 @@ func (s *NodeSync) Prune(ctx context.Context, nodeID uint, keep []uint) (int, er
 	}
 	return removed, nil
 }
+
+// accountsInOrder loads a customer's files in the order they were issued.
+// Without it SQLite happens to return them so and PostgreSQL returns them as
+// they lie on disk, which moves every time a usage counter is written: on a
+// PostgreSQL panel a customer's link listed their files in a new order from
+// one fetch to the next, and the user numbers that follow that order with it.
+func accountsInOrder(db *gorm.DB) *gorm.DB { return db.Order("accounts.id") }
