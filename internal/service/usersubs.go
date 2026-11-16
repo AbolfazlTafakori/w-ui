@@ -78,51 +78,61 @@ func userFiles(accounts []model.Account, device string) []model.Account {
 	return out
 }
 
+// linkScope is what a link reaches beyond the customer: User is the user a
+// user's link is for (0 for the customer's own link), Users how many users
+// the plan has -- the people its one allowance is shared by.
+type linkScope struct {
+	User  int
+	Users int
+}
+
 // resolve finds what a link names: a customer and all their files for the
 // customer's own link, or a customer narrowed to one user's files for a
 // user's link, with that user's number. user is 0 for the customer's link.
 //
 // The customer's link is looked up first and exactly as before, so nothing a
 // customer was handed answers any differently.
-func (s *Subscriptions) resolve(ctx context.Context, token string) (c *model.Client, user int, err error) {
+func (s *Subscriptions) resolve(ctx context.Context, token string) (*model.Client, linkScope, error) {
+	none := linkScope{}
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return nil, 0, fmt.Errorf("%w: no subscription token", ErrNotFound)
+		return nil, none, fmt.Errorf("%w: no subscription token", ErrNotFound)
 	}
 	var whole model.Client
 	if err := s.db.WithContext(ctx).Preload("Accounts").
 		Where("sub_token = ?", token).Limit(1).Find(&whole).Error; err != nil {
-		return nil, 0, fmt.Errorf("service: read subscription: %w", err)
+		return nil, none, fmt.Errorf("service: read subscription: %w", err)
 	}
 	if whole.ID != 0 {
-		return &whole, 0, nil
+		return &whole, linkScope{Users: len(deviceNames(whole.Accounts))}, nil
 	}
 
 	var us model.UserSub
 	if err := s.db.WithContext(ctx).Where("token = ?", token).Limit(1).Find(&us).Error; err != nil {
-		return nil, 0, fmt.Errorf("service: read subscription: %w", err)
+		return nil, none, fmt.Errorf("service: read subscription: %w", err)
 	}
 	if us.ID == 0 {
 		// Deliberately the same answer as a token that never existed.
-		return nil, 0, fmt.Errorf("%w: no such subscription", ErrNotFound)
+		return nil, none, fmt.Errorf("%w: no such subscription", ErrNotFound)
 	}
 	var owner model.Client
 	if err := s.db.WithContext(ctx).Preload("Accounts").
 		Where("id = ?", us.ClientID).Limit(1).Find(&owner).Error; err != nil {
-		return nil, 0, fmt.Errorf("service: read subscription: %w", err)
+		return nil, none, fmt.Errorf("service: read subscription: %w", err)
 	}
 	if owner.ID == 0 {
-		return nil, 0, fmt.Errorf("%w: no such subscription", ErrNotFound)
+		return nil, none, fmt.Errorf("%w: no such subscription", ErrNotFound)
 	}
 	nums := userNumbers(owner.Accounts)
+	users := len(deviceNames(owner.Accounts))
 	owner.Accounts = userFiles(owner.Accounts, us.Device)
 	if !linkHolds(us, owner.Accounts) {
 		// The user was taken off the plan, or a new user was given the
 		// name since: either way this link is not theirs. A link that does
 		// not exist, until its row is gone.
-		return nil, 0, fmt.Errorf("%w: no such subscription", ErrNotFound)
+		return nil, none, fmt.Errorf("%w: no such subscription", ErrNotFound)
 	}
-	return &owner, nums[owner.Accounts[0].ID], nil
+	return &owner, linkScope{User: nums[owner.Accounts[0].ID], Users: users}, nil
 }
 
 // linkHolds reports whether a user's link still belongs to the files that

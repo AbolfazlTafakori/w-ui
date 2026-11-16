@@ -715,14 +715,14 @@ func PlainText(v Values) string {
 // Strings is every word the customer's page shows for these devices, keyed
 // for its language switch.
 func Strings() map[string]map[string]string {
-	out := map[string]map[string]string{"en": {}, "fa": {}}
+	out := make(map[string]map[string]string, len(Langs))
+	for _, l := range Langs {
+		out[l] = map[string]string{}
+	}
 	put := func(key string, t Text) {
-		out["en"][key] = t.EN
-		fa := t.FA
-		if fa == "" {
-			fa = t.EN
+		for _, l := range Langs {
+			out[l][key] = inLang(t, l)
 		}
-		out["fa"][key] = fa
 	}
 	for k, t := range words {
 		put(k, t)

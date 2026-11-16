@@ -824,11 +824,30 @@ type SubPage struct {
 	// for several: whoever holds the plan hands them out. Never on a user's
 	// own page, which is theirs alone.
 	Users []SubPageUser
+	// PlanUsers is how many users share the plan's one allowance: its quota,
+	// its usage and what is left are theirs together. 0 or 1 is a plan for
+	// one. OwnUser is, on a user's own page, which user they are, and
+	// OwnUsedBytes what their own files carried; both 0 on the plan's page.
+	PlanUsers    int
+	OwnUser      int
+	OwnUsedBytes uint64
 	// FilesSince is when the files' usage starts counting, when that is
 	// after the customer's current period began: their per-user table then
 	// covers less than their usage, and says from when. Nil when the table
 	// covers the whole period and adds up to the usage.
 	FilesSince *time.Time
+}
+
+// shared fills in who the plan's allowance is shared by, and on a user's
+// own page what that user spent of it.
+func (p *SubPage) shared(c *model.Client, scope linkScope) {
+	p.PlanUsers = scope.Users
+	p.OwnUser = scope.User
+	if scope.User > 0 {
+		for _, a := range c.Accounts {
+			p.OwnUsedBytes += a.UpBytes + a.DownBytes
+		}
+	}
 }
 
 // SubPageUser is one user's own link, as the plan's page lists it.
@@ -970,7 +989,7 @@ func (s *Subscriptions) filesSince(ctx context.Context, c *model.Client) *time.T
 // freshest handshake, which is all a page refreshing itself needs, and
 // cheap enough to answer every few seconds for every page that is open.
 func (s *Subscriptions) StatusFor(ctx context.Context, token string) (*SubPage, error) {
-	c, err := s.byToken(ctx, token)
+	c, scope, err := s.resolve(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -991,15 +1010,17 @@ func (s *Subscriptions) StatusFor(ctx context.Context, token string) (*SubPage, 
 		}
 		page.Devices = append(page.Devices, SubPageDevice{ID: a.ID, Name: a.DeviceName, Address: a.IP})
 	}
+	page.shared(c, scope)
 	page.Rev = s.revision(ctx, c)
 	return page, nil
 }
 
 func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*SubPage, error) {
-	c, only, err := s.resolve(ctx, token)
+	c, scope, err := s.resolve(ctx, token)
 	if err != nil {
 		return nil, err
 	}
+	only := scope.User
 
 	cfg, err := s.Settings(ctx)
 	if err != nil {
@@ -1035,6 +1056,7 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 		FilesSince: s.filesSince(ctx, c),
 	}
 	page.UpBytes, page.DownBytes = c.UpDown()
+	page.shared(c, scope)
 	several := len(deviceNames(c.Accounts)) > 1
 	numbers := userNumbers(c.Accounts)
 	for _, d := range rendered {

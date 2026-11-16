@@ -13,7 +13,8 @@ This is the page a customer sees when they open their subscription link in a bro
 - For WireGuard and OpenVPN, one block per device **per host**: the configuration text, a copy button, a download, and a QR code that opens centred over the page.
 - For an L2TP/IPsec, PPTP, IKEv2 or OpenConnect user, the row is its sign-in and its setup. The customer opens the device list, whose search at the top works in English or Persian, by name, brand or model; picks their phone, computer or router; and the page shows that device's own fields, filled in with the user's sign-in. An IKEv2 row also offers its certificates to download and, where it differs from the server's address, the Remote ID. An OpenConnect row gives the server address whole, since the camouflage secret is part of it. A second choice of connection, L2TP without IPsec, appears only where the tunnel has one. WireGuard and OpenVPN files have the same setup card of their own, below them.
 - The subscription link itself as a QR code, for apps that read subscriptions.
-- A language switch (English or Persian) and a theme switch.
+- A language switch with every language the panel has (English, Persian, Russian, Turkish and Chinese) and a theme switch. The page opens in the language the customer's browser asks for, when it has it, and in English otherwise; a language picked from the menu is remembered on that browser.
+- On a plan for several users, **Total Quota** and **Remaining** are marked **shared**, and a **Shared plan** note says that the volume and what is left belong to all its users together: what one spends comes off everyone's remaining. On a user's own page the note also shows **Your usage**, what that user's own files carried.
 - The support link, the announcement and the profile title from Settings → Subscription.
 
 ## Sign-ins are masked

@@ -77,6 +77,13 @@ type subPageView struct {
 	ExpiryCls  string
 	LastOnline string
 	SubQR      string // subQR
+	// PlanUsers is how many users share the plan's one allowance, when more
+	// than one does: the page says the total and what remains are theirs
+	// together. OwnUser and OwnUsed are, on a user's own page, who they are
+	// and what they spent of it.
+	PlanUsers int
+	OwnUser   int
+	OwnUsed   string
 	// UserLinks are each user's own link, on the plan's page of a plan for
 	// several, each with its QR.
 	UserLinks []subUserLink
@@ -88,7 +95,9 @@ type subPageView struct {
 	// in the file's own row (subPageDevice.Setup).
 	AnySetup bool
 	Lang     string
-	Icons    map[string]template.HTML
+	// Langs are the languages the page's menu offers (sublang.go).
+	Langs []subLang
+	Icons map[string]template.HTML
 	// Sprite is every icon, drawn once for the page's icons to point at;
 	// Shared is what the page writes once and uses in many places
 	// (subshared.go).
@@ -203,6 +212,9 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 		s.subFailed(w, r, err)
 		return true
 	}
+	// The browser's own language, when the page has it; the customer's
+	// choice from the menu, kept in their browser, still wins.
+	page.Locale = pickSubLang(r.Header.Get("Accept-Language"))
 
 	s.renderSubPage(w, page, token, false, r.UserAgent())
 	return true
@@ -267,6 +279,8 @@ type subLiveStatus struct {
 	ExpiryCls  string  `json:"expiryCls"`
 	LastOnline string  `json:"lastOnline"`
 	Devices    int     `json:"devices"`
+	// OwnUsed is, on a user's own page, what that user spent.
+	OwnUsed string `json:"ownUsed,omitempty"`
 }
 
 // onlineWindow is how recent a handshake has to be for a device to count as
@@ -282,7 +296,7 @@ func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, to
 		Percent: v.Percent, PercentTxt: v.PercentTxt,
 		Down: humanBytes(page.DownBytes), Up: humanBytes(page.UpBytes),
 		Expiry: v.Expiry, ExpiryChip: v.ExpiryChip, ExpiryCls: v.ExpiryCls,
-		LastOnline: v.LastOnline, Devices: len(page.Devices),
+		LastOnline: v.LastOnline, Devices: len(page.Devices), OwnUsed: v.OwnUsed,
 	}
 	if page.LastOnline != nil && time.Since(*page.LastOnline) < onlineWindow {
 		st.Online = true
@@ -310,9 +324,10 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		Sprite:   subSprite,
 		Shared:   &subShared{},
 	}
-	if v.Lang != "fa" {
+	if !subLangOK(v.Lang) {
 		v.Lang = "en"
 	}
+	v.Langs = subLangs
 	if v.Template == "" {
 		v.Template = "classic"
 	}
@@ -367,6 +382,12 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	// Each QR is its pattern, drawn by the page when it is opened (subqr.go).
 	v.SubQR = subQR(page.SubURL)
+	if page.PlanUsers > 1 {
+		v.PlanUsers = page.PlanUsers
+		if page.OwnUser > 0 {
+			v.OwnUser, v.OwnUsed = page.OwnUser, humanBytes(page.OwnUsedBytes)
+		}
+	}
 	for _, u := range page.Users {
 		v.UserLinks = append(v.UserLinks, subUserLink{User: u.User, Token: u.Token, Link: u.Link, QR: subQR(u.Link)})
 	}
@@ -949,8 +970,8 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
         <div class="app app-fixed">
           <button class="btn toolbar-btn" type="button" data-menu="lang" data-i-title="language"><span class="anticon">{{ index .Icons "TranslationOutlined" }}</span></button>
           <div class="menu lang-menu" id="menu-lang">
-            <button type="button" data-lang="en"><span>🇬🇧</span><span>English</span></button>
-            <button type="button" data-lang="fa"><span>🇮🇷</span><span>فارسی</span></button>
+            {{ range .Langs }}<button type="button" data-lang="{{ .Code }}"><span>{{ .Flag }}</span><span>{{ .Name }}</span></button>
+            {{ end }}
           </div>
         </div>
       </div>
@@ -989,8 +1010,9 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
         <tr><th data-i="downloaded">Downloaded</th><td dir="ltr" id="lv-down">{{ bytes .Page.DownBytes }}</td></tr>
         <tr><th data-i="uploaded">Uploaded</th><td dir="ltr" id="lv-up">{{ bytes .Page.UpBytes }}</td></tr>
         <tr><th data-i="usage">Usage</th><td dir="ltr" id="lv-used">{{ .Used }}</td></tr>
-        <tr><th data-i="totalQuota">Total Quota</th><td dir="ltr">{{ .Total }}</td></tr>
-        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td dir="ltr" id="lv-remained">{{ .Remained }}</td></tr>{{ end }}
+        {{ if .PlanUsers }}<tr><th data-i="totalQuota">Total Quota</th><td><span dir="ltr">{{ .Total }}</span> <span class="tag orange shared-tag" data-i="sharedTag">shared</span></td></tr>
+        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td><span dir="ltr" id="lv-remained">{{ .Remained }}</span> <span class="tag orange shared-tag" data-i="sharedTag">shared</span></td></tr>{{ end }}{{ else }}<tr><th data-i="totalQuota">Total Quota</th><td dir="ltr">{{ .Total }}</td></tr>
+        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td dir="ltr" id="lv-remained">{{ .Remained }}</td></tr>{{ end }}{{ end }}
         <tr><th data-i="lastOnline">Last Online</th><td dir="ltr" id="lv-last">{{ if .LastOnline }}{{ .LastOnline }}{{ else }}-{{ end }}</td></tr>
         <tr><th data-i="expiry">Expiry</th><td dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</td></tr>
       </table>
@@ -1007,6 +1029,16 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
         <div class="usage-foot">{{ if .HasQuota }}<span dir="ltr" id="lv-foot-remained">{{ .Remained }}</span><span class="usage-pct" dir="ltr" id="lv-foot-pct">{{ .PercentTxt }}%</span>{{ end }}</div>
       </div>
 
+      {{ if .PlanUsers }}
+      <!-- One allowance for several people: the total above and what
+           remains of it are the whole plan's, shared, not each user's. Said
+           where the figures are, so nobody reads 50 GiB left as theirs. -->
+      <div class="shared-note" role="note">
+        <div class="shared-head"><span class="tag orange" data-i="sharedPlan">Shared plan</span><span class="shared-count"><span dir="ltr">{{ .PlanUsers }}</span> <span data-i="users">users</span></span></div>
+        <p data-i="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}">{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}</p>
+        {{ if .OwnUser }}<div class="shared-own"><span data-i="yourUsage">Your usage</span><b dir="ltr" id="lv-own">{{ .OwnUsed }}</b></div>{{ end }}
+      </div>
+      {{ end }}
       {{ if .Usage }}
       <!-- Who spent what, and where: a row per user, a column per tunnel,
            a total at the end of each row and under each column. A plan
@@ -1200,9 +1232,10 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
   function applyLang(l) {
     var d = S[l] || S.en;
     html.setAttribute('lang', l);
-    $('[data-i]').forEach(function (el) { var k = el.getAttribute('data-i'); if (d[k]) el.textContent = d[k]; });
-    $('[data-i-title]').forEach(function (el) { var k = el.getAttribute('data-i-title'); if (d[k]) { el.title = d[k]; el.setAttribute('aria-label', d[k]); } });
-    $('[data-i-ph]').forEach(function (el) { var k = el.getAttribute('data-i-ph'); if (d[k]) { el.placeholder = d[k]; el.setAttribute('aria-label', d[k]); } });
+    var e = S.en || {}, w = function (k) { return d[k] || e[k]; };
+    $('[data-i]').forEach(function (el) { var t = w(el.getAttribute('data-i')); if (t) el.textContent = t; });
+    $('[data-i-title]').forEach(function (el) { var t = w(el.getAttribute('data-i-title')); if (t) { el.title = t; el.setAttribute('aria-label', t); } });
+    $('[data-i-ph]').forEach(function (el) { var t = w(el.getAttribute('data-i-ph')); if (t) { el.placeholder = t; el.setAttribute('aria-label', t); } });
     $('#menu-lang button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === l); });
     try { localStorage.setItem('wui.sub.lang', l); } catch (e) {}{{ if .AnySetup }}
     document.dispatchEvent(new Event('wui:lang'));{{ end }}
@@ -1333,7 +1366,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
     var dev = box.querySelector('.setup-device'), file = box.querySelector('.setup-file');
     var pick = box.querySelector('.setup-file-pick'), others = box.querySelector('.guide-others');
     var files = [].slice.call(box.querySelectorAll('.setup-files [data-file]'));
-    function word(key, fallback) { var d = window.__wuiDict || {}, l = document.documentElement.lang === 'fa' ? 'fa' : 'en'; return (d[l] && d[l][key]) || fallback; }
+    function word(key, fallback) { var d = window.__wuiDict || {}, l = document.documentElement.lang; return (d[l] && d[l][key]) || (d.en && d.en[key]) || fallback; }
     var every = [].slice.call(dev.options);
     // Persian and Arabic letters typed either way, digits either way, and
     // no case: what a customer types finds what the list says.
@@ -1609,6 +1642,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
       set('lv-data', st.used);
     }
     set('lv-bar-used', st.used); set('lv-bar-total', st.total);
+    if (st.ownUsed) set('lv-own', st.ownUsed);
     set('lv-used', st.used); set('lv-down', st.down); set('lv-up', st.up);
     set('lv-last', st.lastOnline || '-');
     set('lv-expiry', st.expiryChip === 'expired' ? word('expired') : (st.expiryChip || '\u221e'));
