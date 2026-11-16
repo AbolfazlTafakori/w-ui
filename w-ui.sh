@@ -2716,9 +2716,13 @@ pg_install_server_action() {
 }
 
 # Move the panel from one engine to the other: a backup on the engine it is
-# on, the connection switched, and the archive restored into the new one.
-# The dump inside the archive is what crosses; the old data stays where it
-# was, untouched, in case of a change of mind.
+# on, checked to its last row, the connection switched, and the archive
+# restored into the new one. The dump inside the archive is what crosses; the
+# panel loads it in one transaction, reads back what it wrote and holds it to
+# the backup's checksums before committing, so the new engine holds exactly
+# the old one's data or nothing. The old data stays where it was, untouched,
+# and if the panel does not come up on the new engine it is put back on the
+# old one by itself.
 migrate_engine() {
     local to="$1" from; from=$(db_driver_now)
     if [[ "$from" == "$to" ]]; then
@@ -2735,6 +2739,15 @@ migrate_engine() {
     archive=$(panel_cli backup create --dir "$BACKUP_DIR" 2>&1 | tail -1)
     [[ -f "$archive" ]] || { LOGE "backup failed: $archive"; return 1; }
     LOGI "backup taken: $archive"
+    # Read through before anything changes: whole, and its database copy
+    # matching every table's checksum. A backup that does not check out is
+    # never moved, and the panel is left as it was.
+    local checked
+    if ! checked=$(panel_cli backup check "$archive" 2>&1); then
+        LOGE "the backup does not check out, so nothing was moved: $checked"
+        return 1
+    fi
+    LOGI "${checked}"
 
     systemctl stop "$SERVICE" 2> /dev/null
     cp -p "$CONF_DIR/db.env" "$CONF_DIR/db.env.$from"
@@ -2742,27 +2755,75 @@ migrate_engine() {
         cp -f "$CONF_DIR/db.env.postgres" "$CONF_DIR/db.env"
     else
         printf 'WUI_DB_DRIVER=sqlite\nWUI_DB_SOURCE=%s/wui.db\n' "$DATA_DIR" > "$CONF_DIR/db.env"
-        # A fresh file: the restore loads the dump into it.
-        rm -f "$DATA_DIR/wui.db" "$DATA_DIR/wui.db-wal" "$DATA_DIR/wui.db-shm"
+        # A fresh file: the restore loads the dump into it. The old one is
+        # kept beside it, not removed, in case of a change of mind.
+        local f
+        for f in wui.db wui.db-wal wui.db-shm; do
+            [[ -e "$DATA_DIR/$f" ]] && mv -f "$DATA_DIR/$f" "$DATA_DIR/$f.before-move"
+        done
     fi
     chmod 600 "$CONF_DIR/db.env"
 
     local report
-    if report=$(panel_cli backup restore "$archive" --dir "$BACKUP_DIR" 2>&1); then
-        echo "$report" | sed 's/^/  /'
-        systemctl start "$SERVICE" 2> /dev/null
-        sleep 3
-        if systemctl is-active --quiet "$SERVICE" && journalctl -u "$SERVICE" --since "-1 min" --no-pager 2> /dev/null | grep -q "imported a portable backup\|restored from a backup"; then
-            LOGI "the panel is now on $to"
-        else
-            LOGE "the panel did not come up on $to; see: journalctl -u $SERVICE -n 50"
-            LOGE "to go back: cp $CONF_DIR/db.env.$from $CONF_DIR/db.env && systemctl restart $SERVICE"
-        fi
-    else
+    if ! report=$(panel_cli backup restore "$archive" --dir "$BACKUP_DIR" 2>&1); then
         LOGE "restore failed: $report"
-        cp -f "$CONF_DIR/db.env.$from" "$CONF_DIR/db.env"
-        systemctl start "$SERVICE" 2> /dev/null
+        migrate_back "$from"
+        return 1
     fi
+    echo "$report" | sed 's/^/  /'
+
+    # The panel loads the backup as it starts, before it serves anything; on
+    # a large panel that takes minutes. Its log says which way it went.
+    local since; since=$(date '+%Y-%m-%d %H:%M:%S')
+    systemctl start "$SERVICE" 2> /dev/null
+    LOGI "the panel is loading the data into $to; this takes a while on a large panel"
+    local waited=0 log=""
+    while (( waited < 1800 )); do
+        sleep 3
+        waited=$((waited + 3))
+        log=$(journalctl -u "$SERVICE" --since "$since" --no-pager 2> /dev/null)
+        if grep -q "could not be loaded into the database" <<< "$log"; then
+            LOGE "the panel could not load the data into $to:"
+            grep -m3 "could not be loaded\|error=" <<< "$log" | sed 's/^/  /'
+            migrate_back "$from"
+            return 1
+        fi
+        if grep -q "loaded a database dump\|imported a portable backup" <<< "$log"; then
+            break
+        fi
+        if ! systemctl is-active --quiet "$SERVICE"; then
+            LOGE "the panel stopped while loading the data into $to"
+            migrate_back "$from"
+            return 1
+        fi
+    done
+    if (( waited >= 1800 )); then
+        LOGE "the panel has not finished loading after 30 minutes; it is left running on $to"
+        LOGE "to go back: cp $CONF_DIR/db.env.$from $CONF_DIR/db.env && systemctl restart $SERVICE"
+        return 1
+    fi
+    grep -m1 "loaded a database dump\|imported a portable backup" <<< "$log" | sed -E 's/.*msg=//; s/^/  /'
+    LOGI "the panel is now on $to, holding exactly the data it had on $from"
+    LOGI "the $from data is kept: $CONF_DIR/db.env.$from$([[ "$to" == sqlite ]] && echo ", $DATA_DIR/wui.db.before-move")"
+}
+
+# migrate_back puts the panel back on the engine it was moving from, as it
+# was: the connection, and for SQLite the file set aside.
+migrate_back() {
+    local from="$1"
+    systemctl stop "$SERVICE" 2> /dev/null
+    cp -f "$CONF_DIR/db.env.$from" "$CONF_DIR/db.env"
+    chmod 600 "$CONF_DIR/db.env"
+    local f
+    for f in wui.db wui.db-wal wui.db-shm; do
+        if [[ -e "$DATA_DIR/$f.before-move" ]]; then
+            mv -f "$DATA_DIR/$f.before-move" "$DATA_DIR/$f"
+        fi
+    done
+    # A restore staged for the new engine must not be applied to the old.
+    rm -rf "$DATA_DIR/.restore-pending" "$DATA_DIR/.restore-dump.jsonl" "$DATA_DIR/.restore-import.json"
+    systemctl start "$SERVICE" 2> /dev/null
+    LOGI "the panel is back on $from, on the data it had"
 }
 
 postgresql_menu() {

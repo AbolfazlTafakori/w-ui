@@ -130,7 +130,7 @@ func WriteDump(ctx context.Context, db *gorm.DB, drv config.Driver, version stri
 	}
 	run := func(tx *gorm.DB) error {
 		for _, m := range model.AllModels() {
-			t, err := dumpTable(ctx, tx, m, bw)
+			t, err := dumpTable(ctx, tx, drv, m, bw)
 			if err != nil {
 				return err
 			}
@@ -169,19 +169,25 @@ func dumpColumns(sch *schema.Schema) []*schema.Field {
 }
 
 // pkOrder is the table's whole primary key as an ORDER BY: every column of
-// it, so a key of two columns orders as fully as a key of one.
-func pkOrder(sch *schema.Schema) string {
+// it, so a key of two columns orders as fully as a key of one. Text is
+// ordered by its bytes on both engines -- PostgreSQL otherwise orders by the
+// server's language rules, SQLite by bytes -- so a table dumps in the same
+// order whichever engine holds it, and its checksum says the same thing.
+func pkOrder(sch *schema.Schema, drv config.Driver) string {
 	var b bytes.Buffer
 	for i, f := range sch.PrimaryFields {
 		if i > 0 {
 			b.WriteString(", ")
 		}
 		b.WriteString(f.DBName)
+		if drv == config.DriverPostgres && f.FieldType.Kind() == reflect.String {
+			b.WriteString(` COLLATE "C"`)
+		}
 	}
 	return b.String()
 }
 
-func dumpTable(ctx context.Context, tx *gorm.DB, m any, w *bufio.Writer) (*DumpTable, error) {
+func dumpTable(ctx context.Context, tx *gorm.DB, drv config.Driver, m any, w *bufio.Writer) (*DumpTable, error) {
 	sch, err := parseSchema(m)
 	if err != nil {
 		return nil, err
@@ -198,7 +204,7 @@ func dumpTable(ctx context.Context, tx *gorm.DB, m any, w *bufio.Writer) (*DumpT
 	// One query, read as it arrives: no paging, so no key is needed to page
 	// by, and no row is read twice or missed between pages.
 	q := tx.Model(m)
-	if order := pkOrder(sch); order != "" {
+	if order := pkOrder(sch, drv); order != "" {
 		q = q.Order(order)
 	}
 	rows, err := q.Rows()
@@ -328,7 +334,11 @@ func encodeRow(b *bytes.Buffer, vals []any) error {
 			}
 			b.WriteString(strconv.FormatFloat(x, 'g', -1, 64))
 		case time.Time:
-			s, _ := json.Marshal(x.UTC().Format(time.RFC3339Nano))
+			// To the microsecond: what both engines hold. SQLite keeps
+			// nanoseconds and PostgreSQL does not, so a time written finer
+			// than that would come back from PostgreSQL different, and one
+			// table would checksum differently on the two engines.
+			s, _ := json.Marshal(x.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano))
 			b.Write(s)
 		case rawBytes:
 			b.WriteString(`{"b":"`)
@@ -557,6 +567,9 @@ func LoadDump(ctx context.Context, db *gorm.DB, drv config.Driver, r io.Reader, 
 		}
 
 		var ld *tableLoader
+		// Which tables were loaded, and whether the dump's columns are this
+		// panel's exactly: those are read back and checksummed below.
+		loaded := map[string]bool{}
 		flush := func() error {
 			if ld == nil {
 				return nil
@@ -579,6 +592,7 @@ func LoadDump(ctx context.Context, db *gorm.DB, drv config.Driver, r io.Reader, 
 			}
 			sch, _ := parseSchema(m)
 			ld = newTableLoader(m, sch, cols)
+			loaded[name] = sameColumns(sch, cols)
 			return nil
 		}
 		row := func(vals []any) error {
@@ -604,6 +618,14 @@ func LoadDump(ctx context.Context, db *gorm.DB, drv config.Driver, r io.Reader, 
 				return err
 			}
 		}
+		// What was written is read back, before anything is committed, and
+		// held to the dump: every table's rows, and where the dump's columns
+		// are this panel's own, every value by its checksum. Not only was
+		// the file whole -- the database now holds exactly it, on this
+		// engine, and anything else is rolled back.
+		if err := verifyLoaded(ctx, tx, drv, byTable, loaded, d.sum.Tables); err != nil {
+			return err
+		}
 		// Rows from an older panel are in the shape it wrote them in; the
 		// data migrations carry them into this one's.
 		return Replay(tx)
@@ -616,6 +638,46 @@ func LoadDump(ctx context.Context, db *gorm.DB, drv config.Driver, r io.Reader, 
 			"from", d.header.Driver, "version", d.header.Version, "takenAt", d.header.TakenAt)
 	}
 	return &d.sum, nil
+}
+
+// ErrLoadMismatch is a database that, read back after a load, does not hold
+// what the dump did.
+var ErrLoadMismatch = errors.New("the database did not take the backup exactly")
+
+// sameColumns reports whether a dump's columns are this panel's, in order.
+func sameColumns(sch *schema.Schema, names []string) bool {
+	cols := dumpColumns(sch)
+	if len(cols) != len(names) {
+		return false
+	}
+	for i, f := range cols {
+		if f.DBName != names[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// verifyLoaded reads back every table a load wrote, inside its transaction.
+func verifyLoaded(ctx context.Context, tx *gorm.DB, drv config.Driver, byTable map[string]any, loaded map[string]bool, want []DumpTable) error {
+	sink := bufio.NewWriterSize(io.Discard, 64<<10)
+	for _, w := range want {
+		exact, ok := loaded[w.Name]
+		if !ok {
+			continue // a table this panel no longer has
+		}
+		got, err := dumpTable(ctx, tx, drv, byTable[w.Name], sink)
+		if err != nil {
+			return fmt.Errorf("read back %s: %w", w.Name, err)
+		}
+		if got.Rows != w.Rows {
+			return fmt.Errorf("%w: table %s holds %d rows, the backup %d", ErrLoadMismatch, w.Name, got.Rows, w.Rows)
+		}
+		if exact && got.SHA256 != w.SHA256 {
+			return fmt.Errorf("%w: table %s does not hold the values the backup does", ErrLoadMismatch, w.Name)
+		}
+	}
+	return nil
 }
 
 // loadBatch is how many rows go to the database in one insert.

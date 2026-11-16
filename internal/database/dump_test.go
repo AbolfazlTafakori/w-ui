@@ -3,10 +3,14 @@ package database
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -204,4 +208,62 @@ func TestADumpCrossesEnginesBothWays(t *testing.T) {
 		t.Fatalf("%d clients back in SQLite", n)
 	}
 	_ = praw
+}
+
+// A dump whose file checks out but whose values the engine does not keep as
+// they are -- here a time finer than PostgreSQL holds, which it would round
+// without a word -- is refused when the load reads back what it wrote, and
+// nothing is committed.
+func TestALoadThatTheDatabaseDoesNotKeepExactlyIsRefused(t *testing.T) {
+	pg := pgFresh(t)
+	src := memDB(t)
+	seedEverything(t, src)
+	raw, _ := dumpOf(t, src, config.DriverSQLite)
+
+	// One client's created_at made finer than a microsecond, and the
+	// clients table's checksum written again to match: the file is good.
+	lines := bytes.Split(bytes.TrimRight(raw, "\n"), []byte("\n"))
+	in := false
+	h := sha256.New()
+	changed := false
+	for i, l := range lines {
+		switch {
+		case bytes.HasPrefix(l, []byte(`{"table":"clients"`)):
+			in = true
+		case in && bytes.HasPrefix(l, []byte(`{"end":"clients"`)):
+			var end dumpTableEnd
+			must(t, json.Unmarshal(l, &end))
+			end.SHA256 = hex.EncodeToString(h.Sum(nil))
+			b, _ := json.Marshal(end)
+			lines[i] = b
+			in = false
+		case in:
+			if !changed {
+				re := regexp.MustCompile(`"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?Z"`)
+				if loc := re.FindIndex(l); loc != nil {
+					l = append(append(append([]byte{}, l[:loc[0]]...), []byte(`"2026-11-16T21:34:05.123456789Z"`)...), l[loc[1]:]...)
+					lines[i] = l
+					changed = true
+				}
+			}
+			h.Write(l)
+			h.Write([]byte{'\n'})
+		}
+	}
+	if !changed {
+		t.Fatal("no time to change")
+	}
+	bad := append(bytes.Join(lines, []byte("\n")), '\n')
+	if _, err := CheckDump(bytes.NewReader(bad)); err != nil {
+		t.Fatalf("the crafted file should check out: %v", err)
+	}
+	must(t, pg.Create(&model.Client{Name: "already here"}).Error)
+	if _, err := LoadDump(context.Background(), pg, config.DriverPostgres, bytes.NewReader(bad), nil); !errors.Is(err, ErrLoadMismatch) {
+		t.Fatalf("a value PostgreSQL changed was committed, or refused for the wrong reason: %v", err)
+	}
+	var cs []model.Client
+	pg.Find(&cs)
+	if len(cs) != 1 || cs[0].Name != "already here" {
+		t.Fatalf("the database changed: %d clients", len(cs))
+	}
 }
