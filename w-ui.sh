@@ -2749,6 +2749,19 @@ migrate_engine() {
     fi
     LOGI "${checked}"
 
+    # Staged while still on the old engine, and that order matters: a
+    # restore keeps this server's own addresses -- how the panel and the
+    # subscription service are reached -- by reading them from the database
+    # it is on, and on the new engine, still empty, it found none and wrote
+    # those empty values over the restored ones: the subscription service
+    # came up on no port. Its safety copy is of the real data this way, too.
+    local report
+    if ! report=$(panel_cli backup restore "$archive" --dir "$BACKUP_DIR" 2>&1); then
+        LOGE "restore failed, so nothing was moved: $report"
+        return 1
+    fi
+    echo "$report" | sed 's/^/  /'
+
     systemctl stop "$SERVICE" 2> /dev/null
     cp -p "$CONF_DIR/db.env" "$CONF_DIR/db.env.$from"
     if [[ "$to" == postgres ]]; then
@@ -2763,14 +2776,6 @@ migrate_engine() {
         done
     fi
     chmod 600 "$CONF_DIR/db.env"
-
-    local report
-    if ! report=$(panel_cli backup restore "$archive" --dir "$BACKUP_DIR" 2>&1); then
-        LOGE "restore failed: $report"
-        migrate_back "$from"
-        return 1
-    fi
-    echo "$report" | sed 's/^/  /'
 
     # The panel loads the backup as it starts, before it serves anything; on
     # a large panel that takes minutes. Its log says which way it went.

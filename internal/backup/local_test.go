@@ -19,7 +19,45 @@ func addrDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(model.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
+	// A panel in use has its administrator; one without is not set up.
+	if err := db.Create(&model.Admin{Username: "admin", PasswordHash: "x"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	return db
+}
+
+// Moving a panel to a new engine restores its backup into a database that
+// is still empty. That database has no addresses of its own to keep: read as
+// a panel, every setting it lacked was deleted from the restored data, and
+// the subscription service came up on no port.
+func TestAnEmptyDatabaseKeepsNothingOverTheBackup(t *testing.T) {
+	empty, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := empty.AutoMigrate(model.AllModels()...); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := ReadLocalAddresses(empty, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept != nil {
+		t.Fatalf("an empty database claimed addresses of its own: %+v", kept)
+	}
+	restored := addrDB(t)
+	for k, v := range map[string]string{"sub.port": "2096", "sub.listen": "", "panel.port": "2053"} {
+		if err := restored.Create(&model.Setting{Key: k, Value: v}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := ApplyLocalAddresses(restored, kept); err != nil {
+		t.Fatal(err)
+	}
+	var port model.Setting
+	if err := restored.Where("key = ?", "sub.port").First(&port).Error; err != nil || port.Value != "2096" {
+		t.Fatalf("the backup's subscription port was lost: %+v %v", port, err)
+	}
 }
 
 // The reason to restore onto another machine is usually that the first one was

@@ -114,6 +114,19 @@ var panelAccessSettings = []string{
 // always how the panel itself is reached, and with keepAddresses the
 // addresses customers are handed as well.
 func ReadLocalAddresses(db *gorm.DB, keepAddresses bool) (*LocalAddresses, error) {
+	// A database nobody has set up -- no administrator, as a new engine is
+	// before a move loads it -- is not a panel with addresses of its own.
+	// Read as one, every setting it lacks was taken for "left to the
+	// environment" and deleted from the restored data: a move to a new
+	// engine came up with the subscription service on no port. There is
+	// nothing here to keep, and the backup's own addresses stand.
+	var admins int64
+	if err := db.Model(&model.Admin{}).Count(&admins).Error; err != nil {
+		return nil, fmt.Errorf("backup: read whether this panel is set up: %w", err)
+	}
+	if admins == 0 {
+		return nil, nil
+	}
 	out := &LocalAddresses{
 		Interfaces:    map[string]string{},
 		Hosts:         map[string][]LocalHost{},

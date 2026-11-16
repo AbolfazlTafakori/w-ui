@@ -55,7 +55,7 @@ func dumpService(t *testing.T, db *gorm.DB) (*Service, string) {
 	t.Helper()
 	data := t.TempDir()
 	return New(Options{DataDir: data, Log: quiet(), Dump: func(ctx context.Context, w io.Writer) error {
-		_, err := database.WriteDump(ctx, db, config.DriverPostgres, "test", w)
+		_, err := database.WriteDump(ctx, db, config.DriverSQLite, "test", w)
 		return err
 	}}), data
 }
