@@ -76,7 +76,13 @@ type subPageView struct {
 	ExpiryChip string // e.g. 12d, 3h, expired; empty when no expiry
 	ExpiryCls  string
 	LastOnline string
-	SubQR      string // subQR
+	// UsedOfTotal is "20.00 / 50.00 GiB": the usage card's line under its
+	// figure, the unit written once when both share it so it fits one line.
+	UsedOfTotal string
+	// Online is whether a device of the plan was heard from within
+	// onlineWindow: the header's badge, online or offline.
+	Online bool
+	SubQR  string // subQR
 	// PlanUsers is how many users share the plan's one allowance, when more
 	// than one does: the page says the total and what remains are theirs
 	// together. OwnUser and OwnUsed are, on a user's own page, who they are
@@ -286,9 +292,21 @@ type subLiveStatus struct {
 	Devices    int     `json:"devices"`
 	// RowUsed, RowDown and RowUp are the table's usage rows: the user's
 	// own on a user's page, the plan's otherwise (subPageView.RowUsed).
-	RowUsed string `json:"rowUsed"`
-	RowDown string `json:"rowDown"`
-	RowUp   string `json:"rowUp"`
+	UsedOfTotal string `json:"usedOfTotal"`
+	RowUsed     string `json:"rowUsed"`
+	RowDown     string `json:"rowDown"`
+	RowUp       string `json:"rowUp"`
+}
+
+// usedOfTotal is "used / total", with the unit once when both have the same:
+// "20.00 / 50.00 GiB", not "20.00 GiB / 50.00 GiB".
+func usedOfTotal(used, total string) string {
+	u, uu, ok1 := strings.Cut(used, " ")
+	t, tu, ok2 := strings.Cut(total, " ")
+	if ok1 && ok2 && uu == tu {
+		return u + " / " + t + " " + tu
+	}
+	return used + " / " + total
 }
 
 // onlineWindow is how recent a handshake has to be for a device to count as
@@ -305,7 +323,7 @@ func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, to
 		Down: humanBytes(page.DownBytes), Up: humanBytes(page.UpBytes),
 		Expiry: v.Expiry, ExpiryChip: v.ExpiryChip, ExpiryCls: v.ExpiryCls,
 		LastOnline: v.LastOnline, Devices: len(page.Devices),
-		RowUsed: v.RowUsed, RowDown: v.RowDown, RowUp: v.RowUp,
+		RowUsed: v.RowUsed, RowDown: v.RowDown, RowUp: v.RowUp, UsedOfTotal: v.UsedOfTotal,
 	}
 	if page.LastOnline != nil && time.Since(*page.LastOnline) < onlineWindow {
 		st.Online = true
@@ -388,10 +406,12 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	if page.LastOnline != nil {
 		v.LastOnline = page.LastOnline.Local().Format("2006-01-02 15:04")
+		v.Online = time.Since(*page.LastOnline) < onlineWindow
 	}
 	// Each QR is its pattern, drawn by the page when it is opened (subqr.go).
 	v.SubQR = subQR(page.SubURL)
 	v.RowDown, v.RowUp, v.RowUsed = humanBytes(page.DownBytes), humanBytes(page.UpBytes), v.Used
+	v.UsedOfTotal = usedOfTotal(v.Used, v.Total)
 	if page.PlanUsers > 1 {
 		v.PlanUsers = page.PlanUsers
 		if page.OwnUser > 0 {
@@ -820,7 +840,7 @@ var subPageStrings = map[string]map[string]string{
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
 		"copyLink": "Copy URL", "copyAll": "Copy all configs", "copyAllDone": "All configs copied",
 		"config": "WireGuard config", "ovpnConfig": "OpenVPN config", "xrayConfig": "V2Ray link", "theme": "Theme", "language": "Language", "users": "users", "user": "User", "show": "Show", "oneUser": "1 user", "usageTable": "Usage by user and tunnel", "usageSince": "Split by user since", "total": "Total", "allUsers": "All users", "tunnel": "Tunnel",
-		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Off",
+		"live": "Live", "online": "Online", "idle": "Idle", "offline": "Offline", "configs": "configs",
 		"subSettings": "Subscription", "tapToClose": "Tap outside to close", "amneziaKeyHint": "For the AmneziaVPN app: copy the key, or scan it.",
 	},
 	"fa": {
@@ -831,7 +851,7 @@ var subPageStrings = map[string]map[string]string{
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
 		"copyLink": "کپی لینک", "copyAll": "کپی همه کانفیگ‌ها", "copyAllDone": "همه کانفیگ‌ها کپی شد",
 		"config": "پیکربندی WireGuard", "ovpnConfig": "پیکربندی OpenVPN", "xrayConfig": "لینک V2Ray", "theme": "تم", "language": "زبان", "users": "کاربر", "user": "کاربر", "show": "نمایش", "oneUser": "۱ کاربر", "usageTable": "مصرف هر کاربر روی هر تانل", "usageSince": "تفکیک کاربرها از", "total": "جمع", "allUsers": "همهٔ کاربران", "tunnel": "تانل",
-		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "خاموش",
+		"live": "زنده", "online": "آنلاین", "idle": "بی‌کار", "offline": "آفلاین", "configs": "کانفیگ",
 		"subSettings": "اشتراک", "tapToClose": "برای بستن بیرون بزنید", "amneziaKeyHint": "برای اپ AmneziaVPN: کلید را کپی کنید یا اسکن کنید.",
 	},
 }
@@ -995,21 +1015,23 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
           <h1>{{ .Page.Title }}</h1>
           <p>{{ .Page.Name }}</p>
         </div>
-        <span class="hero-live{{ if not .Active }} off{{ end }}" id="lv-live"><i></i><span data-i="{{ if .Active }}live{{ else }}offline{{ end }}">{{ if .Active }}Live{{ else }}Off{{ end }}</span></span>
+        <span class="hero-live{{ if not .Online }} off{{ end }}" id="lv-live"><i></i><span data-i="{{ if .Online }}online{{ else }}offline{{ end }}">{{ if .Online }}Online{{ else }}Offline{{ end }}</span></span>
       </div>
+      <div class="quick-wrap">
       <div class="quick">
         <div>
           <div class="ring" id="lv-ring-status" data-p="100" data-c="{{ if .Active }}var(--ok){{ else }}var(--bad){{ end }}"><span>{{ len .Devices }}</span></div>
-          <div><div class="stat-k" data-i="status">Status</div><div class="stat-v" id="lv-status">{{ if eq .StatusKey "inactive" }}<span data-i="inactive">Inactive</span>{{ else if eq .StatusKey "unlimited" }}<span data-i="unlimited">Unlimited</span>{{ else }}<span data-i="active">Active</span>{{ end }}</div><div class="stat-s">{{ len .Devices }} configs</div></div>
+          <div><div class="stat-k" data-i="status">Status</div><div class="stat-v" id="lv-status">{{ if eq .StatusKey "inactive" }}<span data-i="inactive">Inactive</span>{{ else if eq .StatusKey "unlimited" }}<span data-i="unlimited">Unlimited</span>{{ else }}<span data-i="active">Active</span>{{ end }}</div><div class="stat-s"><span dir="ltr">{{ len .Devices }}</span> <span data-i="configs">configs</span></div></div>
         </div>
         <div>
           <div class="ring" id="lv-ring-usage" data-p="{{ if .HasQuota }}{{ .PercentTxt }}{{ else }}100{{ end }}" data-c="{{ if ge .Percent 90.0 }}var(--bad){{ else if ge .Percent 75.0 }}var(--warn){{ else }}var(--ok){{ end }}"><span dir="ltr" id="lv-pct">{{ if .HasQuota }}{{ .PercentTxt }}%{{ else }}∞{{ end }}</span></div>
-          <div><div class="stat-k" data-i="usage">Data</div><div class="stat-v" dir="ltr" id="lv-data">{{ if .HasQuota }}{{ .Remained }}{{ else }}{{ .Used }}{{ end }}</div><div class="stat-s" dir="ltr" id="lv-data-sub">{{ if .HasQuota }}{{ .Used }} / {{ .Total }}{{ else }}<span data-i="unlimited">Unlimited</span>{{ end }}</div></div>
+          <div><div class="stat-k" data-i="{{ if .HasQuota }}remained{{ else }}usage{{ end }}">{{ if .HasQuota }}Remaining{{ else }}Usage{{ end }}</div><div class="stat-v" dir="ltr" id="lv-data">{{ if .HasQuota }}{{ .Remained }}{{ else }}{{ .Used }}{{ end }}</div><div class="stat-s" dir="ltr" id="lv-data-sub">{{ if .HasQuota }}{{ .UsedOfTotal }}{{ else }}<span data-i="unlimited">Unlimited</span>{{ end }}</div></div>
         </div>
         <div>
           <div class="ring" data-p="100" data-c="{{ if eq .ExpiryCls "red" }}var(--bad){{ else if eq .ExpiryCls "orange" }}var(--warn){{ else }}var(--accent){{ end }}"><span class="anticon">{{ index .Icons "ClockCircleOutlined" }}</span></div>
           <div><div class="stat-k" data-i="expiry">Time</div><div class="stat-v" dir="ltr" id="lv-expiry">{{ if .ExpiryChip }}{{ if eq .ExpiryChip "expired" }}<span data-i="expired">Expired</span>{{ else }}{{ .ExpiryChip }}{{ end }}{{ else }}∞{{ end }}</div><div class="stat-s" dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</div></div>
         </div>
+      </div>
       </div>
       <table class="desc">
         <tr><th data-i="subId">Subscription ID</th><td dir="ltr">{{ .SubID }}</td></tr>
@@ -1640,7 +1662,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
   function set(id, text) { var el = $id(id); if (el && el.textContent !== text) el.textContent = text; }
   function apply(st) {
     if (st.hasQuota) {
-      set('lv-data', st.remained); set('lv-data-sub', st.used + ' / ' + st.total);
+      set('lv-data', st.remained); set('lv-data-sub', st.usedOfTotal || (st.used + ' / ' + st.total));
       set('lv-pct', st.percentTxt + '%');
       set('lv-remained', st.remained); set('lv-foot-remained', st.remained); set('lv-foot-pct', st.percentTxt + '%');
       var ring = $id('lv-ring-usage'); if (ring) { ring.style.setProperty('--p', st.percentTxt); ring.style.setProperty('--c', colour(st.percent)); }
@@ -1654,9 +1676,10 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
     set('lv-expiry', st.expiryChip === 'expired' ? word('expired') : (st.expiryChip || '\u221e'));
     var live = $id('lv-live');
     if (live) {
+      // Online or offline, and nothing between: whether a device of this
+      // plan is connected right now.
       live.classList.toggle('off', !st.online);
-      live.classList.toggle('idle', st.active && !st.online);
-      var t = live.querySelector('span'); if (t) t.textContent = st.online ? word('online') : (st.active ? word('idle') : word('offline'));
+      var t = live.querySelector('span'); if (t) { t.setAttribute('data-i', st.online ? 'online' : 'offline'); t.textContent = st.online ? word('online') : word('offline'); }
     }
     var sr = $id('lv-ring-status'); if (sr) sr.style.setProperty('--c', st.active ? 'var(--ok)' : 'var(--bad)');
     var key = st.statusKey === 'inactive' ? 'inactive' : st.statusKey === 'unlimited' ? 'unlimited' : 'active';

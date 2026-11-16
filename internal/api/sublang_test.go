@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/devguide"
 	"github.com/abolfazl/w-ui/internal/i18n"
@@ -177,5 +178,47 @@ func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 	}
 	if !strings.Contains(html, `<td dir="ltr" id="lv-used">20.00 GiB</td>`) {
 		t.Error("a plan for one does not show its usage as before")
+	}
+}
+
+func TestTheUsageCardWritesItsUnitOnce(t *testing.T) {
+	for in, want := range map[[2]string]string{
+		{"20.00 GiB", "50.00 GiB"}: "20.00 / 50.00 GiB",
+		{"512.0 MiB", "50.00 GiB"}: "512.0 MiB / 50.00 GiB",
+		{"0 B", "10.00 GiB"}:       "0 B / 10.00 GiB",
+	} {
+		if got := usedOfTotal(in[0], in[1]); got != want {
+			t.Errorf("%v: %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The header's badge says online or offline, from the plan's last
+// handshake, and nothing else.
+func TestTheBadgeIsOnlineOrOffline(t *testing.T) {
+	render := func(p *service.SubPage) string {
+		var buf strings.Builder
+		if err := subPageTemplate.Execute(&buf, newSubView(p, "token", false, "")); err != nil {
+			t.Fatal(err)
+		}
+		return buf.String()
+	}
+	now := time.Now()
+	long := now.Add(-time.Hour)
+	on := render(&service.SubPage{Name: "A", Status: "active", LastOnline: &now})
+	off := render(&service.SubPage{Name: "A", Status: "active", LastOnline: &long})
+	never := render(&service.SubPage{Name: "A", Status: "active"})
+	if !strings.Contains(on, `<span class="hero-live" id="lv-live"><i></i><span data-i="online">`) {
+		t.Error("a plan heard from a moment ago is not online")
+	}
+	for _, html := range []string{off, never} {
+		if !strings.Contains(html, `<span class="hero-live off" id="lv-live"><i></i><span data-i="offline">`) {
+			t.Error("a plan not heard from is not offline")
+		}
+	}
+	for _, html := range []string{on, off, never} {
+		if strings.Contains(html, `data-i="idle"`) || strings.Contains(html, `data-i="live"`) {
+			t.Error("the badge says something other than online or offline")
+		}
 	}
 }

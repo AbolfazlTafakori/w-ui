@@ -465,15 +465,28 @@ a.row-title:hover { text-decoration: underline; }
 @keyframes blink { 50% { opacity: .35; } }
 .hero h1 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.01em; }
 .hero p { margin: 2px 0 0; color: var(--muted); font-size: 13px; line-height: 18px; unicode-bidi: plaintext; }
+/* Three cards, one height: a light ring, then a label, a figure and one
+   quiet line under it -- never two, so no card stands taller than the
+   others. The label is plain text, not capitals spaced apart, which reads
+   calmer and does not break Persian. */
 .quick { gap: 10px; margin-bottom: 16px; }
-.quick > div { flex: 1 1 0; min-width: 0; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface-2); display: flex; align-items: center; gap: 12px; }
-.ring { --p: 0; --c: var(--accent); position: relative; width: 48px; height: 48px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--surface-3) 0); flex: none; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
-.ring::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: var(--surface-2); }
+.quick > div { flex: 1 1 0; min-width: 0; min-height: 78px; padding: 14px 16px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface-2); display: flex; align-items: center; gap: 14px; }
+.quick > div > div:last-child { min-width: 0; flex: 1; }
+/* In Persian a card reads from the right: the ring there, its words beside
+   it, all on one edge. Figures keep their own direction (dir="ltr"). */
+html[lang="fa"] .quick > div { direction: rtl; }
+html[lang="fa"] .quick .stat-v, html[lang="fa"] .quick .stat-s { text-align: right; }
+.ring { --p: 0; --c: var(--accent); position: relative; width: 46px; height: 46px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--surface-3) 0); flex: none; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+.ring::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--surface-2); }
 .ring span { position: relative; }
-.stat-k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.stat-v { font-size: 16px; font-weight: 700; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stat-s { font-size: 12px; color: var(--faint); }
-@media (max-width: 575px) { .quick { flex-direction: column; } }
+.stat-k { font-size: 12px; line-height: 16px; color: var(--muted); }
+.stat-v { font-size: 17px; line-height: 24px; font-weight: 700; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-s { font-size: 12px; line-height: 16px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Side by side while each card has room for its figure in full, one under
+   another below that: decided by the card's own width, not the window's,
+   so a narrow column on a wide screen stacks too. */
+.quick-wrap { container-type: inline-size; }
+@container (max-width: 600px) { .quick { flex-direction: column; } .quick > div { flex: none; min-height: 64px; } }
 /* Nothing on this page may be wider than a phone. Long values -- a token, an
    email, a hostname -- wrap or are cut with an ellipsis; they never push the
    card out of the viewport. */
