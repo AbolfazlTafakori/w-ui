@@ -11,6 +11,7 @@ import AntIcon from '../AntIcon.vue'
 import Toggle from '../Toggle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import RoutingRuleForm from '../RoutingRuleForm.vue'
+import { copyText } from '../../lib/clipboard.js'
 
 // The rules, in their order; a move is written back.
 const rules = defineModel('rules', { type: Array, required: true })
@@ -220,7 +221,7 @@ const exportText = computed(() =>
 )
 async function copyExport() {
   try {
-    await navigator.clipboard.writeText(exportText.value)
+    await copyText(exportText.value)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

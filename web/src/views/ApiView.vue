@@ -5,6 +5,7 @@ import { useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import ErrorState from '../components/ErrorState.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const docs = ref(null)
 const loading = ref(true)
@@ -77,7 +78,7 @@ function curlFor(route) {
 
 async function copy(text, id) {
   try {
-    await navigator.clipboard.writeText(text)
+    await copyText(text)
     copied.value = id
     setTimeout(() => (copied.value = ''), 1600)
   } catch {

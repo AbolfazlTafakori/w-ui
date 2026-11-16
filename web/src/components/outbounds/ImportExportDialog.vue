@@ -6,6 +6,7 @@ import { api } from '../../lib/api.js'
 import { t, tn, notify } from '../../lib/store.js'
 import { exportText, parseImport } from '../../lib/outbounds/rows.js'
 import Icon from '../Icon.vue'
+import { copyText } from '../../lib/clipboard.js'
 
 const props = defineProps({
   // 'import' or 'export'.
@@ -21,7 +22,7 @@ const exported = computed(() => exportText(props.outbounds))
 
 async function copyExport() {
   try {
-    await navigator.clipboard.writeText(exported.value)
+    await copyText(exported.value)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

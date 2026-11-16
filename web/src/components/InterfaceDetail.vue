@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { store, t, notify } from '../lib/store.js'
 import { bytes } from '../lib/format.js'
 import Icon from './Icon.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
   iface: { type: Object, required: true },
@@ -133,7 +134,7 @@ const serverConfig = computed(() => {
 
 async function copy(text) {
   try {
-    await navigator.clipboard.writeText(text)
+    await copyText(text)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

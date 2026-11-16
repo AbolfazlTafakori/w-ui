@@ -5,6 +5,7 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { api, saveText } from '../../lib/api.js'
 import { t, tn, notify } from '../../lib/store.js'
 import Icon from '../Icon.vue'
+import { copyText } from '../../lib/clipboard.js'
 
 const emit = defineEmits(['close'])
 
@@ -111,7 +112,7 @@ function logText() {
 
 async function copyLogs() {
   try {
-    await navigator.clipboard.writeText(logText())
+    await copyText(logText())
     notify(t('logs.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

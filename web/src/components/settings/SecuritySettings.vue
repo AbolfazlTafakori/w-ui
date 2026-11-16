@@ -12,6 +12,7 @@ import { store, t, notify, signOut } from '../../lib/store.js'
 import AntIcon from '../AntIcon.vue'
 import Toggle from '../Toggle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import { copyText as toClipboard } from '../../lib/clipboard.js'
 
 const router = useRouter()
 const inner = ref('1')
@@ -91,7 +92,7 @@ async function confirmTfa() {
 }
 async function copyText(text) {
   try {
-    await navigator.clipboard.writeText(text)
+    await toClipboard(text)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('share.copyFailed'), 'error')

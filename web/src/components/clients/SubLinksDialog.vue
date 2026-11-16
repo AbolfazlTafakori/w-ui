@@ -6,6 +6,7 @@ import { onMounted, ref } from 'vue'
 import { api } from '../../lib/api.js'
 import { t, notify } from '../../lib/store.js'
 import Icon from '../Icon.vue'
+import { copyText } from '../../lib/clipboard.js'
 
 // Sub links: every selected customer's subscription address, one per line,
 // read for each of them -- the list's rows do not carry it. A customer whose
@@ -30,7 +31,7 @@ onMounted(async () => {
 })
 async function copySubLinks() {
   try {
-    await navigator.clipboard.writeText(subLinksText.value)
+    await copyText(subLinksText.value)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

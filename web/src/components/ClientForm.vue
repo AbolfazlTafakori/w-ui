@@ -15,6 +15,7 @@ import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
 import HelpTip from './HelpTip.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -213,7 +214,7 @@ onMounted(loadSub)
 
 async function copy(text) {
   try {
-    await navigator.clipboard.writeText(String(text))
+    await copyText(String(text))
     notify(t('common.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

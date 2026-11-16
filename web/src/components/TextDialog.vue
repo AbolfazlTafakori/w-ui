@@ -4,6 +4,7 @@
 import { saveText } from '../lib/api.js'
 import { t, notify } from '../lib/store.js'
 import Icon from './Icon.vue'
+import { copyText as toClipboard } from '../lib/clipboard.js'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -19,7 +20,7 @@ function downloadText() {
 }
 async function copyText() {
   try {
-    await navigator.clipboard.writeText(props.text)
+    await toClipboard(props.text)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

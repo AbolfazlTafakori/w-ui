@@ -12,6 +12,7 @@ import HelpTip from './HelpTip.vue'
 import Toggle from './Toggle.vue'
 import AwgEditor from './AwgEditor.vue'
 import { fronted, proven, wsOf } from '../lib/interfaces/rows.js'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
   // When present the dialog edits that interface instead of creating one.
@@ -370,7 +371,7 @@ function randomPSK(n = 24) {
 
 async function copy(v) {
   try {
-    await navigator.clipboard.writeText(v)
+    await copyText(v)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

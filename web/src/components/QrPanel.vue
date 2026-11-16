@@ -6,6 +6,7 @@ import { ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
   value: { type: String, required: true },
@@ -55,7 +56,7 @@ watch(() => [props.value, props.showQr], draw, { immediate: true })
 
 async function copy() {
   try {
-    await navigator.clipboard.writeText(props.value)
+    await copyText(props.value)
     notify(t('common.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

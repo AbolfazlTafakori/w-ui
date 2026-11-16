@@ -6,6 +6,7 @@ import { useDelayed } from '../lib/live.js'
 import { t, notify } from '../lib/store.js'
 import Icon from '../components/Icon.vue'
 import PageSpin from '../components/PageSpin.vue'
+import { copyText } from '../lib/clipboard.js'
 
 // What the panel is actually asking the machine to do.
 //
@@ -90,7 +91,7 @@ watch(level, () => loadLogs())
 
 async function copy() {
   try {
-    await navigator.clipboard.writeText(shown.value?.text || '')
+    await copyText(shown.value?.text || '')
     notify(t('configs.copied'), 'success')
   } catch {
     // Clipboard access is refused outside a secure context, which a panel on a

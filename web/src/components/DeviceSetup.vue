@@ -9,6 +9,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
   // The customer's files: { key, label, guides } each, guides as the
@@ -74,7 +75,7 @@ const current = computed(() => choices.value.find((c) => c.key === pick.value))
 
 async function copy(v) {
   try {
-    await navigator.clipboard.writeText(v)
+    await copyText(v)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

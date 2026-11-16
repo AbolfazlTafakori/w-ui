@@ -7,6 +7,7 @@ import { api } from '../../lib/api.js'
 import { t, notify } from '../../lib/store.js'
 import { nodeBody, nodeForm } from '../../lib/nodes/rows.js'
 import AntIcon from '../AntIcon.vue'
+import { copyText } from '../../lib/clipboard.js'
 
 const props = defineProps({
   // The node being edited; none to add one.
@@ -41,7 +42,7 @@ async function loadAuthority() {
 
 async function copyAuthority() {
   try {
-    await navigator.clipboard.writeText(authority.value)
+    await copyText(authority.value)
     notify(t('node.authorityCopied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

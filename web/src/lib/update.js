@@ -6,6 +6,7 @@ import { computed, inject, onBeforeUnmount, onMounted, provide, ref, watch } fro
 import { api } from './api.js'
 import { bytes } from './format.js'
 import { t, notify } from './store.js'
+import { copyText } from './clipboard.js'
 
 const UPDATE = Symbol('update')
 
@@ -144,7 +145,7 @@ export function useUpdate(version) {
   const updateCommand = 'bash <(curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/update.sh)'
   async function copyUpdateCommand() {
     try {
-      await navigator.clipboard.writeText(updateCommand)
+      await copyText(updateCommand)
       notify(t('common.copied'), 'success')
     } catch {
       notify(updateCommand, 'success')

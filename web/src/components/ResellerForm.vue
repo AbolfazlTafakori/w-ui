@@ -19,6 +19,7 @@ import MultiSelect from './MultiSelect.vue'
 import AutoComplete from './AutoComplete.vue'
 import HelpTip from './HelpTip.vue'
 import DateField from './DateField.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
   // The owner's servers, every one of them: a reseller is given a subset.
@@ -165,7 +166,7 @@ async function copyLogin() {
   ]
   if (form.value.password) lines.push(`${t('admins.password')}: ${form.value.password}`)
   try {
-    await navigator.clipboard.writeText(lines.join('\n'))
+    await copyText(lines.join('\n'))
     notify(t('common.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

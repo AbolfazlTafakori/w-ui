@@ -13,6 +13,7 @@ import { t, notify } from '../lib/store.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
 import DeviceSetup from './DeviceSetup.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
   client: { type: Object, required: true },
@@ -131,7 +132,7 @@ watch(tab, (k) => {
 
 async function copy(text) {
   try {
-    await navigator.clipboard.writeText(String(text))
+    await copyText(String(text))
     notify(t('common.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')

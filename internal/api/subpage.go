@@ -1272,10 +1272,15 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
   }
   function fallback(text, done) {
     var d = S[lang()] || S.en;
-    var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
+    // On screen but unseen, at 16px, focused and selected end to end: iOS
+    // selects nothing in a field off screen or smaller, and copies nothing.
+    var was = document.activeElement;
+    var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.setAttribute('aria-hidden', 'true');
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px';
+    document.body.appendChild(ta); ta.focus(); ta.select(); try { ta.setSelectionRange(0, text.length); } catch (e) {}
     var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
-    document.body.removeChild(ta); say(ok ? (done || d.copied) : 'Ctrl+C');
+    document.body.removeChild(ta); if (was && was.focus) { try { was.focus({ preventScroll: true }); } catch (e) {} }
+    say(ok ? (done || d.copied) : 'Ctrl+C');
   }
   $('button.copy').forEach(function (b) { b.addEventListener('click', function (e) {
     e.stopPropagation();

@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import { api } from '../../lib/api.js'
 import { t, notify } from '../../lib/store.js'
 import AntIcon from '../AntIcon.vue'
+import { copyText } from '../../lib/clipboard.js'
 
 defineEmits(['close'])
 
@@ -27,7 +28,7 @@ async function issue() {
 
 async function copy() {
   try {
-    await navigator.clipboard.writeText(issued.value.token)
+    await copyText(issued.value.token)
     notify(t('node.tokenCopied'), 'success')
   } catch {
     notify(t('api.copyFailed'), 'error')

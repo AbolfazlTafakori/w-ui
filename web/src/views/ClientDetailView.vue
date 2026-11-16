@@ -9,6 +9,7 @@ import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import DeviceSetup from '../components/DeviceSetup.vue'
+import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({ id: { type: [String, Number], required: true } })
 const router = useRouter()
@@ -182,7 +183,7 @@ const remove = () => {
 
 async function copy(text) {
   try {
-    await navigator.clipboard.writeText(text)
+    await copyText(text)
     notify(t('action.copied'), 'success')
   } catch {
     notify(t('action.copyFailed'), 'error')
