@@ -11,7 +11,12 @@ A backup holds the one thing that cannot be regenerated: the interface private k
 One `.tar.gz`, holding:
 
 - **`wui.db`**: a consistent SQLite snapshot, taken with `VACUUM INTO` rather than as a raw copy that could be caught mid-write. It is only in backups from a SQLite panel. If the snapshot cannot be taken, the live file is **not** archived in its place, since it can lack changes still in the write-ahead log; the dump below carries the database instead. A backup with neither is not written, and the failure is reported.
-- **`wui-export.json`**: every table as JSON, written through the schema. It is in every backup, whichever engine. This is the copy that crosses engines and versions: a column a newer panel added is left at its default, and a column it dropped is ignored.
+- **`wui-dump/`**: the whole database as a stream, in parts of at most 8 MiB (`00001.jsonl`, `00002.jsonl`, …). It is in every backup, whichever engine, and on PostgreSQL it is the database. This is the copy that crosses engines and versions: a column a newer panel added is left at its default, and a column it dropped is ignored.
+  - **One moment.** Every table is read inside one read-only transaction (REPEATABLE READ on PostgreSQL), so a backup taken while customers are being added or removed never holds a file without its customer. It takes no lock that holds back the panel.
+  - **Small and steady on memory.** Rows are written as they are read, a part in memory at a time: measured at 50,000 customers with a file on each of seven protocols (2.4 million rows), the backup held under 5 MiB, against more than a gigabyte for the JSON copy older versions wrote.
+  - **Exact.** Every number is written as stored, the largest byte counters included, and every time to the microsecond, which is what both engines keep.
+  - **Checked.** Every table ends with its number of rows and the SHA-256 of its rows, and the dump ends with a line saying it is complete. Checking an archive, and every restore before it touches anything, reads it to the last row; a cut, damaged or altered dump is refused.
+  - Older backups carry **`wui-export.json`** instead, every table in one JSON document. They still restore.
 - Everything else in `/var/lib/wui`, such as OpenVPN's PKI and server files and the generated profiles. Left out are the backups themselves, SQLite's write-ahead sidecars, a restore waiting to be applied, an update waiting for the update helper, and `keys/`.
 
 **Nothing in a backup opens the panel it came from.** The key sessions are signed with, and the backup password, live in `/var/lib/wui/keys/`, which is never archived and never restored over. Before 3.0 the session key was in the database, so a backup could be used to sign in to its panel as its owner. 3.0 moves the key out and makes a new one, so every backup taken before carries a key that opens nothing. Everyone signs in once more after the update.
@@ -54,13 +59,28 @@ By default, this server's own addresses, which the tunnels tell customers to con
 | Backup from | Restoring into | What happens |
 |---|---|---|
 | SQLite | SQLite | The snapshot file is put back: an exact copy. |
-| SQLite | PostgreSQL | The JSON dump is loaded into PostgreSQL, with ids kept and sequences moved past them. |
-| PostgreSQL | PostgreSQL | The JSON dump is loaded. |
-| PostgreSQL | SQLite | The JSON dump is loaded into a fresh SQLite file. |
+| SQLite | PostgreSQL | The dump is loaded into PostgreSQL, with ids kept and sequences moved past them. |
+| PostgreSQL | PostgreSQL | The dump is loaded. |
+| PostgreSQL | SQLite | The dump is loaded into a fresh SQLite file. |
 | An older W-UI | A newer one | The schema is migrated first, then the data lands in it. |
 | A newer W-UI | An older one | Refused with a clear message when the dump's format is newer than the panel understands. Update the panel first. |
 
 So the database chosen at install is not final. Install with SQLite, and when the customer count grows, take a backup, run the installer again with `--db postgres`, and restore the backup.
+
+A dump is loaded in **one transaction**. As it is read, every table's count and checksum is checked; then what was written is read back from the database, still inside the transaction, and held to the backup: every table's rows, and every value by its checksum. Only then is it committed. Anything short of that (a damaged file, a value the engine would change without a word) rolls everything back, the panel starts on the data it had, and the dump is kept beside it as `.restore-dump.jsonl.failed`. Measured at 2.4 million rows: under 10 MiB of memory, about a minute and a half into PostgreSQL and under four minutes into SQLite.
+
+To check an archive without restoring it: `wui backup check FILE`. It reads the archive through and prints how many tables and rows its database copy holds, every one matching its checksum.
+
+### Moving between SQLite and PostgreSQL
+
+`w-ui` → PostgreSQL → **1** installs PostgreSQL and makes the panel's database and role; **2** moves the panel's data from SQLite to PostgreSQL, **10** back. A move:
+
+1. takes a backup on the engine the panel is on, and checks it to the last row. A backup that does not check out moves nothing;
+2. stages the restore while still on that engine, so this server's own addresses (how the panel and the subscription service are reached) are read from the real data;
+3. switches the connection, starts the panel, and waits for it to report the load, however long a large panel takes;
+4. if the load fails, or the panel stops, puts the panel back on the engine and the data it had, by itself.
+
+The old engine's data is left where it was, in case of a change of mind. Tunnels stay up throughout: moved on the test server both ways with every WireGuard peer and OpenVPN session kept, and every customer's subscription link answering byte for byte as before.
 
 ## Where things are
 
