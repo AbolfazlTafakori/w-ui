@@ -447,13 +447,14 @@ a.row-title:hover { text-decoration: underline; }
 [data-layout="retro"] .hero, [data-layout="retro"] .quick { display: flex; }
 
 /* The hero and quick stats the non-classic looks open with. */
-.hero { align-items: center; gap: 14px; margin-bottom: 16px; }
+.hero { align-items: center; gap: 14px; margin-bottom: 16px; padding: 2px 2px 0; }
 .hero-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; background: #fff; box-shadow: 0 10px 24px -10px var(--accent), inset 0 0 0 1px rgba(0,0,0,.06); flex: none; }
 .hero-logo { display: block; width: 34px; height: auto; }
 .brand-mark { display: inline-block; width: 26px; height: auto; margin-inline-end: 8px; vertical-align: -3px; }
 .hero-copy { min-width: 0; flex: 1; }
-.hero-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
-.hero-live { display: inline-flex; align-items: center; gap: 5px; text-transform: none; letter-spacing: 0; color: var(--ok); }
+/* The plan's state, a badge at the row's far end: never squeezed into
+   the title's column, and never letter-spaced, which breaks Persian apart. */
+.hero-live { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); font-size: 12px; line-height: 16px; white-space: nowrap; color: var(--ok); }
 .hero-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: blink 1.4s ease-in-out infinite; }
 .hero-live.off { color: var(--faint); }
 .hero-live.off i { background: var(--faint); animation: none; }
@@ -462,8 +463,8 @@ a.row-title:hover { text-decoration: underline; }
 .hero-live.idle { color: var(--muted); }
 .hero-live.idle i { background: var(--muted); animation: none; }
 @keyframes blink { 50% { opacity: .35; } }
-.hero h1 { margin: 2px 0 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
-.hero p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.hero h1 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.01em; }
+.hero p { margin: 2px 0 0; color: var(--muted); font-size: 13px; line-height: 18px; unicode-bidi: plaintext; }
 .quick { gap: 10px; margin-bottom: 16px; }
 .quick > div { flex: 1 1 0; min-width: 0; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface-2); display: flex; align-items: center; gap: 12px; }
 .ring { --p: 0; --c: var(--accent); position: relative; width: 48px; height: 48px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--surface-3) 0); flex: none; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
@@ -485,8 +486,7 @@ a.row-title:hover { text-decoration: underline; }
 .hero { min-width: 0; }
 .hero > .hero-copy { min-width: 0; flex: 1; }
 .hero-icon { flex: none; }
-.hero h1, .hero p { overflow-wrap: anywhere; }
-.hero-meta { flex-wrap: wrap; }
+.hero h1, .hero p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .usage-labels { min-width: 0; overflow: hidden; }
 .usage-head { flex-wrap: wrap; gap: 6px; }
 .row-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

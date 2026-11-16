@@ -992,10 +992,10 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
       <div class="hero">
         <div class="hero-icon"><img class="hero-logo" src="{{ .Logo }}" alt="" width="34" height="20"></div>
         <div class="hero-copy">
-          <div class="hero-meta"><span data-i="subSettings">Subscription</span><span class="hero-live{{ if not .Active }} off{{ end }}" id="lv-live"><i></i><span data-i="{{ if .Active }}live{{ else }}offline{{ end }}">{{ if .Active }}Live{{ else }}Off{{ end }}</span></span></div>
           <h1>{{ .Page.Title }}</h1>
           <p>{{ .Page.Name }}</p>
         </div>
+        <span class="hero-live{{ if not .Active }} off{{ end }}" id="lv-live"><i></i><span data-i="{{ if .Active }}live{{ else }}offline{{ end }}">{{ if .Active }}Live{{ else }}Off{{ end }}</span></span>
       </div>
       <div class="quick">
         <div>
