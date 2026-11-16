@@ -171,8 +171,10 @@ a.row-title:hover { text-decoration: underline; }
 .cfg-user .btn.show .anticon { transition: transform .3s; }
 .cfg-user.open .btn.show .anticon { transform: rotate(90deg); }
 /* A plan whose allowance several users share: a quiet mark beside the
-   figures, its explanation on hover. */
-.shared-tag { margin-inline-start: 6px; font-size: 11px; line-height: 18px; padding: 0 6px; cursor: help; }
+   figures, its explanation on hover or a tap. */
+.shared-tag { position: relative; margin-inline-start: 6px; font-size: 11px; line-height: 18px; padding: 0 6px; cursor: help; outline: none; }
+.shared-tip { display: none; position: absolute; z-index: 30; top: calc(100% + 6px); inset-inline-start: 0; width: max-content; max-width: min(280px, 70vw); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 18px; white-space: normal; text-align: start; box-shadow: 0 6px 16px rgba(0,0,0,.18); }
+.shared-tag:hover .shared-tip, .shared-tag:focus .shared-tip, .shared-tag:focus-within .shared-tip { display: block; }
 /* The plan's own link, opening on each user's own. */
 .sub-tree .cfg-head .row-title { flex: 1; min-width: 0; }
 .sub-tree .cfg-head .cfg-count { margin-inline-start: 0; }

@@ -827,10 +827,12 @@ type SubPage struct {
 	// PlanUsers is how many users share the plan's one allowance: its quota,
 	// its usage and what is left are theirs together. 0 or 1 is a plan for
 	// one. OwnUser is, on a user's own page, which user they are, and
-	// OwnUsedBytes what their own files carried; both 0 on the plan's page.
+	// OwnUpBytes and OwnDownBytes what their own files carried each way;
+	// all 0 on the plan's page.
 	PlanUsers    int
 	OwnUser      int
-	OwnUsedBytes uint64
+	OwnUpBytes   uint64
+	OwnDownBytes uint64
 	// FilesSince is when the files' usage starts counting, when that is
 	// after the customer's current period began: their per-user table then
 	// covers less than their usage, and says from when. Nil when the table
@@ -845,7 +847,8 @@ func (p *SubPage) shared(c *model.Client, scope linkScope) {
 	p.OwnUser = scope.User
 	if scope.User > 0 {
 		for _, a := range c.Accounts {
-			p.OwnUsedBytes += a.UpBytes + a.DownBytes
+			p.OwnUpBytes += a.UpBytes
+			p.OwnDownBytes += a.DownBytes
 		}
 	}
 }

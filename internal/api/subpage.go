@@ -83,7 +83,12 @@ type subPageView struct {
 	// and what they spent of it.
 	PlanUsers int
 	OwnUser   int
-	OwnUsed   string
+	// RowDown, RowUp and RowUsed are the usage rows of the page's table:
+	// the plan's on its own page, the user's own on a user's page. The
+	// bar and the remaining stay the plan's, which is what runs out.
+	RowDown string
+	RowUp   string
+	RowUsed string
 	// UserLinks are each user's own link, on the plan's page of a plan for
 	// several, each with its QR.
 	UserLinks []subUserLink
@@ -279,8 +284,11 @@ type subLiveStatus struct {
 	ExpiryCls  string  `json:"expiryCls"`
 	LastOnline string  `json:"lastOnline"`
 	Devices    int     `json:"devices"`
-	// OwnUsed is, on a user's own page, what that user spent.
-	OwnUsed string `json:"ownUsed,omitempty"`
+	// RowUsed, RowDown and RowUp are the table's usage rows: the user's
+	// own on a user's page, the plan's otherwise (subPageView.RowUsed).
+	RowUsed string `json:"rowUsed"`
+	RowDown string `json:"rowDown"`
+	RowUp   string `json:"rowUp"`
 }
 
 // onlineWindow is how recent a handshake has to be for a device to count as
@@ -296,7 +304,8 @@ func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, to
 		Percent: v.Percent, PercentTxt: v.PercentTxt,
 		Down: humanBytes(page.DownBytes), Up: humanBytes(page.UpBytes),
 		Expiry: v.Expiry, ExpiryChip: v.ExpiryChip, ExpiryCls: v.ExpiryCls,
-		LastOnline: v.LastOnline, Devices: len(page.Devices), OwnUsed: v.OwnUsed,
+		LastOnline: v.LastOnline, Devices: len(page.Devices),
+		RowUsed: v.RowUsed, RowDown: v.RowDown, RowUp: v.RowUp,
 	}
 	if page.LastOnline != nil && time.Since(*page.LastOnline) < onlineWindow {
 		st.Online = true
@@ -382,10 +391,13 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 	}
 	// Each QR is its pattern, drawn by the page when it is opened (subqr.go).
 	v.SubQR = subQR(page.SubURL)
+	v.RowDown, v.RowUp, v.RowUsed = humanBytes(page.DownBytes), humanBytes(page.UpBytes), v.Used
 	if page.PlanUsers > 1 {
 		v.PlanUsers = page.PlanUsers
 		if page.OwnUser > 0 {
-			v.OwnUser, v.OwnUsed = page.OwnUser, humanBytes(page.OwnUsedBytes)
+			v.OwnUser = page.OwnUser
+			v.RowDown, v.RowUp = humanBytes(page.OwnDownBytes), humanBytes(page.OwnUpBytes)
+			v.RowUsed = humanBytes(page.OwnDownBytes + page.OwnUpBytes)
 		}
 	}
 	for _, u := range page.Users {
@@ -1007,12 +1019,11 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
           {{ else if eq .StatusKey "unlimited" }}<span class="tag purple" data-i="unlimited">Unlimited</span>
           {{ else }}<span class="tag green" data-i="active">Active</span>{{ end }}
         </td></tr>
-        <tr><th data-i="downloaded">Downloaded</th><td dir="ltr" id="lv-down">{{ bytes .Page.DownBytes }}</td></tr>
-        <tr><th data-i="uploaded">Uploaded</th><td dir="ltr" id="lv-up">{{ bytes .Page.UpBytes }}</td></tr>
-        <tr><th data-i="usage">Usage</th><td dir="ltr" id="lv-used">{{ .Used }}</td></tr>
-        {{ if .PlanUsers }}{{ if .OwnUser }}<tr><th data-i="yourUsage">Your usage</th><td dir="ltr" id="lv-own">{{ .OwnUsed }}</td></tr>
-        {{ end }}<tr><th data-i="totalQuota">Total Quota</th><td><span dir="ltr">{{ .Total }}</span> <span class="tag shared-tag" data-i="sharedTag" data-i-title="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}" title="{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}">shared</span></td></tr>
-        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td><span dir="ltr" id="lv-remained">{{ .Remained }}</span> <span class="tag shared-tag" data-i="sharedTag" data-i-title="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}" title="{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}">shared</span></td></tr>{{ end }}{{ else }}<tr><th data-i="totalQuota">Total Quota</th><td dir="ltr">{{ .Total }}</td></tr>
+        <tr><th data-i="downloaded">Downloaded</th><td dir="ltr" id="lv-down">{{ .RowDown }}</td></tr>
+        <tr><th data-i="uploaded">Uploaded</th><td dir="ltr" id="lv-up">{{ .RowUp }}</td></tr>
+        <tr><th data-i="usage">Usage</th><td dir="ltr" id="lv-used">{{ .RowUsed }}</td></tr>
+        {{ if .PlanUsers }}<tr><th data-i="totalQuota">Total Quota</th><td><span dir="ltr">{{ .Total }}</span> <span class="tag shared-tag" tabindex="0"><span data-i="sharedTag">shared</span><span class="shared-tip" role="tooltip" data-i="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}">{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}</span></span></td></tr>
+        {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td><span dir="ltr" id="lv-remained">{{ .Remained }}</span> <span class="tag shared-tag" tabindex="0"><span data-i="sharedTag">shared</span><span class="shared-tip" role="tooltip" data-i="{{ if .OwnUser }}sharedNoteUser{{ else }}sharedNote{{ end }}">{{ if .OwnUser }}This plan's volume is shared by all its users: the total and the remaining are for everyone together, not for you alone. What one user spends comes off everyone's remaining.{{ else }}The total and the remaining are for all users of this plan together: what one user spends comes off everyone's remaining.{{ end }}</span></span></td></tr>{{ end }}{{ else }}<tr><th data-i="totalQuota">Total Quota</th><td dir="ltr">{{ .Total }}</td></tr>
         {{ if .HasQuota }}<tr><th data-i="remained">Remaining</th><td dir="ltr" id="lv-remained">{{ .Remained }}</td></tr>{{ end }}{{ end }}
         <tr><th data-i="lastOnline">Last Online</th><td dir="ltr" id="lv-last">{{ if .LastOnline }}{{ .LastOnline }}{{ else }}-{{ end }}</td></tr>
         <tr><th data-i="expiry">Expiry</th><td dir="ltr">{{ if .Expiry }}{{ .Expiry }}{{ else }}<span data-i="noExpiry">No expiry</span>{{ end }}</td></tr>
@@ -1633,8 +1644,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
       set('lv-data', st.used);
     }
     set('lv-bar-used', st.used); set('lv-bar-total', st.total);
-    if (st.ownUsed) set('lv-own', st.ownUsed);
-    set('lv-used', st.used); set('lv-down', st.down); set('lv-up', st.up);
+    set('lv-used', st.rowUsed || st.used); set('lv-down', st.rowDown || st.down); set('lv-up', st.rowUp || st.up);
     set('lv-last', st.lastOnline || '-');
     set('lv-expiry', st.expiryChip === 'expired' ? word('expired') : (st.expiryChip || '\u221e'));
     var live = $id('lv-live');

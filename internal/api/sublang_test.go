@@ -131,8 +131,10 @@ func TestTheLanguageMenuOffersEveryLanguage(t *testing.T) {
 }
 
 // A plan shared by several users marks its total and remaining as shared,
-// with what that means on hover; a user's own page also has a row with
-// what they spent; a plan for one is as it was.
+// with what that means on hover or a tap. A user's own page shows that
+// user's own downloaded, uploaded and usage in its table, while the bar and
+// the remaining stay the plan's; the plan's page shows everyone's. A plan
+// for one is as it was.
 func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 	render := func(p *service.SubPage) string {
 		var buf strings.Builder
@@ -142,25 +144,26 @@ func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 		return buf.String()
 	}
 	base := func() *service.SubPage {
-		return &service.SubPage{Name: "Family", Status: "active", QuotaBytes: 50 << 30, UsedBytes: 30 << 30}
+		return &service.SubPage{Name: "Family", Status: "active", QuotaBytes: 50 << 30,
+			UsedBytes: 20 << 30, UpBytes: 3 << 30, DownBytes: 17 << 30}
 	}
 
 	plan := base()
 	plan.PlanUsers = 3
 	html := render(plan)
-	for _, want := range []string{`data-i-title="sharedNote"`, `data-i="sharedTag"`} {
+	for _, want := range []string{`data-i="sharedNote"`, `data-i="sharedTag"`, `class="shared-tip"`,
+		`id="lv-down">17.00 GiB<`, `id="lv-up">3.00 GiB<`, `id="lv-used">20.00 GiB<`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("the plan's page has no %s", want)
 		}
 	}
-	if strings.Contains(html, `id="lv-own"`) {
-		t.Error("the plan's page shows one user's usage")
-	}
 
 	mine := base()
-	mine.PlanUsers, mine.OwnUser, mine.OwnUsedBytes = 3, 2, 10<<30
+	mine.PlanUsers, mine.OwnUser, mine.OwnUpBytes, mine.OwnDownBytes = 3, 2, 2<<30, 8<<30
 	html = render(mine)
-	for _, want := range []string{`data-i-title="sharedNoteUser"`, `data-i="yourUsage"`, `id="lv-own">10.00 GiB<`, `20.00 GiB`} {
+	for _, want := range []string{`data-i="sharedNoteUser"`,
+		`id="lv-down">8.00 GiB<`, `id="lv-up">2.00 GiB<`, `id="lv-used">10.00 GiB<`,
+		`id="lv-bar-used">20.00 GiB<`, `id="lv-remained">30.00 GiB<`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("a user's page has no %s", want)
 		}
@@ -169,7 +172,10 @@ func TestASharedPlanSaysItsAllowanceIsEveryones(t *testing.T) {
 	one := base()
 	one.PlanUsers = 1
 	html = render(one)
-	if strings.Contains(html, "sharedTag") || strings.Contains(html, "yourUsage") {
+	if strings.Contains(html, "sharedTag") || strings.Contains(html, "shared-tip") {
 		t.Error("a plan for one says it is shared")
+	}
+	if !strings.Contains(html, `<td dir="ltr" id="lv-used">20.00 GiB</td>`) {
+		t.Error("a plan for one does not show its usage as before")
 	}
 }
