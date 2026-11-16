@@ -362,6 +362,36 @@ func TestASilentOldSessionBesideANewOneIsOneConnection(t *testing.T) {
 	}
 }
 
+// The same network change as the server really reports it. OpenVPN goes on
+// pinging a session it has not yet noticed is dead -- every ten seconds, until
+// ping-restart gives up on it a minute later -- so what the server sends to
+// the old address keeps growing while nothing comes back from it. Only what
+// the device sends says it is there: one device, not held off. Before, the
+// server's own pings counted as the old session moving, the two sessions
+// overlapped, and the customer's one phone was held off as a second device
+// and refused with AUTH_FAILED until the hold ran out.
+func TestServerPingsToADeadSessionDoNotMakeItLive(t *testing.T) {
+	c := newConcurrency()
+	t0 := time.Now()
+	client := &model.Client{ID: 1, DeviceLimit: 1}
+	accs := []model.Account{{ID: 10}}
+	at := func(s int) time.Time { return t0.Add(time.Duration(s) * time.Second) }
+	ses := func(rx, tx uint64, ep string) backend.Stat {
+		return backend.Stat{AccountID: 10, RX: rx, TX: tx, Endpoint: ep}
+	}
+	c.observe([]backend.Stat{ses(5000, 9000, "1.1.1.1:40000")}, at(0))
+	c.observe([]backend.Stat{ses(6000, 11000, "1.1.1.1:40000")}, at(2))
+	// Wifi drops. The phone is back over mobile data at once; the server
+	// still pings the old session, which never answers.
+	for s, tx := 4, uint64(11100); s <= 60; s, tx = s+2, tx+100 {
+		new := uint64(100 * s)
+		c.observe([]backend.Stat{ses(6000, tx, "1.1.1.1:40000"), ses(new, new, "2.2.2.2:50000")}, at(s))
+		if got := c.enforce(client, accs, at(s)); got != nil {
+			t.Fatalf("one phone that changed network was held off at %ds: %+v", s, got)
+		}
+	}
+}
+
 // A router whose session was replaced by another device signs straight
 // back in, and the two take the sign-in from each other, one session at a
 // time: the address flips back and forth, which is two devices.

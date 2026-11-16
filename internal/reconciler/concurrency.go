@@ -177,9 +177,17 @@ func (c *concurrency) observe(stats []backend.Stat, now time.Time) {
 	}
 }
 
+// heard is what a session's device has sent: the one counter that says the
+// device is there. What the server sends is not -- OpenVPN goes on pinging a
+// session for a minute after its device has gone, and traffic from the
+// internet still heads for a WireGuard peer that has left -- so a session
+// counted by both would look live beside the device's new one, and a phone
+// that only changed network would be held off as a second device.
+func heard(s backend.Stat) uint64 { return s.RX }
+
 // observeOne folds in the one reading a credential has this tick.
 func (c *concurrency) observeOne(s backend.Stat, now time.Time) {
-	total := s.RX + s.TX
+	total := heard(s)
 	a := c.acts[s.AccountID]
 	if a == nil {
 		// First sight: remembered, not counted. A peer that was on before
@@ -225,7 +233,7 @@ func (c *concurrency) observeSessions(id uint, ss []backend.Stat, now time.Time)
 	for _, s := range ss {
 		key := s.Endpoint
 		present[key] = true
-		bytes := s.RX + s.TX
+		bytes := heard(s)
 		total += bytes
 		sa := a.sessions[key]
 		if sa == nil {
