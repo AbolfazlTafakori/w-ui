@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/keyfile"
 )
 
@@ -197,6 +198,7 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 
 	hasDB := false
 	hasExport := false
+	var parts []string
 	for _, rel := range entries {
 		if dbFile != "" && rel == dbFile {
 			hasDB = true
@@ -204,17 +206,33 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		if rel == ExportFile {
 			hasExport = true
 		}
+		if isDumpPart(rel) {
+			parts = append(parts, rel)
+		}
 	}
+	hasDump := len(parts) > 0
 	// An archive taken on the other engine may still carry a SQLite file --
 	// one left behind by a move -- which is not the data. The dump says
 	// which engine it came from, and that is what decides.
 	byFile := hasDB
-	if hasDB && hasExport && dumpDriver(filepath.Join(staging, ExportFile)) != "sqlite" {
+	switch {
+	case hasDB && hasDump && stagedDumpDriver(staging, parts) != "sqlite":
+		byFile = false
+	case hasDB && !hasDump && hasExport && dumpDriver(filepath.Join(staging, ExportFile)) != "sqlite":
 		byFile = false
 	}
 	switch {
 	case byFile:
 		// The exact file wins; the dump is only for crossing engines.
+	case hasDump:
+		// The dump, joined for the load at the next start. The older JSON
+		// copy, if an archive somehow has both, is not used.
+		if err := joinDumpParts(staging, dataDir, parts); err != nil {
+			log.Error("could not keep the database dump for loading; starting on the existing data", "error", err)
+			_ = os.RemoveAll(staging)
+			return "", nil, false
+		}
+		log.Info("the archive has no database file for this engine; its database dump will be loaded")
 	case hasExport:
 		log.Info("the archive has no database file for this engine; its portable dump will be loaded")
 	default:
@@ -234,8 +252,11 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		if strings.HasPrefix(rel, keyfile.Dir+"/") {
 			continue
 		}
+		if isDumpPart(rel) {
+			continue // joined above, or not needed
+		}
 		if rel == ExportFile {
-			if byFile {
+			if byFile || hasDump {
 				continue
 			}
 			// Kept where the caller looks for it after the database is open.
@@ -307,9 +328,22 @@ func collectFiles(root string) ([]string, error) {
 // chose from a list, and an upload has none yet, so saying ".wui-upload-2650995218
 // is damaged" tells them about a file they have never seen.
 func (s *Service) verify(path, label string) error {
+	_, err := s.check(path, label)
+	return err
+}
+
+// Check reads an archive through without restoring it -- every member, the
+// gzip checksum, and the database dump's own counts and checksums -- and says
+// what database it carries: the dump's tables and rows, or nil for an archive
+// that holds only a SQLite file or the older JSON copy.
+func (s *Service) Check(path string) (*database.DumpSummary, error) {
+	return s.check(path, filepath.Base(path))
+}
+
+func (s *Service) check(path, label string) (*database.DumpSummary, error) {
 	gz, f, err := s.open(path, label)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 	defer gz.Close()
@@ -317,6 +351,11 @@ func (s *Service) verify(path, label string) error {
 	tr := tar.NewReader(gz)
 	var total int64
 	seenDB := false
+	// The dump's parts are checked as they go past: every table's count and
+	// checksum, and that the dump is whole. An archive whose database copy
+	// does not check out is refused here, before anything is touched.
+	dump := newDumpChecker()
+	defer dump.finish()
 
 	for {
 		hdr, err := tr.Next()
@@ -324,37 +363,46 @@ func (s *Service) verify(path, label string) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("backup: %q is damaged: %w", label, err)
+			return nil, fmt.Errorf("backup: %q is damaged: %w", label, err)
 		}
 		if _, err := safeJoin("", hdr.Name); err != nil {
-			return err
+			return nil, err
 		}
 		if hdr.Size > maxRestoreFile {
-			return fmt.Errorf("backup: %q contains a file far too large to be one of ours", label)
+			return nil, fmt.Errorf("backup: %q contains a file far too large to be one of ours", label)
 		}
 		total += hdr.Size
 		if total > maxRestoreTotal {
-			return fmt.Errorf("backup: %q expands to more than this can restore", label)
+			return nil, fmt.Errorf("backup: %q expands to more than this can restore", label)
 		}
 		// The database, in either of its shapes: the SQLite file, or the
 		// portable dump a PostgreSQL panel's archive carries instead.
-		if strings.HasSuffix(hdr.Name, ".db") || hdr.Name == ExportFile {
+		if strings.HasSuffix(hdr.Name, ".db") || hdr.Name == ExportFile || isDumpPart(hdr.Name) {
 			seenDB = true
 		}
 		// Read the member out rather than skipping it: the checksum at the end
 		// of the gzip stream is only checked once the bytes have gone through.
-		if _, err := io.Copy(io.Discard, tr); err != nil {
+		if isDumpPart(hdr.Name) {
+			err = dump.part(hdr.Name, tr)
+		} else {
+			_, err = io.Copy(io.Discard, tr)
+		}
+		if err != nil {
 			if errors.Is(err, ErrWrongPassword) {
-				return err
+				return nil, err
 			}
-			return fmt.Errorf("backup: %q is damaged: %w", label, err)
+			return nil, fmt.Errorf("backup: %q is damaged: %w", label, err)
 		}
 	}
 
 	if !seenDB {
-		return fmt.Errorf("backup: %q holds no database, so it is not a W-UI backup", label)
+		return nil, fmt.Errorf("backup: %q holds no database, so it is not a W-UI backup", label)
 	}
-	return nil
+	sum, err := dump.finish()
+	if err != nil {
+		return nil, fmt.Errorf("backup: %q: %w", label, err)
+	}
+	return sum, nil
 }
 
 // unpack extracts into a directory, returning the relative names written.

@@ -10,7 +10,6 @@ package backup
 import (
 	"archive/tar"
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -77,16 +76,19 @@ type Options struct {
 	// a restore, in place of the dump that carries the real data.
 	DBFile string
 
-	// Export writes the database as a portable dump -- every table as JSON,
-	// independent of the engine. It goes into every archive beside the
-	// SQLite snapshot, so a backup taken on one engine restores into the
-	// other, and one taken by an older panel restores into a newer one.
-	Export func(ctx context.Context, w io.Writer) error
+	// Dump streams the database as a portable dump (database.WriteDump):
+	// independent of the engine, consistent, checksummed. It goes into every
+	// archive beside the SQLite snapshot, in parts (dumpparts.go), so a
+	// backup taken on one engine restores into the other -- and on
+	// PostgreSQL it is the database.
+	Dump func(ctx context.Context, w io.Writer) error
 
 	Log *slog.Logger
 }
 
-// ExportFile is the portable dump's name inside an archive.
+// ExportFile is the first portable format's name inside an archive: every
+// table in one JSON document. No longer written; an archive that has it
+// still restores.
 const ExportFile = "wui-export.json"
 
 // Service takes and prunes backups.
@@ -95,7 +97,7 @@ type Service struct {
 	dir      string
 	keep     int
 	snapshot func(context.Context, string) error
-	export   func(context.Context, io.Writer) error
+	dump     func(context.Context, io.Writer) error
 	dbFile   string
 	log      *slog.Logger
 
@@ -118,7 +120,7 @@ func New(o Options) *Service {
 		dir:      dir,
 		keep:     o.Keep,
 		snapshot: o.Snapshot,
-		export:   o.Export,
+		dump:     o.Dump,
 		dbFile:   o.DBFile,
 		log:      log,
 	}
@@ -380,7 +382,7 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 			return filepath.SkipDir
 		}
 		// A dump waiting to be loaded is not data yet.
-		if d.Name() == PendingImportFile {
+		if d.Name() == PendingImportFile || d.Name() == PendingDumpFile || d.Name() == PendingDumpFile+".tmp" {
 			return nil
 		}
 		if d.IsDir() {
@@ -452,23 +454,24 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		return err
 	}
 
-	// The portable dump, last. Its size is not known until it is written, so
-	// it goes through a buffer; a database is small next to a year of
-	// archives of it.
-	if s.export != nil {
-		var buf bytes.Buffer
-		if err := s.export(ctx, &buf); err != nil {
-			s.log.Warn("could not write the portable dump into the backup", "error", err)
-		} else {
-			hdr := &tar.Header{Name: ExportFile, Mode: 0o600, Size: int64(buf.Len()), ModTime: time.Now(), Typeflag: tar.TypeReg}
-			if err := tw.WriteHeader(hdr); err != nil {
-				return fmt.Errorf("backup: write header for %s: %w", ExportFile, err)
-			}
-			if _, err := io.Copy(tw, &buf); err != nil {
-				return fmt.Errorf("backup: write %s: %w", ExportFile, err)
-			}
-			carriesDB = true
+	// The portable dump, last, in parts as it is read from the database: a
+	// part in memory at a time, however large the panel. A dump that fails
+	// part way leaves the parts written so far in the archive, which a
+	// restore refuses -- they lack the dump's end -- so a failure here fails
+	// the backup rather than leave one that cannot be restored.
+	if s.dump != nil {
+		pw := newPartWriter(tw)
+		err := s.dump(ctx, pw)
+		if err == nil {
+			err = pw.Close()
 		}
+		if err != nil {
+			if !carriesDB {
+				return fmt.Errorf("backup: the database could not be copied: %w", err)
+			}
+			return fmt.Errorf("backup: the portable copy of the database failed: %w", err)
+		}
+		carriesDB = true
 	}
 	if !carriesDB {
 		return fmt.Errorf("backup: the database could not be copied, so no backup was written; see the log for why")

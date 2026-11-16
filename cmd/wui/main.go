@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -662,6 +663,16 @@ func fileExists(p string) bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
+func loadPendingDump(db *gorm.DB, cfg config.Config, path string, log *slog.Logger) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = database.LoadDump(context.Background(), db, cfg.DBDriver, bufio.NewReaderSize(f, 256<<10), log)
+	return err
+}
+
 func importPending(db *gorm.DB, cfg config.Config, path string, log *slog.Logger) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -697,8 +708,9 @@ func newBackupService(db *gorm.DB, cfg config.Config, dir string, log *slog.Logg
 		Log:      log,
 		Snapshot: snapshot,
 		// And, for every engine, the copy that restores into any other.
-		Export: func(ctx context.Context, w io.Writer) error {
-			return database.Export(ctx, db, cfg.DBDriver, version, w)
+		Dump: func(ctx context.Context, w io.Writer) error {
+			_, err := database.WriteDump(ctx, db, cfg.DBDriver, version, w)
+			return err
 		},
 	})
 }

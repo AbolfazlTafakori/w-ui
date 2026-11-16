@@ -60,7 +60,24 @@ func openPanelDatabase(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 	}
 
 	// A restore that crossed engines, or came from a panel on the other one:
-	// the archive's portable dump is loaded now that the schema is current.
+	// the archive's database dump is loaded now that the schema is current.
+	// One transaction, checked to its last line: a dump that does not check
+	// out leaves the database exactly as it was, and is set aside.
+	if pending := filepath.Join(cfg.DataDir, backup.PendingDumpFile); fileExists(pending) {
+		if err := loadPendingDump(db, cfg, pending, log); err != nil {
+			log.Error("the restored backup could not be loaded into the database; the panel is running on the data it had",
+				"error", err, "kept", pending+".failed")
+			if err := os.Rename(pending, pending+".failed"); err != nil {
+				log.Warn("could not set the failed restore aside", "error", err)
+			}
+		} else {
+			if err := os.Remove(pending); err != nil {
+				log.Warn("could not remove the loaded restore", "error", err)
+			}
+			restored = true
+		}
+	}
+	// The same for an archive from before the dump: its one JSON document.
 	if pending := filepath.Join(cfg.DataDir, backup.PendingImportFile); fileExists(pending) {
 		if err := importPending(db, cfg, pending, log); err != nil {
 			log.Error("the restored backup could not be loaded into the database; the panel is running on the data it had",

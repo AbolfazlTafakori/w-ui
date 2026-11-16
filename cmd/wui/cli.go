@@ -93,6 +93,9 @@ Usage:
   wui backup create [--dir DIR]    take a backup, the same archive the panel
                                    takes; prints its path
   wui backup list [--dir DIR]      the backups in that directory
+  wui backup check FILE            read an archive through without
+                                   restoring it: whole, and its database
+                                   copy matching every table's checksum
   wui backup restore FILE          stage a restore; applied when the panel
                                    next starts. A backup from either
                                    database engine restores into either.
@@ -671,6 +674,24 @@ func cmdBackup(args []string) error {
 		for _, a := range list {
 			fmt.Printf("%s\t%d\t%s\n", a.Name, a.Size, a.Taken.Format(time.RFC3339))
 		}
+		return nil
+
+	case "check":
+		// Read through without restoring: the archive whole, and its
+		// database copy to the last row, every table counted and checksummed.
+		if len(positional) != 1 {
+			return errors.New("backup check: give the archive's path")
+		}
+		sum, err := svc.Check(positional[0])
+		if err != nil {
+			return err
+		}
+		if sum == nil {
+			fmt.Println("ok: the archive is whole; its database is a SQLite file or an older JSON copy, which a restore checks as it loads")
+			return nil
+		}
+		fmt.Printf("ok: the archive is whole; its database copy holds %d tables and %d rows, every one matching its checksum (taken %s on %s, version %s)\n",
+			len(sum.Tables), sum.Rows, sum.Header.TakenAt.Format(time.RFC3339), sum.Header.Driver, sum.Header.Version)
 		return nil
 
 	case "restore":

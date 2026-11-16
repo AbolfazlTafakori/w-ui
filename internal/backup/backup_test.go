@@ -376,8 +376,8 @@ func TestAFailedSnapshotFallsBackToTheDumpNotTheLiveFile(t *testing.T) {
 		Snapshot: func(context.Context, string) error {
 			return io.ErrUnexpectedEOF
 		},
-		Export: func(_ context.Context, w io.Writer) error {
-			_, err := io.WriteString(w, `{"format":1,"driver":"sqlite"}`)
+		Dump: func(_ context.Context, w io.Writer) error {
+			_, err := io.WriteString(w, `{"wui":"dump","format":2,"driver":"sqlite"}`+"\n")
 			return err
 		},
 	})
@@ -390,7 +390,7 @@ func TestAFailedSnapshotFallsBackToTheDumpNotTheLiveFile(t *testing.T) {
 	if _, has := got["wui.db"]; has {
 		t.Error("the live database file was archived in place of the failed snapshot")
 	}
-	if got[ExportFile] == "" {
+	if got[DumpDir+"/00001.jsonl"] == "" {
 		t.Error("the portable dump is missing, so the backup carries no database")
 	}
 }
@@ -410,7 +410,7 @@ func TestABackupWithNoDatabaseIsNotWritten(t *testing.T) {
 		Snapshot: func(context.Context, string) error {
 			return io.ErrUnexpectedEOF
 		},
-		Export: func(context.Context, io.Writer) error {
+		Dump: func(context.Context, io.Writer) error {
 			return io.ErrUnexpectedEOF
 		},
 	})
