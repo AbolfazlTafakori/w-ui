@@ -147,7 +147,7 @@ func TestIKEv2CertificatesFollowTheDevices(t *testing.T) {
 	if err := db.Where("kind = ?", model.KindLocal).First(&local).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now()); err != nil {
+	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now(), true); err != nil {
 		t.Fatal(err)
 	}
 	acc := accountsOn(t, db, c.ID, ike.ID)[0]
@@ -157,7 +157,7 @@ func TestIKEv2CertificatesFollowTheDevices(t *testing.T) {
 		t.Fatalf("device certificate %+v", cert.Subject)
 	}
 	// A second pass leaves a current certificate alone.
-	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now()); err != nil {
+	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now(), true); err != nil {
 		t.Fatal(err)
 	}
 	if again := accountsOn(t, db, c.ID, ike.ID)[0]; again.CertPEM != acc.CertPEM {
@@ -167,7 +167,7 @@ func TestIKEv2CertificatesFollowTheDevices(t *testing.T) {
 	if err := db.Model(&model.Account{}).Where("id = ?", acc.ID).Update("username", "roya2").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now()); err != nil {
+	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now(), true); err != nil {
 		t.Fatal(err)
 	}
 	if cn := parseCert(t, accountsOn(t, db, c.ID, ike.ID)[0].CertPEM).Subject.CommonName; cn != "roya2" {
@@ -179,7 +179,7 @@ func TestIKEv2CertificatesFollowTheDevices(t *testing.T) {
 	if _, err := ifs.Update(ctx, ike.ID, UpdateInterfaceInput{EndpointHost: &host}); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now()); err != nil {
+	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now(), true); err != nil {
 		t.Fatal(err)
 	}
 	var moved model.Interface
@@ -226,5 +226,66 @@ func TestModesNoneIsAll(t *testing.T) {
 	}
 	if _, err := ikev2Modes([]string{"eap"}); err == nil || !strings.Contains(err.Error(), "eap") {
 		t.Fatal(err)
+	}
+}
+
+// The quick pass looks only at devices with no certificate; the full one
+// also finds a certificate gone stale -- here, a device renamed -- and both
+// stop between keys when told to.
+func TestTheQuickPassIssuesOnlyWhatIsMissing(t *testing.T) {
+	db, _ := seeded(t)
+	pools := ipam.NewPools()
+	ifs := NewInterfaces(db, pools, quietLog())
+	ike, err := createIKEv2(t, ifs, CreateInterfaceInput{IKEv2Modes: []string{"mschapv2", "rsa"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients := NewClients(db, pools, quietLog())
+	ctx := context.Background()
+	var local model.Node
+	if err := db.Where("kind = ?", model.KindLocal).First(&local).Error; err != nil {
+		t.Fatal(err)
+	}
+	c, err := clients.Create(ctx, CreateInput{Name: "Roya", InterfaceIDs: []uint{ike.ID}, DeviceLimit: 1,
+		OpenVPNUsername: "roya", OpenVPNPassword: "s3cret-pass"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now(), false); err != nil {
+		t.Fatal(err)
+	}
+	acc := accountsOn(t, db, c.ID, ike.ID)[0]
+	if acc.CertPEM == "" {
+		t.Fatal("the quick pass did not issue a missing certificate")
+	}
+
+	// Renamed: the quick pass does not read certificates, the full one does.
+	if err := db.Model(&model.Account{}).Where("id = ?", acc.ID).Update("username", "roya2").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now(), false); err != nil {
+		t.Fatal(err)
+	}
+	if accountsOn(t, db, c.ID, ike.ID)[0].CertPEM != acc.CertPEM {
+		t.Fatal("the quick pass read and replaced a certificate it should not have looked at")
+	}
+	if err := EnsureIKEv2Certs(ctx, db, local.ID, time.Now(), true); err != nil {
+		t.Fatal(err)
+	}
+	if cn := parseCert(t, accountsOn(t, db, c.ID, ike.ID)[0].CertPEM).Subject.CommonName; cn != "roya2" {
+		t.Fatalf("the full pass left a certificate for %q", cn)
+	}
+
+	// Stopped: no key is made after it is told to stop.
+	if err := db.Model(&model.Account{}).Where("id = ?", acc.ID).Updates(map[string]any{"cert_pem": "", "cert_key_pem": ""}).Error; err != nil {
+		t.Fatal(err)
+	}
+	done, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := EnsureIKEv2Certs(done, db, local.ID, time.Now(), false); err == nil {
+		t.Fatal("a stopped pass carried on")
+	}
+	if accountsOn(t, db, c.ID, ike.ID)[0].CertPEM != "" {
+		t.Fatal("a key was made after the pass was told to stop")
 	}
 }

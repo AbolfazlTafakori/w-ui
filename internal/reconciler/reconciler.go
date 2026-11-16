@@ -215,6 +215,7 @@ func New(o Options) *Reconciler {
 // Start runs the loop until ctx is done.
 func (r *Reconciler) Start(ctx context.Context) {
 	r.writer.start(ctx)
+	go r.issueCertificates(ctx)
 
 	go func() {
 		t := time.NewTicker(r.interval)
@@ -234,6 +235,48 @@ func (r *Reconciler) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// IKEv2 device certificates are made beside the reconciler, never on its
+// pass. A device without one is looked for every certNewEvery, which is one
+// indexed question; every device's certificate is read for its expiry and
+// its name every certFullEvery. A device whose certificate arrives is
+// described to its tunnel on the next pass.
+const (
+	certNewEvery  = 5 * time.Second
+	certFullEvery = time.Minute
+)
+
+func (r *Reconciler) issueCertificates(ctx context.Context) {
+	t := time.NewTicker(certNewEvery)
+	defer t.Stop()
+	var lastFull time.Time
+	for {
+		now := time.Now()
+		full := now.Sub(lastFull) >= certFullEvery
+		// Every server this panel makes certificates for: its own, and the
+		// nodes it manages.
+		var nodes []uint
+		if err := r.db.WithContext(ctx).Model(&model.Node{}).Order("id").Pluck("id", &nodes).Error; err != nil && ctx.Err() == nil {
+			r.log.Error("IKEv2 certificates: read the servers", "error", err)
+		}
+		if len(nodes) == 0 {
+			nodes = []uint{r.localNodeID}
+		}
+		for _, id := range nodes {
+			if err := service.EnsureIKEv2Certs(ctx, r.db, id, now, full); err != nil && ctx.Err() == nil {
+				r.log.Error("IKEv2 certificates", "node", id, "error", err)
+			}
+		}
+		if full {
+			lastFull = now
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // AddNodeReport folds what a remote node counted into the customers' totals
@@ -789,11 +832,6 @@ func serviceableFor(c *model.Client, suspended map[uint]bool) bool {
 
 // readDesired builds the target state from the database in two queries.
 func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
-	// Before the accounts are read, so a device given a certificate on this
-	// pass is described to its tunnel with it.
-	if err := service.EnsureIKEv2Certs(ctx, r.db, r.localNodeID, time.Now()); err != nil {
-		r.log.Error("IKEv2 certificates", "error", err)
-	}
 	if err := service.EnsureOpenConnectCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
 		r.log.Error("OpenConnect certificates", "error", err)
 	}

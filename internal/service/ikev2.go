@@ -97,7 +97,16 @@ func deviceCertStale(certPEM, username string, ca *x509.Certificate, now time.Ti
 // username or a tunnel can leave a device with a certificate for somebody
 // else. A new key is slow to make, which is why a certificate is only
 // issued when it has to be.
-func EnsureIKEv2Certs(ctx context.Context, db *gorm.DB, nodeID uint, now time.Time) error {
+//
+// It runs beside the reconciler, never inside its pass: a key takes a tenth
+// of a second or more, and a batch of thousands of IKEv2 customers held the
+// reconciler for the better part of an hour -- no new peers on any tunnel,
+// no plan ended, for every customer on the panel. full is the whole check,
+// every device's certificate read for its expiry and its name; without it
+// only devices with no certificate yet are looked at, which is one indexed
+// question however many devices the tunnel has. It stops between keys when
+// ctx is done.
+func EnsureIKEv2Certs(ctx context.Context, db *gorm.DB, nodeID uint, now time.Time, full bool) error {
 	var ifaces []model.Interface
 	// Not a tunnel a panel manages here: its authority stays with that
 	// panel, and what it needs arrives with it.
@@ -133,11 +142,18 @@ func EnsureIKEv2Certs(ctx context.Context, db *gorm.DB, nodeID uint, now time.Ti
 			return fmt.Errorf("service: %s's authority: %w", f.Name, err)
 		}
 		var accs []model.Account
-		if err := db.WithContext(ctx).Where("interface_id = ?", f.ID).Find(&accs).Error; err != nil {
+		q := db.WithContext(ctx).Where("interface_id = ? AND username <> ''", f.ID)
+		if !full {
+			q = q.Where("cert_pem = '' OR cert_pem IS NULL")
+		}
+		if err := q.Order("id").Find(&accs).Error; err != nil {
 			return fmt.Errorf("service: load %s's devices: %w", f.Name, err)
 		}
 		auth := ikev2conf.Authority{Cert: p.CACert, Key: p.CAKey}
 		for _, a := range accs {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if a.Username == "" || !deviceCertStale(a.CertPEM, a.Username, ca, now) {
 				continue
 			}

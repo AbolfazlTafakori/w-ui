@@ -203,7 +203,7 @@ func TestANodeIsHandedItsIKEv2AndOpenConnectTunnels(t *testing.T) {
 		t.Fatalf("the device's certificate: %q %v", acc.CertPEM, err)
 	}
 	// The node's own passes leave them alone.
-	if err := EnsureIKEv2Certs(ctx, db, 1, time.Now().Add(5000*24*time.Hour)); err != nil {
+	if err := EnsureIKEv2Certs(ctx, db, 1, time.Now().Add(5000*24*time.Hour), true); err != nil {
 		t.Fatal(err)
 	}
 	if err := EnsureOpenConnectCerts(ctx, db, 1, PanelCert{}, time.Now().Add(5000*24*time.Hour)); err != nil {

@@ -1,0 +1,55 @@
+package reconciler
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/ikev2conf"
+)
+
+// A pass of the reconciler makes no certificate. Hundreds of IKEv2 devices
+// waiting for theirs -- a batch of customers just sold -- used to hold the
+// pass while a key was made for each, a tenth of a second or more apiece:
+// no peer added on any tunnel and no plan ended on the whole panel until the
+// last was done. The pass now takes as long with them as without them, and
+// the certificates are left to the worker beside it.
+func TestAPassMakesNoCertificates(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Create(&model.Node{Name: "local", Kind: model.KindLocal, Enabled: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ca, err := ikev2conf.NewAuthority("ike0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ike := model.Interface{Name: "ike0", Protocol: model.ProtocolIKEv2, Subnet: "10.79.0.0/16", ListenPort: 500,
+		EndpointHost: "vpn.example.com", Enabled: true,
+		IKEv2: model.JSON(model.IKEv2Params{MSCHAPv2: true, RSA: true, CACert: ca.Cert, CAKey: ca.Key})}
+	if err := db.Create(&ike).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 300; i++ {
+		c := model.Client{Name: fmt.Sprintf("c%d", i), Status: model.StatusActive}
+		if err := db.Create(&c).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.Account{ClientID: c.ID, InterfaceID: ike.ID, DeviceName: "d", IP: fmt.Sprintf("10.79.%d.%d", i/250, i%250+2),
+			Username: fmt.Sprintf("u%d", i), Secret: "s"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := newReconciler(t, db)
+	start := time.Now()
+	r.Tick(context.Background())
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("a pass with 300 devices waiting for certificates took %s", took)
+	}
+	var issued int64
+	db.Model(&model.Account{}).Where("cert_pem <> ''").Count(&issued)
+	if issued != 0 {
+		t.Fatalf("the pass made %d certificates itself", issued)
+	}
+}

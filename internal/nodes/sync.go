@@ -299,12 +299,10 @@ func (s *Syncer) customersOf(ctx context.Context, devices []fleet.NodeDeviceUsag
 func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.NodeState, error) {
 	db := s.db.WithContext(ctx)
 
-	// The node's IKEv2 and OpenConnect certificates are this panel's to make
-	// and renew, as for its own tunnels; done before they are read, so a
-	// device added since the last round goes with its certificate.
-	if err := service.EnsureIKEv2Certs(ctx, s.db, nodeID, time.Now()); err != nil {
-		s.log.Warn("IKEv2 certificates for a node", "node", nodeID, "error", err)
-	}
+	// The node's OpenConnect certificate is this panel's to make and renew,
+	// as for its own tunnels. Its IKEv2 devices' certificates are made beside
+	// the reconciler (reconciler.issueCertificates), for every node: a key
+	// is slow, and made here thousands of them held the node's sync back.
 	if err := service.EnsureOpenConnectCerts(ctx, s.db, nodeID, service.PanelCert{}, time.Now()); err != nil {
 		s.log.Warn("OpenConnect certificates for a node", "node", nodeID, "error", err)
 	}
