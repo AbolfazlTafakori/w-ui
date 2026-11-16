@@ -6,6 +6,30 @@ description: "Which app a customer needs for each kind of tunnel on every platfo
 
 What a customer installs for each kind of tunnel, and how they load what you give them. The customer's subscription page has step-by-step device guides for 78 phones, routers and modems, chosen from two lists: the device, then the connection it can make. This page is the overview.
 
+## The W-UI app
+
+W-UI has its own app for **Android** and **Windows**. The customer adds the subscription link once, by pasting it or scanning its QR code, and every server and protocol they have arrives with it and stays up to date: usage, expiry and new servers refresh on their own.
+
+| Platform | Download | Needs |
+|----------|----------|-------|
+| Android | [`W-UI-x.y.z-arm64.apk`](https://github.com/AbolfazlTafakori/w-ui-app/releases/latest) (most phones), `armv7` for older 32-bit phones, `universal` if unsure | Android 8.0 or newer |
+| Windows | [`W-UI-x.y.z-windows-setup.exe`](https://github.com/AbolfazlTafakori/w-ui-app/releases/latest) | Windows 10 or 11, 64-bit; administrator rights once, to install the VPN service |
+
+What it connects with:
+
+| | Android | Windows |
+|---|---|---|
+| WireGuard, AmneziaWG | ✓ | ✓ |
+| OpenVPN | ✓ | ✓ |
+| Stealth transports (veil, drift, relay, anchor, bare, mold, mirror) | ✓ | ✓ |
+| IKEv2, L2TP/IPsec | ✓ | ✓ username and password, or L2TP's pre-shared key (Windows' own VPN) |
+| PPTP | — | ✓ (Windows' own VPN) |
+| OpenConnect | ✓ | — |
+
+Both also take a single WireGuard, AmneziaWG or OpenVPN file without a subscription. On both: a kill switch, split tunnelling (Android by app; Windows by destination, with Iran's addresses as a one-tap list), a real-delay test of every server, an app lock with a PIN (and the fingerprint on Android), English and Persian. Each app updates itself from **Settings → App update**, checking the download against the release's `SHA256SUMS` before it installs. Source of the releases: [w-ui-app](https://github.com/AbolfazlTafakori/w-ui-app).
+
+The stealth transports reach a customer only through the W-UI app: the other apps below carry the plain tunnel.
+
 ## WireGuard
 
 | Platform | App | Import |

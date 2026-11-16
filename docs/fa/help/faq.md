@@ -28,7 +28,7 @@ W-UI جای پنل Xray را نمی‌گیرد و می‌تواند روی آن 
 
 ## با کدام اپ‌ها کار می‌کند؟
 
-اپ‌های WireGuard و AmneziaWG، OpenVPN Connect، Cisco Secure Client یا OpenConnect، و برای IKEv2، L2TP/IPsec و PPTP همان VPN داخلی اندروید، آیفون، مک، ویندوز و بیشتر روترها. [اپ‌های کلاینت](/fa/guide/client-apps) را ببینید.
+[برنامهٔ W-UI](https://github.com/AbolfazlTafakori/w-ui-app/releases/latest) برای اندروید و ویندوز، که لینک سابسکریپشن را می‌گیرد و همهٔ پروتکل‌ها و ترنسپورت‌های پنهان را می‌برد؛ اپ‌های WireGuard و AmneziaWG، OpenVPN Connect، Cisco Secure Client یا OpenConnect، و برای IKEv2، L2TP/IPsec و PPTP همان VPN داخلی اندروید، آیفون، مک، ویندوز و بیشتر روترها. [اپ‌های کلاینت](/fa/guide/client-apps) را ببینید.
 
 ## مشتری می‌تواند مصرفش را ببیند؟
 

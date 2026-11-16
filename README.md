@@ -19,6 +19,7 @@
   <a href="https://abolfazltafakori.github.io/w-ui/">Documentation</a> ·
   <a href="https://abolfazltafakori.github.io/w-ui/fa/">مستندات فارسی</a> ·
   <a href="https://github.com/AbolfazlTafakori/w-ui/releases">Releases</a> ·
+  <a href="https://github.com/AbolfazlTafakori/w-ui-app/releases/latest">Android &amp; Windows app</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="SECURITY.md">Security</a> ·
   <a href="https://t.me/wuipanel">Telegram channel</a>
@@ -59,6 +60,19 @@ It asks a few questions — port, URL path, administrator, database, certificate
 ```
 
 Every question is also a flag, and `-y` skips them all — for cloud-init and CI. Re-running the installer upgrades in place and keeps the port, the path, the database and the administrator. Details, flags and unattended installs: [docs → Install](https://abolfazltafakori.github.io/w-ui/guide/install).
+
+---
+
+## Apps for your customers
+
+W-UI has its own client app. A customer adds their subscription link once (paste it, or scan its QR code) and gets every server and protocol you give them, kept up to date by itself, including the stealth transports no other app speaks.
+
+| | Download | |
+|---|---|---|
+| **Android** 8.0+ | [W-UI for Android](https://github.com/AbolfazlTafakori/w-ui-app/releases/latest) | `arm64` for most phones, `armv7` for older 32-bit ones, `universal` if unsure |
+| **Windows** 10/11 (64-bit) | [W-UI for Windows](https://github.com/AbolfazlTafakori/w-ui-app/releases/latest) | `W-UI-x.y.z-windows-setup.exe`: the app with its VPN service, OpenVPN and Wintun |
+
+WireGuard, AmneziaWG, OpenVPN and the stealth transports on both; IKEv2 and L2TP on both, PPTP on Windows, OpenConnect on Android. Kill switch, split tunnelling, a real-delay test of every server, an app lock, English and Persian; each updates itself and checks the download against `SHA256SUMS`. Plain WireGuard, OpenVPN and the built-in VPNs of every system work too: [Client apps](https://abolfazltafakori.github.io/w-ui/guide/client-apps).
 
 ---
 

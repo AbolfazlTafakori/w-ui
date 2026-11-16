@@ -28,7 +28,7 @@ Yes. There is one owner, any number of panel administrators who look after every
 
 ## Which client apps work?
 
-The WireGuard and AmneziaWG apps, OpenVPN Connect, Cisco Secure Client or OpenConnect, and the VPN built into Android, iPhone, Mac, Windows and most routers for IKEv2, L2TP/IPsec and PPTP. See [Client apps](/guide/client-apps).
+The [W-UI app](https://github.com/AbolfazlTafakori/w-ui-app/releases/latest) for Android and Windows, which takes the subscription link and carries every protocol and stealth transport; the WireGuard and AmneziaWG apps, OpenVPN Connect, Cisco Secure Client or OpenConnect, and the VPN built into Android, iPhone, Mac, Windows and most routers for IKEv2, L2TP/IPsec and PPTP. See [Client apps](/guide/client-apps).
 
 ## Can customers see how much they have used?
 
