@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database"
-	"github.com/abolfazl/w-ui/internal/keyfile"
 )
 
 // Putting an archive back.
@@ -247,9 +246,12 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		if rel == markerFile || rel == localAddressesFile {
 			continue
 		}
-		// This server's own keys stay its own, whatever an archive carries:
-		// none this panel writes has them, and one that does was not.
-		if strings.HasPrefix(rel, keyfile.Dir+"/") {
+		// This server's own keys stay its own, and what the root helpers
+		// read is this server's panel's to write, whatever an archive
+		// carries: none this panel writes has them, and one that does was
+		// not made by it (runtimeDirs).
+		if isRuntime(rel) {
+			log.Warn("left out of the restore: it is not data, and only this server's panel writes it", "file", rel)
 			continue
 		}
 		if isDumpPart(rel) {

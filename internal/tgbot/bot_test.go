@@ -272,3 +272,50 @@ func TestLongMessagesAreSentInPagesThatTelegramTakes(t *testing.T) {
 		t.Fatalf("a short message: %v", ps)
 	}
 }
+
+// pressIn and messageIn are an administrator acting in some other chat -- a
+// group the bot was added to.
+func (f *fixture) pressIn(chat, from int64, data string) {
+	f.bot.handle(context.Background(), update{Callback: &callbackQuery{ID: "q", From: &user{ID: from}, Data: data,
+		Message: &message{ID: 2, Chat: struct {
+			ID int64 `json:"id"`
+		}{ID: chat}}}})
+}
+
+func (f *fixture) messageIn(chat, from int64, text string) {
+	f.bot.handle(context.Background(), update{Message: &message{ID: 1, From: &user{ID: from, FirstName: "x"},
+		Chat: struct {
+			ID int64 `json:"id"`
+		}{ID: chat}, Text: text}})
+}
+
+// What the bot answers goes to the chat it was asked in. An administrator in
+// a group -- the bot added to one -- is answered as anyone is: no backup of
+// the database posted for the whole group, no customer's configurations,
+// nothing an administrator alone may do. In their own chat, all of it.
+func TestAnAdministratorInAGroupIsAnsweredAsAnyoneIs(t *testing.T) {
+	f := newFixture(t)
+	const group = -100123456
+	for _, data := range []string{"backup", "reset_all_confirm", "sorted_report", "all_clients", "ban_logs", "onlines", "c:reset:1"} {
+		f.pressIn(group, adminID, data)
+	}
+	for _, cmd := range []string{"/restart", "/clearall", "/usage sara", "/inbound wg0"} {
+		f.messageIn(group, adminID, cmd)
+	}
+	if f.backups != 0 || f.tg.docs != 0 || f.restarts != 0 {
+		t.Fatalf("in a group: %d backups taken, %d files sent, %d restarts", f.backups, f.tg.docs, f.restarts)
+	}
+	var sara model.Client
+	f.db.Where("name = ?", "sara").First(&sara)
+	if sara.UsedBytes != 1<<30 {
+		t.Fatal("a customer's usage was reset from a group")
+	}
+	if said := f.tg.said(); strings.Contains(said, "203.0.113.9") || strings.Contains(strings.ToLower(said), "sara") {
+		t.Fatalf("the group was told what is the administrator's:\n%s", said)
+	}
+
+	f.press(adminID, "backup")
+	if f.backups != 1 || f.tg.docs != 1 {
+		t.Fatal("in their own chat the administrator did not get their backup")
+	}
+}

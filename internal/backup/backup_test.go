@@ -476,7 +476,7 @@ func TestABackupSkipsAStagedUpdate(t *testing.T) {
 // restored elsewhere it would start that machine's agent on a stale tunnel.
 func TestABackupSkipsTheL2TPAgentsFiles(t *testing.T) {
 	s, data := newService(t, 0)
-	dir := filepath.Join(data, l2tpStateDir)
+	dir := filepath.Join(data, "l2tp")
 	if err := os.MkdirAll(filepath.Join(dir, "kick"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ func TestABackupSkipsTheL2TPAgentsFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name := range entries(t, filepath.Join(s.Dir(), a.Name)) {
-		if strings.HasPrefix(name, l2tpStateDir+"/") {
+		if strings.HasPrefix(name, "l2tp"+"/") {
 			t.Errorf("%s was archived", name)
 		}
 	}

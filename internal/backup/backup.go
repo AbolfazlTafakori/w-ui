@@ -363,26 +363,19 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		if s.dbFile != "" && d.Name() == s.dbFile && !d.IsDir() && dbSnapshot == "" && s.snapshot != nil {
 			return nil
 		}
-		// A release waiting for the root helper, and the helper's answer.
-		// Restored, the request would set the helper off on another machine.
-		if d.IsDir() && clean == filepath.Join(root, updateStageDir) {
-			return filepath.SkipDir
-		}
-		// What the panel tells the L2TP agent and what the agent answers:
-		// rebuilt from the database at every start. Restored on another
-		// machine, the description would start that machine's agent on a
-		// tunnel before its panel had said a word, and a waiting request
-		// would end a session there.
-		if d.IsDir() && (clean == filepath.Join(root, l2tpStateDir) || clean == filepath.Join(root, pptpStateDir)) {
-			return filepath.SkipDir
-		}
-		// The panel's own keys (keyfile): a backup carries nothing that opens
-		// the panel it was taken on.
-		if d.IsDir() && clean == filepath.Join(root, keyfile.Dir) {
-			return filepath.SkipDir
+		// What the root helpers read, and the panel's own keys: never data,
+		// never archived (runtimeDirs).
+		if d.IsDir() {
+			if rel, err := filepath.Rel(root, clean); err == nil && isRuntime(filepath.ToSlash(rel)+"/") {
+				return filepath.SkipDir
+			}
 		}
 		// A dump waiting to be loaded is not data yet.
-		if d.Name() == PendingImportFile || d.Name() == PendingDumpFile || d.Name() == PendingDumpFile+".tmp" {
+		// Nor one that failed to load and was set aside for the operator to
+		// look at: the whole database in the clear, which a backup would
+		// otherwise carry along every time after.
+		switch strings.TrimSuffix(strings.TrimSuffix(d.Name(), ".failed"), ".tmp") {
+		case PendingImportFile, PendingDumpFile:
 			return nil
 		}
 		if d.IsDir() {
@@ -566,16 +559,39 @@ func (s *Service) prune() {
 	}
 }
 
+// runtimeDirs are the directories in the data directory that are not the
+// panel's data but how it talks to the processes that run as root, or its
+// own keys. Every one is rebuilt from the database at start, so a backup
+// never takes them, and a restore never puts them back -- whatever an
+// archive carries, since an archive is a file that may have come from
+// anywhere:
+//
+//   - update: a release waiting for the root update helper, and its answer;
+//   - l2tp, pptp, ikev2, openconnect: what the panel tells the root PPP
+//     agent to run, and its answers -- restored, a description would start
+//     an agent on a tunnel the panel never described;
+//   - firewall: the ports the root firewall helper opens the moment the
+//     file changes -- restored from a crafted archive, any port at all,
+//     open until the panel wrote the file again;
+//   - keys: the panel's own session and backup keys (keyfile), which open
+//     the panel they belong to.
+var runtimeDirs = []string{updateStageDir, "l2tp", "pptp", "ikev2", "openconnect", "firewall", keyfile.Dir}
+
 // updateStageDir is where a downloaded update waits for the root helper,
 // inside the data directory.
 const updateStageDir = "update"
 
-// l2tpStateDir is where the panel and the L2TP agent talk, inside the data
-// directory.
-const l2tpStateDir = "l2tp"
-
-// pptpStateDir is the same for the PPTP tunnel.
-const pptpStateDir = "pptp"
+// isRuntime reports whether a path in an archive, slash-separated and
+// relative to the data directory, lies under one of runtimeDirs.
+func isRuntime(rel string) bool {
+	rel = strings.Trim(filepath.ToSlash(filepath.Clean("/"+rel)), "/")
+	for _, d := range runtimeDirs {
+		if rel == d || strings.HasPrefix(rel, d+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // freeName is base with the archive suffix, or base-2, base-3... when an
 // archive by that name exists: two taken within the same second -- a manual

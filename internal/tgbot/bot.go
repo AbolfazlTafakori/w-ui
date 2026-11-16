@@ -103,6 +103,17 @@ func (b *Bot) isAdmin(id int64) bool {
 	return false
 }
 
+// adminHere reports whether someone is acting as an administrator: one of
+// the configured ids, in their own private chat with the bot. What the bot
+// answers goes to the chat the message or button was in, so an administrator
+// in a group -- the bot added to one, a button pressed there -- would have
+// posted the whole database as a backup, or a customer's configurations, to
+// everyone in it. A private chat's id is its user's own, on Telegram and Bale
+// alike; anywhere else the administrator is answered as anyone is.
+func (b *Bot) adminHere(user, chat int64) bool {
+	return chat == user && b.isAdmin(user)
+}
+
 func (b *Bot) handle(ctx context.Context, u update) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -119,7 +130,7 @@ func (b *Bot) handle(ctx context.Context, u update) {
 
 func (b *Bot) onMessage(ctx context.Context, m *message) {
 	chat := m.Chat.ID
-	admin := b.isAdmin(m.From.ID)
+	admin := b.adminHere(m.From.ID, chat)
 	text := strings.TrimSpace(m.Text)
 
 	b.mu.Lock()
@@ -221,7 +232,7 @@ func (b *Bot) sendMenu(ctx context.Context, chat int64, text string, admin bool)
 
 func (b *Bot) onCallback(ctx context.Context, q *callbackQuery) {
 	chat := q.Message.Chat.ID
-	admin := b.isAdmin(q.From.ID)
+	admin := b.adminHere(q.From.ID, chat)
 	data := q.Data
 	b.answer(ctx, q.ID, "")
 
