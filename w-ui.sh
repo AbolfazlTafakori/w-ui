@@ -2809,7 +2809,12 @@ migrate_engine() {
     fi
     grep -m1 "loaded a database dump\|imported a portable backup" <<< "$log" | sed -E 's/.*msg=//; s/^/  /'
     LOGI "the panel is now on $to, holding exactly the data it had on $from"
-    LOGI "the $from data is kept: $CONF_DIR/db.env.$from$([[ "$to" == sqlite ]] && echo ", $DATA_DIR/wui.db.before-move")"
+    if [[ "$to" == sqlite ]]; then
+        LOGI "the PostgreSQL data is left in its database, connection kept in $CONF_DIR/db.env.$from"
+        [[ -e "$DATA_DIR/wui.db.before-move" ]] && LOGI "the SQLite file that was here before is kept as $DATA_DIR/wui.db.before-move"
+    else
+        LOGI "the SQLite data is left in $DATA_DIR/wui.db, connection kept in $CONF_DIR/db.env.$from"
+    fi
 }
 
 # migrate_back puts the panel back on the engine it was moving from, as it
