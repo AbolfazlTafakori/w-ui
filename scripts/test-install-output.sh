@@ -304,5 +304,31 @@ no_ "REMOVED" "$untouched" "another package left half-configured is not removed"
 grep -q 'drop_failed_amnezia_package$' "$WORK/lib.sh" && on_fail=yes || on_fail=no
 yes_ yes "$on_fail" "a failed module install runs the clean-up before the userspace fallback"
 
+echo
+echo "── the panel's PostgreSQL role reaches its own database and no other ───"
+hba_after() { # hba_after MODE < pg_hba.conf
+  (
+    set +e
+    # shellcheck disable=SC1091
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+    panel_hba "$1"
+  )
+}
+stock=$'local   all             postgres                                peer\nhost    all             all             127.0.0.1/32            scram-sha-256\n'
+fresh=$(hba_after "" <<< "$stock")
+order=$(awk '{print $1, $2, $3, $5}' <<< "$fresh" | grep -v '^#' | head -5 | tr '\n' '|')
+yes_ "host wui wui scram-sha-256|host wui wui scram-sha-256|host all wui reject|host all wui reject|local all wui |" "$order" \
+  "fresh: its database allowed, then every other database refused for the role, before the stock lines"
+yes_ "host    all             all             127.0.0.1/32" "$fresh" "the stock lines are kept"
+again=$(hba_after "" <<< "$fresh")
+yes_ ok "$([[ "$again" == "$fresh" ]] && echo ok)" "running it again changes nothing"
+old=$'# W-UI: its own database and role, over the loopback. Nothing else here was changed.\nhost    wui    wui    127.0.0.1/32    scram-sha-256\nhost    wui    wui    ::1/128         scram-sha-256\n'"$stock"
+upgraded=$(hba_after existing <<< "$old")
+order=$(awk '{print $1, $2, $3, $5}' <<< "$upgraded" | grep -v '^#' | head -5 | tr '\n' '|')
+yes_ "host wui wui scram-sha-256|host wui wui scram-sha-256|host all wui reject|host all wui reject|local all wui |" "$order" \
+  "an install from before: the reject lines go right after its own lines"
+hand=$(hba_after existing <<< "$stock")
+no_ "wui" "$hand" "an install whose PostgreSQL was set up by hand is not touched"
+
 printf '\n  %d passed, %d failed\n\n' "$pass" "$fail"
 [[ "$fail" == 0 ]]

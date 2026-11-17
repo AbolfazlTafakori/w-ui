@@ -2543,27 +2543,66 @@ issue_ip_certificate() {
 # stops working the moment this installer runs. Instead two lines for this
 # panel's database and role alone go first in pg_hba.conf, where the first
 # matching line wins, and every other line is left as it was.
+#
+# The role is also kept out of every other database. PostgreSQL grants CONNECT
+# on the postgres maintenance database to PUBLIC, so the panel's role could
+# open it; revoking that from PUBLIC would lock out every other project's
+# roles too. Two reject lines for the role wui alone, right after its own
+# lines, close it -- and template1, and anything made later -- for the panel
+# and for no one else.
+#
+# With "existing" -- an install whose database was set up before -- the
+# reject lines are added only where the allow lines are this installer's: a
+# PostgreSQL the operator set up by hand is not touched.
 allow_panel_login() {
-  local hba
+  local mode="${1:-}" hba
   hba="$(runuser -u postgres -- psql -qAt -c 'SHOW hba_file' 2>/dev/null || true)"
   if [[ -z "$hba" || ! -f "$hba" ]]; then
+    [[ "$mode" == existing ]] && return 0
     warn "could not find pg_hba.conf; if the panel cannot sign in to its database, allow the role wui over 127.0.0.1 with scram-sha-256"
     return 0
   fi
-  grep -Eq '^host[[:space:]]+wui[[:space:]]+wui[[:space:]]+127[.]0[.]0[.]1/32' "$hba" && return 0
   local tmp
   tmp="$(mktemp)"
-  {
-    printf '# W-UI: its own database and role, over the loopback. Nothing else here was changed.\n'
-    printf 'host    wui    wui    127.0.0.1/32    scram-sha-256\n'
-    printf 'host    wui    wui    ::1/128         scram-sha-256\n'
-    cat "$hba"
-  } > "$tmp"
+  panel_hba "$mode" < "$hba" > "$tmp"
+  if cmp -s "$tmp" "$hba"; then
+    rm -f "$tmp"
+    return 0
+  fi
   # Written through, not moved: the file keeps its owner and permissions.
   cat "$tmp" > "$hba"
   rm -f "$tmp"
   runuser -u postgres -- psql -qAt -c 'SELECT pg_reload_conf()' >/dev/null 2>&1 || true
-  ok "PostgreSQL allows the panel's role into its database; other databases untouched"
+  ok "PostgreSQL allows the panel's role into its database and no other; other roles untouched"
+}
+
+# panel_hba is pg_hba.conf (stdin) with the panel's lines (stdout): its allow
+# lines first, where they are not there yet, and its reject lines right after
+# them. Running it again changes nothing.
+panel_hba() {
+  awk -v mode="${1:-}" '
+    function rejects() {
+      print "host    all    wui    127.0.0.1/32    reject"
+      print "host    all    wui    ::1/128         reject"
+      # The panel signs in over the loopback, never the socket; there,
+      # peer would let the system user wui in as the role wui anywhere.
+      print "local   all    wui                     reject"
+    }
+    { lines[NR] = $0 }
+    $1 == "host" && $2 == "wui" && $3 == "wui" { allow = NR }
+    $1 == "host" && $2 == "all" && $3 == "wui" && $5 == "reject" { denied = 1 }
+    END {
+      if (!allow && mode != "existing") {
+        print "# W-UI: its own database and role, over the loopback, and no other database for the role. Nothing else here was changed."
+        print "host    wui    wui    127.0.0.1/32    scram-sha-256"
+        print "host    wui    wui    ::1/128         scram-sha-256"
+        rejects()
+      }
+      for (i = 1; i <= NR; i++) {
+        print lines[i]
+        if (i == allow && !denied) rejects()
+      }
+    }'
 }
 
 # The database the panel opens. SQLite is one file under the data directory
@@ -2586,6 +2625,10 @@ setup_database() {
   if [[ -n "$DB_SOURCE" ]] && [[ "$DB_SOURCE" == postgres://* ]]; then
     ok "PostgreSQL, as already configured"
     ensure_postgres_running
+    # An install from before the panel's role was kept to its database.
+    if [[ "$DB_SOURCE" == *@127.0.0.1:* ]] && id postgres >/dev/null 2>&1; then
+      allow_panel_login existing
+    fi
     return 0
   fi
 
