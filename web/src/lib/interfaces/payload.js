@@ -51,6 +51,30 @@ export function wgAdvancedChanged(input, iface) {
     want.postDown !== had.postDown
   )
 }
+// A new interface made from an export: this panel's (exportable in rows.js),
+// or one written before the export took that shape, which carried the stored
+// OpenVPN block whole. Read into the form's shape and sent as the form sends
+// it, so an import carries everything the form would -- a WireGuard tunnel's
+// stealth transport, IKEv2's ways in, OpenConnect's settings -- and nothing
+// the server does not take. An AmneziaWG profile is not in an export: the
+// new tunnel draws its own, as it does its keys.
+export function importPayload(raw) {
+  const transport = raw.transport || raw.openvpn?.transport || ''
+  const out = createPayload({
+    ...raw,
+    transport,
+    ws: raw.transportWs,
+    oc: raw.openconnect,
+    awg: null,
+    awgLevel: undefined,
+  })
+  // A blank or absent value is the server's default, not a value to send.
+  for (const [k, v] of Object.entries(out)) {
+    if (v === undefined || v === null || v === '' || Number.isNaN(v)) delete out[k]
+  }
+  return out
+}
+
 // A new interface as the server's CreateInterfaceInput takes it.
 export function createPayload(input) {
   const p = input.protocol

@@ -136,7 +136,20 @@ export function exportable(i) {
     // anchor's, drift's, relay's or bare's name, path and decoy travel too;
     // its keys do not, and a tunnel made from this draws its own.
     ...(i.protocol === 'wireguard' && hasWsFields(i.stealth?.transport) ? { transportWs: wsPayload(wsOf(i.stealth)) } : {}),
+    // The ways into an IKEv2 tunnel, and an OpenConnect tunnel's settings
+    // with its camouflage secret, which every device's link carries, so a
+    // tunnel made from this lets the same devices in the same way.
+    ...(i.protocol === 'ikev2' && i.ikev2 ? { ikev2Modes: ikev2ModesOf(i.ikev2) } : {}),
+    ...(i.protocol === 'openconnect' && i.openconnect ? { openconnect: ocPayload(i.openconnect) } : {}),
+    ...(i.protocol === 'wireguard' && i.wgAdvanced && Object.keys(i.wgAdvanced).length ? { wgAdvanced: i.wgAdvanced } : {}),
   }
+}
+
+// An IKEv2 tunnel's ways in, as the create call names them.
+const IKEV2_MODES = ['mschapv2', 'psk', 'rsa', 'eap-tls']
+export function ikev2ModesOf(p) {
+  const on = { mschapv2: p?.mschapv2, psk: p?.psk, rsa: p?.rsa, 'eap-tls': p?.eapTls }
+  return IKEV2_MODES.filter((m) => on[m])
 }
 
 // What an OpenConnect tunnel's form sends: a secret left empty is drawn by

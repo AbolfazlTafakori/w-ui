@@ -4,6 +4,7 @@
 // a name or a port taken here -- says why and leaves the rest to be made.
 import { ref } from 'vue'
 import { api } from '../../lib/api.js'
+import { importPayload } from '../../lib/interfaces/payload.js'
 import { store, t, notify } from '../../lib/store.js'
 import Icon from '../Icon.vue'
 
@@ -14,21 +15,6 @@ const busy = ref(false)
 const importText = ref('')
 const importFile = ref(null)
 
-// What the create call takes, out of an export: this panel's, or one written
-// before the export took that shape, which carried the stored AmneziaWG and
-// OpenVPN blocks whole. The server refuses a field it does not know rather
-// than guess at it, so those never imported; the transport inside the OpenVPN
-// block is the one part of them worth keeping.
-const IMPORT_FIELDS = ['name', 'protocol', 'enabled', 'listenPort', 'subnet', 'endpointHost', 'mtu', 'dns', 'natInterface', 'mode', 'transport', 'psk', 'l2tpPlain', 'nodeId']
-function importable(raw) {
-  const out = {}
-  for (const k of IMPORT_FIELDS) {
-    if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') out[k] = raw[k]
-  }
-  if (!out.transport && raw.openvpn?.transport) out.transport = raw.openvpn.transport
-  if (out.protocol !== 'openvpn') delete out.transport
-  return out
-}
 function pickImportFile() {
   importFile.value?.click()
 }
@@ -58,7 +44,7 @@ async function runImport() {
   try {
     for (const it of list) {
       try {
-        await api.post('/api/interfaces', importable(it))
+        await api.post('/api/interfaces', importPayload(it))
         made++
       } catch (err) {
         failed.push(`${it.name || '?'}: ${err.message}`)
