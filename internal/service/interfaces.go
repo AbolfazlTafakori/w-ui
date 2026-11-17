@@ -30,6 +30,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/occonf"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
+	"github.com/abolfazl/w-ui/internal/scope"
 	"github.com/abolfazl/w-ui/internal/wgconf"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -1837,4 +1838,56 @@ func versionAtLeast(v string, major, minor int) bool {
 		return false
 	}
 	return ma > major || (ma == major && mi >= minor)
+}
+
+// OwnCount is how many of the asking operator's customers are on a tunnel,
+// and how many of those are online now.
+type OwnCount struct {
+	Clients int64
+	Online  int64
+}
+
+// OwnCounts is, per tunnel, the asking operator's own customers on it and
+// how many of them are online -- for the read-only server status a reseller
+// or an admin is shown. Counted over their customers alone, as Narrow puts
+// it: the tunnel's total would be every other operator's customers in
+// aggregate. With no restriction it is every customer, which is the owner's
+// view of the same numbers.
+func (s *Interfaces) OwnCounts(ctx context.Context) (map[uint]OwnCount, error) {
+	type row struct {
+		InterfaceID uint
+		N           int64
+	}
+	count := func(online bool) ([]row, error) {
+		q := s.db.WithContext(ctx).Model(&model.Account{}).
+			Joins("JOIN clients ON clients.id = accounts.client_id").
+			Select("accounts.interface_id AS interface_id, COUNT(DISTINCT accounts.client_id) AS n").
+			Group("accounts.interface_id")
+		if online {
+			// UTC, as handshakes are stored: the owner may set the panel's
+			// time zone, and a local cutoff compares wrong against them.
+			q = q.Where("accounts.last_handshake > ?", time.Now().UTC().Add(-onlineWithin()))
+		}
+		var out []row
+		err := scope.Narrow(ctx, q, "clients.owner_id").Scan(&out).Error
+		return out, err
+	}
+	out := map[uint]OwnCount{}
+	all, err := count(false)
+	if err != nil {
+		return nil, fmt.Errorf("service: count own customers per tunnel: %w", err)
+	}
+	for _, r := range all {
+		out[r.InterfaceID] = OwnCount{Clients: r.N}
+	}
+	live, err := count(true)
+	if err != nil {
+		return nil, fmt.Errorf("service: count own customers online per tunnel: %w", err)
+	}
+	for _, r := range live {
+		c := out[r.InterfaceID]
+		c.Online = r.N
+		out[r.InterfaceID] = c
+	}
+	return out, nil
 }

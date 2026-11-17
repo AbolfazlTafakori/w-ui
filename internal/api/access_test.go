@@ -70,6 +70,9 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		"POST /api/clients/{id}/subscription/rotate",
 		"GET /api/clients/{id}/subscription/users",
 		"POST /api/clients/{id}/subscription/users/{user}/rotate",
+		// Whether the servers they sell on are up, with their own customers
+		// counted: a view of its own, not the interface list.
+		"GET /api/operator/servers",
 	}
 	sort.Strings(want)
 

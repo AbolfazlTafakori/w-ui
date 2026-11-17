@@ -20,6 +20,7 @@ import AccountCard from '../components/clients/AccountCard.vue'
 import { filterChips as chipsFor, filtersFromLink, listQuery, withoutChip } from '../lib/clients/filters.js'
 import { useClientActions } from '../lib/clients/actions.js'
 import ClientStats from '../components/clients/ClientStats.vue'
+import ServerStatus from '../components/clients/ServerStatus.vue'
 import { useSelection } from '../lib/clients/selection.js'
 import MoreMenu from '../components/MoreMenu.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -343,6 +344,10 @@ async function submitForm(input) {
 
   <!-- Their summary Card: size="small", six Statistics with a coloured dot. -->
   <ClientStats v-if="stats" :stats="stats" />
+
+  <!-- A reseller's or an admin's servers, read-only. The owner has the
+       interfaces page for this, with everything behind it. -->
+  <ServerStatus v-if="store.admin && !store.admin.managesPanel" />
 
   <div v-if="!interfaces.length" class="aalert warning">
     <AntIcon name="ExclamationCircleFilled" />

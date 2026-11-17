@@ -668,6 +668,11 @@ func (s *Server) routes() []Route {
 			handler: s.handleGeneratedConfigs},
 		{Method: "GET", Path: "/api/logs", Group: "Server", Auth: true,
 			Summary: "Recent log lines. Takes limit and level.", handler: s.handleLogs},
+		{Method: "GET", Path: "/api/operator/servers", Group: "Server", Auth: true,
+			Summary: "The servers you sell on: each one's name, protocol and whether it is up, with how many of your customers are on it and online.",
+			Note: "For a reseller or an admin: only the tunnels the owner gave you, and only your own customers counted. " +
+				"status is up, off (switched off by the owner) or down (on, but not running).",
+			handler: s.handleOperatorServers},
 		{Method: "GET", Path: "/api/sharing", Group: "Server", Auth: true,
 			Summary: "Credentials seen from several places at once.",
 			Note:    "Evidence, not proof. Nothing is disconnected automatically.",
@@ -912,6 +917,18 @@ var (
 		// narrowed to the operator's own customers like the link itself.
 		"GET /api/clients/{id}/subscription/users":                true,
 		"POST /api/clients/{id}/subscription/users/{user}/rotate": true,
+		// Whether the servers they sell on are up, with their own customers
+		// counted. Its own view, not the interface list's: nothing on it
+		// reaches past the tunnel's name and state.
+		"GET /api/operator/servers": true,
+	}
+
+	// menuForRoute is the admin page that gates a single route under a
+	// heading menuForGroup does not gate. The server status rides on the
+	// customer list, so an admin has it with their customers page and not
+	// without it.
+	menuForRoute = map[string]string{
+		"GET /api/operator/servers": model.MenuClients,
 	}
 )
 
@@ -952,6 +969,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux, routes []Route) {
 		// Under the signed-in operator, refuse an admin a page the owner left
 		// unchecked. Inside requireAuth (wrapped below), so the admin is known.
 		if m := menuForGroup[r.Group]; m != "" {
+			h = s.requireMenu(m, h)
+		} else if m := menuForRoute[r.Method+" "+r.Path]; m != "" {
 			h = s.requireMenu(m, h)
 		}
 		if r.Operator {
