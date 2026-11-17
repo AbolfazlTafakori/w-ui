@@ -171,6 +171,8 @@ type Reconciler struct {
 	nodeEvery time.Duration
 	// gws is the veil gateways in front of this server's tunnels.
 	gws gateways
+	// certWake has the certificate worker look at once (wakeCertificates).
+	certWake chan struct{}
 }
 
 // New builds a reconciler.
@@ -209,6 +211,7 @@ func New(o Options) *Reconciler {
 		localNodeID: max64(o.LocalNodeID, 1),
 		changes:     o.Changes,
 		panelCert:   o.PanelCert,
+		certWake:    make(chan struct{}, 1),
 	}
 }
 
@@ -239,13 +242,24 @@ func (r *Reconciler) Start(ctx context.Context) {
 
 // IKEv2 device certificates are made beside the reconciler, never on its
 // pass. A device without one is looked for every certNewEvery, which is one
-// indexed question; every device's certificate is read for its expiry and
+// indexed question, and at once when a pass finds one waiting
+// (wakeCertificates); every device's certificate is read for its expiry and
 // its name every certFullEvery. A device whose certificate arrives is
 // described to its tunnel on the next pass.
 const (
 	certNewEvery  = 5 * time.Second
 	certFullEvery = time.Minute
 )
+
+// wakeCertificates has the certificate worker look now rather than at its
+// next tick: a device just made waits for its key, not for the clock. It
+// never blocks a pass; a wake already pending covers this one.
+func (r *Reconciler) wakeCertificates() {
+	select {
+	case r.certWake <- struct{}{}:
+	default:
+	}
+}
 
 func (r *Reconciler) issueCertificates(ctx context.Context) {
 	t := time.NewTicker(certNewEvery)
@@ -275,6 +289,7 @@ func (r *Reconciler) issueCertificates(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-r.certWake:
 		}
 	}
 }
@@ -630,6 +645,8 @@ type desired struct {
 	perIface    map[uint][]backend.DesiredAccount
 	clients     int
 	accounts    int
+	// certsWanted is set when a device here waits for its IKEv2 certificate.
+	certsWanted bool
 }
 
 // apply reads the desired state and pushes it to the enforcer and the drivers.
@@ -637,6 +654,9 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	d, err := r.readDesired(ctx)
 	if err != nil {
 		return 0, 0, err
+	}
+	if d.certsWanted {
+		r.wakeCertificates()
 	}
 
 	// Drivers first, and from the database rather than from whatever was open
@@ -904,8 +924,14 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	// the desired state here so this kernel is never asked for a peer on an
 	// interface it does not have.
 	local := make(map[uint]bool, len(interfaces))
+	// IKEv2 tunnels whose devices sign in by certificate: a device on one
+	// with none yet sets the certificate worker going at once.
+	byCert := map[uint]bool{}
 	for _, iface := range interfaces {
 		local[iface.ID] = true
+		if iface.Protocol == model.ProtocolIKEv2 && iface.IKEv2.V.ByCertificate() {
+			byCert[iface.ID] = true
+		}
 	}
 	//
 	// They are still counted: the connections limit is the customer's, and
@@ -1029,6 +1055,9 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 				r.log.Warn("account has an unparseable address",
 					"account", a.ID, "ip", a.IP)
 				continue
+			}
+			if byCert[a.InterfaceID] && a.CertPEM == "" {
+				d.certsWanted = true
 			}
 			if c.RateBitsPerSec > 0 {
 				d.sessionRate[a.ID] = shaper.Client{Key: enforce.Key(c.ID), RateBitsPerSec: c.RateBitsPerSec}

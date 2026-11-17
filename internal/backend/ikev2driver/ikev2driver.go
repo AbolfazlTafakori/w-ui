@@ -236,7 +236,9 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 				"protocol", "ikev2", "account", a.ID)
 			continue
 		case byCert && acc.Cert == "":
-			d.log.Warn("a device was left out: it has no certificate yet", "protocol", "ikev2", "account", a.ID)
+			// Its certificate is being made beside the pass; it is described
+			// on the pass after. Not a fault, so not a warning.
+			d.log.Info("a device waits for its certificate", "protocol", "ikev2", "account", a.ID)
 			continue
 		case !a.IP.Is4() || !pfx.Contains(a.IP) || a.IP == gw || names[acc.Username] || acc.Username == server:
 			d.log.Warn("a device was left out", "protocol", "ikev2", "account", a.ID, "address", a.IP)
