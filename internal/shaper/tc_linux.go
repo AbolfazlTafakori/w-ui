@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os/exec"
 	"strings"
 	"sync"
@@ -38,6 +39,24 @@ func New(log *slog.Logger) *TC {
 		log = slog.Default()
 	}
 	return &TC{log: log, rooted: map[string]bool{}}
+}
+
+// forgetGone drops what is remembered of devices no longer shaped. A tunnel
+// removed and made again under the same name is a new device with no
+// hierarchy yet: remembered, it was taken for one whose hierarchy someone had
+// removed, and warned about as such.
+func (s *TC) forgetGone(devices []string) {
+	keep := make(map[string]bool, len(devices))
+	for _, d := range devices {
+		keep[d] = true
+	}
+	s.mu.Lock()
+	for d := range s.rooted {
+		if !keep[d] {
+			delete(s.rooted, d)
+		}
+	}
+	s.mu.Unlock()
 }
 
 // Health reports whether a rate limit would actually be applied.
@@ -115,8 +134,19 @@ func (s *TC) Apply(ctx context.Context, devices []string, clients []Client) erro
 		s.log.Warn("skipping a client that cannot be shaped", "error", p)
 	}
 
+	s.forgetGone(devices)
+
 	var failures []string
 	for _, dev := range devices {
+		// A tunnel's device is not there for a moment while it comes up or
+		// goes away -- removed a beat before its row is. Nothing is there to
+		// shape, and nothing has gone wrong: it is looked at again next pass.
+		if _, err := net.InterfaceByName(dev); err != nil {
+			s.mu.Lock()
+			delete(s.rooted, dev)
+			s.mu.Unlock()
+			continue
+		}
 		if err := s.applyDevice(ctx, dev, want); err != nil {
 			s.log.Warn("could not shape a device", "device", dev, "error", err)
 			failures = append(failures, dev)
