@@ -71,6 +71,63 @@ func TestAStaleReportIsNoAgent(t *testing.T) {
 	}
 }
 
+// The first state of a kind starts the agent, so opening it waits for the
+// agent's first report; a state already in place with the agent silent does
+// not, and nothing waits on an agent already answering.
+func TestOnlyTheFirstStateStartsTheAgent(t *testing.T) {
+	p := l2tpconf.PathsFor(t.TempDir(), "ikev2")
+	if !StartsAgent(p) {
+		t.Fatal("no state and no agent: the first write starts it")
+	}
+	if err := WriteAtomic(p.State(), []byte("{}"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if StartsAgent(p) {
+		t.Fatal("a state already in place: another write starts nothing")
+	}
+	os.Remove(p.State())
+	raw, _ := json.Marshal(l2tpconf.Report{At: time.Now().Unix()})
+	if err := WriteAtomic(p.Report(), raw, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if StartsAgent(p) {
+		t.Fatal("an agent already answering is not started")
+	}
+}
+
+// Opening waits for the agent's first report and no longer: it returns as
+// soon as the report is there, and gives up at the bound.
+func TestAwaitReportReturnsWithTheFirstReport(t *testing.T) {
+	p := l2tpconf.PathsFor(t.TempDir(), "ikev2")
+	report := func(state string) {
+		raw, _ := json.Marshal(l2tpconf.Report{At: time.Now().Unix(), State: state})
+		WriteAtomic(p.Report(), raw, 0o640)
+	}
+	// Installing first, as an agent just started reports while it checks
+	// what the tunnel needs; then running.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		report(l2tpconf.AgentInstalling)
+		time.Sleep(400 * time.Millisecond)
+		report(l2tpconf.AgentRunning)
+	}()
+	start := time.Now()
+	AwaitReport(context.Background(), p, 5*time.Second)
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("waited %s for a report written after 600ms", took)
+	}
+	if r, err := FreshReport(p); err != nil || r.State != l2tpconf.AgentRunning {
+		t.Fatalf("returned before the agent was running: %+v, %v", r, err)
+	}
+
+	silent := l2tpconf.PathsFor(t.TempDir(), "ikev2")
+	start = time.Now()
+	AwaitReport(context.Background(), silent, 400*time.Millisecond)
+	if took := time.Since(start); took < 400*time.Millisecond || took > 2*time.Second {
+		t.Fatalf("a silent agent was waited on for %s, not the bound", took)
+	}
+}
+
 func TestServersAreTheTunnelsOwnFirstThenItsHosts(t *testing.T) {
 	iface := &model.Interface{EndpointHost: "vpn.example.com", Hosts: []model.Host{
 		{Address: "b.example.com", Priority: 2, Enabled: true},

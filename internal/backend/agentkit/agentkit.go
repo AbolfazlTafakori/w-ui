@@ -7,6 +7,7 @@
 package agentkit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -93,6 +94,47 @@ func ReadReport(p l2tpconf.Paths) (l2tpconf.Report, error) {
 		return r, fmt.Errorf("the agent's report: %w", err)
 	}
 	return r, nil
+}
+
+// OpenWait is how long opening a tunnel waits for the agent its state file
+// has just started. systemd starts the agent the moment a tunnel's state
+// appears, and its first report follows within seconds; without the wait,
+// the first tunnel of a kind was said not to come up while it was coming up.
+// An agent still silent after it is reported as starting, as before. A
+// variable only so a driver's tests need not sit through it.
+var OpenWait = 10 * time.Second
+
+// StartsAgent reports whether writing this tunnel's state now starts the
+// agent: there is no state yet and the agent is not answering. Only then is
+// the wait worth it. An agent that has stopped answering with a state in
+// place is not woken by another write, and a pass of the reconciler that
+// reopens such a tunnel must not be held up waiting for it.
+func StartsAgent(p l2tpconf.Paths) bool {
+	if _, err := os.Stat(p.State()); err == nil {
+		return false
+	}
+	_, err := FreshReport(p)
+	return err != nil
+}
+
+// AwaitReport waits up to max for the agent to report the tunnel settled --
+// running, or failed -- and returns as soon as it has. An agent just started
+// first reports that it is installing while it checks what the tunnel needs,
+// even when all of it is there already; a real install outlasts the wait and
+// is reported as installing. It stops early when ctx is done.
+func AwaitReport(ctx context.Context, p l2tpconf.Paths, max time.Duration) {
+	deadline := time.Now().Add(max)
+	for {
+		r, err := FreshReport(p)
+		if (err == nil && r.State != l2tpconf.AgentInstalling) || time.Now().After(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // FreshReport is the agent's report while the agent is still writing it.

@@ -133,12 +133,17 @@ func (d *Driver) Open(ctx context.Context, iface *model.Interface) error {
 	d.ifID = ifID
 	d.mu.Unlock()
 
+	// Read before the state is written: the first state starts the agent.
+	starts := agentkit.StartsAgent(paths)
 	var kept []ikev2conf.Account
 	if prev, err := readState(paths); err == nil && prev.Interface.ID == iface.ID {
 		kept = prev.Interface.Accounts
 	}
 	if _, err := d.write(iface, kept); err != nil {
 		return err
+	}
+	if starts {
+		agentkit.AwaitReport(ctx, paths, agentkit.OpenWait)
 	}
 	return d.agentError(true)
 }

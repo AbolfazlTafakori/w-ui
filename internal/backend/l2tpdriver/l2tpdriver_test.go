@@ -20,6 +20,11 @@ import (
 func setup(t *testing.T) (*model.Interface, l2tpconf.Paths) {
 	t.Helper()
 	backend.DataDir = t.TempDir()
+	// No agent runs here: opening gives up on it at once rather than after
+	// the ten seconds a real one is given to start.
+	wait := agentkit.OpenWait
+	agentkit.OpenWait = 0
+	t.Cleanup(func() { agentkit.OpenWait = wait })
 	ensureDeviceFn = func(context.Context, *model.Interface) error { return nil }
 	removeDeviceFn = func(context.Context, *model.Interface) error { return nil }
 	t.Cleanup(func() { ensureDeviceFn, removeDeviceFn = agentkit.EnsureDevice, agentkit.RemoveDevice })
