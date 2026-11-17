@@ -197,6 +197,13 @@ func Register(db *gorm.DB) error {
 		Register("wui:scope_query", narrow); err != nil {
 		return err
 	}
+	// A Select(...).Scan(...) -- a SUM, a scanned count -- runs through the
+	// row callback, not the query one. Without this a reseller's user
+	// ceiling summed every customer on the panel.
+	if err := db.Callback().Row().Before("gorm:row").
+		Register("wui:scope_row", narrow); err != nil {
+		return err
+	}
 	if err := db.Callback().Update().Before("gorm:update").
 		Register("wui:scope_update", narrow); err != nil {
 		return err

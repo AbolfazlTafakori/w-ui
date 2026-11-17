@@ -198,3 +198,24 @@ func TestNarrowTakesTheConditionToAnotherTable(t *testing.T) {
 		t.Fatalf("every account: %d, %v", n, err)
 	}
 }
+
+// A sum or a scan goes through gorm's row callback, not its query
+// callback, and was not narrowed: a reseller's user ceiling added up the
+// plans of every customer on the panel and refused them early.
+func TestASumIsNarrowedToo(t *testing.T) {
+	db := panel(t)
+	var sum *int64
+	if err := db.WithContext(reza).Model(&client{}).Select("SUM(id)").Scan(&sum).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sum == nil || *sum != 2+3 {
+		t.Fatalf("reza's sum over customers 2 and 3: %v", sum)
+	}
+	var row struct{ N int64 }
+	if err := db.WithContext(reza).Model(&client{}).Select("COUNT(*) AS n").Scan(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.N != 2 {
+		t.Fatalf("reza's count by scan: %d", row.N)
+	}
+}
