@@ -143,7 +143,7 @@ func WriteDump(ctx context.Context, db *gorm.DB, drv config.Driver, version stri
 	if drv == config.DriverPostgres {
 		err = db.WithContext(ctx).Transaction(run, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	} else {
-		err = db.WithContext(ctx).Transaction(run)
+		err = sqliteReadSnapshot(ctx, db, run)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("database: dump: %w", err)
@@ -155,6 +155,29 @@ func WriteDump(ctx context.Context, db *gorm.DB, drv config.Driver, version stri
 		return nil, fmt.Errorf("database: dump: %w", err)
 	}
 	return sum, nil
+}
+
+// sqliteReadSnapshot runs fn on one connection inside a deferred transaction:
+// a snapshot from its first read, and no lock that holds a writer back. The
+// panel's own transactions begin IMMEDIATE (sqliteDSN), taking the write
+// lock at once; a backup reading for a minute that way would stop every
+// write on the panel for that minute.
+func sqliteReadSnapshot(ctx context.Context, db *gorm.DB, fn func(*gorm.DB) error) error {
+	return db.WithContext(ctx).Connection(func(conn *gorm.DB) error {
+		if err := conn.Exec("BEGIN DEFERRED").Error; err != nil {
+			return err
+		}
+		// A new session on the pinned connection: the handle Connection hands
+		// over carries its statement from call to call, and each table's
+		// query would carry the one before it -- the last table's ORDER BY.
+		err := fn(conn.Session(&gorm.Session{NewDB: true, Context: ctx}))
+		// Nothing was written; ending it either way lets the connection go
+		// back to the pool clean.
+		if rerr := conn.Exec("ROLLBACK").Error; err == nil && rerr != nil {
+			err = rerr
+		}
+		return err
+	})
 }
 
 // dumpColumns are the columns of a table a dump carries, in a fixed order.

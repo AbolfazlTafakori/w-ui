@@ -42,7 +42,7 @@ func Open(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 		}
 		// The pure-Go SQLite driver keeps the build CGO-free, so the panel
 		// stays a single static binary that cross-compiles to any target.
-		db, err = gorm.Open(sqlite.Open(cfg.DBSource), gcfg)
+		db, err = gorm.Open(sqlite.Open(sqliteDSN(cfg.DBSource)), gcfg)
 	case config.DriverPostgres:
 		db, err = gorm.Open(postgres.Open(cfg.DBSource), gcfg)
 	default:
@@ -71,33 +71,55 @@ func Open(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 	return db, nil
 }
 
-// tuneSQLite applies the settings the collector's write rate depends on.
-func tuneSQLite(db *gorm.DB) error {
-	pragmas := []string{
-		// WAL lets the collector write while the API reads.
-		"PRAGMA journal_mode = WAL",
-		// NORMAL trades an fsync per commit for durability only against power
-		// loss, not process crashes. Traffic samples are re-derivable from the
-		// kernel counters, so that trade is worth the write throughput.
-		"PRAGMA synchronous = NORMAL",
-		"PRAGMA foreign_keys = ON",
-		// Wait rather than fail when a write collides with a reader.
-		"PRAGMA busy_timeout = 5000",
+// sqliteDSN is the database file with the settings every connection to it
+// is opened with. On the connection string, not run once: a pool opens
+// connections as it needs them, and a setting applied to the first is not on
+// the second -- foreign keys unchecked, a writer that fails at once instead
+// of waiting its turn.
+//
+//   - WAL: readers and one writer at once.
+//   - synchronous NORMAL trades an fsync per commit for durability only
+//     against power loss, not a crash; traffic samples are re-derivable from
+//     the kernel's counters, and the write rate is worth it.
+//   - busy_timeout: a writer waits for the one before it, up to 15 s.
+//   - _txlock=immediate: a transaction takes the write lock as it begins, so
+//     two that read and then write queue instead of one failing with
+//     "database is locked" when it comes to write. A long read that must not
+//     hold writers back (the backup's dump) begins its own, deferred.
+func sqliteDSN(source string) string {
+	params := "_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(15000)&_txlock=immediate"
+	if strings.Contains(source, "?") {
+		return source + "&" + params
 	}
-	for _, p := range pragmas {
-		if err := db.Exec(p).Error; err != nil {
-			return fmt.Errorf("database: %s: %w", p, err)
-		}
-	}
+	return source + "?" + params
+}
 
+// sqliteConns is how many connections the panel holds to a SQLite file.
+//
+// It was one, which put every read in the panel behind every other: the
+// reconciler's pass over every customer, a backup's read of the whole
+// database, each customer's subscription and each page of the panel, one
+// after another. With tens of thousands of files a pass held it for seconds
+// and a backup for a minute, and the panel stood still meanwhile. In WAL any
+// number read at once beside the one writer; writers still go one at a time,
+// SQLite's own lock and busy_timeout seeing to that.
+const sqliteConns = 8
+
+// tuneSQLite sizes the pool, and checks the settings took.
+func tuneSQLite(db *gorm.DB) error {
+	var mode string
+	if err := db.Raw("PRAGMA journal_mode").Scan(&mode).Error; err != nil {
+		return fmt.Errorf("database: read journal mode: %w", err)
+	}
+	if !strings.EqualFold(mode, "wal") {
+		return fmt.Errorf("database: SQLite is in %q mode, not WAL", mode)
+	}
 	sqlDB, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("database: unwrap sql.DB: %w", err)
 	}
-	// SQLite serialises writers anyway; a single connection avoids
-	// SQLITE_BUSY churn between the collector and the API.
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetMaxOpenConns(sqliteConns)
+	sqlDB.SetMaxIdleConns(sqliteConns)
 	sqlDB.SetConnMaxLifetime(0)
 	return nil
 }
