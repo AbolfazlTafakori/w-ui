@@ -352,6 +352,8 @@ func (f *fakeXUI) serveAPI(w http.ResponseWriter, r *http.Request, api string, b
 					return
 				}
 				in.Clients = append(in.Clients[:i], in.Clients[i+1:]...)
+				// Its counters go with it, as 3x-ui deletes its row.
+				delete(in.Stats, fmt.Sprint(c["email"]))
 				ok200(w, nil)
 				return
 			}
@@ -401,6 +403,7 @@ func (f *fakeXUI) serveAPI(w http.ResponseWriter, r *http.Request, api string, b
 				}
 			}
 			in.Clients = kept
+			delete(in.Stats, email)
 		}
 		ok200(w, nil)
 	case strings.HasPrefix(api, "clients/links/") && f.atLeast(3, 1):

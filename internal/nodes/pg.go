@@ -165,6 +165,17 @@ func (p *pgPanel) own(ctx context.Context, f xrayFile) xrayResult {
 		p.groupOf[inbound] = gid
 	}
 	u, exists := p.ours[name]
+	if exists && !f.acc.XUIPlaced {
+		// Under its name, but never made by it: another customer's,
+		// left by a restore, with that customer's credentials and
+		// traffic. Taken away, and the file's own made in its place.
+		if err := p.api.deleteUser(ctx, name); err != nil {
+			res.err = fmt.Errorf("taking away the user left under %s: %v", name, err)
+			return res
+		}
+		delete(p.ours, name)
+		exists = false
+	}
 	switch {
 	case !exists:
 		made, err := p.api.createUser(ctx, name, status, f.client.Name, gid)
@@ -172,7 +183,7 @@ func (p *pgPanel) own(ctx context.Context, f xrayFile) xrayResult {
 			res.err = fmt.Errorf("adding %s: %v", name, err)
 			return res
 		}
-		u, res.changed = made, true
+		u, res.changed, res.placed = made, true, true
 	case u.Status != status || !sameGroups(u.GroupIDs, gid):
 		// Active or disabled, the two states it is told: a user there is
 		// limited or expired only by limits this panel never sets.

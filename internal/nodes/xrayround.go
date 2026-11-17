@@ -109,9 +109,11 @@ type xrayFile struct {
 
 // xrayResult is what became of a file there.
 type xrayResult struct {
-	name    string // its name there, when it is one this panel made
-	usage   *service.XUIUsage
-	link    string // its links, when they are new
+	name  string // its name there, when it is one this panel made
+	usage *service.XUIUsage
+	link  string // its links, when they are new
+	// placed is that this round made its client or user there.
+	placed  bool
 	changed bool
 	err     error
 }
@@ -213,6 +215,7 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 	wanted := map[string]bool{}
 	var usage []service.XUIUsage
 	links := map[uint]string{}
+	var placed []uint
 	for _, f := range files {
 		var r xrayResult
 		if f.acc.Adopted != "" {
@@ -232,13 +235,16 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 		if r.link != "" {
 			links[f.acc.ID] = r.link
 		}
+		if r.placed {
+			placed = append(placed, f.acc.ID)
+		}
 		touched = touched || r.changed
 	}
 	changed, swept := p.sweep(ctx, wanted)
 	touched = touched || changed
 	failures = append(failures, swept...)
 
-	if err := service.SaveXUICounters(ctx, s.db, usage, links); err != nil {
+	if err := service.SaveXUICounters(ctx, s.db, usage, links, placed); err != nil {
 		return fmt.Errorf("could not keep its counters: %w", err)
 	}
 	s.chargeXUI(ctx, node, usage)

@@ -253,3 +253,11 @@ While a node is unreachable, the panel keeps every record; only the customers on
 ## The node's own panel
 
 Server B stays a complete panel. You can sign in to it, run `w-ui` there, take backups of it, and see the tunnels and accounts this panel put on it; they are marked as managed, and are edited from here, not there. Its scheduled backups are its own, and restoring A does not restore B.
+
+## Backups and nodes
+
+A backup of this panel holds everything it put on its nodes: their tunnels, keys and customers are its own records, and the nodes' addresses and tokens are in the database too. Taking one asks no node anything. Set a [backup password](/operations/backup-restore#encryption): an archive opens every node it lists.
+
+Restoring an older backup puts the nodes back the way the archive has them, at their next round: a tunnel or device made after the backup is taken off its node. A node out of reach then is put right when it answers. Customers made after the restore are numbered from where the archive left off, the numbers the devices taken away had, and a client still found on a 3x-ui or Pasarguard node under one of them is never given to the new device: it is removed, with its credentials and traffic, and the device's own made in its place (on a 3x-ui 2 inbound where it is the last client, it is made the device's where it is, and the traffic it had counted is not charged).
+
+What was made on a 3x-ui or Pasarguard panel itself, not through this panel, is not in this panel's backup: back that panel up on its own.

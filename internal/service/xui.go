@@ -310,8 +310,13 @@ type XUIUsage struct {
 
 // SaveXUICounters remembers the counters a 3x-ui node last reported, and the
 // links it makes, for each file.
-func SaveXUICounters(ctx context.Context, db *gorm.DB, usage []XUIUsage, links map[uint]string) error {
+func SaveXUICounters(ctx context.Context, db *gorm.DB, usage []XUIUsage, links map[uint]string, placed []uint) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(placed) > 0 {
+			if err := tx.Model(&model.Account{}).Where("id IN ?", placed).Update("xui_placed", true).Error; err != nil {
+				return err
+			}
+		}
 		for _, u := range usage {
 			if err := tx.Model(&model.Account{}).Where("id = ?", u.AccountID).
 				Updates(map[string]any{"xui_up": u.SeenUp, "xui_down": u.SeenDown}).Error; err != nil {

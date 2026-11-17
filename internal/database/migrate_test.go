@@ -72,3 +72,42 @@ func TestDataMigrationsCanRunAgain(t *testing.T) {
 		t.Fatalf("%d group rows for one label carried twice", n)
 	}
 }
+
+// The files a 3x-ui or Pasarguard node already has are this panel's: marked
+// placed, so the first round after the update keeps their clients rather
+// than making every one again. Files on its own server or a W-UI node, and
+// users brought in from the node, are left as they are.
+func TestFilesAlreadyOnAnXrayNodeAreMarkedPlaced(t *testing.T) {
+	db := bareDB(t)
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []model.Node{
+		{ID: 2, Name: "x", Kind: model.KindXUI}, {ID: 3, Name: "p", Kind: model.KindPG}, {ID: 4, Name: "w", Kind: model.KindRemote},
+	} {
+		if err := db.Create(&n).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, a := range []model.Account{
+		{ID: 1, NodeID: 2, ClientID: 1, InterfaceID: 1, IP: "10.0.0.1"},
+		{ID: 2, NodeID: 3, ClientID: 1, InterfaceID: 2, IP: "10.0.0.2"},
+		{ID: 3, NodeID: 4, ClientID: 1, InterfaceID: 3, IP: "10.0.0.3"},
+		{ID: 4, NodeID: 2, ClientID: 1, InterfaceID: 1, IP: "10.0.0.4", Adopted: "theirs-1"},
+	} {
+		if err := db.Create(&a).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := markPlacedOnXrayNodes(db); err != nil {
+		t.Fatal(err)
+	}
+	want := map[uint]bool{1: true, 2: true, 3: false, 4: false}
+	var got []model.Account
+	db.Order("id").Find(&got)
+	for _, a := range got {
+		if a.XUIPlaced != want[a.ID] {
+			t.Errorf("account %d placed %v, want %v", a.ID, a.XUIPlaced, want[a.ID])
+		}
+	}
+}

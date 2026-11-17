@@ -546,6 +546,12 @@ type Account struct {
 	XUILink string `gorm:"type:text;column:xui_link" json:"-"`
 	XUIUp   uint64 `gorm:"column:xui_up;not null;default:0" json:"-"`
 	XUIDown uint64 `gorm:"column:xui_down;not null;default:0" json:"-"`
+	// XUIPlaced is that this panel made this file's client or user on that
+	// panel itself. One found there under its name before then is not its:
+	// after an older backup is restored, numbers used since are handed out
+	// again, and a node that was out of reach still has the clients made
+	// under them -- other customers', with their credentials and traffic.
+	XUIPlaced bool `gorm:"column:xui_placed;not null;default:false" json:"-"`
 
 	// Adopted is, for a user brought in from a 3x-ui or Pasarguard node, who
 	// it is there: its email on 3x-ui, its username on Pasarguard. Such a

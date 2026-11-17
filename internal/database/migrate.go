@@ -46,6 +46,7 @@ var migrations = []migration{
 	{2, "whoever administered the panel before roles owns it", false, existingAdminsOwn},
 	{3, "a customer's group label becomes their first group", false, carryGroupLabels},
 	{4, "each file's usage is counted by the panel from now on", false, startExactFileUsage},
+	{5, "files already on a 3x-ui or Pasarguard node were placed there by this panel", false, markPlacedOnXrayNodes},
 }
 
 // Migrate brings the schema up to date.
@@ -139,6 +140,24 @@ func carryGroupLabels(tx *gorm.DB) error {
 		WHERE COALESCE("group", '') <> ''
 		  AND NOT EXISTS (SELECT 1 FROM client_groups g WHERE g.client_id = clients.id)`).Error; err != nil {
 		return fmt.Errorf("carry groups over: %w", err)
+	}
+	return nil
+}
+
+// markPlacedOnXrayNodes: a file on a 3x-ui or Pasarguard node from before
+// placement was recorded was placed there by this panel, or is about to be;
+// none can be another's under its number, which only a restore hands out
+// again. Marked so the first round after the update takes their clients for
+// theirs, as it always did, instead of making every one of them again. Run
+// again on rows a restore brings from an older panel, it marks those the
+// same way: they were that panel's.
+func markPlacedOnXrayNodes(tx *gorm.DB) error {
+	if err := tx.Exec(`
+		UPDATE accounts SET xui_placed = TRUE
+		WHERE xui_placed = FALSE AND COALESCE(adopted, '') = ''
+		  AND node_id IN (SELECT id FROM nodes WHERE kind IN (?, ?))`,
+		model.KindXUI, model.KindPG).Error; err != nil {
+		return fmt.Errorf("mark files placed: %w", err)
 	}
 	return nil
 }

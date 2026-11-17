@@ -122,7 +122,22 @@ func (p *xuiPanel) own(ctx context.Context, f xrayFile) xrayResult {
 	in := f.iface.XUI.V
 	desired := xuiClientFor(p.tag, &f.acc, in, f.client, f.on)
 	rc, exists := p.remote[email]
-	if exists {
+	// left is a client under its name it never made: another customer's,
+	// left by a restore. Taken away, with its credential and counters, and
+	// the file's own made in its place -- or, where 3x-ui 2 keeps it as the
+	// last on its inbound, made the file's own where it is, its credential
+	// replaced and the traffic it already counted never charged here.
+	left := exists && !f.acc.XUIPlaced
+	if left {
+		if err := p.api.deleteClient(ctx, rc.inbound, email, xuiKey(rc.kind, rc.cfg)); err == nil {
+			delete(p.remote, email)
+			exists, left = false, false
+		} else if rc.inbound != in.RemoteID || !lastOf(p.remote, rc.inbound, email) {
+			res.err = fmt.Errorf("taking away the client left under %s: %v", email, err)
+			return res
+		}
+	}
+	if exists && !left {
 		keepTheirs(&desired, rc.cfg, in.Kind)
 	}
 	switch {
@@ -131,7 +146,7 @@ func (p *xuiPanel) own(ctx context.Context, f xrayFile) xrayResult {
 			res.err = fmt.Errorf("adding %s to %s: %v", email, f.iface.Name, err)
 			return res
 		}
-		res.changed = true
+		res.changed, res.placed = true, true
 	case rc.inbound != in.RemoteID:
 		// On another inbound there than the one it belongs to here: moved
 		// by hand on that panel. Put back where it belongs.
@@ -144,14 +159,18 @@ func (p *xuiPanel) own(ctx context.Context, f xrayFile) xrayResult {
 			return res
 		}
 		res.changed = true
-	case xuiDiffers(rc.cfg, desired):
+	case xuiDiffers(rc.cfg, desired) || left:
 		if err := p.api.updateClient(ctx, in.RemoteID, xuiKey(in.Kind, rc.cfg), desired); err != nil {
 			res.err = fmt.Errorf("updating %s: %v", email, err)
 			return res
 		}
 		res.changed = true
+		res.placed = res.placed || left
 	}
-	if exists && rc.hasStat {
+	if left && rc.hasStat {
+		// What it counted was the other customer's: the starting point.
+		res.usage = &service.XUIUsage{AccountID: f.acc.ID, ClientID: f.acc.ClientID, SeenUp: rc.stat.Up, SeenDown: rc.stat.Down}
+	} else if exists && rc.hasStat {
 		u := service.XUIUsage{AccountID: f.acc.ID, ClientID: f.acc.ClientID, SeenUp: rc.stat.Up, SeenDown: rc.stat.Down,
 			Up: since(rc.stat.Up, f.acc.XUIUp), Down: since(rc.stat.Down, f.acc.XUIDown)}
 		if u.Up > 0 || u.Down > 0 || u.SeenUp != f.acc.XUIUp || u.SeenDown != f.acc.XUIDown {
