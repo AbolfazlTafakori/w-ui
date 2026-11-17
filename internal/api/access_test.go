@@ -77,6 +77,10 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		// them the page.
 		"GET /api/operator/sharing",
 		"GET /api/operator/sharing/history",
+		// Their own API tokens, signed in only.
+		"GET /api/operator/tokens",
+		"POST /api/operator/tokens",
+		"DELETE /api/operator/tokens/{id}",
 	}
 	sort.Strings(want)
 

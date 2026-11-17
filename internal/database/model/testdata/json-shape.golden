@@ -313,6 +313,15 @@ SharingEvent
 	startedAt time.Time
 	lastSeen time.Time
 	deleted bool (not stored)
+OperatorToken
+	id uint
+	adminId uint
+	name string
+	prefix string
+	expiresAt *time.Time
+	lastUsedAt *time.Time
+	createdAt time.Time
+	username string omitempty (not stored)
 Outbound
 	id uint
 	tag string

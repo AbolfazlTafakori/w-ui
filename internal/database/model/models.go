@@ -145,6 +145,34 @@ type APIToken struct {
 	CreatedAt  time.Time  `json:"createdAt"`
 }
 
+// OperatorToken is an API token an admin or a reseller issued for
+// themselves, for their own scripts.
+//
+// Apart from APIToken on purpose. A machine token is the owner's and reaches
+// what the owner does; this one reaches what its operator does and no more,
+// and keeping the two in one table would leave one forgotten condition
+// between a reseller's script and the whole panel. The token carries no
+// rights of its own: every request it makes is served under its operator as
+// they are at that moment, so switching them off or taking a server away
+// takes it from the token at once.
+type OperatorToken struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	AdminID uint   `gorm:"index;not null" json:"adminId"`
+	Name    string `gorm:"size:64;not null" json:"name"`
+	// Hash is the SHA-256 of the secret, which is shown once and kept nowhere.
+	Hash string `gorm:"size:128;uniqueIndex;not null" json:"-"`
+	// Prefix tells two tokens apart in a list without being enough to use one.
+	Prefix string `gorm:"size:12;not null" json:"prefix"`
+	// ExpiresAt is when it stops working; nil is never.
+	ExpiresAt  *time.Time `json:"expiresAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
+
+	// Username is whose it is, filled when the list is read for the owner
+	// or an admin; never stored.
+	Username string `gorm:"-" json:"username,omitempty"`
+}
+
 // Interface is one listening VPN endpoint on a node.
 //
 // Running several interfaces on one node is deliberate: a standard WireGuard
@@ -975,6 +1003,7 @@ func AllModels() []any {
 		&ClientGroup{},
 		&AccountEndpoint{},
 		&SharingEvent{},
+		&OperatorToken{},
 		&Outbound{},
 		&OutboundSub{},
 		&Balancer{},

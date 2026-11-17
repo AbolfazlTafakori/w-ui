@@ -140,6 +140,9 @@ GET    /api/nodes/{id}/users                          Nodes          auth=true  
 POST   /api/nodes/{id}/users/import                   Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 POST   /api/xray/keys                                 Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/nodes/{id}/probe                          Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
+GET    /api/operator/tokens                           Authentication auth=true  operator=true  | none=401 token=403 reseller=yes admin=yes owner=yes
+POST   /api/operator/tokens                           Authentication auth=true  operator=true  | none=401 token=403 reseller=yes admin=yes owner=yes
+DELETE /api/operator/tokens/{id}                      Authentication auth=true  operator=true  | none=401 token=403 reseller=yes admin=yes owner=yes
 GET    /api/tokens                                    Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 POST   /api/tokens                                    Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 DELETE /api/tokens/{id}                               Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes

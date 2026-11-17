@@ -39,6 +39,11 @@ const (
 	// ctxMachine marks a request made with a machine token: another panel
 	// managing this one as its node, or automation the owner issued it for.
 	ctxMachine
+	// ctxOperatorToken marks a request an admin or a reseller made with an
+	// API token of their own, rather than signed in. Served as them, and
+	// refused what only someone at the keyboard may do (requireOperator,
+	// refuseOperatorToken).
+	ctxOperatorToken
 )
 
 type loginRequest struct {
@@ -209,6 +214,21 @@ func (s *Server) authenticate(r *http.Request) (admin *model.Admin, machine bool
 	// the JWT because it is not one and would fail that parse with a
 	// message about sessions that would send an operator looking in the
 	// wrong place.
+	// An operator's own token. Its operator is read now, as they are now: the
+	// token holds no rights of its own, so one switched off, or removed, is
+	// turned away here exactly as a password would be, and what they may
+	// reach is the scope requireAuth builds from them below, every time.
+	if strings.HasPrefix(raw, operators.OperatorTokenPrefix) {
+		a, err := s.admins.TokenOperator(r.Context(), raw)
+		if err != nil {
+			return nil, false, "that access token is not valid", false
+		}
+		if why := signInRefusal(a, time.Now().UTC()); why != "" {
+			return nil, false, why, false
+		}
+		return a, false, "", false
+	}
+
 	if strings.HasPrefix(raw, "wui_") {
 		if s.nodes != nil && s.nodes.VerifyToken(r.Context(), raw) {
 			return nil, true, "", false
@@ -271,6 +291,9 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxAdmin, admin)
+		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer "+operators.OperatorTokenPrefix) {
+			ctx = context.WithValue(ctx, ctxOperatorToken, true)
+		}
 		// Attached here, once, for every authenticated request. Below this
 		// line the database narrows itself to this operator on its own, so
 		// a handler cannot serve another operator's customers by forgetting
@@ -415,12 +438,33 @@ func (s *Server) requireMenu(menu string, next http.HandlerFunc) http.HandlerFun
 // the admin when there is one.
 func (s *Server) requireOperator(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if adminFrom(r.Context()) == nil {
+		if adminFrom(r.Context()) == nil || fromOperatorToken(r.Context()) {
 			writeError(w, http.StatusForbidden, "this needs a signed-in administrator, not an API token")
 			return
 		}
 		next(w, r)
 	}
+}
+
+// refuseOperatorToken keeps an operator's token off a route that is
+// theirs only at the keyboard: the panel's settings, and anything about
+// operators. A script that leaked could otherwise read what the panel is
+// set up as, or reach the people who run it.
+func (s *Server) refuseOperatorToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if fromOperatorToken(r.Context()) {
+			writeError(w, http.StatusForbidden, "this needs you signed in, not an API token")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// fromOperatorToken reports whether requireAuth let this request in on an
+// operator's own token.
+func fromOperatorToken(ctx context.Context) bool {
+	t, _ := ctx.Value(ctxOperatorToken).(bool)
+	return t
 }
 
 // fromMachine reports whether requireAuth let this request in on a machine

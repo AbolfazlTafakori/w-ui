@@ -632,6 +632,9 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients C
 			Update("owner_id", 0).Error; err != nil {
 			return fmt.Errorf("release the operator's nodes: %w", err)
 		}
+		if err := DropTokensOf(tx, admin.ID); err != nil {
+			return fmt.Errorf("revoke the operator's tokens: %w", err)
+		}
 		if err := tx.Delete(&model.Admin{}, admin.ID).Error; err != nil {
 			return fmt.Errorf("delete operator: %w", err)
 		}

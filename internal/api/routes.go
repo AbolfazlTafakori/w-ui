@@ -630,6 +630,20 @@ func (s *Server) routes() []Route {
 		{Method: "POST", Path: "/api/nodes/{id}/probe", Group: "Nodes", Auth: true,
 			Summary: "Ask one node right now instead of waiting for the schedule.",
 			handler: s.handleProbeNode},
+		{Method: "GET", Path: "/api/operator/tokens", Group: "Authentication", Auth: true, Operator: true,
+			Summary: "Your own API tokens; for the owner every operator's, for an admin theirs and their resellers'.",
+			Note:    "No secret is kept, so none is listed: only a prefix to tell them apart, when each ends and when it was last used.",
+			handler: s.handleListOperatorTokens},
+		{Method: "POST", Path: "/api/operator/tokens", Group: "Authentication", Auth: true, Operator: true,
+			Summary: "Issue yourself an API token, as an admin or a reseller.",
+			Body:    `{"name":"shop","days":90}`,
+			Note: "It reaches what you do, as you are at each request -- switched off, it stops at once -- and never " +
+				"your account, the operators, the settings or other tokens. days: absent is 90, 0 is never, at most 365. " +
+				"Five at most. The secret is returned once and stored only as a hash.",
+			handler: s.handleIssueOperatorToken},
+		{Method: "DELETE", Path: "/api/operator/tokens/{id}", Group: "Authentication", Auth: true, Operator: true,
+			Summary: "Revoke an API token: your own, or as the owner anyone's, as an admin your resellers'.",
+			handler: s.handleRevokeOperatorToken},
 		{Method: "GET", Path: "/api/tokens", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Access tokens issued for machine use.",
 			handler: s.handleListTokens},
@@ -935,6 +949,11 @@ var (
 		// report and record, which carry every address in full.
 		"GET /api/operator/sharing":         true,
 		"GET /api/operator/sharing/history": true,
+		// Their own API tokens, signed in only (Operator): a token can
+		// neither list, mint nor revoke one.
+		"GET /api/operator/tokens":         true,
+		"POST /api/operator/tokens":        true,
+		"DELETE /api/operator/tokens/{id}": true,
 	}
 
 	// menuForRoute is the admin page that gates a single route under a
@@ -1000,6 +1019,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux, routes []Route) {
 		}
 		if r.Operator {
 			h = s.requireOperator(h)
+		} else if r.Group == "Settings" || r.Group == "Operators" {
+			// An operator's own token reaches their customers, never the
+			// panel's settings or the people who run it.
+			h = s.refuseOperatorToken(h)
 		}
 		if r.Auth || r.Operator {
 			// Inside requireAuth, so the line can say who.
