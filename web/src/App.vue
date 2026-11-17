@@ -75,6 +75,8 @@ const nav = [
   // own customers and by network; the owner's in full.
   // Every operator's own API tokens; the owner sees and revokes everyone's.
   { to: '/tokens', key: 'nav.tokens', icon: 'KeyOutlined', sells: true, everyone: true },
+  // What an admin's tree, or a reseller, changed; granted by the owner.
+  { to: '/activity', key: 'nav.activity', icon: 'ProfileOutlined', menu: 'activity', grant: 'activity' },
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined', menu: 'sharing', grant: 'sharing' },
   { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true, menu: 'groups' },
   // Two tiers, two pages. Admins is the owner's alone -- no menu grant and no

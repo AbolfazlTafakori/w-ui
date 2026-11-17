@@ -38,6 +38,7 @@ const SettingsView = () => import('./views/SettingsView.vue')
 const AdminsView = () => import('./views/AdminsView.vue')
 const SharingView = () => import('./views/SharingView.vue')
 const TokensView = () => import('./views/TokensView.vue')
+const ActivityView = () => import('./views/ActivityView.vue')
 const ApiView = () => import('./views/ApiView.vue')
 const NodesView = () => import('./views/NodesView.vue')
 const HostsView = () => import('./views/HostsView.vue')
@@ -74,6 +75,8 @@ const router = createRouter({
     // meta.grant: a page a reseller has only when the owner ticked it.
     // Every operator's: their own API tokens, or for the owner everyone's.
     { path: '/tokens', name: 'tokens', component: TokensView, meta: { sells: true, everyone: true } },
+    // What an admin's tree changed, or a reseller's own: granted like sharing.
+    { path: '/activity', name: 'activity', component: ActivityView, meta: { menu: 'activity', grant: 'activity' } },
     { path: '/sharing', name: 'sharing', component: SharingView, meta: { menu: 'sharing', grant: 'sharing' } },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },

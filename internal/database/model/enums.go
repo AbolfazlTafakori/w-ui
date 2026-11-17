@@ -211,11 +211,15 @@ const (
 	// The one page a reseller can be granted too: off until the owner ticks
 	// it, for an admin and a reseller alike.
 	MenuSharing = "sharing"
+	// MenuActivity is the record of what the operator and, for an admin,
+	// their resellers changed. Granted like sharing: by the owner, to an
+	// admin or a reseller, off until ticked.
+	MenuActivity = "activity"
 )
 
 // GrantableMenus is every page the owner may grant an admin, in menu order.
 func GrantableMenus() []string {
-	return []string{MenuClients, MenuGroups, MenuResellers, MenuSharing}
+	return []string{MenuClients, MenuGroups, MenuResellers, MenuSharing, MenuActivity}
 }
 
 // DefaultAdminMenus is what an admin made without a list of pages is given:
@@ -223,14 +227,14 @@ func GrantableMenus() []string {
 // customers' networks, and is handed to nobody the owner did not tick it for.
 func DefaultAdminMenus() []string { return []string{MenuClients, MenuGroups, MenuResellers} }
 
-// ResellerMenus is the pages a reseller can be granted: sharing alone. Their
-// customers and groups are theirs anyway.
-func ResellerMenus() []string { return []string{MenuSharing} }
+// ResellerMenus is the pages a reseller can be granted: sharing and their own
+// activity. Their customers and groups are theirs anyway.
+func ResellerMenus() []string { return []string{MenuSharing, MenuActivity} }
 
 // ValidMenu reports whether m is a page that can be granted.
 func ValidMenu(m string) bool {
 	switch m {
-	case MenuClients, MenuGroups, MenuResellers, MenuSharing:
+	case MenuClients, MenuGroups, MenuResellers, MenuSharing, MenuActivity:
 		return true
 	}
 	return false
@@ -242,7 +246,7 @@ func ValidMenuFor(role AdminRole, m string) bool {
 	case RoleAdmin:
 		return ValidMenu(m)
 	case RoleReseller:
-		return m == MenuSharing
+		return m == MenuSharing || m == MenuActivity
 	}
 	return false
 }

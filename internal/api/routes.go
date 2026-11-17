@@ -696,6 +696,11 @@ func (s *Server) routes() []Route {
 			Summary: "The sharing record of your own customers, deleted ones included, newest first. Takes limit.",
 			Note:    "As /api/operator/sharing: by network, never the address in full.",
 			handler: s.handleOperatorSharingHistory},
+		{Method: "GET", Path: "/api/operator/activity", Group: "Server", Auth: true,
+			Summary: "What admins and resellers changed: an admin's own and their resellers', a reseller's own, every operator's for the owner. Takes limit.",
+			Note: "For an operator the owner granted the activity page. The action as routed and how it ended, never what " +
+				"was sent or answered. Kept 90 days. The owner's own changes are in the panel's log.",
+			handler: s.handleOperatorActivity},
 		{Method: "GET", Path: "/api/sharing", Group: "Server", Auth: true,
 			Summary: "Credentials seen from several places at once.",
 			Note:    "Evidence, not proof. Nothing is disconnected automatically.",
@@ -954,6 +959,8 @@ var (
 		"GET /api/operator/tokens":         true,
 		"POST /api/operator/tokens":        true,
 		"DELETE /api/operator/tokens/{id}": true,
+		// What their tree changed, when the owner granted them the page.
+		"GET /api/operator/activity": true,
 	}
 
 	// menuForRoute is the admin page that gates a single route under a
@@ -970,6 +977,7 @@ var (
 	grantForRoute = map[string]string{
 		"GET /api/operator/sharing":         model.MenuSharing,
 		"GET /api/operator/sharing/history": model.MenuSharing,
+		"GET /api/operator/activity":        model.MenuActivity,
 	}
 )
 

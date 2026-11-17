@@ -74,11 +74,11 @@ function monthFromToday() {
 // GrantableMenus. A new admin starts with the pages there were before sharing
 // (DefaultAdminMenus): sharing shows customers' networks, and is ticked by
 // the owner for whoever should have it.
-const ALL_MENUS = ['clients', 'groups', 'resellers', 'sharing']
+const ALL_MENUS = ['clients', 'groups', 'resellers', 'sharing', 'activity']
 const DEFAULT_ADMIN_MENUS = ['clients', 'groups', 'resellers']
-// A reseller's one grantable page (ResellerMenus); their customers and
-// groups are theirs anyway. Only the owner grants it.
-const RESELLER_MENUS = ['sharing']
+// A reseller's grantable pages (ResellerMenus); their customers and
+// groups are theirs anyway. Only the owner grants them.
+const RESELLER_MENUS = ['sharing', 'activity']
 
 const a = props.admin
 const q = quotaToUnit(a?.quotaBytes)

@@ -173,6 +173,29 @@ type OperatorToken struct {
 	Username string `gorm:"-" json:"username,omitempty"`
 }
 
+// OperatorAction is one change an admin or a reseller made, kept so the
+// admin over them -- or they themselves, when the owner grants it -- can see
+// what was done in their tree.
+//
+// What was asked and how it ended, never what was sent or answered: no
+// request body, no response, no query string, so no password, token or
+// subscription link can be in it. Not the address it came from either: an
+// admin is shown what their resellers did, not where they were.
+type OperatorAction struct {
+	ID      uint `gorm:"primaryKey" json:"id"`
+	AdminID uint `gorm:"index;not null" json:"adminId"`
+	// Method and Path are the request as routed: the path holds ids at most.
+	Method string `gorm:"size:8;not null" json:"method"`
+	Path   string `gorm:"size:255;not null" json:"path"`
+	Status int    `gorm:"not null" json:"status"`
+	// ViaToken says it came from one of their API tokens, not signed in.
+	ViaToken bool      `gorm:"not null;default:false" json:"viaToken"`
+	At       time.Time `gorm:"not null;index" json:"at"`
+
+	// Username is who, filled when the list is read; never stored.
+	Username string `gorm:"-" json:"username,omitempty"`
+}
+
 // Interface is one listening VPN endpoint on a node.
 //
 // Running several interfaces on one node is deliberate: a standard WireGuard
@@ -1004,6 +1027,7 @@ func AllModels() []any {
 		&AccountEndpoint{},
 		&SharingEvent{},
 		&OperatorToken{},
+		&OperatorAction{},
 		&Outbound{},
 		&OutboundSub{},
 		&Balancer{},

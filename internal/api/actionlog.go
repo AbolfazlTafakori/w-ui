@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -56,6 +57,13 @@ func (s *Server) logAction(method string, next http.HandlerFunc) http.HandlerFun
 			// Whatever changed, every open subscription page hears of it
 			// now; each asks whether its own files moved.
 			s.subHub.Broadcast()
+		}
+		// An admin's or a reseller's change is also kept for the admin over
+		// them (operators.RecordAction): the path, never the body or the
+		// answer, and not the address. After the answer, so the caller does
+		// not wait on it.
+		if a := adminFrom(r.Context()); a != nil && s.admins != nil {
+			s.admins.RecordAction(context.WithoutCancel(r.Context()), a, method, r.URL.Path, rec.status, fromOperatorToken(r.Context()))
 		}
 		switch {
 		case rec.status >= 500:

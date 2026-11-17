@@ -322,6 +322,15 @@ OperatorToken
 	lastUsedAt *time.Time
 	createdAt time.Time
 	username string omitempty (not stored)
+OperatorAction
+	id uint
+	adminId uint
+	method string
+	path string
+	status int
+	viaToken bool
+	at time.Time
+	username string omitempty (not stored)
 Outbound
 	id uint
 	tag string

@@ -81,6 +81,8 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		"GET /api/operator/tokens",
 		"POST /api/operator/tokens",
 		"DELETE /api/operator/tokens/{id}",
+		// What their tree changed, when the owner granted them the page.
+		"GET /api/operator/activity",
 	}
 	sort.Strings(want)
 
