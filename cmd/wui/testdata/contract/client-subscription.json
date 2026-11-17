@@ -1,5 +1,6 @@
 {
   "body": {
+    "enabled": true,
     "link": "http://127.0.0.1:47171/subscribe/n95QyHlTPbUc-b0pNtMfFlhWAmOX7ghe",
     "token": "n95QyHlTPbUc-b0pNtMfFlhWAmOX7ghe"
   },

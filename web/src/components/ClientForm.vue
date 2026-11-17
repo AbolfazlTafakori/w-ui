@@ -203,9 +203,11 @@ const subEnabled = ref(false)
 async function loadSub() {
   if (!editing.value) return
   try {
-    const s = await api.get('/api/subscription', { background: true })
-    subEnabled.value = !!s?.enabled
-    if (s?.enabled) sub.value = await api.get(`/api/clients/${props.client.id}/subscription`, { background: true })
+    // The link answer says whether the service is on; the settings route
+    // is the owner's alone, so a reseller cannot ask it.
+    const link = await api.get(`/api/clients/${props.client.id}/subscription`, { background: true })
+    subEnabled.value = !!link?.enabled
+    sub.value = link?.enabled ? link : null
   } catch {
     sub.value = null
   }

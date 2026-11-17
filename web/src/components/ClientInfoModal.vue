@@ -62,13 +62,15 @@ const overflowMore = ref(false)
 async function load() {
   loading.value = true
   try {
-    const [fresh, subs] = await Promise.all([
+    // The link answer says whether the service is on; the settings route
+    // is the owner's alone, so a reseller cannot ask it.
+    const [fresh, link] = await Promise.all([
       api.client(props.client.id),
-      api.get('/api/subscription', { background: true }).catch(() => null),
+      api.get(`/api/clients/${props.client.id}/subscription`, { background: true }).catch(() => null),
     ])
     c.value = fresh
-    if (subs?.enabled) {
-      sub.value = await api.get(`/api/clients/${props.client.id}/subscription`, { background: true }).catch(() => null)
+    sub.value = link?.enabled ? link : null
+    if (link?.enabled) {
       const list = await api.get(`/api/clients/${props.client.id}/subscription/users`, { background: true }).catch(() => null)
       users.value = list?.users || []
     }

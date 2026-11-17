@@ -184,12 +184,20 @@ func (s *Server) handleClientSubscription(w http.ResponseWriter, r *http.Request
 		fail(w, s.log, err)
 		return
 	}
+	cfg, err := s.subs.Settings(r.Context())
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
 	link, err := s.subs.LinkFor(r.Context(), token, r.Host)
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"link": link, "token": token})
+	// Whether the service is on rides along: the settings route that also
+	// says so is the owner's, and a reseller or admin asking it is refused,
+	// which left their QR and info dialogs with no link to show (#13).
+	writeJSON(w, http.StatusOK, map[string]any{"link": link, "token": token, "enabled": cfg.Enabled})
 }
 
 // handleRotateSubscription invalidates the old link and issues a new one.

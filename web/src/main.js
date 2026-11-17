@@ -56,15 +56,15 @@ const router = createRouter({
   history: createWebHistory(routerBase),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
-    // meta.sells marks a page a reseller has; meta.everyone one a panel
-    // administrator has on top of those. Everything unmarked is the
-    // owner's. The guard below turns that into a redirect, and every
+    // meta.sells marks a page a reseller has; meta.menu the page an admin
+    // has when the owner ticked it for them; meta.everyone one every
+    // operator has. Everything unmarked is the owner's. The guard below turns that into a redirect, and every
     // endpoint behind these pages checks again for itself -- a route table
     // is a convenience, never the thing that keeps anybody out.
-    { path: '/', name: 'overview', component: OverviewView, meta: { everyone: true } },
-    { path: '/clients', name: 'clients', component: ClientsView, meta: { sells: true } },
-    { path: '/clients/:id', name: 'client', component: ClientDetailView, props: true, meta: { sells: true } },
-    { path: '/groups', name: 'groups', component: GroupsView, meta: { sells: true } },
+    { path: '/', name: 'overview', component: OverviewView },
+    { path: '/clients', name: 'clients', component: ClientsView, meta: { sells: true, menu: 'clients' } },
+    { path: '/clients/:id', name: 'client', component: ClientDetailView, props: true, meta: { sells: true, menu: 'clients' } },
+    { path: '/groups', name: 'groups', component: GroupsView, meta: { sells: true, menu: 'groups' } },
     { path: '/interfaces', name: 'interfaces', component: InterfacesView },
     { path: '/nodes', name: 'nodes', component: NodesView },
     { path: '/hosts', name: 'hosts', component: HostsView },
@@ -77,7 +77,7 @@ const router = createRouter({
     // owner's own second tier) and resellers. The same list, filtered to one
     // role, so each page is one job.
     { path: '/admins', name: 'admins', component: AdminsView, props: { kind: 'admin' } },
-    { path: '/resellers', name: 'resellers', component: AdminsView, props: { kind: 'reseller' } },
+    { path: '/resellers', name: 'resellers', component: AdminsView, props: { kind: 'reseller' }, meta: { menu: 'resellers' } },
     // Where it used to live. Kept so a bookmark or an open tab still lands on
     // the page rather than on a settings section that does not exist -- and
     // ahead of the :tab route below, which would otherwise swallow it.
@@ -113,16 +113,31 @@ router.beforeEach((to) => {
     // Sent to the page they do have rather than shown a refusal. A
     // reseller following an old bookmark into the routing table has not
     // done anything wrong; there is simply nothing there for them.
-    return { name: store.admin.managesPanel || store.admin.seesEveryone ? 'overview' : 'clients' }
+    return landing(store.admin)
   }
   return true
 })
+
+// landing is the page an operator is sent to: the owner's dashboard, an
+// admin's first ticked page (the menu ids are the route names), or a
+// reseller's customers. An admin with no page ticked gets the not-found
+// page rather than a redirect that would loop.
+function landing(me) {
+  if (me.managesPanel) return { name: 'overview' }
+  if (me.managesResellers) {
+    const first = (me.menuIds || [])[0]
+    return first ? { name: first } : { name: 'not-found', params: { pathMatch: ['home'] } }
+  }
+  return { name: 'clients' }
+}
 
 // allowed answers the question the sidebar answers for its own items.
 function allowed(to) {
   const me = store.admin
   if (!me || me.managesPanel) return true
-  if (me.seesEveryone) return !!(to.meta.everyone || to.meta.sells)
+  // An admin: the pages the owner ticked for them, as the sidebar shows.
+  // Not seesEveryone -- that is "see every customer", not which pages.
+  if (me.managesResellers) return !!(to.meta.everyone || (to.meta.menu && (me.menuIds || []).includes(to.meta.menu)))
   return !!to.meta.sells
 }
 

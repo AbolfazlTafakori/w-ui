@@ -42,21 +42,16 @@ const entry = computed(() => {
 
 onMounted(async () => {
   try {
-    const [fresh, sub, ifaces] = await Promise.all([
+    // The link answer says whether the service is on; the settings route
+    // is the owner's alone, so a reseller cannot ask it.
+    const [fresh, link, ifaces] = await Promise.all([
       api.client(props.client.id),
-      api.get('/api/subscription', { background: true }).catch(() => null),
+      api.get(`/api/clients/${props.client.id}/subscription`, { background: true }).catch(() => null),
       props.interfaces.length ? Promise.resolve(props.interfaces) : api.interfaces({ background: true }).catch(() => []),
     ])
     const byId = Object.fromEntries((ifaces || []).map((i) => [i.id, i]))
-    if (sub?.enabled) {
-      try {
-        const link = await api.get(`/api/clients/${props.client.id}/subscription`, { background: true })
-        if (link?.link) {
-          subEntry.value = { key: 'sub', value: link.link, remark: `${fresh.name} — ${t('client.subscriptionTitle')}`, showQr: true }
-        }
-      } catch {
-        /* no link: the segment is simply not offered */
-      }
+    if (link?.enabled && link.link) {
+      subEntry.value = { key: 'sub', value: link.link, remark: `${fresh.name} — ${t('client.subscriptionTitle')}`, showQr: true }
     }
     // Files by tunnel, in the order they were issued, each numbered as its
     // user is on the subscription page and their own link.

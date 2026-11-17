@@ -66,7 +66,9 @@ watch(langOpen, (open) => {
 // `sells` marks a page a reseller has. Everything unmarked is the owner's,
 // and `everyone` marks what an administrator gets on top.
 const nav = [
-  { to: '/', key: 'nav.overview', icon: 'DashboardOutlined', exact: true, everyone: true },
+  // The owner's alone: an admin has no use for the server dashboard, and
+  // its figures come from a route only the owner may read (#13).
+  { to: '/', key: 'nav.overview', icon: 'DashboardOutlined', exact: true },
   { to: '/interfaces', key: 'nav.interfaces', icon: 'ImportOutlined' },
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true, menu: 'clients' },
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
@@ -144,7 +146,7 @@ const visibleNav = computed(() => {
   if (!me || me.managesPanel) return nav
   const grants = me.menuIds || []
   const keep = (item) => {
-    // An admin: the overview always, plus the pages the owner granted. A page
+    // An admin: the pages the owner granted. A page
     // the owner left unchecked is not here, and the backend refuses it too.
     if (me.managesResellers) return item.everyone || (item.menu && grants.includes(item.menu))
     // A reseller: the fixed two pages that are theirs.
@@ -466,7 +468,7 @@ function reload() {
           </div>
 
           <ul class="amenu-inline drawer-menu" role="menu">
-            <template v-for="item in nav" :key="item.key || item.to">
+            <template v-for="item in visibleNav" :key="item.key || item.to">
               <li v-if="!item.children" role="none">
                 <RouterLink :to="item.to" class="amenu-item" :class="{ selected: isActive(item) }" role="menuitem">
                   <AntIcon :name="item.icon" />
