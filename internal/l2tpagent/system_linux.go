@@ -32,6 +32,10 @@ const (
 
 	cmdTimeout     = 30 * time.Second
 	installTimeout = 15 * time.Minute
+	// loadTimeout bounds strongSwan starting and loading its configuration:
+	// its own unit loads everything as it starts, and with thousands of
+	// IKEv2 devices that alone outlasts cmdTimeout.
+	loadTimeout = 5 * time.Minute
 )
 
 // swanctlDirs are where distributions keep strongSwan's swanctl
@@ -397,31 +401,35 @@ func (s *linuxSystem) LoadIPsec(ctx context.Context, conf string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeAtomic(filepath.Join(dir, swanctlFile), conf, 0o600); err != nil {
-		return err
+	path := filepath.Join(dir, swanctlFile)
+	same := sameFile(path, conf, 0o600)
+	if !same {
+		if err := writeAtomic(path, conf, 0o600); err != nil {
+			return err
+		}
 	}
 	unit := strongswanUnit()
 	if !s.active(ctx, unit) {
-		if _, err := s.run(ctx, cmdTimeout, "", "systemctl", "start", unit); err != nil {
+		if _, err := s.run(ctx, loadTimeout, "", "systemctl", "start", unit); err != nil {
 			return err
 		}
 		if err := s.WriteRun(startedMarker, unit+"\n"); err != nil {
 			s.log.Warn("could not note that strongSwan was started here", "error", err)
 		}
+		// Started, it has loaded everything; asked once more, as before,
+		// for a strongSwan whose unit loads nothing itself.
+		return s.loadAll(ctx)
 	}
-	// charon answers on its control socket a moment after it starts.
-	var last error
-	for i := 0; i < 20; i++ {
-		if _, last = s.run(ctx, cmdTimeout, "", "swanctl", "--load-all", "--noprompt"); last == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
+	if same {
+		return nil
 	}
-	return last
+	// The file holds a connection and its secret, and nothing else:
+	// those two are loaded again, never the IKEv2 tunnel's certificates
+	// and pools beside it.
+	if err := s.swanctl(ctx, "--load-creds", "--noprompt"); err != nil {
+		return err
+	}
+	return s.swanctl(ctx, "--load-conns")
 }
 
 func (s *linuxSystem) UnloadIPsec(ctx context.Context) error {

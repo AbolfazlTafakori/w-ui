@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"path"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/radiusd"
+	"github.com/abolfazl/w-ui/internal/vici"
 )
 
 // The IKEv2 tunnel.
@@ -28,11 +31,17 @@ type IPsecSystem interface {
 	// EnsurePackages installs what the tunnel needs and is missing.
 	EnsurePackages(ctx context.Context, protocol string) error
 	// WriteSwanctl writes the tunnel's files under strongSwan's swanctl
-	// directory, and removes the ones of its own it no longer has.
-	WriteSwanctl(files []ikev2conf.File) error
-	// LoadSwanctl has strongSwan load everything, starting it if it is not
-	// running.
-	LoadSwanctl(ctx context.Context) error
+	// directory -- each only when it is not already there as it is -- and
+	// removes the ones of its own it no longer has. It returns what it
+	// wrote or removed, as "dir/name".
+	WriteSwanctl(files []ikev2conf.File) ([]string, error)
+	// LoadSwanctl has strongSwan load what Loads names, starting it if it is
+	// not running.
+	LoadSwanctl(ctx context.Context, l Loads) error
+	// ApplyItems unloads and loads these connections, pools and secrets
+	// alone, over strongSwan's control socket; the files already say the
+	// same. An error leaves the rest to LoadSwanctl.
+	ApplyItems(ctx context.Context, unload, load []ikev2conf.Item) error
 	// RemoveSwanctl takes every one of the tunnel's files away and reloads
 	// strongSwan -- or stops it, when it was the agent's and nothing of the
 	// panel's is left in it.
@@ -59,8 +68,18 @@ type IKEv2Agent struct {
 	installed bool
 	// applied is the fingerprint of the files strongSwan was last given.
 	applied string
-	state   *ikev2conf.State
-	failure string
+	// wanted is the fingerprint the pass before wanted, and waiting since
+	// when a change has been held back for the panel to finish making it.
+	wanted  string
+	waiting time.Time
+	// items is, by Item.Key, the fingerprint of every connection, pool and
+	// secret strongSwan was last given.
+	items map[string]string
+	state *ikev2conf.State
+	// stateKey fingerprints the panel's state file state was read from, and
+	// statePrint the files it renders to.
+	stateKey, statePrint string
+	failure              string
 	// seen is, per session, the secret and certificate its account had when
 	// it was first seen: one changed since ends the session.
 	seen map[uint]string
@@ -89,9 +108,16 @@ func (a *IKEv2Agent) Step(ctx context.Context) error {
 		return ErrNoTunnel
 	}
 	a.idle = false
-	want, err := ikev2conf.Decode(raw)
-	if err != nil {
-		return a.fail(fmt.Errorf("the panel's state was refused: %w", err))
+	// The state unchanged since the last pass -- most passes -- is not
+	// read or rendered again: with thousands of devices that alone is
+	// most of a second.
+	key := l2tpconf.Fingerprint(string(raw))
+	same := a.state != nil && key == a.stateKey
+	want := a.state
+	if !same {
+		if want, err = ikev2conf.Decode(raw); err != nil {
+			return a.fail(fmt.Errorf("the panel's state was refused: %w", err))
+		}
 	}
 	if !a.installed {
 		a.report(l2tpconf.AgentInstalling, "", nil)
@@ -108,36 +134,181 @@ func (a *IKEv2Agent) Step(ctx context.Context) error {
 		}
 		a.radiusSecret = hex.EncodeToString(b)
 	}
-	if want.Interface.Has(ikev2conf.ModeMSCHAPv2) {
-		if err := a.sys.ServeRadius(a.radiusSecret, lookupFrom(want)); err != nil {
-			return a.fail(fmt.Errorf("starting the RADIUS server password sign-ins are checked by: %w", err))
+	var files []ikev2conf.File
+	print := a.statePrint
+	if !same {
+		if want.Interface.Has(ikev2conf.ModeMSCHAPv2) {
+			if err := a.sys.ServeRadius(a.radiusSecret, lookupFrom(want)); err != nil {
+				return a.fail(fmt.Errorf("starting the RADIUS server password sign-ins are checked by: %w", err))
+			}
+		} else {
+			a.sys.StopRadius()
 		}
-	} else {
-		a.sys.StopRadius()
+		files = ikev2conf.Files(want, a.radiusSecret)
+		print = filesFingerprint(files)
 	}
-	files := ikev2conf.Files(want, a.radiusSecret)
-	print := filesFingerprint(files)
 	sas, listErr := a.sys.SAs(ctx)
-	// Written and loaded when they changed, and again when strongSwan is
-	// not answering -- it died, or this is the first pass of a run.
-	if print != a.applied || listErr != nil {
-		if err := a.sys.WriteSwanctl(files); err != nil {
+	// strongSwan not answering -- it died, or this is the first pass of a
+	// run -- is given everything; a change, only what it touched, once the
+	// panel has stopped making it.
+	down := listErr != nil || a.applied == ""
+	var live []l2tpconf.Session
+	if !down {
+		// Sessions that should not exist are ended first: a device
+		// taken away holds its address no longer when its pool goes.
+		live = a.endUnwanted(ctx, want, sas)
+	}
+	if down || (print != a.applied && a.settled(print)) {
+		if files == nil {
+			files = ikev2conf.Files(want, a.radiusSecret)
+		}
+		changed, err := a.sys.WriteSwanctl(files)
+		if err != nil {
 			return a.fail(fmt.Errorf("writing strongSwan's files: %w", err))
 		}
-		if err := a.sys.LoadSwanctl(ctx); err != nil {
-			return a.fail(fmt.Errorf("loading the tunnel into strongSwan: %w", err))
+		l := loadsFor(changed)
+		items := ikev2conf.Items(want)
+		prints := itemPrints(items)
+		if down {
+			l = Loads{All: true, Settings: l.Settings}
+		} else if unload, load := a.itemDiff(items, prints); len(unload)+len(load) > 0 {
+			// What one device changed is loaded alone: swanctl would
+			// hand strongSwan every connection again.
+			if err := a.sys.ApplyItems(ctx, unload, load); err != nil {
+				a.log.Warn("could not load the change alone; loading it through swanctl", "error", err)
+			} else {
+				l.Secrets, l.Pools, l.Conns = false, false, false
+			}
+		} else {
+			l.Secrets, l.Pools, l.Conns = false, false, false
 		}
-		a.applied = print
+		// Nothing for swanctl when all of it went over the socket.
+		if l != (Loads{}) {
+			if err := a.sys.LoadSwanctl(ctx, l); err != nil {
+				// The files are written: the next pass would see
+				// nothing changed, and loads them all instead.
+				a.applied = ""
+				return a.fail(fmt.Errorf("loading the tunnel into strongSwan: %w", err))
+			}
+		}
+		a.applied, a.waiting, a.items = print, time.Time{}, prints
+	}
+	a.wanted = print
+	if down {
 		if sas, listErr = a.sys.SAs(ctx); listErr != nil {
 			a.log.Warn("could not list the sessions", "error", listErr)
 		}
+		live = a.endUnwanted(ctx, want, sas)
 	}
-	a.state = want
+	a.state, a.stateKey, a.statePrint = want, key, print
 	a.failure = ""
-
-	live := a.endUnwanted(ctx, want, sas)
 	a.report(l2tpconf.AgentRunning, "", live)
 	return nil
+}
+
+// settleFor is how long a change still being made -- the panel making
+// thousands of certificates -- is held back at most before it is loaded.
+const settleFor = 10 * time.Second
+
+// settled reports whether a change the panel wants is ready to load: it is
+// what the pass before wanted too, so the panel has stopped changing it, or
+// it has been held back long enough. Changes coming one on another are
+// loaded together, every settleFor, not one by one.
+func (a *IKEv2Agent) settled(print string) bool {
+	if a.waiting.IsZero() {
+		a.waiting = a.now()
+	}
+	return print == a.wanted || a.now().Sub(a.waiting) >= settleFor
+}
+
+// itemPrints fingerprints each item by the request that loads it.
+func itemPrints(items []ikev2conf.Item) map[string]string {
+	out := make(map[string]string, len(items))
+	for _, it := range items {
+		cmd, msg := it.Load()
+		b, err := vici.Request(cmd, msg)
+		if err != nil {
+			b = []byte(err.Error()) // refused when loaded too; never equal
+		}
+		out[it.Key()] = l2tpconf.Fingerprint(string(b))
+	}
+	return out
+}
+
+// itemDiff is what strongSwan last had and the panel no longer wants, and
+// what is new or changed since.
+func (a *IKEv2Agent) itemDiff(items []ikev2conf.Item, prints map[string]string) (unload, load []ikev2conf.Item) {
+	for _, it := range items {
+		if a.items[it.Key()] != prints[it.Key()] {
+			load = append(load, it)
+		}
+	}
+	gone := make([]string, 0)
+	for k := range a.items {
+		if _, ok := prints[k]; !ok {
+			gone = append(gone, k)
+		}
+	}
+	sort.Strings(gone)
+	for _, k := range gone {
+		kind, name, _ := strings.Cut(k, ":")
+		unload = append(unload, ikev2conf.Item{Kind: kind, Sec: &vici.Section{Name: name}})
+	}
+	return unload, load
+}
+
+// Loads is what strongSwan is asked to load again through swanctl.
+type Loads struct {
+	// All is everything: strongSwan was not answering, or the agent has
+	// just started and does not know what it holds.
+	All bool
+	// Creds are the certificates and keys, Secrets the secrets file.
+	Settings, Creds, Secrets, Pools, Conns bool
+}
+
+// loadsFor is what the files written or removed have strongSwan load.
+func loadsFor(changed []string) Loads {
+	var l Loads
+	for _, c := range changed {
+		dir, name := path.Split(c)
+		switch ikev2conf.LoadOf(strings.TrimSuffix(dir, "/"), name) {
+		case ikev2conf.LoadSettings:
+			l.Settings = true
+		case ikev2conf.LoadCreds:
+			l.Creds = true
+		case ikev2conf.LoadSecrets:
+			l.Secrets = true
+		case ikev2conf.LoadPools:
+			l.Pools = true
+		case ikev2conf.LoadConns:
+			l.Conns = true
+		}
+	}
+	return l
+}
+
+// swanctlCommands are the swanctl commands that load l, in order: the
+// credentials and pools before the connections that use them. strongSwan's
+// own settings are read again only when they changed.
+func swanctlCommands(l Loads) [][]string {
+	var out [][]string
+	if l.All {
+		out = append(out, []string{"--load-all", "--noprompt"})
+	} else {
+		if l.Creds || l.Secrets {
+			out = append(out, []string{"--load-creds", "--noprompt"})
+		}
+		if l.Pools {
+			out = append(out, []string{"--load-pools"})
+		}
+		if l.Conns {
+			out = append(out, []string{"--load-conns"})
+		}
+	}
+	if l.Settings {
+		out = append(out, []string{"--reload-settings"})
+	}
+	return out
 }
 
 // endUnwanted ends the sessions that should not exist -- a device taken off
@@ -261,7 +432,7 @@ func (a *IKEv2Agent) teardown(ctx context.Context) {
 	if err := a.files.RemoveReport(); err != nil {
 		a.log.Warn("tearing down the tunnel", "step", "removing the report", "error", err)
 	}
-	a.state, a.applied, a.seen = nil, "", nil
+	a.state, a.applied, a.wanted, a.waiting, a.seen, a.items = nil, "", "", time.Time{}, nil, nil
 	a.log.Info("IKEv2 tunnel taken down: the panel has none on this server")
 }
 

@@ -7,6 +7,9 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +22,10 @@ import (
 type fakeIPsec struct {
 	calls      []string
 	files      []ikev2conf.File
+	disk       map[string]string // what WriteSwanctl left, by "dir/name"
+	loads      []Loads
+	events     []string // each load: "swanctl: ..." or "vici: -unloaded +loaded"
+	viciDown   bool
 	sas        []IKESA
 	down       bool // strongSwan not answering
 	terminated []uint
@@ -28,16 +35,58 @@ func (f *fakeIPsec) EnsurePackages(context.Context, string) error {
 	f.calls = append(f.calls, "install")
 	return nil
 }
-func (f *fakeIPsec) WriteSwanctl(files []ikev2conf.File) error {
+func (f *fakeIPsec) WriteSwanctl(files []ikev2conf.File) ([]string, error) {
 	f.calls = append(f.calls, "write")
 	f.files = files
-	return nil
+	if f.disk == nil {
+		f.disk = map[string]string{}
+	}
+	var changed []string
+	keep := map[string]bool{}
+	for _, file := range files {
+		k := file.Dir + "/" + file.Name
+		keep[k] = true
+		if b, ok := f.disk[k]; !ok || b != file.Body {
+			f.disk[k] = file.Body
+			changed = append(changed, k)
+		}
+	}
+	for k := range f.disk {
+		if !keep[k] {
+			delete(f.disk, k)
+			changed = append(changed, k)
+		}
+	}
+	return changed, nil
 }
-func (f *fakeIPsec) LoadSwanctl(context.Context) error {
+func (f *fakeIPsec) LoadSwanctl(_ context.Context, l Loads) error {
 	f.calls = append(f.calls, "load")
+	f.loads = append(f.loads, l)
+	var cmds []string
+	for _, args := range swanctlCommands(l) {
+		cmds = append(cmds, strings.Join(args, " "))
+	}
+	f.events = append(f.events, "swanctl: "+strings.Join(cmds, "; "))
 	f.down = false
 	return nil
 }
+func (f *fakeIPsec) ApplyItems(_ context.Context, unload, load []ikev2conf.Item) error {
+	f.calls = append(f.calls, "apply")
+	if f.viciDown {
+		f.events = append(f.events, "vici: refused")
+		return errors.New("no socket")
+	}
+	var keys []string
+	for _, it := range unload {
+		keys = append(keys, "-"+it.Key())
+	}
+	for _, it := range load {
+		keys = append(keys, "+"+it.Key())
+	}
+	f.events = append(f.events, "vici: "+strings.Join(keys, " "))
+	return nil
+}
+func (f *fakeIPsec) lastLoad() Loads { return f.loads[len(f.loads)-1] }
 func (f *fakeIPsec) RemoveSwanctl(context.Context) error {
 	f.calls = append(f.calls, "remove")
 	return nil
@@ -144,15 +193,253 @@ func TestTheIKEv2TunnelIsLoadedOnceAndAgainWhenItChanges(t *testing.T) {
 		t.Fatalf("an unchanged state was written again: %v", sys.calls)
 	}
 	files.state = ikeState(t, func(s *ikev2conf.State) { s.Interface.Accounts = s.Interface.Accounts[:1] })
+	_ = a.Step(context.Background()) // seen; loaded once the panel has stopped changing it
 	_ = a.Step(context.Background())
-	if sys.count("write") != 2 || sys.count("load") != 2 {
-		t.Fatalf("a changed state was not loaded: %v", sys.calls)
+	if sys.count("write") != 2 || sys.count("apply") != 1 || sys.count("load") != 1 {
+		t.Fatalf("a changed state was not loaded alone: %v", sys.calls)
 	}
 	// strongSwan dies: the next pass loads it all again.
 	sys.down = true
 	_ = a.Step(context.Background())
-	if sys.count("load") != 3 {
-		t.Fatalf("strongSwan down was not reloaded: %v", sys.calls)
+	if sys.count("load") != 2 || !sys.lastLoad().All {
+		t.Fatalf("strongSwan down was not reloaded: %v %+v", sys.calls, sys.loads)
+	}
+}
+
+// settle steps until the change in files.state is loaded, as Run does, and
+// returns how it was: one load, through swanctl or over the socket, or
+// both.
+func settle(t *testing.T, a *IKEv2Agent, sys *fakeIPsec) string {
+	t.Helper()
+	n := len(sys.events)
+	for i := 0; i < 2; i++ {
+		if err := a.Step(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return strings.Join(sys.events[n:], " | ")
+}
+
+// testPKI is a tunnel's authority, the server's certificate (and a renewed
+// one) and every test device's, made once.
+var testPKI = sync.OnceValue(func() map[string]string {
+	ca, err := ikev2conf.NewAuthority("ike0")
+	if err != nil {
+		panic(err)
+	}
+	out := map[string]string{"ca": ca.Cert}
+	for _, k := range []string{"server", "server2"} {
+		srv, err := ca.IssueServer([]string{"vpn.example.com"})
+		if err != nil {
+			panic(err)
+		}
+		out[k], out[k+"-key"] = srv.Cert, srv.Key
+	}
+	for _, u := range []string{"s1-laptop", "s1-phone", "s1-tab", "s1-tab2"} {
+		d, err := ca.IssueDevice(strings.TrimSuffix(u, "2"))
+		if err != nil {
+			panic(err)
+		}
+		out[u] = d.Cert
+	}
+	return out
+})
+
+// withCerts turns certificate sign-ins on beside PSK.
+func withCerts(s *ikev2conf.State) {
+	p := testPKI()
+	s.Interface.Modes = []string{ikev2conf.ModePSK, ikev2conf.ModeRSA}
+	s.Interface.CACert, s.Interface.ServerCert, s.Interface.ServerKey = p["ca"], p["server"], p["server-key"]
+	for i := range s.Interface.Accounts {
+		s.Interface.Accounts[i].Cert = p[s.Interface.Accounts[i].Username]
+	}
+}
+
+// One change has strongSwan load only what it touched -- one device's
+// connections, pool, secret, over the socket -- and never everything, nor
+// its own settings.
+func TestOneChangeLoadsOnlyWhatChanged(t *testing.T) {
+	a, sys, files := ikeRig(t)
+	tab := ikev2conf.Account{ID: 3, Username: "s1-tab", Secret: "Tablet123", IP: "10.79.0.4"}
+	state := func(edit func(s *ikev2conf.State)) []byte {
+		return ikeState(t, func(s *ikev2conf.State) {
+			s.Interface.Accounts = append(s.Interface.Accounts, tab)
+			withCerts(s)
+			if edit != nil {
+				edit(s)
+			}
+		})
+	}
+	files.state = ikeState(t, withCerts)
+	_ = a.Step(context.Background())
+	if l := sys.lastLoad(); !l.All {
+		t.Fatalf("first pass of a run: %+v", l)
+	}
+	renewed := func(s *ikev2conf.State) { s.Interface.Accounts[2].Cert = testPKI()["s1-tab2"] }
+	rotated := func(s *ikev2conf.State) { renewed(s); s.Interface.Accounts[2].Secret = "Rotated99" }
+	newServer := func(s *ikev2conf.State) {
+		rotated(s)
+		s.Interface.ServerCert, s.Interface.ServerKey = testPKI()["server2"], testPKI()["server2-key"]
+	}
+	for _, c := range []struct {
+		what string
+		edit func(s *ikev2conf.State)
+		want string
+	}{
+		{"a device added: its connections, pool and secret", nil,
+			"vici: +conn:wui-ikev2-3-psk +conn:wui-ikev2-3-rsa +pool:wui-ikev2-3 +secret:ike-wui-ikev2-3"},
+		{"its certificate renewed: the connection pinning it", renewed, "vici: +conn:wui-ikev2-3-rsa"},
+		{"its password changed: its secret", rotated, "vici: +secret:ike-wui-ikev2-3"},
+		{"the server's certificate renewed: the credentials, and the connections that send it", newServer,
+			"vici: +conn:wui-ikev2-1-rsa +conn:wui-ikev2-2-rsa +conn:wui-ikev2-3-rsa | swanctl: --load-creds --noprompt"},
+		{"nothing changed", newServer, ""},
+	} {
+		files.state = state(c.edit)
+		if got := settle(t, a, sys); got != c.want {
+			t.Fatalf("%s:\n got %s\nwant %s", c.what, got, c.want)
+		}
+	}
+	for _, l := range sys.loads[1:] {
+		if l.All || l.Settings {
+			t.Fatalf("a change loaded everything or the settings: %+v", sys.loads)
+		}
+	}
+}
+
+// A device taken away loses its way in: its session is ended before
+// anything is loaded, then its connections, pool and secret are unloaded,
+// and its files are gone.
+func TestARemovedDeviceIsUnloaded(t *testing.T) {
+	a, sys, files := ikeRig(t)
+	files.state = ikeState(t, withCerts)
+	_ = a.Step(context.Background())
+	sys.sas = []IKESA{sa(21, 2, 10)}
+	sys.calls = nil
+	files.state = ikeState(t, func(s *ikev2conf.State) { s.Interface.Accounts = s.Interface.Accounts[:1]; withCerts(s) })
+	_ = a.Step(context.Background())
+	if len(sys.terminated) != 1 || sys.terminated[0] != 21 || sys.count("apply") != 0 {
+		t.Fatalf("its session was not ended before the load: ended %v, calls %v", sys.terminated, sys.calls)
+	}
+	want := "vici: -conn:wui-ikev2-2-psk -conn:wui-ikev2-2-rsa -pool:wui-ikev2-2 -secret:ike-wui-ikev2-2"
+	if got := settle(t, a, sys); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	for k, body := range sys.disk {
+		if strings.Contains(k, "wui-ikev2-2.pem") || strings.Contains(body, "s1-phone") || strings.Contains(body, "wui-ikev2-2 ") {
+			t.Fatalf("%s still names the device", k)
+		}
+	}
+}
+
+// strongSwan's socket refusing, the change is loaded through swanctl: every
+// part it touched, from the files.
+func TestWithoutTheSocketSwanctlLoadsTheChange(t *testing.T) {
+	a, sys, files := ikeRig(t)
+	_ = a.Step(context.Background())
+	sys.viciDown = true
+	files.state = ikeState(t, func(s *ikev2conf.State) { s.Interface.Accounts = s.Interface.Accounts[:1] })
+	want := "vici: refused | swanctl: --load-creds --noprompt; --load-pools; --load-conns"
+	if got := settle(t, a, sys); got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// Changes coming one on another -- the panel making thousands of
+// certificates -- are loaded together, never more than once in settleFor,
+// and each device once, whatever batch it came in.
+func TestChangesInARowAreLoadedTogether(t *testing.T) {
+	a, sys, files := ikeRig(t)
+	now := time.Unix(1_000_000, 0)
+	a.now = func() time.Time { return now }
+	_ = a.Step(context.Background())
+	n := len(sys.events)
+	for i := 0; i < 60; i++ { // a minute, a new device every second
+		last := 10 + i
+		files.state = ikeState(t, func(s *ikev2conf.State) {
+			for j := 10; j <= last; j++ {
+				s.Interface.Accounts = append(s.Interface.Accounts, ikev2conf.Account{
+					ID: uint(j), Username: "s1-d" + strconv.Itoa(j), Secret: "Secret123", IP: "10.79.0." + strconv.Itoa(j)})
+			}
+		})
+		_ = a.Step(context.Background())
+		now = now.Add(time.Second)
+	}
+	if got := len(sys.events) - n; got < 5 || got > 7 {
+		t.Fatalf("%d loads for 60 changes in a minute", got)
+	}
+	_ = a.Step(context.Background())
+	if a.applied != filesFingerprint(sys.files) || a.applied == "" {
+		t.Fatal("the last change was not loaded once the panel stopped")
+	}
+	loaded := map[string]int{}
+	for _, e := range sys.events[n:] {
+		for _, k := range strings.Fields(strings.TrimPrefix(e, "vici: ")) {
+			loaded[k]++
+		}
+	}
+	for k, c := range loaded {
+		if c != 1 {
+			t.Fatalf("%s loaded %d times", k, c)
+		}
+	}
+	if len(loaded) != 60*3 {
+		t.Fatalf("%d items loaded, want 180", len(loaded))
+	}
+}
+
+func TestSwanctlCommands(t *testing.T) {
+	for _, c := range []struct {
+		l    Loads
+		want string
+	}{
+		{Loads{}, ""},
+		{Loads{All: true}, "--load-all --noprompt"},
+		{Loads{All: true, Settings: true}, "--load-all --noprompt; --reload-settings"},
+		{Loads{Creds: true}, "--load-creds --noprompt"},
+		{Loads{Secrets: true}, "--load-creds --noprompt"},
+		{Loads{Conns: true}, "--load-conns"},
+		{Loads{Pools: true, Conns: true}, "--load-pools; --load-conns"},
+		{Loads{Creds: true, Pools: true, Conns: true, Settings: true}, "--load-creds --noprompt; --load-pools; --load-conns; --reload-settings"},
+	} {
+		var parts []string
+		for _, args := range swanctlCommands(c.l) {
+			parts = append(parts, strings.Join(args, " "))
+		}
+		if got := strings.Join(parts, "; "); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.l, got, c.want)
+		}
+	}
+	for _, c := range []struct {
+		changed []string
+		want    Loads
+	}{
+		{[]string{"strongswan.d/wui-ikev2-radius.conf"}, Loads{Settings: true}},
+		{[]string{"x509ca/wui-ikev2-ca.pem", "private/wui-ikev2-server.pem"}, Loads{Creds: true}},
+		{[]string{"conf.d/wui-ikev2-secrets.conf"}, Loads{Secrets: true}},
+		{[]string{"conf.d/wui-ikev2-pools.conf"}, Loads{Pools: true}},
+		{[]string{"conf.d/wui-ikev2.conf", "wui-ikev2-certs/wui-ikev2-7.pem"}, Loads{Conns: true}},
+		// From before the device certificates moved: taken out of x509.
+		{[]string{"x509/wui-ikev2-7.pem"}, Loads{Creds: true}},
+	} {
+		if got := loadsFor(c.changed); got != c.want {
+			t.Errorf("%v: %+v, want %+v", c.changed, got, c.want)
+		}
+	}
+}
+
+// The agent restarted, strongSwan still running, its files already as they
+// should be: everything is loaded once, so what it holds matches the files.
+func TestARestartedAgentLoadsEverythingOnce(t *testing.T) {
+	a, sys, files := ikeRig(t)
+	_ = a.Step(context.Background())
+	b := NewIKEv2(sys, files, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	_ = b.Step(context.Background())
+	if l := sys.lastLoad(); len(sys.loads) != 2 || !l.All {
+		t.Fatalf("loads %+v", sys.loads)
+	}
+	_ = b.Step(context.Background())
+	if len(sys.loads) != 2 {
+		t.Fatalf("loaded again with nothing changed: %+v", sys.loads)
 	}
 }
 

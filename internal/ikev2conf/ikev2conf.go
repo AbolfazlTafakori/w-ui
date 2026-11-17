@@ -37,6 +37,7 @@ import (
 	"strings"
 
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
+	"github.com/abolfazl/w-ui/internal/vici"
 )
 
 // The ports IKEv2 uses: key exchange, and everything once a NAT is in the
@@ -109,13 +110,6 @@ type Iface struct {
 	// tunnel. Zero on a kernel without the device; the sessions then run on
 	// policies alone, unshaped.
 	IfID uint32 `json:"ifId,omitempty"`
-}
-
-// ifID ties a session's SAs to the tunnel's device, when it has one.
-func ifID(b *strings.Builder, f *Iface) {
-	if f.IfID != 0 {
-		fmt.Fprintf(b, "        if_id_in = %d\n        if_id_out = %d\n", f.IfID, f.IfID)
-	}
 }
 
 // Account is one device: the identity it announces (its username), the
@@ -387,8 +381,8 @@ func NewPaths(dataDir string) l2tpconf.Paths {
 // ── What the agent writes ───────────────────────────────────────────────
 
 // File is one file the tunnel needs: Dir is the swanctl directory it goes in
-// (x509ca, x509, private, conf.d), or SettingsDir for strongSwan's own
-// settings (strongswan.d).
+// (x509ca, x509, private, conf.d, CertDir), or SettingsDir for strongSwan's
+// own settings (strongswan.d).
 type File struct {
 	Dir, Name, Body string
 	// Secret is a file only root may read.
@@ -401,10 +395,62 @@ const (
 	serverFile = Prefix + "-server.pem"
 )
 
+// pinnedCert is a device's certificate as its connection names it: swanctl
+// reads a relative path from x509, and the certificates are beside it.
+func pinnedCert(id uint) string { return "../" + CertDir + "/" + accountFile(id) }
+
 func accountFile(id uint) string { return Prefix + "-" + strconv.FormatUint(uint64(id), 10) + ".pem" }
 
 // SettingsDir is File.Dir for a file in strongSwan's settings directory.
 const SettingsDir = "strongswan.d"
+
+// CertDir is the swanctl directory, beside x509, the devices' certificates
+// go in. They are not credentials of their own: each is pinned by its
+// device's connection, which reads it when the connections are loaded, and
+// is gone with that connection. In x509 every load of the credentials would
+// hand strongSwan all of them again, and one taken away would stay loaded.
+const CertDir = Prefix + "-certs"
+
+// The tunnel's three files in conf.d, split by what strongSwan loads them
+// with, so one changing reloads only its own part.
+const (
+	PoolsFile   = Prefix + "-pools.conf"
+	SecretsFile = Prefix + "-secrets.conf"
+)
+
+// What a changed file has strongSwan load again.
+const (
+	LoadSettings = "settings" // swanctl --reload-settings
+	LoadCreds    = "creds"    // swanctl --load-creds: certificates and keys
+	LoadSecrets  = "secrets"  // swanctl --load-creds: the secrets file
+	LoadPools    = "pools"    // swanctl --load-pools
+	LoadConns    = "conns"    // swanctl --load-conns
+)
+
+// LoadOf is what a file of the tunnel's, written or removed, has strongSwan
+// load again.
+func LoadOf(dir, name string) string {
+	switch dir {
+	case SettingsDir:
+		return LoadSettings
+	case CertDir:
+		return LoadConns
+	case "conf.d":
+		switch name {
+		case PoolsFile:
+			return LoadPools
+		case SecretsFile:
+			return LoadSecrets
+		}
+		// The connections -- and, from before they were split, the
+		// whole tunnel: every part again.
+		if name == ConfFile {
+			return LoadConns
+		}
+		return ""
+	}
+	return LoadCreds
+}
 
 // RadiusConn is the one connection devices signing in by password come in
 // on; RADIUS (package radiusd) tells strongSwan who they are and which
@@ -455,10 +501,13 @@ func Files(s *State, radiusSecret string) []File {
 	}
 	if f.ByCertificate() {
 		for _, a := range sorted(f.Accounts) {
-			out = append(out, File{Dir: "x509", Name: accountFile(a.ID), Body: a.Cert})
+			out = append(out, File{Dir: CertDir, Name: accountFile(a.ID), Body: a.Cert})
 		}
 	}
-	out = append(out, File{Dir: "conf.d", Name: ConfFile, Body: Swanctl(s), Secret: true})
+	out = append(out,
+		File{Dir: "conf.d", Name: PoolsFile, Body: swanctlPools(s), Secret: true},
+		File{Dir: "conf.d", Name: SecretsFile, Body: swanctlSecrets(s), Secret: true},
+		File{Dir: "conf.d", Name: ConfFile, Body: swanctlConns(s), Secret: true})
 	return out
 }
 
@@ -520,37 +569,84 @@ func ParseConnName(name string) (uint, bool) {
 	return uint(n), true
 }
 
-// Swanctl renders the tunnel for /etc/swanctl/conf.d.
+// Swanctl renders the tunnel for /etc/swanctl/conf.d, its three files as one.
 func Swanctl(s *State) string {
+	return swanctlConns(s) + "\n" + swanctlPools(s) + "\n" + swanctlSecrets(s)
+}
+
+const header = "# Written by W-UI's agent from the panel's IKEv2 tunnel. Edits are replaced.\n"
+
+// The kinds of Item.
+const (
+	KindConn   = "conn"
+	KindPool   = "pool"
+	KindSecret = "secret"
+)
+
+// Item is one thing strongSwan holds for the tunnel -- a connection, a pool,
+// a secret -- which the agent can load or unload alone. The files are the
+// same items written out.
+type Item struct {
+	Kind string
+	Sec  *vici.Section
+}
+
+// Key names the item among all the tunnel's.
+func (it Item) Key() string { return it.Kind + ":" + it.Sec.Name }
+
+// Load is the VICI request that loads the item, or replaces it.
+func (it Item) Load() (string, *vici.Section) {
+	switch it.Kind {
+	case KindConn:
+		return "load-conn", &vici.Section{Entries: []vici.Entry{{Key: it.Sec.Name, Sub: it.Sec}}}
+	case KindPool:
+		return "load-pool", &vici.Section{Entries: []vici.Entry{{Key: it.Sec.Name, Sub: it.Sec}}}
+	}
+	// A secret: as swanctl sends one from a file, under its section's name.
+	msg := &vici.Section{}
+	msg.Value("id", it.Sec.Name).Value("type", "IKE")
+	var owners []string
+	for _, e := range it.Sec.Entries {
+		switch e.Key {
+		case "secret":
+			msg.Value("data", e.Values[0])
+		case "id":
+			owners = append(owners, e.Values[0])
+		}
+	}
+	msg.List("owners", owners...)
+	return "load-shared", msg
+}
+
+// Unload is the VICI request that unloads the item.
+func (it Item) Unload() (string, *vici.Section) {
+	msg := &vici.Section{}
+	switch it.Kind {
+	case KindConn:
+		return "unload-conn", msg.Value("name", it.Sec.Name)
+	case KindPool:
+		return "unload-pool", msg.Value("name", it.Sec.Name)
+	}
+	return "unload-shared", msg.Value("id", it.Sec.Name)
+}
+
+// Items is every connection, pool and secret of the tunnel.
+func Items(s *State) []Item {
 	f := &s.Interface
-	var b strings.Builder
-	b.WriteString("# Written by W-UI's agent from the panel's IKEv2 tunnel. Edits are replaced.\n")
-	b.WriteString("connections {\n")
+	var out []Item
 	if f.Has(ModeMSCHAPv2) {
-		radiusConn(&b, f)
+		out = append(out, Item{KindConn, radiusConn(f)})
 	}
 	for _, a := range sorted(f.Accounts) {
 		for _, m := range []string{ModePSK, ModeRSA, ModeEAPTLS} {
-			if !f.Has(m) {
-				continue
+			if f.Has(m) {
+				out = append(out, Item{KindConn, conn(f, a, m)})
 			}
-			conn(&b, f, a, m)
 		}
 	}
-	b.WriteString("}\n\n")
-
-	b.WriteString("pools {\n")
 	for _, a := range sorted(f.Accounts) {
-		fmt.Fprintf(&b, "  %s {\n", PoolName(a.ID))
-		fmt.Fprintf(&b, "    addrs = %s/32\n", a.IP)
-		if len(f.DNS) > 0 {
-			fmt.Fprintf(&b, "    dns = %s\n", strings.Join(f.DNS, ","))
-		}
-		b.WriteString("  }\n")
+		out = append(out, Item{KindPool, pool(f, a)})
 	}
-	b.WriteString("}\n\n")
-
-	b.WriteString("secrets {\n")
 	for _, a := range sorted(f.Accounts) {
 		// A device's key for PSK is its password. Each is bound to the
 		// device's identity, so a key without one -- L2TP's, which every
@@ -558,110 +654,132 @@ func Swanctl(s *State) string {
 		// stands in for a device's. Passwords for EAP are RADIUS's, not
 		// strongSwan's.
 		if f.Has(ModePSK) {
-			fmt.Fprintf(&b, "  ike-%s {\n    id = %q\n    secret = %q\n  }\n", PoolName(a.ID), a.Username, a.Secret)
+			sec := &vici.Section{Name: "ike-" + PoolName(a.ID)}
+			sec.Quoted("id", a.Username).Quoted("secret", a.Secret)
+			out = append(out, Item{KindSecret, sec})
+		}
+	}
+	return out
+}
+
+// swanctlBlock writes the items of one kind under one top-level section.
+func swanctlBlock(s *State, top, kind string) string {
+	var b strings.Builder
+	b.WriteString(header)
+	b.WriteString(top + " {\n")
+	for _, it := range Items(s) {
+		if it.Kind == kind {
+			it.Sec.Swanctl(&b, 1)
 		}
 	}
 	b.WriteString("}\n")
 	return b.String()
 }
 
+func swanctlConns(s *State) string   { return swanctlBlock(s, "connections", KindConn) }
+func swanctlPools(s *State) string   { return swanctlBlock(s, "pools", KindPool) }
+func swanctlSecrets(s *State) string { return swanctlBlock(s, "secrets", KindSecret) }
+
+func pool(f *Iface, a Account) *vici.Section {
+	p := &vici.Section{Name: PoolName(a.ID)}
+	p.Value("addrs", a.IP+"/32")
+	if len(f.DNS) > 0 {
+		p.List("dns", f.DNS...)
+	}
+	return p
+}
+
+// child is a connection's one child: every address, into the tunnel's
+// device when it has one.
+func child(c *vici.Section, name string, f *Iface) {
+	ch := c.Sub("children").Sub(name)
+	ch.List("local_ts", "0.0.0.0/0")
+	ch.List("esp_proposals", espProposals...)
+	ch.Value("dpd_action", "clear")
+	if f.IfID != 0 {
+		id := strconv.FormatUint(uint64(f.IfID), 10)
+		ch.Value("if_id_in", id).Value("if_id_out", id)
+	}
+}
+
 // radiusConn is the connection for every device signing in by password,
 // whatever identity it announces -- Windows announces its address.
-func radiusConn(b *strings.Builder, f *Iface) {
-	fmt.Fprintf(b, "  %s {\n", RadiusConn)
-	b.WriteString("    version = 2\n")
-	fmt.Fprintf(b, "    proposals = %s\n", strings.Join(ikeProposals, ","))
+func radiusConn(f *Iface) *vici.Section {
+	c := &vici.Section{Name: RadiusConn}
+	c.Value("version", "2")
+	c.List("proposals", ikeProposals...)
 	// The address RADIUS gives, which is the device's own.
-	b.WriteString("    pools = radius\n")
+	c.List("pools", "radius")
 	// Not replaced by identity: the identity here can be a device's local
 	// address, which two customers in two homes may well share. The agent
 	// holds each device to one session, by its address.
-	b.WriteString("    unique = no\n")
-	b.WriteString("    mobike = yes\n")
-	b.WriteString("    fragmentation = yes\n")
-	b.WriteString("    dpd_delay = 30s\n")
-	b.WriteString("    send_cert = always\n")
-	b.WriteString("    send_certreq = no\n")
-	b.WriteString("    local {\n")
-	b.WriteString("      auth = pubkey\n")
-	fmt.Fprintf(b, "      certs = %s\n", serverFile)
-	fmt.Fprintf(b, "      id = %q\n", f.ServerID)
-	b.WriteString("    }\n")
-	b.WriteString("    remote {\n")
-	b.WriteString("      auth = eap-radius\n")
-	b.WriteString("      eap_id = %any\n")
-	b.WriteString("    }\n")
-	b.WriteString("    children {\n")
-	fmt.Fprintf(b, "      %s {\n", RadiusConn)
-	b.WriteString("        local_ts = 0.0.0.0/0\n")
-	fmt.Fprintf(b, "        esp_proposals = %s\n", strings.Join(espProposals, ","))
-	b.WriteString("        dpd_action = clear\n")
-	ifID(b, f)
-	b.WriteString("      }\n")
-	b.WriteString("    }\n")
-	b.WriteString("  }\n")
+	c.Value("unique", "no")
+	c.Value("mobike", "yes")
+	c.Value("fragmentation", "yes")
+	c.Value("dpd_delay", "30s")
+	c.Value("send_cert", "always")
+	c.Value("send_certreq", "no")
+	local := c.Sub("local")
+	local.Value("auth", "pubkey")
+	local.FileList("certs", serverFile, f.ServerCert)
+	local.Quoted("id", f.ServerID)
+	remote := c.Sub("remote")
+	remote.Value("auth", "eap-radius")
+	remote.Value("eap_id", "%any")
+	child(c, RadiusConn, f)
+	return c
 }
 
-func conn(b *strings.Builder, f *Iface, a Account, mode string) {
-	fmt.Fprintf(b, "  %s {\n", ConnName(a.ID, mode))
-	b.WriteString("    version = 2\n")
-	fmt.Fprintf(b, "    proposals = %s\n", strings.Join(ikeProposals, ","))
-	fmt.Fprintf(b, "    pools = %s\n", PoolName(a.ID))
+func conn(f *Iface, a Account, mode string) *vici.Section {
+	name := ConnName(a.ID, mode)
+	c := &vici.Section{Name: name}
+	c.Value("version", "2")
+	c.List("proposals", ikeProposals...)
+	c.List("pools", PoolName(a.ID))
 	// One sign-in, one session: the device signing in again replaces the
 	// session before, as every other protocol here does.
-	b.WriteString("    unique = replace\n")
+	c.Value("unique", "replace")
 	// A phone moves between networks; certificates make big messages.
-	b.WriteString("    mobike = yes\n")
-	b.WriteString("    fragmentation = yes\n")
-	b.WriteString("    dpd_delay = 30s\n")
+	c.Value("mobike", "yes")
+	c.Value("fragmentation", "yes")
+	c.Value("dpd_delay", "30s")
 	if mode != ModePSK {
 		// The server's certificate goes with every answer: a device that
 		// did not ask for it (iOS asks for none) still has to check it.
-		b.WriteString("    send_cert = always\n")
+		c.Value("send_cert", "always")
 	}
-	b.WriteString("    local {\n")
+	local := c.Sub("local")
 	if mode == ModePSK {
-		b.WriteString("      auth = psk\n")
+		local.Value("auth", "psk")
 	} else {
-		b.WriteString("      auth = pubkey\n")
-		fmt.Fprintf(b, "      certs = %s\n", serverFile)
+		local.Value("auth", "pubkey")
+		local.FileList("certs", serverFile, f.ServerCert)
 	}
-	fmt.Fprintf(b, "      id = %q\n", f.ServerID)
-	b.WriteString("    }\n")
-	b.WriteString("    remote {\n")
+	local.Quoted("id", f.ServerID)
+	remote := c.Sub("remote")
 	if mode == ModeEAPTLS {
-		fmt.Fprintf(b, "      id = %q\n", TLSIdentity(a.Username))
+		remote.Quoted("id", TLSIdentity(a.Username))
 	} else {
-		fmt.Fprintf(b, "      id = %q\n", a.Username)
+		remote.Quoted("id", a.Username)
 	}
 	switch mode {
 	case ModePSK:
-		b.WriteString("      auth = psk\n")
+		remote.Value("auth", "psk")
 	case ModeRSA:
-		b.WriteString("      auth = pubkey\n")
-		fmt.Fprintf(b, "      certs = %s\n", accountFile(a.ID))
-		fmt.Fprintf(b, "      cacerts = %s\n", caFile)
+		remote.Value("auth", "pubkey")
+		remote.FileList("certs", pinnedCert(a.ID), a.Cert)
+		remote.FileList("cacerts", caFile, f.CACert)
 	case ModeEAPTLS:
-		b.WriteString("      auth = eap-tls\n")
+		remote.Value("auth", "eap-tls")
 		// Whatever EAP identity the device gives -- clients differ -- it
 		// is the device's own certificate, pinned here, that lets it in.
-		b.WriteString("      eap_id = %any\n")
-		fmt.Fprintf(b, "      certs = %s\n", accountFile(a.ID))
-		fmt.Fprintf(b, "      cacerts = %s\n", caFile)
-	}
-	b.WriteString("    }\n")
-	if mode == ModeEAPTLS {
+		remote.Value("eap_id", "%any")
+		remote.FileList("certs", pinnedCert(a.ID), a.Cert)
+		remote.FileList("cacerts", caFile, f.CACert)
 		// The server asks for no certificate where the device has none to
 		// give; Windows otherwise stalls on the request.
-		b.WriteString("    send_certreq = no\n")
+		c.Value("send_certreq", "no")
 	}
-	b.WriteString("    children {\n")
-	fmt.Fprintf(b, "      %s {\n", ConnName(a.ID, mode))
-	b.WriteString("        local_ts = 0.0.0.0/0\n")
-	fmt.Fprintf(b, "        esp_proposals = %s\n", strings.Join(espProposals, ","))
-	b.WriteString("        dpd_action = clear\n")
-	ifID(b, f)
-	b.WriteString("      }\n")
-	b.WriteString("    }\n")
-	b.WriteString("  }\n")
+	child(c, name, f)
+	return c
 }

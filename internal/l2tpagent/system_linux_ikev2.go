@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/radiusd"
+	"github.com/abolfazl/w-ui/internal/vici"
 )
 
 // The IKEv2 tunnel on Linux: strongSwan's swanctl files, shared with L2TP's.
@@ -48,7 +50,7 @@ func swanctlRoot() (string, error) {
 }
 
 // ikev2Dirs are the swanctl directories the tunnel writes into.
-var ikev2Dirs = []string{"x509ca", "x509", "private", "conf.d"}
+var ikev2Dirs = []string{"x509ca", "x509", "private", "conf.d", ikev2conf.CertDir}
 
 // settingsDir is strongSwan's settings directory beside swanctl's:
 // /etc/strongswan.d, or /etc/strongswan/strongswan.d on the RHEL family.
@@ -67,34 +69,51 @@ func fileDir(root, dir string) string {
 	return filepath.Join(root, dir)
 }
 
-func (s *linuxSystem) WriteSwanctl(files []ikev2conf.File) error {
+func (s *linuxSystem) WriteSwanctl(files []ikev2conf.File) ([]string, error) {
 	root, err := swanctlRoot()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var changed []string
 	keep := map[string]bool{}
 	for _, f := range files {
 		dir := fileDir(root, f.Dir)
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return err
-		}
 		mode := os.FileMode(0o644)
 		if f.Secret {
 			mode = 0o600
 		}
 		path := filepath.Join(dir, f.Name)
-		if err := writeAtomic(path, f.Body, mode); err != nil {
-			return err
-		}
 		keep[path] = true
+		if sameFile(path, f.Body, mode) {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return nil, err
+		}
+		if err := writeAtomic(path, f.Body, mode); err != nil {
+			return nil, err
+		}
+		changed = append(changed, f.Dir+"/"+f.Name)
 	}
 	// A device gone takes its certificate with it.
-	return removeIKEv2Files(root, keep)
+	removed, err := removeIKEv2Files(root, keep)
+	return append(changed, removed...), err
+}
+
+// sameFile reports whether path already holds body, with mode.
+func sameFile(path, body string, mode os.FileMode) bool {
+	st, err := os.Stat(path)
+	if err != nil || st.Mode().Perm() != mode || st.Size() != int64(len(body)) {
+		return false
+	}
+	b, err := os.ReadFile(path)
+	return err == nil && string(b) == body
 }
 
 // removeIKEv2Files removes the tunnel's own files -- by their prefix --
-// except those kept.
-func removeIKEv2Files(root string, keep map[string]bool) error {
+// except those kept, and returns what it removed as "dir/name".
+func removeIKEv2Files(root string, keep map[string]bool) ([]string, error) {
+	var removed []string
 	for _, d := range append(append([]string(nil), ikev2Dirs...), ikev2conf.SettingsDir) {
 		entries, err := os.ReadDir(fileDir(root, d))
 		if err != nil {
@@ -109,23 +128,62 @@ func removeIKEv2Files(root string, keep map[string]bool) error {
 				continue
 			}
 			if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return err
+				return removed, err
 			}
+			removed = append(removed, d+"/"+e.Name())
+		}
+	}
+	return removed, nil
+}
+
+func (s *linuxSystem) LoadSwanctl(ctx context.Context, l Loads) error {
+	if err := s.ensureCharon(ctx); err != nil {
+		return err
+	}
+	for _, args := range swanctlCommands(l) {
+		if err := s.swanctl(ctx, args...); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func (s *linuxSystem) LoadSwanctl(ctx context.Context) error {
-	if err := s.ensureCharon(ctx); err != nil {
+// itemOrder is the order items are loaded in: a secret and a pool before the
+// connection that uses them. They are unloaded the other way round.
+var itemOrder = map[string]int{ikev2conf.KindSecret: 0, ikev2conf.KindPool: 1, ikev2conf.KindConn: 2}
+
+func (s *linuxSystem) ApplyItems(ctx context.Context, unload, load []ikev2conf.Item) error {
+	c, err := vici.Dial(cmdTimeout)
+	if err != nil {
 		return err
 	}
-	// The RADIUS settings are strongSwan's own, read again on request.
-	if err := s.loadAll(ctx); err != nil {
-		return err
+	defer c.Close()
+	unload = append([]ikev2conf.Item(nil), unload...)
+	sort.SliceStable(unload, func(i, j int) bool { return itemOrder[unload[i].Kind] > itemOrder[unload[j].Kind] })
+	for _, it := range unload {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Not fatal: the connection is what lets a device in, and one
+		// gone takes that with it. A pool or secret left behind grants
+		// nothing, and goes when strongSwan next loads its files.
+		cmd, msg := it.Unload()
+		if _, err := c.Call(cmd, msg); err != nil {
+			s.log.Warn("could not unload from strongSwan", "item", it.Key(), "error", err)
+		}
 	}
-	_, err := s.run(ctx, cmdTimeout, "", "swanctl", "--reload-settings")
-	return err
+	load = append([]ikev2conf.Item(nil), load...)
+	sort.SliceStable(load, func(i, j int) bool { return itemOrder[load[i].Kind] < itemOrder[load[j].Kind] })
+	for _, it := range load {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		cmd, msg := it.Load()
+		if _, err := c.Call(cmd, msg); err != nil {
+			return fmt.Errorf("%s: %w", it.Key(), err)
+		}
+	}
+	return nil
 }
 
 func (s *linuxSystem) ServeRadius(secret string, lookup radiusd.Lookup) error {
@@ -177,13 +235,13 @@ func (s *linuxSystem) ensureCharon(ctx context.Context) error {
 		if missing := notLoaded(string(out), ikev2Plugins, havePlugin); len(missing) > 0 {
 			s.log.Warn("strongSwan started before IKEv2's plugins were installed; restarting it to load them",
 				"plugins", strings.Join(missing, ", "))
-			if _, err := s.run(ctx, cmdTimeout, "", "systemctl", "restart", unit); err != nil {
+			if _, err := s.run(ctx, loadTimeout, "", "systemctl", "restart", unit); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	if _, err := s.run(ctx, cmdTimeout, "", "systemctl", "start", unit); err != nil {
+	if _, err := s.run(ctx, loadTimeout, "", "systemctl", "start", unit); err != nil {
 		return err
 	}
 	if err := s.WriteRun(startedMarker, unit+"\n"); err != nil {
@@ -194,9 +252,15 @@ func (s *linuxSystem) ensureCharon(ctx context.Context) error {
 
 // loadAll has strongSwan load every file, retrying while it starts.
 func (s *linuxSystem) loadAll(ctx context.Context) error {
+	return s.swanctl(ctx, "--load-all", "--noprompt")
+}
+
+// swanctl runs one swanctl command, retrying while strongSwan starts: it
+// answers on its control socket a moment after.
+func (s *linuxSystem) swanctl(ctx context.Context, args ...string) error {
 	var last error
 	for i := 0; i < 20; i++ {
-		if _, last = s.run(ctx, cmdTimeout, "", "swanctl", "--load-all", "--noprompt"); last == nil {
+		if _, last = s.run(ctx, loadTimeout, "", "swanctl", args...); last == nil {
 			return nil
 		}
 		select {
@@ -213,8 +277,13 @@ func (s *linuxSystem) RemoveSwanctl(ctx context.Context) error {
 	if err != nil {
 		return nil // no strongSwan, nothing of ours in it
 	}
-	if err := removeIKEv2Files(root, nil); err != nil {
+	if _, err := removeIKEv2Files(root, nil); err != nil {
 		return err
+	}
+	// The devices' certificates' own directory goes with them; it is
+	// the tunnel's alone.
+	if err := os.Remove(filepath.Join(root, ikev2conf.CertDir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		s.log.Warn("could not remove the certificates' directory", "error", err)
 	}
 	return s.releaseCharon(ctx)
 }

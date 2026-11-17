@@ -26,8 +26,11 @@ func NewSystem(*slog.Logger) System { return otherSystem{} }
 // NewIPsecSystem is the same for IKEv2.
 func NewIPsecSystem(*slog.Logger) IPsecSystem { return otherSystem{} }
 
-func (otherSystem) WriteSwanctl([]ikev2conf.File) error      { return errPlatform }
-func (otherSystem) LoadSwanctl(context.Context) error        { return errPlatform }
+func (otherSystem) WriteSwanctl([]ikev2conf.File) ([]string, error) { return nil, errPlatform }
+func (otherSystem) LoadSwanctl(context.Context, Loads) error        { return errPlatform }
+func (otherSystem) ApplyItems(context.Context, []ikev2conf.Item, []ikev2conf.Item) error {
+	return errPlatform
+}
 func (otherSystem) RemoveSwanctl(context.Context) error      { return nil }
 func (otherSystem) SAs(context.Context) ([]IKESA, error)     { return nil, errPlatform }
 func (otherSystem) Terminate(context.Context, uint) error    { return errPlatform }

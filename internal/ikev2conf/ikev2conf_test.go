@@ -111,7 +111,7 @@ func TestEachDeviceIsItsOwnConnection(t *testing.T) {
 		"wui-ikev2-10-psk {", "wui-ikev2-10-rsa {", "wui-ikev2-10-eap-tls {",
 		`id = "s1-ali"`, "auth = eap-tls", `id = "tls-s1-ali"`, "eap_id = %any",
 		"pools = wui-ikev2-10", "addrs = 10.79.0.2/32", "dns = 1.1.1.1", "unique = replace",
-		"certs = wui-ikev2-10.pem", "cacerts = wui-ikev2-ca.pem", `id = "vpn.example.com"`,
+		"certs = ../wui-ikev2-certs/wui-ikev2-10.pem", "cacerts = wui-ikev2-ca.pem", `id = "vpn.example.com"`,
 		"modp1024", "fragmentation = yes",
 		"ike-wui-ikev2-10 {\n    id = \"s1-ali\"\n    secret = \"Pws1-alix9\"",
 	} {
@@ -155,7 +155,8 @@ func TestEveryFileHasItsPlace(t *testing.T) {
 	}
 	for name, secret := range map[string]bool{
 		"x509ca/wui-ikev2-ca.pem": false, "x509/wui-ikev2-server.pem": false, "private/wui-ikev2-server.pem": true,
-		"x509/wui-ikev2-10.pem": false, "x509/wui-ikev2-11.pem": false, "conf.d/wui-ikev2.conf": true,
+		"wui-ikev2-certs/wui-ikev2-10.pem": false, "wui-ikev2-certs/wui-ikev2-11.pem": false, "conf.d/wui-ikev2.conf": true,
+		"conf.d/wui-ikev2-pools.conf": true, "conf.d/wui-ikev2-secrets.conf": true,
 		"strongswan.d/wui-ikev2-radius.conf": true,
 	} {
 		if s, ok := got[name]; !ok || s != secret {
