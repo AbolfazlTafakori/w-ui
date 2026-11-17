@@ -737,7 +737,10 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 		InterfaceID uint
 		N           int64
 	}
-	since := time.Now().Add(-onlineWithin())
+	// UTC, as handshakes are stored. In local time this compared wrong
+	// against them whenever the owner set the panel to a zone other than
+	// UTC, and every tunnel showed nobody online.
+	since := time.Now().UTC().Add(-onlineWithin())
 	err = s.db.WithContext(ctx).Model(&model.Account{}).
 		Select("interface_id, COUNT(DISTINCT client_id) AS n").
 		Where("last_handshake > ?", since).
