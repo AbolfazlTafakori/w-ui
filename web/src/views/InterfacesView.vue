@@ -6,8 +6,9 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../lib/api.js'
 import { useLive, mergeRows, useDelayed } from '../lib/live.js'
 import { store, t, notify } from '../lib/store.js'
-import { cmpText, generalItems, nextSort, ocPayload, proven, sortRows, totals as totalsOf, wsOf, wsPayload } from '../lib/interfaces/rows.js'
+import { cmpText, generalItems, nextSort, ocPayload, sortRows, totals as totalsOf } from '../lib/interfaces/rows.js'
 import { useInterfaceActions } from '../lib/interfaces/actions.js'
+import { createPayload, wgAdvancedChanged, wgAdvancedForSend, wgTransportChanged, wgTransportOf } from '../lib/interfaces/payload.js'
 import ErrorState from '../components/ErrorState.vue'
 import InterfaceForm from '../components/InterfaceForm.vue'
 import InterfaceDetail from '../components/InterfaceDetail.vue'
@@ -176,53 +177,6 @@ function toggleOne(id, checked) {
   selected.value = next
 }
 
-// A WireGuard tunnel's transport as the form asks for it: plain UDP, or a
-// stealth one and its port, and anchor's, drift's, relay's or bare's name, path and
-// decoy. AmneziaWG has only plain UDP.
-function wgTransportOf(input) {
-  if (input.mode === 'amnezia' || !input.transport || input.transport === 'udp') return { transport: 'udp', transportPort: 0 }
-  const out = { transport: input.transport, transportPort: Number(input.transportPort) || 0 }
-  if (proven(input.transport) || input.transport === 'mirror') out.transportWs = wsPayload(input.ws)
-  return out
-}
-function wgTransportChanged(input, iface) {
-  const want = wgTransportOf(input)
-  if (want.transport !== (iface.stealth?.transport || 'udp') || want.transportPort !== (iface.stealth?.port || 0)) return true
-  // An empty path or cookie keeps the one there is, so it is no change.
-  if (!want.transportWs) return false
-  const had = wsPayload(wsOf(iface.stealth))
-  const kept = (k) => (k === 'path' || k === 'cookie') && want.transportWs[k] === ''
-  return Object.keys(want.transportWs).some((k) => !kept(k) && want.transportWs[k] !== had[k])
-}
-
-// The advanced WireGuard overrides, as the server takes them: blanks become
-// zeros, which it reads as "use the default". A zero keepalive and MTU and an
-// empty AllowedIPs are exactly the defaults, so clearing a field restores them.
-function wgAdvancedForSend(a) {
-  return {
-    keepalive: Number(a?.keepalive) || 0,
-    allowedIps: (a?.allowedIps || '').trim(),
-    mtu: Number(a?.mtu) || 0,
-    postUp: (a?.postUp || '').trim(),
-    postDown: (a?.postDown || '').trim(),
-  }
-}
-function wgAdvancedNonEmpty(a) {
-  const v = wgAdvancedForSend(a)
-  return !!(v.keepalive || v.mtu || v.allowedIps || v.postUp || v.postDown)
-}
-function wgAdvancedChanged(input, iface) {
-  const want = wgAdvancedForSend(input.wgAdvanced)
-  const had = wgAdvancedForSend(iface.wgAdvanced)
-  return (
-    want.keepalive !== had.keepalive ||
-    want.allowedIps !== had.allowedIps ||
-    want.mtu !== had.mtu ||
-    want.postUp !== had.postUp ||
-    want.postDown !== had.postDown
-  )
-}
-
 async function submitForm(input) {
   try {
     if (formFor.value?.iface) {
@@ -256,39 +210,18 @@ async function submitForm(input) {
       })
       notify(t('interface.updated'), 'success')
     } else {
-      // transport is OpenVPN's alone and the server refuses it elsewhere, so
-      // a WireGuard interface must not carry the form's default along with it.
-      // The same for psk, which is L2TP's.
-      // eslint-disable-next-line no-unused-vars -- taken out of rest, sent by protocol below
-      const { transport, transportPort, ws, psk, l2tpPlain, ikev2Modes, awg, awgLevel, oc, xray, wgAdvanced, ...rest } = input
-      if (xray) {
+      if (input.xray) {
         // An inbound on a 3x-ui or Pasarguard node, made there as that
         // panel's own form would make it.
         await api.createInterface({
-          name: input.name, nodeId: input.nodeId, protocol: 'xray', listenPort: Number(input.listenPort), xray,
+          name: input.name, nodeId: input.nodeId, protocol: 'xray', listenPort: Number(input.listenPort), xray: input.xray,
         })
         notify(t('interface.created'), 'success')
         formFor.value = null
         await load()
         return
       }
-      await api.createInterface({
-        ...rest,
-        listenPort: Number(input.listenPort),
-        mtu: Number(input.mtu),
-        ...(input.protocol === 'openvpn' && transport ? { transport } : {}),
-        ...(input.protocol === 'l2tp' && psk ? { psk } : {}),
-        ...(input.protocol === 'l2tp' && l2tpPlain ? { l2tpPlain: true } : {}),
-        ...(input.protocol === 'ikev2' ? { ikev2Modes } : {}),
-        ...(input.protocol === 'openconnect' ? { openconnect: ocPayload(oc) } : {}),
-        ...(input.protocol === 'wireguard' && wgTransportOf(input).transport !== 'udp' ? wgTransportOf(input) : {}),
-        // The profile the form shows, as drawn for this server and perhaps
-        // changed: what is created is what the operator saw.
-        ...(input.protocol === 'wireguard' && input.mode === 'amnezia' ? (awg ? { awg } : { awgLevel }) : {}),
-        // Only when the operator set one of them: a bare tunnel keeps the
-        // defaults and stores nothing.
-        ...(input.protocol === 'wireguard' && wgAdvancedNonEmpty(wgAdvanced) ? { wgAdvanced: wgAdvancedForSend(wgAdvanced) } : {}),
-      })
+      await api.createInterface(createPayload(input))
       notify(t('interface.created'), 'success')
     }
     formFor.value = null
