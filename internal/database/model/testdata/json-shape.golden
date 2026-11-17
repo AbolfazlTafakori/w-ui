@@ -331,6 +331,27 @@ OperatorAction
 	viaToken bool
 	at time.Time
 	username string omitempty (not stored)
+CapacityAccount
+	id uint
+	adminId uint
+	kind string
+	mode string
+	granted int64
+	used int64
+	handed int64
+	updatedAt time.Time
+CapacityEntry
+	id uint
+	accountId uint
+	adminId uint
+	kind string
+	field string
+	delta int64
+	reason string
+	actorId uint
+	clientId uint
+	tokenId uint
+	at time.Time
 Outbound
 	id uint
 	tag string

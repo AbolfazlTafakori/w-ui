@@ -48,6 +48,7 @@ var migrations = []migration{
 	{4, "each file's usage is counted by the panel from now on", false, startExactFileUsage},
 	{5, "files already on a 3x-ui or Pasarguard node were placed there by this panel", false, markPlacedOnXrayNodes},
 	{6, "the sharing record says whose customer each entry was", false, ownSharingRecord},
+	{7, "an operator's user ceiling becomes seats held at once, kept as running figures", false, openUserCapacity},
 }
 
 // Migrate brings the schema up to date.
@@ -176,6 +177,66 @@ func ownSharingRecord(tx *gorm.DB) error {
 		WHERE owner_id = 0 AND client_id <> 0
 		  AND EXISTS (SELECT 1 FROM clients WHERE clients.id = sharing_events.client_id)`).Error; err != nil {
 		return fmt.Errorf("own the sharing record: %w", err)
+	}
+	return nil
+}
+
+// openUserCapacity: an operator's user ceiling (client_limit) becomes an
+// account of seats held at once -- capacity's "open" mode, the nearest to
+// what the ceiling did -- with its figures written once and their ledger
+// beside them, so every later change is a move of a figure rather than a
+// count. Seats are held by the customers still being served: one whose plan
+// ended (expired, or out of traffic) gives its seats back, which the old
+// count did not. An admin's handed figure is what their resellers were
+// given. Only operators without an account yet are touched, so a second run
+// changes nothing.
+func openUserCapacity(tx *gorm.DB) error {
+	type op struct {
+		ID            uint
+		Role          string
+		ClientLimit   int64
+		ParentAdminID uint
+	}
+	var ops []op
+	if err := tx.Raw(`SELECT id, role, client_limit, parent_admin_id FROM admins
+		WHERE role IN ('admin', 'reseller') AND client_limit > 0
+		  AND id NOT IN (SELECT admin_id FROM capacity_accounts WHERE kind = 'users')`).Scan(&ops).Error; err != nil {
+		return fmt.Errorf("read operators' ceilings: %w", err)
+	}
+	limit := map[uint]int64{}
+	for _, o := range ops {
+		limit[o.ID] = o.ClientLimit
+	}
+	now := time.Now().UTC()
+	for _, o := range ops {
+		var held int64
+		if err := tx.Raw(`SELECT COALESCE(SUM(device_limit), 0) FROM clients
+			WHERE owner_id = ? AND status NOT IN ('expired', 'exhausted')`, o.ID).Scan(&held).Error; err != nil {
+			return fmt.Errorf("count operator %d's seats: %w", o.ID, err)
+		}
+		var handed int64
+		if o.Role == "admin" {
+			for _, c := range ops {
+				if c.ParentAdminID == o.ID {
+					handed += c.ClientLimit
+				}
+			}
+		}
+		acc := model.CapacityAccount{AdminID: o.ID, Kind: model.CapacityUsers, Mode: model.CapacityOpen,
+			Granted: o.ClientLimit, Used: held, Handed: handed, UpdatedAt: now}
+		if err := tx.Create(&acc).Error; err != nil {
+			return fmt.Errorf("open operator %d's account: %w", o.ID, err)
+		}
+		for field, delta := range map[string]int64{"granted": acc.Granted, "used": acc.Used, "handed": acc.Handed} {
+			if delta == 0 {
+				continue
+			}
+			e := model.CapacityEntry{AccountID: acc.ID, AdminID: o.ID, Kind: model.CapacityUsers, Field: field,
+				Delta: delta, Reason: model.CapacityMigrate, At: now}
+			if err := tx.Create(&e).Error; err != nil {
+				return fmt.Errorf("write operator %d's ledger: %w", o.ID, err)
+			}
+		}
 	}
 	return nil
 }

@@ -149,3 +149,73 @@ func TestTheSharingRecordIsOwned(t *testing.T) {
 		}
 	}
 }
+
+// An operator's user ceiling becomes an open account: granted is the old
+// ceiling, used the seats of customers still served (an ended one gives its
+// seats back), an admin's handed what their resellers were given, and the
+// ledger sums to each figure. A second run changes nothing.
+func TestUserCeilingsBecomeOpenAccounts(t *testing.T) {
+	db := bareDB(t)
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`DELETE FROM capacity_accounts`)
+	for _, a := range []model.Admin{
+		{ID: 2, Username: "ad", PasswordHash: "x", Role: model.RoleAdmin, ClientLimit: 100},
+		{ID: 3, Username: "ra", PasswordHash: "x", Role: model.RoleReseller, ClientLimit: 30, ParentAdminID: 2},
+		{ID: 4, Username: "rb", PasswordHash: "x", Role: model.RoleReseller, ClientLimit: 0},
+	} {
+		if err := db.Create(&a).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, c := range []model.Client{
+		{OwnerID: 3, DeviceLimit: 2, Status: model.StatusActive},
+		{OwnerID: 3, DeviceLimit: 4, Status: model.StatusDisabled},
+		{OwnerID: 3, DeviceLimit: 5, Status: model.StatusExpired},
+		{OwnerID: 3, DeviceLimit: 7, Status: model.StatusExhausted},
+		{OwnerID: 2, DeviceLimit: 1, Status: model.StatusActive},
+	} {
+		c.Name = string(rune('a' + i))
+		if err := db.Create(&c).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if err := openUserCapacity(db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var accs []model.CapacityAccount
+	db.Order("admin_id").Find(&accs)
+	got := map[uint]model.CapacityAccount{}
+	for _, a := range accs {
+		got[a.AdminID] = a
+	}
+	if len(accs) != 2 {
+		t.Fatalf("accounts: %+v", accs)
+	}
+	if a := got[2]; a.Mode != model.CapacityOpen || a.Granted != 100 || a.Used != 1 || a.Handed != 30 {
+		t.Errorf("admin: %+v", a)
+	}
+	if r := got[3]; r.Granted != 30 || r.Used != 6 || r.Handed != 0 {
+		t.Errorf("reseller: %+v (an ended customer holds no seat)", r)
+	}
+	var sums []struct {
+		AccountID uint
+		Field     string
+		N         int64
+	}
+	db.Raw(`SELECT account_id, field, SUM(delta) AS n FROM capacity_entries GROUP BY account_id, field`).Scan(&sums)
+	for _, s := range sums {
+		for _, a := range accs {
+			if a.ID != s.AccountID {
+				continue
+			}
+			want := map[string]int64{"granted": a.Granted, "used": a.Used, "handed": a.Handed}[s.Field]
+			if s.N != want {
+				t.Errorf("account %d %s: ledger %d, figure %d", a.ID, s.Field, s.N, want)
+			}
+		}
+	}
+}

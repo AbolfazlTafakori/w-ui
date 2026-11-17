@@ -196,6 +196,84 @@ type OperatorAction struct {
 	Username string `gorm:"-" json:"username,omitempty"`
 }
 
+// CapacityAccount is how much of one thing -- users, or API tokens -- an
+// admin or a reseller has been given, how much of it is in use or spent,
+// and how much they handed on to the resellers under them.
+//
+// Kept as running figures rather than counted on each request: making a
+// customer is one conditional UPDATE here, in the same transaction as the
+// customer, so a ceiling can never be passed by two requests at once and is
+// never read from a count that took a table scan. Every change to a figure
+// is a CapacityEntry, and each figure is always the sum of its entries.
+//
+// No row is no ceiling for users (the owner, and an operator the owner set
+// no ceiling for) and no tokens for tokens.
+type CapacityAccount struct {
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	AdminID uint   `gorm:"not null;uniqueIndex:idx_capacity_owner_kind" json:"adminId"`
+	Kind    string `gorm:"size:8;not null;uniqueIndex:idx_capacity_owner_kind" json:"kind"`
+	// Mode is how users are counted: CapacityOpen, seats held at once, or
+	// CapacityConsumable, units spent and never given back. Tokens are
+	// always spent.
+	Mode string `gorm:"size:16;not null" json:"mode"`
+	// Granted is what they were given, Used what is held (open) or spent
+	// (consumable, tokens), Handed what they passed to their resellers.
+	// What is free is Granted - Used - Handed, and nothing is taken that
+	// would make it negative.
+	Granted   int64     `gorm:"not null;default:0" json:"granted"`
+	Used      int64     `gorm:"not null;default:0" json:"used"`
+	Handed    int64     `gorm:"not null;default:0" json:"handed"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// CapacityEntry is one change to a CapacityAccount: when, by whom, how many
+// units of which figure, why, and the customer or token it was for.
+type CapacityEntry struct {
+	ID        uint   `gorm:"primaryKey" json:"id"`
+	AccountID uint   `gorm:"not null;index" json:"accountId"`
+	AdminID   uint   `gorm:"not null;index" json:"adminId"`
+	Kind      string `gorm:"size:8;not null" json:"kind"`
+	// Field is which figure moved: granted, used or handed.
+	Field string `gorm:"size:8;not null" json:"field"`
+	Delta int64  `gorm:"not null" json:"delta"`
+	// Reason is what for: CapacityCreate, CapacityExtend and the rest.
+	Reason string `gorm:"size:16;not null" json:"reason"`
+	// ActorID is the operator who did it; zero is the panel itself (an
+	// expiry noticed by the reconciler) or the owner's machine token.
+	ActorID  uint      `gorm:"not null;default:0" json:"actorId"`
+	ClientID uint      `gorm:"not null;default:0;index" json:"clientId"`
+	TokenID  uint      `gorm:"not null;default:0" json:"tokenId"`
+	At       time.Time `gorm:"not null;index" json:"at"`
+}
+
+// Capacity kinds and user modes.
+const (
+	CapacityUsers  = "users"
+	CapacityTokens = "tokens"
+
+	CapacityOpen       = "open"
+	CapacityConsumable = "consumable"
+	CapacityFixed      = "fixed" // tokens
+)
+
+// Why a CapacityEntry was written.
+const (
+	CapacityCreate     = "create"
+	CapacityExtend     = "extend"
+	CapacityGrow       = "grow"
+	CapacityShrink     = "shrink"
+	CapacityRelease    = "release"
+	CapacityEnded      = "ended"
+	CapacityRevived    = "revived"
+	CapacityCharge     = "charge"
+	CapacityDebit      = "debit"
+	CapacityHandDown   = "handdown"
+	CapacityHandBack   = "handback"
+	CapacityModeSwitch = "mode"
+	CapacityIssue      = "issue"
+	CapacityMigrate    = "migrate"
+)
+
 // Interface is one listening VPN endpoint on a node.
 //
 // Running several interfaces on one node is deliberate: a standard WireGuard
@@ -1028,6 +1106,8 @@ func AllModels() []any {
 		&SharingEvent{},
 		&OperatorToken{},
 		&OperatorAction{},
+		&CapacityAccount{},
+		&CapacityEntry{},
 		&Outbound{},
 		&OutboundSub{},
 		&Balancer{},
