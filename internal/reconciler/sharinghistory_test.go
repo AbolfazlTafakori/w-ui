@@ -286,3 +286,38 @@ func TestTheSharingNoticeGoesOnceWhenItBegins(t *testing.T) {
 		t.Fatalf("notice %q", sent[0])
 	}
 }
+
+// An entry is written with whose customer it was, so a reseller is shown
+// their own record after the customer is gone; an entry read from the log
+// with no customer, matched to one later, takes their owner then.
+func TestAnEntryKeepsWhoseCustomerItWas(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	if err := db.Create(&model.Client{ID: 41, Name: "theirs", OwnerID: 7}).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := recordSharing(ctx, db, model.SharingEvent{Kind: model.SharingShared, AccountID: 3, ClientID: 41,
+		ClientName: "theirs", DeviceName: "d", Source: model.SharingLive, StartedAt: now, LastSeen: now}); err != nil {
+		t.Fatal(err)
+	}
+	// From the log: the same device, no customer named yet.
+	if _, err := recordSharing(ctx, db, model.SharingEvent{Kind: model.SharingHeld, ClientName: "theirs",
+		DeviceName: "d", Source: model.SharingFromLog, StartedAt: now, LastSeen: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recordSharing(ctx, db, model.SharingEvent{Kind: model.SharingHeld, AccountID: 3, ClientID: 41,
+		ClientName: "theirs", DeviceName: "d", Source: model.SharingLive, StartedAt: now, LastSeen: now}); err != nil {
+		t.Fatal(err)
+	}
+	var got []model.SharingEvent
+	db.Order("id").Find(&got)
+	if len(got) != 2 {
+		t.Fatalf("entries: %+v", got)
+	}
+	for _, ev := range got {
+		if ev.OwnerID != 7 {
+			t.Errorf("%s entry owned by %d, want 7", ev.Kind, ev.OwnerID)
+		}
+	}
+}

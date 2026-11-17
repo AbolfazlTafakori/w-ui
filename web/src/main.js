@@ -70,7 +70,8 @@ const router = createRouter({
     { path: '/hosts', name: 'hosts', component: HostsView },
     { path: '/outbounds', name: 'outbounds', component: OutboundsView },
     { path: '/routing', name: 'routing', component: RoutingView },
-    { path: '/sharing', name: 'sharing', component: SharingView },
+    // meta.grant: a page a reseller has only when the owner ticked it.
+    { path: '/sharing', name: 'sharing', component: SharingView, meta: { menu: 'sharing', grant: 'sharing' } },
     { path: '/api-docs', name: 'api', component: ApiView },
     { path: '/settings', name: 'settings', component: SettingsView },
     // Who runs and sells on this panel, each tier its own page: admins (the
@@ -138,7 +139,7 @@ function allowed(to) {
   // An admin: the pages the owner ticked for them, as the sidebar shows.
   // Not seesEveryone -- that is "see every customer", not which pages.
   if (me.managesResellers) return !!(to.meta.everyone || (to.meta.menu && (me.menuIds || []).includes(to.meta.menu)))
-  return !!to.meta.sells
+  return !!(to.meta.sells || (to.meta.grant && (me.menuIds || []).includes(to.meta.grant)))
 }
 
 // A token can expire between page loads. When any request comes back 401 the

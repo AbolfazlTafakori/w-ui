@@ -673,6 +673,15 @@ func (s *Server) routes() []Route {
 			Note: "For a reseller or an admin: only the tunnels the owner gave you, and only your own customers counted. " +
 				"status is up, off (switched off by the owner) or down (on, but not running).",
 			handler: s.handleOperatorServers},
+		{Method: "GET", Path: "/api/operator/sharing", Group: "Server", Auth: true,
+			Summary: "Your own customers' devices seen from several places at once, by network.",
+			Note: "For an admin or a reseller the owner granted the sharing page. Addresses are given as their " +
+				"network (a /24, or a /48 for IPv6) with how many were in it, never in full.",
+			handler: s.handleOperatorSharing},
+		{Method: "GET", Path: "/api/operator/sharing/history", Group: "Server", Auth: true,
+			Summary: "The sharing record of your own customers, deleted ones included, newest first. Takes limit.",
+			Note:    "As /api/operator/sharing: by network, never the address in full.",
+			handler: s.handleOperatorSharingHistory},
 		{Method: "GET", Path: "/api/sharing", Group: "Server", Auth: true,
 			Summary: "Credentials seen from several places at once.",
 			Note:    "Evidence, not proof. Nothing is disconnected automatically.",
@@ -921,6 +930,11 @@ var (
 		// counted. Its own view, not the interface list's: nothing on it
 		// reaches past the tunnel's name and state.
 		"GET /api/operator/servers": true,
+		// Their own customers' sharing, by network, when the owner granted
+		// them the page (grantForRoute). Their own views, not the owner's
+		// report and record, which carry every address in full.
+		"GET /api/operator/sharing":         true,
+		"GET /api/operator/sharing/history": true,
 	}
 
 	// menuForRoute is the admin page that gates a single route under a
@@ -929,6 +943,14 @@ var (
 	// without it.
 	menuForRoute = map[string]string{
 		"GET /api/operator/servers": model.MenuClients,
+	}
+
+	// grantForRoute is a page an admin or a reseller reaches only when the
+	// owner ticked it for them (requireGrant). Unlike menuForRoute it holds a
+	// reseller to it too.
+	grantForRoute = map[string]string{
+		"GET /api/operator/sharing":         model.MenuSharing,
+		"GET /api/operator/sharing/history": model.MenuSharing,
 	}
 )
 
@@ -972,6 +994,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux, routes []Route) {
 			h = s.requireMenu(m, h)
 		} else if m := menuForRoute[r.Method+" "+r.Path]; m != "" {
 			h = s.requireMenu(m, h)
+		}
+		if m := grantForRoute[r.Method+" "+r.Path]; m != "" {
+			h = s.requireGrant(m, h)
 		}
 		if r.Operator {
 			h = s.requireOperator(h)

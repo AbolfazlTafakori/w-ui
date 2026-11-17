@@ -73,6 +73,10 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		// Whether the servers they sell on are up, with their own customers
 		// counted: a view of its own, not the interface list.
 		"GET /api/operator/servers",
+		// Their own customers' sharing, by network, when the owner granted
+		// them the page.
+		"GET /api/operator/sharing",
+		"GET /api/operator/sharing/history",
 	}
 	sort.Strings(want)
 

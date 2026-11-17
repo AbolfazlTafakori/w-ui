@@ -134,16 +134,16 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 	// was said. Settled before the row is written so a bad page is refused
 	// before anything is created.
 	var menus []string
-	if in.Role == model.RoleAdmin {
-		if in.MenuIDs == nil {
-			menus = model.GrantableMenus()
-		} else {
-			clean, err := cleanMenus(in.MenuIDs)
-			if err != nil {
-				return nil, err
-			}
-			menus = clean
+	switch {
+	case in.Role == model.RoleAdmin && in.MenuIDs == nil:
+		menus = model.DefaultAdminMenus()
+	case in.Role == model.RoleAdmin || in.Role == model.RoleReseller && in.MenuIDs != nil:
+		// A reseller's one grantable page, sharing, only when it is asked for.
+		clean, err := cleanMenus(in.Role, in.MenuIDs)
+		if err != nil {
+			return nil, err
 		}
+		menus = clean
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
@@ -221,7 +221,7 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 		if err := s.setInterfaces(tx, admin.ID, in.InterfaceIDs); err != nil {
 			return err
 		}
-		if admin.Role == model.RoleAdmin {
+		if admin.Role == model.RoleAdmin || len(menus) > 0 {
 			return setMenus(tx, admin.ID, menus)
 		}
 		return nil
@@ -500,9 +500,9 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	// them. An empty list is the owner unchecking every page, which is a real
 	// thing to want. Only an admin has pages to change.
 	var menusUpdate []string
-	setMenusUpdate := admin.Role == model.RoleAdmin && in.MenuIDs != nil
+	setMenusUpdate := (admin.Role == model.RoleAdmin || admin.Role == model.RoleReseller) && in.MenuIDs != nil
 	if setMenusUpdate {
-		clean, err := cleanMenus(in.MenuIDs)
+		clean, err := cleanMenus(admin.Role, in.MenuIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -721,10 +721,16 @@ func (s *Admins) fill(ctx context.Context, admins []*model.Admin) error {
 		has[g.AdminID][g.Menu] = true
 	}
 	for _, a := range admins {
-		if a.Role != model.RoleAdmin {
+		switch {
+		case a.Role == model.RoleAdmin:
+			a.MenuIDs = []string{}
+		case a.Role == model.RoleReseller && len(has[a.ID]) > 0:
+			// A reseller granted sharing. One granted nothing keeps the
+			// answer they always had, with no list at all.
+			a.MenuIDs = []string{}
+		default:
 			continue
 		}
-		a.MenuIDs = []string{}
 		for _, m := range model.GrantableMenus() {
 			if has[a.ID][m] {
 				a.MenuIDs = append(a.MenuIDs, m)

@@ -489,6 +489,12 @@ func (s *Server) adminView(ctx context.Context, admin *model.Admin) *adminView {
 		if menus, err := s.admins.MenuIDs(ctx, admin.ID); err == nil {
 			view.Admin.MenuIDs = menus
 		}
+	} else if admin.Role == model.RoleReseller {
+		// A reseller's one grantable page, sharing, when the owner ticked it;
+		// nothing at all, as before, when not.
+		if menus, err := s.admins.MenuIDs(ctx, admin.ID); err == nil && len(menus) > 0 {
+			view.Admin.MenuIDs = menus
+		}
 	}
 	if ids, err := s.admins.AllowedInterfaces(ctx, admin); err == nil && ids != nil {
 		list := make([]uint, 0, len(ids))

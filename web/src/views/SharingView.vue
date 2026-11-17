@@ -60,9 +60,22 @@ onMounted(() => {
 })
 onBeforeUnmount(() => clearInterval(timer))
 
+// Anyone but the owner reads their own customers' sharing, by network: a
+// /24 (a /48 for IPv6) with how many addresses were in it, never the address
+// itself. Shown in the same columns, each network a tag.
+const operator = computed(() => !!store.admin && !store.admin.managesPanel)
+const asTags = (list) =>
+  list.map((r) => ({ ...r, addrs: (r.networks || []).map((n) => (n.count > 1 ? `${n.net} ×${n.count}` : n.net)) }))
+
 async function load(quiet = false) {
   try {
-    if (tab.value === 'history') {
+    if (operator.value) {
+      if (tab.value === 'history') {
+        events.value = asTags(await api.get('/api/operator/sharing/history', { background: quiet }))
+      } else {
+        reports.value = asTags(await api.get('/api/operator/sharing', { background: quiet }))
+      }
+    } else if (tab.value === 'history') {
       const h = await api.get('/api/sharing/history', { background: quiet })
       events.value = h.events || []
       importState.value = h.import || null
@@ -111,7 +124,9 @@ const totals = computed(() =>
     : {
         devices: reports.value.length,
         clients: new Set(reports.value.map((r) => r.clientId)).size,
-        addrs: reports.value.reduce((a, r) => a + addrsOf(r).length, 0),
+        // An operator's rows carry networks with counts: the addresses
+        // behind them are still counted, though none is shown.
+        addrs: reports.value.reduce((a, r) => a + (r.networks ? r.networks.reduce((n, x) => n + x.count, 0) : addrsOf(r).length), 0),
       },
 )
 
@@ -260,6 +275,10 @@ function when(r) {
           <div class="aalert info with-desc" role="note">
             <AntIcon name="InfoCircleFilled" />
             <div class="aalert-body"><span class="aalert-desc">{{ t('sharing.historyHint') }}</span></div>
+          </div>
+          <div v-if="operator" class="aalert with-desc import-note info" role="status">
+            <AntIcon name="InfoCircleFilled" />
+            <div class="aalert-body"><span class="aalert-desc">{{ t('sharing.byNetwork') }}</span></div>
           </div>
           <div v-if="importNote" class="aalert with-desc import-note" :class="importNote.tone" role="status">
             <AntIcon :name="importNote.tone === 'warning' ? 'ExclamationCircleFilled' : 'InfoCircleFilled'" />

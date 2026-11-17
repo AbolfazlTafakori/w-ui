@@ -21,6 +21,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/l2tpconf"
 	"github.com/abolfazl/w-ui/internal/optional"
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
+	"github.com/abolfazl/w-ui/internal/scope"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
@@ -2371,4 +2372,39 @@ func (s *Clients) fitSeats(ctx context.Context, client *model.Client, seats int)
 		s.log.Info("files removed to fit the plan", "client", client.Name, "removed", strings.Join(extra, ", "), "users", seats)
 	}
 	return nil
+}
+
+// Own is which of these customers the asking operator holds: the ids read
+// back from the customers table, which narrows itself to their scope. An id
+// that is not theirs, or no longer exists, is not in the answer.
+func (s *Clients) Own(ctx context.Context, ids []uint) (map[uint]bool, error) {
+	out := map[uint]bool{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var own []uint
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).Where("id IN ?", ids).Pluck("id", &own).Error; err != nil {
+		return nil, fmt.Errorf("service: which customers are the operator's: %w", err)
+	}
+	for _, id := range own {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// SharingRecord is the sharing record, newest first, of the asking
+// operator's customers -- their deleted customers' included, by whose
+// customer each entry was when it was written. The record is not a
+// customers' table and is not narrowed on its own: the condition is here,
+// as Narrow puts it.
+func (s *Clients) SharingRecord(ctx context.Context, limit int) ([]model.SharingEvent, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 500
+	}
+	q := s.db.WithContext(ctx).Model(&model.SharingEvent{}).Order("last_seen DESC, id DESC").Limit(limit)
+	var out []model.SharingEvent
+	if err := scope.Narrow(ctx, q, "owner_id").Find(&out).Error; err != nil {
+		return nil, fmt.Errorf("service: the operator's sharing record: %w", err)
+	}
+	return out, nil
 }

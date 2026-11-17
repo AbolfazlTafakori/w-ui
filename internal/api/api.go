@@ -87,6 +87,10 @@ type Server struct {
 	// pushes here.
 	localNodeID uint
 
+	// sharingCache keeps the panel-wide sharing report a few seconds, so
+	// every operator's sharing page polling it does not rerun its join.
+	sharingCache sharingCache
+
 	restart  func()
 	engine   *service.Engine
 	template *service.Template

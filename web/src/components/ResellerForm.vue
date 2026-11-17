@@ -71,8 +71,14 @@ function monthFromToday() {
 }
 
 // The pages an admin can be granted, in menu order; must match the backend's
-// GrantableMenus.
-const ALL_MENUS = ['clients', 'groups', 'resellers']
+// GrantableMenus. A new admin starts with the pages there were before sharing
+// (DefaultAdminMenus): sharing shows customers' networks, and is ticked by
+// the owner for whoever should have it.
+const ALL_MENUS = ['clients', 'groups', 'resellers', 'sharing']
+const DEFAULT_ADMIN_MENUS = ['clients', 'groups', 'resellers']
+// A reseller's one grantable page (ResellerMenus); their customers and
+// groups are theirs anyway. Only the owner grants it.
+const RESELLER_MENUS = ['sharing']
 
 const a = props.admin
 const q = quotaToUnit(a?.quotaBytes)
@@ -99,7 +105,7 @@ const form = ref({
   // outside their own tree until the owner widens it.
   canViewAllClients: !!a?.canViewAllClients,
   canViewAllInterfaces: !!a?.canViewAllInterfaces,
-  menuIds: [...(a?.menuIds || ALL_MENUS)],
+  menuIds: [...(a ? a.menuIds || (a.role === 'admin' ? ALL_MENUS : []) : DEFAULT_ADMIN_MENUS)],
 })
 
 // A reseller and an admin both hold a ceiling and sell on chosen servers; the
@@ -219,6 +225,9 @@ async function submit() {
   if (isReseller.value) {
     const label = f.groupName.trim()
     if (label && label !== (props.admin?.groupName || '')) body.groupName = label
+    // Sent by the owner alone: an admin editing their reseller has no page
+    // to grant, and the server refuses a list from them.
+    if (ownerView.value) body.menuIds = RESELLER_MENUS.filter((m) => f.menuIds.includes(m))
   }
   if (isAdmin.value) {
     body.canViewAllClients = f.canViewAllClients
@@ -417,10 +426,10 @@ async function submit() {
           <!-- The pages this admin may open. Each a row with what it holds, so
                a grant reads as a decision rather than a word in a grid. The
                machine pages are never among them. -->
-          <div v-if="isAdmin" class="aform-item perm-block">
+          <div v-if="isAdmin || (isReseller && ownerView)" class="aform-item perm-block">
             <label class="aform-label">{{ t('admins.pages') }} <HelpTip :text="t('admins.pagesHint')" /></label>
             <div class="perm-list">
-              <label v-for="m in ALL_MENUS" :key="m" class="perm-item">
+              <label v-for="m in (isAdmin ? ALL_MENUS : RESELLER_MENUS)" :key="m" class="perm-item">
                 <div class="perm-meta">
                   <div class="perm-title">{{ t(`admins.page.${m}`) }}</div>
                   <div class="perm-desc">{{ t(`admins.page.${m}.desc`) }}</div>

@@ -18,11 +18,13 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/panelconf"
+	"github.com/abolfazl/w-ui/internal/reconciler"
 	"github.com/abolfazl/w-ui/internal/scope"
 	"github.com/abolfazl/w-ui/internal/service"
 )
@@ -40,7 +42,7 @@ import (
 //	"ra"  two customers on 1, one of them online
 //	"rb"  one customer on 1 and one on 2
 //	"rc"  one customer on 1
-func serversPanel(t *testing.T) (http.Handler, map[string]session) {
+func serversPanel(t *testing.T) (http.Handler, map[string]session, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "wui.db")), &gorm.Config{Logger: gormlogger.Discard})
 	if err != nil {
@@ -66,6 +68,8 @@ func serversPanel(t *testing.T) (http.Handler, map[string]session) {
 		DB: db, Logger: log, Catalog: catalog,
 		Enforcer: enforce.NewNoop(), Settings: panelconf.NewSettings(db, "en"),
 		Interfaces: service.NewInterfaces(db, ipam.NewPools(), log),
+		Clients:    service.NewClients(db, ipam.NewPools(), log),
+		Reconciler: reconciler.New(reconciler.Options{DB: db, Log: log, Enforcer: enforce.NewNoop(), Pool: backend.NewPool(log)}),
 		JWTSecret:  []byte("servers-test-secret-0123456789abcd"), Version: "test",
 	})
 	must := func(err error) {
@@ -107,6 +111,8 @@ func serversPanel(t *testing.T) (http.Handler, map[string]session) {
 	}
 	mk(model.Admin{Username: "an", Role: model.RoleAdmin})
 	mk(model.Admin{Username: "ra", Role: model.RoleReseller, Enabled: true}, 1)
+	// ra is granted the sharing page; rb is not.
+	must(db.Create(&model.AdminMenuPermission{AdminID: ids["ra"], Menu: model.MenuSharing}).Error)
 	mk(model.Admin{Username: "rb", Role: model.RoleReseller, Enabled: true}, 1, 2)
 	mk(model.Admin{Username: "rc", Role: model.RoleReseller, Enabled: true, ParentAdminID: ids["ad"]}, 1)
 
@@ -155,7 +161,7 @@ func serversPanel(t *testing.T) (http.Handler, map[string]session) {
 		}
 		sessions[who] = session{token: got.Token, cookies: rec.Result().Cookies()}
 	}
-	return mux, sessions
+	return mux, sessions, db
 }
 
 func askServers(t *testing.T, mux http.Handler, sess session) (int, []map[string]any, string) {
@@ -194,7 +200,7 @@ func jsonNum(v any) string {
 // Each operator is told about the tunnels the owner gave them and no
 // others, with their own customers counted -- never the tunnel's total.
 func TestAnOperatorSeesTheirOwnServersAndCustomersOnly(t *testing.T) {
-	mux, sess := serversPanel(t)
+	mux, sess, _ := serversPanel(t)
 	cases := map[string]map[string]string{
 		// Two on wg-a, one online; wg-b and oc-c were not given to them.
 		"ra": {"wg-a": "down 2/1"},
@@ -232,7 +238,7 @@ func TestAnOperatorSeesTheirOwnServersAndCustomersOnly(t *testing.T) {
 // the JSON keys themselves rather than by the fields a struct happens to
 // have today.
 func TestTheServerStatusCarriesNothingElse(t *testing.T) {
-	mux, sess := serversPanel(t)
+	mux, sess, _ := serversPanel(t)
 	for _, who := range []string{"ra", "rb", "rc", "ad"} {
 		_, rows, body := askServers(t, mux, sess[who])
 		for _, r := range rows {
@@ -256,7 +262,7 @@ func TestTheServerStatusCarriesNothingElse(t *testing.T) {
 // An admin the owner left without the customers page is not given the
 // servers that page shows either.
 func TestAnAdminWithoutTheCustomersPageIsRefused(t *testing.T) {
-	mux, sess := serversPanel(t)
+	mux, sess, _ := serversPanel(t)
 	if code, _, body := askServers(t, mux, sess["an"]); code != http.StatusForbidden {
 		t.Fatalf("an admin with no page: %d %s", code, body)
 	}

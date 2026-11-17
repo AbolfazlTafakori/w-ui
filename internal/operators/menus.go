@@ -12,16 +12,17 @@ import (
 
 // An admin's menu grants: which of the grantable pages the owner has let
 // them reach. Held in AdminMenuPermission rows, read as a set, and refused
-// in the backend for any page not among them (internal/api gating). Only an
-// admin has any; the owner reaches everything and a reseller's menu is fixed.
+// in the backend for any page not among them (internal/api gating). An admin
+// has any of them; a reseller's menu is fixed but for sharing, which the
+// owner may grant them too; the owner reaches everything.
 
 // cleanMenus validates a grant list and drops duplicates, keeping the
 // canonical order. An unknown page is refused rather than silently ignored,
 // so a typo in the form is a visible error, not a page quietly left off.
-func cleanMenus(in []string) ([]string, error) {
+func cleanMenus(role model.AdminRole, in []string) ([]string, error) {
 	seen := map[string]bool{}
 	for _, m := range in {
-		if !model.ValidMenu(m) {
+		if !model.ValidMenuFor(role, m) {
 			return nil, fault.Field("menuIds", "%q is not a page that can be granted", m)
 		}
 		seen[m] = true
@@ -67,8 +68,8 @@ func (s *Admins) HasMenu(ctx context.Context, adminID uint, menu string) (bool, 
 	return n > 0, nil
 }
 
-// MenuIDs is the pages an admin may reach, in menu order. Empty for anyone
-// but an admin.
+// MenuIDs is the pages an admin or a reseller has been granted, in menu
+// order. Empty for the owner, who has no grants and needs none.
 func (s *Admins) MenuIDs(ctx context.Context, adminID uint) ([]string, error) {
 	var have []string
 	if err := s.db.WithContext(ctx).Model(&model.AdminMenuPermission{}).

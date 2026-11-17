@@ -922,6 +922,12 @@ type SharingEvent struct {
 	Kind      string `gorm:"size:16;not null;index;uniqueIndex:idx_sharing_event" json:"kind"`
 	AccountID uint   `gorm:"index;not null;default:0" json:"accountId"`
 	ClientID  uint   `gorm:"index;not null;default:0" json:"clientId"`
+	// OwnerID is the operator whose customer this was when it was recorded,
+	// as clients.owner_id: zero is the owner's own. Kept here because the
+	// record outlives the customer, and a reseller or an admin is shown the
+	// record of their own customers, deleted ones included, and nobody
+	// else's. Not sent: the owner's page reads the record as before.
+	OwnerID uint `gorm:"index;not null;default:0" json:"-"`
 	// The names as they were, which is what identifies a record from the
 	// log too, where there are no ids.
 	ClientName string `gorm:"size:128;not null;uniqueIndex:idx_sharing_event" json:"clientName"`

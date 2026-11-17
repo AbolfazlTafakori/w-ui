@@ -207,16 +207,42 @@ const (
 	MenuClients   = "clients"   // the admin's customers
 	MenuGroups    = "groups"    // their customer groups
 	MenuResellers = "resellers" // the resellers they created
+	// MenuSharing is the sharing report over the operator's own customers.
+	// The one page a reseller can be granted too: off until the owner ticks
+	// it, for an admin and a reseller alike.
+	MenuSharing = "sharing"
 )
 
 // GrantableMenus is every page the owner may grant an admin, in menu order.
-func GrantableMenus() []string { return []string{MenuClients, MenuGroups, MenuResellers} }
+func GrantableMenus() []string {
+	return []string{MenuClients, MenuGroups, MenuResellers, MenuSharing}
+}
+
+// DefaultAdminMenus is what an admin made without a list of pages is given:
+// the pages there were before sharing could be granted. Sharing shows
+// customers' networks, and is handed to nobody the owner did not tick it for.
+func DefaultAdminMenus() []string { return []string{MenuClients, MenuGroups, MenuResellers} }
+
+// ResellerMenus is the pages a reseller can be granted: sharing alone. Their
+// customers and groups are theirs anyway.
+func ResellerMenus() []string { return []string{MenuSharing} }
 
 // ValidMenu reports whether m is a page that can be granted.
 func ValidMenu(m string) bool {
 	switch m {
-	case MenuClients, MenuGroups, MenuResellers:
+	case MenuClients, MenuGroups, MenuResellers, MenuSharing:
 		return true
+	}
+	return false
+}
+
+// ValidMenuFor reports whether m is a page that can be granted to this role.
+func ValidMenuFor(role AdminRole, m string) bool {
+	switch role {
+	case RoleAdmin:
+		return ValidMenu(m)
+	case RoleReseller:
+		return m == MenuSharing
 	}
 	return false
 }

@@ -111,3 +111,41 @@ func TestFilesAlreadyOnAnXrayNodeAreMarkedPlaced(t *testing.T) {
 		}
 	}
 }
+
+// The sharing record learns whose customer each entry was: an entry whose
+// customer still exists takes their owner, one whose customer is gone stays
+// the owner's alone, and one already owned is left as it is.
+func TestTheSharingRecordIsOwned(t *testing.T) {
+	db := bareDB(t)
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []model.Client{{ID: 1, Name: "a", OwnerID: 7}, {ID: 2, Name: "b", OwnerID: 0}} {
+		if err := db.Create(&c).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, ev := range []model.SharingEvent{
+		{ID: 1, Kind: "shared", ClientID: 1, ClientName: "a", DeviceName: "d", Source: "live"},
+		{ID: 2, Kind: "shared", ClientID: 2, ClientName: "b", DeviceName: "d", Source: "live"},
+		{ID: 3, Kind: "shared", ClientID: 9, ClientName: "gone", DeviceName: "d", Source: "live"},
+		{ID: 4, Kind: "held", ClientID: 1, ClientName: "a", DeviceName: "d", Source: "live", OwnerID: 5},
+	} {
+		if err := db.Create(&ev).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 { // and again: nothing more changes
+		if err := ownSharingRecord(db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := map[uint]uint{1: 7, 2: 0, 3: 0, 4: 5}
+	var got []model.SharingEvent
+	db.Order("id").Find(&got)
+	for _, ev := range got {
+		if ev.OwnerID != want[ev.ID] {
+			t.Errorf("entry %d owned by %d, want %d", ev.ID, ev.OwnerID, want[ev.ID])
+		}
+	}
+}

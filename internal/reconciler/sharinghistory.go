@@ -173,6 +173,9 @@ func recordSharing(ctx context.Context, db *gorm.DB, ev model.SharingEvent) (cre
 		err := q.First(&open).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			created = true
+			if ev.OwnerID, err = ownerOfClient(tx, ev.ClientID); err != nil {
+				return err
+			}
 			return tx.Create(&ev).Error
 		}
 		if err != nil {
@@ -187,6 +190,13 @@ func recordSharing(ctx context.Context, db *gorm.DB, ev model.SharingEvent) (cre
 		}
 		if open.AccountID == 0 && ev.AccountID != 0 {
 			updates["account_id"], updates["client_id"] = ev.AccountID, ev.ClientID
+			// Read from the log with no customer to name, and matched to one
+			// now: whose it is comes with them.
+			owner, err := ownerOfClient(tx, ev.ClientID)
+			if err != nil {
+				return err
+			}
+			updates["owner_id"] = owner
 		}
 		if ev.Limit != 0 {
 			updates["plan_limit"] = ev.Limit
@@ -197,6 +207,24 @@ func recordSharing(ctx context.Context, db *gorm.DB, ev model.SharingEvent) (cre
 		return tx.Model(&model.SharingEvent{}).Where("id = ?", open.ID).Updates(updates).Error
 	})
 	return created && err == nil, err
+}
+
+// ownerOfClient is the operator a customer belongs to as the record is
+// written, or zero -- the owner's -- when there is no such customer. Read
+// without a scope: the record is written by the reconciler, for every
+// operator alike.
+func ownerOfClient(tx *gorm.DB, clientID uint) (uint, error) {
+	if clientID == 0 {
+		return 0, nil
+	}
+	var owners []uint
+	if err := tx.Model(&model.Client{}).Where("id = ?", clientID).Pluck("owner_id", &owners).Error; err != nil {
+		return 0, fmt.Errorf("whose customer a sharing record is: %w", err)
+	}
+	if len(owners) == 0 {
+		return 0, nil
+	}
+	return owners[0], nil
 }
 
 // mergeAddrs is the addresses of both lists, once each, in order.

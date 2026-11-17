@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/operators"
 )
 
@@ -41,6 +42,9 @@ func (s *Server) handleCreateAdmin(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if !s.mayGrantPages(w, r, in) {
+		return
+	}
 	admin, err := s.admins.Create(r.Context(), in)
 	if err != nil {
 		fail(w, s.log, err)
@@ -66,6 +70,9 @@ func (s *Server) handleUpdateAdmin(w http.ResponseWriter, r *http.Request) {
 	if me := adminFrom(r.Context()); me != nil && me.ID == id {
 		writeError(w, http.StatusBadRequest,
 			"change your own account from the security settings, not from here")
+		return
+	}
+	if !s.mayGrantPages(w, r, in) {
 		return
 	}
 	admin, err := s.admins.Update(r.Context(), id, in)
@@ -159,4 +166,19 @@ func (s *Server) handleResetAdminUsage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reconcileNow() {
 	s.tickNow()
 	s.subHub.Broadcast()
+}
+
+// mayGrantPages refuses a list of pages from anyone but the owner. An admin
+// manages their own resellers through these routes, and a reseller's pages
+// -- sharing -- are the owner's to grant: an admin who could tick it for
+// their reseller would be handing out a page they may not have themselves.
+// Before a reseller could hold a page the list was simply not read for one;
+// it is refused now rather than quietly dropped, so the form says why.
+func (s *Server) mayGrantPages(w http.ResponseWriter, r *http.Request, in operators.AdminInput) bool {
+	me := adminFrom(r.Context())
+	if in.MenuIDs == nil || me == nil || me.Role == model.RoleOwner {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "only the owner grants pages")
+	return false
 }

@@ -71,7 +71,9 @@ const nav = [
   { to: '/', key: 'nav.overview', icon: 'DashboardOutlined', exact: true },
   { to: '/interfaces', key: 'nav.interfaces', icon: 'ImportOutlined' },
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true, menu: 'clients' },
-  { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined' },
+  // An admin's or a reseller's when the owner ticked it for them, over their
+  // own customers and by network; the owner's in full.
+  { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined', menu: 'sharing', grant: 'sharing' },
   { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true, menu: 'groups' },
   // Two tiers, two pages. Admins is the owner's alone -- no menu grant and no
   // sells flag, so only the owner sees it. Resellers is the owner's and an
@@ -149,8 +151,9 @@ const visibleNav = computed(() => {
     // An admin: the pages the owner granted. A page
     // the owner left unchecked is not here, and the backend refuses it too.
     if (me.managesResellers) return item.everyone || (item.menu && grants.includes(item.menu))
-    // A reseller: the fixed two pages that are theirs.
-    return item.sells
+    // A reseller: the fixed two pages that are theirs, and a page the owner
+    // granted them (sharing).
+    return item.sells || (item.grant && grants.includes(item.grant))
   }
   return nav.filter((item) => !item.children && keep(item))
 })

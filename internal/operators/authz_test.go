@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -137,14 +138,16 @@ func TestAnAdminsMenuGrants(t *testing.T) {
 	s := authzDB(t)
 	on := true
 
-	// No list on create: the admin gets every grantable page.
+	// No list on create: the admin gets the pages there were before sharing
+	// could be granted, and not sharing -- that is handed only to whoever
+	// the owner ticks it for.
 	full, err := s.Create(context.Background(), AdminInput{Username: "full",
 		Password: "correct-horse", Role: model.RoleAdmin, Enabled: &on})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.MenuIDs(context.Background(), full.ID); len(got) != len(model.GrantableMenus()) {
-		t.Fatalf("a default admin has pages %v, want all", got)
+	if got, _ := s.MenuIDs(context.Background(), full.ID); strings.Join(got, ",") != "clients,groups,resellers" {
+		t.Fatalf("a default admin has pages %v, want clients, groups and resellers", got)
 	}
 
 	// A list is taken as given.
@@ -174,5 +177,43 @@ func TestAnAdminsMenuGrants(t *testing.T) {
 	}
 	if got, _ := s.MenuIDs(context.Background(), some.ID); len(got) != 0 {
 		t.Errorf("after unchecking all, the admin still has %v", got)
+	}
+}
+
+// A reseller can be granted sharing and nothing else: their customers and
+// groups are theirs anyway, and the machine is never anybody's but the
+// owner's. Without a list they have no page granted at all, as before.
+func TestAResellerCanBeGrantedSharingAlone(t *testing.T) {
+	s := authzDB(t)
+	on := true
+	plain, err := s.Create(context.Background(), AdminInput{Username: "plain",
+		Password: "correct-horse", Role: model.RoleReseller, Enabled: &on})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.MenuIDs(context.Background(), plain.ID); len(got) != 0 {
+		t.Fatalf("a reseller made without a list has pages %v", got)
+	}
+	for _, page := range []string{model.MenuClients, model.MenuGroups, model.MenuResellers, "routing"} {
+		if _, err := s.Create(context.Background(), AdminInput{Username: "r-" + page,
+			Password: "correct-horse", Role: model.RoleReseller, Enabled: &on,
+			MenuIDs: []string{page}}); !errors.Is(err, fault.ErrInvalid) {
+			t.Errorf("a reseller was granted %q: %v", page, err)
+		}
+	}
+	if _, err := s.Update(context.Background(), plain.ID, AdminInput{MenuIDs: []string{model.MenuSharing}}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.HasMenu(context.Background(), plain.ID, model.MenuSharing); !ok {
+		t.Fatal("the reseller was not granted sharing")
+	}
+	if _, err := s.Update(context.Background(), plain.ID, AdminInput{MenuIDs: []string{model.MenuGroups}}); !errors.Is(err, fault.ErrInvalid) {
+		t.Errorf("a reseller was granted groups on update: %v", err)
+	}
+	if _, err := s.Update(context.Background(), plain.ID, AdminInput{MenuIDs: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.HasMenu(context.Background(), plain.ID, model.MenuSharing); ok {
+		t.Fatal("unticking sharing left it granted")
 	}
 }

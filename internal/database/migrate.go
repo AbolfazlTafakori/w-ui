@@ -47,6 +47,7 @@ var migrations = []migration{
 	{3, "a customer's group label becomes their first group", false, carryGroupLabels},
 	{4, "each file's usage is counted by the panel from now on", false, startExactFileUsage},
 	{5, "files already on a 3x-ui or Pasarguard node were placed there by this panel", false, markPlacedOnXrayNodes},
+	{6, "the sharing record says whose customer each entry was", false, ownSharingRecord},
 }
 
 // Migrate brings the schema up to date.
@@ -158,6 +159,23 @@ func markPlacedOnXrayNodes(tx *gorm.DB) error {
 		  AND node_id IN (SELECT id FROM nodes WHERE kind IN (?, ?))`,
 		model.KindXUI, model.KindPG).Error; err != nil {
 		return fmt.Errorf("mark files placed: %w", err)
+	}
+	return nil
+}
+
+// ownSharingRecord: the sharing record now keeps whose customer each entry
+// was, so a reseller or an admin can be shown their own. An entry whose
+// customer still exists takes that customer's owner; one whose customer is
+// already gone has nobody left to ask, and stays the owner's alone -- zero,
+// which no operator but the owner is shown. Only entries still at zero are
+// touched, so running it again changes nothing.
+func ownSharingRecord(tx *gorm.DB) error {
+	if err := tx.Exec(`
+		UPDATE sharing_events
+		SET owner_id = (SELECT clients.owner_id FROM clients WHERE clients.id = sharing_events.client_id)
+		WHERE owner_id = 0 AND client_id <> 0
+		  AND EXISTS (SELECT 1 FROM clients WHERE clients.id = sharing_events.client_id)`).Error; err != nil {
+		return fmt.Errorf("own the sharing record: %w", err)
 	}
 	return nil
 }
