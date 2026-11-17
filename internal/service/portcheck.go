@@ -1,11 +1,15 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
 // Checking that a port is free before claiming it.
@@ -89,5 +93,47 @@ func checkPortFree(port int, transport string) error {
 			"Something else is listening there — another VPN, or another program. "+
 			"Choose a different port",
 			ErrInvalid, port, reason)
+	}
+}
+
+// portReleaseWait is how long removing a tunnel waits for its ports to be let
+// go. Long enough for a gateway's pass and the agent's step; short enough that
+// a port held by something else does not hold up the removal.
+var portReleaseWait = 3 * time.Second
+
+// tunnelPorts is every port a tunnel listens on: its own, and its stealth
+// transport's.
+func tunnelPorts(iface *model.Interface) []int {
+	var out []int
+	if iface.ListenPort > 0 {
+		out = append(out, iface.ListenPort)
+	}
+	if p := iface.Stealth.V.Port; p > 0 && p != iface.ListenPort {
+		out = append(out, p)
+	}
+	return out
+}
+
+// awaitPortsFree waits up to max for nothing to listen on these ports, over
+// TCP or UDP. A port the panel may not bind cannot be asked about, and is not
+// waited on.
+func awaitPortsFree(ctx context.Context, ports []int, max time.Duration) {
+	held := func() bool {
+		for _, p := range ports {
+			for _, network := range []string{"tcp", "udp"} {
+				if st, _ := probePort(p, network); st == portTaken {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	deadline := time.Now().Add(max)
+	for held() && time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 }

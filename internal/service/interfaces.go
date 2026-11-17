@@ -1439,6 +1439,16 @@ func (s *Interfaces) Delete(ctx context.Context, id uint) error {
 	if err := s.db.WithContext(ctx).Delete(&model.Interface{}, id).Error; err != nil {
 		return fmt.Errorf("service: delete interface: %w", err)
 	}
+	// Some of a tunnel lets go of its ports a moment after it is taken down:
+	// a stealth gateway on the reconciler's next pass that no longer finds
+	// the row, ocserv when the agent next looks. A tunnel made on the same
+	// port at once -- an import of what was just removed -- was refused as
+	// "in use". Delete returns when they are free, or after portReleaseWait.
+	if s.Teardown != nil {
+		if local, err := s.isLocal(ctx, iface.NodeID); err == nil && local {
+			awaitPortsFree(ctx, tunnelPorts(iface), portReleaseWait)
+		}
+	}
 	s.log.Info("interface deleted", "id", id, "name", iface.Name)
 	return nil
 }
