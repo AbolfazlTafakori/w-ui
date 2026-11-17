@@ -26,6 +26,7 @@ type fakeIPsec struct {
 	loads      []Loads
 	events     []string // each load: "swanctl: ..." or "vici: -unloaded +loaded"
 	viciDown   bool
+	instance   string // strongSwan's; changed when it starts again
 	sas        []IKESA
 	down       bool // strongSwan not answering
 	terminated []uint
@@ -86,7 +87,8 @@ func (f *fakeIPsec) ApplyItems(_ context.Context, unload, load []ikev2conf.Item)
 	f.events = append(f.events, "vici: "+strings.Join(keys, " "))
 	return nil
 }
-func (f *fakeIPsec) lastLoad() Loads { return f.loads[len(f.loads)-1] }
+func (f *fakeIPsec) Instance() string { return f.instance }
+func (f *fakeIPsec) lastLoad() Loads  { return f.loads[len(f.loads)-1] }
 func (f *fakeIPsec) RemoveSwanctl(context.Context) error {
 	f.calls = append(f.calls, "remove")
 	return nil
@@ -424,6 +426,30 @@ func TestSwanctlCommands(t *testing.T) {
 		if got := loadsFor(c.changed); got != c.want {
 			t.Errorf("%v: %+v, want %+v", c.changed, got, c.want)
 		}
+	}
+}
+
+// strongSwan killed and started again by systemd answers at once, holding
+// who knows what: the agent notices, loads everything once, and goes back
+// to loading only what changes.
+func TestAStrongSwanStartedAgainIsLoadedOnce(t *testing.T) {
+	a, sys, _ := ikeRig(t)
+	sys.instance = "1"
+	_ = a.Step(context.Background())
+	n := len(sys.loads)
+	_ = a.Step(context.Background())
+	if len(sys.loads) != n {
+		t.Fatal("loaded with nothing changed")
+	}
+	sys.instance = "2"
+	_ = a.Step(context.Background())
+	if len(sys.loads) != n+1 || !sys.lastLoad().All {
+		t.Fatalf("a restarted strongSwan was not loaded: %+v", sys.loads[n:])
+	}
+	_ = a.Step(context.Background())
+	_ = a.Step(context.Background())
+	if len(sys.loads) != n+1 {
+		t.Fatalf("loaded again: %+v", sys.loads[n:])
 	}
 }
 

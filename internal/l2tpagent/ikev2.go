@@ -49,6 +49,10 @@ type IPsecSystem interface {
 	// SAs lists every session strongSwan holds; an error is strongSwan not
 	// answering.
 	SAs(ctx context.Context) ([]IKESA, error)
+	// Instance names the running strongSwan: it changes when strongSwan
+	// is started again, by the agent or by anyone else. Empty when it
+	// cannot be told.
+	Instance() string
 	// Terminate ends one.
 	Terminate(ctx context.Context, id uint) error
 	// ServeRadius runs the RADIUS server password sign-ins are checked by,
@@ -75,7 +79,9 @@ type IKEv2Agent struct {
 	// items is, by Item.Key, the fingerprint of every connection, pool and
 	// secret strongSwan was last given.
 	items map[string]string
-	state *ikev2conf.State
+	// instance is the strongSwan they were given to.
+	instance string
+	state    *ikev2conf.State
 	// stateKey fingerprints the panel's state file state was read from, and
 	// statePrint the files it renders to.
 	stateKey, statePrint string
@@ -151,7 +157,14 @@ func (a *IKEv2Agent) Step(ctx context.Context) error {
 	// strongSwan not answering -- it died, or this is the first pass of a
 	// run -- is given everything; a change, only what it touched, once the
 	// panel has stopped making it.
-	down := listErr != nil || a.applied == ""
+	// A strongSwan started again since -- killed and restarted by systemd,
+	// say -- answers, but may hold nothing of what it was given; what it
+	// does hold is not known.
+	restarted := a.applied != "" && a.sys.Instance() != a.instance
+	if restarted {
+		a.log.Warn("strongSwan was started again; loading the tunnel into it")
+	}
+	down := listErr != nil || a.applied == "" || restarted
 	var live []l2tpconf.Session
 	if !down {
 		// Sessions that should not exist are ended first: a device
@@ -192,6 +205,7 @@ func (a *IKEv2Agent) Step(ctx context.Context) error {
 			}
 		}
 		a.applied, a.waiting, a.items = print, time.Time{}, prints
+		a.instance = a.sys.Instance()
 	}
 	a.wanted = print
 	if down {

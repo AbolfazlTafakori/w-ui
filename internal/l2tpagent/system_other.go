@@ -33,6 +33,7 @@ func (otherSystem) ApplyItems(context.Context, []ikev2conf.Item, []ikev2conf.Ite
 }
 func (otherSystem) RemoveSwanctl(context.Context) error      { return nil }
 func (otherSystem) SAs(context.Context) ([]IKESA, error)     { return nil, errPlatform }
+func (otherSystem) Instance() string                         { return "" }
 func (otherSystem) Terminate(context.Context, uint) error    { return errPlatform }
 func (otherSystem) ServeRadius(string, radiusd.Lookup) error { return errPlatform }
 func (otherSystem) StopRadius()                              {}

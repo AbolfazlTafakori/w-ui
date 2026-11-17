@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/ikev2conf"
@@ -318,6 +319,19 @@ func (s *linuxSystem) panelFilesLeft() bool {
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// Instance is the identity of strongSwan's control socket, which it makes
+// anew each time it starts.
+func (s *linuxSystem) Instance() string {
+	for _, p := range vici.Sockets {
+		if st, err := os.Stat(p); err == nil {
+			if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+				return fmt.Sprintf("%d:%d", sys.Ino, st.ModTime().UnixNano())
+			}
+		}
+	}
+	return ""
 }
 
 func (s *linuxSystem) SAs(ctx context.Context) ([]IKESA, error) {
