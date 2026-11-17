@@ -321,6 +321,7 @@ async function submitForm(input) {
     v-if="formFor"
     :iface="formFor.iface"
     :nodes="nodeList"
+    :existing="interfaces"
     @close="formFor = null"
     @submit="submitForm"
   />

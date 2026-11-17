@@ -12,6 +12,7 @@ import HelpTip from './HelpTip.vue'
 import Toggle from './Toggle.vue'
 import AwgEditor from './AwgEditor.vue'
 import { fronted, proven, wsOf } from '../lib/interfaces/rows.js'
+import { freeDefaults } from '../lib/interfaces/defaults.js'
 import { copyText } from '../lib/clipboard.js'
 
 const props = defineProps({
@@ -20,6 +21,9 @@ const props = defineProps({
   // The servers a tunnel can be placed on. Empty or one means there is nothing
   // to choose, and the field is not shown at all.
   nodes: { type: Array, default: () => [] },
+  // The tunnels already on the panel, so a new one is offered a name, subnet
+  // and port none of them has.
+  existing: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close', 'submit'])
 
@@ -104,7 +108,7 @@ const form = ref(
         enabled: props.iface.enabled,
       }
     : {
-        ...defaults.wireguard,
+        ...freeDefaults('wireguard', defaults.wireguard, props.existing),
         protocol: 'wireguard',
         endpointHost: '',
         dns: '1.1.1.1',
@@ -384,7 +388,7 @@ function chooseProtocol(p) {
   if (editing.value || form.value.protocol === p) return
   form.value.protocol = p
   clearError('protocol')
-  Object.assign(form.value, defaults[p])
+  Object.assign(form.value, freeDefaults(p, defaults[p], props.existing))
   if (p !== 'wireguard') form.value.mode = 'standard'
   // Each protocol's transports are its own.
   form.value.transport = 'udp'
