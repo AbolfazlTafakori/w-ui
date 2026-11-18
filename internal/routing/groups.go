@@ -150,6 +150,46 @@ func ParseTarget(s string, countries Countries) ([]netip.Prefix, error) {
 		ErrInvalidPolicy, s, strings.Join(GroupNames(), ", "))
 }
 
+// ParseTargetsKeeping expands a whole list, keeping every entry that reads
+// and saying which did not. For a list already saved, where one entry going
+// bad -- a country list not downloaded yet -- must not take the rest with
+// it: a block list of addresses and a country would otherwise block nothing
+// at all while the country's list is missing.
+func ParseTargetsKeeping(entries []string, countries Countries) ([]netip.Prefix, []error) {
+	var out []netip.Prefix
+	var bad []error
+	seen := map[netip.Prefix]bool{}
+	for _, e := range entries {
+		ps, err := ParseTarget(e, countries)
+		if err != nil {
+			bad = append(bad, err)
+			continue
+		}
+		for _, p := range ps {
+			if !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
+	}
+	return out, bad
+}
+
+// ParsePortsKeeping is ParsePorts entry by entry, keeping those that read.
+func ParsePortsKeeping(entries []string) ([]PortRange, []error) {
+	var out []PortRange
+	var bad []error
+	for _, e := range entries {
+		ps, err := ParsePorts([]string{e})
+		if err != nil {
+			bad = append(bad, err)
+			continue
+		}
+		out = append(out, ps...)
+	}
+	return out, bad
+}
+
 // ParseTargets expands a whole list, keeping the first failure.
 func ParseTargets(entries []string, countries Countries) ([]netip.Prefix, error) {
 	var out []netip.Prefix

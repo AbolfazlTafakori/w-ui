@@ -119,6 +119,9 @@ type Routing struct {
 	defaultMark uint32
 	// countries resolves "geoip:" entries (SetCountries); nil refuses them.
 	countries routing.Countries
+
+	// saidUnread is the unreadable stored entries already logged.
+	saidUnread map[string]bool
 }
 
 // DefaultMark is the mark of the outbound at the top of the list, or zero
@@ -637,12 +640,17 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 		return p, err
 	}
 
-	// A malformed stored entry is skipped rather than fatal: it was validated
-	// when it was saved, and refusing to route at all because one row went bad
-	// would take the whole server down over a typo.
-	p.BlockAddrs, _ = routing.ParseTargets(basic.BlockIPs, s.countries)
-	p.DirectAddrs, _ = routing.ParseTargets(basic.DirectIPs, s.countries)
-	p.BlockPorts, _ = routing.ParsePorts(basic.BlockPorts)
+	// A stored entry that no longer reads -- a country whose list is not
+	// downloaded yet -- is left out and said; the rest of its list stays.
+	// Before, the first such entry emptied the whole list: a block list of
+	// addresses and one country blocked nothing at all.
+	var bad []error
+	p.BlockAddrs, bad = routing.ParseTargetsKeeping(basic.BlockIPs, s.countries)
+	s.noteUnread("blocked addresses", bad)
+	p.DirectAddrs, bad = routing.ParseTargetsKeeping(basic.DirectIPs, s.countries)
+	s.noteUnread("direct addresses", bad)
+	p.BlockPorts, bad = routing.ParsePortsKeeping(basic.BlockPorts)
+	s.noteUnread("blocked ports", bad)
 	p.BlockBitTorrent = basic.BlockBitTorrent
 
 	s.mu.RLock()
@@ -928,8 +936,10 @@ func balancerMarkID(id uint) uint { return 0x8000 + id }
 // with no customers -- makes the whole rule match nothing, rather than
 // being dropped from the conjunction and widening it.
 func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.RoutingRule, ifaces []model.Interface) bool {
+	var bad []error
 	if r.DestIPs != "" {
-		mr.Addrs, _ = routing.ParseTargets(listfield.Split(r.DestIPs), s.countries)
+		mr.Addrs, bad = routing.ParseTargetsKeeping(listfield.Split(r.DestIPs), s.countries)
+		s.noteUnread("rule "+r.Name+" destinations", bad)
 		if len(mr.Addrs) == 0 {
 			return false
 		}
@@ -947,20 +957,23 @@ func (s *Routing) fillMatch(ctx context.Context, mr *routing.MarkRule, r model.R
 		mr.Addrs = append(mr.Addrs, got...)
 	}
 	if r.Ports != "" {
-		mr.Ports, _ = routing.ParsePorts(listfield.Split(r.Ports))
+		mr.Ports, bad = routing.ParsePortsKeeping(listfield.Split(r.Ports))
+		s.noteUnread("rule "+r.Name+" ports", bad)
 		if len(mr.Ports) == 0 {
 			return false
 		}
 	}
 	if r.SourcePorts != "" {
-		mr.SourcePorts, _ = routing.ParsePorts(listfield.Split(r.SourcePorts))
+		mr.SourcePorts, bad = routing.ParsePortsKeeping(listfield.Split(r.SourcePorts))
+		s.noteUnread("rule "+r.Name+" source ports", bad)
 		if len(mr.SourcePorts) == 0 {
 			return false
 		}
 	}
 	mr.Protocol = strings.ToLower(r.Network)
 	if r.SourceIPs != "" {
-		mr.Sources, _ = routing.ParseTargets(listfield.Split(r.SourceIPs), s.countries)
+		mr.Sources, bad = routing.ParseTargetsKeeping(listfield.Split(r.SourceIPs), s.countries)
+		s.noteUnread("rule "+r.Name+" sources", bad)
 		if len(mr.Sources) == 0 {
 			return false
 		}
@@ -1654,4 +1667,27 @@ func checkDomain(d string) error {
 // can put the message next to the input that caused it.
 func fieldWrap(field string, err error) error {
 	return &FieldError{Field: field, Err: err}
+}
+
+// noteUnread says, once for each, the stored entries a policy left out
+// because they no longer read. The policy is built every pass; said every
+// pass, the same line would bury the log.
+func (s *Routing) noteUnread(where string, bad []error) {
+	if len(bad) == 0 {
+		return
+	}
+	for _, err := range bad {
+		key := where + ": " + err.Error()
+		s.mu.Lock()
+		if s.saidUnread == nil {
+			s.saidUnread = map[string]bool{}
+		}
+		said := s.saidUnread[key]
+		s.saidUnread[key] = true
+		s.mu.Unlock()
+		if !said && s.log != nil {
+			s.log.Warn("a stored routing entry no longer reads and is left out; the rest of its list applies",
+				"where", where, "error", err)
+		}
+	}
 }
