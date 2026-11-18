@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -87,6 +88,9 @@ type ExtendInput struct {
 	IncludeWaiting bool `json:"includeWaiting"`
 	// DryRun says what would happen, and changes nothing.
 	DryRun bool `json:"dryRun"`
+	// capture, on a dry run, is filled with each changed customer's state
+	// before and after, for the preview to work out what it takes.
+	capture *seatCapture
 	// measuring is a preview's real run, inside a transaction that is never
 	// kept: said to nobody, logged nowhere.
 	measuring bool
@@ -168,7 +172,13 @@ func (s *Clients) extendRaw(ctx context.Context, in ExtendInput) (*ExtendResult,
 
 	now := time.Now().UTC()
 	db := s.db.WithContext(ctx)
-	err := db.Transaction(func(tx *gorm.DB) error {
+	// A dry run only reads: no transaction, so it takes no write lock and
+	// waits on nothing another change is doing.
+	run := db.Transaction
+	if in.DryRun {
+		run = func(fc func(tx *gorm.DB) error, _ ...*sql.TxOptions) error { return fc(db) }
+	}
+	err := run(func(tx *gorm.DB) error {
 		found := 0
 		for start := 0; start < len(ids); start += 1000 {
 			chunk := ids[start:min(start+1000, len(ids))]
@@ -180,6 +190,7 @@ func (s *Clients) extendRaw(ctx context.Context, in ExtendInput) (*ExtendResult,
 			}
 			found += len(members)
 			for i := range members {
+				was := seatStateOf(&members[i])
 				fields, why := extendOne(&members[i], in, delta, bytes, now, res)
 				if why != "" {
 					res.Skipped[why]++
@@ -187,6 +198,9 @@ func (s *Clients) extendRaw(ctx context.Context, in ExtendInput) (*ExtendResult,
 				}
 				res.Changed++
 				if in.DryRun {
+					if in.capture != nil {
+						in.capture.add(members[i].ID, was, seatStateOf(&members[i]))
+					}
 					continue
 				}
 				if err := tx.Model(&model.Client{}).Where("id = ?", members[i].ID).Updates(fields).Error; err != nil {
@@ -342,4 +356,19 @@ func (in ExtendInput) traffic() (int64, error) {
 		return 0, invalidField("gb", "enter an amount of traffic")
 	}
 	return b, nil
+}
+
+// seatCapture is the customers a dry run would change, as they are and as
+// they would be.
+type seatCapture struct {
+	ids           []uint
+	before, after map[uint]seatState
+}
+
+func (c *seatCapture) add(id uint, was, will seatState) {
+	if c.before == nil {
+		c.before, c.after = map[uint]seatState{}, map[uint]seatState{}
+	}
+	c.ids = append(c.ids, id)
+	c.before[id], c.after[id] = was, will
 }

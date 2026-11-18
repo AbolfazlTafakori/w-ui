@@ -163,3 +163,33 @@ func TestSeeingEveryoneIsStillAnAdminsScope(t *testing.T) {
 		t.Error("paused, and not barred")
 	}
 }
+
+// A preview changes nothing, and nothing says it did: no record in the
+// operators' activity, while the extension itself is recorded.
+func TestAPreviewLeavesNoTrace(t *testing.T) {
+	mux, sess, db := serversPanel(t)
+	count := func() int64 {
+		var n int64
+		db.Model(&model.OperatorAction{}).Count(&n)
+		return n
+	}
+	before := count()
+	body := `{"ids":[3],"kind":"time","days":3,"dryRun":true}`
+	if code, out := send(t, mux, sess["ra"], http.MethodPost, "/api/clients/extend", body); code != http.StatusOK {
+		t.Fatalf("preview: %d %s", code, out)
+	}
+	if got := count(); got != before {
+		t.Errorf("a preview was recorded as a change: %d records, was %d", got, before)
+	}
+	var c model.Client
+	db.First(&c, 3)
+	if c.ExpiresAt != nil {
+		t.Errorf("the preview gave customer 3 an end date: %v", c.ExpiresAt)
+	}
+	if code, _ := send(t, mux, sess["ra"], http.MethodPost, "/api/clients/extend", `{"ids":[3],"kind":"traffic","gb":1}`); code != http.StatusOK {
+		t.Fatal("the extension itself was refused")
+	}
+	if count() != before+1 {
+		t.Error("the extension itself was not recorded")
+	}
+}

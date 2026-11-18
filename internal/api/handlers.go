@@ -796,6 +796,9 @@ func (s *Server) handleExtend(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if in.DryRun {
+		changedNothing(w)
+	}
 	res, err := s.clients.Extend(r.Context(), in)
 	if err != nil {
 		fail(w, s.log, err)

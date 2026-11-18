@@ -166,12 +166,85 @@ func (s *Clients) Import(ctx context.Context, in ImportInput) (*ImportReport, er
 // previewExtend is what an extension would do, and what it would take from
 // the caller's users, before they confirm it.
 //
-// Run for real -- the same change and the same settling as the extension
-// itself -- inside a transaction that is always rolled back, so the units
-// shown are the units it takes, not a second sum that could disagree with
-// the first. A change that would be refused for want of users is refused
-// here too, with the same sentence.
+// Read only: the selection is read, each customer's change worked out in
+// memory, and what it would do to each owner's users planned by the same
+// function the extension settles with (planSeats) and played on copies of
+// their accounts by the same rules. It takes no write lock, so a dialog
+// asking as the operator types holds nobody else up. A change that would be
+// refused for want of users is refused here with the same sentence.
 func (s *Clients) previewExtend(ctx context.Context, in ExtendInput) (*ExtendResult, error) {
+	sc := ScopeOf(ctx)
+	run := in
+	run.capture = &seatCapture{}
+	out, err := s.extendRaw(ctx, run)
+	if err != nil {
+		return nil, err
+	}
+	enforced, spends := seatTerms(sc, ByCaller)
+	moves := planSeats(run.capture.before, run.capture.after, run.capture.ids)
+	used, err := playSeats(s.db.WithContext(ctx), moves, enforced, spends)
+	if err != nil {
+		return nil, err
+	}
+	if sc.Capped {
+		if before, ok := used[sc.AdminID]; ok {
+			out.Units = before[1] - before[0]
+		}
+	}
+	return out, nil
+}
+
+// playSeats plays moves on copies of the owners' accounts by the rules
+// settleSeats applies them with, and says each account's use before and
+// after: what the change would do, without doing it.
+func playSeats(db *gorm.DB, moves []seatMove, enforced, spends bool) (map[uint][2]int64, error) {
+	accounts := map[uint]*model.CapacityAccount{}
+	start := map[uint]int64{}
+	for _, m := range moves {
+		acc, ok := accounts[m.owner]
+		if !ok {
+			got, err := capacity.Account(db, m.owner, model.CapacityUsers)
+			if err != nil {
+				return nil, err
+			}
+			if got != nil {
+				cp := *got
+				acc = &cp
+				start[m.owner] = cp.Used
+			}
+			accounts[m.owner] = acc
+		}
+		if acc == nil {
+			continue // an operator with no ceiling
+		}
+		switch {
+		case acc.Mode == model.CapacityOpen && m.delta < 0:
+			acc.Used -= min(-m.delta, acc.Used) // never below zero
+		case acc.Mode == model.CapacityOpen && m.delta > 0 && enforced:
+			if capacity.Free(acc) < m.delta {
+				return nil, errNoUsers(acc, m.delta)
+			}
+			acc.Used += m.delta
+		case acc.Mode == model.CapacityOpen && m.delta > 0:
+			acc.Used += m.delta
+		case acc.Mode == model.CapacityConsumable && m.spend > 0 && spends:
+			if capacity.Free(acc) < m.spend {
+				return nil, errNoUsers(acc, m.spend)
+			}
+			acc.Used += m.spend
+		}
+	}
+	out := make(map[uint][2]int64, len(start))
+	for id, was := range start {
+		out[id] = [2]int64{was, accounts[id].Used}
+	}
+	return out, nil
+}
+
+// measureExtend is the preview the long way: the extension run for real and
+// rolled back, with what it took from the caller's users read off their
+// account. Kept for the test that holds the read-only preview to it.
+func (s *Clients) measureExtend(ctx context.Context, in ExtendInput) (*ExtendResult, error) {
 	sc := ScopeOf(ctx)
 	run := in
 	run.DryRun, run.measuring = false, true

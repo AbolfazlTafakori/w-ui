@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -622,4 +623,153 @@ func TestAnAdminWhoSeesEveryonePaysForWhatTheySell(t *testing.T) {
 		ExpiresAt: ptrTime(time.Now().UTC().Add(48 * time.Hour))})
 	refusedForUsers(t, "past the units left", err)
 	p.balanced(t)
+}
+
+// Ten previews at once beside customers being made, on the panel's own
+// SQLite settings: every one answers, nothing is changed, the customers are
+// all made, and how long the previews hold the write lock is said.
+func TestPreviewsBesideCreatesHoldTheLockBriefly(t *testing.T) {
+	p := filePanel(t)
+	r := p.operator(t, "reza", model.RoleReseller, model.CapacityConsumable, 1000, nil)
+	ctx := asReseller(r, 1)
+	var ids []uint
+	for i := 0; i < 50; i++ {
+		ids = append(ids, p.make(t, ctx, fmt.Sprintf("c%02d", i), 1).ID)
+	}
+	usedBefore := p.acc(t, r).Used
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var previews, creates []time.Duration
+	errs := make(chan error, 40)
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			t0 := time.Now()
+			_, err := p.clients.Extend(ctx, ExtendInput{IDs: ids, Kind: ExtendTime, Days: 3, DryRun: true})
+			mu.Lock()
+			previews = append(previews, time.Since(t0))
+			mu.Unlock()
+			if err != nil {
+				errs <- err
+			}
+		}()
+		go func(i int) {
+			defer wg.Done()
+			t0 := time.Now()
+			_, err := p.clients.Create(ctx, CreateInput{Name: fmt.Sprintf("n%02d", i), InterfaceIDs: []uint{1}, DeviceLimit: 1,
+				ExpiresAt: ptrTime(time.Now().UTC().Add(48 * time.Hour))})
+			mu.Lock()
+			creates = append(creates, time.Since(t0))
+			mu.Unlock()
+			if err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	if got := p.acc(t, r).Used - usedBefore; got != 10 {
+		t.Errorf("spent %d, want the 10 customers made and nothing for the previews", got)
+	}
+	longest := func(xs []time.Duration) time.Duration {
+		m := time.Duration(0)
+		for _, x := range xs {
+			m = max(m, x)
+		}
+		return m
+	}
+	t.Logf("10 previews over 50 customers beside 10 creates: longest preview %v, longest create %v",
+		longest(previews).Round(time.Millisecond), longest(creates).Round(time.Millisecond))
+	p.balanced(t)
+}
+
+// filePanel is a seat panel on a file with the panel's own SQLite settings
+// (WAL, a busy timeout, immediate write transactions, eight connections), so
+// work done at once queues for the write lock as it does on a server.
+func filePanel(t *testing.T) seatPanel {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "w.db")+
+		"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(15000)&_txlock=immediate"),
+		&gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(8)
+	t.Cleanup(func() { sqlDB.Close() })
+	if err := db.AutoMigrate(model.AllModels()...); err != nil {
+		t.Fatal(err)
+	}
+	if err := scope.Register(db); err != nil {
+		t.Fatal(err)
+	}
+	db.Create(&model.Node{Name: "local", Kind: model.KindLocal})
+	iface := model.Interface{Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: 51820, Subnet: "10.9.0.0/22", EndpointHost: "x", NodeID: 1}
+	db.Create(&iface)
+	pools := ipam.NewPools()
+	pools.Add(iface.ID, iface.Subnet)
+	return seatPanel{db, NewClients(db, pools, quietLog()), operators.NewAdmins(db, quietLog())}
+}
+
+// The read-only preview and the extension run for real and rolled back
+// agree, every time: on the units, on what changes, and on a refusal.
+// Random selections over customers live and ended, of one to three users,
+// in both modes, time and traffic, given and taken back, with few units
+// left and many.
+func TestTheReadOnlyPreviewIsTheRunPreview(t *testing.T) {
+	rnd := rand.New(rand.NewPCG(7, 11))
+	for _, mode := range []string{model.CapacityOpen, model.CapacityConsumable} {
+		t.Run(mode, func(t *testing.T) {
+			p := newSeatPanel(t)
+			r := p.operator(t, "reza", model.RoleReseller, mode, 40, nil)
+			ctx := asReseller(r, 1)
+			var ids []uint
+			for i := 0; i < 12; i++ {
+				c := p.make(t, ctx, fmt.Sprintf("c%02d", i), 1+i%3)
+				ids = append(ids, c.ID)
+				if i%4 == 0 {
+					endBy(p, t, c)
+					p.db.Model(&model.Client{}).Where("id = ?", c.ID).Update("expires_at", time.Now().UTC().Add(-time.Hour))
+				}
+			}
+			for round := 0; round < 60; round++ {
+				var pick []uint
+				for _, id := range ids {
+					if rnd.IntN(2) == 0 {
+						pick = append(pick, id)
+					}
+				}
+				in := ExtendInput{IDs: pick, DryRun: true, Subtract: rnd.IntN(4) == 0}
+				if rnd.IntN(2) == 0 {
+					in.Kind, in.Days = ExtendTime, float64(1+rnd.IntN(5))
+				} else {
+					in.Kind, in.GB = ExtendTraffic, float64(1+rnd.IntN(3))
+				}
+				// Sometimes spend most of what is left, so refusals are met.
+				if rnd.IntN(3) == 0 {
+					acc := p.acc(t, r)
+					if free := capacity.Free(acc); free > 2 {
+						p.db.Model(&model.CapacityAccount{}).Where("id = ?", acc.ID).Update("granted", acc.Granted-free+1)
+					}
+				} else {
+					p.db.Model(&model.CapacityAccount{}).Where("admin_id = ? AND kind = ?", r.ID, model.CapacityUsers).Update("granted", 40)
+				}
+				ro, errRO := p.clients.Extend(ctx, in)
+				run, errRun := p.clients.measureExtend(ctx, in)
+				if (errRO == nil) != (errRun == nil) || (errRO != nil && errRO.Error() != errRun.Error()) {
+					t.Fatalf("round %d %+v: read-only says %v, the run says %v", round, in, errRO, errRun)
+				}
+				if errRO != nil {
+					continue
+				}
+				if ro.Units != run.Units || ro.Changed != run.Changed || ro.Revived != run.Revived || ro.Ended != run.Ended {
+					t.Fatalf("round %d %+v: read-only %+v, the run %+v", round, in, ro, run)
+				}
+			}
+		})
+	}
 }

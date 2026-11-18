@@ -38,6 +38,10 @@ func (s *Server) logAction(method string, next http.HandlerFunc) http.HandlerFun
 		start := time.Now()
 		rec := &actionRecorder{statusRecorder: statusRecorder{ResponseWriter: w, status: http.StatusOK}}
 		next(rec, r)
+		if rec.unchanged && rec.status < 400 {
+			s.log.Debug("preview", "action", method+" "+r.URL.Path, "took", time.Since(start).Round(time.Millisecond).String())
+			return
+		}
 
 		by := "token"
 		if a := adminFrom(r.Context()); a != nil {
@@ -81,6 +85,18 @@ func (s *Server) logAction(method string, next http.HandlerFunc) http.HandlerFun
 type actionRecorder struct {
 	statusRecorder
 	body []byte
+	// unchanged is a request that changed nothing (a preview): no line in
+	// the log as a change, no refresh sent to the subscription pages, no
+	// record in the operators' activity.
+	unchanged bool
+}
+
+// changedNothing marks this request as one that changed nothing, for
+// logAction. A handler calls it on a preview.
+func changedNothing(w http.ResponseWriter) {
+	if a, ok := w.(*actionRecorder); ok {
+		a.unchanged = true
+	}
 }
 
 func (a *actionRecorder) Write(b []byte) (int, error) {
