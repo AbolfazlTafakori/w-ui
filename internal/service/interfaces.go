@@ -741,10 +741,17 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 	// against them whenever the owner set the panel to a zone other than
 	// UTC, and every tunnel showed nobody online.
 	since := time.Now().UTC().Add(-onlineWithin())
-	err = s.db.WithContext(ctx).Model(&model.Account{}).
-		Select("interface_id, COUNT(DISTINCT client_id) AS n").
-		Where("last_handshake > ?", since).
-		Group("interface_id").Scan(&online).Error
+	paused, err := PausedOperatorIDs(ctx, s.db)
+	if err != nil {
+		return nil, fmt.Errorf("service: read paused operators: %w", err)
+	}
+	// A customer under a paused operator is off: not online, however recent
+	// their last handshake.
+	err = notUnderPaused(s.db.WithContext(ctx).Model(&model.Account{}).
+		Joins("JOIN clients c ON c.id = accounts.client_id").
+		Select("accounts.interface_id AS interface_id, COUNT(DISTINCT accounts.client_id) AS n").
+		Where("accounts.last_handshake > ?", since), "c.", paused).
+		Group("accounts.interface_id").Scan(&online).Error
 	if err != nil {
 		return nil, fmt.Errorf("service: count online: %w", err)
 	}
@@ -1870,6 +1877,11 @@ func (s *Interfaces) OwnCounts(ctx context.Context) (map[uint]OwnCount, error) {
 			// UTC, as handshakes are stored: the owner may set the panel's
 			// time zone, and a local cutoff compares wrong against them.
 			q = q.Where("accounts.last_handshake > ?", time.Now().UTC().Add(-onlineWithin()))
+			paused, err := PausedOperatorIDs(ctx, s.db)
+			if err != nil {
+				return nil, err
+			}
+			q = notUnderPaused(q, "clients.", paused)
 		}
 		var out []row
 		err := scope.Narrow(ctx, q, "clients.owner_id").Scan(&out).Error

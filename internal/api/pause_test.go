@@ -76,32 +76,31 @@ func reseller(t *testing.T, db *gorm.DB, a model.Admin) *model.Admin {
 	return &a
 }
 
-// Who a correct password still turns away. Only the owner's decision keeps an
-// operator out; a lapse lets them in, read-only, to see why.
+// Who a correct password still turns away: any paused operator, whatever
+// paused them. Being let in while paused would be a way round the pause.
 func TestWhoIsTurnedAwayAtSignIn(t *testing.T) {
 	now := time.Now().UTC()
 	past := now.Add(-time.Hour)
+	srv := &Server{}
 	cases := []struct {
 		name  string
 		admin model.Admin
-		out   bool
+		want  string
 	}{
-		{"a reseller in good standing", model.Admin{Role: model.RoleReseller, Enabled: true}, false},
-		{"a reseller switched off", model.Admin{Role: model.RoleReseller}, true},
-		{"a reseller whose term has ended", model.Admin{Role: model.RoleReseller, Enabled: true, ExpiresAt: &past}, false},
-		{"a reseller whose traffic is used up", model.Admin{Role: model.RoleReseller, Enabled: true, QuotaBytes: 1, UsedBytes: 1}, false},
-		{"a reseller switched off whose term has ended", model.Admin{Role: model.RoleReseller, ExpiresAt: &past}, true},
-		{"an administrator switched off", model.Admin{Role: model.RoleAdmin}, true},
-		{"the owner, whatever the switch says", model.Admin{Role: model.RoleOwner}, false},
+		{"a reseller in good standing", model.Admin{Role: model.RoleReseller, Enabled: true}, ""},
+		{"a reseller switched off", model.Admin{Role: model.RoleReseller}, model.PauseSwitchedOff},
+		{"a reseller whose term has ended", model.Admin{Role: model.RoleReseller, Enabled: true, ExpiresAt: &past}, model.PauseTermEnded},
+		{"a reseller whose traffic is used up", model.Admin{Role: model.RoleReseller, Enabled: true, QuotaBytes: 1, UsedBytes: 1}, model.PauseTrafficUsed},
+		{"a reseller switched off whose term has ended", model.Admin{Role: model.RoleReseller, ExpiresAt: &past}, model.PauseSwitchedOff},
+		{"an administrator switched off", model.Admin{Role: model.RoleAdmin}, model.PauseSwitchedOff},
+		{"an administrator whose term has ended", model.Admin{Role: model.RoleAdmin, Enabled: true, ExpiresAt: &past}, model.PauseTermEnded},
+		{"the owner, whatever the switch says", model.Admin{Role: model.RoleOwner}, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := signInRefusal(&tc.admin, now)
-			if (got != "") != tc.out {
-				t.Fatalf("refusal %q, want refused=%v", got, tc.out)
-			}
-			if tc.out && got != model.PauseMessage(model.PauseSwitchedOff) {
-				t.Fatalf("refused with %q, want the switched-off message", got)
+			got := srv.signInRefusal(context.Background(), &tc.admin, now)
+			if got != model.PauseMessage(tc.want) {
+				t.Fatalf("refusal %q, want %q", got, model.PauseMessage(tc.want))
 			}
 		})
 	}

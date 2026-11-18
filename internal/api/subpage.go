@@ -66,7 +66,7 @@ type subPageView struct {
 	HasQuota   bool
 	Unlimited  bool
 	Active     bool
-	StatusKey  string // active | inactive | unlimited
+	StatusKey  string // active | inactive | unlimited | paused
 	Used       string
 	Total      string
 	Remained   string
@@ -363,6 +363,8 @@ func newSubView(page *service.SubPage, token string, preview bool, userAgent str
 		!(page.QuotaBytes > 0 && page.UsedBytes >= page.QuotaBytes) &&
 		!(page.ExpiresAt != nil && !page.ExpiresAt.After(time.Now()))
 	switch {
+	case page.Status == service.StatusPaused:
+		v.StatusKey = "paused"
 	case page.Status != "active":
 		v.StatusKey = "inactive"
 	case v.Unlimited:
@@ -834,7 +836,7 @@ var (
 var subPageStrings = map[string]map[string]string{
 	"en": {
 		"title": "Subscription info", "subId": "Subscription ID", "email": "Email", "status": "Status",
-		"active": "Active", "inactive": "Inactive", "unlimited": "Unlimited",
+		"active": "Active", "inactive": "Inactive", "paused": "Paused by admin/reseller", "unlimited": "Unlimited",
 		"downloaded": "Downloaded", "uploaded": "Uploaded", "usage": "Usage", "totalQuota": "Total Quota",
 		"remained": "Remaining", "lastOnline": "Last Online", "expiry": "Expiry", "noExpiry": "No expiry",
 		"expired": "Expired", "copy": "Copy", "copied": "Copied", "download": "Download",
@@ -845,7 +847,7 @@ var subPageStrings = map[string]map[string]string{
 	},
 	"fa": {
 		"title": "اطلاعات سابسکریپشن", "subId": "شناسه اشتراک", "email": "ایمیل", "status": "وضعیت",
-		"active": "فعال", "inactive": "غیرفعال", "unlimited": "نامحدود",
+		"active": "فعال", "inactive": "غیرفعال", "paused": "متوقف به‌خاطر ادمین/نماینده", "unlimited": "نامحدود",
 		"downloaded": "دانلود شده", "uploaded": "آپلود شده", "usage": "مصرف", "totalQuota": "حجم کل",
 		"remained": "باقی‌مانده", "lastOnline": "آخرین فعالیت", "expiry": "انقضا", "noExpiry": "بدون انقضا",
 		"expired": "منقضی", "copy": "کپی", "copied": "کپی شد", "download": "دانلود",
@@ -1021,7 +1023,7 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
       <div class="quick">
         <div>
           <div class="ring" id="lv-ring-status" data-p="100" data-c="{{ if .Active }}var(--ok){{ else }}var(--bad){{ end }}"><span>{{ len .Devices }}</span></div>
-          <div><div class="stat-k" data-i="status">Status</div><div class="stat-v" id="lv-status">{{ if eq .StatusKey "inactive" }}<span data-i="inactive">Inactive</span>{{ else if eq .StatusKey "unlimited" }}<span data-i="unlimited">Unlimited</span>{{ else }}<span data-i="active">Active</span>{{ end }}</div><div class="stat-s"><span dir="ltr">{{ len .Devices }}</span> <span data-i="configs">configs</span></div></div>
+          <div><div class="stat-k" data-i="status">Status</div><div class="stat-v" id="lv-status">{{ if eq .StatusKey "paused" }}<span data-i="paused">Paused by admin/reseller</span>{{ else if eq .StatusKey "inactive" }}<span data-i="inactive">Inactive</span>{{ else if eq .StatusKey "unlimited" }}<span data-i="unlimited">Unlimited</span>{{ else }}<span data-i="active">Active</span>{{ end }}</div><div class="stat-s"><span dir="ltr">{{ len .Devices }}</span> <span data-i="configs">configs</span></div></div>
         </div>
         <div>
           <div class="ring" id="lv-ring-usage" data-p="{{ if .HasQuota }}{{ .PercentTxt }}{{ else }}100{{ end }}" data-c="{{ if ge .Percent 90.0 }}var(--bad){{ else if ge .Percent 75.0 }}var(--warn){{ else }}var(--ok){{ end }}"><span dir="ltr" id="lv-pct">{{ if .HasQuota }}{{ .PercentTxt }}%{{ else }}∞{{ end }}</span></div>
@@ -1037,7 +1039,8 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
         <tr><th data-i="subId">Subscription ID</th><td dir="ltr">{{ .SubID }}</td></tr>
         <tr><th data-i="email">Email</th><td>{{ .Page.Name }}</td></tr>
         <tr><th data-i="status">Status</th><td id="lv-td-status">
-          {{ if eq .StatusKey "inactive" }}<span class="tag red" data-i="inactive">Inactive</span>
+          {{ if eq .StatusKey "paused" }}<span class="tag orange" data-i="paused">Paused by admin/reseller</span>
+          {{ else if eq .StatusKey "inactive" }}<span class="tag red" data-i="inactive">Inactive</span>
           {{ else if eq .StatusKey "unlimited" }}<span class="tag purple" data-i="unlimited">Unlimited</span>
           {{ else }}<span class="tag green" data-i="active">Active</span>{{ end }}
         </td></tr>
@@ -1682,9 +1685,9 @@ var subPageTemplate = template.Must(template.New("subpage").Funcs(subPageFuncs).
       var t = live.querySelector('span'); if (t) { t.setAttribute('data-i', st.online ? 'online' : 'offline'); t.textContent = st.online ? word('online') : word('offline'); }
     }
     var sr = $id('lv-ring-status'); if (sr) sr.style.setProperty('--c', st.active ? 'var(--ok)' : 'var(--bad)');
-    var key = st.statusKey === 'inactive' ? 'inactive' : st.statusKey === 'unlimited' ? 'unlimited' : 'active';
+    var key = st.statusKey === 'paused' ? 'paused' : st.statusKey === 'inactive' ? 'inactive' : st.statusKey === 'unlimited' ? 'unlimited' : 'active';
     set('lv-status', word(key));
-    var td = $id('lv-td-status'); if (td) { var tag = td.querySelector('.tag'); if (tag) { tag.textContent = word(key); tag.className = 'tag ' + (key === 'inactive' ? 'red' : key === 'unlimited' ? 'purple' : 'green'); } }
+    var td = $id('lv-td-status'); if (td) { var tag = td.querySelector('.tag'); if (tag) { tag.textContent = word(key); tag.className = 'tag ' + (key === 'paused' ? 'orange' : key === 'inactive' ? 'red' : key === 'unlimited' ? 'purple' : 'green'); } }
     var usage = document.querySelector('.usage'); if (usage) usage.classList.toggle('inactive', !st.active);
   }
   // The page's own fingerprint. When the panel's answer carries a

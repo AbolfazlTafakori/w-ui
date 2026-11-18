@@ -504,6 +504,21 @@ func (s *Subscriptions) Serve(ctx context.Context, token, format string) (*Bundl
 	if err != nil {
 		return nil, err
 	}
+	// Paused from above: the link still answers, with the header that tells
+	// the app why, and no configuration to connect with.
+	if s.pausedBy(ctx, c) != "" {
+		cfg, err := s.Settings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &Bundle{
+			ContentType: "text/plain; charset=utf-8",
+			Filename:    endpoints.SafeFilename(c.Name) + ".txt",
+			UserInfo:    userInfo(c),
+			Title:       cfg.Title,
+			UpdateHours: cfg.UpdateHours,
+		}, nil
+	}
 	return s.bundle(ctx, c, format)
 }
 
@@ -933,28 +948,48 @@ func bundleFormatName(format string) string {
 	}
 }
 
+// StatusPaused is what a customer's own page and link say while someone
+// above them is paused: their own plan is fine, and service comes back
+// exactly as it was once the pause is lifted.
+const StatusPaused = "paused"
+
 // statusShown is the customer's status as their own page should state it.
 //
-// A customer of a paused reseller is off although their own plan is not, and
-// a page saying "active" would send them looking for a fault in their phone.
-// It says they are off -- and not why: the reseller's standing with the
-// owner is not the customer's business.
+// A customer of a paused admin or reseller is off although their own plan is
+// not, and a page saying "active" would send them looking for a fault in
+// their phone. It says "paused": stopped from above, not used up.
 func (s *Subscriptions) statusShown(ctx context.Context, c *model.Client) string {
-	if c.Status.Serviceable() {
-		// The direct owner, and the admin above a reseller: either being
-		// suspended takes the customer off, so either is enough to say so.
-		now := time.Now().UTC()
-		for _, id := range []uint{c.OwnerID, c.AdminID} {
-			if id == 0 {
-				continue
-			}
-			var a model.Admin
-			if err := s.db.WithContext(ctx).First(&a, id).Error; err == nil && a.Suspended(now) {
-				return string(model.StatusDisabled)
-			}
-		}
+	if s.pausedBy(ctx, c) != "" {
+		return StatusPaused
 	}
 	return string(c.Status)
+}
+
+// pausedBy is who above this customer is paused -- "admin" or "reseller" --
+// or empty. The direct owner first, then the admin over a reseller: two
+// lookups by primary key, and none for a customer of the owner.
+func (s *Subscriptions) PausedBy(ctx context.Context, c *model.Client) string {
+	return s.pausedBy(ctx, c)
+}
+
+func (s *Subscriptions) pausedBy(ctx context.Context, c *model.Client) string {
+	if !c.Status.Serviceable() {
+		return ""
+	}
+	now := time.Now().UTC()
+	for _, id := range []uint{c.OwnerID, c.AdminID} {
+		if id == 0 {
+			continue
+		}
+		var a model.Admin
+		if err := s.db.WithContext(ctx).Where("id = ?", id).Limit(1).Find(&a).Error; err != nil || a.ID == 0 {
+			continue
+		}
+		if a.Suspended(now) {
+			return string(a.Role)
+		}
+	}
+	return ""
 }
 
 // filesSince is when the customer's files began to be counted, when that is
@@ -1042,6 +1077,10 @@ func (s *Subscriptions) PageFor(ctx context.Context, token, subURL string) (*Sub
 	rendered, err := s.renderDevicesFor(ctx, c, byID, "page")
 	if err != nil {
 		return nil, err
+	}
+	// Paused from above: the page says so and offers nothing to connect with.
+	if s.pausedBy(ctx, c) != "" {
+		rendered = nil
 	}
 
 	page := &SubPage{
@@ -1163,6 +1202,9 @@ func (s *Subscriptions) DeviceConfig(
 	c, err := s.byToken(ctx, token)
 	if err != nil {
 		return nil, err
+	}
+	if s.pausedBy(ctx, c) != "" {
+		return nil, fmt.Errorf("%w: no such device on this subscription", ErrNotFound)
 	}
 
 	var ifaces []model.Interface

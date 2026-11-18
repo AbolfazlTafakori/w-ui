@@ -371,6 +371,7 @@ func (b *Bot) showClient(ctx context.Context, chat int64, name string, editID in
 		b.send(ctx, chat, b.t("noResult"), nil)
 		return
 	}
+	b.pausedAbove(ctx, c)
 	text := b.clientInfo(c)
 	kb := keyboard{
 		{{Text: b.t("btnRefresh"), Data: "c:refresh:" + itoa(c.ID)}, {Text: b.t("btnIPLog"), Data: "c:ips:" + itoa(c.ID)}},
@@ -573,12 +574,18 @@ func (b *Bot) showOwnUsage(ctx context.Context, chat, tgID int64, name string) {
 		if name != "" && !strings.EqualFold(clients[i].Name, name) {
 			continue
 		}
+		b.pausedAbove(ctx, &clients[i])
 		b.send(ctx, chat, b.clientInfo(&clients[i]), keyboard{{{Text: b.t("btnRefresh"), Data: "my_usage"}}})
 	}
 }
 
 // sendLinks hands over a customer's subscription link, files, or codes.
 func (b *Bot) sendLinks(ctx context.Context, chat int64, c *model.Client, what string) {
+	// Paused from above: nothing to connect with, by the bot or any other way.
+	if b.pausedAbove(ctx, c) {
+		b.send(ctx, chat, html.EscapeString(c.Name)+": "+b.t("paused"), nil)
+		return
+	}
 	switch what {
 	case "sub":
 		token, err := b.Subs.EnsureToken(ctx, c.ID)
@@ -627,6 +634,16 @@ func (b *Bot) sendLinks(ctx context.Context, chat int64, c *model.Client, what s
 
 // ── the texts ──
 
+// pausedAbove reports whether an operator above this customer is paused,
+// and marks the customer so clientInfo says so.
+func (b *Bot) pausedAbove(ctx context.Context, c *model.Client) bool {
+	if b.Subs == nil {
+		return false
+	}
+	c.PausedBy = b.Subs.PausedBy(ctx, c)
+	return c.PausedBy != ""
+}
+
 func (b *Bot) clientInfo(c *model.Client) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "<b>%s</b>\n", html.EscapeString(c.Name))
@@ -638,6 +655,9 @@ func (b *Bot) clientInfo(c *model.Client) string {
 		status = b.t("expired")
 	case model.StatusExhausted:
 		status = b.t("exhausted")
+	}
+	if c.PausedBy != "" {
+		status = b.t("paused")
 	}
 	fmt.Fprintf(&sb, "%s: %s\n", b.t("status"), status)
 	fmt.Fprintf(&sb, "%s: ↑ %s / ↓ %s\n", b.t("traffic"), human(c.UpBytes), human(c.DownBytes))
@@ -780,6 +800,10 @@ func (b *Bot) onlines(ctx context.Context) string {
 	var sb strings.Builder
 	n := 0
 	for _, c := range items {
+		// Under a paused operator: off, not online (the list says so).
+		if c.OwnerPaused != "" {
+			continue
+		}
 		on := false
 		for _, a := range c.Accounts {
 			if a.LastHandshake != nil && time.Since(*a.LastHandshake) < time.Duration(service.OnlineWithin.Load())*time.Second {

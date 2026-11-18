@@ -89,20 +89,49 @@ func fillOwnerPause(ctx context.Context, db *gorm.DB, items []model.Client) erro
 	}
 	now := time.Now().UTC()
 	why := make(map[uint]string, len(admins))
+	role := make(map[uint]string, len(admins))
 	for i := range admins {
 		why[admins[i].ID] = admins[i].PauseReason(now)
+		role[admins[i].ID] = string(admins[i].Role)
 	}
 	// The direct owner's reason first; failing that, the admin above them --
 	// a reseller in good standing whose admin is switched off is still off,
 	// and the panel says why.
 	for i := range items {
+		items[i].OwnerPaused, items[i].PausedBy = "", ""
 		if r := why[items[i].OwnerID]; r != "" {
-			items[i].OwnerPaused = r
-		} else {
-			items[i].OwnerPaused = why[items[i].AdminID]
+			items[i].OwnerPaused, items[i].PausedBy = r, role[items[i].OwnerID]
+		} else if r := why[items[i].AdminID]; r != "" {
+			items[i].OwnerPaused, items[i].PausedBy = r, role[items[i].AdminID]
 		}
 	}
 	return nil
+}
+
+// PausedOperatorIDs is every operator paused right now, as a list for an
+// IN clause: one read of the operators table, which holds the panel's
+// admins and resellers and never its customers.
+func PausedOperatorIDs(ctx context.Context, db *gorm.DB) ([]uint, error) {
+	set, err := SuspendedOwners(ctx, db, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uint, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// notUnderPaused narrows q to customers with no paused operator above them,
+// the clients table reached under the alias col ("" for the table itself,
+// "c." for an alias). Their customers are off: neither online nor counted
+// as connected, whatever their last handshake says.
+func notUnderPaused(q *gorm.DB, col string, paused []uint) *gorm.DB {
+	if len(paused) == 0 {
+		return q
+	}
+	return q.Where(col+"owner_id NOT IN ? AND "+col+"admin_id NOT IN ?", paused, paused)
 }
 
 // SuspendedOwners lists the operators whose customers must be off right now.

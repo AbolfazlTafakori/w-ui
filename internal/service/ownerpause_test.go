@@ -46,7 +46,10 @@ func TestAPausedResellersCustomersSaySo(t *testing.T) {
 	if _, err := admins.Update(t.Context(), reza.ID, operators.AdminInput{Enabled: &off}); err != nil {
 		t.Fatal(err)
 	}
-	check(model.PauseSwitchedOff, string(model.StatusDisabled))
+	check(model.PauseSwitchedOff, StatusPaused)
+	if got, _ := clients.Get(t.Context(), c.ID); got.PausedBy != string(model.RoleReseller) {
+		t.Errorf("paused by %q, want the reseller", got.PausedBy)
+	}
 
 	// Nothing was written to the customer: switched back on, it is as it was.
 	on := true
@@ -106,7 +109,10 @@ func TestSwitchingOffAnAdminStopsItsResellersCustomers(t *testing.T) {
 	if _, err := admins.Update(t.Context(), ali.ID, operators.AdminInput{Enabled: &off}); err != nil {
 		t.Fatal(err)
 	}
-	check(model.PauseSwitchedOff, string(model.StatusDisabled))
+	check(model.PauseSwitchedOff, StatusPaused)
+	if got, _ := clients.Get(t.Context(), c.ID); got.PausedBy != string(model.RoleAdmin) {
+		t.Errorf("paused by %q, want the admin", got.PausedBy)
+	}
 
 	// And back: nothing on the customer or the reseller was ever written.
 	on := true
@@ -114,4 +120,58 @@ func TestSwitchingOffAnAdminStopsItsResellersCustomers(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("", string(model.StatusActive))
+}
+
+// A customer paused from above is given nothing to connect with: the link
+// answers with no configuration, a single device's file is not found, and
+// the page lists none. Lifted, all of it comes back.
+func TestAPausedCustomersLinkCarriesNoConfiguration(t *testing.T) {
+	db := testDB(t)
+	c := seed(t, db, 1)
+	reseller := model.Admin{Username: "reza", Role: model.RoleReseller, PasswordHash: "x"}
+	if err := db.Create(&reseller).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(c).Update("owner_id", reseller.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	subs := newSubs(db, &fakeDriver{body: "conf"})
+	tok, err := subs.EnsureToken(t.Context(), c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device model.Account
+	if err := db.Where("client_id = ?", c.ID).First(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	served := func() (int, error, int) {
+		t.Helper()
+		b, err := subs.Serve(t.Context(), tok, "conf")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, derr := subs.DeviceConfig(t.Context(), tok, device.ID, 0)
+		page, err := subs.PageFor(t.Context(), tok, "https://x/sub/"+tok)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(b.Body), derr, len(page.Devices)
+	}
+	setEnabled := func(on bool) {
+		t.Helper()
+		if err := db.Model(&reseller).Update("enabled", on).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if body, derr, n := served(); body == 0 || derr != nil || n == 0 {
+		t.Fatalf("before the pause: body %d, device %v, page %d", body, derr, n)
+	}
+	setEnabled(false)
+	if body, derr, n := served(); body != 0 || derr == nil || n != 0 {
+		t.Errorf("paused: body %d, device %v, page %d", body, derr, n)
+	}
+	setEnabled(true)
+	if body, derr, n := served(); body == 0 || derr != nil || n == 0 {
+		t.Errorf("back on: body %d, device %v, page %d", body, derr, n)
+	}
 }

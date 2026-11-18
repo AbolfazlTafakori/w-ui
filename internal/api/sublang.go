@@ -116,7 +116,7 @@ var subPageExtra = map[string]map[string]string{
 	},
 	"ru": {
 		"title": "Подписка", "subId": "ID подписки", "email": "Имя", "status": "Статус",
-		"active": "Активна", "inactive": "Неактивна", "unlimited": "Безлимит",
+		"active": "Активна", "inactive": "Неактивна", "paused": "Приостановлена администратором/реселлером", "unlimited": "Безлимит",
 		"downloaded": "Скачано", "uploaded": "Отправлено", "usage": "Использовано", "totalQuota": "Всего",
 		"remained": "Осталось", "lastOnline": "Последний вход", "expiry": "Срок", "noExpiry": "Бессрочно",
 		"expired": "Истекла", "copy": "Копировать", "copied": "Скопировано", "download": "Скачать",
@@ -132,7 +132,7 @@ var subPageExtra = map[string]map[string]string{
 	},
 	"tr": {
 		"title": "Abonelik bilgisi", "subId": "Abonelik kimliği", "email": "Ad", "status": "Durum",
-		"active": "Etkin", "inactive": "Etkin değil", "unlimited": "Sınırsız",
+		"active": "Etkin", "inactive": "Etkin değil", "paused": "Yönetici/bayi tarafından durduruldu", "unlimited": "Sınırsız",
 		"downloaded": "İndirilen", "uploaded": "Yüklenen", "usage": "Kullanım", "totalQuota": "Toplam kota",
 		"remained": "Kalan", "lastOnline": "Son çevrimiçi", "expiry": "Bitiş", "noExpiry": "Süresiz",
 		"expired": "Süresi doldu", "copy": "Kopyala", "copied": "Kopyalandı", "download": "İndir",
@@ -148,7 +148,7 @@ var subPageExtra = map[string]map[string]string{
 	},
 	"zh": {
 		"title": "订阅信息", "subId": "订阅 ID", "email": "名称", "status": "状态",
-		"active": "有效", "inactive": "无效", "unlimited": "不限量",
+		"active": "有效", "inactive": "无效", "paused": "因管理员/代理商而暂停", "unlimited": "不限量",
 		"downloaded": "已下载", "uploaded": "已上传", "usage": "已用", "totalQuota": "总流量",
 		"remained": "剩余", "lastOnline": "最后在线", "expiry": "到期", "noExpiry": "永不到期",
 		"expired": "已到期", "copy": "复制", "copied": "已复制", "download": "下载",

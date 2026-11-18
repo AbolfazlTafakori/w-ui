@@ -114,8 +114,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// with no point. A reseller whose term ran out or whose allowance is
 	// spent is let in, read-only, to see why and pay: that is a lapse, and
 	// this is a decision.
-	if refusal := signInRefusal(admin, time.Now().UTC()); refusal != "" {
-		s.log.Warn("sign-in refused: account switched off",
+	if refusal := s.signInRefusal(r.Context(), admin, time.Now().UTC()); refusal != "" {
+		s.log.Warn("sign-in refused: account paused",
 			"username", admin.Username, "ip", clientIP(r))
 		writeError(w, http.StatusForbidden, refusal)
 		return
@@ -223,7 +223,7 @@ func (s *Server) authenticate(r *http.Request) (admin *model.Admin, machine bool
 		if err != nil {
 			return nil, false, "that access token is not valid", false
 		}
-		if why := signInRefusal(a, time.Now().UTC()); why != "" {
+		if why := s.signInRefusal(r.Context(), a, time.Now().UTC()); why != "" {
 			return nil, false, why, false
 		}
 		return a, false, "", false
@@ -264,6 +264,10 @@ func (s *Server) authenticate(r *http.Request) (admin *model.Admin, machine bool
 	// deliberately.
 	if !epochHolds(a, claims) {
 		return nil, false, "you were signed out everywhere; sign in again", true
+	}
+	// Paused since signing in: the open session ends with the pause.
+	if why := s.signInRefusal(r.Context(), a, time.Now().UTC()); why != "" {
+		return nil, false, why, false
 	}
 	return a, false, "", false
 }
@@ -334,15 +338,27 @@ func (s *Server) scopeFor(ctx context.Context, admin *model.Admin) (service.Scop
 	return sc, nil
 }
 
-// signInRefusal is why a correct password is still turned away, or empty.
+// signInRefusal is why a correct password, an open session or a token is
+// still turned away, or empty.
 //
-// Only the owner's decision keeps an operator out. A reseller whose term
-// ended or whose traffic ran out is paused just the same, but is let in,
-// read-only, to see why and to pay: that is a lapse, and switching them off
-// is a decision.
-func signInRefusal(admin *model.Admin, now time.Time) string {
-	if admin.PauseReason(now) == model.PauseSwitchedOff {
-		return model.PauseMessage(model.PauseSwitchedOff)
+// A paused operator is out, whatever paused them: switched off, term ended,
+// allowance spent -- and so is anyone under a paused admin. Paused means
+// their customers are off and nothing of theirs moves; letting them in to
+// act would be a way round that. Only the owner lifts an admin's pause, and
+// a reseller's is lifted by their admin or the owner, never from inside.
+func (s *Server) signInRefusal(ctx context.Context, admin *model.Admin, now time.Time) string {
+	if why := admin.PauseReason(now); why != "" {
+		return model.PauseMessage(why)
+	}
+	if admin.ParentAdminID == 0 || admin.Role != model.RoleReseller {
+		return ""
+	}
+	parent, err := s.admins.ForSession(ctx, fmt.Sprint(admin.ParentAdminID))
+	if err != nil {
+		return ""
+	}
+	if parent.PauseReason(now) != "" {
+		return model.PauseMessage(model.PauseByAdmin)
 	}
 	return ""
 }

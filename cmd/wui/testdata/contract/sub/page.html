@@ -382,7 +382,7 @@ PersistentKeepalive = 25
 </div></div>
 <div class="toast" id="toast"></div>
 
-<script nonce=<masked> src="/sub-asset/words.1939c1a94d6c.js"></script>
+<script nonce=<masked> src="/sub-asset/words.2bc0ef79e4e3.js"></script>
 <script nonce=<masked>>
 (function () {
   var S = window.__wuiStrings || { en: {} };
@@ -794,9 +794,9 @@ PersistentKeepalive = 25
       var t = live.querySelector('span'); if (t) { t.setAttribute('data-i', st.online ? 'online' : 'offline'); t.textContent = st.online ? word('online') : word('offline'); }
     }
     var sr = $id('lv-ring-status'); if (sr) sr.style.setProperty('--c', st.active ? 'var(--ok)' : 'var(--bad)');
-    var key = st.statusKey === 'inactive' ? 'inactive' : st.statusKey === 'unlimited' ? 'unlimited' : 'active';
+    var key = st.statusKey === 'paused' ? 'paused' : st.statusKey === 'inactive' ? 'inactive' : st.statusKey === 'unlimited' ? 'unlimited' : 'active';
     set('lv-status', word(key));
-    var td = $id('lv-td-status'); if (td) { var tag = td.querySelector('.tag'); if (tag) { tag.textContent = word(key); tag.className = 'tag ' + (key === 'inactive' ? 'red' : key === 'unlimited' ? 'purple' : 'green'); } }
+    var td = $id('lv-td-status'); if (td) { var tag = td.querySelector('.tag'); if (tag) { tag.textContent = word(key); tag.className = 'tag ' + (key === 'paused' ? 'orange' : key === 'inactive' ? 'red' : key === 'unlimited' ? 'purple' : 'green'); } }
     var usage = document.querySelector('.usage'); if (usage) usage.classList.toggle('inactive', !st.active);
   }
   

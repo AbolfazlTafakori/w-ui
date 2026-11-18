@@ -195,6 +195,7 @@ Client
 	onlineNow int (not stored)
 	speed *model.Speed (not stored)
 	ownerPaused string omitempty (not stored)
+	pausedBy string omitempty (not stored)
 	rateBitsPerSec uint64
 	resetCycle model.ResetCycle
 	lastResetAt *time.Time

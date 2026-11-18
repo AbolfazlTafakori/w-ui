@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -836,7 +837,7 @@ func onlineWithin() time.Duration { return time.Duration(OnlineWithin.Load()) * 
 // through their allowance to be worth offering a renewal to, and "online" is a
 // fact about their devices rather than about them -- which is why it reaches
 // into accounts instead of comparing a column.
-func (s *Clients) bucketWhere(bucket string) (string, []any) {
+func (s *Clients) bucketWhere(bucket string, paused []uint) (string, []any) {
 	switch bucket {
 	case "active":
 		return "status = ?", []any{model.StatusActive}
@@ -850,15 +851,21 @@ func (s *Clients) bucketWhere(bucket string) (string, []any) {
 		return "status = ? AND quota_bytes > 0 AND used_bytes * 100 >= quota_bytes * ?",
 			[]any{model.StatusActive, depletingPercent}
 	case "online":
+		// A customer under a paused operator is off, however recent their
+		// last handshake: not online.
+		pausedOut, pausedArgs := "", []any{}
+		if len(paused) > 0 {
+			pausedOut, pausedArgs = " AND owner_id NOT IN ? AND admin_id NOT IN ?", []any{paused, paused}
+		}
 		if s.live != nil {
 			ids := s.live.LiveClients()
 			if len(ids) == 0 {
 				return "1 = 0", nil
 			}
-			return "id IN ?", []any{ids}
+			return "id IN ?" + pausedOut, append([]any{ids}, pausedArgs...)
 		}
-		return "id IN (SELECT client_id FROM accounts WHERE last_handshake > ?)",
-			[]any{time.Now().UTC().Add(-onlineWithin())}
+		return "id IN (SELECT client_id FROM accounts WHERE last_handshake > ?)" + pausedOut,
+			append([]any{time.Now().UTC().Add(-onlineWithin())}, pausedArgs...)
 	}
 	return "", nil
 }
@@ -932,11 +939,13 @@ func (s *Clients) List(ctx context.Context, f ListFilter) (*Page, error) {
 	if err := fillGroups(ctx, s.db.WithContext(ctx), items); err != nil {
 		return nil, err
 	}
-	if err := s.fillOnlineNow(ctx, items); err != nil {
-		return nil, err
-	}
+	// Who is paused first: a customer under a paused operator is shown with
+	// nobody connected, and fillOnlineNow reads that.
 	if err := fillOwnerPause(ctx, s.db, items); err != nil {
 		return nil, fmt.Errorf("service: read resellers' standing: %w", err)
+	}
+	if err := s.fillOnlineNow(ctx, items); err != nil {
+		return nil, err
 	}
 
 	return &Page{Items: items, Total: total, Page: f.Page, PerPage: f.PerPage}, nil
@@ -967,8 +976,16 @@ func (s *Clients) filtered(ctx context.Context, f ListFilter) *gorm.DB {
 	if len(f.Buckets) > 0 {
 		any := s.db.Session(&gorm.Session{NewDB: true})
 		matched := false
+		var paused []uint
+		if slices.Contains(f.Buckets, "online") {
+			var err error
+			if paused, err = PausedOperatorIDs(ctx, s.db); err != nil {
+				_ = q.AddError(fmt.Errorf("service: read paused operators: %w", err))
+				return q
+			}
+		}
 		for _, b := range f.Buckets {
-			where, args := s.bucketWhere(b)
+			where, args := s.bucketWhere(b, paused)
 			if where == "" {
 				continue // an unknown bucket narrows nothing rather than erroring
 			}
@@ -1052,6 +1069,15 @@ func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error
 	if len(items) == 0 {
 		return nil
 	}
+	// Under a paused operator: off, whatever the kernel last saw. Read from
+	// OwnerPaused, which fillOwnerPause set before this.
+	defer func() {
+		for i := range items {
+			if items[i].OwnerPaused != "" {
+				items[i].OnlineNow, items[i].Speed = 0, nil
+			}
+		}
+	}()
 	ids := make([]uint, len(items))
 	for i := range items {
 		ids[i] = items[i].ID
@@ -1107,14 +1133,14 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 		return nil, fmt.Errorf("service: load client: %w", err)
 	}
 	one := []model.Client{client}
+	if err := fillOwnerPause(ctx, s.db, one); err != nil {
+		return nil, fmt.Errorf("service: read the reseller's standing: %w", err)
+	}
 	if err := s.fillOnlineNow(ctx, one); err != nil {
 		return nil, err
 	}
 	if err := fillGroups(ctx, s.db.WithContext(ctx), one); err != nil {
 		return nil, err
-	}
-	if err := fillOwnerPause(ctx, s.db, one); err != nil {
-		return nil, fmt.Errorf("service: read the reseller's standing: %w", err)
 	}
 	// The operator reading one customer sees each OpenVPN user's password,
 	// so it can be told to them or changed; a WireGuard file has no such
@@ -1930,18 +1956,41 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 	// A peer is considered present if it handshook within the window after
 	// which WireGuard itself treats a session as stale.
 	cutoff := time.Now().UTC().Add(-onlineWithin())
+	// Customers under a paused operator are off and not counted online,
+	// whatever their last handshake.
+	paused, err := PausedOperatorIDs(ctx, s.db)
+	if err != nil {
+		return nil, fmt.Errorf("service: read paused operators: %w", err)
+	}
+	served := notUnderPaused(s.db.Session(&gorm.Session{NewDB: true}).Model(&model.Client{}).Select("id"), "", paused)
 	switch {
 	case sc.Restricted:
 		online := db.Model(&model.Account{}).
 			Where("last_handshake > ?", cutoff).
 			Where("client_id IN (SELECT id FROM clients WHERE owner_id IN ?)", sc.OwnerList())
+		if len(paused) > 0 {
+			online = online.Where("client_id IN (?)", served)
+		}
 		if err := online.Count(&o.Online).Error; err != nil {
 			return nil, err
 		}
 	case s.live != nil:
-		o.Online = int64(len(s.live.LiveClients()))
+		ids := s.live.LiveClients()
+		if len(paused) > 0 && len(ids) > 0 {
+			if err := db.Model(&model.Client{}).Where("id IN ?", ids).
+				Where("owner_id NOT IN ? AND admin_id NOT IN ?", paused, paused).
+				Count(&o.Online).Error; err != nil {
+				return nil, err
+			}
+		} else {
+			o.Online = int64(len(ids))
+		}
 	default:
-		if err := count(&o.Online, &model.Account{}, "last_handshake > ?", cutoff); err != nil {
+		online := db.Model(&model.Account{}).Where("last_handshake > ?", cutoff)
+		if len(paused) > 0 {
+			online = online.Where("client_id IN (?)", served)
+		}
+		if err := online.Count(&o.Online).Error; err != nil {
 			return nil, err
 		}
 	}

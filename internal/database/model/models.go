@@ -567,6 +567,10 @@ type Client struct {
 	// Filled on the way out, not stored -- the pause is the reseller's, and
 	// writing it onto the customers is exactly what keeps it reversible.
 	OwnerPaused string `gorm:"-" json:"ownerPaused,omitempty"`
+	// PausedBy is who above the customer is paused -- "admin" or "reseller"
+	// -- when OwnerPaused is set: the panel labels the customer "paused by
+	// admin/reseller" rather than as used up or switched off.
+	PausedBy string `gorm:"-" json:"pausedBy,omitempty"`
 
 	// RateBitsPerSec of 0 means unmetered. Applied via tc by the enforcer.
 	RateBitsPerSec uint64 `gorm:"not null;default:0" json:"rateBitsPerSec"`
@@ -897,6 +901,9 @@ const (
 	PauseSwitchedOff = "switchedOff"
 	PauseTermEnded   = "termEnded"
 	PauseTrafficUsed = "trafficUsed"
+	// PauseByAdmin is a reseller whose own standing is good but whose admin
+	// is paused: the whole tree under a paused admin stops with them.
+	PauseByAdmin = "byAdmin"
 )
 
 // PauseMessage is what a paused operator is told, for each reason: the
@@ -911,6 +918,8 @@ func PauseMessage(reason string) string {
 		return "your account's term has ended"
 	case PauseTrafficUsed:
 		return "your data allowance is used up"
+	case PauseByAdmin:
+		return "your admin's account is paused"
 	}
 	return ""
 }
