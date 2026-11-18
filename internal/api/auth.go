@@ -333,7 +333,9 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 // they are allowed to sell.
 func (s *Server) scopeFor(ctx context.Context, admin *model.Admin) (service.Scope, error) {
 	sc := service.ScopeFor(admin)
-	if !sc.Restricted {
+	// The owner: nothing to hold them to. An admin who sees every customer
+	// is not narrowed, but is held to their tunnels and paused like any.
+	if !sc.Capped {
 		return sc, nil
 	}
 	allowed, err := s.admins.AllowedInterfaces(ctx, admin)

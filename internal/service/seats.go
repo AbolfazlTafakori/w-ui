@@ -282,9 +282,12 @@ type seatMove struct {
 // one customer's seats and revives another's is not refused on the way.
 func settleSeats(ctx context.Context, tx *gorm.DB, before, after map[uint]seatState, ids []uint, rule SeatRule) error {
 	sc := ScopeOf(ctx)
-	enforced := (sc.Restricted && rule == ByCaller) || rule == ByPanelIfFree
-	spends := sc.Restricted && rule == ByCaller
-	actor := sc.AdminID
+	// Held to the ceiling and charged: any admin or reseller acting, narrowed
+	// to their tree or not. The owner and the panel move seats to match and
+	// spend nothing.
+	enforced := (sc.Capped && rule == ByCaller) || rule == ByPanelIfFree
+	spends := sc.Capped && rule == ByCaller
+	actor := sc.Actor
 	var moves []seatMove
 	seen := map[uint]bool{}
 	for _, id := range ids {

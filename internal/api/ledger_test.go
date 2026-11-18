@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"testing"
 
 	"github.com/abolfazl/w-ui/internal/capacity"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/operators"
 )
 
 // Each operator reads their own capacity ledger and nobody else's: an admin
@@ -118,5 +122,44 @@ func TestTheOperatorsListCarriesCapacity(t *testing.T) {
 		if who == "owner" && got["owner"] != nil {
 			t.Errorf("the owner has a ceiling: %+v", got["owner"])
 		}
+	}
+}
+
+// An admin the owner lets see every customer is not narrowed, and is an
+// admin all the same: the scope the API builds for them holds them to the
+// tunnels they were given and carries their pause. Before, they had the
+// owner's own scope: any tunnel, and nothing barred while paused.
+func TestSeeingEveryoneIsStillAnAdminsScope(t *testing.T) {
+	mux, sess, db := serversPanel(t)
+	ad := idOf(t, db, "ad")
+	if err := db.Model(&model.Admin{}).Where("id = ?", ad).Update("can_view_all_clients", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	// They still see every customer.
+	code, body := send(t, mux, sess["ad"], http.MethodGet, "/api/clients?perPage=100", "")
+	var page struct {
+		Total int `json:"total"`
+	}
+	_ = json.Unmarshal([]byte(body), &page)
+	if code != http.StatusOK || page.Total != 7 {
+		t.Fatalf("ad sees %d customers (%d), want all 7", page.Total, code)
+	}
+	srv := &Server{admins: operators.NewAdmins(db, slog.New(slog.NewTextHandler(io.Discard, nil)))}
+	var a model.Admin
+	db.First(&a, ad)
+	sc, err := srv.scopeFor(context.Background(), &a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc.Restricted || !sc.Capped || sc.AdminID != ad || sc.AdminStamp != ad {
+		t.Errorf("the scope: %+v", sc)
+	}
+	if sc.Allows(3) || !sc.Allows(1) {
+		t.Errorf("tunnels: %v, want wg-a and wg-b alone", sc.Interfaces)
+	}
+	db.Model(&model.Admin{}).Where("id = ?", ad).Update("enabled", false)
+	db.First(&a, ad)
+	if sc, _ = srv.scopeFor(context.Background(), &a); sc.Barred == "" {
+		t.Error("paused, and not barred")
 	}
 }

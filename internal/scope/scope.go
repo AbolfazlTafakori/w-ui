@@ -58,6 +58,17 @@ type Scope struct {
 	// Restricted narrows every customer and group query to Owners.
 	Restricted bool
 
+	// Capped is an admin or a reseller: someone held to the users and
+	// tokens they were given, to the tunnels they were given, and stopped
+	// while paused -- narrowed to their tree or not. An admin the owner
+	// lets see every customer is not narrowed (Restricted is false) and is
+	// capped all the same: seeing everyone is not selling without limit.
+	Capped bool
+
+	// Actor is who is making the request, the owner included: the name on
+	// each line of the capacity ledger. Zero is the panel itself.
+	Actor uint
+
 	// Hidden is the group the owner puts this operator's customers in and
 	// never shows them.
 	//

@@ -394,7 +394,7 @@ func (s *Clients) loadInterfaces(ctx context.Context, ids []uint) ([]*model.Inte
 // for.
 func checkBarred(ctx context.Context) error {
 	sc := ScopeOf(ctx)
-	if !sc.Restricted || sc.Barred == "" {
+	if !sc.Capped || sc.Barred == "" {
 		return nil
 	}
 	return fmt.Errorf("%w: %s", ErrInvalid, sc.Barred)
@@ -410,7 +410,7 @@ func checkBarred(ctx context.Context) error {
 // before: -1 for a new customer.
 func (s *Clients) checkCeiling(ctx context.Context, users, was int) error {
 	sc := ScopeOf(ctx)
-	if !sc.Restricted {
+	if !sc.Capped {
 		return nil
 	}
 	if err := checkBarred(ctx); err != nil {

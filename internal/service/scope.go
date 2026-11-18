@@ -23,21 +23,28 @@ type Scope = scope.Scope
 // unrestricted -- not with a scope that happens to match every row, which
 // would be a filter waiting to be got wrong.
 func ScopeFor(admin *model.Admin) Scope {
-	if admin == nil || admin.Role.SeesEveryone() {
+	if admin == nil {
 		return Scope{}
 	}
-	// An admin the owner has let see every customer is unrestricted too --
-	// one scope that matches no condition rather than a condition over the
-	// whole panel that could be got wrong.
+	if admin.Role.SeesEveryone() {
+		return Scope{Actor: admin.ID}
+	}
+	// An admin the owner has let see every customer is not narrowed -- one
+	// scope that matches no condition rather than a condition over the
+	// whole panel that could be got wrong -- but is still an admin: what
+	// they make is theirs and paid from their users, their tunnels are the
+	// ones given them, and a pause stops them. Before, this was the owner's
+	// own scope, and such an admin made customers that were nobody's, for
+	// nothing, on any tunnel.
 	if admin.Role == model.RoleAdmin && admin.CanViewAllClients {
-		return Scope{}
+		return Scope{AdminID: admin.ID, AdminStamp: admin.ID, Capped: true, Actor: admin.ID}
 	}
 	// Owners is the set the narrowing matches against. A reseller's is their
 	// own id alone; an admin's starts with their own id and gains their
 	// resellers where the DB is reachable (the API layer appends them). The
 	// admin_id stamped on anything created is the admin at the top of the
 	// chain: an admin themselves, a reseller their parent.
-	s := Scope{AdminID: admin.ID, Restricted: true, Hidden: admin.GroupName, Owners: []uint{admin.ID}}
+	s := Scope{AdminID: admin.ID, Restricted: true, Capped: true, Actor: admin.ID, Hidden: admin.GroupName, Owners: []uint{admin.ID}}
 	switch admin.Role {
 	case model.RoleAdmin:
 		s.AdminStamp = admin.ID
