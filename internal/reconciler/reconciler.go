@@ -564,11 +564,12 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	exhaustedNames := r.namesMatching(ctx,
 		"status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR id IN ?)", model.StatusActive, spent)
 
-	res := db.Model(&model.Client{}).
-		Where("status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR id IN ?)", model.StatusActive, spent).
-		Update("status", model.StatusExhausted)
-	if res.Error != nil {
-		return 0, 0, res.Error
+	// Ended in the same transaction as their seats are given back: a
+	// customer out of traffic holds no seat of an open account.
+	res, err := endClients(ctx, db, model.StatusExhausted,
+		"status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR id IN ?)", model.StatusActive, spent)
+	if err != nil {
+		return 0, 0, err
 	}
 	if res.RowsAffected > 0 {
 		r.log.Info("clients cut off for reaching their allowance", "count", res.RowsAffected, "clients", strings.Join(exhaustedNames, ", "))
@@ -583,12 +584,11 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 		"status IN (?) AND expires_at IS NOT NULL AND expires_at <= ?",
 		[]string{string(model.StatusActive), string(model.StatusExhausted)}, now)
 
-	res2 := db.Model(&model.Client{}).
-		Where("status IN (?) AND expires_at IS NOT NULL AND expires_at <= ?",
-			[]string{string(model.StatusActive), string(model.StatusExhausted)}, now).
-		Update("status", model.StatusExpired)
-	if res2.Error != nil {
-		return 0, 0, res2.Error
+	res2, err := endClients(ctx, db, model.StatusExpired,
+		"status IN (?) AND expires_at IS NOT NULL AND expires_at <= ?",
+		[]string{string(model.StatusActive), string(model.StatusExhausted)}, now)
+	if err != nil {
+		return 0, 0, err
 	}
 	if res2.RowsAffected > 0 {
 		r.log.Info("clients expired", "count", res2.RowsAffected, "clients", strings.Join(expiredNames, ", "))
@@ -598,6 +598,30 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	}
 
 	return res.RowsAffected, res2.RowsAffected, nil
+}
+
+// ended is how many customers a sweep ended.
+type ended struct{ RowsAffected int64 }
+
+// endClients sets the customers a condition selects to status, and gives
+// back the seats they held, in one transaction (service.SettleChange). Only
+// the ids the condition matches are read: a sweep that ends nobody costs one
+// indexed read.
+func endClients(ctx context.Context, db *gorm.DB, status model.ClientStatus, where string, args ...any) (ended, error) {
+	var ids []uint
+	if err := db.Model(&model.Client{}).Where(where, args...).Pluck("id", &ids).Error; err != nil {
+		return ended{}, err
+	}
+	if len(ids) == 0 {
+		return ended{}, nil
+	}
+	var n int64
+	err := service.SettleChange(ctx, db, ids, service.ByPanel, func(tx *gorm.DB) ([]uint, error) {
+		res := tx.Model(&model.Client{}).Where("id IN ?", ids).Where(where, args...).Update("status", status)
+		n = res.RowsAffected
+		return nil, res.Error
+	})
+	return ended{RowsAffected: n}, err
 }
 
 // namesMatching reads the client names a condition selects, capped so a mass

@@ -16,12 +16,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/capacity"
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/membership"
 	"github.com/abolfazl/w-ui/internal/optional"
+	"github.com/abolfazl/w-ui/internal/scope"
 )
 
 // Selling the panel on.
@@ -87,6 +89,13 @@ type AdminInput struct {
 	// given. Only an admin has menu grants -- it is ignored for a reseller,
 	// whose menu is fixed, and the owner, who reaches everything.
 	MenuIDs []string `json:"menuIds"`
+
+	// UserMode is how the operator's users are counted, the owner's to set:
+	// "open" (seats held at once, given back when a customer ends) or
+	// "consumable" (units spent on each customer made or extended, never
+	// given back). Empty leaves it; a reseller under an admin is counted as
+	// the admin is.
+	UserMode string `json:"userMode"`
 }
 
 // MaxTermDays bounds a term on hold. Ten years is past any plan anybody
@@ -220,6 +229,18 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 		}
 		if err := s.setInterfaces(tx, admin.ID, in.InterfaceIDs); err != nil {
 			return err
+		}
+		// Their users, as an account: the owner's grant, or a hand-down from
+		// the admin making them, which can never be more than the admin has
+		// free. A reseller of an admin with a ceiling is always given one.
+		if admin.Role.Capped() {
+			limit := int64(0)
+			if in.ClientLimit != nil {
+				limit = int64(*in.ClientLimit)
+			}
+			if err := setUsers(tx, scope.Of(ctx).AdminID, &admin, limit, in.UserMode, scopedTo(ctx) == nil); err != nil {
+				return err
+			}
 		}
 		if admin.Role == model.RoleAdmin || len(menus) > 0 {
 			return setMenus(tx, admin.ID, menus)
@@ -510,6 +531,26 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Their users moved to the new figure, or counted the new way, in
+		// this same transaction (setUsers). Only the owner switches a mode.
+		if role.Capped() && (in.ClientLimit != nil || (in.UserMode != "" && scopedTo(ctx) == nil)) {
+			limit := int64(admin.ClientLimit)
+			if acc, err := capacity.Account(tx, admin.ID, model.CapacityUsers); err != nil {
+				return err
+			} else if acc != nil {
+				limit = acc.Granted
+			}
+			if in.ClientLimit != nil {
+				limit = int64(*in.ClientLimit)
+			}
+			mode := in.UserMode
+			if scopedTo(ctx) != nil {
+				mode = ""
+			}
+			if err := setUsers(tx, scope.Of(ctx).AdminID, &admin, limit, mode, scopedTo(ctx) == nil); err != nil {
+				return err
+			}
+		}
 		if newGroup != "" {
 			canonical, err := ensureOwnerGroup(tx, newGroup, admin.Username)
 			if err != nil {
@@ -631,6 +672,9 @@ func (s *Admins) Delete(ctx context.Context, id uint, mode DeleteMode, clients C
 		if err := tx.Model(&model.Node{}).Where("owner_id = ?", admin.ID).
 			Update("owner_id", 0).Error; err != nil {
 			return fmt.Errorf("release the operator's nodes: %w", err)
+		}
+		if err := releaseUsers(tx, scope.Of(ctx).AdminID, &admin); err != nil {
+			return err
 		}
 		if err := DropTokensOf(tx, admin.ID); err != nil {
 			return fmt.Errorf("revoke the operator's tokens: %w", err)

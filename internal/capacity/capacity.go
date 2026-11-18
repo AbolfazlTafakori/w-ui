@@ -131,6 +131,44 @@ func Take(tx *gorm.DB, a *model.CapacityAccount, n int64, e Entry) error {
 	return move(tx, a, "used", n, whenFree, e)
 }
 
+// Hold takes n seats of an open account whatever is free. It is for what
+// the owner and the panel itself do -- the owner extending a reseller's
+// customer, the panel reviving one on its monthly reset -- so the seats a
+// reseller holds always match the customers being served, even past their
+// ceiling. Nothing an operator asks for goes through it.
+func Hold(tx *gorm.DB, a *model.CapacityAccount, n int64, e Entry) error {
+	if n < 0 {
+		return ErrTooLarge
+	}
+	return move(tx, a, "used", n, alwaysAllows, e)
+}
+
+// Recount sets the used figure to what it is now found to be, by an entry
+// of the difference. It is for the moment users start or stop being counted
+// a way -- an operator given a ceiling, a mode switched by the owner -- and
+// for nothing an operator asks.
+func Recount(tx *gorm.DB, a *model.CapacityAccount, used int64, e Entry) error {
+	if used < 0 || used > 1<<40 {
+		return ErrTooLarge
+	}
+	if a == nil || used == a.Used {
+		return nil
+	}
+	d := used - a.Used
+	if d > MaxUnits || d < -MaxUnits {
+		// Past a single move's bound: in steps, each an entry.
+		step := int64(MaxUnits)
+		if d < 0 {
+			step = -MaxUnits
+		}
+		if err := move(tx, a, "used", step, alwaysAllows, e); err != nil {
+			return err
+		}
+		return Recount(tx, a, used, e)
+	}
+	return move(tx, a, "used", d, alwaysAllows, e)
+}
+
 // Give hands n seats back. Only open (concurrent) accounts give anything
 // back; a spent unit or a revoked token is gone, and asking here for one is
 // a mistake in the caller, refused rather than honoured.
@@ -194,6 +232,15 @@ func HandBack(tx *gorm.DB, parent, child *model.CapacityAccount, n int64, e Entr
 		return err
 	}
 	return move(tx, parent, "handed", -n, whenHanded, pe)
+}
+
+// Withdraw lowers what a parent handed on by n, when the reseller holding it
+// is removed with seats that were only lent.
+func Withdraw(tx *gorm.DB, parent *model.CapacityAccount, n int64, e Entry) error {
+	if n < 0 {
+		return ErrTooLarge
+	}
+	return move(tx, parent, "handed", -n, whenHanded, e)
 }
 
 // Open makes an operator's account of a kind, empty, in a mode. An existing

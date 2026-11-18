@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/capacity"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/ipam"
@@ -39,7 +40,10 @@ type Clients struct {
 
 	// subClashes counts, per reseller, the subscription ids refused as
 	// taken. See checkSubID.
-	subClashes clashCounter
+	subClashes *clashCounter
+	// ipj is the address journal of the transaction this view runs in
+	// (withSeats); nil outside one.
+	ipj *ipJournal
 	// remote is the panels used as nodes, whose users are brought in
 	// (SetRemote); nil for a CLI.
 	remote RemotePanels
@@ -87,7 +91,7 @@ func (c *clashCounter) miss(id uint, now time.Time) {
 
 // NewClients builds the client service.
 func NewClients(db *gorm.DB, pools *ipam.Pools, log *slog.Logger) *Clients {
-	return &Clients{db: db, pools: pools, log: log}
+	return &Clients{db: db, pools: pools, log: log, subClashes: &clashCounter{}}
 }
 
 // CreateInput describes a new client.
@@ -175,7 +179,7 @@ type CreateInput struct {
 // The protocol is taken from the interface rather than asked for separately: an
 // account only exists on an interface, and an interface serves exactly one
 // protocol, so accepting both would allow them to disagree.
-func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, error) {
+func (s *Clients) createRaw(ctx context.Context, in CreateInput) (*model.Client, error) {
 	if err := checkBarred(ctx); err != nil {
 		return nil, err
 	}
@@ -395,24 +399,14 @@ func checkBarred(ctx context.Context) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, sc.Barred)
 }
 
-// checkCeiling refuses a customer that would take a reseller past the users
-// the owner sold them.
-//
-// The limit counts users, not customers: a customer is as many users as
-// their plan is for -- DeviceLimit, one file and one connection each. A
-// reseller sold 100 may make a hundred single-user customers or twenty-five
-// for four users each, and either way has sold 100. Counting customers
-// instead let a reseller sold 100 hand out 5,000 connections, 50 to a
-// customer.
+// checkCeiling refuses a plan an operator with a user ceiling cannot be
+// sold: one for no users, or for any number at once, which the ceiling
+// could not count. Whether they have the users left is not asked here: it is
+// settled with the customer itself, in its transaction (withSeats), so two
+// requests at once cannot both be let through on one free seat.
 //
 // users is what the customer's plan is to be for, was what it was for
-// before: -1 for a new customer. A plan made smaller, or left as it is,
-// is never refused; a plan for any number of users at once is, under a
-// limit, since it would hold users the count could not see.
-//
-// Read here rather than in the handler so that every way of making a
-// customer goes through it: the form, the batch, the importer and the
-// Telegram bot alike.
+// before: -1 for a new customer.
 func (s *Clients) checkCeiling(ctx context.Context, users, was int) error {
 	sc := ScopeOf(ctx)
 	if !sc.Restricted {
@@ -421,40 +415,18 @@ func (s *Clients) checkCeiling(ctx context.Context, users, was int) error {
 	if err := checkBarred(ctx); err != nil {
 		return err
 	}
-	if sc.ClientLimit <= 0 || users == was {
+	if users == was || users > 0 {
 		return nil
 	}
-	if users <= 0 {
-		return invalidField("deviceLimit",
-			"you may sell %d users in all, so each customer is for a number of users: give 1 or more", sc.ClientLimit)
-	}
-	if was > 0 && users < was {
-		return nil
-	}
-	held, err := s.usersHeld(ctx)
+	acc, err := capacity.Account(s.db.WithContext(ctx), sc.AdminID, model.CapacityUsers)
 	if err != nil {
 		return err
 	}
-	if held-int64(max(was, 0))+int64(users) > int64(sc.ClientLimit) {
+	if acc != nil {
 		return invalidField("deviceLimit",
-			"you may have %d users and you have %d; this customer would make it %d",
-			sc.ClientLimit, held, held-int64(max(was, 0))+int64(users))
+			"your customers are counted in users, so each is for a number of users: give 1 or more")
 	}
 	return nil
-}
-
-// usersHeld is how many users the operator in ctx has sold: the users each
-// of their customers' plans is for, added up.
-func (s *Clients) usersHeld(ctx context.Context) (int64, error) {
-	var held *int64
-	if err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Select("SUM(device_limit)").Scan(&held).Error; err != nil {
-		return 0, fmt.Errorf("service: count your users: %w", err)
-	}
-	if held == nil {
-		return 0, nil
-	}
-	return *held, nil
 }
 
 // buildAccount generates the credentials for one device.
@@ -519,12 +491,17 @@ func (s *Clients) reserve(ctx context.Context, interfaceID uint, n int) ([]netip
 		for _, a := range addrs {
 			if err := alloc.Release(a); err != nil {
 				s.log.Error("could not return address to pool", "address", a, "error", err)
+			} else {
+				s.noteFreed(alloc, a)
 			}
 		}
 	}
 
 	for i := 0; i < n; i++ {
 		addr, err := alloc.Allocate()
+		if err == nil {
+			s.noteTaken(alloc, addr)
+		}
 		if err != nil {
 			release()
 			if errors.Is(err, ipam.ErrPoolFull) {
@@ -813,6 +790,8 @@ func (s *Clients) RemoveDevice(ctx context.Context, accountID uint) error {
 		if alloc, aerr := s.pools.Get(acc.InterfaceID); aerr == nil {
 			if rerr := alloc.Release(addr); rerr != nil {
 				s.log.Error("could not return address to pool", "address", addr, "error", rerr)
+			} else {
+				s.noteFreed(alloc, addr)
 			}
 		}
 	}
@@ -1197,7 +1176,7 @@ type UpdateInput struct {
 }
 
 // Update applies changes to a client.
-func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.Client, error) {
+func (s *Clients) updateRaw(ctx context.Context, id uint, in UpdateInput) (*model.Client, error) {
 	if err := checkBarred(ctx); err != nil {
 		return nil, err
 	}
@@ -1465,7 +1444,7 @@ func (s *Clients) revives(client *model.Client, in UpdateInput) bool {
 }
 
 // ResetTraffic zeroes usage and reactivates a client that had run out.
-func (s *Clients) ResetTraffic(ctx context.Context, id uint) (*model.Client, error) {
+func (s *Clients) resetTrafficRaw(ctx context.Context, id uint) (*model.Client, error) {
 	if err := checkBarred(ctx); err != nil {
 		return nil, err
 	}
@@ -1495,7 +1474,7 @@ func (s *Clients) ResetTraffic(ctx context.Context, id uint) (*model.Client, err
 }
 
 // Delete removes a client and returns its addresses to the pool.
-func (s *Clients) Delete(ctx context.Context, id uint) error {
+func (s *Clients) deleteRaw(ctx context.Context, id uint) error {
 	if err := checkBarred(ctx); err != nil {
 		return err
 	}
@@ -1531,6 +1510,8 @@ func (s *Clients) Delete(ctx context.Context, id uint) error {
 		if alloc, aerr := s.pools.Get(acc.InterfaceID); aerr == nil {
 			if rerr := alloc.Release(addr); rerr != nil {
 				s.log.Error("could not return address to pool", "address", addr, "error", rerr)
+			} else {
+				s.noteFreed(alloc, addr)
 			}
 		}
 	}
@@ -1557,7 +1538,7 @@ const (
 // Enable and reset are written as single statements rather than a loop: an
 // operator renewing a few hundred customers at the start of a month should not
 // pay for one round trip each.
-func (s *Clients) Bulk(ctx context.Context, action BulkAction, ids []uint) (int64, error) {
+func (s *Clients) bulkRaw(ctx context.Context, action BulkAction, ids []uint) (int64, error) {
 	if err := checkBarred(ctx); err != nil {
 		return 0, err
 	}
@@ -1610,7 +1591,7 @@ func (s *Clients) Bulk(ctx context.Context, action BulkAction, ids []uint) (int6
 		// be returned to the pool and its leases closed.
 		var n int64
 		for _, id := range ids {
-			if err := s.Delete(ctx, id); err != nil {
+			if err := s.deleteRaw(ctx, id); err != nil {
 				if errors.Is(err, ErrNotFound) {
 					continue
 				}
@@ -1639,7 +1620,7 @@ type AdjustInput struct {
 }
 
 // Adjust applies an expiry/quota/renewal change to the selected clients.
-func (s *Clients) Adjust(ctx context.Context, in AdjustInput) (int64, error) {
+func (s *Clients) adjustRaw(ctx context.Context, in AdjustInput) (int64, error) {
 	if err := checkBarred(ctx); err != nil {
 		return 0, err
 	}
@@ -1702,7 +1683,7 @@ func (s *Clients) Adjust(ctx context.Context, in AdjustInput) (int64, error) {
 }
 
 // ResetAllTraffic zeroes usage for every client and revives the exhausted.
-func (s *Clients) ResetAllTraffic(ctx context.Context) (int64, error) {
+func (s *Clients) resetAllTrafficRaw(ctx context.Context) (int64, error) {
 	if err := checkBarred(ctx); err != nil {
 		return 0, err
 	}
@@ -1818,7 +1799,7 @@ func batchName(in BatchInput, i int) (string, error) {
 // Each is created through the normal path rather than by bulk insert, so every
 // one gets its own keys and addresses and a partial failure leaves the
 // successful ones intact rather than rolling back a whole batch.
-func (s *Clients) CreateBatch(ctx context.Context, in BatchInput) ([]model.Client, error) {
+func (s *Clients) createBatchRaw(ctx context.Context, in BatchInput) ([]model.Client, error) {
 	if in.Count < 1 || in.Count > 200 {
 		return nil, invalidField("count", "how many is between 1 and 200")
 	}
@@ -2268,7 +2249,7 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 	// reseller who keeps choosing taken ids is stopped after a few, and the
 	// refusal does not say whose it is.
 	sc := ScopeOf(ctx)
-	if sc.Restricted && s.subClashes.blocked(sc.AdminID, time.Now()) {
+	if sc.Restricted && s.subClashes != nil && s.subClashes.blocked(sc.AdminID, time.Now()) {
 		return "", invalidField("subId", "too many subscription ids refused; wait a while, or leave it empty for one to be drawn")
 	}
 	var n int64
@@ -2291,7 +2272,9 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 	}
 	if n > 0 {
 		if sc.Restricted {
-			s.subClashes.miss(sc.AdminID, time.Now())
+			if s.subClashes != nil {
+				s.subClashes.miss(sc.AdminID, time.Now())
+			}
 		}
 		return "", invalidField("subId", "that subscription id cannot be used; choose another, or leave it empty for one to be drawn")
 	}

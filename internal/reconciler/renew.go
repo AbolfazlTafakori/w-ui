@@ -2,9 +2,12 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -126,12 +129,27 @@ func (r *Reconciler) renew(ctx context.Context, now time.Time) (int, error) {
 			fields["status"] = model.StatusActive
 		}
 		// Conditional on the renewal it was read for, so a reset made by
-		// hand in between is not undone by one made on its old date.
-		res := db.Model(&model.Client{}).
-			Where("id = ? AND (last_reset_at IS NULL OR last_reset_at < ?)", p.ID, at).
-			Updates(fields)
-		if res.Error != nil {
-			return len(renewed), fmt.Errorf("renew %s: %w", p.Name, res.Error)
+		// hand in between is not undone by one made on its old date. A
+		// customer brought back from out of traffic takes their seats back
+		// only if they are free (ByPanelIfFree); if not, the period still
+		// starts but they stay out until a seat is, and nothing is spent.
+		var res *gorm.DB
+		renew := func(fields map[string]any) error {
+			return service.SettleChange(ctx, db, []uint{p.ID}, service.ByPanelIfFree, func(tx *gorm.DB) ([]uint, error) {
+				res = tx.Model(&model.Client{}).
+					Where("id = ? AND (last_reset_at IS NULL OR last_reset_at < ?)", p.ID, at).
+					Updates(fields)
+				return nil, res.Error
+			})
+		}
+		err := renew(fields)
+		if errors.Is(err, service.ErrNoUsers) {
+			delete(fields, "status")
+			r.log.Warn("a renewed plan stays out: its operator has no seats free", "client", p.Name)
+			err = renew(fields)
+		}
+		if err != nil {
+			return len(renewed), fmt.Errorf("renew %s: %w", p.Name, err)
 		}
 		if res.RowsAffected > 0 {
 			if err := service.ZeroFileUsage(db, "id = ?", p.ID); err != nil {

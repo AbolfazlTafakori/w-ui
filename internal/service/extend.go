@@ -118,7 +118,7 @@ type ExtendResult struct {
 }
 
 // Extend adds (or takes back) time or traffic for the selected customers.
-func (s *Clients) Extend(ctx context.Context, in ExtendInput) (*ExtendResult, error) {
+func (s *Clients) extendRaw(ctx context.Context, in ExtendInput) (*ExtendResult, error) {
 	if err := checkBarred(ctx); err != nil {
 		return nil, err
 	}

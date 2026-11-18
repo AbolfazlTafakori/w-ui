@@ -188,7 +188,7 @@ func TestResellerCeilingCountsUsers(t *testing.T) {
 			}
 			// The hundred are sold: not one more user, whatever the plan.
 			_, err := clients.Create(ctx, CreateInput{Name: "one too many", InterfaceIDs: []uint{1}, DeviceLimit: 1})
-			if err == nil || !strings.Contains(err.Error(), "you may have 100 users and you have 100") {
+			if err == nil || !strings.Contains(err.Error(), "0 of your 100 are free") {
 				t.Fatalf("past the limit gave %v, want a refusal naming it", err)
 			}
 			// What the owner's page shows against the limit.

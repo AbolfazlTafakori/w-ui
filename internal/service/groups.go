@@ -534,7 +534,7 @@ type GroupOp struct {
 }
 
 // ApplyToGroup runs an action across every client carrying the label.
-func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
+func (s *Clients) applyToGroupRaw(ctx context.Context, op GroupOp) (int64, error) {
 	// These write the plan directly -- a group extended by thirty days, a
 	// group's quota set -- rather than through Update, so they carry the
 	// same refusal themselves.
@@ -656,7 +656,7 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 		if err := scope().Pluck("id", &ids).Error; err != nil {
 			return 0, fmt.Errorf("service: list group members: %w", err)
 		}
-		return s.Bulk(ctx, BulkDelete, ids)
+		return s.bulkRaw(ctx, BulkDelete, ids)
 
 	default:
 		return 0, fmt.Errorf("%w: unknown action %q", ErrInvalid, op.Action)

@@ -81,7 +81,7 @@ type ImportReport struct {
 }
 
 // Import loads a client list.
-func (s *Clients) Import(ctx context.Context, in ImportInput) (*ImportReport, error) {
+func (s *Clients) importRaw(ctx context.Context, in ImportInput) (*ImportReport, error) {
 	// "Replace" writes an existing customer's plan directly, past Update, so
 	// it carries the refusal a paused reseller meets everywhere else: a file
 	// of their own customers' names with a year on each is the same storing

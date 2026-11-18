@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/abolfazl/w-ui/internal/capacity"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/ipam"
 	"github.com/abolfazl/w-ui/internal/scope"
@@ -20,10 +21,26 @@ import (
 // the ledger is seen to cost nothing a seller would notice:
 //
 //	go test ./internal/service -run X -bench ResellerCreates -benchtime 400x
-func BenchmarkResellerCreatesACustomer(b *testing.B) {
-	db, err := gorm.Open(sqlite.Open(filepath.Join(b.TempDir(), "bench.db")+"?_pragma=journal_mode(WAL)"), &gorm.Config{Logger: gormlogger.Discard})
+func BenchmarkResellerCreatesACustomer(b *testing.B) { benchCreate(b, "") }
+
+// The same, with the reseller's users counted, each way: the customer and
+// its units moved and written down in one transaction.
+func BenchmarkResellerCreatesACustomerCounted(b *testing.B) {
+	b.Run("open", func(b *testing.B) { benchCreate(b, model.CapacityOpen) })
+	b.Run("consumable", func(b *testing.B) { benchCreate(b, model.CapacityConsumable) })
+}
+
+func benchCreate(b *testing.B, mode string) {
+	// The panel's own settings (internal/database): WAL, synchronous NORMAL,
+	// writers queued by an immediate lock, eight connections.
+	db, err := gorm.Open(sqlite.Open(filepath.Join(b.TempDir(), "bench.db")+
+		"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(15000)&_txlock=immediate"),
+		&gorm.Config{Logger: gormlogger.Discard})
 	if err != nil {
 		b.Fatal(err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(8)
 	}
 	b.Cleanup(func() {
 		if sqlDB, err := db.DB(); err == nil {
@@ -43,6 +60,15 @@ func BenchmarkResellerCreatesACustomer(b *testing.B) {
 	reseller := model.Admin{Username: "bench", PasswordHash: "x", Role: model.RoleReseller, Enabled: true, ClientLimit: 1_000_000}
 	if err := db.Create(&reseller).Error; err != nil {
 		b.Fatal(err)
+	}
+	if mode != "" {
+		acc, err := capacity.Open(db, reseller.ID, model.CapacityUsers, mode)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := capacity.Charge(db, acc, 1_000_000, capacity.Entry{Reason: model.CapacityCharge}); err != nil {
+			b.Fatal(err)
+		}
 	}
 	pools := ipam.NewPools()
 	if _, err := pools.Add(iface.ID, iface.Subnet); err != nil {
