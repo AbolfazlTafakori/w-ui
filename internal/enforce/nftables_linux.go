@@ -398,9 +398,15 @@ func (n *NFTables) Health(ctx context.Context) error {
 	if _, err := exec.LookPath(nftBinary); err != nil {
 		return fmt.Errorf("%w: nft not found on PATH; install nftables", ErrUnavailable)
 	}
-	if _, err := n.run(ctx, "", "list", "tables"); err != nil {
-		return fmt.Errorf("%w: cannot read the ruleset (needs CAP_NET_ADMIN): %v",
-			ErrUnavailable, err)
+	// Over netlink first: asking the nft program lists the whole ruleset in
+	// userspace, every customer's quota and counters with it, which took
+	// 300ms with 5,000 customers -- on every dashboard refresh. The program
+	// is asked only where netlink cannot be.
+	if _, err := nftstate.ListTables(); err != nil {
+		if _, err := n.run(ctx, "", "list", "tables"); err != nil {
+			return fmt.Errorf("%w: cannot read the ruleset (needs CAP_NET_ADMIN): %v",
+				ErrUnavailable, err)
+		}
 	}
 
 	// Reported rather than hidden. An operator selling a 50 GB plan deserves to
