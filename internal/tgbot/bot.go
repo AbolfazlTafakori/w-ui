@@ -249,7 +249,14 @@ func (b *Bot) onCallback(ctx context.Context, q *callbackQuery) {
 		b.send(ctx, chat, b.t("clientCommands"), nil)
 		return
 	case strings.HasPrefix(data, "my:"):
-		clients, _ := b.ownClients(ctx, q.From.ID)
+		clients, err := b.ownClients(ctx, q.From.ID)
+		if err != nil {
+			// Not "nothing found": that would tell a customer their plan is
+			// gone when the panel only could not look.
+			b.log.Warn("could not read a customer's plans for the bot", "bot", b.name(), "error", err)
+			b.send(ctx, chat, b.t("tryAgain"), nil)
+			return
+		}
 		if len(clients) == 0 {
 			b.send(ctx, chat, b.t("noResult"), nil)
 			return

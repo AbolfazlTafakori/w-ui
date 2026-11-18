@@ -470,7 +470,12 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 	// The placeholder means the operator did not retype the token, so the
 	// stored one stays. Writing the placeholder itself would silently break
 	// notifications the next time they saved any unrelated setting.
-	cur, _ := s.Get(ctx)
+	// Read first: without it a placeholder would be saved as no token at
+	// all, and the bots stop with nothing said. Refused instead.
+	cur, err := s.Get(ctx)
+	if err != nil {
+		return PanelSettings{}, fmt.Errorf("settings: read the current settings to keep the bot tokens: %w", err)
+	}
 	if in.NotifyBotToken != TokenPlaceholder {
 		values[keyNotifyToken] = in.NotifyBotToken
 	} else {
@@ -489,7 +494,7 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 
 	// One transaction: a half-saved settings page would leave the panel in a
 	// state the operator never chose.
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err = db.Transaction(func(tx *gorm.DB) error {
 		for k, v := range values {
 			if err := database.PutSetting(tx, k, v); err != nil {
 				return err
