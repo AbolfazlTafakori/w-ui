@@ -93,6 +93,7 @@ func (b *Bot) upload(ctx context.Context, method, field, filename string, data [
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	for k, v := range params {
+		// A multipart field into memory: it cannot fail.
 		_ = w.WriteField(k, v)
 	}
 	fw, err := w.CreateFormFile(field, filename)
@@ -102,6 +103,7 @@ func (b *Bot) upload(ctx context.Context, method, field, filename string, data [
 	if _, err := fw.Write(data); err != nil {
 		return err
 	}
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = w.Close()
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -196,6 +198,7 @@ func (b *Bot) captionParams(chat int64, caption string) map[string]string {
 }
 
 func (b *Bot) answer(ctx context.Context, id, text string) {
+	// Acknowledging a button press: Telegram only stops the spinner, the answer itself is sent separately.
 	_ = b.call(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": id, "text": text}, nil)
 }
 

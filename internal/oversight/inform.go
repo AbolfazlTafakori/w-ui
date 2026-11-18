@@ -88,6 +88,7 @@ func (i *Informer) tick(ctx context.Context) {
 	if len(rows) == 0 {
 		return
 	}
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	body, _ := json.Marshal(rows)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.ExternalTrafficInformURI, bytes.NewReader(body))
 	if err != nil {

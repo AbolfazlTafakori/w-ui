@@ -37,7 +37,10 @@ func (r *Reporter) Build(ctx context.Context, lang string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cfg, _ := r.settings.Get(ctx)
+	cfg, err := r.settings.Get(ctx)
+	if err != nil {
+		return "", fmt.Errorf("oversight: read the settings for the report: %w", err)
+	}
 	fa := lang == "fa"
 	l := func(en, per string) string {
 		if fa {
@@ -102,6 +105,7 @@ func (r *Reporter) Backup(ctx context.Context, lang string) (*notify.Attachment,
 	if err != nil {
 		return nil, err
 	}
+	// A name for display or a path with a fallback: unknown is shown as such.
 	host, _ := os.Hostname()
 	when := arch.Taken.Local().Format("2006-01-02 15:04 MST")
 	caption := fmt.Sprintf("W-UI %s backup · %s\n%s · %s\nRestore: Overview → Backup & Restore → Upload",

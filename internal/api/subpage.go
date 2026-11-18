@@ -192,6 +192,7 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// Writing an answer to a client that may have gone: there is nobody left to tell.
 		_, _ = w.Write(body)
 		return true
 	}
@@ -217,7 +218,12 @@ func (s *Server) maybeServeSubPage(w http.ResponseWriter, r *http.Request, token
 		return false
 	}
 
-	link, _ := s.subs.LinkFor(r.Context(), token, r.Host)
+	link, err := s.subs.LinkFor(r.Context(), token, r.Host)
+	if err != nil {
+		// The page still opens; only its copy-link box is empty, and the
+		// reason is here rather than nowhere.
+		s.log.Warn("could not build a customer's subscription link for their page", "error", err)
+	}
 	page, err := s.subs.PageFor(r.Context(), token, link)
 	if err != nil {
 		s.subFailed(w, r, err)
@@ -267,6 +273,7 @@ func (s *Server) renderSubPage(w http.ResponseWriter, page *service.SubPage, tok
 	// A customer's page is theirs alone: no index, no archive, no preview.
 	h.Set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
 	w.WriteHeader(http.StatusOK)
+	// Writing an answer to a client that may have gone: there is nobody left to tell.
 	_, _ = w.Write(buf.Bytes())
 }
 
@@ -332,6 +339,7 @@ func (s *Server) serveSubStatus(w http.ResponseWriter, page *service.SubPage, to
 	h.Set("Content-Type", "application/json; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
+	// Writing an answer to a client that may have gone: there is nobody left to tell.
 	_ = json.NewEncoder(w).Encode(st)
 }
 
@@ -877,6 +885,7 @@ func (s *Server) maybeServeSubDevice(w http.ResponseWriter, r *http.Request, tok
 
 	var hostID uint64
 	if h := r.URL.Query().Get("host"); h != "" {
+		// A number with a fallback: what does not read is the default, as the code below says.
 		hostID, _ = strconv.ParseUint(h, 10, 64)
 	}
 	profile, err := s.subs.DeviceConfig(r.Context(), token, uint(id), uint(hostID))
@@ -890,6 +899,7 @@ func (s *Server) maybeServeSubDevice(w http.ResponseWriter, r *http.Request, tok
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	// Writing an answer to a client that may have gone: there is nobody left to tell.
 	_, _ = w.Write(profile.Body)
 	return true
 }

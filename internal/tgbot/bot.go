@@ -369,6 +369,7 @@ func (b *Bot) onReply(ctx context.Context, chat int64, from *user, admin bool, w
 		if len(f) != 3 {
 			return
 		}
+		// A number with a fallback: what does not read is the default, as the code below says.
 		id, _ := strconv.ParseUint(f[2], 10, 64)
 		b.setField(ctx, chat, uint(id), f[1], text)
 	}
@@ -404,6 +405,7 @@ func (b *Bot) onClientAction(ctx context.Context, chat int64, q *callbackQuery, 
 		return
 	}
 	action := f[0]
+	// A number with a fallback: what does not read is the default, as the code below says.
 	id, _ := strconv.ParseUint(f[1], 10, 64)
 	c, err := b.Clients.Get(ctx, uint(id))
 	if err != nil {
@@ -730,7 +732,10 @@ func (b *Bot) deviceLog(c *model.Client) string {
 // serverUsage is their sendServerUsage.
 func (b *Bot) serverUsage(ctx context.Context) string {
 	s := b.Sys()
-	ov, _ := b.Clients.Overview(ctx)
+	ov, ovErr := b.Clients.Overview(ctx)
+	if ovErr != nil {
+		b.log.Warn("could not read the customer counts for the bot's server report", "bot", b.name(), "error", ovErr)
+	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "🖥 %s: <code>%s</code>\n", b.t("hostname"), html.EscapeString(s.Host.Hostname))
 	fmt.Fprintf(&sb, "📦 %s: <code>%s</code>\n", b.t("version"), html.EscapeString(b.Version))
@@ -742,6 +747,10 @@ func (b *Bot) serverUsage(ctx context.Context) string {
 	fmt.Fprintf(&sb, "↕️ %s: ↑ %s / ↓ %s\n", b.t("traffic"), human(s.Network.BytesSent), human(s.Network.BytesRecv))
 	if ov != nil {
 		fmt.Fprintf(&sb, "👥 %s: %d, %s: %d\n", b.t("clients"), ov.Clients, b.t("online"), ov.Online)
+	} else {
+		// Not left out without a word: a report with no customer line
+		// reads as a panel with none.
+		fmt.Fprintf(&sb, "👥 %s: %s\n", b.t("clients"), b.t("tryAgain"))
 	}
 	return sb.String()
 }
@@ -751,7 +760,12 @@ func (b *Bot) inboundUsages(ctx context.Context) string {
 	if err != nil || len(ifaces) == 0 {
 		return b.t("noInbounds")
 	}
-	loads, _ := b.Ifaces.Loads(ctx)
+	loads, err := b.Ifaces.Loads(ctx)
+	if err != nil {
+		// Zeros shown as figures would read as tunnels nobody uses.
+		b.log.Warn("could not read the tunnels' loads for the bot", "bot", b.name(), "error", err)
+		return b.t("tryAgain")
+	}
 	var sb strings.Builder
 	for _, i := range ifaces {
 		l := loads[i.ID]
@@ -768,7 +782,13 @@ func (b *Bot) showInbound(ctx context.Context, chat int64, name string) {
 		b.send(ctx, chat, html.EscapeString(err.Error()), nil)
 		return
 	}
-	loads, _ := b.Ifaces.Loads(ctx)
+	loads, err := b.Ifaces.Loads(ctx)
+	if err != nil {
+		// Zeros shown as figures would read as tunnels nobody uses.
+		b.log.Warn("could not read the tunnels' loads for the bot", "bot", b.name(), "error", err)
+		b.send(ctx, chat, b.t("tryAgain"), nil)
+		return
+	}
 	for _, i := range ifaces {
 		if strings.EqualFold(i.Name, name) {
 			l := loads[i.ID]
