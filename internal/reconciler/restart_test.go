@@ -64,3 +64,49 @@ func TestARebootOrATrailingQuotaChargesNothing(t *testing.T) {
 		t.Fatalf("stored usage %d, want it left at 500", c.UsedBytes)
 	}
 }
+
+// A customer near their allowance has what they used written in the same
+// tick, so a reboot right after cannot lose bytes that would have stopped
+// them; one far from theirs waits for the flush, as before.
+func TestUsageNearTheAllowanceIsWrittenAtOnce(t *testing.T) {
+	r, db, enf, _ := newRig(t)
+	near := seed(t, db, model.Client{Name: "near", QuotaBytes: 1 << 30, UsedBytes: (1 << 30) - (10 << 20)}, "10.66.0.2")
+	far := seed(t, db, model.Client{Name: "far", QuotaBytes: 100 << 30, UsedBytes: 1 << 30}, "10.66.0.3")
+	ctx := context.Background()
+	r.Tick(ctx) // learns who is near
+	enf.drain = []enforce.Usage{{Key: enforce.Key(near), Bytes: 5000}, {Key: enforce.Key(far), Bytes: 7000}}
+	r.Tick(ctx)
+	var n, f model.Client
+	db.First(&n, near)
+	db.First(&f, far)
+	if n.UsedBytes != (1<<30)-(10<<20)+5000 {
+		t.Errorf("near: stored %d after the tick, want the 5000 written at once", n.UsedBytes-((1<<30)-(10<<20)))
+	}
+	if f.UsedBytes != 1<<30 {
+		t.Errorf("far: stored %d more after the tick, want it held for the flush", f.UsedBytes-(1<<30))
+	}
+	r.writer.flush(ctx)
+	db.First(&f, far)
+	if f.UsedBytes != (1<<30)+7000 {
+		t.Errorf("far after the flush: %d more, want 7000", f.UsedBytes-(1<<30))
+	}
+}
+
+func TestWhoIsNearTheirAllowance(t *testing.T) {
+	cases := []struct {
+		quota, used uint64
+		want        bool
+	}{
+		{0, 5, false},                           // no allowance
+		{100 << 30, 1 << 30, false},             // far
+		{100 << 30, 96 << 30, true},             // under five percent left
+		{1 << 30, (1 << 30) - (63 << 20), true}, // a small plan: under 64MB left
+		{1 << 30, 100 << 20, false},
+		{1 << 30, 2 << 30, true}, // past it
+	}
+	for _, c := range cases {
+		if got := nearAllowance(c.quota, c.used); got != c.want {
+			t.Errorf("quota %d used %d: near %v, want %v", c.quota, c.used, got, c.want)
+		}
+	}
+}

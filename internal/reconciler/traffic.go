@@ -180,7 +180,31 @@ func (w *trafficWriter) flush(ctx context.Context) {
 	w.devices = map[uint]usageDelta{}
 	w.liveness = map[uint]trafficUpdate{}
 	w.mu.Unlock()
+	w.write(ctx, usage, devices, liveness)
+}
 
+// flushClients writes these customers' usage now, and nothing else: what
+// the pass does for the customers near their allowance, so a reboot or a
+// power cut cannot lose bytes that would have stopped them. Their devices'
+// figures and everyone else's wait for the next flush.
+func (w *trafficWriter) flushClients(ctx context.Context, ids []uint) {
+	w.mu.Lock()
+	usage := make(map[uint]usageDelta, len(ids))
+	for _, id := range ids {
+		if u, ok := w.usage[id]; ok {
+			usage[id] = u
+			delete(w.usage, id)
+		}
+	}
+	w.mu.Unlock()
+	if len(usage) > 0 {
+		w.write(ctx, usage, map[uint]usageDelta{}, map[uint]trafficUpdate{})
+	}
+}
+
+// write puts one set of usage in the database, or back in the buffer if
+// it cannot.
+func (w *trafficWriter) write(ctx context.Context, usage, devices map[uint]usageDelta, liveness map[uint]trafficUpdate) {
 	if len(usage) == 0 && len(liveness) == 0 && len(devices) == 0 {
 		return
 	}

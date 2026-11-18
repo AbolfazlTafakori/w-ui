@@ -114,3 +114,25 @@ func BenchmarkTheFirstPassOver5000NewDevices(b *testing.B) {
 		}
 	}
 }
+
+// What one write of usage costs with this many customers moving traffic:
+// what writing every tick instead of every flushInterval would add.
+func BenchmarkAUsageWrite(b *testing.B) {
+	for _, active := range []int{50, 1000, 5000} {
+		b.Run(fmt.Sprintf("active=%d", active), func(b *testing.B) {
+			db, _ := chainTree(b)
+			w := newTrafficWriter(db, quietLog())
+			now := time.Now().UTC()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				for id := 1; id <= active; id++ {
+					w.submit(trafficUpdate{Key: keyFromClientID(uint(id)), Bytes: 1000, Up: 400, Down: 600, At: now},
+						trafficUpdate{AccountID: uint(id), DevUp: 400, DevDown: 600, At: now})
+				}
+				b.StartTimer()
+				w.flush(context.Background())
+			}
+		})
+	}
+}

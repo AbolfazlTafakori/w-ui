@@ -174,6 +174,11 @@ type Reconciler struct {
 	gws gateways
 	// certWake has the certificate worker look at once (wakeCertificates).
 	certWake chan struct{}
+
+	// near is the customers close to their allowance as of the last pass:
+	// their usage is written every tick (writeNearLimit).
+	nearMu sync.Mutex
+	near   map[uint]bool
 }
 
 // New builds a reconciler.
@@ -452,6 +457,7 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 
 	now := time.Now().UTC()
 	total, billed, files := r.charge(drained, now)
+	r.writeNearLimit(ctx, billed)
 	r.speed.local(billed, now)
 	r.fileSpeed.local(files, now)
 
@@ -497,6 +503,54 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	r.maybeRecordSharing(ctx, now)
 
 	return total, nil
+}
+
+// closeToLimit is how near its allowance a customer's usage must be for
+// what they used each tick to be written at once rather than with the
+// next flush: within this share of the allowance, or nearLimitBytes,
+// whichever is more.
+const (
+	closeToLimitShare = 20 // 1/20: five percent
+	nearLimitBytes    = 64 << 20
+)
+
+// nearAllowance reports whether a customer is close enough to their
+// allowance to be written every tick.
+func nearAllowance(quota, used uint64) bool {
+	if quota == 0 {
+		return false
+	}
+	left := uint64(0)
+	if quota > used {
+		left = quota - used
+	}
+	return left < max(quota/closeToLimitShare, nearLimitBytes)
+}
+
+// writeNearLimit writes at once what the customers near their allowance
+// used this tick. Everyone's usage is written every flushInterval; a
+// reboot or a power cut loses what was not, and the kernel's quota, rebuilt
+// from the stored figure, would then let those bytes through again. For a
+// customer far from their limit that is a little usage unbilled; for one
+// near it, it is going past it. Writing everyone every tick costs 42ms a
+// write with 1,000 customers moving traffic and 248ms with 5,000
+// (BenchmarkAUsageWrite); the few near their limit cost a couple.
+func (r *Reconciler) writeNearLimit(ctx context.Context, moved map[uint]usageDelta) {
+	r.nearMu.Lock()
+	near := r.near
+	r.nearMu.Unlock()
+	if len(near) == 0 || len(moved) == 0 {
+		return
+	}
+	var ids []uint
+	for id := range moved {
+		if near[id] {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > 0 {
+		r.writer.flushClients(ctx, ids)
+	}
 }
 
 // charge hands what the kernel's counters drained to the traffic writer:
@@ -1133,6 +1187,16 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		disabled:    disabled,
 		devices:     shapedDevices(interfaces),
 	}
+
+	near := map[uint]bool{}
+	for _, c := range clients {
+		if nearAllowance(c.QuotaBytes, c.UsedBytes) {
+			near[c.ID] = true
+		}
+	}
+	r.nearMu.Lock()
+	r.near = near
+	r.nearMu.Unlock()
 
 	for _, c := range clients {
 		accs := byClient[c.ID]
