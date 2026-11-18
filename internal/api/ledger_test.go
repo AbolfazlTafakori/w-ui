@@ -271,3 +271,51 @@ func TestProblemsAreShownToWhomTheyConcern(t *testing.T) {
 		t.Errorf("ra sees a node they do not sell on: %v", ra)
 	}
 }
+
+// No operator raises their own capacity, or reaches another's: not by
+// editing their own row, not through their own profile, not by naming
+// another admin, and not a reseller through anything.
+func TestNobodyRaisesTheirOwnCapacity(t *testing.T) {
+	mux, sess, db := serversPanel(t)
+	ad, rc := idOf(t, db, "ad"), idOf(t, db, "rc")
+	for _, id := range []uint{ad, rc} {
+		acc, err := capacity.Open(db, id, model.CapacityUsers, model.CapacityOpen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := capacity.Charge(db, acc, 5, capacity.Entry{Reason: model.CapacityCharge}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	granted := func(id uint) int64 {
+		a, _ := capacity.Account(db, id, model.CapacityUsers)
+		return a.Granted
+	}
+	tries := []struct {
+		who, method, path, body string
+	}{
+		{"ad", http.MethodPatch, "/api/admins/" + jsonNum(ad), `{"clientLimit":99999}`},
+		{"ad", http.MethodPatch, "/api/admins/" + jsonNum(ad), `{"tokenLimit":99}`},
+		{"ad", http.MethodPatch, "/api/admins/" + jsonNum(idOf(t, db, "an")), `{"clientLimit":99999}`},
+		{"ad", http.MethodPatch, "/api/auth/me", `{"clientLimit":99999,"tokenLimit":99}`},
+		{"rc", http.MethodPatch, "/api/admins/" + jsonNum(rc), `{"clientLimit":99999}`},
+		{"rc", http.MethodPatch, "/api/auth/me", `{"clientLimit":99999}`},
+		{"rc", http.MethodPost, "/api/admins", `{"username":"rcsub","password":"long-enough-pass-1","role":"reseller","clientLimit":100}`},
+	}
+	for _, tr := range tries {
+		code, body := send(t, mux, sess[tr.who], tr.method, tr.path, tr.body)
+		if code < 400 {
+			t.Errorf("%s %s %s %s was taken: %d %s", tr.who, tr.method, tr.path, tr.body, code, body)
+		}
+	}
+	if g := granted(ad); g != 5 {
+		t.Errorf("ad's users are %d, want the 5 given", g)
+	}
+	if g := granted(rc); g != 5 {
+		t.Errorf("rc's users are %d, want the 5 given", g)
+	}
+	var tok model.CapacityAccount
+	if db.Where("admin_id = ? AND kind = ?", ad, model.CapacityTokens).Limit(1).Find(&tok); tok.Granted != 0 {
+		t.Errorf("ad gave themselves %d tokens", tok.Granted)
+	}
+}
