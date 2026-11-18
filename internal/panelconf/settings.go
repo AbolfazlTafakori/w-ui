@@ -37,6 +37,7 @@ const (
 	keyWebListen      = "panel.listen"
 	keyWebDomain      = "panel.domain"
 	keyWebPort        = "panel.port"
+	keyOwnerPort      = "panel.ownerPort"
 	keyWebBasePath    = "panel.basePath"
 	keySessionHours   = "panel.sessionHours" // the old unit, read for migration
 	keySessionMinutes = "panel.sessionMinutes"
@@ -116,9 +117,13 @@ const (
 type PanelSettings struct {
 	// Where the panel answers. Applied at the next start; empty leaves the
 	// environment's value alone.
-	WebListen   string `json:"webListen"`
-	WebDomain   string `json:"webDomain"`
-	WebPort     int    `json:"webPort"`
+	WebListen string `json:"webListen"`
+	WebDomain string `json:"webDomain"`
+	WebPort   int    `json:"webPort"`
+	// OwnerPort, when not 0, is a port for the owner alone, on the panel's
+	// own host: the panel's port is then the operators', without the
+	// owner's pages. Applied at the next start.
+	OwnerPort   int    `json:"ownerPort"`
 	WebBasePath string `json:"webBasePath"`
 	WebCertFile string `json:"webCertFile"`
 	WebKeyFile  string `json:"webKeyFile"`
@@ -301,6 +306,7 @@ func (s *Settings) Get(ctx context.Context) (PanelSettings, error) {
 	str(keyWebListen, &out.WebListen)
 	str(keyWebDomain, &out.WebDomain)
 	out.WebPort = IntOr(stored[keyWebPort], out.WebPort)
+	out.OwnerPort = IntOr(stored[keyOwnerPort], out.OwnerPort)
 	str(keyWebBasePath, &out.WebBasePath)
 	str(keyWebCertFile, &out.WebCertFile)
 	str(keyWebKeyFile, &out.WebKeyFile)
@@ -409,6 +415,7 @@ func (s *Settings) Save(ctx context.Context, in PanelSettings) (PanelSettings, e
 		keyWebListen:       strings.TrimSpace(in.WebListen),
 		keyWebDomain:       strings.TrimSpace(in.WebDomain),
 		keyWebPort:         strconv.Itoa(in.WebPort),
+		keyOwnerPort:       strconv.Itoa(in.OwnerPort),
 		keyWebBasePath:     in.WebBasePath,
 		keyWebCertFile:     strings.TrimSpace(in.WebCertFile),
 		keyWebKeyFile:      strings.TrimSpace(in.WebKeyFile),
@@ -507,6 +514,12 @@ func (s *Settings) validate(in *PanelSettings) error {
 	}
 	if in.WebPort < 0 || in.WebPort > 65535 {
 		return fmt.Errorf("%w: panel port %d is out of range", fault.ErrInvalid, in.WebPort)
+	}
+	if in.OwnerPort < 0 || in.OwnerPort > 65535 {
+		return fmt.Errorf("%w: owner port %d is out of range", fault.ErrInvalid, in.OwnerPort)
+	}
+	if in.OwnerPort != 0 && in.OwnerPort == in.WebPort {
+		return fmt.Errorf("%w: the owner's port must differ from the panel's port", fault.ErrInvalid)
 	}
 	if v := strings.TrimSpace(in.WebListen); v != "" {
 		if _, err := netip.ParseAddr(v); err != nil {
@@ -820,6 +833,7 @@ type Overrides struct {
 	// panel was started with -- see MergeListen.
 	ListenHost     string
 	ListenPort     int
+	OwnerPort      int
 	BasePath       string
 	TLSCert        string
 	TLSKey         string
@@ -833,7 +847,7 @@ func (s *Settings) Overrides(ctx context.Context) Overrides {
 	if err != nil {
 		return Overrides{}
 	}
-	o := Overrides{ListenHost: strings.TrimSpace(got.WebListen), ListenPort: got.WebPort}
+	o := Overrides{ListenHost: strings.TrimSpace(got.WebListen), ListenPort: got.WebPort, OwnerPort: got.OwnerPort}
 	o.BasePath = got.WebBasePath
 	if got.WebCertFile != "" && got.WebKeyFile != "" {
 		o.TLSCert, o.TLSKey = got.WebCertFile, got.WebKeyFile

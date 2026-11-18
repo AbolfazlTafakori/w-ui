@@ -99,6 +99,7 @@ var hostBoundSettings = []string{
 var panelAccessSettings = []string{
 	"panel.listen",
 	"panel.port",
+	"panel.ownerPort",
 	"panel.basePath",
 	"panel.domain",
 	"panel.certFile",

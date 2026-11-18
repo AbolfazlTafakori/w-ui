@@ -1036,6 +1036,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux, routes []Route) {
 			// Inside requireAuth, so the line can say who.
 			h = s.requireAuth(s.logAction(r.Method, h))
 		}
+		// The owner's own routes are not on the operators' port at all.
+		// Outermost, so the answer is the same 404 signed in or not.
+		if r.forOwner() && r.Group != "Operators" && (r.Auth || r.Operator) {
+			h = ownerPortOnly(h)
+		}
 		mux.HandleFunc(r.Method+" "+r.Path, h)
 	}
 }

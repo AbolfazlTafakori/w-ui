@@ -26,6 +26,7 @@ unit_with() { # unit_with CERT KEY PORT [BASE]
     WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
     UNIT="$WORK/wui.service"
     TLS_CERT="$1"; TLS_KEY="$2"; PANEL_PORT="$3"; BASE_PATH="${4:-}"; LISTEN_ADDR="${5:-0.0.0.0}"
+    OWNER_PORT="${OWNER_PORT_FOR_TEST:-}"
     have_systemd() { return 1; }
     write_unit >/dev/null 2>&1
     cat "$UNIT"
@@ -47,6 +48,14 @@ no_  "WUI_TLS_CERT" "$u" "no half-configured TLS in the unit"
 no_  "WUI_TLS_KEY"  "$u" "no stray key variable"
 yes_ "Environment=WUI_LISTEN=0.0.0.0:2096" "$u" "still listens"
 no_  "WUI_BASE_PATH" "$u" "no path variable when the panel is at the root"
+
+echo
+echo "── the owner's own port, only when asked for ──────────────────────────"
+u=$(unit_with "" "" 2096 "")
+no_  "WUI_OWNER_LISTEN" "$u" "no owner port unless one was chosen: one port for everybody"
+u=$(OWNER_PORT_FOR_TEST=39443 unit_with "" "" 2096 "")
+yes_ "Environment=WUI_OWNER_LISTEN=0.0.0.0:39443" "$u" "the owner's port reaches the service"
+yes_ "Environment=WUI_LISTEN=0.0.0.0:2096" "$u" "the panel port stays the operators'"
 
 echo
 echo "── half a pair would stop the panel booting, so it is never written ───"

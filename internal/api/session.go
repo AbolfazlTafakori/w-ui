@@ -81,7 +81,7 @@ func fingerprintOf(value string) string {
 // setBindCookie puts the unreadable half in the browser.
 func setBindCookie(w http.ResponseWriter, r *http.Request, value string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
-		Name:  bindCookie,
+		Name:  bindCookieName(r),
 		Value: value,
 		// The whole host. The panel may be mounted under a secret prefix, and a
 		// cookie scoped to that prefix would put the prefix in every request's
@@ -104,7 +104,7 @@ func setBindCookie(w http.ResponseWriter, r *http.Request, value string, expires
 // clearBindCookie ends the browser's half of a session.
 func clearBindCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     bindCookie,
+		Name:     bindCookieName(r),
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -123,7 +123,7 @@ func bindingHolds(r *http.Request, claims *sessionClaims) bool {
 	if claims.Bind == "" {
 		return true
 	}
-	c, err := r.Cookie(bindCookie)
+	c, err := r.Cookie(bindCookieName(r))
 	if err != nil || c.Value == "" {
 		return false
 	}

@@ -19,6 +19,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/api"
 	"github.com/abolfazl/w-ui/internal/backup"
 	"github.com/abolfazl/w-ui/internal/config"
 	"github.com/abolfazl/w-ui/internal/database"
@@ -126,6 +127,10 @@ func applySavedSettings(cfg *config.Config, settings *panelconf.Settings, log *s
 	if ov.ListenHost != "" || ov.ListenPort > 0 {
 		cfg.Listen = panelconf.MergeListen(cfg.Listen, ov.ListenHost, ov.ListenPort)
 	}
+	// The owner's port, on the panel's own host.
+	if ov.OwnerPort > 0 {
+		cfg.OwnerListen = panelconf.MergeListen(cfg.Listen, "", ov.OwnerPort)
+	}
 	if ov.BasePath != "" {
 		cfg.BasePath = ov.BasePath
 	}
@@ -143,7 +148,7 @@ func applySavedSettings(cfg *config.Config, settings *panelconf.Settings, log *s
 		}
 	}
 	log.Info("settings from the panel applied over the environment",
-		"listen", cfg.Listen, "basePath", cfg.BasePath, "tls", cfg.TLS())
+		"listen", cfg.Listen, "ownerListen", cfg.OwnerListen, "basePath", cfg.BasePath, "tls", cfg.TLS())
 }
 
 // reportEnforcement says once, at start, which of the panel's promises the
@@ -400,8 +405,37 @@ func startNodes(ctx context.Context, db *gorm.DB, rec *reconciler.Reconciler, if
 // lets the requests in flight finish.
 func serve(ctx context.Context, cfg config.Config, srv *http.Server, subs *service.Subscriptions,
 	subOnly http.Handler, history *sysinfo.Store, log *slog.Logger) error {
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	subSrvs := startSubListeners(ctx, cfg, subs, subOnly, log)
+	// With a port of the owner's own, the panel's port is the operators'
+	// and the owner's pages answer only on theirs.
+	var ownerSrv *http.Server
+	if cfg.OwnerListen != "" {
+		shared := srv.Handler
+		srv.Handler = api.ForOperatorPort(shared)
+		ownerSrv = &http.Server{
+			Addr:              cfg.OwnerListen,
+			Handler:           api.ForOwnerPort(shared),
+			TLSConfig:         srv.TLSConfig,
+			ReadHeaderTimeout: srv.ReadHeaderTimeout,
+			ReadTimeout:       srv.ReadTimeout,
+			WriteTimeout:      srv.WriteTimeout,
+			IdleTimeout:       srv.IdleTimeout,
+		}
+		go func() {
+			log.Info("listening for the owner", "address", cfg.OwnerListen,
+				"url", cfg.Scheme()+"://"+cfg.OwnerListen+cfg.BasePath)
+			var err error
+			if cfg.TLS() {
+				err = ownerSrv.ListenAndServeTLS("", "")
+			} else {
+				err = ownerSrv.ListenAndServe()
+			}
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errc <- fmt.Errorf("owner port: %w", err)
+			}
+		}()
+	}
 	go func() {
 		log.Info("listening",
 			"address", cfg.Listen,
@@ -447,6 +481,11 @@ func serve(ctx context.Context, cfg config.Config, srv *http.Server, subs *servi
 	for _, s := range subSrvs {
 		if err := s.Shutdown(shutdownCtx); err != nil {
 			log.Warn("the subscription listener did not stop cleanly", "address", s.Addr, "error", err)
+		}
+	}
+	if ownerSrv != nil {
+		if err := ownerSrv.Shutdown(shutdownCtx); err != nil {
+			log.Warn("the owner's listener did not stop cleanly", "error", err)
 		}
 	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {

@@ -27,6 +27,10 @@ const (
 type Config struct {
 	// Listen is the panel's own HTTP address.
 	Listen string
+	// OwnerListen, when set, is a second address for the owner alone: Listen
+	// is then the operators', and the owner's pages are not on it. Empty is
+	// one port for everybody, as before.
+	OwnerListen string
 
 	// DBDriver selects the storage engine. SQLite is the default and is
 	// adequate into the low thousands of accounts; Postgres is for deployments
@@ -115,6 +119,7 @@ func Load() (Config, error) {
 	c := Default()
 
 	c.Listen = env("WUI_LISTEN", c.Listen)
+	c.OwnerListen = env("WUI_OWNER_LISTEN", c.OwnerListen)
 	c.DBDriver = Driver(strings.ToLower(env("WUI_DB_DRIVER", string(c.DBDriver))))
 	c.DBSource = env("WUI_DB_SOURCE", c.DBSource)
 	c.DataDir = env("WUI_DATA_DIR", c.DataDir)
@@ -160,6 +165,9 @@ func (c Config) Validate() error {
 	}
 	if c.Listen == "" {
 		return fmt.Errorf("config: WUI_LISTEN must not be empty")
+	}
+	if c.OwnerListen != "" && c.OwnerListen == c.Listen {
+		return fmt.Errorf("config: WUI_OWNER_LISTEN is the same address as WUI_LISTEN; give the owner a port of their own or leave it empty")
 	}
 	if c.CollectInterval < time.Second {
 		return fmt.Errorf("config: WUI_COLLECT_INTERVAL is %s, minimum is 1s", c.CollectInterval)

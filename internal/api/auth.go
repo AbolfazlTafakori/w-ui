@@ -70,8 +70,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	ipKey := "ip:" + clientIP(r)
-	userKey := "user:" + strings.ToLower(strings.TrimSpace(req.Username))
+	// Each port keeps its own count: guessing on the operators' port never
+	// locks the owner out of theirs.
+	ipKey := throttleScope(r) + "ip:" + clientIP(r)
+	userKey := throttleScope(r) + "user:" + strings.ToLower(strings.TrimSpace(req.Username))
 
 	// Checked before the password is looked at, so a locked-out caller costs
 	// nothing to refuse.
@@ -114,6 +116,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// with no point. A reseller whose term ran out or whose allowance is
 	// spent is let in, read-only, to see why and pay: that is a lapse, and
 	// this is a decision.
+	// Not this port's to sign in on: the owner on the operators' port, an
+	// operator on the owner's. Answered as a wrong password, so the port
+	// tells nobody who exists or where they belong; not counted, since the
+	// password was right.
+	if !signsInHere(r, admin) {
+		writeError(w, http.StatusUnauthorized, "incorrect username or password")
+		return
+	}
+
 	if refusal := s.signInRefusal(r.Context(), admin, time.Now().UTC()); refusal != "" {
 		s.log.Warn("sign-in refused: account paused",
 			"username", admin.Username, "ip", clientIP(r))
@@ -223,13 +234,17 @@ func (s *Server) authenticate(r *http.Request) (admin *model.Admin, machine bool
 		if err != nil {
 			return nil, false, "that access token is not valid", false
 		}
+		if !signsInHere(r, a) {
+			return nil, false, "that access token is not valid", false
+		}
 		if why := s.signInRefusal(r.Context(), a, time.Now().UTC()); why != "" {
 			return nil, false, why, false
 		}
 		return a, false, "", false
 	}
 
-	if strings.HasPrefix(raw, "wui_") {
+	// A machine token is the owner's: not taken on the operators' port.
+	if strings.HasPrefix(raw, "wui_") && portOf(r) != portOperator {
 		if s.nodes != nil && s.nodes.VerifyToken(r.Context(), raw) {
 			return nil, true, "", false
 		}
@@ -264,6 +279,9 @@ func (s *Server) authenticate(r *http.Request) (admin *model.Admin, machine bool
 	// deliberately.
 	if !epochHolds(a, claims) {
 		return nil, false, "you were signed out everywhere; sign in again", true
+	}
+	if !signsInHere(r, a) {
+		return nil, false, "your session has ended; sign in again", false
 	}
 	// Paused since signing in: the open session ends with the pause.
 	if why := s.signInRefusal(r.Context(), a, time.Now().UTC()); why != "" {

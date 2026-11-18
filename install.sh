@@ -37,6 +37,9 @@
 #                      first tunnel of its kind is made.
 #   --port <n>         panel port (default: random)
 #   --sub-port <n>     subscription service port (default: random)
+#   --owner-port <n>   a port for the owner alone; the panel port is then the
+#                      operators' and the owner's pages are not on it
+#                      (default: none, one port for everybody)
 #   --db <engine>      sqlite (default) or postgres, for a large customer count
 #   --username <name>  administrator name (default admin)
 #   --password <pass>  administrator password (default: generated)
@@ -108,6 +111,12 @@ PANEL_PORT=2096
 # minute without the operator having to find the setting.
 SUB_PORT="${WUI_SUB_PORT:-}"
 SUB_KNOWN=0
+# The owner's own port, when they want one: the panel port is then the
+# operators', and settings, tunnels, nodes and backups answer only here.
+# Empty is one port for everybody.
+OWNER_PORT="${WUI_OWNER_PORT:-}"
+OWNER_KNOWN=0
+[[ -n "$OWNER_PORT" ]] && OWNER_KNOWN=1
 # Set only when the port was read from an install already here: a port
 # given on the command line is still a fresh install to switch on.
 SUB_EXISTING=0
@@ -227,6 +236,7 @@ while [[ "$LIB_ONLY" != 1 && $# -gt 0 ]]; do
     --no-proxy-cores) WANT_PROXY=0; shift ;;
     --port)        PANEL_PORT="${2:?--port needs a number}"; PORT_KNOWN=1; shift 2 ;;
     --sub-port)    SUB_PORT="${2:?--sub-port needs a number}"; SUB_KNOWN=1; shift 2 ;;
+    --owner-port)  OWNER_PORT="${2:?--owner-port needs a number}"; OWNER_KNOWN=1; shift 2 ;;
     --db)          DB_DRIVER="${2:?--db needs sqlite or postgres}"; DB_KNOWN=1; shift 2 ;;
     --username)    ADMIN_USER="${2:?--username needs a name}"; shift 2 ;;
     --password)    ADMIN_PASS="${2:?--password needs a value}"; shift 2 ;;
@@ -1598,6 +1608,8 @@ read_existing() {
   local v
   v=$(sed -n 's/^Environment=WUI_LISTEN=.*:\([0-9]\{1,5\}\)$/\1/p' "$UNIT" | head -1)
   if [[ -n "$v" && "$PORT_KNOWN" == 0 ]]; then PANEL_PORT="$v"; PORT_KNOWN=1; fi
+  v=$(sed -n 's/^Environment=WUI_OWNER_LISTEN=.*:\([0-9]\{1,5\}\)$/\1/p' "$UNIT" | head -1)
+  if [[ -n "$v" && "$OWNER_KNOWN" == 0 ]]; then OWNER_PORT="$v"; OWNER_KNOWN=1; fi
   v=$(sed -n 's|^Environment=WUI_BASE_PATH=/\{0,1\}\(.*\)|\1|p' "$UNIT" | head -1)
   v="${v%/}"
   if [[ -n "$v" && "$BASE_KNOWN" == 0 ]]; then BASE_PATH="$v"; BASE_KNOWN=1; fi
@@ -2036,6 +2048,23 @@ configure() {
   else
     PANEL_PORT="$(random_free_port)"
     info "panel port: $PANEL_PORT"
+  fi
+
+  # ── the owner's own port ──────────────────────────────────────────────────
+  #
+  # Off unless asked for, with --owner-port or WUI_OWNER_PORT (or later on
+  # the owner's settings page): one port for everybody, as before. Not a
+  # question, so an install that presses enter through everything is
+  # exactly what it was. With one, the operators sign in on the panel port
+  # and never see the owner's pages.
+  if [[ -n "$OWNER_PORT" ]]; then
+    if [[ ! "$OWNER_PORT" =~ ^[0-9]+$ ]] || (( OWNER_PORT < 1 || OWNER_PORT > 65535 )); then
+      die "--owner-port is a number from 1 to 65535"
+    fi
+    info "owner's own port: $OWNER_PORT"
+  fi
+  if [[ -n "$OWNER_PORT" && "$OWNER_PORT" == "$PANEL_PORT" ]]; then
+    die "the owner's port must differ from the panel port ($PANEL_PORT)"
   fi
 
   # ── the subscription port ─────────────────────────────────────────────────
@@ -2882,7 +2911,8 @@ write_unit() {
   # Two lines or none. An empty WUI_TLS_CERT is not the same as an unset one:
   # the panel refuses to start when only half a pair is present, which is the
   # right answer for a typo and the wrong one for a plain-HTTP install.
-  local TLS_ENV="" BASE_ENV=""
+  local TLS_ENV="" BASE_ENV="" OWNER_ENV=""
+  [[ -n "$OWNER_PORT" ]] && OWNER_ENV="Environment=WUI_OWNER_LISTEN=$LISTEN_ADDR:$OWNER_PORT"$'\n'
   [[ -n "$BASE_PATH" ]] && BASE_ENV="Environment=WUI_BASE_PATH=$BASE_PATH"$'\n'
   if [[ -n "$TLS_CERT" && -n "$TLS_KEY" ]]; then
     TLS_ENV="Environment=WUI_TLS_CERT=$TLS_CERT"$'\n'"Environment=WUI_TLS_KEY=$TLS_KEY"
@@ -2911,7 +2941,7 @@ CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 
 Environment=WUI_LISTEN=$LISTEN_ADDR:$PANEL_PORT
-Environment=WUI_DATA_DIR=$DATA_DIR
+${OWNER_ENV}Environment=WUI_DATA_DIR=$DATA_DIR
 Environment=WUI_BACKUP_DIR=$BACKUP_DIR
 $BASE_ENV$TLS_ENV
 # The database: driver and connection string, root-only because the
@@ -3015,6 +3045,7 @@ open_firewall() {
   # would be a lie in the operator's own rule list.
   local ports=()
   [[ "$LISTEN_ADDR" == 127.0.0.1 ]] || ports+=("$PANEL_PORT/tcp")
+  [[ "$LISTEN_ADDR" != 127.0.0.1 && -n "$OWNER_PORT" ]] && ports+=("$OWNER_PORT/tcp")
   [[ -n "$SUB_PORT" ]] && ports+=("$SUB_PORT/tcp")
   [[ "$ACME_METHOD" == standalone ]] && ports+=("80/tcp")
   local pr
@@ -3176,6 +3207,7 @@ summary() {
   box Username: "$ADMIN_USER"
   [[ -n "$ADMIN_PASS" ]] && box Password: "$ADMIN_PASS" "$R"
   box Port: "$PANEL_PORT"
+  [[ -n "$OWNER_PORT" ]] && box 'Owner Port:' "$OWNER_PORT"
   box 'Sub Port:' "$SUB_PORT"
   box WebBasePath: "${BASE_PATH:-/}"
   if [[ "$DB_DRIVER" == postgres ]]; then
