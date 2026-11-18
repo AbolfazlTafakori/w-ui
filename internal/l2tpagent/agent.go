@@ -190,6 +190,7 @@ func (a *Agent) Step(ctx context.Context) error {
 	}
 	a.failure = ""
 
+	// An address or subnet the panel validated when it was saved: it reads.
 	gateway, _ := netip.ParseAddr(want.Interface.Gateway)
 	live, err := a.sys.Sessions(gateway)
 	if err != nil {

@@ -91,6 +91,7 @@ func parseHostAndPort(s string, defaultPort int) (string, int) {
 
 func newGroupID() string {
 	b := make([]byte, 8)
+	// Crypto/rand does not fail on the systems the panel runs on (it panics if it cannot read).
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
@@ -378,6 +379,7 @@ func (s *Hosts) ReorderGroups(ctx context.Context, groupIDs []string) error {
 		for i, gid := range groupIDs {
 			q := tx.Model(&model.Host{})
 			if strings.HasPrefix(gid, "fallback_") {
+				// A number with a fallback: what does not read is the default, as the code below says.
 				id, _ := strconv.ParseUint(strings.TrimPrefix(gid, "fallback_"), 10, 64)
 				q = q.Where("id = ?", id)
 			} else {
@@ -522,6 +524,7 @@ func VariantsFor(iface *model.Interface, format string) []HostVariant {
 	}
 	if shuffle {
 		for i := len(out) - 1; i > 0; i-- {
+			// Crypto/rand does not fail on the systems the panel runs on (it panics if it cannot read).
 			n, _ := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
 			j := int(n.Int64())
 			out[i], out[j] = out[j], out[i]

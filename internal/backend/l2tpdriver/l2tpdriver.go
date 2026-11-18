@@ -197,6 +197,7 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 		return backend.SyncReport{}, backend.ErrNotOpen
 	}
 	pfx := mustPrefix(iface.Subnet).Masked()
+	// An address or subnet the panel validated when it was saved: it reads.
 	gw, _ := agentkit.Gateway(iface.Subnet)
 
 	var want []l2tpconf.Account
@@ -441,6 +442,7 @@ func readState(p l2tpconf.Paths) (*l2tpconf.State, error) {
 }
 
 func mustPrefix(subnet string) netip.Prefix {
+	// An address or subnet the panel validated when it was saved: it reads.
 	p, _ := netip.ParsePrefix(strings.TrimSpace(subnet))
 	return p
 }

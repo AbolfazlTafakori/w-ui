@@ -167,7 +167,9 @@ func joinIDs(ids []uint) string {
 
 func sortNumeric(v []string) {
 	sort.Slice(v, func(i, j int) bool {
+		// A number with a fallback: what does not read is the default, as the code below says.
 		a, _ := strconv.Atoi(v[i])
+		// A number with a fallback: what does not read is the default, as the code below says.
 		b, _ := strconv.Atoi(v[j])
 		return a < b
 	})

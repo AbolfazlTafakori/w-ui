@@ -82,6 +82,7 @@ func (n *NFTables) probeCaps(ctx context.Context) Caps {
 	const probeTable = "wui_probe"
 	caps := Caps{}
 
+	// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 	_, _ = n.run(ctx, "", "delete", "table", "inet", probeTable)
 	script := fmt.Sprintf(
 		"add table inet %s\nadd quota inet %s probe { over 1000 bytes }\n",
@@ -89,6 +90,7 @@ func (n *NFTables) probeCaps(ctx context.Context) Caps {
 	if _, err := n.run(ctx, script, "-f", "-"); err == nil {
 		caps.Quota = true
 	}
+	// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 	_, _ = n.run(ctx, "", "delete", "table", "inet", probeTable)
 
 	n.mu.Lock()

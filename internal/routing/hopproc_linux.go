@@ -91,6 +91,7 @@ func startProc(dir, logName, bin string, args ...string) (*exec.Cmd, error) {
 	// Logs are capped by truncation on start rather than rotation: a hop
 	// that flaps for a week would otherwise fill the disk with the same line.
 	if st, err := logf.Stat(); err == nil && st.Size() > 4<<20 {
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = logf.Truncate(0)
 	}
 	cmd := exec.Command(bin, args...)
@@ -103,6 +104,7 @@ func startProc(dir, logName, bin string, args ...string) (*exec.Cmd, error) {
 		return nil, err
 	}
 	go func() {
+		// Stopping a process that may already be gone: its being gone is the goal.
 		_ = cmd.Wait()
 		logf.Close()
 	}()
@@ -117,12 +119,14 @@ func stopProc(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil || exited(cmd) {
 		return
 	}
+	// Stopping a process that may already be gone: its being gone is the goal.
 	_ = cmd.Process.Signal(syscall.SIGTERM)
 	deadline := time.Now().Add(3 * time.Second)
 	for !exited(cmd) && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if !exited(cmd) {
+		// Stopping a process that may already be gone: its being gone is the goal.
 		_ = cmd.Process.Kill()
 	}
 }
@@ -285,6 +289,7 @@ func (m *HopManager) bringOpenVPN(ctx context.Context, s HopSpec) error {
 		return err
 	}
 	if s.MTU > 0 {
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_, _ = run(ctx, ipBinary, "", "link", "set", "mtu", fmt.Sprint(s.MTU), "dev", s.Device)
 	}
 	m.setProc(s.Device, &hopProc{kind: "openvpn", cmds: []*exec.Cmd{cmd}, dir: dir, since: time.Now()})
@@ -420,10 +425,12 @@ func (m *HopManager) bringXray(ctx context.Context, s HopSpec) error {
 		return m.bringHysteria(ctx, s, ob, sbin, dir)
 	}
 	if host, port, err := net.SplitHostPort(s.Endpoint); err == nil {
+		// A number with a fallback: what does not read is the default, as the code below says.
 		n, _ := strconv.Atoi(port)
 		if err := pinFirstCert(ctx, ob, host, n); err != nil {
 			return fmt.Errorf("routing: %s: %w", s.Device, err)
 		}
+		// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 		raw, _ := json.Marshal(ob)
 		s.Config = string(raw)
 	}

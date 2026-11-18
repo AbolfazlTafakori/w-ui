@@ -182,8 +182,10 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 	if iface == nil {
 		return backend.SyncReport{}, backend.ErrNotOpen
 	}
+	// An address or subnet the panel validated when it was saved: it reads.
 	pfx, _ := netip.ParsePrefix(strings.TrimSpace(iface.Subnet))
 	pfx = pfx.Masked()
+	// An address or subnet the panel validated when it was saved: it reads.
 	gw, _ := agentkit.Gateway(iface.Subnet)
 
 	var want []occonf.Account

@@ -155,6 +155,7 @@ func state(iface *model.Interface, ifID uint32, accounts []ikev2conf.Account) (*
 		return nil, err
 	}
 	p := iface.IKEv2.V
+	// An address or subnet the panel validated when it was saved: it reads.
 	pfx, _ := netipPrefix(iface.Subnet)
 	return &ikev2conf.State{
 		Version: ikev2conf.SchemaVersion,
@@ -220,7 +221,9 @@ func (d *Driver) Sync(_ context.Context, desired []backend.DesiredAccount) (back
 	if iface == nil {
 		return backend.SyncReport{}, backend.ErrNotOpen
 	}
+	// An address or subnet the panel validated when it was saved: it reads.
 	pfx, _ := netipParse(iface.Subnet)
+	// An address or subnet the panel validated when it was saved: it reads.
 	gw, _ := agentkit.Gateway(iface.Subnet)
 	byCert := iface.IKEv2.V.ByCertificate()
 	server := ServerID(iface)

@@ -55,11 +55,13 @@ func probePort(port int, transport string) (portStatus, string) {
 	if network == "tcp" {
 		var l net.Listener
 		if l, err = net.Listen("tcp", addr); err == nil {
+			// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 			_ = l.Close()
 		}
 	} else {
 		var c net.PacketConn
 		if c, err = net.ListenPacket("udp", addr); err == nil {
+			// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 			_ = c.Close()
 		}
 	}

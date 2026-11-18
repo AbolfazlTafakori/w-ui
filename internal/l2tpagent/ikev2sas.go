@@ -159,6 +159,7 @@ func str(v any) string {
 }
 
 func atou(s string) uint64 {
+	// A number with a fallback: what does not read is the default, as the code below says.
 	n, _ := strconv.ParseUint(s, 10, 64)
 	return n
 }

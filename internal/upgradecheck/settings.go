@@ -268,10 +268,12 @@ func pagesDiff(was, is map[string]any) []string {
 // normalize makes two JSON values comparable whatever way they were decoded:
 // numbers as their text, lists and objects element by element.
 func normalize(v any) any {
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	raw, _ := json.Marshal(v)
 	var out any
 	d := json.NewDecoder(strings.NewReader(string(raw)))
 	d.UseNumber()
+	// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 	_ = d.Decode(&out)
 	return out
 }

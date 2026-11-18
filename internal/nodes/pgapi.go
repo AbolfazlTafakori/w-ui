@@ -128,6 +128,7 @@ func (p *pgAPI) raw(ctx context.Context, method, target string, body, into any, 
 		return fmt.Errorf("could not reach it: %w", err)
 	}
 	defer resp.Body.Close()
+	// A read whose short or failed result is handled by what was read (an empty or short body is refused below).
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:

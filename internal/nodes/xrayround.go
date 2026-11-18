@@ -37,6 +37,7 @@ func inboundPrint(parts ...any) string {
 		var v any
 		switch x := p.(type) {
 		case json.RawMessage:
+			// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 			_ = objectOrString(x, &v)
 		default:
 			v = x

@@ -207,8 +207,10 @@ func (n *Notifier) sendDocument(ctx context.Context, c Config, a *Attachment) er
 
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
+	// A multipart field into memory: it cannot fail.
 	_ = mw.WriteField("chat_id", c.ChatID)
 	if a.Caption != "" {
+		// A multipart field into memory: it cannot fail.
 		_ = mw.WriteField("caption", c.render(a.Caption))
 	}
 	fw, err := mw.CreateFormFile("document", a.Name)
@@ -244,6 +246,7 @@ func telegramRefused(resp *http.Response) error {
 	var reply struct {
 		Description string `json:"description"`
 	}
+	// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 	_ = json.NewDecoder(resp.Body).Decode(&reply)
 	if reply.Description != "" {
 		return fmt.Errorf("notify: the bot API refused it: %s", reply.Description)

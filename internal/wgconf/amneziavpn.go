@@ -20,8 +20,11 @@ func AmneziaVPNKey(conf string) string {
 	var n [4]byte
 	binary.BigEndian.PutUint32(n[:], uint32(len(conf)))
 	b.Write(n[:])
+	// A constructor given valid fixed arguments: it cannot fail.
 	w, _ := zlib.NewWriterLevel(&b, zlib.BestCompression)
+	// Writing an answer to a client that may have gone: there is nobody left to tell.
 	_, _ = w.Write([]byte(conf))
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = w.Close()
 	return "vpn://" + base64.RawURLEncoding.EncodeToString(b.Bytes())
 }

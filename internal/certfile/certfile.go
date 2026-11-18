@@ -65,7 +65,9 @@ func (l *Loader) reload() error {
 	if err != nil {
 		return err
 	}
+	// A file that cannot be read counts as changed, so it is read again and that read reports.
 	c, _ := os.Stat(l.certPath)
+	// A file that cannot be read counts as changed, so it is read again and that read reports.
 	k, _ := os.Stat(l.keyPath)
 	l.cert = &cert
 	if c != nil {

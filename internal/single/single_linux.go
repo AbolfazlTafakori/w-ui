@@ -49,6 +49,7 @@ func (h *listenerHolder) Release() {
 	default:
 		close(h.done)
 	}
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = h.ln.Close()
 }
 
@@ -79,8 +80,11 @@ func claim(identity string) (Holder, error) {
 					return
 				}
 			}
+			// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 			_ = conn.SetWriteDeadline(time.Now().Add(answerTimeout))
+			// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 			_, _ = conn.Write([]byte(identity))
+			// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 			_ = conn.Close()
 		}
 	}()
@@ -98,6 +102,7 @@ func ask() string {
 	}
 	defer conn.Close()
 
+	// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 	_ = conn.SetReadDeadline(time.Now().Add(answerTimeout))
 	buf := make([]byte, 256)
 	n, err := conn.Read(buf)

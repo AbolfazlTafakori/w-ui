@@ -18,6 +18,7 @@ import (
 // what is already compressed or what must arrive as it is written.
 
 var gzipWriters = sync.Pool{New: func() any {
+	// A constructor given valid fixed arguments: it cannot fail.
 	w, _ := gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
 	return w
 }}
@@ -82,6 +83,7 @@ func (g *gzipResponse) Write(b []byte) (int, error) {
 
 func (g *gzipResponse) finish() {
 	if g.gz != nil {
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = g.gz.Close()
 		g.gz.Reset(io.Discard)
 		gzipWriters.Put(g.gz)

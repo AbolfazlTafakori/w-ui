@@ -213,13 +213,16 @@ func cmdSetting(args []string) error {
 	if stored.WebCertFile != "" && stored.WebKeyFile != "" {
 		cfg.TLSCert, cfg.TLSKey = stored.WebCertFile, stored.WebKeyFile
 	}
+	// An address or subnet the panel validated when it was saved: it reads.
 	listenIP, _, _ := net.SplitHostPort(cfg.Listen)
 	if listenIP == "" {
 		listenIP = "0.0.0.0"
 	}
+	// Shown on the command line as defaults when the stored settings cannot be read: the CLI says what it uses.
 	subCfg, _ := service.NewSubscriptions(db, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Settings(context.Background())
 	subPort := subCfg.Port
 	if subPort == 0 {
+		// A number with a fallback: what does not read is the default, as the code below says.
 		subPort, _ = strconv.Atoi(portOf(cfg.Listen))
 	}
 

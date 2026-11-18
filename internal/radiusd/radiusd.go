@@ -158,6 +158,7 @@ func (s *Server) Serve(ctx context.Context) {
 			continue
 		}
 		if reply != nil {
+			// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 			_, _ = s.conn.WriteToUDP(reply, from)
 		}
 	}
@@ -367,6 +368,7 @@ func (s *Server) answer(p *packet, now time.Time) []byte {
 
 func (s *Server) store(ss *session) []byte {
 	st := make([]byte, 16)
+	// Crypto/rand does not fail on the systems the panel runs on (it panics if it cannot read).
 	_, _ = rand.Read(st)
 	s.mu.Lock()
 	s.sessions[string(st)] = ss
@@ -435,6 +437,7 @@ func eapAttrs(eap []byte) []attr {
 // then the length and key, padded, XORed with an MD5 chain of the secret.
 func (s *Server) mppeKey(reqAuth []byte, which byte, key []byte) attr {
 	salt := make([]byte, 2)
+	// Crypto/rand does not fail on the systems the panel runs on (it panics if it cannot read).
 	_, _ = rand.Read(salt)
 	salt[0] |= 0x80
 	plain := append([]byte{byte(len(key))}, key...)

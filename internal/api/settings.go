@@ -568,6 +568,7 @@ func (s *Server) handleSharingHistory(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, sharingHistory{Events: []model.SharingEvent{}})
 		return
 	}
+	// A number with a fallback: what does not read is the default, as the code below says.
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	events, err := s.rec.SharingHistory(r.Context(), limit)
 	if err != nil {

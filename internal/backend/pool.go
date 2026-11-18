@@ -198,6 +198,7 @@ func (p *Pool) takeDown(ctx context.Context, iface *model.Interface, forGood boo
 				p.log.Warn("could not take a tunnel down", "interface", iface.Name, "error", err)
 			}
 		}
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = e.drv.Close()
 	}
 	if err := Remove(ctx, iface); err != nil {
@@ -296,6 +297,7 @@ func (p *Pool) openLocked(ctx context.Context, iface *model.Interface, loud bool
 	p.mu.Unlock()
 
 	if old.drv != nil {
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = old.drv.Close()
 	}
 

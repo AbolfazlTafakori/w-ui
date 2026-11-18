@@ -148,6 +148,7 @@ func xuiCandidates(ctx context.Context, node model.Node, tunnels []model.Interfa
 	seenEmail := map[string]int{} // which candidate an email went to
 	for _, r := range rows {
 		var set xuiSettings
+		// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 		_ = objectOrString(r.Settings, &set)
 		stats := map[string]xuiClientStat{}
 		for _, cs := range r.ClientStats {

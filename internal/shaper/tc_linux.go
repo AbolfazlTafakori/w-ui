@@ -104,6 +104,7 @@ func (s *TC) probeHTB(ctx context.Context) error {
 		return nil
 	}
 	defer func() {
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_ = exec.Command("ip", "link", "del", probeDevice).Run()
 	}()
 
@@ -201,6 +202,8 @@ func (s *TC) ensureRoot(ctx context.Context, device string) error {
 		// Cheap check that it is still there. Someone running `tc qdisc del`
 		// by hand, or the device being recreated, would otherwise leave every
 		// customer silently unshaped until the panel restarted.
+		// A check that fails reads as "not there", and the hierarchy is
+		// rebuilt: the safe side of not knowing.
 		if ok, _ := s.hasRoot(ctx, device); ok {
 			return nil
 		}

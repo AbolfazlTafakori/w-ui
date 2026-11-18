@@ -73,6 +73,7 @@ func probeThrough(ctx context.Context, ob *model.Outbound, mode string, tuning *
 			return probeResult{err: err}
 		}
 	} else {
+		// A read whose short or failed result is handled by what was read (an empty or short body is refused below).
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	}
 	end := time.Now()

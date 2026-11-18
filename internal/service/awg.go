@@ -241,6 +241,7 @@ func specialSize(s string) int {
 		case "t":
 			size += 4
 		default:
+			// A number with a fallback: what does not read is the default, as the code below says.
 			n, _ := strconv.Atoi(parts[1])
 			size += n
 		}

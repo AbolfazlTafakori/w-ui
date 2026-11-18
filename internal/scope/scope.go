@@ -238,6 +238,7 @@ func Register(db *gorm.DB) error {
 			return
 		}
 		if namesTenantTable(tx.Statement.SQL.String()) {
+			// AddError returns the error it was given; it is already on the statement.
 			_ = tx.AddError(ErrUnscopedSQL)
 		}
 	}

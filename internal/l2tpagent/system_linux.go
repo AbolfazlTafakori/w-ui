@@ -202,14 +202,17 @@ func packages(protocol, family string) []string {
 // is removed, as the installer does, since amneziawg-go carries those
 // tunnels without it. Anything else is only asked to finish configuring.
 func (s *linuxSystem) unbreakDpkg(ctx context.Context) {
+	// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 	audit, _ := s.run(ctx, cmdTimeout, "", "dpkg", "--audit")
 	if len(bytes.TrimSpace(audit)) == 0 {
 		return
 	}
 	if bytes.Contains(audit, []byte("amneziawg")) {
 		s.log.Warn("removing the AmneziaWG module package that did not build; it keeps apt from installing anything")
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_, _ = s.run(ctx, installTimeout, "", "dpkg", "--remove", "--force-remove-reinstreq", "amneziawg", "amneziawg-dkms")
 	}
+	// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 	_, _ = s.run(ctx, installTimeout, "", "dpkg", "--configure", "-a")
 }
 
@@ -230,6 +233,7 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error
 		s.unbreakDpkg(ctx)
 		upd := exec.CommandContext(ctx, "apt-get", "update", "-qq")
 		upd.Env = env
+		// A package index refresh: the install after it fails with its own message if the index is stale.
 		_ = upd.Run()
 		cctx, cancel := context.WithTimeout(ctx, installTimeout)
 		defer cancel()
@@ -243,6 +247,7 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error
 		// strongSwan and xl2tpd come from EPEL on the RHEL family; Fedora
 		// carries them itself.
 		if id != "fedora" {
+			// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 			_, _ = s.run(ctx, installTimeout, "", "dnf", "install", "-y", "-q", "epel-release")
 		}
 		args := append([]string{"install", "-y", "-q"}, packages(protocol, family)...)
@@ -260,6 +265,7 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error
 			// Ubuntu's xl2tpd -- is disabled by --now but left running,
 			// holding the port the agent's own needs.
 			_, _ = s.run(ctx, cmdTimeout, "", "systemctl", "disable", "--now", unit)
+			// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 			_, _ = s.run(ctx, cmdTimeout, "", "systemctl", "stop", unit)
 		}
 	}
@@ -271,6 +277,7 @@ func (s *linuxSystem) EnsurePackages(ctx context.Context, protocol string) error
 
 // osFamily reads /etc/os-release.
 func osFamily() (family, id string) {
+	// A file that may not be there yet: missing is the empty case handled below.
 	raw, _ := os.ReadFile("/etc/os-release")
 	var like string
 	for _, line := range strings.Split(string(raw), "\n") {
@@ -544,6 +551,7 @@ func (s *linuxSystem) Start(ctx context.Context, protocol string) error {
 			return fmt.Errorf("%s is not installed", d.bin)
 		}
 	}
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = os.Remove(d.pid)
 	logf, err := os.OpenFile(d.log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -572,6 +580,7 @@ func (s *linuxSystem) Start(ctx context.Context, protocol string) error {
 	// cannot connect.
 	select {
 	case err := <-exited:
+		// A file that may not be there yet: missing is the empty case handled below.
 		body, _ := os.ReadFile(d.log)
 		return fmt.Errorf("%s exited at start (%v): %s", d.bin, err, tail(body))
 	case <-time.After(1500 * time.Millisecond):
@@ -588,6 +597,7 @@ func (s *linuxSystem) Stop(ctx context.Context, protocol string) error {
 	if !ok {
 		return nil
 	}
+	// Stopping a process that may already be gone: its being gone is the goal.
 	_ = syscall.Kill(pid, syscall.SIGTERM)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -597,8 +607,10 @@ func (s *linuxSystem) Stop(ctx context.Context, protocol string) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	if syscall.Kill(pid, 0) == nil {
+		// Stopping a process that may already be gone: its being gone is the goal.
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = os.Remove(d.pid)
 	return nil
 }
@@ -666,6 +678,7 @@ func readSession(dev string) (pid int, since int64, endpoint string, rx, tx uint
 		if err != nil {
 			continue
 		}
+		// A number with a fallback: what does not read is the default, as the code below says.
 		pid, _ = strconv.Atoi(strings.TrimSpace(strings.SplitN(string(raw), "\n", 2)[0]))
 		if info, err := os.Stat(p); err == nil {
 			since = info.ModTime().Unix()
@@ -700,6 +713,7 @@ func readCounter(dev, name string) uint64 {
 	if err != nil {
 		return 0
 	}
+	// A number with a fallback: what does not read is the default, as the code below says.
 	n, _ := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 64)
 	return n
 }

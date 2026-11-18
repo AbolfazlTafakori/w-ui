@@ -84,6 +84,7 @@ func (r *responder) from(msg []byte, device, ss [32]byte) bool {
 	if !isInitiation(msg) {
 		return false
 	}
+	// A constructor given a key of the size it requires: it cannot fail.
 	mac1, _ := blake2s.New128(r.mac1Key[:])
 	mac1.Write(msg[:116])
 	if subtle.ConstantTimeCompare(mac1.Sum(nil), msg[116:132]) != 1 {
@@ -118,11 +119,13 @@ func (r *responder) from(msg []byte, device, ss [32]byte) bool {
 }
 
 func open(key [32]byte, sealed, aad []byte) ([]byte, error) {
+	// A constructor given a key of the size it requires: it cannot fail.
 	a, _ := chacha20poly1305.New(key[:])
 	return a.Open(nil, make([]byte, chacha20poly1305.NonceSize), sealed, aad)
 }
 
 func mixHash(h [32]byte, data []byte) [32]byte {
+	// A constructor given a key of the size it requires: it cannot fail.
 	d, _ := blake2s.New256(nil)
 	d.Write(h[:])
 	d.Write(data)
@@ -132,6 +135,7 @@ func mixHash(h [32]byte, data []byte) [32]byte {
 }
 
 func newBlake() hash.Hash {
+	// A constructor given a key of the size it requires: it cannot fail.
 	d, _ := blake2s.New256(nil)
 	return d
 }

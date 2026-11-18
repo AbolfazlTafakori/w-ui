@@ -105,6 +105,7 @@ func (p *Providers) WarpRegister(ctx context.Context) (*WarpState, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A name for display or a path with a fallback: unknown is shown as such.
 	host, _ := os.Hostname()
 	raw, err := p.warpRequest(ctx, http.MethodPost, "/reg", map[string]any{
 		"key":   pair.Public.String(),

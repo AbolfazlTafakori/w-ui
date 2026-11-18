@@ -129,6 +129,7 @@ func (r *Reconciler) ImportSharingFromLog(ctx context.Context) SharingImport {
 }
 
 func (r *Reconciler) saveImport(res SharingImport) {
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	raw, _ := json.Marshal(res)
 	if err := database.PutSetting(r.db, KeySharingImport, string(raw)); err != nil {
 		r.log.Warn("could not note that the log was read back", "error", err)
@@ -165,6 +166,7 @@ func heldFromLog(e logger.Entry, accounts map[string]model.Account) (model.Shari
 	}
 	limit := 0
 	if v, _ := e.Fields["limit"].(string); v != "" {
+		// A number with a fallback: what does not read is the default, as the code below says.
 		limit, _ = strconv.Atoi(v)
 	}
 	place, _ := e.Fields["on"].(string)

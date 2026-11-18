@@ -211,6 +211,7 @@ func (s *Subscriptions) Settings(ctx context.Context) (SubSettings, error) {
 		out.Template = v
 	}
 	if v := stored[keySubFormer]; v != "" {
+		// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 		_ = json.Unmarshal([]byte(v), &out.Former)
 	}
 	return out, nil
@@ -307,6 +308,7 @@ func (s *Subscriptions) SaveSettings(ctx context.Context, in SubSettings) (SubSe
 	in.Former = formerAfter(was, in, in.Former)
 	former := ""
 	if len(in.Former) > 0 {
+		// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 		b, _ := json.Marshal(in.Former)
 		former = string(b)
 	}

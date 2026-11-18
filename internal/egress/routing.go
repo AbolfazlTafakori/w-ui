@@ -1322,7 +1322,8 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 	note("%s resolves to %s", target, joinAddrs(addrs))
 
 	// 1. Blocked destinations.
-	blocked, _ := routing.ParseTargets(basic.BlockIPs, s.countries)
+	// As the policy reads it: an entry that no longer reads is left out, the rest kept.
+	blocked, _ := routing.ParseTargetsKeeping(basic.BlockIPs, s.countries)
 	s.mu.RLock()
 	for _, d := range basic.BlockDomains {
 		blocked = append(blocked, s.resolved[d]...)
@@ -1337,7 +1338,8 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 
 	// 2. Blocked ports and BitTorrent.
 	if in.Port > 0 {
-		if ports, _ := routing.ParsePorts(basic.BlockPorts); portMatches(ports, in.Port) {
+		// As the policy reads it: an entry that no longer reads is left out, the rest kept.
+		if ports, _ := routing.ParsePortsKeeping(basic.BlockPorts); portMatches(ports, in.Port) {
 			ans.Outbound, ans.Blocked = TagBlocked, true
 			ans.Reason = fmt.Sprintf("port %d is on the blocked list", in.Port)
 			return ans, nil
@@ -1350,7 +1352,8 @@ func (s *Routing) TestRoute(ctx context.Context, in RouteTest) (*RouteAnswer, er
 	}
 
 	// 3. Pinned destinations.
-	direct, _ := routing.ParseTargets(basic.DirectIPs, s.countries)
+	// As the policy reads it: an entry that no longer reads is left out, the rest kept.
+	direct, _ := routing.ParseTargetsKeeping(basic.DirectIPs, s.countries)
 	s.mu.RLock()
 	for _, d := range basic.DirectDomains {
 		direct = append(direct, s.resolved[d]...)
@@ -1455,7 +1458,8 @@ func (s *Routing) ruleMatches(
 	if r.DestIPs != "" || r.Domains != "" {
 		var ps []netip.Prefix
 		if r.DestIPs != "" {
-			ps, _ = routing.ParseTargets(listfield.Split(r.DestIPs), s.countries)
+			// As the policy reads it: an entry that no longer reads is left out, the rest kept.
+			ps, _ = routing.ParseTargetsKeeping(listfield.Split(r.DestIPs), s.countries)
 		}
 		s.mu.RLock()
 		for _, d := range listfield.Split(r.Domains) {
@@ -1467,7 +1471,8 @@ func (s *Routing) ruleMatches(
 		}
 	}
 	if r.Ports != "" {
-		ports, _ := routing.ParsePorts(listfield.Split(r.Ports))
+		// As the policy reads it: an entry that no longer reads is left out, the rest kept.
+		ports, _ := routing.ParsePortsKeeping(listfield.Split(r.Ports))
 		if in.Port <= 0 || !portMatches(ports, in.Port) {
 			return false
 		}
@@ -1485,7 +1490,8 @@ func (s *Routing) ruleMatches(
 		if err != nil {
 			return false
 		}
-		ps, _ := routing.ParseTargets(listfield.Split(r.SourceIPs), s.countries)
+		// As the policy reads it: an entry that no longer reads is left out, the rest kept.
+		ps, _ := routing.ParseTargetsKeeping(listfield.Split(r.SourceIPs), s.countries)
 		if _, hit := firstMatch([]netip.Addr{src.Unmap()}, ps); !hit {
 			return false
 		}
@@ -1624,7 +1630,8 @@ func isAddrTarget(e string) bool {
 // as a domain in the Block or Direct lists.
 func (s *Routing) splitPrefixes(basic BasicRouting) []netip.Prefix {
 	addrTargets, domains := partitionSplit(basic.SplitList)
-	out, _ := routing.ParseTargets(addrTargets, s.countries)
+	// As the policy reads it: an entry that no longer reads is left out, the rest kept.
+	out, _ := routing.ParseTargetsKeeping(addrTargets, s.countries)
 	s.mu.RLock()
 	for _, d := range domains {
 		out = append(out, s.resolved[d]...)

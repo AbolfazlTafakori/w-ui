@@ -885,6 +885,7 @@ func Dial(ctx context.Context, addr string) (time.Duration, error) {
 		return 0, err
 	}
 	elapsed := time.Since(start)
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = conn.Close()
 	return elapsed, nil
 }

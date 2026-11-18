@@ -153,6 +153,7 @@ func (t *Template) Export(ctx context.Context) (TemplateDoc, error) {
 }
 
 func mustJSON(v any) json.RawMessage {
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	b, _ := json.Marshal(v)
 	return b
 }

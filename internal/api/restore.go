@@ -36,7 +36,9 @@ const transferTime = 30 * time.Minute
 func allowLongTransfer(w http.ResponseWriter) {
 	rc := http.NewResponseController(w)
 	deadline := time.Now().Add(transferTime)
+	// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 	_ = rc.SetReadDeadline(deadline)
+	// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 	_ = rc.SetWriteDeadline(deadline)
 }
 
@@ -55,6 +57,7 @@ func (s *Server) handleUploadBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		if r.MultipartForm != nil {
+			// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 			_ = r.MultipartForm.RemoveAll()
 		}
 	}()

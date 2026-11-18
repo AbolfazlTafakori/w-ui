@@ -980,6 +980,7 @@ func (s *Clients) filtered(ctx context.Context, f ListFilter) *gorm.DB {
 		if slices.Contains(f.Buckets, "online") {
 			var err error
 			if paused, err = PausedOperatorIDs(ctx, s.db); err != nil {
+				// AddError returns the error it was given; it is already on the statement.
 				_ = q.AddError(fmt.Errorf("service: read paused operators: %w", err))
 				return q
 			}

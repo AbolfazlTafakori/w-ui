@@ -71,13 +71,16 @@ func (p *xuiPanel) read(ctx context.Context) ([]service.XUIInboundSeen, map[int]
 		prints[r.ID] = inboundPrint(r.Protocol, r.Port, r.Remark, r.Settings, r.Stream)
 		var set xuiSettings
 		var st xuiStream
+		// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 		_ = objectOrString(r.Settings, &set)
+		// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 		_ = objectOrString(r.Stream, &st)
 		// The clients as that panel wrote them too, to send one back with
 		// every field of its own.
 		var raw struct {
 			Clients []map[string]any `json:"clients"`
 		}
+		// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 		_ = objectOrString(r.Settings, &raw)
 		in := model.XUIInbound{
 			RemoteID: r.ID,

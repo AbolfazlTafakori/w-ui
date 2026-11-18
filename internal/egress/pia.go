@@ -107,8 +107,11 @@ func (p *Providers) PIALogin(ctx context.Context, username, password string) (*P
 	}
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
+	// A multipart field into memory: it cannot fail.
 	_ = w.WriteField("username", username)
+	// A multipart field into memory: it cannot fail.
 	_ = w.WriteField("password", password)
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = w.Close()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, piaTokenURL, &body)

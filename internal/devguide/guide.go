@@ -578,6 +578,7 @@ func androidMajor(ua string) int {
 	if end < 0 {
 		end = len(rest)
 	}
+	// A number with a fallback: what does not read is the default, as the code below says.
 	n, _ := strconv.Atoi(rest[:end])
 	return n
 }

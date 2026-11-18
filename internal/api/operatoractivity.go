@@ -22,6 +22,7 @@ type operatorActionView struct {
 }
 
 func (s *Server) handleOperatorActivity(w http.ResponseWriter, r *http.Request) {
+	// A number with a fallback: what does not read is the default, as the code below says.
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	rows, err := s.admins.Activity(r.Context(), adminFrom(r.Context()), limit)
 	if err != nil {
@@ -43,7 +44,9 @@ func (s *Server) handleOperatorActivity(w http.ResponseWriter, r *http.Request) 
 // owner. Narrowed in operators.Ledger, never by what the request names.
 func (s *Server) handleOperatorLedger(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	// A number with a fallback: what does not read is the default, as the code below says.
 	limit, _ := strconv.Atoi(q.Get("limit"))
+	// A number with a fallback: what does not read is the default, as the code below says.
 	before, _ := strconv.ParseUint(q.Get("before"), 10, 32)
 	rows, err := s.admins.Ledger(r.Context(), adminFrom(r.Context()), q.Get("kind"), uint(before), limit)
 	if err != nil {

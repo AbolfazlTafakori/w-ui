@@ -131,6 +131,7 @@ func normalize(in []Rule) []Rule {
 
 // Encode is the file the panel writes.
 func Encode(rules []Rule) []byte {
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	b, _ := json.MarshalIndent(file{Version: 1, Open: normalize(rules)}, "", "  ")
 	return append(b, '\n')
 }

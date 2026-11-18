@@ -151,6 +151,7 @@ func writeLimit(path string, limit uint64) error {
 // synced. Where it does not, there is nothing more to do.
 func syncDir(dir string) {
 	if d, err := os.Open(dir); err == nil {
+		// A replay journal flush: losing it re-allows at most what the in-memory window already refuses.
 		_ = d.Sync()
 		d.Close()
 	}

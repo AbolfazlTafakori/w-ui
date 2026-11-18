@@ -415,6 +415,7 @@ func recordResult(root *os.Root, version string, err error) {
 	if err != nil {
 		res.Error = err.Error()
 	}
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	raw, _ := json.Marshal(res)
 	tmp := filepath.Join(StageDirName, fmt.Sprintf(".result-%d", time.Now().UnixNano()))
 	f, ferr := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)

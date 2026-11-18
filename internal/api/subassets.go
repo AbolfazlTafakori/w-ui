@@ -39,8 +39,11 @@ func registerSubAsset(name, ext, ctype string, body []byte) string {
 	path := subAssetPrefix + name + "." + hex.EncodeToString(sum[:6]) + ext
 	if _, ok := subAssets.Load(path); !ok {
 		var gz bytes.Buffer
+		// A constructor given valid fixed arguments: it cannot fail.
 		zw, _ := gzip.NewWriterLevel(&gz, gzip.BestCompression)
+		// Writing an answer to a client that may have gone: there is nobody left to tell.
 		_, _ = zw.Write(body)
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = zw.Close()
 		subAssets.Store(path, &subAsset{ctype: ctype, body: body, gzip: gz.Bytes()})
 	}
@@ -59,6 +62,7 @@ func subStringsPath(l2tp, setup bool) string {
 	if p, ok := subStringsPaths.Load(key); ok {
 		return p.(string)
 	}
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	dict, _ := json.Marshal(pageStrings(l2tp, setup))
 	p := registerSubAsset("words", ".js", "text/javascript; charset=utf-8",
 		append(append([]byte("window.__wuiStrings="), dict...), ';', '\n'))
@@ -90,6 +94,7 @@ func serveSubAsset(w http.ResponseWriter, r *http.Request) bool {
 	}
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
+		// Writing an answer to a client that may have gone: there is nobody left to tell.
 		_, _ = w.Write(body)
 	}
 	return true

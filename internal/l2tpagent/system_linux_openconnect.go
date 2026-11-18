@@ -126,11 +126,13 @@ func (s *linuxSystem) StartOcserv(ctx context.Context) error {
 }
 
 func (s *linuxSystem) ocservLogTail(ctx context.Context) string {
+	// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 	out, _ := s.run(ctx, cmdTimeout, "", "journalctl", "-t", "ocserv", "-n", "5", "--no-pager", "-o", "cat")
 	return tail(out)
 }
 
 func (s *linuxSystem) stopPID(pid int) {
+	// Stopping a process that may already be gone: its being gone is the goal.
 	_ = syscall.Kill(pid, syscall.SIGTERM)
 	for range 50 {
 		if syscall.Kill(pid, 0) != nil {
@@ -138,6 +140,7 @@ func (s *linuxSystem) stopPID(pid int) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	// Stopping a process that may already be gone: its being gone is the goal.
 	_ = syscall.Kill(pid, syscall.SIGKILL)
 }
 
@@ -196,8 +199,11 @@ func ocUsers(us []occtlUser) []OCUser {
 		if u.State != "connected" {
 			continue
 		}
+		// An address or subnet the panel validated when it was saved: it reads.
 		ip, _ := netip.ParseAddr(u.IPv4)
+		// A number with a fallback: what does not read is the default, as the code below says.
 		rx, _ := strconv.ParseUint(u.RX, 10, 64)
+		// A number with a fallback: what does not read is the default, as the code below says.
 		tx, _ := strconv.ParseUint(u.TX, 10, 64)
 		outs = append(outs, OCUser{ID: u.ID, Username: u.Username, Device: u.Device, IP: ip, Remote: u.Remote, RX: rx, TX: tx})
 	}
@@ -210,6 +216,7 @@ func (s *linuxSystem) Disconnect(ctx context.Context, id int) error {
 }
 
 func (s *linuxSystem) Camouflage(ctx context.Context) bool {
+	// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 	out, _ := s.run(ctx, cmdTimeout, "", "ocserv", "--version")
 	return camouflageIn(string(out))
 }

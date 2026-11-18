@@ -146,6 +146,7 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 
 	w.WriteHeader(http.StatusOK)
+	// Writing an answer to a client that may have gone: there is nobody left to tell.
 	_, _ = w.Write(body)
 }
 

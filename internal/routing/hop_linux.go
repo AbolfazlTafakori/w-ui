@@ -181,6 +181,7 @@ func (m *HopManager) down(ctx context.Context, dev string) {
 		return
 	}
 	m.stopProcs(dev)
+	// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 	_, _ = run(ctx, ipBinary, "", "link", "del", "dev", dev)
 
 	m.mu.Lock()

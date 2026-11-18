@@ -284,6 +284,7 @@ func (s *Server) handleUpdateInterface(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDrawAWG(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	num := func(k string) int {
+		// A number with a fallback: what does not read is the default, as the code below says.
 		n, _ := strconv.Atoi(q.Get(k))
 		return n
 	}
@@ -364,7 +365,9 @@ func (s *Server) handleMatchingIDs(w http.ResponseWriter, r *http.Request) {
 // customer that matches" selects exactly what the list shows.
 func listFilter(r *http.Request) service.ListFilter {
 	q := r.URL.Query()
+	// A number with a fallback: what does not read is the default, as the code below says.
 	page, _ := strconv.Atoi(q.Get("page"))
+	// A number with a fallback: what does not read is the default, as the code below says.
 	perPage, _ := strconv.Atoi(q.Get("perPage"))
 	return service.ListFilter{
 		Search:   q.Get("search"),
@@ -544,6 +547,7 @@ func (s *Server) handleInterfaceProfile(w http.ResponseWriter, r *http.Request) 
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	// Writing an answer to a client that may have gone: there is nobody left to tell.
 	_, _ = w.Write([]byte(body))
 }
 
@@ -575,6 +579,7 @@ func (s *Server) handleClientConfigs(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	// Writing an answer to a client that may have gone: there is nobody left to tell.
 	_, _ = w.Write(bundle.Body)
 }
 

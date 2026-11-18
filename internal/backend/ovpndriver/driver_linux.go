@@ -158,6 +158,7 @@ func (d *Driver) ensureRunning(ctx context.Context, iface *model.Interface, l ov
 
 	pid, alive := runningPID(l.PIDFile())
 	if alive {
+		// A file that may not be there yet: missing is the empty case handled below.
 		have, _ := os.ReadFile(stampPath)
 		switch {
 		case strings.TrimSpace(string(have)) != want:
@@ -190,6 +191,7 @@ func (d *Driver) ensureRunning(ctx context.Context, iface *model.Interface, l ov
 // deliberate: upgrading or restarting the panel should not disconnect paying
 // customers, and the pid file lets the next run adopt the process it left.
 func (d *Driver) start(ctx context.Context, iface *model.Interface, l ovpnconf.Layout) error {
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = os.Remove(l.Management())
 
 	cmd := exec.Command("openvpn",
@@ -498,6 +500,7 @@ func (d *Driver) management(ctx context.Context, l ovpnconf.Layout, command stri
 	defer conn.Close()
 
 	if deadline, ok := ctx.Deadline(); ok {
+		// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 		_ = conn.SetDeadline(deadline)
 	}
 
@@ -566,7 +569,9 @@ func dirIsReadOnlyFor(pid int, dir string) bool {
 	probe := filepath.Join("/proc", strconv.Itoa(pid), "root", dir, ".writable")
 	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err == nil {
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = f.Close()
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = os.Remove(probe)
 		return false
 	}
@@ -578,6 +583,7 @@ func stop(pid int) {
 	if pid <= 0 {
 		return
 	}
+	// Stopping a process that may already be gone: its being gone is the goal.
 	_ = syscall.Kill(pid, syscall.SIGTERM)
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -587,6 +593,7 @@ func stop(pid int) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	// Stopping a process that may already be gone: its being gone is the goal.
 	_ = syscall.Kill(pid, syscall.SIGKILL)
 }
 
@@ -674,6 +681,7 @@ func StopServer(ctx context.Context, iface *model.Interface) error {
 		stop(pid)
 	}
 	if exec.CommandContext(ctx, "ip", "link", "show", "dev", iface.Name).Run() == nil {
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_ = exec.CommandContext(ctx, "ip", "link", "del", "dev", iface.Name).Run()
 	}
 	// The directory goes with the tunnel. Everything in it is written again

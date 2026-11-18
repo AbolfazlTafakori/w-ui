@@ -68,6 +68,7 @@ func challengeResponse(challenge, hash []byte) []byte {
 	copy(z, hash)
 	out := make([]byte, 0, 24)
 	for i := 0; i < 3; i++ {
+		// A constructor given a key of the size it requires: it cannot fail.
 		block, _ := des.NewCipher(desKey(z[7*i : 7*i+7]))
 		buf := make([]byte, 8)
 		block.Encrypt(buf, challenge)

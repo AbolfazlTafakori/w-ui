@@ -233,6 +233,7 @@ type control struct {
 func (c *control) send(b []byte) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
+	// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.conn.Write(b)
 	return err
@@ -248,6 +249,7 @@ func (s *Server) serve(nc net.Conn) {
 		return // GRE here is IPv4's
 	}
 	if tc, ok := nc.(*net.TCPConn); ok {
+		// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 		_ = tc.SetKeepAlive(true)
 	}
 	c := &control{conn: nc}
@@ -335,7 +337,9 @@ func (s *Server) serve(nc net.Conn) {
 				continue
 			}
 			cl = nil
+			// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 			_ = c.send(callDisconnect(gone.id, cdnLostCarrier))
+			// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 			_ = c.send(stopRequest())
 			reset(stopTimeout)
 			echoPending = true // the next timeout closes the connection
@@ -363,6 +367,7 @@ func (s *Server) serve(nc net.Conn) {
 			case msgOutCallReq:
 				oc := parseOutCall(b)
 				if cl != nil {
+					// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 					_ = c.send(outCallReply(0, oc.peerCallID, callResultRefused, recvWindow))
 					continue
 				}
@@ -374,6 +379,7 @@ func (s *Server) serve(nc net.Conn) {
 				})
 				if err != nil {
 					log.Warn("PPTP call could not start", "error", err)
+					// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 					_ = c.send(outCallReply(0, oc.peerCallID, callResultErr, recvWindow))
 					continue
 				}
@@ -386,12 +392,14 @@ func (s *Server) serve(nc net.Conn) {
 					gone := cl
 					cl = nil
 					gone.end()
+					// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 					_ = c.send(callDisconnect(gone.id, cdnAdminShutdown))
 				}
 			case msgSetLinkInfo, msgWANError:
 				// The async map is pppd's and the frames are escaped for any;
 				// errors are for the device's own counters.
 			case msgStopReq:
+				// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 				_ = c.send(stopReply())
 				return
 			case msgStopReply:
@@ -459,6 +467,7 @@ func (s *Server) startCall(peer, local net.IP, oc outCall, log *slog.Logger, onE
 	s.mu.Unlock()
 
 	go func() {
+		// Stopping a process that may already be gone: its being gone is the goal.
 		_ = cmd.Wait()
 		cl.end()
 		onEnd(cl)
@@ -498,6 +507,7 @@ func (cl *call) fromPPPD() {
 
 // send writes a GRE packet to the device, from the address it dialed.
 func (cl *call) send(b []byte, dst *net.IPAddr) {
+	// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 	_, _ = cl.s.out.WriteTo(b, &ipv4.ControlMessage{Src: cl.local}, dst)
 }
 
@@ -518,6 +528,7 @@ func (cl *call) received(p grePacket) {
 	if len(p.payload) == 0 {
 		return
 	}
+	// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 	_, _ = cl.master.Write(appendFramed(make([]byte, 0, 2*len(p.payload)+8), p.payload))
 }
 
@@ -557,6 +568,7 @@ func (cl *call) end() {
 		delete(cl.s.calls, cl.id)
 		cl.s.mu.Unlock()
 		if cl.cmd != nil && cl.cmd.Process != nil {
+			// Stopping a process that may already be gone: its being gone is the goal.
 			_ = cl.cmd.Process.Signal(syscall.SIGTERM)
 			p := cl.cmd.Process
 			go func() {

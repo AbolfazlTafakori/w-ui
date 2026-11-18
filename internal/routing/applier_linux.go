@@ -108,6 +108,7 @@ func (a *Applier) Apply(ctx context.Context, p Policy) error {
 	// reporting, and treating it as one would make every first apply look
 	// broken.
 	for _, s := range plan.Remove {
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_, _ = a.runIP(ctx, s.Args...)
 	}
 	down := false
@@ -161,7 +162,9 @@ func (a *Applier) pruneRules(ctx context.Context, hops []Hop) {
 			continue
 		}
 		mark := fmt.Sprintf("0x%x", m)
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_, _ = a.runIP(ctx, "rule", "del", "fwmark", mark, "table", table)
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_, _ = a.runIP(ctx, "route", "flush", "table", table)
 		a.log.Info("stale routing rule removed", "mark", mark, "table", table)
 	}
@@ -301,6 +304,7 @@ func (a *Applier) Teardown(ctx context.Context, hops []Hop) error {
 		)
 	}
 	for _, s := range plan.Remove {
+		// A best-effort system step (tear down, probe or package housekeeping): the step after it checks what matters and reports it.
 		_, _ = a.runIP(ctx, s.Args...)
 	}
 

@@ -134,6 +134,7 @@ func (n *Notifier) sendMail(ctx context.Context, c MailConfig, e Event) error {
 	// connection and then stops talking is the common failure, and without
 	// this the send would hang until the process ended.
 	if deadline, ok := ctx.Deadline(); ok {
+		// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 		_ = conn.SetDeadline(deadline)
 	}
 

@@ -69,6 +69,7 @@ func subSlots(vals []string) string {
 	if len(vals) == 0 {
 		return ""
 	}
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	b, _ := json.Marshal(vals)
 	return string(b)
 }

@@ -169,6 +169,7 @@ func (f *rootFiles) TakeKicks() ([]uint, error) {
 	var out []uint
 	for _, e := range entries {
 		name := e.Name()
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = f.root.Remove(path.Join(kickName, name))
 		if id, ok := l2tpconf.ParseKickName(name); ok {
 			out = append(out, id)

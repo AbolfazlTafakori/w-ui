@@ -384,6 +384,7 @@ func parseShadowsocks(link string) (*OutboundInput, error) {
 	rest := strings.TrimPrefix(link, "ss://")
 	tag := ""
 	if i := strings.Index(rest, "#"); i >= 0 {
+		// An escape that does not decode is kept as written.
 		tag, _ = url.PathUnescape(rest[i+1:])
 		rest = rest[:i]
 	}
@@ -494,6 +495,7 @@ func parseWireGuardLink(link string) (*OutboundInput, error) {
 		return nil, invalidField("text", "that wireguard link is malformed")
 	}
 	q := u.Query()
+	// An escape that does not decode is kept as written.
 	pk, _ := url.PathUnescape(u.User.Username())
 	in := &OutboundInput{
 		Tag:          remark(u),
@@ -550,6 +552,7 @@ func parseWireGuardConf(text string) (*OutboundInput, error) {
 			case "address":
 				in.HopAddress = v
 			case "mtu":
+				// A number with a fallback: what does not read is the default, as the code below says.
 				in.HopMTU, _ = strconv.Atoi(v)
 			case "dns":
 				in.HopDNS = v
@@ -568,6 +571,7 @@ func parseWireGuardConf(text string) (*OutboundInput, error) {
 			case "allowedips":
 				in.AllowedIPs = v
 			case "persistentkeepalive":
+				// A number with a fallback: what does not read is the default, as the code below says.
 				in.Keepalive, _ = strconv.Atoi(v)
 			}
 		}
@@ -674,6 +678,7 @@ func xrayTarget(ob map[string]any) (string, int) {
 	case float64:
 		port = int(p)
 	case string:
+		// A number with a fallback: what does not read is the default, as the code below says.
 		port, _ = strconv.Atoi(p)
 	}
 	return addr, port
@@ -686,6 +691,7 @@ func xrayFromProxyFields(in OutboundInput) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// A number with a fallback: what does not read is the default, as the code below says.
 	port, _ := strconv.Atoi(portStr)
 	server := map[string]any{"address": host, "port": port}
 	if in.Username != "" {

@@ -138,4 +138,5 @@ func (s *Server) serveSubEvents(w http.ResponseWriter, r *http.Request) {
 // flushVia flushes through http.ResponseController, which walks Unwrap.
 type flushVia struct{ rc *http.ResponseController }
 
+// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 func (f flushVia) Flush() { _ = f.rc.Flush() }

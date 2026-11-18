@@ -19,7 +19,9 @@ func camouflageIn(versionOutput string) bool {
 	if m == nil {
 		return false
 	}
+	// A number with a fallback: what does not read is the default, as the code below says.
 	major, _ := strconv.Atoi(m[1])
+	// A number with a fallback: what does not read is the default, as the code below says.
 	minor, _ := strconv.Atoi(m[2])
 	return major > 1 || major == 1 && minor >= 2
 }

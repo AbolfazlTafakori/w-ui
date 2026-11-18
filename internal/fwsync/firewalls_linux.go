@@ -92,11 +92,15 @@ func (f firewalld) flag(verb string, r Rule) string {
 }
 
 func (f firewalld) Has(r Rule) (bool, error) {
+	// firewall-cmd --query exits non-zero to say "no"; the answer is in
+	// what it printed, which is read either way.
 	out, _ := run(f.path, f.flag("query", r))
 	return strings.TrimSpace(out) == "yes", nil
 }
 
 func (f firewalld) Allow(r Rule) (bool, error) {
+	// Has reads the answer from what firewall-cmd printed; it returns no
+	// error of its own.
 	if ok, _ := f.Has(r); ok {
 		return false, nil
 	}

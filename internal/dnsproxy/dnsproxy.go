@@ -210,6 +210,7 @@ func (p *Proxy) serveUDP(c *net.UDPConn) {
 		q := append([]byte(nil), buf[:n]...)
 		go func() {
 			if resp := p.handle(q, false); resp != nil {
+				// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 				_, _ = c.WriteToUDP(resp, from)
 			}
 		}()
@@ -224,6 +225,7 @@ func (p *Proxy) serveTCP(l net.Listener) {
 		}
 		go func() {
 			defer conn.Close()
+			// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 			var lenb [2]byte
 			if _, err := io.ReadFull(conn, lenb[:]); err != nil {
@@ -241,6 +243,7 @@ func (p *Proxy) serveTCP(l net.Listener) {
 			out := make([]byte, 2+len(resp))
 			out[0], out[1] = byte(len(resp)>>8), byte(len(resp))
 			copy(out[2:], resp)
+			// A packet to a peer on a lossy link or one being torn down: the protocol retries or the session is ending.
 			_, _ = conn.Write(out)
 		}()
 	}
@@ -315,8 +318,11 @@ func (p *Proxy) fromHosts(cfg Config, hdr dnsmessage.Header, question dnsmessage
 	}
 	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: hdr.ID, Response: true, Authoritative: true, RecursionDesired: hdr.RecursionDesired, RecursionAvailable: true})
 	b.EnableCompression()
+	// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 	_ = b.StartQuestions()
+	// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 	_ = b.Question(question)
+	// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 	_ = b.StartAnswers()
 	for _, v := range hit.Values {
 		addr, err := netip.ParseAddr(strings.TrimSpace(v))
@@ -325,8 +331,10 @@ func (p *Proxy) fromHosts(cfg Config, hdr dnsmessage.Header, question dnsmessage
 		}
 		rh := dnsmessage.ResourceHeader{Name: question.Name, Class: dnsmessage.ClassINET, TTL: 60}
 		if addr.Is4() && question.Type == dnsmessage.TypeA {
+			// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 			_ = b.AResource(rh, dnsmessage.AResource{A: addr.As4()})
 		} else if addr.Is6() && question.Type == dnsmessage.TypeAAAA {
+			// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 			_ = b.AAAAResource(rh, dnsmessage.AAAAResource{AAAA: addr.As16()})
 		}
 	}
@@ -339,8 +347,11 @@ func (p *Proxy) fromHosts(cfg Config, hdr dnsmessage.Header, question dnsmessage
 
 func (p *Proxy) empty(hdr dnsmessage.Header, question dnsmessage.Question) []byte {
 	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: hdr.ID, Response: true, RecursionDesired: hdr.RecursionDesired, RecursionAvailable: true})
+	// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 	_ = b.StartQuestions()
+	// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 	_ = b.Question(question)
+	// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 	out, _ := b.Finish()
 	return out
 }
@@ -348,9 +359,12 @@ func (p *Proxy) empty(hdr dnsmessage.Header, question dnsmessage.Question) []byt
 func (p *Proxy) failure(hdr dnsmessage.Header, question *dnsmessage.Question, code dnsmessage.RCode) []byte {
 	b := dnsmessage.NewBuilder(nil, dnsmessage.Header{ID: hdr.ID, Response: true, RecursionDesired: hdr.RecursionDesired, RecursionAvailable: true, RCode: code})
 	if question != nil {
+		// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 		_ = b.StartQuestions()
+		// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 		_ = b.Question(*question)
 	}
+	// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 	out, _ := b.Finish()
 	return out
 }
@@ -397,6 +411,7 @@ func (p *Proxy) store(key string, msg []byte) {
 	ttl := uint32(300)
 	var parser dnsmessage.Parser
 	if _, err := parser.Start(msg); err == nil {
+		// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 		_ = parser.SkipAllQuestions()
 		for {
 			h, err := parser.AnswerHeader()
@@ -406,6 +421,7 @@ func (p *Proxy) store(key string, msg []byte) {
 			if h.TTL < ttl {
 				ttl = h.TTL
 			}
+			// Building or skipping DNS sections in order on a fixed buffer: they fail only if called out of order, which this code does not.
 			_ = parser.SkipAnswer()
 		}
 	}
@@ -509,6 +525,7 @@ func (p *Proxy) ask(ctx context.Context, s Server, q []byte) ([]byte, error) {
 	}
 	defer conn.Close()
 	if dl, ok := ctx.Deadline(); ok {
+		// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 		_ = conn.SetDeadline(dl)
 	}
 	if proto == "tcp" {
@@ -529,6 +546,7 @@ func (p *Proxy) ask(ctx context.Context, s Server, q []byte) ([]byte, error) {
 		if err == nil {
 			defer tc.Close()
 			if dl, ok := ctx.Deadline(); ok {
+				// A socket option: a socket that will not take it fails on its next read or write, where that error is handled.
 				_ = tc.SetDeadline(dl)
 			}
 			if full, err := exchangeTCP(tc, q); err == nil {

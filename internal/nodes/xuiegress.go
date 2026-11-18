@@ -281,8 +281,10 @@ var xuiSettle = time.Second
 // normalJSON is v through JSON, so a config read back compares equal to the
 // same config built here.
 func normalJSON(v any) any {
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	raw, _ := json.Marshal(v)
 	var out any
+	// A field another panel or a stored setting may lack or hold in another shape: missing is empty, and the code below works with empty.
 	_ = json.Unmarshal(raw, &out)
 	return out
 }

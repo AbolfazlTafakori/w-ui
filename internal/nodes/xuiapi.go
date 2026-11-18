@@ -203,6 +203,7 @@ func (x *xuiAPI) csrfToken(ctx context.Context) string {
 
 // signIn signs in with the node's username and password and keeps the cookie.
 func (x *xuiAPI) signIn(ctx context.Context) error {
+	// A constructor given valid fixed arguments: it cannot fail.
 	jar, _ := cookiejar.New(nil)
 	x.client.Jar = jar
 	x.csrf = x.csrfToken(ctx)
@@ -557,6 +558,7 @@ type xuiClient struct {
 // inClients is a client as the older API takes it: inside an inbound's
 // settings, written as a string.
 func inClients(inboundID int, c any) map[string]any {
+	// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 	raw, _ := json.Marshal(map[string]any{"clients": []any{c}})
 	return map[string]any{"id": inboundID, "settings": string(raw)}
 }
@@ -711,6 +713,7 @@ func (x *xuiAPI) subURL(ctx context.Context) (string, error) {
 	}
 	host := set.Domain
 	if host == "" {
+		// A root URL validated when the node was saved: it parses.
 		u, _ := url.Parse(x.root)
 		host = u.Hostname()
 	}

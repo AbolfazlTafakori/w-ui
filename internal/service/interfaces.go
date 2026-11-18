@@ -1241,6 +1241,7 @@ func (s *Interfaces) updateTransport(ctx context.Context, iface *model.Interface
 // address from the new range, in one transaction with the interface's own
 // change, and the pool follows only once that has committed.
 func (s *Interfaces) readdress(ctx context.Context, iface *model.Interface, subnet string, fields map[string]any) error {
+	// An address or subnet the panel validated when it was saved: it reads.
 	prefix, _ := netip.ParsePrefix(subnet)
 	fresh, err := ipam.New(prefix)
 	if err != nil {

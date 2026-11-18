@@ -322,6 +322,7 @@ func (x *xuiAPI) addInbound(ctx context.Context, in service.XrayInboundInput) (i
 		if v == nil {
 			return ""
 		}
+		// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 		b, _ := json.Marshal(v)
 		return string(b)
 	}

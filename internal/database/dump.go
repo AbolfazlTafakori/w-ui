@@ -583,6 +583,7 @@ func LoadDump(ctx context.Context, db *gorm.DB, drv config.Driver, r io.Reader, 
 			}
 		}
 		for i := len(models) - 1; i >= 0; i-- {
+			// The schema of a model the panel registers itself: it parses.
 			sch, _ := parseSchema(models[i])
 			if err := tx.Table(sch.Table).Where("1 = 1").Delete(nil).Error; err != nil {
 				return fmt.Errorf("clear %s: %w", sch.Table, err)
@@ -613,6 +614,7 @@ func LoadDump(ctx context.Context, db *gorm.DB, drv config.Driver, r io.Reader, 
 			if !ok {
 				return nil // a table this panel no longer has
 			}
+			// The schema of a model the panel registers itself: it parses.
 			sch, _ := parseSchema(m)
 			ld = newTableLoader(m, sch, cols)
 			loaded[name] = sameColumns(sch, cols)

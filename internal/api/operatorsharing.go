@@ -127,6 +127,7 @@ func (s *Server) handleOperatorSharing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOperatorSharingHistory(w http.ResponseWriter, r *http.Request) {
+	// A number with a fallback: what does not read is the default, as the code below says.
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	// Their own customers' entries, their deleted customers' included: the
 	// record keeps whose customer each was (service.SharingRecord).

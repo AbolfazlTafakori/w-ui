@@ -288,6 +288,7 @@ func checkWS(p model.StealthParams, now time.Time) (model.StealthParams, error) 
 			}
 			sh = preset
 		}
+		// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 		obj, _ := json.Marshal(sh.ProfileObject())
 		p.Shape = string(obj)
 	} else {

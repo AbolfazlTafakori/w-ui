@@ -348,6 +348,7 @@ func (s *Clients) makeHandedOver(ctx context.Context, node model.Node, take []ha
 		}
 		for _, ip := range made.ips[id] {
 			if err := s.pools.Replay(id, ip); err != nil {
+				// Undoing a half-made import: the error returned is the import's own, which is the one that matters.
 				_ = s.unmakeHandedOver(ctx, made)
 				return nil, claim, err
 			}

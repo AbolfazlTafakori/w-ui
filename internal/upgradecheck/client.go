@@ -33,6 +33,7 @@ type Client struct {
 // token and the cookie it is bound to -- so a release that checks either
 // accepts it.
 func Login(ctx context.Context, base, username, password string) (*Client, error) {
+	// A constructor given valid fixed arguments: it cannot fail.
 	jar, _ := cookiejar.New(nil)
 	c := &Client{
 		Base: strings.TrimRight(base, "/") + "/",
@@ -58,6 +59,7 @@ func WaitUp(ctx context.Context, base string, within time.Duration) error {
 	defer cancel()
 	hc := &http.Client{Timeout: 2 * time.Second}
 	for {
+		// A fixed method and a URL built from a validated address: it cannot fail.
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/", nil)
 		if resp, err := hc.Do(req); err == nil {
 			resp.Body.Close()
@@ -119,6 +121,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 func (c *Client) Raw(ctx context.Context, method, path string, body any) (int, []byte) {
 	var rd io.Reader
 	if body != nil {
+		// Marshalling plain data the panel built (maps, strings, numbers): it cannot fail.
 		raw, _ := json.Marshal(body)
 		rd = bytes.NewReader(raw)
 	}
@@ -135,6 +138,7 @@ func (c *Client) Raw(ctx context.Context, method, path string, body any) (int, [
 		return 0, []byte(err.Error())
 	}
 	defer resp.Body.Close()
+	// A read whose short or failed result is handled by what was read (an empty or short body is refused below).
 	raw, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, raw
 }
