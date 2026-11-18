@@ -47,22 +47,29 @@ func EnsureStealthSecrets(ctx context.Context, db *gorm.DB) error {
 		Pluck("accounts.id", &ids).Error; err != nil {
 		return fmt.Errorf("service: find devices without a transport secret: %w", err)
 	}
-	for _, id := range ids {
-		secret, err := newStealthSecret()
-		if err != nil {
-			return err
-		}
-		// Only where there is still none, so a pass that races another
-		// never replaces a secret a customer was already handed. Its
-		// updated_at is left: the files a customer has did not change, and
-		// their date is read from it.
-		if err := db.WithContext(ctx).Model(&model.Account{}).
-			Where("id = ? AND (stealth_secret = '' OR stealth_secret IS NULL)", id).
-			UpdateColumn("stealth_secret", secret).Error; err != nil {
-			return fmt.Errorf("service: store a transport secret: %w", err)
-		}
+	if len(ids) == 0 {
+		return nil
 	}
-	return nil
+	// All in one transaction: one write to disk for the lot, rather than
+	// one per device -- thousands after an import, each waiting on its own.
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, id := range ids {
+			secret, err := newStealthSecret()
+			if err != nil {
+				return err
+			}
+			// Only where there is still none, so a pass that races another
+			// never replaces a secret a customer was already handed. Its
+			// updated_at is left: the files a customer has did not change,
+			// and their date is read from it.
+			if err := tx.Model(&model.Account{}).
+				Where("id = ? AND (stealth_secret = '' OR stealth_secret IS NULL)", id).
+				UpdateColumn("stealth_secret", secret).Error; err != nil {
+				return fmt.Errorf("service: store a transport secret: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // checkWireGuardTransport refuses a WireGuard transport there is none of.

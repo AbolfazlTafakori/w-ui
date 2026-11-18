@@ -76,6 +76,12 @@ func BenchmarkAPassOverATreeOf5000(b *testing.B) {
 			}
 			r := New(Options{DB: db, Enforcer: newFakeEnforcer(), Pool: backend.NewPool(quietLog()), Interval: time.Second, Log: quietLog()})
 			ctx := context.Background()
+			// One pass first, as the panel's first after start: it gives each
+			// new device its transport secret, once. What is timed is every
+			// pass after that.
+			if _, err := r.readDesired(ctx); err != nil {
+				b.Fatal(err)
+			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				d, err := r.readDesired(ctx)
@@ -91,5 +97,20 @@ func BenchmarkAPassOverATreeOf5000(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// The first pass after 5,000 devices arrive without a transport secret --
+// after an import, or the upgrade that brought secrets -- gives every one
+// of them its secret, once.
+func BenchmarkTheFirstPassOver5000NewDevices(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		db, _ := chainTree(b)
+		r := New(Options{DB: db, Enforcer: newFakeEnforcer(), Pool: backend.NewPool(quietLog()), Interval: time.Second, Log: quietLog()})
+		b.StartTimer()
+		if _, err := r.readDesired(context.Background()); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
