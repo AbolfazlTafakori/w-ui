@@ -73,8 +73,15 @@ type NodeClient struct {
 	// DeviceLimit is how many connections the plan allows at once. The panel
 	// holds the customer to it across every server; the node keeps it only
 	// to fall back on its own view while the panel is out of touch.
-	DeviceLimit int           `json:"deviceLimit"`
-	Accounts    []NodeAccount `json:"accounts"`
+	DeviceLimit int `json:"deviceLimit"`
+	// AllowanceBytes is what the customer has left to use, as the panel
+	// knew it when it pushed; nil is no allowance (unlimited), and a panel
+	// older than this field sends none. The node holds them to it in its
+	// own kernel -- the packet that crosses it is dropped there -- rather
+	// than serving them until the panel has counted what they used and
+	// pushed them off, which is up to two rounds of full speed.
+	AllowanceBytes *uint64       `json:"allowanceBytes,omitempty"`
+	Accounts       []NodeAccount `json:"accounts"`
 }
 
 // NodeAccount is one device's credentials on this tunnel.
@@ -318,9 +325,17 @@ func (s *NodeSync) upsertClients(tx *gorm.DB, iface *model.Interface, want []Nod
 		c.Name = fmt.Sprintf("origin-%d", wc.OriginID)
 		c.Protocol = iface.Protocol
 		c.RateBitsPerSec = wc.RateBitsPerSec
-		// No allowance and no expiry: this node counts, the panel that sold the
-		// plan decides. Enabled is the decision arriving.
+		// No expiry: the panel that sold the plan decides that, and Enabled
+		// is the decision arriving. The allowance is held here as well, so
+		// the kernel stops them at the byte: what this node has counted for
+		// them, and what the panel says they have left. Without one, none.
 		c.QuotaBytes = 0
+		if wc.AllowanceBytes != nil {
+			c.QuotaBytes = c.UsedBytes + *wc.AllowanceBytes
+			if c.QuotaBytes == 0 {
+				c.QuotaBytes = 1 // nothing left is a limit, not unlimited
+			}
+		}
 		c.ExpiresAt = nil
 		// 0 is unlimited -- also what a panel older than this field sends,
 		// and such a panel never held anybody, so the fallback holds nobody.

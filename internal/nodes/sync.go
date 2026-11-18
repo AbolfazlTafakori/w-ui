@@ -415,6 +415,16 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.
 			// allowance, the date, an operator's switch — was resolved here,
 			// because the allowance is one number spent across every node and
 			// only this panel can see the whole of it.
+			// What they have left, for the node to hold them to in its own
+			// kernel; none for a plan with no allowance.
+			var allowance *uint64
+			if c.QuotaBytes > 0 {
+				left := uint64(0)
+				if c.QuotaBytes > c.UsedBytes {
+					left = c.QuotaBytes - c.UsedBytes
+				}
+				allowance = &left
+			}
 			state.Clients = append(state.Clients, fleet.NodeClient{
 				OriginID: c.ID,
 				// A server past its host's transfer allowance carries nobody.
@@ -424,6 +434,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.
 				Enabled:        !spent && service.ServesNow(&c, suspended),
 				RateBitsPerSec: c.RateBitsPerSec,
 				DeviceLimit:    c.DeviceLimit,
+				AllowanceBytes: allowance,
 				Accounts:       accs,
 			})
 		}
