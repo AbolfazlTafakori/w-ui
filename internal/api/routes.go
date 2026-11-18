@@ -635,11 +635,12 @@ func (s *Server) routes() []Route {
 			Note:    "No secret is kept, so none is listed: only a prefix to tell them apart, when each ends and when it was last used.",
 			handler: s.handleListOperatorTokens},
 		{Method: "POST", Path: "/api/operator/tokens", Group: "Authentication", Auth: true, Operator: true,
-			Summary: "Issue yourself an API token, as an admin or a reseller.",
-			Body:    `{"name":"shop","days":90}`,
-			Note: "It reaches what you do, as you are at each request -- switched off, it stops at once -- and never " +
-				"your account, the operators, the settings or other tokens. days: absent is 90, 0 is never, at most 365. " +
-				"Five at most. The secret is returned once and stored only as a hash.",
+			Summary: "Issue an API token: an admin for themselves or one of their resellers, out of the admin's token capacity; the owner for anyone.",
+			Body:    `{"name":"shop","days":90,"forAdminId":0}`,
+			Note: "A reseller cannot issue one: 403. Each token issued spends one of the admin's tokens, and revoking it gives nothing back. " +
+				"It reaches what its operator does, as they are at each request -- paused, it stops at once -- and never " +
+				"an account, the operators, the settings or other tokens. days: absent is 90, 0 is never, at most 365. " +
+				"The secret is returned once and stored only as a hash.",
 			handler: s.handleIssueOperatorToken},
 		{Method: "DELETE", Path: "/api/operator/tokens/{id}", Group: "Authentication", Auth: true, Operator: true,
 			Summary: "Revoke an API token: your own, or as the owner anyone's, as an admin your resellers'.",
@@ -701,6 +702,12 @@ func (s *Server) routes() []Route {
 			Note: "For an operator the owner granted the activity page. The action as routed and how it ended, never what " +
 				"was sent or answered. Kept 90 days. The owner's own changes are in the panel's log.",
 			handler: s.handleOperatorActivity},
+		{Method: "GET", Path: "/api/operator/ledger", Group: "Server", Auth: true,
+			Summary: "Your capacity ledger, newest first: every movement of users or tokens -- made, extended, ended, charged, handed down -- with who did it and for which customer or token.",
+			Note: "An admin sees their own account's and their resellers', a reseller their own, the owner every account's. " +
+				"Takes kind (users or tokens), limit (at most 500) and before (an entry id, to page back). " +
+				"The sum of an account's lines is its balance.",
+			handler: s.handleOperatorLedger},
 		{Method: "GET", Path: "/api/sharing", Group: "Server", Auth: true,
 			Summary: "Credentials seen from several places at once.",
 			Note:    "Evidence, not proof. Nothing is disconnected automatically.",
@@ -961,6 +968,7 @@ var (
 		"DELETE /api/operator/tokens/{id}": true,
 		// What their tree changed, when the owner granted them the page.
 		"GET /api/operator/activity": true,
+		"GET /api/operator/ledger":   true,
 	}
 
 	// menuForRoute is the admin page that gates a single route under a

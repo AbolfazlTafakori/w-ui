@@ -37,3 +37,18 @@ func (s *Server) handleOperatorActivity(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+// handleOperatorLedger is the capacity ledger the caller may see: their own
+// account's movements, an admin's resellers' too, every account's for the
+// owner. Narrowed in operators.Ledger, never by what the request names.
+func (s *Server) handleOperatorLedger(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	before, _ := strconv.ParseUint(q.Get("before"), 10, 32)
+	rows, err := s.admins.Ledger(r.Context(), adminFrom(r.Context()), q.Get("kind"), uint(before), limit)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": rows})
+}
