@@ -26,6 +26,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/logger"
 )
 
 // ErrFull is a change refused for want of free units. Callers wrap it with
@@ -105,8 +106,12 @@ func move(tx *gorm.DB, a *model.CapacityAccount, field string, delta int64, cond
 		return fmt.Errorf("capacity: move %s: %w", field, res.Error)
 	}
 	if res.RowsAffected == 0 {
+		debug.Debug("refused: not enough left", "account", a.ID, "operator", a.AdminID, "kind", a.Kind,
+			"field", field, "units", delta, "reason", e.Reason, "client", e.ClientID)
 		return ErrFull
 	}
+	debug.Debug("moved", "account", a.ID, "operator", a.AdminID, "kind", a.Kind, "field", field,
+		"units", delta, "reason", e.Reason, "actor", e.ActorID, "client", e.ClientID, "token", e.TokenID)
 	switch field {
 	case "granted":
 		a.Granted += delta
@@ -295,3 +300,7 @@ func Balanced(tx *gorm.DB) ([]uint, error) {
 	}
 	return bad, nil
 }
+
+// debug is the capacity area's debug lines (WUI_DEBUG=capacity): every unit
+// moved and every one refused, with whose and why.
+var debug = logger.Area(nil, logger.AreaCapacity)

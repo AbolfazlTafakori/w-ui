@@ -12,6 +12,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/logger"
 )
 
 // flushInterval is how often the buffer is drained to the database.
@@ -183,6 +184,14 @@ func (w *trafficWriter) flush(ctx context.Context) {
 	if len(usage) == 0 && len(liveness) == 0 && len(devices) == 0 {
 		return
 	}
+	if logger.DebugOn(logger.AreaTraffic) {
+		var bytes uint64
+		for _, u := range usage {
+			bytes += u.Bytes
+		}
+		trafficDebug.Debug("writing usage", "customers", len(usage), "bytes", bytes,
+			"devices", len(devices), "liveness", len(liveness))
+	}
 
 	db := w.db.WithContext(ctx)
 	now := time.Now().UTC()
@@ -271,3 +280,6 @@ func (w *trafficWriter) health() (failing bool, failures uint64, held int) {
 	defer w.mu.Unlock()
 	return w.failing, w.failures, len(w.usage)
 }
+
+// trafficDebug is the traffic area's debug lines (WUI_DEBUG=traffic).
+var trafficDebug = logger.Area(nil, logger.AreaTraffic)

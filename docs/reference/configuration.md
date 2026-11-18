@@ -10,6 +10,7 @@ Everything is an environment variable; there is no config file to keep in sync. 
 |----------|---------|---------|
 | `WUI_LISTEN` | `127.0.0.1:2096` | The address to serve on. |
 | `WUI_OWNER_LISTEN` | (empty) | A second address for the owner alone (install: `--owner-port`; also on the owner's settings page). `WUI_LISTEN` is then the admins' and resellers': the owner's pages answer 404 there, and the owner signs in only here. Each port has its own session cookie and sign-in throttle. Empty: one port for everybody. |
+| `WUI_DEBUG` | (empty) | Debug lines for chosen parts of the panel, whatever `WUI_LOG_LEVEL` is: comma separated from `capacity` (units taken, given, refused), `traffic` (usage written), `cutoff` (customers kept off and why), `limit` (connections counted and held off), `nodes` (what nodes say), `bot`; or `all`. Off, they cost nothing measurable (about 28ns a line). Never carries a password, token, key or link. |
 | `WUI_BASE_PATH` | `/` | The secret URL prefix. |
 | `WUI_TLS_CERT` / `WUI_TLS_KEY` | | Serve HTTPS with this pair. |
 | `WUI_TRUSTED_PROXIES` | | CIDRs allowed to set `X-Forwarded-*`. |

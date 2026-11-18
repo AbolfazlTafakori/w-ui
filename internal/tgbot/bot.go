@@ -15,6 +15,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/panelconf"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -120,6 +121,9 @@ func (b *Bot) handle(ctx context.Context, u update) {
 			b.log.Error("bot handler panicked", "bot", b.name(), "panic", r)
 		}
 	}()
+	// Which kind of update, never what it said: a message may carry a
+	// customer's link or a token.
+	botDebug.Debug("update", "bot", b.name(), "message", u.Message != nil, "callback", u.Callback != nil)
 	switch {
 	case u.Callback != nil && u.Callback.Message != nil:
 		b.onCallback(ctx, u.Callback)
@@ -892,3 +896,6 @@ func untilText(t time.Time) string {
 // telegramFileLimit is the largest file a bot may send; past it Telegram
 // answers 413 and nothing arrives.
 const telegramFileLimit = 50 << 20
+
+// botDebug is the bot area's debug lines (WUI_DEBUG=bot).
+var botDebug = logger.Area(nil, logger.AreaBot)

@@ -9,6 +9,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fleet"
+	"github.com/abolfazl/w-ui/internal/logger"
 )
 
 // Holding a customer to the connections their plan allows.
@@ -561,6 +562,8 @@ func (c *concurrency) enforce(client *model.Client, accs []model.Account, now ti
 	if total <= client.DeviceLimit {
 		return nil
 	}
+	limitDebug.Debug("over the connection limit", "client", client.ID, "name", client.Name,
+		"limit", client.DeviceLimit, "connections", total, "credentials", len(lives))
 	// Oldest first: the device that was already connected stays. Ties --
 	// two reports rounded to the same second -- go by id, so the answer is
 	// the same on every tick rather than flapping between the two.
@@ -643,3 +646,6 @@ func (c *concurrency) liveClients(now time.Time) []uint {
 func whereFrom(endpoint string) string {
 	return strings.TrimSpace(endpoint)
 }
+
+// limitDebug is the limit area's debug lines (WUI_DEBUG=limit).
+var limitDebug = logger.Area(nil, logger.AreaLimit)

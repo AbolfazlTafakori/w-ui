@@ -70,7 +70,7 @@ func serversPanel(t *testing.T) (http.Handler, map[string]session, *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.NewTextHandler(panelLogTo, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	s := New(Options{
 		DB: db, Logger: log, Catalog: catalog,
 		Enforcer: enforce.NewNoop(), Settings: panelconf.NewSettings(db, "en"),
@@ -170,6 +170,10 @@ func serversPanel(t *testing.T) (http.Handler, map[string]session, *gorm.DB) {
 	}
 	return mux, sessions, db
 }
+
+// panelLogTo is where a test panel's log goes: nowhere, unless a test reads
+// it.
+var panelLogTo io.Writer = io.Discard
 
 func askServers(t *testing.T, mux http.Handler, sess session) (int, []map[string]any, string) {
 	t.Helper()

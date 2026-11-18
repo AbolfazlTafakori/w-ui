@@ -31,6 +31,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/fleet"
+	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/routing"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -950,6 +951,17 @@ func (r *Reconciler) lastSuspended(read map[uint]bool, err error) map[uint]bool 
 			"error", err, "suspended", len(r.suspended))
 		return r.suspended
 	}
+	for id := range read {
+		if !r.suspended[id] {
+			r.log.Info("an operator is paused: every customer of theirs, and of their resellers, is off until they are back",
+				"operator", id)
+		}
+	}
+	for id := range r.suspended {
+		if !read[id] {
+			r.log.Info("an operator is back: their customers are served as they were", "operator", id)
+		}
+	}
 	r.suspended = read
 	return read
 }
@@ -1141,6 +1153,10 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		}
 
 		serviceable := serviceableFor(&c, suspended)
+		if !serviceable && c.Status.Serviceable() {
+			cutoffDebug.Debug("kept off: an operator above is paused", "client", c.ID, "name", c.Name,
+				"owner", c.OwnerID, "admin", c.AdminID)
+		}
 
 		// Every client gets a rule, including the cut-off ones. A rule that
 		// drops is how the kernel refuses their traffic in the instant between
@@ -1434,3 +1450,6 @@ func (r *Reconciler) spentInKernel(ctx context.Context) []uint {
 	}
 	return out
 }
+
+// cutoffDebug is the cutoff area's debug lines (WUI_DEBUG=cutoff).
+var cutoffDebug = logger.Area(nil, logger.AreaCutoff)

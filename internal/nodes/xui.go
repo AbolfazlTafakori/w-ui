@@ -10,6 +10,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fleet"
+	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/service"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
@@ -561,6 +562,7 @@ func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
 		}
 	}
 	s.mu.Unlock()
+	nodesDebug.Debug("live on a 3x-ui", "node", node.Name, "online", len(emails), "ours", len(out))
 	if s.Sessions != nil {
 		s.Sessions(node.ID, out)
 	}
@@ -645,3 +647,6 @@ func (s *Syncer) setLimitWarning(ctx context.Context, node model.Node, warning s
 		s.log.Warn("a node's connections are not all counted toward customers' limits", "node", node.Name, "why", warning)
 	}
 }
+
+// nodesDebug is the nodes area's debug lines (WUI_DEBUG=nodes).
+var nodesDebug = logger.Area(nil, logger.AreaNodes)
