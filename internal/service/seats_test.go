@@ -538,3 +538,88 @@ func TestCustomersMadeAtOnceCannotPassTheCeiling(t *testing.T) {
 		})
 	}
 }
+
+// ── What an extension would take, shown before it is confirmed ──
+
+// The preview takes what the extension takes -- counted by running it and
+// rolling it back -- and leaves the account and the customer as they were.
+func TestAnExtensionsPreviewIsWhatItTakes(t *testing.T) {
+	p := newSeatPanel(t)
+	units := p.operator(t, "reza", model.RoleReseller, model.CapacityConsumable, 5, nil)
+	seats := p.operator(t, "sara", model.RoleReseller, model.CapacityOpen, 5, nil)
+	ctxU, ctxS := asReseller(units, 1), asReseller(seats, 1)
+	a := p.make(t, ctxU, "a", 2)
+	b := p.make(t, ctxS, "b", 2)
+	in := func(id uint, dry bool) ExtendInput {
+		return ExtendInput{IDs: []uint{id}, Kind: ExtendTime, Days: 3, DryRun: dry}
+	}
+	check := func(what string, ctx context.Context, op *model.Admin, id uint, want int64) {
+		t.Helper()
+		was := p.acc(t, op).Used
+		var before model.Client
+		p.db.First(&before, id)
+		got, err := p.clients.Extend(ctx, in(id, true))
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		if got.Units != want {
+			t.Errorf("%s: the preview says %d units, want %d", what, got.Units, want)
+		}
+		var after model.Client
+		p.db.First(&after, id)
+		if p.acc(t, op).Used != was || !after.ExpiresAt.Equal(*before.ExpiresAt) || after.Status != before.Status {
+			t.Fatalf("%s: the preview changed something", what)
+		}
+		if _, err := p.clients.Extend(ctx, in(id, false)); err != nil {
+			t.Fatalf("%s, for real: %v", what, err)
+		}
+		if took := p.acc(t, op).Used - was; took != want {
+			t.Errorf("%s: the preview said %d, the extension took %d", what, want, took)
+		}
+	}
+	// Consumable: every extension spends the customer's users.
+	check("units, a live customer", ctxU, units, a.ID, 2)
+	// Open: free while the customer is on; ended, it takes the seats back.
+	check("seats, a live customer", ctxS, seats, b.ID, 0)
+	endBy(p, t, b)
+	if err := p.db.Model(&model.Client{}).Where("id = ?", b.ID).Update("expires_at", time.Now().UTC().Add(-time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	check("seats, an ended customer", ctxS, seats, b.ID, 2)
+	p.balanced(t)
+
+	// One unit of five left, two needed: refused in the preview, in the
+	// same words as the extension itself.
+	_, err := p.clients.Extend(ctxU, in(a.ID, true))
+	refusedForUsers(t, "the preview of one past the units left", err)
+	_, err = p.clients.Extend(ctxU, in(a.ID, false))
+	refusedForUsers(t, "the extension past the units left", err)
+}
+
+// An admin the owner lets see every customer makes customers that are
+// theirs, paid from their users, and is refused past what is left. Before,
+// they made the owner's customers, for nothing.
+func TestAnAdminWhoSeesEveryonePaysForWhatTheySell(t *testing.T) {
+	p := newSeatPanel(t)
+	ad := p.operator(t, "adm", model.RoleAdmin, model.CapacityConsumable, 3, nil)
+	if err := p.db.Model(&model.Admin{}).Where("id = ?", ad.ID).Update("can_view_all_clients", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	ad.CanViewAllClients = true
+	sc := ScopeFor(ad)
+	if sc.Restricted || !sc.Capped {
+		t.Fatalf("the scope: %+v", sc)
+	}
+	ctx := WithScope(context.Background(), sc)
+	c := p.make(t, ctx, "x", 2)
+	if c.OwnerID != ad.ID || c.AdminID != ad.ID {
+		t.Errorf("stamped owner %d admin %d, want %d", c.OwnerID, c.AdminID, ad.ID)
+	}
+	if used := p.acc(t, ad).Used; used != 2 {
+		t.Errorf("spent %d, want 2", used)
+	}
+	_, err := p.clients.Create(ctx, CreateInput{Name: "y", InterfaceIDs: []uint{1}, DeviceLimit: 2,
+		ExpiresAt: ptrTime(time.Now().UTC().Add(48 * time.Hour))})
+	refusedForUsers(t, "past the units left", err)
+	p.balanced(t)
+}

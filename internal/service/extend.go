@@ -87,6 +87,9 @@ type ExtendInput struct {
 	IncludeWaiting bool `json:"includeWaiting"`
 	// DryRun says what would happen, and changes nothing.
 	DryRun bool `json:"dryRun"`
+	// measuring is a preview's real run, inside a transaction that is never
+	// kept: said to nobody, logged nowhere.
+	measuring bool
 }
 
 // Why a selected customer was not changed.
@@ -115,6 +118,10 @@ type ExtendResult struct {
 	// Amount is what each changed customer got, as the server understood
 	// it: seconds of time or bytes of traffic, negative when taken back.
 	Amount int64 `json:"amount"`
+	// Units is, on a dry run, what it would take from the caller's users:
+	// units spent (consumable) or seats taken back (open; negative when it
+	// frees some). Zero for the owner, and for an operator with no ceiling.
+	Units int64 `json:"units"`
 }
 
 // Extend adds (or takes back) time or traffic for the selected customers.
@@ -200,7 +207,7 @@ func (s *Clients) extendRaw(ctx context.Context, in ExtendInput) (*ExtendResult,
 		return nil, err
 	}
 
-	if !in.DryRun && res.Changed > 0 {
+	if !in.DryRun && !in.measuring && res.Changed > 0 {
 		s.log.Info("customers' plans changed in bulk",
 			"kind", in.Kind, "subtract", in.Subtract, "amount", res.Amount,
 			"changed", res.Changed, "skipped", res.Skipped,

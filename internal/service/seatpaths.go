@@ -2,9 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"gorm.io/gorm"
+
+	"github.com/abolfazl/w-ui/internal/capacity"
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
@@ -86,6 +90,9 @@ func (s *Clients) Adjust(ctx context.Context, in AdjustInput) (int64, error) {
 }
 
 func (s *Clients) Extend(ctx context.Context, in ExtendInput) (*ExtendResult, error) {
+	if in.DryRun {
+		return s.previewExtend(ctx, in)
+	}
 	var out *ExtendResult
 	err := s.withSeats(ctx, in.IDs, false, func(v *Clients) ([]uint, error) {
 		var err error
@@ -154,4 +161,53 @@ func (s *Clients) Import(ctx context.Context, in ImportInput) (*ImportReport, er
 		return nil, err
 	})
 	return out, err
+}
+
+// previewExtend is what an extension would do, and what it would take from
+// the caller's users, before they confirm it.
+//
+// Run for real -- the same change and the same settling as the extension
+// itself -- inside a transaction that is always rolled back, so the units
+// shown are the units it takes, not a second sum that could disagree with
+// the first. A change that would be refused for want of users is refused
+// here too, with the same sentence.
+func (s *Clients) previewExtend(ctx context.Context, in ExtendInput) (*ExtendResult, error) {
+	sc := ScopeOf(ctx)
+	run := in
+	run.DryRun, run.measuring = false, true
+	var out *ExtendResult
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		before, err := callerUsers(tx, sc)
+		if err != nil {
+			return err
+		}
+		view := s.seatsView(tx, &ipJournal{})
+		view.changes = nil
+		if out, err = view.Extend(ctx, run); err != nil {
+			return err
+		}
+		after, err := callerUsers(tx, sc)
+		if err != nil {
+			return err
+		}
+		out.Units = after - before
+		return errDryRun
+	})
+	if err != nil && !errors.Is(err, errDryRun) {
+		return nil, err
+	}
+	return out, nil
+}
+
+// callerUsers is how much of the caller's users is in use, or 0 for one
+// with no ceiling.
+func callerUsers(tx *gorm.DB, sc Scope) (int64, error) {
+	if !sc.Capped {
+		return 0, nil
+	}
+	acc, err := capacity.Account(tx, sc.AdminID, model.CapacityUsers)
+	if err != nil || acc == nil {
+		return 0, err
+	}
+	return acc.Used, nil
 }
