@@ -46,8 +46,12 @@ export function statusTag(c) {
   // One short word in the column; the reason is on the tag's tooltip.
   if (c.ownerPaused) {
     return {
-      color: 'red',
-      label: t('client.paused'),
+      // Stopped from above, not used up: amber, not the red of an ended plan.
+      color: 'orange',
+      // Who above them is paused, when the server said: "paused by admin" or
+      // "paused by reseller".
+      label: c.pausedBy === 'admin' ? t('client.pausedByAdmin')
+        : c.pausedBy === 'reseller' ? t('client.pausedByReseller') : t('client.paused'),
       // The switch is shown off while paused, so the tooltip is where their
       // own setting -- what they return to -- is still told.
       title: (store.admin?.role === 'reseller' ? t('client.accountPausedHint') : t('client.resellerPausedHint'))

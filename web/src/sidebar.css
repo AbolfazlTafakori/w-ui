@@ -508,3 +508,11 @@
     padding: 8px;
   }
 }
+
+/* A line between an operator's groups of pages. */
+.amenu-divider {
+  height: 1px;
+  margin: 6px 12px;
+  background: var(--line-soft);
+  list-style: none;
+}

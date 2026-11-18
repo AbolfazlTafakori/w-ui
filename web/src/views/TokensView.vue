@@ -23,9 +23,18 @@ const revoking = ref(null)
 
 const owner = computed(() => !!store.admin?.managesPanel)
 const me = computed(() => store.admin?.id)
-// Five live tokens at most (MaxOperatorTokens): the button says so before
-// the server has to.
-const mine = computed(() => tokens.value.filter((tk) => tk.adminId === me.value && !expired(tk)).length)
+// Who issues here: an admin, out of the tokens the owner gave them, for
+// themselves or one of their resellers. A reseller's are issued by their
+// admin, so a reseller only reads and revokes their own; the owner issues
+// from the operators page.
+const issues = computed(() => store.admin?.role === 'admin')
+const left = computed(() => {
+  const tk = store.admin?.tokenCapacity
+  return tk ? Math.max((Number(tk.granted) || 0) - (Number(tk.used) || 0), 0) : 0
+})
+// The admin's resellers, to issue a token for one of them.
+const resellers = ref([])
+const createFor = ref(0)
 
 async function load() {
   try {
@@ -37,16 +46,39 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (issues.value) {
+    try {
+      resellers.value = ((await api.admins()).items || []).filter((a) => a.role === 'reseller')
+    } catch {
+      resellers.value = []
+    }
+  }
+})
+
+// The admin's own count moved: read it again so the button and the card
+// say what is left.
+async function refreshMe() {
+  try {
+    const me = await api.get('/api/auth/me')
+    if (me && store.admin) store.admin.tokenCapacity = me.tokenCapacity
+  } catch {
+    // The list itself is right; the count catches up on the next page.
+  }
+}
 
 async function create() {
   if (!createName.value.trim()) return
   creating.value = true
   try {
-    created.value = await api.post('/api/operator/tokens', { name: createName.value.trim(), days: Number(createDays.value) })
+    const body = { name: createName.value.trim(), days: Number(createDays.value) }
+    if (createFor.value) body.forAdminId = Number(createFor.value)
+    created.value = await api.post('/api/operator/tokens', body)
     createOpen.value = false
     createName.value = ''
-    await load()
+    createFor.value = 0
+    await Promise.all([load(), refreshMe()])
   } catch (e) {
     notify(e.message, 'error')
   } finally {
@@ -89,7 +121,8 @@ function ends(tk) {
       <div class="acard-body">
         <div class="api-token-header">
           <p class="api-token-hint">{{ owner ? t('opTokens.ownerHint') : t('opTokens.hint') }}</p>
-          <button v-if="!owner" class="abtn primary sm" :disabled="mine >= 5" :title="mine >= 5 ? t('opTokens.atMost') : ''" @click="createOpen = true">
+          <span v-if="issues" class="api-token-left">{{ t('cap.tokensLeft', { n: left }) }}</span>
+          <button v-if="issues" class="abtn primary sm" :disabled="left <= 0" :title="left <= 0 ? t('cap.err.tokens') : ''" @click="createOpen = true">
             + {{ t('set.security.apiTokenNew') }}
           </button>
         </div>
@@ -132,6 +165,13 @@ function ends(tk) {
             <label class="aform-label required" for="op-tk-name">{{ t('set.security.apiTokenName') }}</label>
             <label class="ainput block"><input id="op-tk-name" v-model="createName" maxlength="64" :placeholder="t('opTokens.namePlaceholder')" @keydown.enter="create" /></label>
           </div>
+          <div v-if="resellers.length" class="aform-item">
+            <label class="aform-label" for="op-tk-for">{{ t('cap.tokenFor') }}</label>
+            <div class="aselect"><select id="op-tk-for" v-model="createFor">
+              <option :value="0">{{ t('cap.tokenForMe') }}</option>
+              <option v-for="r in resellers" :key="r.id" :value="r.id">{{ r.username }}</option>
+            </select></div>
+          </div>
           <div class="aform-item">
             <label class="aform-label" for="op-tk-days">{{ t('opTokens.lasts') }}</label>
             <div class="aselect"><select id="op-tk-days" v-model="createDays">
@@ -144,6 +184,7 @@ function ends(tk) {
         </div>
         <div class="amodal-foot">
           <button class="abtn" @click="createOpen = false">{{ t('set.cancel') }}</button>
+          <span class="api-token-cost">{{ t('cap.tokenCost') }}</span>
           <button class="abtn primary" :disabled="creating || !createName.trim()" @click="create"><span v-if="creating" class="spin sm"></span>{{ t('set.confirm') }}</button>
         </div>
       </div>
@@ -182,4 +223,6 @@ function ends(tk) {
 .api-token-created-notice { margin-top: 0; }
 .api-token-value-wrap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .api-token-value { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 4px 8px; background: var(--surface-3); border-radius: 4px; word-break: break-all; }
+.api-token-left { color: var(--muted); font-size: 13px; margin-inline-start: auto; margin-inline-end: 8px; }
+.api-token-cost { margin-inline-end: auto; align-self: center; color: var(--muted); font-size: 13px; }
 </style>

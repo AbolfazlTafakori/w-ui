@@ -6,6 +6,7 @@ import { computed } from 'vue'
 import { store, t } from '../../lib/store.js'
 import { bytes, dateTime } from '../../lib/format.js'
 import { DEPLETING_AT } from '../../lib/clientRow.js'
+import { cardOf } from '../../lib/capacity.js'
 import AntIcon from '../AntIcon.vue'
 
 const props = defineProps({ account: { type: Object, default: null } })
@@ -22,9 +23,22 @@ const accountStrip = computed(() => {
   if (!a.enabled) reason = t('admins.switchedOff')
   else if (days !== null && days <= 0) reason = t('admins.termEnded')
   else if (a.quotaBytes && a.usedBytes >= a.quotaBytes) reason = t('admins.allowanceSpent')
+  // Users as the capacity card says them: seats held of what was given
+  // (open), units left to spend (consumable), or a count with no ceiling.
+  const cap = cardOf(a)
+  let customers = `${nf(a.users)} / ∞`
+  let customersColor = 'green'
+  if (cap.users?.mode === 'consumable') {
+    customers = t('cap.unitsLeft', { n: cap.users.free })
+    customersColor = cap.users.free <= 0 ? 'orange' : 'green'
+  } else if (cap.users) {
+    customers = t('cap.usersOf', { used: cap.users.used + cap.users.handed, total: cap.users.given })
+    customersColor = cap.users.free <= 0 ? 'orange' : 'green'
+  }
   return {
-    customers: a.clientLimit ? `${nf(a.users)} / ${nf(a.clientLimit)}` : `${nf(a.users)} / ∞`,
-    customersColor: a.clientLimit && a.users >= a.clientLimit ? 'orange' : 'green',
+    customers,
+    customersColor,
+    tokens: cap.tokens ? t('cap.tokensOf', { used: cap.tokens.used, total: cap.tokens.given }) : '',
     traffic: left === null ? '∞' : bytes(left, store.locale),
     trafficColor: left === null ? 'purple' : spentPct >= 100 ? 'red' : spentPct >= DEPLETING_AT ? 'orange' : 'green',
     time: days === null ? '∞' : days <= 0 ? t('admins.termEnded') : t('admins.daysLeft', { n: nf(days) }),
@@ -40,7 +54,8 @@ const accountStrip = computed(() => {
     <div class="acard-body">
       <div class="account-row">
         <span class="account-title"><AntIcon name="ShopOutlined" /> {{ t('admins.you.title') }}</span>
-        <span class="account-item">{{ t('admins.you.customers') }} <span class="atag ltr" :class="accountStrip.customersColor">{{ accountStrip.customers }}</span></span>
+        <span class="account-item">{{ t('admins.you.customers') }} <span class="atag" dir="auto" :class="accountStrip.customersColor">{{ accountStrip.customers }}</span></span>
+        <span v-if="accountStrip.tokens" class="account-item">{{ t('nav.tokens') }} <span class="atag blue" dir="auto">{{ accountStrip.tokens }}</span></span>
         <span class="account-item">{{ t('admins.you.trafficLeft') }} <span class="atag ltr" :class="accountStrip.trafficColor">{{ accountStrip.traffic }}</span></span>
         <span class="account-item">{{ t('admins.you.timeLeft') }} <span class="atag" dir="auto" :class="accountStrip.timeColor" :title="accountStrip.timeTitle">{{ accountStrip.time }}</span></span>
       </div>

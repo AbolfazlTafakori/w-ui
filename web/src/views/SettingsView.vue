@@ -139,6 +139,7 @@ async function save() {
       const res = await api.put('/api/settings', {
         ...f,
         webPort: num(f.webPort),
+        ownerPort: num(f.ownerPort),
         sessionMaxAge: num(f.sessionMaxAge, 720),
         pageSize: num(f.pageSize, 25),
         expireDiff: num(f.expireDiff),

@@ -2,6 +2,9 @@
 // into thrown Errors with the server's message, so views can show what actually
 // went wrong instead of "request failed".
 
+import { capacityMessage } from './capacity.js'
+import { t } from './store.js'
+
 const TOKEN_KEY = 'wui.token'
 
 // Where the panel is mounted, taken from the <base> tag the server writes.
@@ -34,7 +37,9 @@ export function setToken(token) {
 
 export class ApiError extends Error {
   constructor(message, status, kind = 'server', field = '') {
-    super(message)
+    // A capacity refusal is said in the operator's language, with its
+    // numbers; anything else as the server put it.
+    super(capacityMessage(message, t))
     this.name = 'ApiError'
     this.status = status
     // Which input the server was complaining about, when it said. Lets a form

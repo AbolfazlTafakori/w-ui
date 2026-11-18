@@ -9,13 +9,14 @@
 // and the sizes are theirs.
 import { ref, computed, onMounted, watch } from 'vue'
 import { api } from '../lib/api.js'
-import { t, notify } from '../lib/store.js'
+import { t, notify, store } from '../lib/store.js'
 import { quotaToUnit, unitToBytes, durationToUnit, unitToHours } from '../lib/format.js'
 import AntIcon from './AntIcon.vue'
 import Toggle from './Toggle.vue'
 import MultiSelect from './MultiSelect.vue'
 import HelpTip from './HelpTip.vue'
 import { copyText } from '../lib/clipboard.js'
+import { unitsFor } from '../lib/capacity.js'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -233,6 +234,19 @@ function planDays() {
 // One login per user: the rows follow the Users count. On an edit a row
 // starts with the user's current name and password, as they are.
 const openvpnCount = computed(() => Math.max(1, Number(form.value.deviceLimit) || 1))
+
+// What saving takes from the operator's users, said beside the button before
+// they press it: a new customer's users, or the users added to one.
+const unitsLine = computed(() => {
+  const u = store.admin?.userCapacity
+  if (!u) return ''
+  const users = Number(form.value.deviceLimit) || 0
+  const n = editing.value
+    ? unitsFor(store.admin, { kind: 'grow', users, from: props.client.deviceLimit })
+    : unitsFor(store.admin, { kind: 'create', users })
+  if (!n) return ''
+  return t(u.mode === 'consumable' ? 'cap.willSpend' : 'cap.willHold', { n })
+})
 // A row for every user the count asks for, added when it grows; a smaller
 // count shows fewer and keeps what was typed in the rest.
 watch(
@@ -608,6 +622,7 @@ async function submit() {
       </div>
 
       <div class="amodal-foot">
+        <span v-if="unitsLine" class="cf-units">{{ unitsLine }}</span>
         <button class="abtn" type="button" @click="emit('close')">{{ t('action.cancel') }}</button>
         <button class="abtn primary" type="submit" form="client-form" :disabled="busy">
           <AntIcon v-if="busy" name="LoadingOutlined" class="spin" />
@@ -674,4 +689,5 @@ async function submit() {
 .aalert { margin-bottom: 24px; }
 .anticon.spin { animation: aspin 1s linear infinite; }
 @keyframes aspin { to { transform: rotate(360deg); } }
+.cf-units { margin-inline-end: auto; align-self: center; color: var(--muted); font-size: 13px; }
 </style>

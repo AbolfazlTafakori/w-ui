@@ -11,7 +11,9 @@ describe('a customer row', () => {
   })
 
   it('shows a paused reseller over the customer’s own state', () => {
-    expect(statusTag(customer({ ownerPaused: 'term ended', onlineNow: 2 }))).toMatchObject({ color: 'red', label: 'client.paused' })
+    expect(statusTag(customer({ ownerPaused: 'term ended', onlineNow: 2 }))).toMatchObject({ color: 'orange', label: 'client.paused' })
+    expect(statusTag(customer({ ownerPaused: 'switchedOff', pausedBy: 'admin' }))).toMatchObject({ label: 'client.pausedByAdmin' })
+    expect(statusTag(customer({ ownerPaused: 'switchedOff', pausedBy: 'reseller' }))).toMatchObject({ label: 'client.pausedByReseller' })
   })
 
   it('is online while it moves traffic, unless switched off', () => {

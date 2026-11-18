@@ -54,6 +54,10 @@ const rateMbit = computed({
         <div class="acol"><label class="ainput number"><input v-model.number="form.webPort" type="number" min="1" max="65535" class="ltr" /></label></div>
       </div></div>
       <div class="setting-list-item"><div class="arow">
+        <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.ownerPort') }}</div><div class="setting-list-description">{{ t('set.ownerPortDesc') }}</div></div></div>
+        <div class="acol"><label class="ainput number"><input v-model.number="form.ownerPort" type="number" min="0" max="65535" class="ltr" :placeholder="t('set.ownerPortNone')" /></label></div>
+      </div></div>
+      <div class="setting-list-item"><div class="arow">
         <div class="acol"><div class="setting-list-meta"><div class="setting-list-title">{{ t('set.panelUrlPath') }}</div><div class="setting-list-description">{{ t('set.panelUrlPathDesc') }}</div></div></div>
         <div class="acol"><label class="ainput block"><input :value="form.webBasePath" class="ltr" @input="form.webBasePath = sanitizePath($event.target.value)" /></label></div>
       </div></div>

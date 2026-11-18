@@ -91,6 +91,11 @@ const form = ref({
   role: a ? a.role : (props.forceRole || 'reseller'),
   enabled: a ? !!a.enabled : true,
   clientLimit: a?.clientLimit || '',
+  // How their users count: open (seats, freed when a customer ends) or
+  // consumable (units spent on every sale and renewal, never returned).
+  userMode: a?.capacity?.userMode || 'open',
+  // An admin's API tokens to issue, for themselves and their resellers.
+  tokenLimit: a?.capacity?.tokensGiven || 0,
   quota: q.value,
   quotaUnit: q.unit,
   onHold: !!(a && !a.expiresAt && a.durationDays > 0),
@@ -198,6 +203,24 @@ function validate() {
   return !Object.keys(e).length
 }
 
+// Every label by its own key, so the check that each exists in every
+// language can see them.
+const MODE = { open: 'cap.mode.open', consumable: 'cap.mode.consumable' }
+const MODE_HINT = { open: 'cap.mode.openHint', consumable: 'cap.mode.consumableHint' }
+
+// The owner chooses how an admin's users count, and a reseller's of their
+// own; a reseller under an admin counts the way their admin does.
+const showMode = computed(() => ownerView.value && hasCeiling.value && (isAdmin.value || !props.admin?.parentAdminId))
+const showTokens = computed(() => ownerView.value && isAdmin.value)
+
+// What handing these users down takes out of the caller's own capacity: an
+// admin giving a reseller users sells from what they have free.
+const handDown = computed(() => {
+  if (ownerView.value || !store.admin?.userCapacity) return 0
+  const now = Math.max(0, Math.floor(Number(form.value.clientLimit) || 0))
+  return Math.max(now - (Number(props.admin?.capacity?.usersGiven) || 0), 0)
+})
+
 const busy = ref(false)
 async function submit() {
   if (!validate()) return
@@ -212,6 +235,7 @@ async function submit() {
   if (hasCeiling.value) {
     body.interfaceIds = f.interfaceIds
     body.clientLimit = Math.max(0, Math.floor(Number(f.clientLimit) || 0))
+    if (showMode.value) body.userMode = f.userMode
     body.quotaBytes = unitToBytes(f.quota, f.quotaUnit)
     if (f.onHold) {
       body.durationDays = Number(f.durationDays)
@@ -229,6 +253,7 @@ async function submit() {
     // to grant, and the server refuses a list from them.
     if (ownerView.value) body.menuIds = RESELLER_MENUS.filter((m) => f.menuIds.includes(m))
   }
+  if (showTokens.value) body.tokenLimit = Math.max(0, Math.floor(Number(f.tokenLimit) || 0))
   if (isAdmin.value) {
     body.canViewAllClients = f.canViewAllClients
     body.canViewAllInterfaces = f.canViewAllInterfaces
@@ -324,6 +349,25 @@ async function submit() {
                 <div class="aform-item">
                   <label class="aform-label" for="rf-limit">{{ t('admins.clientLimit') }} <HelpTip :text="t('admins.limitHint')" /></label>
                   <label class="ainput number"><input id="rf-limit" v-model="form.clientLimit" type="number" min="0" step="1" class="ltr" :placeholder="t('client.unlimited')" /></label>
+                  <p v-if="handDown" class="field-hint">{{ t('cap.handDownCost', { n: handDown }) }}</p>
+                </div>
+              </div>
+              <div v-if="showMode" class="acol24">
+                <div class="aform-item">
+                  <span class="aform-label">{{ t('cap.modeLabel') }}</span>
+                  <div class="cap-modes" role="radiogroup" :aria-label="t('cap.modeLabel')">
+                    <label v-for="m in ['open', 'consumable']" :key="m" class="cap-mode" :class="{ on: form.userMode === m }">
+                      <input v-model="form.userMode" type="radio" name="rf-mode" :value="m" />
+                      <span class="cap-mode-name">{{ t(MODE[m]) }}</span>
+                      <span class="cap-mode-hint">{{ t(MODE_HINT[m]) }}</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div v-if="showTokens" class="acol8">
+                <div class="aform-item">
+                  <label class="aform-label" for="rf-tokens">{{ t('cap.tokenLimit') }} <HelpTip :text="t('cap.tokensHint')" /></label>
+                  <label class="ainput number"><input id="rf-tokens" v-model="form.tokenLimit" type="number" min="0" step="1" class="ltr" placeholder="0" /></label>
                 </div>
               </div>
               <div class="acol8">
@@ -510,4 +554,11 @@ async function submit() {
 .field-error { margin: 4px 0 0; font-size: 12px; color: var(--bad); }
 .anticon.spin { animation: aspin 1s linear infinite; }
 @keyframes aspin { to { transform: rotate(360deg); } }
+.field-hint { margin: 5px 0 0; font-size: 12px; line-height: 16px; color: var(--muted); }
+.cap-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.cap-mode { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.cap-mode.on { border-color: var(--tag-blue-ink); background: color-mix(in srgb, var(--tag-blue-ink) 8%, transparent); }
+.cap-mode input { grid-row: span 2; margin-top: 3px; }
+.cap-mode-name { font-weight: 600; color: var(--ink); }
+.cap-mode-hint { color: var(--muted); font-size: 12px; }
 </style>

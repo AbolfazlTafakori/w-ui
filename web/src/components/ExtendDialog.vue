@@ -107,6 +107,16 @@ watch([f, subtract, includeWaiting], schedulePreview, { deep: true })
 onBeforeUnmount(() => clearTimeout(timer))
 
 const changed = computed(() => preview.value?.changed || 0)
+
+// What it takes from the operator's users, as the server worked it out by
+// running it: units spent (consumable), or seats taken back (open).
+const unitsLine = computed(() => {
+  const u = store.admin?.userCapacity
+  const n = Number(preview.value?.units) || 0
+  if (!u || !n) return ''
+  if (n < 0) return t('cap.willFree', { n: -n })
+  return t(u.mode === 'consumable' ? 'cap.willSpend' : 'cap.willHold', { n })
+})
 const needsTyping = computed(() => subtract.value && changed.value >= 5)
 const canApply = computed(
   () => valid.value && !busy.value && !checking.value && changed.value > 0 &&
@@ -210,6 +220,7 @@ async function apply() {
                 ? t(subtract ? 'xt.willLose' : changed === 1 ? 'xt.willGet.one' : 'xt.willGet', { n: changed, amount: amountText })
                 : t('xt.noneChange') }}
             </p>
+            <p v-if="unitsLine" class="xt-units">{{ unitsLine }}</p>
             <ul v-if="effectLines.length || skippedLines.length" class="xt-lines">
               <li v-for="l in effectLines" :key="l.key" :class="`xt-${l.tone}`">{{ l.text }}</li>
               <li v-for="l in skippedLines" :key="l.key" class="muted">{{ l.text }}</li>
@@ -296,4 +307,5 @@ async function apply() {
 @media (max-width: 480px) {
   .xt-grid { gap: 6px; }
 }
+.xt-units { margin: 4px 0 0; font-size: 13px; color: var(--ink); }
 </style>

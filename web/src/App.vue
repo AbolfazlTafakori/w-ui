@@ -124,6 +124,37 @@ const nav = [
   { to: '/api-docs', key: 'nav.api', icon: 'ApiOutlined' },
 ]
 
+// An admin's and a reseller's menu, in the order that was agreed for them:
+// their customers first -- the list, a new one, what they have left to sell
+// with -- then what they run, then what the owner granted them. A line
+// shows only when it is theirs: a page the owner did not grant, a section
+// they have nothing in (tokens with none given or issued), is not there at
+// all. The backend refuses the same pages regardless.
+const operatorNav = [
+  { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', show: (me, g) => !me.managesResellers || g('clients') },
+  { to: '/clients?new=1', key: 'nav.newClient', icon: 'UsergroupAddOutlined', show: (me, g) => !me.managesResellers || g('clients') },
+  { to: '/capacity', key: 'nav.capacity', icon: 'PieChartOutlined', show: (me) => hasCapacity(me) },
+  { divider: true },
+  { to: '/resellers', key: 'nav.resellers', icon: 'ShopOutlined', show: (me, g) => me.managesResellers && g('resellers') },
+  { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', show: (me, g) => !me.managesResellers || g('groups') },
+  { to: '/tokens', key: 'nav.tokens', icon: 'KeyOutlined', show: (me) => hasTokens(me) },
+  { divider: true },
+  { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined', show: (me, g) => g('sharing') },
+  { to: '/activity', key: 'nav.activity', icon: 'ProfileOutlined', show: (me, g) => g('activity') },
+]
+
+// Whether they have any capacity to show: users given, or tokens.
+function hasCapacity(me) {
+  return !!(me.userCapacity || hasTokens(me))
+}
+
+// The tokens section is theirs when they were given tokens to issue (an
+// admin) or hold one (a reseller their admin issued one to).
+function hasTokens(me) {
+  const tk = me.tokenCapacity
+  return !!(tk && (Number(tk.granted) > 0 || Number(tk.held) > 0))
+}
+
 // The page's name, from the menu entry it belongs to -- the longest `to`
 // the current path starts with, so /clients/12 is Clients and
 // /settings/security is Security rather than Settings.
@@ -138,6 +169,7 @@ const pageTitle = computed(() => {
     }
   }
   visit(nav)
+  visit(operatorNav.filter((item) => item.to && !item.to.includes('?')))
   return best ? t(best.key) : ''
 })
 // Every tab and every history entry said "W-UI", so ten open tabs were ten
@@ -151,15 +183,10 @@ const visibleNav = computed(() => {
   const me = store.admin
   if (!me || me.managesPanel) return nav
   const grants = me.menuIds || []
-  const keep = (item) => {
-    // An admin: the pages the owner granted. A page
-    // the owner left unchecked is not here, and the backend refuses it too.
-    if (me.managesResellers) return item.everyone || (item.menu && grants.includes(item.menu))
-    // A reseller: the fixed two pages that are theirs, and a page the owner
-    // granted them (sharing).
-    return item.sells || (item.grant && grants.includes(item.grant))
-  }
-  return nav.filter((item) => !item.children && keep(item))
+  const g = (m) => grants.includes(m)
+  const items = operatorNav.filter((item) => item.divider || item.show(me, g))
+  // A line only between two groups that both have something in them.
+  return items.filter((item, i) => !item.divider || (i > 0 && !items[i - 1].divider && i < items.length - 1))
 })
 
 // Which collapsible groups are open. A group containing the current page opens
@@ -390,8 +417,9 @@ function reload() {
 
       <!-- Their inline Menu: items, and two submenus that open in place. -->
       <ul class="amenu-inline sider-nav" role="menu">
-        <template v-for="item in visibleNav" :key="item.key || item.to">
-          <li v-if="!item.children" role="none">
+        <template v-for="(item, i) in visibleNav" :key="item.key || item.to || 'line' + i">
+          <li v-if="item.divider" class="amenu-divider" role="separator"></li>
+          <li v-else-if="!item.children" role="none">
             <RouterLink :to="item.to" class="amenu-item" :class="{ selected: isActive(item) }" role="menuitem" :title="expanded ? '' : t(item.key)">
               <AntIcon :name="item.icon" />
               <span class="amenu-title">{{ t(item.key) }}</span>

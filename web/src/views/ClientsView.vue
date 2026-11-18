@@ -212,7 +212,18 @@ onMounted(async () => {
     notify(err.message, 'error')
   }
   await Promise.all([load(), loadGroups(), loadOperators()])
+  openNewFromLink()
 })
+
+// "+ New customer" in an operator's menu is this page with ?new=1: the form
+// opens, and the link is put back so a reload does not open it again.
+function openNewFromLink() {
+  if (route.query.new !== '1' || !interfaces.value.length) return
+  formFor.value = {}
+  const { new: _, ...rest } = route.query
+  router.replace({ query: rest })
+}
+watch(() => route.query.new, openNewFromLink)
 
 
 let searchTimer = null
