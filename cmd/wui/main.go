@@ -236,8 +236,8 @@ func run() error {
 	if err := outbounds.EnsureBuiltins(ctx); err != nil {
 		return err
 	}
-	// Names in the policy are resolved on a timer; the first pass runs now so
-	// the opening tick is not applied with empty sets.
+	// Names in the policy are resolved on a timer. The first pass starts now
+	// and is waited for briefly, never for a slow or filtered resolver.
 	if err := routes.MigrateRules(ctx); err != nil {
 		return err
 	}

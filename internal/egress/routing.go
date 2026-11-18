@@ -1056,11 +1056,43 @@ func HopDevice(o model.Outbound) string { return hopDevice(o) }
 
 // ── name resolution ──────────────────────────────────────────────────────────
 
+// firstPassWait is how long the panel's start waits for the first lookup of
+// the policy's names. A server whose resolver is slow or filtered -- common
+// on Iranian hosts, where a lookup can hang for ten seconds or more -- must
+// not hold the panel's start for it.
+var firstPassWait = 2 * time.Second
+
+// lookupNetIP resolves one name; a variable so a test can stand in a
+// resolver that hangs.
+var lookupNetIP = func(ctx context.Context, family, name string) ([]netip.Addr, error) {
+	var r net.Resolver
+	return r.LookupNetIP(ctx, family, name)
+}
+
 // StartResolver keeps the name-to-address cache fresh until ctx is done.
+//
+// The first pass runs now, and start waits for it at most firstPassWait:
+// on a healthy resolver it is done by then and the opening tick has every
+// address. Otherwise it finishes in the background, and the reconciler,
+// which reads the policy every tick, applies the addresses on the tick
+// after they arrive.
 func (s *Routing) StartResolver(ctx context.Context) {
-	s.refreshDomains(ctx)
+	first := make(chan struct{})
+	go func() {
+		defer close(first)
+		s.refreshDomains(ctx)
+	}()
+	select {
+	case <-first:
+	case <-time.After(firstPassWait):
+		if s.log != nil {
+			s.log.Warn("name lookups are slow; the panel starts without waiting for them")
+		}
+	case <-ctx.Done():
+	}
 
 	go func() {
+		<-first
 		t := time.NewTicker(domainRefresh)
 		defer t.Stop()
 		for {
@@ -1136,7 +1168,7 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 		got = map[string][]netip.Prefix{}
 		sem = make(chan struct{}, 8)
 	)
-	resolver := net.Resolver{}
+	lookup := lookupNetIP
 	s.mu.RLock()
 	family := "ip"
 	switch s.domainStrategy {
@@ -1154,7 +1186,7 @@ func (s *Routing) refreshDomains(ctx context.Context) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			ips, err := resolver.LookupNetIP(ctx, family, name)
+			ips, err := lookup(ctx, family, name)
 			if err != nil || len(ips) == 0 {
 				return
 			}
