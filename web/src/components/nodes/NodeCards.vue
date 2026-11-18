@@ -56,6 +56,7 @@ const menuItems = (n) => [
           <span v-else-if="!n.enabled" class="tag grey">{{ t('status.disabled') }}</span>
           <span v-else-if="n.reachable" class="tag green">{{ t('node.online') }}</span>
           <span v-else class="tag red" :title="n.lastError">{{ t('node.offline') }}</span>
+          <span v-if="n.limitWarning" class="tag orange" :title="t(n.limitWarning === 'noAddrs' ? 'node.limitNoAddrs' : 'node.limitNoOnlines')">{{ t('node.limitPartial') }}</span>
         </div>
         <div class="stat-row"><span class="stat-label">CPU / RAM</span><span class="ltr">{{ n.cpuPercent ? n.cpuPercent.toFixed(0) + '%' : '—' }} / {{ n.memPercent ? n.memPercent.toFixed(0) + '%' : '—' }}</span></div>
         <div class="stat-row"><span class="stat-label">{{ t('node.version') }}</span><span class="ltr">{{ n.version || '—' }}</span></div>

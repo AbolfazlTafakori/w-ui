@@ -80,7 +80,13 @@ type Syncer struct {
 	xuiRounds map[uint]int
 	// xuiSeen is, per 3x-ui node, since when each of its files has been seen
 	// online: how the oldest connection is told from the newest.
-	xuiSeen       map[uint]map[uint]time.Time
+	xuiSeen map[uint]map[uint]time.Time
+	// xuiAddrs is, per 3x-ui node, how many places each online file was
+	// last seen connecting from, and xuiAddrsAt when that was asked.
+	xuiAddrs   map[uint]map[string]int
+	xuiAddrsAt map[uint]time.Time
+	// addrsWG is the address questions still out, for a test to wait on.
+	addrsWG       sync.WaitGroup
 	inboundPrints map[uint]map[int]string
 
 	mu sync.Mutex
@@ -141,7 +147,7 @@ func (s *Syncer) sessionsRound(ctx context.Context) {
 	}
 	var remotes []model.Node
 	if err := s.db.WithContext(ctx).
-		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI}, true).
+		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI, model.KindPG}, true).
 		Find(&remotes).Error; err != nil {
 		s.log.Warn("could not list the nodes to ask what is live", "error", err)
 		return
@@ -152,8 +158,12 @@ func (s *Syncer) sessionsRound(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if node.Kind == model.KindXUI {
+			switch node.Kind {
+			case model.KindXUI:
 				s.xuiSessions(ctx, node)
+				return
+			case model.KindPG:
+				s.pgSessions(ctx, node)
 				return
 			}
 			var reply struct {

@@ -279,18 +279,65 @@ func (p *pgAPI) createGroup(ctx context.Context, name, tag string) (pgGroup, err
 }
 
 type pgUser struct {
-	ID              int    `json:"id"`
-	Username        string `json:"username"`
-	Status          string `json:"status"`
-	UsedTraffic     uint64 `json:"used_traffic"`
-	GroupIDs        []int  `json:"group_ids"`
-	SubscriptionURL string `json:"subscription_url"`
+	ID          int    `json:"id"`
+	Username    string `json:"username"`
+	Status      string `json:"status"`
+	UsedTraffic uint64 `json:"used_traffic"`
+	// OnlineAt is when it last had a connection open there.
+	OnlineAt        *time.Time `json:"online_at"`
+	GroupIDs        []int      `json:"group_ids"`
+	SubscriptionURL string     `json:"subscription_url"`
 	// What a user brought in from that panel has of its own.
 	DataLimit            *uint64        `json:"data_limit"`
 	Expire               any            `json:"expire"`
 	OnHoldExpireDuration int64          `json:"on_hold_expire_duration"`
 	Note                 string         `json:"note"`
 	ProxySettings        map[string]any `json:"proxy_settings"`
+}
+
+// onlineUsers is this panel's users there with a connection open now, as
+// that panel says (online=true), read a page at a time.
+func (p *pgAPI) onlineUsers(ctx context.Context, tag string) ([]pgUser, error) {
+	var all []pgUser
+	const page = 500
+	for offset := 0; ; offset += page {
+		var out struct {
+			Users []pgUser `json:"users"`
+			Total int      `json:"total"`
+		}
+		q := url.Values{"offset": {fmt.Sprint(offset)}, "limit": {fmt.Sprint(page)},
+			"search": {"wui_" + tag + "_"}, "online": {"true"}}
+		if err := p.do(ctx, http.MethodGet, "/api/users?"+q.Encode(), nil, &out); err != nil {
+			return nil, err
+		}
+		all = append(all, out.Users...)
+		if len(out.Users) < page || offset+page >= out.Total {
+			return all, nil
+		}
+	}
+}
+
+// userIPs is where one user's connections come from now, across that
+// panel's nodes: each address once.
+func (p *pgAPI) userIPs(ctx context.Context, userID int) (int, error) {
+	var out struct {
+		Nodes map[string]*struct {
+			IPs map[string]int `json:"ips"`
+		} `json:"nodes"`
+	}
+	if err := p.do(ctx, http.MethodGet, fmt.Sprintf("/api/node/online_stats/%d/ip", userID), nil, &out); err != nil {
+		return 0, err
+	}
+	seen := map[string]bool{}
+	for _, n := range out.Nodes {
+		if n == nil {
+			continue
+		}
+		for ip := range n.IPs {
+			seen[ip] = true
+		}
+	}
+	return len(seen), nil
 }
 
 // ourUsers is every user this panel made there, read a page at a time.

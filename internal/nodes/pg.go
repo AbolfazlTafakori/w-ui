@@ -3,8 +3,10 @@ package nodes
 import (
 	"context"
 	"fmt"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"hash/crc32"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -277,4 +279,139 @@ func askPG(ctx context.Context, node model.Node) (Snapshot, error) {
 		return snap, fmt.Errorf("it has no node of its own to carry anything")
 	}
 	return snap, fmt.Errorf("none of its nodes is connected (%s: %s)", ns[0].Name, ns[0].Status)
+}
+
+// pgOnlineWindow is how recently a Pasarguard user must have been online to
+// count as connected: the reconciler's own window.
+const pgOnlineWindow = 75 * time.Second
+
+// warnPGNoOnlines: as warnNoOnlines, on a Pasarguard.
+const warnPGNoOnlines = warnNoOnlines
+
+// pgSessions tells the reconciler which of this panel's files are live on a
+// Pasarguard node, and from how many addresses, as xuiSessions does for a
+// 3x-ui: who is online, every few seconds; from where, every xuiIPsEvery.
+func (s *Syncer) pgSessions(ctx context.Context, node model.Node) {
+	tag, err := service.PanelTag(ctx, s.db)
+	if err != nil {
+		s.log.Warn("could not read this panel's tag to count who is live on a node", "node", node.Name, "error", err)
+		return
+	}
+	api, err := newPGAPI(ctx, node)
+	if err != nil {
+		return // said by the next round, which fails the same way
+	}
+	users, err := api.onlineUsers(ctx, tag)
+	if err != nil {
+		s.setLimitWarning(ctx, node, warnPGNoOnlines)
+		return
+	}
+	var accs []model.Account
+	if err := s.db.WithContext(ctx).Where("node_id = ?", node.ID).Find(&accs).Error; err != nil {
+		s.log.Warn("could not read a node's files to count who is live on it", "node", node.Name, "error", err)
+		return
+	}
+	byName := make(map[string]uint, len(accs))
+	for i := range accs {
+		byName[service.PGUsername(tag, &accs[i])] = accs[i].ID
+	}
+	now := time.Now()
+	s.mu.Lock()
+	if s.xuiAddrs == nil {
+		s.xuiAddrs, s.xuiAddrsAt = map[uint]map[string]int{}, map[uint]time.Time{}
+	}
+	ask := now.Sub(s.xuiAddrsAt[node.ID]) >= xuiIPsEvery
+	s.mu.Unlock()
+	if ask {
+		var mine []pgUser
+		for _, u := range users {
+			if _, ours := byName[u.Username]; ours && u.ID != 0 {
+				mine = append(mine, u)
+			}
+		}
+		s.mu.Lock()
+		s.xuiAddrsAt[node.ID] = now
+		s.mu.Unlock()
+		// Beside the round, a few at a time, as on a 3x-ui.
+		s.addrsWG.Add(1)
+		go func() {
+			defer s.addrsWG.Done()
+			s.askPGAddrs(context.WithoutCancel(ctx), node, api, mine)
+		}()
+	}
+	s.setLimitWarning(ctx, node, "")
+
+	s.mu.Lock()
+	if s.xuiSeen == nil {
+		s.xuiSeen = map[uint]map[uint]time.Time{}
+	}
+	seen := s.xuiSeen[node.ID]
+	if seen == nil {
+		seen = map[uint]time.Time{}
+		s.xuiSeen[node.ID] = seen
+	}
+	addrs := s.xuiAddrs[node.ID]
+	live := map[uint]bool{}
+	out := make([]fleet.NodeSession, 0, len(users))
+	for _, u := range users {
+		id, ok := byName[u.Username]
+		if !ok || live[id] {
+			continue
+		}
+		// The filter is that panel's; the time is checked here as well, so
+		// one that ignores the filter is not taken to say everyone is on.
+		if u.OnlineAt == nil || now.Sub(*u.OnlineAt) > pgOnlineWindow {
+			continue
+		}
+		live[id] = true
+		since, had := seen[id]
+		if !had {
+			since = now
+			seen[id] = now
+		}
+		out = append(out, fleet.NodeSession{OriginID: id, Connections: max(addrs[u.Username], 1),
+			AgeSeconds: int(now.Sub(since) / time.Second)})
+	}
+	for id := range seen {
+		if !live[id] {
+			delete(seen, id)
+		}
+	}
+	s.mu.Unlock()
+	if s.Sessions != nil {
+		s.Sessions(node.ID, out)
+	}
+}
+
+// askPGAddrs asks a Pasarguard where each of these online users is
+// connected from, a few at a time, and keeps the counts for the next rounds.
+// One it cannot say is counted as one, from the online list alone.
+func (s *Syncer) askPGAddrs(ctx context.Context, node model.Node, api *pgAPI, users []pgUser) {
+	ctx, cancel := context.WithTimeout(ctx, xuiIPsEvery)
+	defer cancel()
+	var (
+		mu     sync.Mutex
+		counts = map[string]int{}
+		wg     sync.WaitGroup
+		slots  = make(chan struct{}, xuiIPsAtOnce)
+	)
+	for _, u := range users {
+		wg.Add(1)
+		slots <- struct{}{}
+		go func(u pgUser) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			n, err := api.userIPs(ctx, u.ID)
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			counts[u.Username] = n
+			mu.Unlock()
+		}(u)
+	}
+	wg.Wait()
+	s.mu.Lock()
+	s.xuiAddrs[node.ID] = counts
+	s.mu.Unlock()
 }

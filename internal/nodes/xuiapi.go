@@ -454,11 +454,70 @@ func objectOrString(raw json.RawMessage, into any) error {
 	return json.Unmarshal(raw, into)
 }
 
-// onlines is the email of every client with a connection open there now.
+// onlines is the email of every client with a connection open there now:
+// under clients/ on the 3x-ui of today, under inbounds/ on an older one.
 func (x *xuiAPI) onlines(ctx context.Context) ([]string, error) {
 	var emails []string
-	err := x.do(ctx, http.MethodPost, "inbounds/onlines", nil, &emails)
+	err := x.do(ctx, http.MethodPost, "clients/onlines", nil, &emails)
+	if err != nil {
+		if err2 := x.do(ctx, http.MethodPost, "inbounds/onlines", nil, &emails); err2 == nil {
+			return emails, nil
+		}
+	}
 	return emails, err
+}
+
+// clientIPs is where one client's connections come from now, by address,
+// with when each was last seen (0 when that 3x-ui does not say): under
+// clients/ips/ on the 3x-ui of today, inbounds/clientIps/ on an older one.
+func (x *xuiAPI) clientIPs(ctx context.Context, email string) (map[string]int64, error) {
+	var raw json.RawMessage
+	err := x.do(ctx, http.MethodPost, "clients/ips/"+url.PathEscape(email), nil, &raw)
+	if err != nil {
+		if err2 := x.do(ctx, http.MethodPost, "inbounds/clientIps/"+url.PathEscape(email), nil, &raw); err2 != nil {
+			return nil, err
+		}
+	}
+	return parseClientIPs(raw), nil
+}
+
+// parseClientIPs reads the shapes 3x-ui has answered with: a list of
+// {ip, lastSeen}; a list of "1.2.3.4 (time)" strings; or a sentence saying
+// there is no record. lastSeen is taken in seconds or milliseconds.
+func parseClientIPs(raw json.RawMessage) map[string]int64 {
+	out := map[string]int64{}
+	var objs []struct {
+		IP       string `json:"ip"`
+		LastSeen int64  `json:"lastSeen"`
+	}
+	if json.Unmarshal(raw, &objs) == nil {
+		for _, o := range objs {
+			if o.IP == "" {
+				continue
+			}
+			seen := o.LastSeen
+			if seen > 1e12 {
+				seen /= 1000
+			}
+			if seen > out[o.IP] {
+				out[o.IP] = seen
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	var strs []string
+	if json.Unmarshal(raw, &strs) == nil {
+		for _, s := range strs {
+			if ip, _, _ := strings.Cut(strings.TrimSpace(s), " "); ip != "" {
+				if _, ok := out[ip]; !ok {
+					out[ip] = 0
+				}
+			}
+		}
+	}
+	return out
 }
 
 func (x *xuiAPI) inbounds(ctx context.Context) ([]xuiInboundRow, error) {

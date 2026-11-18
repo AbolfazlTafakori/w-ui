@@ -35,6 +35,8 @@ type fakePGUser struct {
 	Used      uint64
 	Note      string
 	Password  string // its proxies' credential, made by the panel
+	OnlineAt  *time.Time
+	IPs       []string // where it is connected from now
 }
 
 type fakePG struct {
@@ -222,6 +224,17 @@ func (f *fakePG) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(body, &h)
 		f.hosts = append(f.hosts, h)
 		writeJSONBody(w, h)
+	case strings.HasPrefix(path, "/api/node/online_stats/") && strings.HasSuffix(path, "/ip"):
+		id, _ := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(path, "/api/node/online_stats/"), "/ip"))
+		ips := map[string]int{}
+		for _, u := range f.users {
+			if u.ID == id {
+				for _, ip := range u.IPs {
+					ips[ip] = 1
+				}
+			}
+		}
+		writeJSONBody(w, map[string]any{"nodes": map[string]any{"1": map[string]any{"ips": ips}}})
 	case path == "/api/users":
 		f.serveUsers(w, r.URL.Query())
 	case path == "/api/user" && r.Method == http.MethodPost:
@@ -307,6 +320,9 @@ func (f *fakePG) serveUsers(w http.ResponseWriter, q url.Values) {
 		if len(named) > 0 && !named[n] {
 			continue
 		}
+		if q.Get("online") == "true" && (f.users[n].OnlineAt == nil || time.Since(*f.users[n].OnlineAt) > time.Minute) {
+			continue
+		}
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -331,7 +347,7 @@ func (f *fakePG) serveUsers(w http.ResponseWriter, q url.Values) {
 
 func (f *fakePG) userJSON(u *fakePGUser) map[string]any {
 	j := map[string]any{"id": u.ID, "username": u.Username, "status": u.Status, "used_traffic": u.Used,
-		"group_ids": u.Groups, "note": u.Note, "on_hold_expire_duration": u.OnHold,
+		"group_ids": u.Groups, "note": u.Note, "on_hold_expire_duration": u.OnHold, "online_at": u.OnlineAt,
 		"subscription_url": f.srv.URL + "/sub/" + u.Username,
 		"proxy_settings":   map[string]any{"vless": map[string]any{"id": u.Password}, "shadowsocks": map[string]any{"password": u.Password}}}
 	if u.DataLimit > 0 {

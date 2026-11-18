@@ -47,8 +47,16 @@ type fakeXUI struct {
 
 	inbounds []*fakeXUIInbound
 	nextID   int
-	// online is the emails it says have a connection open.
-	online []string
+	// online is the emails it says have a connection open; oldOnlines
+	// answers them only where an older 3x-ui did (inbounds/onlines), and
+	// noOnlines not at all. ips is what it says of each one's addresses.
+	online     []string
+	oldOnlines bool
+	noOnlines  bool
+	ips        map[string]any
+	// requests counts what it was asked, for measuring the load the panel
+	// puts on a node.
+	requests int
 	xray     map[string]any // the xray config it runs
 	// xrayFails says xray will not run with a config, as a real one may not.
 	xrayFails func(cfg map[string]any) bool
@@ -157,6 +165,7 @@ func (f *fakeXUI) inbound(id int) *fakeXUIInbound {
 func (f *fakeXUI) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.requests++
 	path, ok := strings.CutPrefix(r.URL.Path, fakeXUIPath)
 	if !ok {
 		// Anywhere but its secret path it answers nothing, as 3x-ui does.
@@ -312,8 +321,14 @@ func (f *fakeXUI) serveAPI(w http.ResponseWriter, r *http.Request, api string, b
 		}
 		f.inbounds = kept
 		ok200(w, nil)
-	case api == "inbounds/onlines":
+	case api == "clients/onlines" && !f.oldOnlines && !f.noOnlines:
 		ok200(w, f.online)
+	case api == "inbounds/onlines" && f.oldOnlines && !f.noOnlines:
+		ok200(w, f.online)
+	case strings.HasPrefix(api, "clients/ips/") && !f.oldOnlines:
+		ok200(w, f.ips[strings.TrimPrefix(api, "clients/ips/")])
+	case strings.HasPrefix(api, "inbounds/clientIps/") && f.oldOnlines:
+		ok200(w, f.ips[strings.TrimPrefix(api, "inbounds/clientIps/")])
 	case api == "inbounds/list":
 		f.serveList(w)
 	case api == "inbounds/addClient" && !f.atLeast(3, 1):

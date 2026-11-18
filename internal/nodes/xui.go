@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -441,15 +442,43 @@ func askXUI(ctx context.Context, node model.Node) (Snapshot, error) {
 	return snap, nil
 }
 
+// xuiIPsEvery is how often each online file's addresses are asked for: a
+// call per online file, so not every few seconds. Measured against ten
+// 3x-ui nodes with 200 files online on each, every 15s was 800 calls a
+// node a minute; every 30s, four at a time beside the round, is half that
+// and never holds the round up.
+const xuiIPsEvery = 30 * time.Second
+
+// xuiIPsAtOnce is how many address questions go to one node at a time.
+const xuiIPsAtOnce = 4
+
+// xuiAddrWindow is how recently an address must have been seen to count as
+// one of a file's connections now: the reconciler's own window for a
+// device that has gone quiet.
+const xuiAddrWindow = 75 * time.Second
+
+// What the panel cannot count on a node, said on the node as a code the
+// panel's pages put into words.
+const (
+	// warnNoOnlines: it does not say who is online, so connections there are
+	// not counted toward a customer's limit.
+	warnNoOnlines = "noOnlines"
+	// warnNoAddrs: it does not say when each address was seen, so two
+	// devices on one file there are held only by 3x-ui's own IP limit, which
+	// needs its fail2ban job running.
+	warnNoAddrs = "noAddrs"
+)
+
 // xuiSessions tells the reconciler which of this panel's files are live on
-// a 3x-ui node, so a customer's connections are counted across it with
-// their others: a one-user plan with a WireGuard device and an xray one at
-// once is over its limit like any other two. 3x-ui says only which clients
-// are online, not from how many places; one file shared by two devices is
-// held to one there by its IP limit.
+// a 3x-ui node, and from how many places, so a customer's connections are
+// counted across it with their others. A one-user plan with a WireGuard
+// device and an xray one at once is over its limit like any other two; so
+// is one xray file used from two addresses at once. What that 3x-ui does
+// not say is said on the node (LimitWarning) rather than assumed.
 func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
 	tag, err := service.PanelTag(ctx, s.db)
 	if err != nil {
+		s.log.Warn("could not read this panel's tag to count who is live on a node", "node", node.Name, "error", err)
 		return
 	}
 	api, err := newXUIAPI(ctx, node)
@@ -458,6 +487,7 @@ func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
 	}
 	emails, err := api.onlines(ctx)
 	if err != nil {
+		s.setLimitWarning(ctx, node, warnNoOnlines)
 		return
 	}
 	var accs []model.Account
@@ -470,6 +500,33 @@ func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
 		byEmail[service.XUIEmail(tag, &accs[i])] = accs[i].ID
 	}
 	now := time.Now()
+
+	// Where each online file comes from, asked every xuiIPsEvery.
+	s.mu.Lock()
+	if s.xuiAddrs == nil {
+		s.xuiAddrs, s.xuiAddrsAt = map[uint]map[string]int{}, map[uint]time.Time{}
+	}
+	ask := now.Sub(s.xuiAddrsAt[node.ID]) >= xuiIPsEvery
+	s.mu.Unlock()
+	if ask {
+		var mine []string
+		for _, e := range emails {
+			if _, ours := byEmail[e]; ours {
+				mine = append(mine, e)
+			}
+		}
+		s.mu.Lock()
+		s.xuiAddrsAt[node.ID] = now
+		s.mu.Unlock()
+		// Beside the round, a few at a time: what it finds is counted from
+		// the next round on, and a slow node never holds this one up.
+		s.addrsWG.Add(1)
+		go func() {
+			defer s.addrsWG.Done()
+			s.askAddrs(context.WithoutCancel(ctx), node, api, mine)
+		}()
+	}
+
 	s.mu.Lock()
 	if s.xuiSeen == nil {
 		s.xuiSeen = map[uint]map[uint]time.Time{}
@@ -479,6 +536,7 @@ func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
 		seen = map[uint]time.Time{}
 		s.xuiSeen[node.ID] = seen
 	}
+	addrs := s.xuiAddrs[node.ID]
 	live := map[uint]bool{}
 	out := make([]fleet.NodeSession, 0, len(emails))
 	for _, e := range emails {
@@ -494,7 +552,8 @@ func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
 			since = now
 			seen[id] = now
 		}
-		out = append(out, fleet.NodeSession{OriginID: id, Connections: 1, AgeSeconds: int(now.Sub(since) / time.Second)})
+		n := max(addrs[e], 1)
+		out = append(out, fleet.NodeSession{OriginID: id, Connections: n, AgeSeconds: int(now.Sub(since) / time.Second)})
 	}
 	for id := range seen {
 		if !live[id] {
@@ -504,5 +563,85 @@ func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
 	s.mu.Unlock()
 	if s.Sessions != nil {
 		s.Sessions(node.ID, out)
+	}
+}
+
+// askAddrs asks a 3x-ui where each of these online files is connected
+// from, a few at a time, and keeps the counts for the next rounds.
+func (s *Syncer) askAddrs(ctx context.Context, node model.Node, api *xuiAPI, emails []string) {
+	ctx, cancel := context.WithTimeout(ctx, xuiIPsEvery)
+	defer cancel()
+	var (
+		mu     sync.Mutex
+		counts = map[string]int{}
+		dated  = true
+		wg     sync.WaitGroup
+		slots  = make(chan struct{}, xuiIPsAtOnce)
+	)
+	for _, e := range emails {
+		wg.Add(1)
+		slots <- struct{}{}
+		go func(e string) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			ips, err := api.clientIPs(ctx, e)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				dated = false
+				return
+			}
+			counts[e] = liveAddrs(ips)
+			if counts[e] == 0 && len(ips) > 0 {
+				dated = false // addresses without times: not trusted to count
+			}
+		}(e)
+	}
+	wg.Wait()
+	s.mu.Lock()
+	s.xuiAddrs[node.ID] = counts
+	s.mu.Unlock()
+	if dated {
+		s.setLimitWarning(ctx, node, "")
+	} else {
+		s.setLimitWarning(ctx, node, warnNoAddrs)
+	}
+}
+
+// liveAddrs is how many of a file's addresses were seen within the window
+// of the newest one: measured against that node's own clock, so the two
+// machines' clocks need not agree. Addresses without a time count none.
+func liveAddrs(ips map[string]int64) int {
+	var newest int64
+	for _, seen := range ips {
+		newest = max(newest, seen)
+	}
+	if newest == 0 {
+		return 0
+	}
+	n := 0
+	for _, seen := range ips {
+		if seen > 0 && newest-seen < int64(xuiAddrWindow/time.Second) {
+			n++
+		}
+	}
+	return n
+}
+
+// setLimitWarning stores what the panel cannot count on a node, when it
+// changed.
+func (s *Syncer) setLimitWarning(ctx context.Context, node model.Node, warning string) {
+	var have string
+	if err := s.db.WithContext(ctx).Model(&model.Node{}).Where("id = ?", node.ID).
+		Select("limit_warning").Scan(&have).Error; err != nil || have == warning {
+		return
+	}
+	if err := s.db.WithContext(ctx).Model(&model.Node{}).Where("id = ?", node.ID).
+		UpdateColumn("limit_warning", warning).Error; err != nil {
+		s.log.Warn("could not note what is not counted on a node", "node", node.Name, "error", err)
+		return
+	}
+	if warning != "" {
+		s.log.Warn("a node's connections are not all counted toward customers' limits", "node", node.Name, "why", warning)
 	}
 }

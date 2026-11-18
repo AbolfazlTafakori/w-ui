@@ -45,6 +45,11 @@ type Node struct {
 	Version    string     `gorm:"size:32" json:"version"`
 	Reachable  bool       `gorm:"not null;default:false" json:"reachable"`
 	LastError  string     `gorm:"size:256" json:"lastError"`
+	// LimitWarning says what of a customer's connections the panel cannot
+	// count on this node, and so cannot hold to their plan there: noOnlines
+	// (it does not say who is online) or noAddrs (it does not say when each
+	// address was seen). Empty when every connection there is counted.
+	LimitWarning string `gorm:"size:256" json:"limitWarning"`
 
 	// TLSMode is how this panel checks the node's certificate, and TLSPin is
 	// the public key it will accept when the mode is "pin".

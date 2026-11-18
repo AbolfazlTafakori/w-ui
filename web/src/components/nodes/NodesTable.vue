@@ -117,6 +117,7 @@ defineEmits(['probe', 'update', 'import', 'edit', 'remove', 'toggle'])
             <!-- The reason, not just the colour: "refused" and "no route" send
                  an operator to entirely different places. -->
             <span v-else class="tag red" :title="n.lastError">{{ t('node.offline') }}</span>
+            <span v-if="n.limitWarning" class="tag orange" :title="t(n.limitWarning === 'noAddrs' ? 'node.limitNoAddrs' : 'node.limitNoOnlines')">{{ t('node.limitPartial') }}</span>
           </td>
 
           <td class="num ltr">{{ n.cpuPercent ? n.cpuPercent.toFixed(0) + '%' : '—' }}</td>

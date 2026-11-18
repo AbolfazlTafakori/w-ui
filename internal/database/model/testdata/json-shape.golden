@@ -12,6 +12,7 @@ Node
 	version string
 	reachable bool
 	lastError string
+	limitWarning string
 	tlsMode model.NodeTLSMode
 	tlsPin string
 	tlsServerName string
