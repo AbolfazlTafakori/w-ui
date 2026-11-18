@@ -870,6 +870,12 @@ func (r *Reconciler) lastSuspended(read map[uint]bool, err error) map[uint]bool 
 // reseller's customer, the admin over that reseller: AdminID is the top of
 // the chain, zero when there is none. Suspending the admin thus stops their
 // resellers' customers too, without a row on any of them being touched.
+// passClientColumns is what of a customer the pass reads: who they are,
+// whether they are served (status and the operators above), and what the
+// kernel holds them to (allowance, usage, rate, connections).
+var passClientColumns = []string{"id", "name", "status", "owner_id", "admin_id", "origin_id",
+	"device_limit", "quota_bytes", "used_bytes", "rate_bits_per_sec"}
+
 func serviceableFor(c *model.Client, suspended map[uint]bool) bool {
 	return service.ServesNow(c, suspended)
 }
@@ -890,8 +896,11 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	}
 	db := r.db.WithContext(ctx)
 
+	// The columns this pass decides with, and no others: read every two
+	// seconds for every customer, the rest of a customer's row (notes,
+	// links, settings) is most of what a full read would scan.
 	var clients []model.Client
-	if err := db.Find(&clients).Error; err != nil {
+	if err := db.Select(passClientColumns).Find(&clients).Error; err != nil {
 		return nil, fmt.Errorf("load clients: %w", err)
 	}
 
