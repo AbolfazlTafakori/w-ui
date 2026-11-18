@@ -297,6 +297,7 @@ func (s *Service) snapshotDB(ctx context.Context) (string, func(), error) {
 	if err != nil {
 		return "", noop, fmt.Errorf("backup: snapshot directory: %w", err)
 	}
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	cleanup := func() { _ = os.RemoveAll(dir) }
 
 	dest := filepath.Join(dir, "wui.db")

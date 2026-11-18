@@ -178,6 +178,7 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		// what is there is incomplete. Both are discarded.
 		if _, statErr := os.Stat(staging); statErr == nil {
 			log.Warn("discarding an incomplete staged restore", "path", staging)
+			// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 			_ = os.RemoveAll(staging)
 		}
 		return "", nil, false
@@ -228,6 +229,7 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		// copy, if an archive somehow has both, is not used.
 		if err := joinDumpParts(staging, dataDir, parts); err != nil {
 			log.Error("could not keep the database dump for loading; starting on the existing data", "error", err)
+			// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 			_ = os.RemoveAll(staging)
 			return "", nil, false
 		}
@@ -294,7 +296,8 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 
 	// The write-ahead log and shared memory belong to the database that was
 	// there before. Left beside the restored one, SQLite replays them over it.
-	clearSidecars(dataDir)
+	clearSidecars(dataDir, log)
+	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = os.RemoveAll(staging)
 
 	log.Warn("restored from a backup", "archive", archive, "files", applied)
@@ -487,15 +490,32 @@ func safeJoin(base, name string) (string, error) {
 //
 // They describe the database that was open before. Left beside the one just
 // restored, SQLite replays them over it and quietly undoes the restore.
-func clearSidecars(dataDir string) {
+func clearSidecars(dataDir string, log *slog.Logger) {
 	entries, err := os.ReadDir(dataDir)
 	if err != nil {
+		log.Error("could not look for the old database's write-ahead log; if one is left, SQLite may replay it over the restored database",
+			"dir", dataDir, "error", err)
 		return
 	}
 	for _, e := range entries {
 		n := e.Name()
-		if strings.HasSuffix(n, ".db-wal") || strings.HasSuffix(n, ".db-shm") {
-			_ = os.Remove(filepath.Join(dataDir, n))
+		if !strings.HasSuffix(n, ".db-wal") && !strings.HasSuffix(n, ".db-shm") {
+			continue
+		}
+		path := filepath.Join(dataDir, n)
+		err := os.Remove(path)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		// Moved aside if it cannot be removed: under another name SQLite
+		// does not find it, and the restored database is not replayed over.
+		aside := path + ".stale-" + time.Now().UTC().Format("20060102T150405")
+		if rerr := os.Rename(path, aside); rerr == nil {
+			log.Warn("the old database's write-ahead file could not be removed and was moved aside", "file", path, "to", aside, "error", err)
+			continue
+		} else {
+			log.Error("the old database's write-ahead file could neither be removed nor moved aside: SQLite may replay it over the restored database; stop the panel and delete it by hand",
+				"file", path, "remove", err, "move", rerr)
 		}
 	}
 }
@@ -599,6 +619,7 @@ func dumpDriver(path string) string {
 	}
 	defer f.Close()
 	head := make([]byte, 512)
+	// A read whose short or failed result is handled by what was read (an empty or short body is refused below).
 	n, _ := io.ReadFull(f, head)
 	m := driverRe.FindSubmatch(head[:n])
 	if m == nil {

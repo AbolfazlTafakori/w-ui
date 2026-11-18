@@ -203,6 +203,7 @@ func (o *opener) next() error {
 	if plain, err := o.aead.Open(nil, sealNonce(o.base, o.counter, true), sealed, nil); err == nil {
 		// Marked last: nothing may follow it.
 		var extra [1]byte
+		// A read whose short or failed result is handled by what was read (an empty or short body is refused below).
 		if m, _ := o.r.Read(extra[:]); m > 0 {
 			return ErrWrongPassword
 		}

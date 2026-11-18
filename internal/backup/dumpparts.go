@@ -134,6 +134,7 @@ func (c *dumpChecker) part(name string, r io.Reader) error {
 // call again: the verdict is kept.
 func (c *dumpChecker) finish() (*database.DumpSummary, error) {
 	c.once.Do(func() {
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = c.pw.Close()
 		c.result = <-c.done
 	})
@@ -165,6 +166,7 @@ func joinDumpParts(staging, dataDir string, parts []string) error {
 			out.Close()
 			return err
 		}
+		// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 		_ = os.Remove(src)
 	}
 	if err := out.Sync(); err != nil {
