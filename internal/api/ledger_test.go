@@ -72,3 +72,51 @@ func TestTheLedgerIsEachTreesOwn(t *testing.T) {
 		t.Errorf("nobody signed in: %d", code)
 	}
 }
+
+// The operators page shows each operator's capacity, read for the whole list
+// at once; an admin sees their own resellers' and nobody else's.
+func TestTheOperatorsListCarriesCapacity(t *testing.T) {
+	mux, sess, db := serversPanel(t)
+	rc := idOf(t, db, "rc")
+	a, err := capacity.Open(db, rc, model.CapacityUsers, model.CapacityConsumable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := capacity.Charge(db, a, 40, capacity.Entry{Reason: model.CapacityCharge}); err != nil {
+		t.Fatal(err)
+	}
+	read := func(who string) map[string]*model.OperatorCapacity {
+		t.Helper()
+		code, body := send(t, mux, sess[who], http.MethodGet, "/api/admins", "")
+		if code != http.StatusOK {
+			t.Fatalf("%s: %d %s", who, code, body)
+		}
+		var out struct {
+			Items []struct {
+				Username string                  `json:"username"`
+				Capacity *model.OperatorCapacity `json:"capacity"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(body), &out); err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]*model.OperatorCapacity{}
+		for _, r := range out.Items {
+			m[r.Username] = r.Capacity
+		}
+		return m
+	}
+	for _, who := range []string{"owner", "ad"} {
+		got := read(who)
+		c := got["rc"]
+		if c == nil || c.UserMode != model.CapacityConsumable || c.UsersGiven != 40 {
+			t.Errorf("%s reads rc's capacity as %+v", who, c)
+		}
+		if who == "ad" && len(got) != 1 {
+			t.Errorf("ad lists %v, want rc alone", got)
+		}
+		if who == "owner" && got["owner"] != nil {
+			t.Errorf("the owner has a ceiling: %+v", got["owner"])
+		}
+	}
+}

@@ -246,6 +246,20 @@ type CapacityEntry struct {
 	At       time.Time `gorm:"not null;index" json:"at"`
 }
 
+// OperatorCapacity is what an operator has, as the operators page shows it.
+type OperatorCapacity struct {
+	// UserMode is open (seats) or consumable (units), "" with no user
+	// ceiling; the figures are their users account's.
+	UserMode    string `json:"userMode,omitempty"`
+	UsersGiven  int64  `json:"usersGiven"`
+	UsersUsed   int64  `json:"usersUsed"`
+	UsersHanded int64  `json:"usersHanded"`
+	// TokensGiven is an admin's token capacity, TokensUsed how many of it
+	// they have issued.
+	TokensGiven int64 `json:"tokensGiven"`
+	TokensUsed  int64 `json:"tokensUsed"`
+}
+
 // Capacity kinds and user modes.
 const (
 	CapacityUsers  = "users"
@@ -849,6 +863,10 @@ type Admin struct {
 	// has any; empty for the owner, who reaches everything, and a reseller,
 	// whose menu is fixed.
 	MenuIDs []string `gorm:"-" json:"menuIds"`
+	// Capacity is this operator's users and tokens, for their card on the
+	// operators page and for the form that edits them. Nil for the owner,
+	// who has no ceiling.
+	Capacity *OperatorCapacity `gorm:"-" json:"capacity,omitempty"`
 
 	// SessionEpoch is what makes a session endable.
 	//

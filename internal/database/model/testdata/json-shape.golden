@@ -269,8 +269,16 @@ Admin
 	clients int64 (not stored)
 	users int64 (not stored)
 	menuIds []string (not stored)
+	capacity *model.OperatorCapacity omitempty (not stored)
 	createdAt time.Time
 	updatedAt time.Time
+OperatorCapacity
+	userMode string omitempty
+	usersGiven int64
+	usersUsed int64
+	usersHanded int64
+	tokensGiven int64
+	tokensUsed int64
 AdminInterface
 	adminId uint
 	interfaceId uint

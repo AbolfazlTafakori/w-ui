@@ -822,6 +822,30 @@ func (s *Admins) fill(ctx context.Context, admins []*model.Admin) error {
 			a.Users = c.Users
 		}
 	}
+
+	// Each one's capacity, in one read of the accounts for the lot.
+	var accounts []model.CapacityAccount
+	if err := s.db.WithContext(ctx).Where("admin_id IN ?", ids).Find(&accounts).Error; err != nil {
+		return fmt.Errorf("service: load operators' capacity: %w", err)
+	}
+	for _, a := range admins {
+		if a.Role != model.RoleOwner {
+			a.Capacity = &model.OperatorCapacity{}
+		}
+	}
+	for _, acc := range accounts {
+		a := byID[acc.AdminID]
+		if a == nil || a.Capacity == nil {
+			continue
+		}
+		switch acc.Kind {
+		case model.CapacityUsers:
+			a.Capacity.UserMode = acc.Mode
+			a.Capacity.UsersGiven, a.Capacity.UsersUsed, a.Capacity.UsersHanded = acc.Granted, acc.Used, acc.Handed
+		case model.CapacityTokens:
+			a.Capacity.TokensGiven, a.Capacity.TokensUsed = acc.Granted, acc.Used
+		}
+	}
 	return nil
 }
 
