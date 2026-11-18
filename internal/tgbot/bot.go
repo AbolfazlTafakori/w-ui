@@ -837,7 +837,7 @@ func (b *Bot) onlines(ctx context.Context) string {
 		}
 		on := false
 		for _, a := range c.Accounts {
-			if a.LastHandshake != nil && time.Since(*a.LastHandshake) < time.Duration(service.OnlineWithin.Load())*time.Second {
+			if service.HandshakeLive(a.LastHandshake) {
 				on = true
 			}
 		}

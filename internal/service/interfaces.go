@@ -740,7 +740,7 @@ func (s *Interfaces) Loads(ctx context.Context) (map[uint]Load, error) {
 	// UTC, as handshakes are stored. In local time this compared wrong
 	// against them whenever the owner set the panel to a zone other than
 	// UTC, and every tunnel showed nobody online.
-	since := time.Now().UTC().Add(-onlineWithin())
+	since := onlineSince()
 	paused, err := PausedOperatorIDs(ctx, s.db)
 	if err != nil {
 		return nil, fmt.Errorf("service: read paused operators: %w", err)
@@ -1885,7 +1885,7 @@ func (s *Interfaces) OwnCounts(ctx context.Context) (map[uint]OwnCount, error) {
 		if online {
 			// UTC, as handshakes are stored: the owner may set the panel's
 			// time zone, and a local cutoff compares wrong against them.
-			q = q.Where("accounts.last_handshake > ?", time.Now().UTC().Add(-onlineWithin()))
+			q = q.Where("accounts.last_handshake > ?", onlineSince())
 			paused, err := PausedOperatorIDs(ctx, s.db)
 			if err != nil {
 				return nil, err

@@ -1382,7 +1382,7 @@ func (r *Reconciler) overAllowance(ctx context.Context) bool {
 
 // liveWindow is how recent a handshake has to be for a session to count as
 // connected -- the panel's online window.
-func liveWindow() time.Duration { return time.Duration(service.OnlineWithin.Load()) * time.Second }
+func liveWindow() time.Duration { return service.OnlineWindow() }
 
 // holdOver holds a customer to the connections their plan allows, across
 // every server they reach. What is over the limit is held off: a session on

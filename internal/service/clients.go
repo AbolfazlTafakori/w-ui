@@ -831,6 +831,19 @@ type ListFilter struct {
 // for, and the overview counter uses the same one.
 func onlineWithin() time.Duration { return time.Duration(OnlineWithin.Load()) * time.Second }
 
+// onlineSince is the oldest handshake that still counts as online now, in
+// UTC as handshakes are stored. The one definition every count of who is
+// online asks: the dashboard, the online filter, a tunnel's load, an
+// operator's own servers, the bot.
+func onlineSince() time.Time { return time.Now().UTC().Add(-onlineWithin()) }
+
+// OnlineWindow is how recent a handshake has to be to count as online.
+func OnlineWindow() time.Duration { return onlineWithin() }
+
+// HandshakeLive reports whether a device that last handshook at t counts
+// as online now.
+func HandshakeLive(t *time.Time) bool { return t != nil && t.After(onlineSince()) }
+
 // bucketWhere renders one status bucket as a condition.
 //
 // They are not all statuses. "depleting" is an active customer far enough
@@ -865,7 +878,7 @@ func (s *Clients) bucketWhere(bucket string, paused []uint) (string, []any) {
 			return "id IN ?" + pausedOut, append([]any{ids}, pausedArgs...)
 		}
 		return "id IN (SELECT client_id FROM accounts WHERE last_handshake > ?)" + pausedOut,
-			append([]any{time.Now().UTC().Add(-onlineWithin())}, pausedArgs...)
+			append([]any{onlineSince()}, pausedArgs...)
 	}
 	return "", nil
 }
@@ -1098,7 +1111,7 @@ func (s *Clients) fillOnlineNow(ctx context.Context, items []model.Client) error
 		}
 		return nil
 	}
-	cutoff := time.Now().UTC().Add(-onlineWithin())
+	cutoff := onlineSince()
 	var rows []struct {
 		ClientID uint
 		N        int
@@ -1956,7 +1969,7 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 
 	// A peer is considered present if it handshook within the window after
 	// which WireGuard itself treats a session as stale.
-	cutoff := time.Now().UTC().Add(-onlineWithin())
+	cutoff := onlineSince()
 	// Customers under a paused operator are off and not counted online,
 	// whatever their last handshake.
 	paused, err := PausedOperatorIDs(ctx, s.db)
