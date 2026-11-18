@@ -282,12 +282,64 @@ type seatMove struct {
 // one customer's seats and revives another's is not refused on the way.
 func settleSeats(ctx context.Context, tx *gorm.DB, before, after map[uint]seatState, ids []uint, rule SeatRule) error {
 	sc := ScopeOf(ctx)
-	// Held to the ceiling and charged: any admin or reseller acting, narrowed
-	// to their tree or not. The owner and the panel move seats to match and
-	// spend nothing.
-	enforced := (sc.Capped && rule == ByCaller) || rule == ByPanelIfFree
-	spends := sc.Capped && rule == ByCaller
+	enforced, spends := seatTerms(sc, rule)
 	actor := sc.Actor
+	moves := planSeats(before, after, ids)
+
+	accounts := map[uint]*model.CapacityAccount{}
+	for _, m := range moves {
+		acc, ok := accounts[m.owner]
+		if !ok {
+			var err error
+			if acc, err = capacity.Account(tx, m.owner, model.CapacityUsers); err != nil {
+				return err
+			}
+			accounts[m.owner] = acc
+		}
+		if acc == nil {
+			continue // an operator with no ceiling
+		}
+		e := capacity.Entry{Reason: m.reason, ActorID: actor, ClientID: m.client}
+		var err error
+		switch {
+		case acc.Mode == model.CapacityOpen && m.delta < 0:
+			err = capacity.Give(tx, acc, -m.delta, e)
+			if errors.Is(err, capacity.ErrFull) {
+				// Fewer seats held than the customer had: a figure the
+				// owner or the panel moved past. Never below zero.
+				err = capacity.Give(tx, acc, acc.Used, e)
+			}
+		case acc.Mode == model.CapacityOpen && m.delta > 0 && enforced:
+			if err = capacity.Take(tx, acc, m.delta, e); errors.Is(err, capacity.ErrFull) {
+				err = errNoUsers(acc, m.delta)
+			}
+		case acc.Mode == model.CapacityOpen && m.delta > 0:
+			err = capacity.Hold(tx, acc, m.delta, e)
+		case acc.Mode == model.CapacityConsumable && m.spend > 0 && spends:
+			if err = capacity.Take(tx, acc, m.spend, e); errors.Is(err, capacity.ErrFull) {
+				err = errNoUsers(acc, m.spend)
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// seatTerms is how a change is held and charged: enforced, refused past the
+// ceiling; spends, units spent. Any admin or reseller acting is both,
+// narrowed to their tree or not; the owner and the panel move seats to
+// match and spend nothing; a revival the panel makes on its own is held to
+// what is free and spends nothing.
+func seatTerms(sc Scope, rule SeatRule) (enforced, spends bool) {
+	return (sc.Capped && rule == ByCaller) || rule == ByPanelIfFree, sc.Capped && rule == ByCaller
+}
+
+// planSeats is what a change did to each owner's units, customer by
+// customer, gives first: the one sum both the settling and its read-only
+// preview make, so the two cannot disagree.
+func planSeats(before, after map[uint]seatState, ids []uint) []seatMove {
 	var moves []seatMove
 	seen := map[uint]bool{}
 	for _, id := range ids {
@@ -342,44 +394,5 @@ func settleSeats(ctx context.Context, tx *gorm.DB, before, after map[uint]seatSt
 		}
 	}
 	sort.SliceStable(moves, func(i, j int) bool { return moves[i].delta < moves[j].delta })
-
-	accounts := map[uint]*model.CapacityAccount{}
-	for _, m := range moves {
-		acc, ok := accounts[m.owner]
-		if !ok {
-			var err error
-			if acc, err = capacity.Account(tx, m.owner, model.CapacityUsers); err != nil {
-				return err
-			}
-			accounts[m.owner] = acc
-		}
-		if acc == nil {
-			continue // an operator with no ceiling
-		}
-		e := capacity.Entry{Reason: m.reason, ActorID: actor, ClientID: m.client}
-		var err error
-		switch {
-		case acc.Mode == model.CapacityOpen && m.delta < 0:
-			err = capacity.Give(tx, acc, -m.delta, e)
-			if errors.Is(err, capacity.ErrFull) {
-				// Fewer seats held than the customer had: a figure the
-				// owner or the panel moved past. Never below zero.
-				err = capacity.Give(tx, acc, acc.Used, e)
-			}
-		case acc.Mode == model.CapacityOpen && m.delta > 0 && enforced:
-			if err = capacity.Take(tx, acc, m.delta, e); errors.Is(err, capacity.ErrFull) {
-				err = errNoUsers(acc, m.delta)
-			}
-		case acc.Mode == model.CapacityOpen && m.delta > 0:
-			err = capacity.Hold(tx, acc, m.delta, e)
-		case acc.Mode == model.CapacityConsumable && m.spend > 0 && spends:
-			if err = capacity.Take(tx, acc, m.spend, e); errors.Is(err, capacity.ErrFull) {
-				err = errNoUsers(acc, m.spend)
-			}
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return moves
 }
