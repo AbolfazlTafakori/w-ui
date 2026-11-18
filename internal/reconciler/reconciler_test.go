@@ -26,7 +26,10 @@ type fakeEnforcer struct {
 	drain   []enforce.Usage
 	drains  int
 	spent   map[string]uint64 // quotas the kernel holds spent, with what each used
+	quotas  []enforce.Usage   // each quota's tally, as the kernel would say
 }
+
+func (f *fakeEnforcer) Usage(context.Context) ([]enforce.Usage, error) { return f.quotas, nil }
 
 func (f *fakeEnforcer) QuotaSpent(_ context.Context, keys []string) (map[string]uint64, error) {
 	out := map[string]uint64{}

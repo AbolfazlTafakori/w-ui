@@ -217,6 +217,7 @@ func New(o Options) *Reconciler {
 
 // Start runs the loop until ctx is done.
 func (r *Reconciler) Start(ctx context.Context) {
+	r.recoverKernelUsage(ctx)
 	r.writer.start(ctx)
 	go r.issueCertificates(ctx)
 
@@ -448,31 +449,8 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 		return 0, err
 	}
 
-	var total uint64
 	now := time.Now().UTC()
-	billed := map[uint]usageDelta{} // client -> what it used this tick, for its speed
-	files := map[uint]usageDelta{}  // account -> what it carried this tick, for its speed
-	for _, d := range drained {
-		id, ok := clientIDFromKey(d.Key)
-		if !ok || d.Bytes == 0 {
-			continue // idle clients are not worth a write
-		}
-		total += d.Bytes
-		billed[id] = usageDelta{Bytes: d.Bytes, Up: d.Up, Down: d.Down}
-
-		// The customer's usage and what each of their files carried are
-		// handed over in one call, so they are written in one flush.
-		batch := make([]trafficUpdate, 0, 1+len(d.Files))
-		batch = append(batch, trafficUpdate{Key: d.Key, Bytes: d.Bytes, Up: d.Up, Down: d.Down, At: now})
-		for _, f := range d.Files {
-			if f.Account == 0 || f.Up+f.Down == 0 {
-				continue
-			}
-			files[f.Account] = usageDelta{Bytes: f.Up + f.Down, Up: f.Up, Down: f.Down}
-			batch = append(batch, trafficUpdate{AccountID: f.Account, DevUp: f.Up, DevDown: f.Down, At: now})
-		}
-		r.writer.submit(batch...)
-	}
+	total, billed, files := r.charge(drained, now)
 	r.speed.local(billed, now)
 	r.fileSpeed.local(files, now)
 
@@ -518,6 +496,120 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	r.maybeRecordSharing(ctx, now)
 
 	return total, nil
+}
+
+// charge hands what the kernel's counters drained to the traffic writer:
+// each customer's usage and what each of their files carried, in one call
+// so they are written in one flush. It says the total, and what each
+// customer and each file moved, for their speeds.
+func (r *Reconciler) charge(drained []enforce.Usage, now time.Time) (uint64, map[uint]usageDelta, map[uint]usageDelta) {
+	var total uint64
+	billed := map[uint]usageDelta{} // client -> what it used this tick, for its speed
+	files := map[uint]usageDelta{}  // account -> what it carried this tick, for its speed
+	for _, d := range drained {
+		id, ok := clientIDFromKey(d.Key)
+		if !ok || d.Bytes == 0 {
+			continue // idle clients are not worth a write
+		}
+		total += d.Bytes
+		billed[id] = usageDelta{Bytes: d.Bytes, Up: d.Up, Down: d.Down}
+		batch := make([]trafficUpdate, 0, 1+len(d.Files))
+		batch = append(batch, trafficUpdate{Key: d.Key, Bytes: d.Bytes, Up: d.Up, Down: d.Down, At: now})
+		for _, f := range d.Files {
+			if f.Account == 0 || f.Up+f.Down == 0 {
+				continue
+			}
+			files[f.Account] = usageDelta{Bytes: f.Up + f.Down, Up: f.Up, Down: f.Down}
+			batch = append(batch, trafficUpdate{AccountID: f.Account, DevUp: f.Up, DevDown: f.Down, At: now})
+		}
+		r.writer.submit(batch...)
+	}
+	return total, billed, files
+}
+
+// recoverKernelUsage charges, once at start and before anything is applied,
+// what the kernel counted while this panel was not writing it down.
+//
+// The kernel's table outlives the panel: a panel that stops -- cleanly, or
+// killed mid-flight -- leaves its counters and its quotas counting. Two
+// things were lost on the way back. The bytes drained before the stop but
+// not yet written (the writer holds them up to flushInterval) were never
+// charged. And the first apply rewrites the table, seeding each quota from
+// the stored usage -- which did not have those bytes, nor the ones the
+// counters still held -- so whatever was missing was given away free.
+//
+// So, before the first pass: the counters are drained and charged; each
+// quota's own tally, which counted every byte up to now, is read; and
+// where it is more than what is stored and what was just drained, the
+// difference is charged too. Then it is all written, synchronously, so the
+// first apply seeds every quota from complete figures. The quota's tally
+// trails usage on other servers (it is reseeded from the stored figure,
+// which has theirs), so what it adds is never more than this server
+// carried. A table that is not there -- a reboot, a first start -- has
+// nothing to recover.
+func (r *Reconciler) recoverKernelUsage(ctx context.Context) {
+	drained, err := r.enforcer.DrainCounters(ctx)
+	if err != nil {
+		r.log.Warn("could not read the kernel's counters at start; usage counted while the panel was down may be missing",
+			"error", err)
+		return
+	}
+	quotas, err := r.enforcer.Usage(ctx)
+	if err != nil {
+		r.log.Warn("could not read the kernel's quotas at start; usage counted while the panel was down may be missing",
+			"error", err)
+	}
+	now := time.Now().UTC()
+	r.charge(drained, now)
+
+	justDrained := make(map[uint]uint64, len(drained))
+	for _, d := range drained {
+		if id, ok := clientIDFromKey(d.Key); ok {
+			justDrained[id] += d.Bytes
+		}
+	}
+	tally := map[uint]uint64{}
+	ids := make([]uint, 0, len(quotas))
+	for _, q := range quotas {
+		if id, ok := clientIDFromKey(q.Key); ok && q.Bytes > 0 {
+			tally[id] = q.Bytes
+			ids = append(ids, id)
+		}
+	}
+	var missing []trafficUpdate
+	var lost uint64
+	if len(ids) > 0 {
+		var rows []struct {
+			ID        uint
+			UsedBytes uint64
+		}
+		for start := 0; start < len(ids); start += 900 {
+			var part []struct {
+				ID        uint
+				UsedBytes uint64
+			}
+			if err := r.db.WithContext(ctx).Model(&model.Client{}).Select("id, used_bytes").
+				Where("id IN ?", ids[start:min(start+900, len(ids))]).Scan(&part).Error; err != nil {
+				r.log.Warn("could not read stored usage at start; usage counted while the panel was down may be missing",
+					"error", err)
+				part = nil
+			}
+			rows = append(rows, part...)
+		}
+		for _, row := range rows {
+			known := row.UsedBytes + justDrained[row.ID]
+			if t := tally[row.ID]; t > known {
+				missing = append(missing, trafficUpdate{Key: keyFromClientID(row.ID), Bytes: t - known, At: now})
+				lost += t - known
+			}
+		}
+	}
+	r.writer.submit(missing...)
+	r.writer.flush(ctx)
+	if len(drained) > 0 || lost > 0 {
+		r.log.Info("usage the kernel counted while the panel was down charged",
+			"customers", len(justDrained), "unwrittenBytes", lost)
+	}
 }
 
 // maybePrune sweeps stale addresses on a slow schedule of its own.
