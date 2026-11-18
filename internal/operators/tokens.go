@@ -13,6 +13,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/capacity"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fault"
 )
@@ -29,10 +30,6 @@ import (
 // "wui_": the two are told apart before either is looked up, so neither can
 // be taken for the other.
 const OperatorTokenPrefix = "wuo_"
-
-// MaxOperatorTokens is how many live tokens one operator may hold. Enough for
-// a script per purpose; few enough that a leaked list of them is short.
-const MaxOperatorTokens = 5
 
 // DefaultTokenDays is how long a token lasts when its maker says nothing: a
 // token forgotten in a script ends on its own.
@@ -53,11 +50,25 @@ func hashOperatorToken(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// IssueToken makes a token for this operator. days is how long it lasts:
-// nil is DefaultTokenDays, zero is never, and more than a year is refused.
-func (s *Admins) IssueToken(ctx context.Context, admin *model.Admin, name string, days *int) (*OperatorTokenPlain, error) {
-	if admin == nil || (admin.Role != model.RoleAdmin && admin.Role != model.RoleReseller) {
+// IssueToken makes a token for target, issued by caller (nil or the owner:
+// the owner). days is how long it lasts: nil is DefaultTokenDays, zero is
+// never, and more than a year is refused.
+//
+// Tokens are an admin's to give: an admin issues them for themselves and for
+// their own resellers, each one spending a token of the admin's capacity in
+// the same transaction as the token -- refused when none is left. A token
+// revoked is spent for good. The owner issues them for any admin or reseller
+// and spends nothing. A reseller issues none (refused in the API before it
+// gets here, and here again).
+func (s *Admins) IssueToken(ctx context.Context, caller, target *model.Admin, name string, days *int) (*OperatorTokenPlain, error) {
+	if target == nil || (target.Role != model.RoleAdmin && target.Role != model.RoleReseller) {
 		return nil, fmt.Errorf("%w: these tokens are an admin's or a reseller's; the owner issues machine tokens", fault.ErrInvalid)
+	}
+	if caller != nil && caller.Role == model.RoleReseller {
+		return nil, fmt.Errorf("%w: a reseller's tokens are issued by their admin", fault.ErrInvalid)
+	}
+	if caller != nil && caller.Role == model.RoleAdmin && target.ID != caller.ID && target.ParentAdminID != caller.ID {
+		return nil, fmt.Errorf("%w: operator", fault.ErrNotFound)
 	}
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 64 {
@@ -76,34 +87,101 @@ func (s *Admins) IssueToken(ctx context.Context, admin *model.Admin, name string
 		return nil, fmt.Errorf("service: generate token: %w", err)
 	}
 	secret := OperatorTokenPrefix + base64.RawURLEncoding.EncodeToString(raw)
-	row := model.OperatorToken{AdminID: admin.ID, Name: name, Hash: hashOperatorToken(secret), Prefix: secret[:12]}
+	row := model.OperatorToken{AdminID: target.ID, Name: name, Hash: hashOperatorToken(secret), Prefix: secret[:12]}
 	if d > 0 {
 		at := time.Now().UTC().AddDate(0, 0, d)
 		row.ExpiresAt = &at
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var live int64
-		now := time.Now().UTC()
-		if err := tx.Model(&model.OperatorToken{}).
-			Where("admin_id = ? AND (expires_at IS NULL OR expires_at > ?)", admin.ID, now).
-			Count(&live).Error; err != nil {
+		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		if live >= MaxOperatorTokens {
-			return fmt.Errorf("%w: you hold %d tokens, the most there may be; revoke one first", fault.ErrInvalid, live)
+		if caller == nil || caller.Role == model.RoleOwner {
+			return nil // the owner's: nothing spent
 		}
-		return tx.Create(&row).Error
+		acc, err := capacity.Account(tx, caller.ID, model.CapacityTokens)
+		if err != nil {
+			return err
+		}
+		if err := capacity.Take(tx, acc, 1, capacity.Entry{Reason: model.CapacityIssue, ActorID: caller.ID, TokenID: row.ID}); err != nil {
+			if errors.Is(err, capacity.ErrFull) {
+				return fault.Field("tokens", "you have no tokens left to issue; ask the owner for more")
+			}
+			return err
+		}
+		return nil
 	})
 	if err != nil {
-		if errors.Is(err, fault.ErrInvalid) {
+		if errors.Is(err, fault.ErrInvalid) || errors.Is(err, fault.ErrNotFound) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("service: store token: %w", err)
 	}
 	// The prefix only: the secret is never written anywhere but the answer.
-	s.log.Info("operator token issued", "operator", admin.Username, "name", name, "prefix", row.Prefix)
+	s.log.Info("operator token issued", "for", target.Username, "name", name, "prefix", row.Prefix)
 	return &OperatorTokenPlain{Token: secret, Meta: &row}, nil
+}
+
+// TokenCapacity is what an operator has of tokens, for their page and their
+// menu: an admin's capacity (granted, spent), and how many live tokens they
+// hold. A reseller has no capacity of their own, only tokens issued to them.
+type TokenCapacity struct {
+	Granted int64 `json:"granted"`
+	Used    int64 `json:"used"`
+	Held    int64 `json:"held"`
+}
+
+// TokensOf reads an operator's token capacity and how many live tokens they
+// hold, in two indexed reads.
+func (s *Admins) TokensOf(ctx context.Context, a *model.Admin) (TokenCapacity, error) {
+	var out TokenCapacity
+	if a == nil {
+		return out, nil
+	}
+	if acc, err := capacity.Account(s.db.WithContext(ctx), a.ID, model.CapacityTokens); err != nil {
+		return out, err
+	} else if acc != nil {
+		out.Granted, out.Used = acc.Granted, acc.Used
+	}
+	err := s.db.WithContext(ctx).Model(&model.OperatorToken{}).
+		Where("admin_id = ? AND (expires_at IS NULL OR expires_at > ?)", a.ID, time.Now().UTC()).Count(&out.Held).Error
+	return out, err
+}
+
+// setTokens brings an admin's token capacity to limit, the owner's to set:
+// a charge or a debit of the difference. A debit below what is spent cuts
+// no token off; it leaves none to issue. Zero is no tokens to issue.
+func setTokens(tx *gorm.DB, actor uint, target *model.Admin, limit int64) error {
+	if limit < 0 || limit > capacity.MaxUnits {
+		return fault.Field("tokenLimit", "tokens are given as a number from 0 to %d", capacity.MaxUnits)
+	}
+	if target.Role != model.RoleAdmin {
+		return fault.Field("tokenLimit", "token capacity is an admin's; a reseller's tokens are issued by their admin")
+	}
+	acc, err := capacity.Account(tx, target.ID, model.CapacityTokens)
+	if err != nil {
+		return err
+	}
+	if acc == nil {
+		if limit == 0 {
+			return nil
+		}
+		if acc, err = capacity.Open(tx, target.ID, model.CapacityTokens, model.CapacityFixed); err != nil {
+			return err
+		}
+	}
+	diff := limit - acc.Granted
+	e := capacity.Entry{ActorID: actor}
+	switch {
+	case diff > 0:
+		e.Reason = model.CapacityCharge
+		return capacity.Charge(tx, acc, diff, e)
+	case diff < 0:
+		e.Reason = model.CapacityDebit
+		return capacity.Debit(tx, acc, -diff, e)
+	}
+	return nil
 }
 
 // TokenOperator is the operator a token belongs to, or an error when it is
@@ -198,7 +276,9 @@ func (s *Admins) ListTokens(ctx context.Context, me *model.Admin) ([]model.Opera
 }
 
 // RevokeToken deletes a token this operator may see. One they may not is
-// not found, so whether it exists is not told.
+// not found, so whether it exists is not told. The token it spent of its
+// admin's capacity is not given back: a revoked token is spent for good, so
+// revoking and reissuing is not a way to more.
 func (s *Admins) RevokeToken(ctx context.Context, me *model.Admin, id uint) error {
 	holders, err := s.tokenHolders(ctx, me)
 	if err != nil {

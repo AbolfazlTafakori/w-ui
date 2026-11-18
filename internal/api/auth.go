@@ -498,6 +498,20 @@ type adminView struct {
 	ManagesAdmins    bool `json:"managesAdmins"`
 	ManagesResellers bool `json:"managesResellers"`
 	SeesEveryone     bool `json:"seesEveryone"`
+	// Users is the operator's user capacity (nil: no ceiling), and Tokens
+	// what they have of API tokens -- for their capacity card, and so their
+	// menu leaves out what they have none of.
+	Users  *userCapacityView        `json:"userCapacity,omitempty"`
+	Tokens *operators.TokenCapacity `json:"tokenCapacity,omitempty"`
+}
+
+// userCapacityView is an operator's users as their card shows them.
+type userCapacityView struct {
+	Mode    string `json:"mode"`
+	Granted int64  `json:"granted"`
+	Used    int64  `json:"used"`
+	Handed  int64  `json:"handed"`
+	Free    int64  `json:"free"`
 }
 
 // adminView builds it. Sign-in and the /me call both answer with this: an
@@ -538,6 +552,15 @@ func (s *Server) adminView(ctx context.Context, admin *model.Admin) *adminView {
 		// nothing at all, as before, when not.
 		if menus, err := s.admins.MenuIDs(ctx, admin.ID); err == nil && len(menus) > 0 {
 			view.Admin.MenuIDs = menus
+		}
+	}
+	if admin.Role == model.RoleAdmin || admin.Role == model.RoleReseller {
+		if acc, err := s.admins.UserCapacity(ctx, admin.ID); err == nil && acc != nil {
+			view.Users = &userCapacityView{Mode: acc.Mode, Granted: acc.Granted, Used: acc.Used, Handed: acc.Handed,
+				Free: max(acc.Granted-acc.Used-acc.Handed, 0)}
+		}
+		if tc, err := s.admins.TokensOf(ctx, admin); err == nil {
+			view.Tokens = &tc
 		}
 	}
 	if ids, err := s.admins.AllowedInterfaces(ctx, admin); err == nil && ids != nil {

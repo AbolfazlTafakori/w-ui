@@ -1,6 +1,7 @@
 package operators
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -185,4 +186,10 @@ func releaseUsers(tx *gorm.DB, actor uint, target *model.Admin) error {
 		}
 	}
 	return capacity.Close(tx, target.ID)
+}
+
+// UserCapacity is an operator's user account, or nil when they have no
+// ceiling.
+func (s *Admins) UserCapacity(ctx context.Context, adminID uint) (*model.CapacityAccount, error) {
+	return capacity.Account(s.db.WithContext(ctx), adminID, model.CapacityUsers)
 }

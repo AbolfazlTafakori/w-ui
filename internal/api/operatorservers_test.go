@@ -44,9 +44,16 @@ import (
 //	"rc"  one customer on 1
 func serversPanel(t *testing.T) (http.Handler, map[string]session, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "wui.db")), &gorm.Config{Logger: gormlogger.Discard})
+	// The panel's own settings (internal/database), so requests at once
+	// queue as they would on a server.
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "wui.db")+
+		"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(15000)&_txlock=immediate"),
+		&gorm.Config{Logger: gormlogger.Discard})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(8)
 	}
 	t.Cleanup(func() {
 		if sqlDB, err := db.DB(); err == nil {

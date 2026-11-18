@@ -22,8 +22,8 @@ func TestActivityIsTheTreesOwnAndCarriesNoSecrets(t *testing.T) {
 	// ra resets their own customer, and tries another's.
 	send(t, mux, sess["ra"], http.MethodPost, "/api/clients/3/reset?secret=QUERY-SECRET", `{"password":"BODY-SECRET"}`)
 	send(t, mux, sess["ra"], http.MethodPost, "/api/clients/5/reset", "")
-	// rc, under ad, resets theirs with a token.
-	tok := issue(t, mux, sess["rc"], `{"name":"shop"}`)
+	// rc, under ad, resets theirs with a token the owner issued them.
+	tok := issueFor(t, mux, sess["owner"], idOf(t, db, "rc"), `{"name":"shop"}`)
 	send(t, mux, session{token: tok}, http.MethodPost, "/api/clients/7/reset", "")
 	// ad changes their own password; the owner resets a customer.
 	send(t, mux, sess["ad"], http.MethodPost, "/api/auth/password", `{"currentPassword":"wrong-password-1","newPassword":"PASSWORD-SECRET-9"}`)

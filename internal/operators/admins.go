@@ -96,6 +96,11 @@ type AdminInput struct {
 	// given back). Empty leaves it; a reseller under an admin is counted as
 	// the admin is.
 	UserMode string `json:"userMode"`
+
+	// TokenLimit is how many API tokens an admin may issue, for themselves
+	// and their resellers, the owner's to set. Zero or absent on a new admin
+	// is none. A reseller has none of their own: their admin issues theirs.
+	TokenLimit *int `json:"tokenLimit"`
 }
 
 // MaxTermDays bounds a term on hold. Ten years is past any plan anybody
@@ -233,6 +238,11 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 		// Their users, as an account: the owner's grant, or a hand-down from
 		// the admin making them, which can never be more than the admin has
 		// free. A reseller of an admin with a ceiling is always given one.
+		if admin.Role == model.RoleAdmin && in.TokenLimit != nil && scopedTo(ctx) == nil {
+			if err := setTokens(tx, scope.Of(ctx).AdminID, &admin, int64(*in.TokenLimit)); err != nil {
+				return err
+			}
+		}
 		if admin.Role.Capped() {
 			limit := int64(0)
 			if in.ClientLimit != nil {
@@ -531,6 +541,14 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if in.TokenLimit != nil {
+			if scopedTo(ctx) != nil {
+				return fault.Field("tokenLimit", "only the owner sets how many tokens an admin has")
+			}
+			if err := setTokens(tx, scope.Of(ctx).AdminID, &admin, int64(*in.TokenLimit)); err != nil {
+				return err
+			}
+		}
 		// Their users moved to the new figure, or counted the new way, in
 		// this same transaction (setUsers). Only the owner switches a mode.
 		if role.Capped() && (in.ClientLimit != nil || (in.UserMode != "" && scopedTo(ctx) == nil)) {
