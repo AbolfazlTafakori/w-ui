@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,9 +16,45 @@ import (
 )
 
 // errorBody is the shape of every failed response, so the frontend has one
-// thing to parse rather than a mix of JSON and plain text.
+// thing to parse rather than a mix of JSON and plain text. Code is a fixed
+// name for what went wrong (codeOf), for the page and for a script to tell
+// cases apart without reading the sentence, which may change.
 type errorBody struct {
 	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
+}
+
+// The codes a failed response can carry. Fixed: a script may match on them.
+const (
+	codeInvalid              = "invalid"
+	codeNotFound             = "notFound"
+	codeCapacityInsufficient = "capacity.insufficient"
+	codeTokensNone           = "tokens.none"
+	codeTokensInsufficient   = "tokens.insufficient"
+	codeTokensResellerIssues = "tokens.resellerCannotIssue"
+	codeOperatorPaused       = "operator.paused"
+	codeDeviceLimit          = "client.deviceLimit"
+	codeAddressesExhausted   = "interface.addressesExhausted"
+	codeInternal             = "internal"
+)
+
+// codeOf is the fixed code for a service error.
+func codeOf(err error) string {
+	switch {
+	case errors.Is(err, service.ErrNoUsers):
+		return codeCapacityInsufficient
+	case errors.Is(err, service.ErrBarred):
+		return codeOperatorPaused
+	case errors.Is(err, service.ErrDeviceLimit):
+		return codeDeviceLimit
+	case errors.Is(err, service.ErrPoolExhausted):
+		return codeAddressesExhausted
+	case errors.Is(err, service.ErrNotFound):
+		return codeNotFound
+	case service.FieldOf(err) == "tokens":
+		return codeTokensInsufficient
+	}
+	return codeInvalid
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -34,6 +72,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorBody{Error: msg})
 }
 
+// writeErrorCode is writeError with the fixed code for the case.
+func writeErrorCode(w http.ResponseWriter, status int, code, msg string) {
+	writeJSON(w, status, errorBody{Error: msg, Code: code})
+}
+
 // fail maps a service error to a status code.
 //
 // Validation failures are the caller's problem and say what is wrong; anything
@@ -42,7 +85,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func fail(w http.ResponseWriter, log *slog.Logger, err error) {
 	switch {
 	case errors.Is(err, service.ErrNotFound):
-		writeError(w, http.StatusNotFound, humanMessage(err))
+		writeErrorCode(w, http.StatusNotFound, codeNotFound, humanMessage(err))
 	case errors.Is(err, service.ErrInvalid),
 		errors.Is(err, service.ErrDeviceLimit),
 		errors.Is(err, service.ErrPoolExhausted),
@@ -57,13 +100,20 @@ func fail(w http.ResponseWriter, log *slog.Logger, err error) {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"error": humanMessage(err),
 				"field": field,
+				"code":  codeOf(err),
 			})
 			return
 		}
-		writeError(w, http.StatusBadRequest, humanMessage(err))
+		writeErrorCode(w, http.StatusBadRequest, codeOf(err), humanMessage(err))
 	default:
-		log.Error("request failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		// What went wrong stays in the log, in full, under a reference the
+		// answer gives: the operator is told the panel failed, not how --
+		// a path or a query in a browser is a leak -- and where to look.
+		ref := faultRef()
+		log.Error("request failed", "ref", ref, "error", err)
+		writeErrorCode(w, http.StatusInternalServerError, codeInternal, fmt.Sprintf(
+			"the panel could not finish this: an unexpected fault, logged under reference %s. "+
+				"Try again; if it happens again, the panel's log says what failed under that reference", ref))
 	}
 }
 
@@ -166,4 +216,14 @@ func isPackageWord(w string) bool {
 		}
 	}
 	return true
+}
+
+// faultRef is a short reference for one unexpected fault, to find it in
+// the log by.
+func faultRef() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(b[:])
 }

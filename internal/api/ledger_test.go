@@ -3,9 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/abolfazl/w-ui/internal/service"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/abolfazl/w-ui/internal/capacity"
@@ -191,5 +194,33 @@ func TestAPreviewLeavesNoTrace(t *testing.T) {
 	}
 	if count() != before+1 {
 		t.Error("the extension itself was not recorded")
+	}
+}
+
+// The answers that matter carry their fixed code: a reseller issuing a
+// token, an admin with none to issue, a paused operator signing in, and
+// a service refusal for want of users.
+func TestRefusalsCarryTheirCode(t *testing.T) {
+	mux, sess, db := serversPanel(t)
+	code := func(body string) string {
+		var out map[string]any
+		_ = json.Unmarshal([]byte(body), &out)
+		c, _ := out["code"].(string)
+		return c
+	}
+	if _, body := send(t, mux, sess["rc"], http.MethodPost, "/api/operator/tokens", `{"name":"x"}`); code(body) != codeTokensResellerIssues {
+		t.Errorf("a reseller issuing: %s", body)
+	}
+	if _, body := send(t, mux, sess["an"], http.MethodGet, "/api/operator/tokens", ""); code(body) != codeTokensNone {
+		t.Errorf("an admin with no tokens: %s", body)
+	}
+	db.Model(&model.Admin{}).Where("username = ?", "rb").Update("enabled", false)
+	if _, body := send(t, mux, session{}, http.MethodPost, "/api/auth/login", `{"username":"rb","password":"servers-test-pass-1"}`); code(body) != codeOperatorPaused {
+		t.Errorf("a paused operator signing in: %s", body)
+	}
+	rec := httptest.NewRecorder()
+	fail(rec, slog.New(slog.NewTextHandler(io.Discard, nil)), fmt.Errorf("%w: %w: this needs 2 users and you have 1 left; ask for more to be added", service.ErrInvalid, service.ErrNoUsers))
+	if code(rec.Body.String()) != codeCapacityInsufficient {
+		t.Errorf("a refusal for want of users: %s", rec.Body.String())
 	}
 }

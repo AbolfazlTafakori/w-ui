@@ -20,10 +20,19 @@ const REFUSALS = [
   { re: /you have no API tokens/i, key: 'cap.err.noTokens' },
 ]
 
+// The codes the server gives these refusals, for those whose sentence has
+// no numbers to read back.
+const BY_CODE = {
+  'tokens.none': 'cap.err.noTokens',
+  'tokens.insufficient': 'cap.err.tokens',
+  'tokens.resellerCannotIssue': 'cap.err.resellerTokens',
+}
+
 // capacityMessage is the server's message said in the operator's language
 // when it is a capacity refusal, or the message as it came.
-export function capacityMessage(message, t) {
+export function capacityMessage(message, t, code = '') {
   const text = String(message || '')
+  if (BY_CODE[code]) return t(BY_CODE[code])
   for (const r of REFUSALS) {
     const m = text.match(r.re)
     if (m) return t(r.key, r.vars ? r.vars(m) : undefined)

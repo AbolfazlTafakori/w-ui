@@ -86,12 +86,21 @@ func TestServiceErrorsBecomeTheRightStatus(t *testing.T) {
 		{"invalid with field", &service.FieldError{Field: "name", Err: fmt.Errorf("%w: name is required", service.ErrInvalid)}, 400, "Name is required", "name"},
 		{"invalid without field", fmt.Errorf("%w: panel port 70000 is out of range", service.ErrInvalid), 400, "Panel port 70000 is out of range", ""},
 		{"not found", fmt.Errorf("%w: interface 99", service.ErrNotFound), 404, "Interface 99", ""},
-		{"anything else", errors.New("disk on fire"), 500, "internal error", ""},
+		{"anything else", errors.New("disk on fire"), 500, "", ""},
 	}
 	for _, c := range cases {
 		rec := httptest.NewRecorder()
 		fail(rec, quiet, c.err)
 		got := body(t, rec)
+		if c.status == 500 {
+			// An unexpected fault: its code, a reference to find it in the
+			// log by, and nothing of what failed.
+			msg, _ := got["error"].(string)
+			if rec.Code != 500 || got["code"] != codeInternal || !strings.Contains(msg, "reference ") || strings.Contains(msg, "disk") {
+				t.Errorf("%s: %d %v", c.name, rec.Code, got)
+			}
+			continue
+		}
 		if rec.Code != c.status || got["error"] != c.msg {
 			t.Errorf("%s: %d %q, want %d %q", c.name, rec.Code, got["error"], c.status, c.msg)
 		}

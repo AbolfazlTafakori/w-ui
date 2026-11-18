@@ -128,7 +128,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if refusal := s.signInRefusal(r.Context(), admin, time.Now().UTC()); refusal != "" {
 		s.log.Warn("sign-in refused: account paused",
 			"username", admin.Username, "ip", clientIP(r))
-		writeError(w, http.StatusForbidden, refusal)
+		writeErrorCode(w, http.StatusForbidden, codeOperatorPaused, refusal)
 		return
 	}
 

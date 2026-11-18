@@ -16,6 +16,9 @@ describe('capacityMessage', () => {
     expect(capacityMessage('You have no tokens left to issue; ask the owner for more', t)).toBe('cap.err.tokens')
     expect(capacityMessage("a reseller's API tokens are issued by their admin", t)).toBe('cap.err.resellerTokens')
   })
+  it('goes by the code when there is one', () => {
+    expect(capacityMessage('anything at all', t, 'tokens.resellerCannotIssue')).toBe('cap.err.resellerTokens')
+  })
   it('leaves anything else as it came', () => {
     expect(capacityMessage('name is taken', t)).toBe('name is taken')
     expect(capacityMessage(undefined, t)).toBe('')

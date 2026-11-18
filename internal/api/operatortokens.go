@@ -40,7 +40,8 @@ func (s *Server) refuseNoTokens(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	if !open {
-		writeError(w, http.StatusForbidden, "you have no API tokens")
+		writeErrorCode(w, http.StatusForbidden, codeTokensNone,
+			"you have no API tokens: an admin is given them by the owner, a reseller is issued one by their admin")
 		return true
 	}
 	return false
@@ -63,7 +64,8 @@ func (s *Server) handleIssueOperatorToken(w http.ResponseWriter, r *http.Request
 	// A reseller's tokens are their admin's to issue. Refused before the
 	// body is read, whatever it says.
 	if me != nil && me.Role == model.RoleReseller {
-		writeError(w, http.StatusForbidden, "a reseller's API tokens are issued by their admin")
+		writeErrorCode(w, http.StatusForbidden, codeTokensResellerIssues,
+			"a reseller's API tokens are issued by their admin: ask your admin for one")
 		return
 	}
 	var in struct {
@@ -81,7 +83,7 @@ func (s *Server) handleIssueOperatorToken(w http.ResponseWriter, r *http.Request
 	// An operator paused -- term ended, allowance gone -- may read what is
 	// theirs but make nothing new, and a token is a new way in.
 	if why := service.ScopeOf(r.Context()).Barred; why != "" {
-		writeError(w, http.StatusForbidden, why)
+		writeErrorCode(w, http.StatusForbidden, codeOperatorPaused, why)
 		return
 	}
 	target := me

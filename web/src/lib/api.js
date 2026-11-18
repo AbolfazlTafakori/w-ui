@@ -36,10 +36,13 @@ export function setToken(token) {
 }
 
 export class ApiError extends Error {
-  constructor(message, status, kind = 'server', field = '') {
+  constructor(message, status, kind = 'server', field = '', code = '') {
     // A capacity refusal is said in the operator's language, with its
     // numbers; anything else as the server put it.
-    super(capacityMessage(message, t))
+    super(capacityMessage(message, t, code))
+    // The server's fixed name for what went wrong (capacity.insufficient,
+    // operator.paused, ...): what a page tells cases apart by.
+    this.code = code
     this.name = 'ApiError'
     this.status = status
     // Which input the server was complaining about, when it said. Lets a form
@@ -184,6 +187,9 @@ async function send(method, path, body) {
       throw new ApiError(
         payload?.error || 'The panel hit an error handling that. Its log will say more.',
         res.status,
+        'server',
+        '',
+        payload?.code || '',
       )
     }
     throw new ApiError(
@@ -191,6 +197,7 @@ async function send(method, path, body) {
       res.status,
       'server',
       payload?.field || '',
+      payload?.code || '',
     )
   }
   return payload
@@ -283,7 +290,7 @@ export function uploadBackup(file, onProgress) {
         return
       }
       if (xhr.status >= 200 && xhr.status < 300 && body?.name) resolve(body)
-      else reject(new ApiError(body?.error || '', xhr.status || 0, 'server', body?.field || ''))
+      else reject(new ApiError(body?.error || '', xhr.status || 0, 'server', body?.field || '', body?.code || ''))
     }
     xhr.onerror = () => reject(new ApiError('', 0, 'network'))
     const form = new FormData()

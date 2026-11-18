@@ -1,5 +1,6 @@
 {
   "body": {
+    "code": "invalid",
     "error": "Unknown action \"fly\"",
     "field": "action"
   },

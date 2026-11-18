@@ -397,7 +397,7 @@ func checkBarred(ctx context.Context) error {
 	if !sc.Capped || sc.Barred == "" {
 		return nil
 	}
-	return fmt.Errorf("%w: %s", ErrInvalid, sc.Barred)
+	return fmt.Errorf("%w: %w: %s", ErrInvalid, ErrBarred, sc.Barred)
 }
 
 // checkCeiling refuses a plan an operator with a user ceiling cannot be

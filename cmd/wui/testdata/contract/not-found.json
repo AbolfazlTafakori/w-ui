@@ -1,5 +1,6 @@
 {
   "body": {
+    "code": "notFound",
     "error": "Client 999"
   },
   "status": 404

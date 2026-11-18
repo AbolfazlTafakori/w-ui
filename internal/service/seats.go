@@ -84,6 +84,9 @@ func extended(b, a seatState) bool {
 // operator is shown is built around it (errNoUsers).
 var ErrNoUsers = errors.New("no users left")
 
+// ErrBarred is a change refused because the operator making it is paused.
+var ErrBarred = errors.New("paused")
+
 func errNoUsers(a *model.CapacityAccount, need int64) error {
 	if a.Mode == model.CapacityConsumable {
 		return fmt.Errorf("%w: %w: this needs %d users and you have %d left; ask for more to be added",
