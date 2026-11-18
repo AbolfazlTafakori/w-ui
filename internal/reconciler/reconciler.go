@@ -871,7 +871,7 @@ func (r *Reconciler) lastSuspended(read map[uint]bool, err error) map[uint]bool 
 // the chain, zero when there is none. Suspending the admin thus stops their
 // resellers' customers too, without a row on any of them being touched.
 func serviceableFor(c *model.Client, suspended map[uint]bool) bool {
-	return c.Status.Serviceable() && !suspended[c.OwnerID] && !suspended[c.AdminID]
+	return service.ServesNow(c, suspended)
 }
 
 // readDesired builds the target state from the database in two queries.

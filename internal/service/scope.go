@@ -160,3 +160,20 @@ func SuspendedOwners(ctx context.Context, db *gorm.DB, now time.Time) (map[uint]
 	}
 	return out, nil
 }
+
+// ServesNow reports whether this customer's devices belong on the tunnels
+// right now: their own plan says so, and every operator above them is in
+// good standing (suspended is SuspendedOwners).
+//
+// Above them is their direct owner -- a reseller or an admin -- and, for a
+// reseller's customer, the admin over that reseller: AdminID is the top of
+// the chain, zero when there is none. Suspending the admin thus stops their
+// resellers' customers too, without a row on any of them being touched.
+//
+// The one rule for every place service is decided: this server's own
+// tunnels, the W-UI nodes the panel pushes to, and the 3x-ui and Pasarguard
+// nodes it drives. Each asked on its own before, and the nodes never asked
+// about the operators above at all.
+func ServesNow(c *model.Client, suspended map[uint]bool) bool {
+	return c.Status.Serviceable() && !suspended[c.OwnerID] && !suspended[c.AdminID]
+}

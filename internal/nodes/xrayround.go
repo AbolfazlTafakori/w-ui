@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/service"
@@ -189,6 +190,18 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 	reread := s.xuiRounds[node.ID]%xrayLinksEvery == 1
 	s.mu.Unlock()
 
+	// Who above a customer is paused, and which files the connections
+	// limit holds off: neither may be served on these nodes either. A
+	// failed read fails the round, and the node keeps what it had.
+	suspended, err := service.SuspendedOwners(ctx, db, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("read paused operators: %w", err)
+	}
+	var holds map[uint]time.Time
+	if s.Holds != nil {
+		holds = s.Holds()
+	}
+
 	files := make([]xrayFile, 0, len(accounts))
 	for _, acc := range accounts {
 		iface, ok := byID[acc.InterfaceID]
@@ -201,7 +214,7 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 		}
 		files = append(files, xrayFile{
 			acc: acc, iface: iface, client: c,
-			on:    !node.OverAllowance && c.Status.Serviceable() && acc.Enabled && iface.Enabled,
+			on:    !node.OverAllowance && service.ServesNow(&c, suspended) && !heldNow(holds, acc.ID) && acc.Enabled && iface.Enabled,
 			links: reread || moved[acc.InterfaceID] || acc.XUILink == "",
 		})
 	}
@@ -267,4 +280,10 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 func xuiShape(in model.XUIInbound) model.XUIInbound {
 	in.Clients, in.Up, in.Down = 0, 0, 0
 	return in
+}
+
+// heldNow reports whether the connections limit holds this file off now.
+func heldNow(holds map[uint]time.Time, id uint) bool {
+	until, ok := holds[id]
+	return ok && time.Now().Before(until)
 }

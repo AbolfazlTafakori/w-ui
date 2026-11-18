@@ -349,6 +349,13 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.
 	if s.Holds != nil {
 		holds = s.Holds()
 	}
+	// Who above a customer is paused, read once for the push. A failed read
+	// fails the push: the node keeps what it had rather than being told the
+	// paused are served.
+	suspended, err := service.SuspendedOwners(ctx, db, time.Now().UTC())
+	if err != nil {
+		return nil, fmt.Errorf("read paused operators: %w", err)
+	}
 
 	out := make([]fleet.NodeState, 0, len(interfaces))
 	for _, iface := range interfaces {
@@ -394,7 +401,7 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.
 				// Sent as a disabled customer rather than an omitted one so the
 				// node keeps the record and lets them straight back on when the
 				// month rolls over, instead of rebuilding every peer.
-				Enabled:        !spent && c.Status.Serviceable(),
+				Enabled:        !spent && service.ServesNow(&c, suspended),
 				RateBitsPerSec: c.RateBitsPerSec,
 				DeviceLimit:    c.DeviceLimit,
 				Accounts:       accs,
