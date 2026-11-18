@@ -2440,3 +2440,13 @@ func (s *Clients) SharingRecord(ctx context.Context, limit int) ([]model.Sharing
 	}
 	return out, nil
 }
+
+// OwnIDs is the id of every customer the caller may see: narrowed like any
+// read, so an operator's are their tree's.
+func (s *Clients) OwnIDs(ctx context.Context) ([]uint, error) {
+	var ids []uint
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("service: read the caller's customers: %w", err)
+	}
+	return ids, nil
+}

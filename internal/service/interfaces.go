@@ -1914,3 +1914,17 @@ func (s *Interfaces) OwnCounts(ctx context.Context) (map[uint]OwnCount, error) {
 	}
 	return out, nil
 }
+
+// Running is the enabled tunnels and the enabled remote nodes, for the
+// list of what is going wrong with them.
+func (s *Interfaces) Running(ctx context.Context) ([]model.Interface, []model.Node, error) {
+	var ifaces []model.Interface
+	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&ifaces).Error; err != nil {
+		return nil, nil, fmt.Errorf("service: read the tunnels: %w", err)
+	}
+	var nodes []model.Node
+	if err := s.db.WithContext(ctx).Where("enabled = ? AND kind <> ?", true, model.KindLocal).Find(&nodes).Error; err != nil {
+		return nil, nil, fmt.Errorf("service: read the nodes: %w", err)
+	}
+	return ifaces, nodes, nil
+}

@@ -2,6 +2,8 @@ package reconciler
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -108,5 +110,27 @@ func TestWhoIsNearTheirAllowance(t *testing.T) {
 		if got := nearAllowance(c.quota, c.used); got != c.want {
 			t.Errorf("quota %d used %d: near %v, want %v", c.quota, c.used, got, c.want)
 		}
+	}
+}
+
+// A failure the loop meets is kept, under its code, while it lasts, and
+// taken away when the thing works again.
+func TestAFailureIsShownWhileItLasts(t *testing.T) {
+	r, db, enf, _ := newRig(t)
+	seed(t, db, model.Client{Name: "Ali", QuotaBytes: 10_000}, "10.66.0.2")
+	ctx := context.Background()
+	enf.applyErr = errors.New("nft: Could not process rule: No such file or directory")
+	r.Tick(ctx)
+	codes := map[string]string{}
+	for _, p := range r.Problems() {
+		codes[p.Code] = p.Detail
+	}
+	if !strings.Contains(codes[ProblemEnforceFailed], "Could not process rule") || codes[ProblemLoopFailed] == "" {
+		t.Fatalf("while the firewall table cannot be written: %v", codes)
+	}
+	enf.applyErr = nil
+	r.Tick(ctx)
+	if p := r.Problems(); len(p) != 0 {
+		t.Fatalf("after it works again: %+v", p)
 	}
 }

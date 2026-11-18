@@ -702,6 +702,11 @@ func (s *Server) routes() []Route {
 			Note: "For an operator the owner granted the activity page. The action as routed and how it ended, never what " +
 				"was sent or answered. Kept 90 days. The owner's own changes are in the panel's log.",
 			handler: s.handleOperatorActivity},
+		{Method: "GET", Path: "/api/problems", Group: "Server", Auth: true,
+			Summary: "What is going wrong now, each with a fixed code: the loop, the firewall table, usage not written, a held device not disconnected, nodes unreachable or not counted, tunnels down.",
+			Note: "Codes: loop.failed, enforce.failed, usage.notWritten, limit.disconnectFailed, node.unreachable, node.limitPartial, tunnel.down. " +
+				"The owner is told what failed (detail); an admin or a reseller only what is about their own customers and the servers they sell on, without the detail.",
+			handler: s.handleProblems},
 		{Method: "GET", Path: "/api/operator/ledger", Group: "Server", Auth: true,
 			Summary: "Your capacity ledger, newest first: every movement of users or tokens -- made, extended, ended, charged, handed down -- with who did it and for which customer or token.",
 			Note: "An admin sees their own account's and their resellers', a reseller their own, the owner every account's. " +
@@ -969,6 +974,7 @@ var (
 		// What their tree changed, when the owner granted them the page.
 		"GET /api/operator/activity": true,
 		"GET /api/operator/ledger":   true,
+		"GET /api/problems":          true,
 	}
 
 	// menuForRoute is the admin page that gates a single route under a

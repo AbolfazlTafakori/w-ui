@@ -179,6 +179,9 @@ type Reconciler struct {
 	// their usage is written every tick (writeNearLimit).
 	nearMu sync.Mutex
 	near   map[uint]bool
+
+	// problems is what is going wrong now, for the panel's pages.
+	problems problems
 }
 
 // New builds a reconciler.
@@ -392,6 +395,11 @@ func (r *Reconciler) Tick(ctx context.Context) {
 		r.stats.LastError = ""
 	}
 	r.mu.Unlock()
+	if err != nil {
+		r.problems.set(ProblemLoopFailed, Problem{Code: ProblemLoopFailed, Detail: err.Error()})
+	} else {
+		r.problems.clear(ProblemLoopFailed)
+	}
 
 	if err != nil {
 		r.log.Error("reconcile failed", "error", err)
@@ -850,8 +858,10 @@ func (r *Reconciler) apply(ctx context.Context) (int, int, error) {
 	// their traffic before the driver gets round to removing the peer, not
 	// after.
 	if err := r.enforcer.Apply(ctx, d.rules); err != nil {
+		r.problems.set(ProblemEnforceFailed, Problem{Code: ProblemEnforceFailed, Detail: err.Error()})
 		return 0, 0, fmt.Errorf("enforcer: %w", err)
 	}
+	r.problems.clear(ProblemEnforceFailed)
 
 	// Shaping comes after the ruleset, because the nftables chain is what
 	// stamps a packet with the class the hierarchy below is built from. A class
@@ -1403,9 +1413,14 @@ func (r *Reconciler) kick(ctx context.Context, ifaceID, accountID uint, device s
 		return
 	}
 	if b, ok := r.pool.Get(ifaceID); ok {
+		key := fmt.Sprintf("%s/%d", ProblemDisconnectFailed, accountID)
 		if err := b.Kick(ctx, accountID); err != nil && !errors.Is(err, backend.ErrNotSupported) {
 			r.log.Warn("could not end a held-off session", "device", device, "error", err)
+			r.problems.set(key, Problem{Code: ProblemDisconnectFailed, Detail: err.Error(),
+				ClientID: r.conc.clients()[accountID], Device: device})
+			return
 		}
+		r.problems.clear(key)
 	}
 }
 

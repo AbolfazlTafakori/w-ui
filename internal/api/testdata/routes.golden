@@ -158,6 +158,7 @@ GET    /api/operator/servers                          Server         auth=true  
 GET    /api/operator/sharing                          Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=yes owner=yes
 GET    /api/operator/sharing/history                  Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=yes owner=yes
 GET    /api/operator/activity                         Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=yes owner=yes
+GET    /api/problems                                  Server         auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 GET    /api/operator/ledger                           Server         auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 GET    /api/sharing                                   Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/sharing/history                           Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes

@@ -85,6 +85,9 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		"GET /api/operator/activity",
 		// Their own capacity ledger, and their resellers' for an admin.
 		"GET /api/operator/ledger",
+		// What is going wrong that touches them: their customers, the
+		// servers they sell on, and what stops limits applying at all.
+		"GET /api/problems",
 	}
 	sort.Strings(want)
 

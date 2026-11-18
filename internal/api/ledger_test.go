@@ -224,3 +224,50 @@ func TestRefusalsCarryTheirCode(t *testing.T) {
 		t.Errorf("a refusal for want of users: %s", rec.Body.String())
 	}
 }
+
+// What is going wrong is the owner's to see in full, and an operator's
+// only where it touches the servers they sell on -- with no detail.
+func TestProblemsAreShownToWhomTheyConcern(t *testing.T) {
+	mux, sess, db := serversPanel(t)
+	sold := model.Node{Name: "sold-node", Kind: model.KindRemote, Address: "x", Enabled: true, LastError: "dial tcp 198.51.100.4:2096: connection refused"}
+	other := model.Node{Name: "other-node", Kind: model.KindRemote, Address: "y", Enabled: true, LastError: "tls: bad certificate"}
+	db.Create(&sold)
+	db.Create(&other)
+	db.Model(&model.Node{}).Where("id IN ?", []uint{sold.ID, other.ID}).Update("reachable", false)
+	// wg-a, which ra sells, moves to the sold node; nothing of ra's is on the other.
+	db.Model(&model.Interface{}).Where("id = ?", 1).Update("node_id", sold.ID)
+
+	read := func(who string) []map[string]any {
+		t.Helper()
+		code, body := send(t, mux, sess[who], http.MethodGet, "/api/problems", "")
+		if code != http.StatusOK {
+			t.Fatalf("%s: %d %s", who, code, body)
+		}
+		var out struct {
+			Items []map[string]any `json:"items"`
+		}
+		_ = json.Unmarshal([]byte(body), &out)
+		return out.Items
+	}
+	nodes := func(items []map[string]any) map[string]string {
+		m := map[string]string{}
+		for _, p := range items {
+			if p["code"] == problemNodeUnreachable {
+				d, _ := p["detail"].(string)
+				m[p["node"].(string)] = d
+			}
+		}
+		return m
+	}
+	owner := nodes(read("owner"))
+	if owner["sold-node"] == "" || owner["other-node"] == "" {
+		t.Errorf("the owner sees %v, want both with what failed", owner)
+	}
+	ra := nodes(read("ra"))
+	if _, ok := ra["sold-node"]; !ok || ra["sold-node"] != "" {
+		t.Errorf("ra sees %v, want the node they sell on, without the detail", ra)
+	}
+	if _, ok := ra["other-node"]; ok {
+		t.Errorf("ra sees a node they do not sell on: %v", ra)
+	}
+}

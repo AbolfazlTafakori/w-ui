@@ -1,4 +1,5 @@
 <script setup>
+import ProblemsBanner from './components/ProblemsBanner.vue'
 import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
 import { store, t, notify, signOut, setLocale } from './lib/store.js'
@@ -562,6 +563,7 @@ function reload() {
         <Icon name="alert" :size="15" />
         <span>{{ t('enforcement.unavailable') }}</span>
       </div>
+      <ProblemsBanner v-if="store.admin" />
 
       <!-- The navigation stays up, so this is a broken page rather than a
            broken panel and there is somewhere to go from here. -->

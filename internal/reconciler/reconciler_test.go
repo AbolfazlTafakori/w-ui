@@ -27,6 +27,8 @@ type fakeEnforcer struct {
 	drains  int
 	spent   map[string]uint64 // quotas the kernel holds spent, with what each used
 	quotas  []enforce.Usage   // each quota's tally, as the kernel would say
+	// applyErr is what Apply fails with, when set.
+	applyErr error
 }
 
 func (f *fakeEnforcer) Usage(context.Context) ([]enforce.Usage, error) { return f.quotas, nil }
@@ -46,6 +48,9 @@ func newFakeEnforcer() *fakeEnforcer {
 }
 
 func (f *fakeEnforcer) Apply(ctx context.Context, rules []enforce.Rule) error {
+	if f.applyErr != nil {
+		return f.applyErr
+	}
 	f.applied = rules
 	return f.Noop.Apply(ctx, rules)
 }
