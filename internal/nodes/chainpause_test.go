@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -87,5 +88,35 @@ func TestA3xuiFileIsOffWhilePausedOrHeld(t *testing.T) {
 	r.round()
 	if !on() {
 		t.Error("the hold is over and the file is still off there")
+	}
+}
+
+// What a 3x-ui node says is online reaches the reconciler as that node's
+// live sessions, by this panel's own file ids, oldest kept as oldest: the
+// connections limit counts a customer's xray connection with their others.
+func TestA3xuiNodesLiveFilesAreCounted(t *testing.T) {
+	f := newFakeXUI(t, "3.10.2")
+	f.addInbound("vless-in", "vless", 31001, map[string]any{"decryption": "none"}, nil)
+	r := newRig(t, xuiNode(f, true, false))
+	r.round()
+	c := r.customer("alice", "vless-in")
+	r.round()
+	acc := r.account(c.ID, "vless-in")
+
+	var got []fleet.NodeSession
+	r.s.Sessions = func(_ uint, ss []fleet.NodeSession) { got = ss }
+	f.mu.Lock()
+	f.online = []string{service.XUIEmail(r.tag(), &acc), "owner-1"}
+	f.mu.Unlock()
+	r.s.sessionsRound(r.ctx)
+	if len(got) != 1 || got[0].OriginID != acc.ID || got[0].Connections != 1 {
+		t.Fatalf("reported %+v, want alice's file live, and nothing of the operator's own", got)
+	}
+	f.mu.Lock()
+	f.online = nil
+	f.mu.Unlock()
+	r.s.sessionsRound(r.ctx)
+	if len(got) != 0 {
+		t.Fatalf("offline there, reported %+v", got)
 	}
 }

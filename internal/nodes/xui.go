@@ -440,3 +440,69 @@ func askXUI(ctx context.Context, node model.Node) (Snapshot, error) {
 	}
 	return snap, nil
 }
+
+// xuiSessions tells the reconciler which of this panel's files are live on
+// a 3x-ui node, so a customer's connections are counted across it with
+// their others: a one-user plan with a WireGuard device and an xray one at
+// once is over its limit like any other two. 3x-ui says only which clients
+// are online, not from how many places; one file shared by two devices is
+// held to one there by its IP limit.
+func (s *Syncer) xuiSessions(ctx context.Context, node model.Node) {
+	tag, err := service.PanelTag(ctx, s.db)
+	if err != nil {
+		return
+	}
+	api, err := newXUIAPI(ctx, node)
+	if err != nil {
+		return // said by the next round, which fails the same way
+	}
+	emails, err := api.onlines(ctx)
+	if err != nil {
+		return
+	}
+	var accs []model.Account
+	if err := s.db.WithContext(ctx).Where("node_id = ?", node.ID).Find(&accs).Error; err != nil {
+		s.log.Warn("could not read a node's files to count who is live on it", "node", node.Name, "error", err)
+		return
+	}
+	byEmail := make(map[string]uint, len(accs))
+	for i := range accs {
+		byEmail[service.XUIEmail(tag, &accs[i])] = accs[i].ID
+	}
+	now := time.Now()
+	s.mu.Lock()
+	if s.xuiSeen == nil {
+		s.xuiSeen = map[uint]map[uint]time.Time{}
+	}
+	seen := s.xuiSeen[node.ID]
+	if seen == nil {
+		seen = map[uint]time.Time{}
+		s.xuiSeen[node.ID] = seen
+	}
+	live := map[uint]bool{}
+	out := make([]fleet.NodeSession, 0, len(emails))
+	for _, e := range emails {
+		id, ok := byEmail[e]
+		if !ok || live[id] {
+			continue
+		}
+		live[id] = true
+		// Since when, as far as this panel has watched: how the oldest
+		// connection is told from the newest when one has to go.
+		since, had := seen[id]
+		if !had {
+			since = now
+			seen[id] = now
+		}
+		out = append(out, fleet.NodeSession{OriginID: id, Connections: 1, AgeSeconds: int(now.Sub(since) / time.Second)})
+	}
+	for id := range seen {
+		if !live[id] {
+			delete(seen, id)
+		}
+	}
+	s.mu.Unlock()
+	if s.Sessions != nil {
+		s.Sessions(node.ID, out)
+	}
+}

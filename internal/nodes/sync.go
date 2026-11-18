@@ -77,7 +77,10 @@ type Syncer struct {
 	// xuiRounds counts each 3x-ui or Pasarguard node's rounds, for
 	// rereading its links; inboundPrints is each one's inbounds' fingerprints
 	// the round before (xrayround.go).
-	xuiRounds     map[uint]int
+	xuiRounds map[uint]int
+	// xuiSeen is, per 3x-ui node, since when each of its files has been seen
+	// online: how the oldest connection is told from the newest.
+	xuiSeen       map[uint]map[uint]time.Time
 	inboundPrints map[uint]map[int]string
 
 	mu sync.Mutex
@@ -138,8 +141,9 @@ func (s *Syncer) sessionsRound(ctx context.Context) {
 	}
 	var remotes []model.Node
 	if err := s.db.WithContext(ctx).
-		Where("kind = ? AND enabled = ?", model.KindRemote, true).
+		Where("kind IN ? AND enabled = ?", []model.NodeKind{model.KindRemote, model.KindXUI}, true).
 		Find(&remotes).Error; err != nil {
+		s.log.Warn("could not list the nodes to ask what is live", "error", err)
 		return
 	}
 	var wg sync.WaitGroup
@@ -148,6 +152,10 @@ func (s *Syncer) sessionsRound(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if node.Kind == model.KindXUI {
+				s.xuiSessions(ctx, node)
+				return
+			}
 			var reply struct {
 				Sessions []fleet.NodeSession `json:"sessions"`
 			}
@@ -169,6 +177,18 @@ func (s *Syncer) PushHold(nodeID uint, hold fleet.NodeHold) {
 		defer cancel()
 		var node model.Node
 		if err := s.db.WithContext(ctx).First(&node, nodeID).Error; err != nil {
+			s.log.Warn("could not read the node to hold a device off on", "node", nodeID, "error", err)
+			return
+		}
+		// A 3x-ui or Pasarguard node has no hold of its own: its round
+		// switches the held file off there, and is run now rather than at
+		// the next interval.
+		switch node.Kind {
+		case model.KindXUI:
+			s.xuiOne(ctx, node)
+			return
+		case model.KindPG:
+			s.pgOne(ctx, node)
 			return
 		}
 		body := map[string]any{"holds": []fleet.NodeHold{hold}}

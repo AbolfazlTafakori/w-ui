@@ -47,6 +47,8 @@ type fakeXUI struct {
 
 	inbounds []*fakeXUIInbound
 	nextID   int
+	// online is the emails it says have a connection open.
+	online []string
 	xray     map[string]any // the xray config it runs
 	// xrayFails says xray will not run with a config, as a real one may not.
 	xrayFails func(cfg map[string]any) bool
@@ -310,6 +312,8 @@ func (f *fakeXUI) serveAPI(w http.ResponseWriter, r *http.Request, api string, b
 		}
 		f.inbounds = kept
 		ok200(w, nil)
+	case api == "inbounds/onlines":
+		ok200(w, f.online)
 	case api == "inbounds/list":
 		f.serveList(w)
 	case api == "inbounds/addClient" && !f.atLeast(3, 1):

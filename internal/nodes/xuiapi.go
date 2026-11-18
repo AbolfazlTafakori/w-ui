@@ -454,6 +454,13 @@ func objectOrString(raw json.RawMessage, into any) error {
 	return json.Unmarshal(raw, into)
 }
 
+// onlines is the email of every client with a connection open there now.
+func (x *xuiAPI) onlines(ctx context.Context) ([]string, error) {
+	var emails []string
+	err := x.do(ctx, http.MethodPost, "inbounds/onlines", nil, &emails)
+	return emails, err
+}
+
 func (x *xuiAPI) inbounds(ctx context.Context) ([]xuiInboundRow, error) {
 	var rows []xuiInboundRow
 	err := x.do(ctx, http.MethodGet, "inbounds/list", nil, &rows)
