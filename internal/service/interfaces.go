@@ -1280,9 +1280,17 @@ func (s *Interfaces) readdress(ctx context.Context, iface *model.Interface, subn
 		return fmt.Errorf("service: move tunnel to %s: %w", subnet, err)
 	}
 	if s.pools != nil {
-		if _, err := s.pools.Add(iface.ID, subnet); err == nil {
+		if _, err := s.pools.Add(iface.ID, subnet); err != nil {
+			s.log.Error("tunnel moved to a new subnet but its address pool could not be rebuilt; new devices on it may be refused until the panel restarts",
+				"interface", iface.Name, "subnet", subnet, "error", err)
+		} else {
 			for _, ip := range moved {
-				_ = s.pools.Replay(iface.ID, ip)
+				// An address not reserved here could be handed to a second
+				// device: said, with which, rather than passed over.
+				if err := s.pools.Replay(iface.ID, ip); err != nil {
+					s.log.Error("an address moved with its tunnel could not be held; it may be given to a second device",
+						"interface", iface.Name, "address", ip, "error", err)
+				}
 			}
 		}
 	}

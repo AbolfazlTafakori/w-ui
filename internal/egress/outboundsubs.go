@@ -245,7 +245,11 @@ func (s *OutboundSubs) removeProduced(ctx context.Context, subID uint, keep map[
 		}
 		if err := s.outbounds.Delete(ctx, ob.ID); err != nil {
 			if errors.Is(err, ErrInvalid) {
-				_ = s.outbounds.SetOrigin(ctx, ob.ID, "", "", 0)
+				// Still in use, so kept, and no longer the subscription's.
+				if err := s.outbounds.SetOrigin(ctx, ob.ID, "", "", 0); err != nil {
+					s.log.Warn("an outbound gone from its subscription is still in use and kept, but could not be marked as no longer the subscription's",
+						"outbound", ob.Tag, "error", err)
+				}
 				kept = append(kept, ob.Tag)
 				continue
 			}

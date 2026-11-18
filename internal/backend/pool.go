@@ -235,6 +235,8 @@ func (p *Pool) Sync(ctx context.Context, ifaces []model.Interface) {
 			p.log.Warn("an open tunnel reports itself unhealthy; reopening",
 				"interface", iface.Name, "error", err)
 		}
+		// Its failure is kept on the tunnel (ErrorFor) and shown with it;
+		// the next pass tries again.
 		_ = p.openLocked(ctx, &iface, false)
 	}
 

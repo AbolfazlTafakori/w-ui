@@ -53,10 +53,22 @@ func CreateXrayInbound(ctx context.Context, node model.Node, in service.XrayInbo
 		// the reason given.
 		// Restarted now rather than when that panel gets round to it, so
 		// what runs is what was just made.
+		// A failed restart is not acted on here: whether xray runs is what
+		// is asked next, and that is the answer that matters.
 		_ = api.restartXray(ctx)
 		if err := api.xrayRunsAfter(ctx); err != nil {
-			_ = api.do(ctx, http.MethodPost, fmt.Sprintf("inbounds/del/%d", id), nil, nil)
-			_ = api.restartXray(ctx)
+			// Taken out again. If that fails too, the inbound that stops
+			// that panel's xray is still there, and the operator must hear
+			// it from the error itself rather than find every inbound there
+			// down.
+			if derr := api.do(ctx, http.MethodPost, fmt.Sprintf("inbounds/del/%d", id), nil, nil); derr != nil {
+				return out, fmt.Errorf("its xray did not run with this inbound (%v), and taking the inbound out again failed too: "+
+					"remove inbound %d on that 3x-ui by hand and restart its xray: %w", err, id, derr)
+			}
+			if rerr := api.restartXray(ctx); rerr != nil {
+				return out, fmt.Errorf("its xray did not run with this inbound (%v); it was taken out again, but restarting that "+
+					"panel's xray failed: restart it from that 3x-ui: %w", err, rerr)
+			}
 			return out, fmt.Errorf("its xray did not run with this inbound, so it was taken out again: %w", err)
 		}
 		out.RemoteID, out.Tag = id, tag
@@ -195,12 +207,25 @@ func (p *pgAPI) addInbound(ctx context.Context, in service.XrayInboundInput, nod
 		return fmt.Errorf("the Pasarguard panel refused the inbound: %w", err)
 	}
 	putBack := func(why error) error {
+		// Each step of putting it back is said if it fails: a core left
+		// changed is that panel's every inbound, and the operator must
+		// know to look.
+		var undo []string
 		if standing {
-			_ = p.deleteUser(ctx, pgStandingName(in.Remark))
+			if err := p.deleteUser(ctx, pgStandingName(in.Remark)); err != nil {
+				undo = append(undo, fmt.Sprintf("removing user %s: %v", pgStandingName(in.Remark), err))
+			}
 		}
 		var old map[string]any
-		_ = json.Unmarshal(before, &old)
-		_ = p.putCore(ctx, pgCore{ID: core.ID, Name: core.Name, Config: old}, true)
+		if err := json.Unmarshal(before, &old); err != nil {
+			undo = append(undo, fmt.Sprintf("reading the core as it was: %v", err))
+		} else if err := p.putCore(ctx, pgCore{ID: core.ID, Name: core.Name, Config: old}, true); err != nil {
+			undo = append(undo, fmt.Sprintf("putting core %q back: %v", core.Name, err))
+		}
+		if len(undo) > 0 {
+			return fmt.Errorf("%w; putting that Pasarguard back as it was failed (%s): check its core %q by hand",
+				why, strings.Join(undo, "; "), core.Name)
+		}
 		return fmt.Errorf("the core was put back as it was: %w", why)
 	}
 	if standing {

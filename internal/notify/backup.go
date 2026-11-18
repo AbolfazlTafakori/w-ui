@@ -179,12 +179,16 @@ func (n *Notifier) sendBackup(ctx context.Context, cfg Config, take BackupFunc) 
 	file, err := take(ctx, cfg.Lang)
 	if err != nil {
 		n.log.Warn("could not take the automatic backup", "error", err)
-		_ = n.post(ctx, cfg, backupNotTaken(cfg.Lang, err))
+		if perr := n.post(ctx, cfg, backupNotTaken(cfg.Lang, err)); perr != nil {
+			n.log.Warn("could not tell the chat the automatic backup was not taken", "to", cfg.Name(), "error", perr)
+		}
 		return
 	}
 	if err := n.sendDocument(ctx, cfg, file); err != nil {
 		n.log.Warn("could not send the automatic backup", "file", file.Name, "error", err)
-		_ = n.post(ctx, cfg, backupNotSent(cfg.Lang, file, err))
+		if perr := n.post(ctx, cfg, backupNotSent(cfg.Lang, file, err)); perr != nil {
+			n.log.Warn("could not tell the chat the automatic backup was not sent", "to", cfg.Name(), "error", perr)
+		}
 		return
 	}
 	n.log.Info("automatic backup sent", "to", cfg.Name(), "file", file.Name, "bytes", file.Size)

@@ -745,6 +745,7 @@ func (s *Outbounds) validate(ctx context.Context, in *OutboundInput, selfID uint
 			}
 			in.Config = cfg
 			var ob map[string]any
+			// cfg was just checked to be a valid xray config, so it reads.
 			_ = json.Unmarshal([]byte(cfg), &ob)
 			if addr, port := xrayTarget(ob); addr != "" && port > 0 {
 				in.Address = net.JoinHostPort(addr, strconv.Itoa(port))
