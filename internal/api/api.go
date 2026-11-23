@@ -376,6 +376,7 @@ func maxUint(v, floor uint) uint {
 // reconciler's to do.
 func newNodeSync(o Options) *fleet.NodeSync {
 	ns := fleet.NewNodeSync(o.DB, o.Logger)
+	ns.SettleCustomers = service.SettleByPanel
 	if o.Reconciler != nil {
 		ns.OnHold = o.Reconciler.Hold
 	}

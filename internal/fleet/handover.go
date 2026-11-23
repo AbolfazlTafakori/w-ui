@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -207,21 +208,35 @@ func (s *NodeSync) Claim(ctx context.Context, nodeID uint, c handover.Claim) err
 				return fmt.Errorf("hand over tunnel %d: %w", p.LocalID, err)
 			}
 		}
+		if s.SettleCustomers == nil {
+			return errors.New("fleet: a handover needs the panel's way to settle its customers' users, and none was given")
+		}
+		clientIDs := make([]uint, 0, len(c.Clients))
 		for _, p := range c.Clients {
-			// What the managing panel keeps from now on, it keeps: the plan is
-			// cleared here, and the name is the id, as a sync would make it.
-			if err := tx.Model(&model.Client{}).Where("id = ?", p.LocalID).Updates(map[string]any{
-				"origin_id": p.OriginID, "name": fmt.Sprintf("origin-%d", p.OriginID),
-				"quota_bytes": 0, "expires_at": nil, "start_on_first_use": false,
-				"duration_days": 0, "duration_hours": 0, "owner_id": 0,
-				"used_bytes": less("used_bytes", p.Used), "up_bytes": less("up_bytes", p.Up),
-				"down_bytes": less("down_bytes", p.Down),
-			}).Error; err != nil {
-				return fmt.Errorf("hand over customer %d: %w", p.LocalID, err)
+			clientIDs = append(clientIDs, p.LocalID)
+		}
+		// The customers leave their owner here, so the users they held go
+		// back to that owner, settled as every other change to customers is.
+		if err := s.SettleCustomers(ctx, tx, clientIDs, func(tx *gorm.DB) error {
+			for _, p := range c.Clients {
+				// What the managing panel keeps from now on, it keeps: the plan is
+				// cleared here, and the name is the id, as a sync would make it.
+				if err := tx.Model(&model.Client{}).Where("id = ?", p.LocalID).Updates(map[string]any{
+					"origin_id": p.OriginID, "name": fmt.Sprintf("origin-%d", p.OriginID),
+					"quota_bytes": 0, "expires_at": nil, "start_on_first_use": false,
+					"duration_days": 0, "duration_hours": 0, "owner_id": 0,
+					"used_bytes": less("used_bytes", p.Used), "up_bytes": less("up_bytes", p.Up),
+					"down_bytes": less("down_bytes", p.Down),
+				}).Error; err != nil {
+					return fmt.Errorf("hand over customer %d: %w", p.LocalID, err)
+				}
+				if err := tx.Where("client_id = ?", p.LocalID).Delete(&model.ClientGroup{}).Error; err != nil {
+					return fmt.Errorf("hand over customer %d: clear their groups: %w", p.LocalID, err)
+				}
 			}
-			if err := tx.Where("client_id = ?", p.LocalID).Delete(&model.ClientGroup{}).Error; err != nil {
-				return err
-			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		for _, p := range c.Accounts {
 			if err := tx.Model(&model.Account{}).Where("id = ? AND interface_id IN ?", p.LocalID, tunnelIDs).

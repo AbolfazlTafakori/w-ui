@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/capacity"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fleet"
 	"github.com/abolfazl/w-ui/internal/handover"
@@ -33,6 +34,7 @@ func newWUINode(t *testing.T) *wuiNode {
 		t.Fatal(err)
 	}
 	n.sync = fleet.NewNodeSync(n.db, quietLog())
+	n.sync.SettleCustomers = service.SettleByPanel
 	refuse := func(w http.ResponseWriter, err error) {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -352,5 +354,49 @@ func TestAHandoverLeavingSomeoneOutIsRefused(t *testing.T) {
 	n.db.First(&wg0, wg0.ID)
 	if wg0.Managed {
 		t.Fatal("wg0 was handed over by a refused claim")
+	}
+}
+
+// A reseller's customer handed over to a managing panel is no longer theirs
+// on the node: the users it held come back to them, in the ledger as in the
+// figure.
+func TestAHandedOverCustomerGivesTheirOwnersUsersBack(t *testing.T) {
+	n := newWUINode(t)
+	ids := n.seed(t)
+	reseller := model.Admin{Username: "rs", PasswordHash: "x", Role: model.RoleReseller}
+	if err := n.db.Create(&reseller).Error; err != nil {
+		t.Fatal(err)
+	}
+	dave := ids["dave"]
+	if err := n.db.Model(&model.Client{}).Where("id = ?", dave).Updates(map[string]any{"owner_id": reseller.ID, "device_limit": 2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	acc, err := capacity.Open(n.db, reseller.ID, model.CapacityUsers, model.CapacityOpen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := capacity.Hold(n.db, acc, 2, capacity.Entry{Reason: model.CapacityCreate, ClientID: dave}); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg9 model.Interface
+	n.db.Where("name = ?", "wg9").First(&wg9)
+	if err := n.sync.Claim(t.Context(), 1, handover.Claim{
+		Tunnels:  []handover.IDPair{{LocalID: wg9.ID, OriginID: 100}},
+		Clients:  []handover.IDPair{{LocalID: dave, OriginID: 200}},
+		Accounts: []handover.IDPair{{LocalID: ids["phone@wg9"], OriginID: 300}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := capacity.Account(n.db, reseller.ID, model.CapacityUsers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Used != 0 {
+		t.Fatalf("the reseller still holds %d users for a customer handed over", after.Used)
+	}
+	if bad, err := capacity.Balanced(n.db); err != nil || len(bad) != 0 {
+		t.Fatalf("accounts out of balance with their ledger: %v %v", bad, err)
 	}
 }

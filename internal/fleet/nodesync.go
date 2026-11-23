@@ -163,6 +163,14 @@ type NodeSync struct {
 	// on a CLI.
 	OnHold func(ctx context.Context, accountID uint, until time.Time)
 
+	// SettleCustomers runs a change to customers with the users their
+	// owners hold settled to match, in the caller's transaction: the panel's
+	// one rule for that (service.SettleByPanel), which this package, a
+	// sibling of service, cannot call itself. Set by the panel; a handover
+	// claimed without it is refused rather than left holding users nobody
+	// is served by.
+	SettleCustomers func(ctx context.Context, tx *gorm.DB, ids []uint, change func(tx *gorm.DB) error) error
+
 	// OnRemoveInterface takes a withdrawn tunnel's device down. Set by the
 	// panel to the same teardown its own deletions use; nil on a CLI.
 	OnRemoveInterface func(ctx context.Context, iface *model.Interface)

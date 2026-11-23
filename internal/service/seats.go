@@ -182,6 +182,13 @@ func loadSeats(tx *gorm.DB, ids []uint) (map[uint]seatState, error) {
 	return out, nil
 }
 
+// SettleByPanel is SettleChange as the panel's own work, for a package that
+// changes customers but cannot import this one (fleet's handover): the users
+// each owner holds move to match, and nothing is spent.
+func SettleByPanel(ctx context.Context, tx *gorm.DB, ids []uint, change func(tx *gorm.DB) error) error {
+	return SettleChange(ctx, tx, ids, ByPanel, func(tx *gorm.DB) ([]uint, error) { return nil, change(tx) })
+}
+
 // SeatRule is who a change is settled as.
 type SeatRule int
 
@@ -352,6 +359,14 @@ func planSeats(before, after map[uint]seatState, ids []uint) []seatMove {
 		seen[id] = true
 		b, had := before[id]
 		a, has := after[id]
+		// A customer that changed hands is two moves: gone from the old
+		// owner, as a removal is, and come to the new one, as a creation
+		// is. Each owner's units then follow the customers they serve.
+		if had && has && b.owner != a.owner {
+			moves = append(moves, planSeats(map[uint]seatState{id: b}, nil, []uint{id})...)
+			moves = append(moves, planSeats(nil, map[uint]seatState{id: a}, []uint{id})...)
+			continue
+		}
 		owner := a.owner
 		if !has {
 			owner = b.owner
