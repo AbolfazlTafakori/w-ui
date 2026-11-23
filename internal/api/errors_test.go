@@ -88,6 +88,15 @@ func TestServiceErrorsBecomeTheRightStatus(t *testing.T) {
 		{"not found", fmt.Errorf("%w: interface 99", service.ErrNotFound), 404, "Interface 99", ""},
 		{"anything else", errors.New("disk on fire"), 500, "", ""},
 	}
+	// A database another writer held past the wait: the change was not
+	// made, and the answer says so with its own code -- not "unexpected".
+	busy := httptest.NewRecorder()
+	fail(busy, quiet, fmt.Errorf("service: create client: %w", errors.New("database is locked (5) (SQLITE_BUSY)")))
+	if got := body(t, busy); busy.Code != 503 || got["code"] != codeDatabaseBusy ||
+		!strings.Contains(got["error"].(string), "nothing was changed") || busy.Header().Get("Retry-After") == "" {
+		t.Errorf("busy database: %d %v", busy.Code, got)
+	}
+
 	for _, c := range cases {
 		rec := httptest.NewRecorder()
 		fail(rec, quiet, c.err)

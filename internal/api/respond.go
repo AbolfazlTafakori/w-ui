@@ -35,6 +35,7 @@ const (
 	codeOperatorPaused       = "operator.paused"
 	codeDeviceLimit          = "client.deviceLimit"
 	codeAddressesExhausted   = "interface.addressesExhausted"
+	codeDatabaseBusy         = "database.busy"
 	codeInternal             = "internal"
 )
 
@@ -105,6 +106,13 @@ func fail(w http.ResponseWriter, log *slog.Logger, err error) {
 			return
 		}
 		writeErrorCode(w, http.StatusBadRequest, codeOf(err), humanMessage(err))
+	case service.IsBusy(err):
+		// Another change held the database past the wait: this one was not
+		// made, and is worth asking for again -- not an unexpected fault.
+		log.Warn("a change waited for the database and was not made", "error", err)
+		w.Header().Set("Retry-After", "5")
+		writeErrorCode(w, http.StatusServiceUnavailable, codeDatabaseBusy,
+			"the panel's database was busy writing another change and did not free up in time, so nothing was changed. Try again in a few seconds")
 	default:
 		// What went wrong stays in the log, in full, under a reference the
 		// answer gives: the operator is told the panel failed, not how --
