@@ -18,6 +18,23 @@ import (
 // Create) is not wrapped twice, so nothing is counted twice.
 
 func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, error) {
+	if in.HandTo != nil {
+		to := *in.HandTo
+		in.HandTo = nil
+		var out *model.Client
+		err := s.thenHand(ctx, to, func(v *Clients) (uint, error) {
+			c, err := v.Create(ctx, in)
+			if err == nil {
+				out = c
+				return c.ID, nil
+			}
+			return 0, err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
 	var out *model.Client
 	err := s.withSeats(ctx, nil, false, func(v *Clients) ([]uint, error) {
 		c, err := v.createRaw(ctx, in)
@@ -43,6 +60,23 @@ func (s *Clients) CreateBatch(ctx context.Context, in BatchInput) ([]model.Clien
 }
 
 func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.Client, error) {
+	if in.HandTo != nil {
+		to := *in.HandTo
+		in.HandTo = nil
+		var out *model.Client
+		err := s.thenHand(ctx, to, func(v *Clients) (uint, error) {
+			c, err := v.Update(ctx, id, in)
+			if err == nil {
+				out = c
+				return id, nil
+			}
+			return 0, err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
 	var out *model.Client
 	err := s.withSeats(ctx, []uint{id}, false, func(v *Clients) ([]uint, error) {
 		var err error

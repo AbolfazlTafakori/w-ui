@@ -25,6 +25,7 @@ POST   /api/clients/servers/attach                    Clients        auth=true  
 POST   /api/clients/servers/detach                    Clients        auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/clients/adjust                            Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/clients/extend                            Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
+POST   /api/clients/transfer                          Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 GET    /api/clients/ids                               Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/clients/reset-all                         Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/clients/purge                             Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes

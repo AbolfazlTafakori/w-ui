@@ -47,6 +47,9 @@ func TestWhatANonOwnerMayReach(t *testing.T) {
 		"POST /api/clients/purge",
 		"POST /api/clients/reset-all",
 		"POST /api/clients/servers/attach",
+		// An admin hands customers within their tree; a reseller is refused by
+		// the service (Transfer), not the route.
+		"POST /api/clients/transfer",
 		"POST /api/clients/servers/detach",
 		"GET /api/groups",
 		"POST /api/groups",

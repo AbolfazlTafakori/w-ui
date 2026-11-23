@@ -818,6 +818,29 @@ func (s *Server) handleExtend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+// handleTransfer hands customers to another operator.
+func (s *Server) handleTransfer(w http.ResponseWriter, r *http.Request) {
+	var in service.TransferInput
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.DryRun {
+		changedNothing(w)
+	}
+	res, err := s.clients.Transfer(r.Context(), in)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	if !in.DryRun && res.Moved > 0 {
+		s.log.Warn("customers handed to another operator", "to", in.To, "moved", res.Moved,
+			"units", res.Units, "carryUsage", in.CarryUsage, "by", adminName(r), "ip", clientIP(r))
+		// At once: a customer handed to a paused operator is off now.
+		s.reconcileNow()
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (s *Server) handleResetAll(w http.ResponseWriter, r *http.Request) {
 	n, err := s.clients.ResetAllTraffic(r.Context())
 	if err != nil {

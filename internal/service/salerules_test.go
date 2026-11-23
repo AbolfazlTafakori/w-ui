@@ -13,7 +13,6 @@ import (
 // The rules of a sale and the price of new credentials, one rule a test,
 // each through the same paths an operator's request takes.
 
-
 // rules sets an operator's rules of sale, as the owner's form does.
 func (p seatPanel) rules(t *testing.T, a *model.Admin, days int, bytes uint64, rekeyFree bool) {
 	t.Helper()

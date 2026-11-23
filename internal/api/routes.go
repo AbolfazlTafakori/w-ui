@@ -155,6 +155,17 @@ func (s *Server) routes() []Route {
 				"passed over unless includeWaiting is set. Traffic taken back stops " +
 				"at what the customer has used. dryRun says what would happen.",
 			handler: s.handleExtend},
+		{Method: "POST", Path: "/api/clients/transfer", Group: "Customers", Auth: true,
+			Summary: "Hand customers to another operator, or back to the owner.",
+			Body:    `{"ids":[1,2],"to":7,"carryUsage":false}`,
+			Note: "The owner hands any customer to anyone; an admin, between themselves " +
+				"and their own resellers; a reseller, nothing. The receiver's users are " +
+				"taken as for a sale -- refused if they have not got them -- the customers " +
+				"must be on servers the receiver sells and fit their rules of sale. " +
+				"Traffic counts to the receiver from the move on; carryUsage counts what " +
+				"was used before as well. Links and credentials are untouched. dryRun " +
+				"says what would happen.",
+			handler: s.handleTransfer},
 		{Method: "GET", Path: "/api/clients/ids", Group: "Customers", Auth: true,
 			Summary: "Every customer the list's filter matches, across every page.",
 			Note:    "Takes the same query as GET /api/clients; what \"select all\" selects.",

@@ -250,6 +250,10 @@ const (
 	// reset: it takes seats only if they are free, and is refused (the
 	// customer stays as they were) otherwise. Nothing is spent.
 	ByPanelIfFree
+	// ByTransfer is customers handed to another operator (Transfer): a sale
+	// to the one receiving them, whoever makes the move -- held to their
+	// ceiling and their rules of sale, and charged.
+	ByTransfer
 )
 
 // SettleChange runs change on the customers ids (and any it makes, which it
@@ -432,6 +436,9 @@ func chargeRekey(tx *gorm.DB, acc *model.CapacityAccount, m seatMove, actor uint
 // match and spend nothing; a revival the panel makes on its own is held to
 // what is free and spends nothing.
 func seatTerms(sc Scope, rule SeatRule) (enforced, spends bool) {
+	if rule == ByTransfer {
+		return true, true
+	}
 	return (sc.Capped && rule == ByCaller) || rule == ByPanelIfFree, sc.Capped && rule == ByCaller
 }
 
@@ -452,8 +459,14 @@ func planSeats(before, after map[uint]seatState, ids []uint) []seatMove {
 		// owner, as a removal is, and come to the new one, as a creation
 		// is. Each owner's units then follow the customers they serve.
 		if had && has && b.owner != a.owner {
-			moves = append(moves, planSeats(map[uint]seatState{id: b}, nil, []uint{id})...)
-			moves = append(moves, planSeats(nil, map[uint]seatState{id: a}, []uint{id})...)
+			for _, m := range planSeats(map[uint]seatState{id: b}, nil, []uint{id}) {
+				m.reason = model.CapacityGivenAway
+				moves = append(moves, m)
+			}
+			for _, m := range planSeats(nil, map[uint]seatState{id: a}, []uint{id}) {
+				m.reason = model.CapacityTransferIn
+				moves = append(moves, m)
+			}
 			continue
 		}
 		owner := a.owner

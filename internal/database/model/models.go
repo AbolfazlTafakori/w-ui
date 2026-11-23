@@ -287,6 +287,8 @@ const (
 	CapacityCharge     = "charge"
 	CapacityDebit      = "debit"
 	CapacityRekey      = "rekey"
+	CapacityTransferIn = "transferin"
+	CapacityGivenAway  = "transferout"
 	CapacityHandDown   = "handdown"
 	CapacityHandBack   = "handback"
 	CapacityModeSwitch = "mode"

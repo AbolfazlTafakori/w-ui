@@ -8,8 +8,9 @@ import (
 )
 
 // A customer that changes hands leaves the old owner's units as a removal
-// does and comes to the new owner's as a creation does; one whose owner
-// becomes the panel's owner is only given back.
+// does and comes to the new owner's as a creation does, each named in the
+// ledger as the transfer it was; one whose owner becomes the panel's owner
+// is only given back.
 func TestACustomerChangingHandsMovesTheirUsersWithThem(t *testing.T) {
 	b := map[uint]seatState{1: {owner: 5, users: 2, alive: true}}
 	a := map[uint]seatState{1: {owner: 7, users: 2, alive: true}}
@@ -21,10 +22,10 @@ func TestACustomerChangingHandsMovesTheirUsersWithThem(t *testing.T) {
 	for _, m := range moves {
 		got[m.owner] = m
 	}
-	if m := got[5]; m.delta != -2 || m.spend != 0 || m.reason != model.CapacityRelease {
+	if m := got[5]; m.delta != -2 || m.spend != 0 || m.reason != model.CapacityGivenAway {
 		t.Fatalf("old owner's move = %+v, want two users given back", m)
 	}
-	if m := got[7]; m.delta != 2 || m.spend != 2 || m.reason != model.CapacityCreate {
+	if m := got[7]; m.delta != 2 || m.spend != 2 || m.reason != model.CapacityTransferIn {
 		t.Fatalf("new owner's move = %+v, want two users taken as a creation", m)
 	}
 

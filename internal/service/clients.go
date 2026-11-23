@@ -97,6 +97,10 @@ func NewClients(db *gorm.DB, pools *ipam.Pools, log *slog.Logger) *Clients {
 
 // CreateInput describes a new client.
 type CreateInput struct {
+	// HandTo makes the customer another operator's in the same change
+	// (Transfer): both happen or neither does.
+	HandTo *HandTo `json:"handTo"`
+
 	Name string `json:"name"`
 	Note string `json:"note"`
 	// Groups the customer is in; Group is the one-label form an older
@@ -1173,6 +1177,10 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 
 // UpdateInput carries the fields an operator may change.
 type UpdateInput struct {
+	// HandTo hands the customer to another operator in the same change
+	// (Transfer): both happen or neither does.
+	HandTo *HandTo `json:"handTo"`
+
 	Name *string `json:"name"`
 	Note *string `json:"note"`
 	// Groups replaces the customer's groups; Group, from an older caller,
