@@ -41,8 +41,9 @@ func (n *NFTables) Apply(_ context.Context, rules []Rule) error {
 	return nil
 }
 
-func (n *NFTables) Usage(context.Context) ([]Usage, error)         { return nil, nil }
-func (n *NFTables) DrainCounters(context.Context) ([]Usage, error) { return nil, nil }
+func (n *NFTables) Usage(context.Context) ([]Usage, error)                 { return nil, nil }
+func (n *NFTables) DrainCounters(context.Context) ([]Usage, error)         { return nil, nil }
+func (n *NFTables) DrainFiles(context.Context, []FileRef) ([]Usage, error) { return nil, nil }
 
 // QuotaSpent has no kernel quotas to ask off Linux.
 func (n *NFTables) QuotaSpent(context.Context, []string) (map[string]uint64, error) { return nil, nil }

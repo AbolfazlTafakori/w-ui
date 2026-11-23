@@ -19,10 +19,13 @@ import (
 type Memory struct {
 	proto model.Protocol
 
-	mu        sync.Mutex
-	iface     *model.Interface
-	accounts  map[uint]DesiredAccount
-	stats     map[uint]Stat
+	mu       sync.Mutex
+	iface    *model.Interface
+	accounts map[uint]DesiredAccount
+	stats    map[uint]Stat
+	// silent is the accounts Stats leaves out: a session that ended, on a
+	// protocol whose driver reports sessions rather than peers. Test-only.
+	silent    map[uint]bool
 	closed    bool
 	destroyed bool
 }
@@ -102,6 +105,9 @@ func (m *Memory) Stats(_ context.Context) ([]Stat, error) {
 
 	out := make([]Stat, 0, len(m.accounts))
 	for id := range m.accounts {
+		if m.silent[id] {
+			continue
+		}
 		s, ok := m.stats[id]
 		if !ok {
 			s = Stat{AccountID: id}
@@ -178,6 +184,24 @@ func (m *Memory) SetStat(s Stat) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stats[s.AccountID] = s
+}
+
+// Forget leaves an account out of Stats from now on, as a session that
+// ended is. Test-only.
+func (m *Memory) Forget(id uint) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.silent == nil {
+		m.silent = map[uint]bool{}
+	}
+	m.silent[id] = true
+}
+
+// StatOf is what SetStat last seeded for an account. Test-only.
+func (m *Memory) StatOf(id uint) Stat {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.stats[id]
 }
 
 // Accounts returns the account IDs the backend currently holds, sorted.

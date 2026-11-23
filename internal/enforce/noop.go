@@ -44,7 +44,8 @@ func (n *Noop) Usage(_ context.Context) ([]Usage, error) {
 	return out, nil
 }
 
-func (n *Noop) DrainCounters(_ context.Context) ([]Usage, error) { return nil, nil }
+func (n *Noop) DrainCounters(_ context.Context) ([]Usage, error)           { return nil, nil }
+func (n *Noop) DrainFiles(_ context.Context, _ []FileRef) ([]Usage, error) { return nil, nil }
 
 // QuotaSpent has no kernel quotas to ask: none is spent.
 func (n *Noop) QuotaSpent(context.Context, []string) (map[string]uint64, error) { return nil, nil }

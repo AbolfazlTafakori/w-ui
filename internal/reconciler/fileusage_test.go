@@ -34,7 +34,7 @@ func TestTheRuleNamesEveryFile(t *testing.T) {
 // rows add up to the customer's usage to the byte -- the per-user table is a
 // measurement, not a share worked out from the total.
 func TestEachFileIsChargedWhatTheKernelCountedOnIt(t *testing.T) {
-	r, db, enf, _ := newRig(t)
+	r, db, enf, drv := newRig(t)
 	id := seed(t, db, model.Client{Name: "Ali", DeviceLimit: 2}, "10.66.0.2")
 	second := model.Account{ClientID: id, InterfaceID: 1, NodeID: 1, DeviceName: "device-2",
 		IP: "10.66.0.3", PublicKey: "pk-2", Enabled: true}
@@ -58,8 +58,19 @@ func TestEachFileIsChargedWhatTheKernelCountedOnIt(t *testing.T) {
 			u.Down += f.Down
 		}
 		u.Bytes = u.Up + u.Down
-		enf.drain = []enforce.Usage{u}
+		// Counted in the kernel and seen by the tunnel's driver, together,
+		// as on a server: a counter holds what it was not yet drained of.
+		enf.add(u)
+		for _, f := range files {
+			moved(drv, f.Account)
+		}
 		r.Tick(context.Background())
+	}
+	// Whatever a tick did not ask for is drained by the turning sweep;
+	// a full read here stands for it, so the totals are compared whole.
+	enf.drain, _ = enf.DrainCounters(context.Background())
+	if len(enf.drain) != 0 {
+		t.Fatalf("bytes left in the kernel's counters after every moving file was drained: %+v", enf.drain)
 	}
 	r.writer.flush(context.Background())
 

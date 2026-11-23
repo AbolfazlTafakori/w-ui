@@ -401,6 +401,20 @@ func (c *concurrency) clients() map[uint]uint {
 	return out
 }
 
+// localFiles is each file served on this server, by account, with its
+// customer: the files that have counters in this server's kernel table.
+func (c *concurrency) localFiles() map[uint]uint {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[uint]uint, len(c.clientOf))
+	for acc, client := range c.clientOf {
+		if c.nodeOf[acc] == 0 {
+			out[acc] = client
+		}
+	}
+	return out
+}
+
 // lookup is what is known of one account right now, from wherever it is
 // served: this server's own readings, or the last report from its node.
 func (c *concurrency) lookup(id uint, now time.Time) (n int, since time.Time, ok bool) {

@@ -62,6 +62,94 @@ func (f *fakeEnforcer) DrainCounters(context.Context) ([]enforce.Usage, error) {
 	return out, nil
 }
 
+// DrainFiles drains the asked files alone, as the kernel does: what the
+// other files hold stays in their counters for a later drain.
+func (f *fakeEnforcer) DrainFiles(_ context.Context, files []enforce.FileRef) ([]enforce.Usage, error) {
+	f.drains++
+	want := make(map[uint]bool, len(files))
+	keys := make(map[string]bool, len(files))
+	for _, fr := range files {
+		want[fr.Account] = true
+		keys[fr.Key] = true
+	}
+	var out, left []enforce.Usage
+	for _, u := range f.drain {
+		took, kept := enforce.Usage{Key: u.Key}, enforce.Usage{Key: u.Key}
+		for _, fu := range u.Files {
+			dst := &kept
+			if want[fu.Account] {
+				dst = &took
+			}
+			dst.Files = append(dst.Files, fu)
+			dst.Up, dst.Down, dst.Bytes = dst.Up+fu.Up, dst.Down+fu.Down, dst.Bytes+fu.Up+fu.Down
+		}
+		if len(u.Files) == 0 {
+			// A test's usage given by customer alone: it goes with any of
+			// that customer's files asked for.
+			took, kept = enforce.Usage{}, u
+			if keys[u.Key] {
+				took, kept = u, enforce.Usage{}
+			}
+		}
+		if took.Bytes > 0 || len(took.Files) > 0 {
+			out = append(out, took)
+		}
+		if kept.Bytes > 0 || len(kept.Files) > 0 {
+			left = append(left, kept)
+		}
+	}
+	f.drain = left
+	return out, nil
+}
+
+// add counts traffic into the fake kernel's counters as the kernel does:
+// onto what they already hold, until a drain takes it.
+func (f *fakeEnforcer) add(u enforce.Usage) {
+	for i := range f.drain {
+		if f.drain[i].Key != u.Key {
+			continue
+		}
+		d := &f.drain[i]
+		d.Bytes, d.Up, d.Down = d.Bytes+u.Bytes, d.Up+u.Up, d.Down+u.Down
+		for _, fu := range u.Files {
+			merged := false
+			for j := range d.Files {
+				if d.Files[j].Account == fu.Account {
+					d.Files[j].Up += fu.Up
+					d.Files[j].Down += fu.Down
+					merged = true
+				}
+			}
+			if !merged {
+				d.Files = append(d.Files, fu)
+			}
+		}
+		return
+	}
+	f.drain = append(f.drain, u)
+}
+
+// moved is a tunnel moving traffic on these files: the driver's own counts
+// go up, as they do whenever the kernel's counters do.
+func moved(drv *backend.Memory, accounts ...uint) {
+	for _, acc := range accounts {
+		s := drv.StatOf(acc)
+		s.AccountID = acc
+		s.RX++
+		drv.SetStat(s)
+	}
+}
+
+// movedClient is moved for every file of a customer.
+func movedClient(t *testing.T, db *gorm.DB, drv *backend.Memory, client uint) {
+	t.Helper()
+	var ids []uint
+	if err := db.Model(&model.Account{}).Where("client_id = ?", client).Pluck("id", &ids).Error; err != nil {
+		t.Fatal(err)
+	}
+	moved(drv, ids...)
+}
+
 func (f *fakeEnforcer) ruleFor(key string) (enforce.Rule, bool) {
 	for _, r := range f.applied {
 		if r.Key == key {

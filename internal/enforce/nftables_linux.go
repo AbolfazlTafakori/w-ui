@@ -287,6 +287,33 @@ func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
 	return usage, nil
 }
 
+// DrainFiles reads and zeroes these files' counters alone, each in one
+// operation as DrainCounters does. Where they cannot be asked for by name
+// (netlink refused), every counter is drained instead: more work, nothing
+// lost.
+func (n *NFTables) DrainFiles(ctx context.Context, files []FileRef) ([]Usage, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	names := make([]string, 0, 2*len(files))
+	for _, f := range files {
+		names = append(names, downCounter(f.Key, f.Account), upCounter(f.Key, f.Account))
+	}
+	objs, err := resetCountersIn(TableName, names)
+	if err == nil {
+		return usageOfCounters(objs), nil
+	}
+	n.mu.Lock()
+	said := n.netlinkSaid
+	n.netlinkSaid = true
+	n.mu.Unlock()
+	if !said {
+		n.log.Warn("counters cannot be read one by one; every counter is read each time instead, which is slower on a large table",
+			"reason", err)
+	}
+	return n.DrainCounters(ctx)
+}
+
 // objects reads the table's counters or quotas over netlink, saying once
 // when it cannot and the nft tool is used instead.
 func (n *NFTables) objects(objType uint32, reset bool) ([]namedValue, error) {

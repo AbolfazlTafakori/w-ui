@@ -126,6 +126,9 @@ type Reconciler struct {
 
 	// conc holds customers to the connections their plan allows.
 	conc *concurrency
+	// drain is which counters the next tick drains (drain.go). Touched by
+	// collect alone, which runs on the loop's one goroutine.
+	drain drainState
 	// speed is each customer's speed right now, for the customer list.
 	speed *speedTracker
 	// fileSpeed is the same for each file -- one customer's credentials on
@@ -458,7 +461,35 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 // row in the per-user table is therefore measured, never worked out from the
 // customer's total, and the rows add up to the total to the byte.
 func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
-	drained, err := r.enforcer.DrainCounters(ctx)
+	// What each driver says of its files comes first: it is also what says
+	// which files moved traffic, and so which counters are worth draining.
+	type ifaceStats struct {
+		id    uint
+		stats []backend.Stat
+	}
+	var read []ifaceStats
+	statsFailed := false
+	for ifaceID, b := range r.pool.All() {
+		stats, err := b.Stats(ctx)
+		if err != nil {
+			r.log.Warn("driver stats unavailable", "interface", ifaceID, "error", err)
+			statsFailed = true
+			continue
+		}
+		read = append(read, ifaceStats{ifaceID, stats})
+	}
+
+	var all []backend.Stat
+	for _, is := range read {
+		all = append(all, is.stats...)
+	}
+	var drained []enforce.Usage
+	var err error
+	if files, full := r.drainPlan(all, statsFailed); full {
+		drained, err = r.enforcer.DrainCounters(ctx)
+	} else {
+		drained, err = r.enforcer.DrainFiles(ctx, files)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -472,12 +503,8 @@ func (r *Reconciler) collect(ctx context.Context) (uint64, error) {
 	// Handshakes and endpoints come from the drivers, not from nftables, and
 	// are what the online indicator and the sharing detector read.
 	seen := map[uint]string{}
-	for ifaceID, b := range r.pool.All() {
-		stats, err := b.Stats(ctx)
-		if err != nil {
-			r.log.Warn("driver stats unavailable", "interface", ifaceID, "error", err)
-			continue
-		}
+	for _, is := range read {
+		ifaceID, stats := is.id, is.stats
 		for i := range stats {
 			stats[i].Endpoint = r.realEndpoint(ifaceID, stats[i].Endpoint)
 		}

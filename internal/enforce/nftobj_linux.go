@@ -52,6 +52,12 @@ var errNoTable = errors.New("no such table")
 // quotas -- each with its value, and with reset zeroes each as it is read,
 // so nothing that arrives between reading and zeroing is lost.
 func dumpObjects(objType uint32, reset bool) ([]namedValue, error) {
+	return dumpObjectsIn(TableName, objType, reset)
+}
+
+// dumpObjectsIn is dumpObjects on a table named here: the panel's own, or
+// one a benchmark builds beside it.
+func dumpObjectsIn(table string, objType uint32, reset bool) ([]namedValue, error) {
 	c, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
 	if err != nil {
 		return nil, fmt.Errorf("netlink: %w", err)
@@ -60,7 +66,7 @@ func dumpObjects(objType uint32, reset bool) ([]namedValue, error) {
 
 	ae := netlink.NewAttributeEncoder()
 	ae.ByteOrder = binary.BigEndian
-	ae.String(nftaObjTable, TableName)
+	ae.String(nftaObjTable, table)
 	ae.Uint32(nftaObjType, objType)
 	attrs, err := ae.Encode()
 	if err != nil {
@@ -145,6 +151,56 @@ func parseObject(b []byte, objType uint32) (namedValue, bool, error) {
 		}
 	}
 	return o, true, dd.Err()
+}
+
+// resetCountersIn reads and zeroes the named counters alone, one request
+// each over one socket, rather than every counter in the table: what it
+// costs grows with the counters asked for, not with the table. A counter
+// that is not there (a file removed since) is left out of the answer.
+func resetCountersIn(table string, names []string) ([]namedValue, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	c, err := netlink.Dial(unix.NETLINK_NETFILTER, nil)
+	if err != nil {
+		return nil, fmt.Errorf("netlink: %w", err)
+	}
+	defer c.Close()
+	out := make([]namedValue, 0, len(names))
+	for _, name := range names {
+		ae := netlink.NewAttributeEncoder()
+		ae.ByteOrder = binary.BigEndian
+		ae.String(nftaObjTable, table)
+		ae.String(nftaObjName, name)
+		ae.Uint32(nftaObjType, nftObjectCounter)
+		attrs, err := ae.Encode()
+		if err != nil {
+			return nil, err
+		}
+		msgs, err := c.Execute(netlink.Message{
+			Header: netlink.Header{Type: netlink.HeaderType(nfnlSubsysNFTables<<8 | nftMsgGetObjReset), Flags: netlink.Request},
+			Data:   append([]byte{nfprotoINet, 0, 0, 0}, attrs...),
+		})
+		if err != nil {
+			if errors.Is(err, unix.ENOENT) {
+				continue
+			}
+			return nil, fmt.Errorf("netlink: reset %s: %w", name, err)
+		}
+		for _, m := range msgs {
+			if len(m.Data) < 4 {
+				continue
+			}
+			o, ok, err := parseObject(m.Data[4:], nftObjectCounter)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				out = append(out, o)
+			}
+		}
+	}
+	return out, nil
 }
 
 // quotaState reads one quota: its limit and what it has used. found is
