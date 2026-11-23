@@ -11,11 +11,28 @@ Every error W-UI shows is a sentence that names what is wrong. This page lists t
 | Where | How |
 |---|---|
 | **The panel** | A red toast, or, for a field you typed, the message under that input. |
-| **The API** | JSON: `{"error": "…"}`; for one input, `{"error": "…", "field": "name"}`. Status `400` bad input, `401` not signed in, `403` refused, `404` not there, `413` too large, `429` locked out, `500` the panel's own fault (details are in the log, never in the answer). |
+| **The API** | JSON: `{"error": "…", "code": "…"}`; for one input, `"field": "name"` too. Status `400` bad input, `401` not signed in, `403` refused, `404` not there, `413` too large, `429` locked out, `503` the database was busy (try again), `500` the panel's own fault (details are in the log, never in the answer). |
 | **The panel's log** | `journalctl -u wui`. `level=ERROR` is something that failed; `level=WARN` is something worth knowing; both carry `error=` with the underlying cause. |
 | **The installer** | `error: …` in red, and the install stops. Everything before it was done; nothing after it. |
 | **`update.sh`** | The same; a failed update leaves the old panel running. |
 | **The `w-ui` menu** | `[ERR] …` in red. |
+
+### Error codes
+
+The `code` beside a refusal is fixed: a script can tell the cases apart by it, while the sentence may change.
+
+| Code | Meaning |
+|---|---|
+| `invalid` | The input is wrong; the sentence (and `field`, when there is one) says which. |
+| `notFound` | The thing named is not there, or is not one the caller may see. |
+| `capacity.insufficient` | Not enough users left for this change. |
+| `tokens.none` / `tokens.insufficient` | No API tokens, or none left to issue. |
+| `tokens.resellerCannotIssue` | A reseller's tokens are issued by their admin. |
+| `operator.paused` | The operator, or one above them, is paused. |
+| `client.deviceLimit` | The device limit is out of range. |
+| `interface.addressesExhausted` | The tunnel has no address left. |
+| `database.busy` | Another change held the database; nothing was changed. Try again in a few seconds. |
+| `internal` | The panel's own fault, logged under the reference the sentence gives. |
 
 An error that says **internal error** is a bug or a broken server, not bad input: read `journalctl -u wui -n 50` for the line that starts with `request failed`, and report it with that line.
 
