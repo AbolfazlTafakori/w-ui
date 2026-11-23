@@ -250,12 +250,30 @@ func (s *Clients) importWUI(ctx context.Context, node model.Node, keys []string)
 		return nil, err
 	}
 	if err := s.remote.ClaimHandover(ctx, node, claim); err != nil {
-		// The node keeps them: what was made here would otherwise be a
-		// second copy of tunnels the node still runs as its own.
-		if uerr := s.unmakeHandedOver(ctx, made); uerr != nil {
-			s.log.Error("could not undo a handover the node refused", "node", node.Name, "error", uerr)
+		// A failed answer is not a refusal: the node may have taken the
+		// claim and the answer been lost on the way back. Undone then, the
+		// customers would be on neither side -- the node has let them go.
+		// So the node is asked what it still calls its own.
+		switch taken, qerr := s.claimTaken(ctx, node, claim); {
+		case qerr != nil:
+			s.log.Error("a handover's answer failed and the node could not be asked whether it took it; nothing undone",
+				"node", node.Name, "claim", err, "ask", qerr)
+			return nil, fmt.Errorf("%w: %s did not answer the handover (%v), and could not be asked afterwards whether it took it (%v). "+
+				"Nothing was undone here, so nobody is lost: check the node's customers page, then bring in again whoever it still has",
+				ErrInvalid, node.Name, err, qerr)
+		case taken:
+			s.log.Warn("a handover's answer was lost, but the node took it; kept", "node", node.Name, "error", err)
+		default:
+			// The node keeps them: what was made here would otherwise be a
+			// second copy of tunnels the node still runs as its own.
+			if uerr := s.unmakeHandedOver(ctx, made); uerr != nil {
+				s.log.Error("could not undo a handover the node refused", "node", node.Name, "error", uerr)
+				return nil, fmt.Errorf("%w: %s did not hand its customers over (%v), and undoing the copies made here failed (%v); "+
+					"those customers are here and on the node: remove them here before bringing them in again",
+					ErrInvalid, node.Name, err, uerr)
+			}
+			return nil, fmt.Errorf("%w: %s did not hand its customers over: %v", ErrInvalid, node.Name, err)
 		}
-		return nil, fmt.Errorf("%w: %s did not hand its customers over: %v", ErrInvalid, node.Name, err)
 	}
 	for _, g := range take {
 		for _, c := range g.clients {
@@ -266,6 +284,25 @@ func (s *Clients) importWUI(ctx context.Context, node model.Node, keys []string)
 		"node", node.Name, "tunnels", len(made.tunnels), "customers", len(made.clients))
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Error == "" && out[j].Error != "" })
 	return out, nil
+}
+
+// claimTaken asks a node whether it took a claim: a node offers only the
+// tunnels still its own, so a claimed tunnel it no longer offers was taken.
+func (s *Clients) claimTaken(ctx context.Context, node model.Node, claim handover.Claim) (bool, error) {
+	h, err := s.remote.Handover(ctx, node)
+	if err != nil {
+		return false, err
+	}
+	still := make(map[uint]bool, len(h.Tunnels))
+	for _, t := range h.Tunnels {
+		still[t.LocalID] = true
+	}
+	for _, t := range claim.Tunnels {
+		if still[t.LocalID] {
+			return false, nil
+		}
+	}
+	return len(claim.Tunnels) > 0, nil
 }
 
 // handedOver is what was made here for a handover, by the node's ids.

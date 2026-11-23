@@ -25,6 +25,9 @@ type wuiNode struct {
 	sync       *fleet.NodeSync
 	srv        *httptest.Server
 	claimFails atomic.Bool
+	// claimLost takes the handover and then answers with a failure, as a
+	// reply lost on the way back looks to the panel.
+	claimLost atomic.Bool
 }
 
 func newWUINode(t *testing.T) *wuiNode {
@@ -60,6 +63,10 @@ func newWUINode(t *testing.T) *wuiNode {
 		}
 		if err := n.sync.Claim(r.Context(), 1, c); err != nil {
 			refuse(w, err)
+			return
+		}
+		if n.claimLost.Load() {
+			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -398,5 +405,57 @@ func TestAHandedOverCustomerGivesTheirOwnersUsersBack(t *testing.T) {
 	}
 	if bad, err := capacity.Balanced(n.db); err != nil || len(bad) != 0 {
 		t.Fatalf("accounts out of balance with their ledger: %v %v", bad, err)
+	}
+}
+
+// A claim the node took, whose answer was lost on the way back, is a
+// handover that happened: the customers stay here, where the node now
+// expects them to be run from, rather than being undone here while the
+// node has already let them go -- which left them on neither side.
+// Found in review.
+func TestAHandoverWhoseAnswerWasLostIsKept(t *testing.T) {
+	n := newWUINode(t)
+	n.seed(t)
+	r := newRig(t, model.Node{Kind: model.KindRemote, Address: n.srv.URL, Token: "t", Enabled: true})
+	cands, err := r.clients.NodeUsers(r.ctx, r.node.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dave := usersByName(cands)["dave"]
+	n.claimLost.Store(true)
+
+	res, err := r.clients.ImportNodeUsers(r.ctx, r.node.ID, []string{dave.Key})
+	if err != nil {
+		t.Fatalf("a handover the node took was reported failed: %v", err)
+	}
+	var here int64
+	r.db.Model(&model.Client{}).Where("name = ?", "dave").Count(&here)
+	if here != 1 || len(res) != 1 || res[0].Error != "" {
+		t.Fatalf("dave here: %d, results %+v; want him kept here", here, res)
+	}
+	var onNode model.Client
+	n.db.Where("origin_id <> 0").Find(&onNode)
+	if onNode.ID == 0 {
+		t.Fatal("the node did not take the handover; the test's node is wrong")
+	}
+}
+
+// A claim the node refused leaves everything as it was: nothing here.
+func TestAHandoverTheNodeRefusedIsUndone(t *testing.T) {
+	n := newWUINode(t)
+	n.seed(t)
+	r := newRig(t, model.Node{Kind: model.KindRemote, Address: n.srv.URL, Token: "t", Enabled: true})
+	cands, err := r.clients.NodeUsers(r.ctx, r.node.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.claimFails.Store(true)
+	if _, err := r.clients.ImportNodeUsers(r.ctx, r.node.ID, []string{usersByName(cands)["dave"].Key}); err == nil {
+		t.Fatal("a refused handover was reported done")
+	}
+	var here int64
+	r.db.Model(&model.Client{}).Where("name = ?", "dave").Count(&here)
+	if here != 0 {
+		t.Fatalf("dave is here %d times after the node refused", here)
 	}
 }
