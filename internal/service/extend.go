@@ -62,6 +62,22 @@ const (
 	maxExtendData = 1 << 50                                           // a pebibyte
 )
 
+// checkPlanSize refuses an allowance or a waiting term no plan could mean:
+// the bounds extend already holds to. Past them a sum of allowances, or a
+// term turned into a duration, no longer fits the 64 bits it is kept in.
+func checkPlanSize(quota uint64, days int) error {
+	if quota > maxExtendData {
+		return invalidField("quotaBytes", "the traffic allowance can be at most 1 PiB")
+	}
+	if days > maxPlanDays {
+		return invalidField("durationDays", "the duration can be at most %d days", maxPlanDays)
+	}
+	return nil
+}
+
+// maxPlanDays is maxExtendTime in days: a hundred years of 360.
+const maxPlanDays = int(maxExtendTime / (hoursPerDay * time.Hour))
+
 // maxExtendIDs bounds one request, as the matching selection does.
 const maxExtendIDs = maxMatchingIDs
 

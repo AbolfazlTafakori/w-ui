@@ -569,6 +569,9 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 	if in.DeviceLimit > 50 {
 		return nil, invalidField("deviceLimit", "device limit must be between 0 and 50")
 	}
+	if err := checkPlanSize(in.QuotaBytes, in.DurationDays); err != nil {
+		return nil, err
+	}
 	switch in.ResetCycle {
 	case "":
 		in.ResetCycle = model.ResetNone
@@ -1259,6 +1262,9 @@ func (s *Clients) updateRaw(ctx context.Context, id uint, in UpdateInput) (*mode
 		fields["bale_id"] = *in.BaleID
 	}
 	if in.QuotaBytes != nil {
+		if err := checkPlanSize(*in.QuotaBytes, 0); err != nil {
+			return nil, err
+		}
 		fields["quota_bytes"] = *in.QuotaBytes
 	}
 	if in.ExpiresAt.Set {
@@ -1275,6 +1281,9 @@ func (s *Clients) updateRaw(ctx context.Context, id uint, in UpdateInput) (*mode
 		}
 		if days < 0 {
 			return nil, invalidField("durationDays", "the duration cannot be negative")
+		}
+		if err := checkPlanSize(0, days); err != nil {
+			return nil, err
 		}
 		if on && days > 0 && client.ActivatedAt == nil {
 			// Deferred: the date is decided at the first handshake.
@@ -2011,12 +2020,15 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 
 	var sums struct {
 		Used  *uint64
-		Quota *uint64
+		Quota *float64
 		Slots *int64
 	}
 	if err := db.Model(&model.Client{}).
 		Select("SUM(used_bytes) AS used, " +
-			"SUM(CASE WHEN quota_bytes > 0 THEN quota_bytes ELSE 0 END) AS quota, " +
+			// Summed as a double: many large allowances together pass what a
+			// signed 64-bit sum holds, and SQLite refuses the whole query
+			// then. A double is exact to 8 PiB, past any real panel.
+			"SUM(CASE WHEN quota_bytes > 0 THEN CAST(quota_bytes AS DOUBLE PRECISION) ELSE 0 END) AS quota, " +
 			"SUM(device_limit) AS slots").
 		Scan(&sums).Error; err != nil {
 		return nil, fmt.Errorf("service: sum usage: %w", err)
@@ -2025,7 +2037,7 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 		o.TotalUsed = *sums.Used
 	}
 	if sums.Quota != nil {
-		o.TotalQuota = *sums.Quota
+		o.TotalQuota = uint64(*sums.Quota)
 	}
 	if sums.Slots != nil {
 		o.DeviceSlots = *sums.Slots
