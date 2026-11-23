@@ -522,7 +522,7 @@ async function submitForm(input) {
 .clients .email-cell .email:hover, .clients a.tag-name:hover { text-decoration: underline; }
 .clients .toggle-wrap { display: inline-flex; }
 .clients .online-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-inline-end: 5px; vertical-align: middle; background: var(--ok); animation: online-blink 1.1s ease-in-out infinite; }
-@keyframes online-blink { .clients 0%, .clients 100% { opacity: 1; } .clients 50% { opacity: 0.35; } }
+@keyframes online-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 /* Figures of one width, so a speed that changes every few seconds does not
    shift the rest of the line. */
 
