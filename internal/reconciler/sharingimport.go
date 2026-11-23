@@ -116,7 +116,7 @@ func (r *Reconciler) ImportSharingFromLog(ctx context.Context) SharingImport {
 	for name, seen := range connects {
 		client, device := splitDeviceName(name, accounts)
 		for _, ev := range sharedFromConnects(client, device, seen) {
-			if a, ok := accounts[client+"\x00"+device]; ok {
+			if a, ok := accounts[client+"\x00"+device]; ok && a.ID != 0 {
 				ev.AccountID, ev.ClientID = a.ID, a.ClientID
 			}
 			if created, err := recordSharing(ctx, r.db, ev); err == nil && created {
@@ -152,7 +152,18 @@ func (r *Reconciler) accountsByName(ctx context.Context) (map[string]model.Accou
 	}
 	out := make(map[string]model.Account, len(rows))
 	for _, row := range rows {
-		out[row.ClientName+"\x00"+row.DeviceName] = row.Account
+		key := row.ClientName + "\x00" + row.DeviceName
+		if _, twice := out[key]; twice {
+			// Names are not unique: two operators may each have a "bob".
+			// The log names a device by name alone, so a name two devices
+			// share is kept -- it still splits a log line -- but says no one
+			// (ID 0): its sightings stay the owner's, rather than going to
+			// whichever "bob" was read last and showing one operator another's
+			// networks.
+			out[key] = model.Account{}
+			continue
+		}
+		out[key] = row.Account
 	}
 	return out, nil
 }
@@ -180,7 +191,7 @@ func heldFromLog(e logger.Entry, accounts map[string]model.Account) (model.Shari
 		StartedAt:  e.Time.UTC(),
 		LastSeen:   e.Time.UTC(),
 	}
-	if a, ok := accounts[client+"\x00"+device]; ok {
+	if a, ok := accounts[client+"\x00"+device]; ok && a.ID != 0 {
 		ev.AccountID, ev.ClientID = a.ID, a.ClientID
 	}
 	return ev, true

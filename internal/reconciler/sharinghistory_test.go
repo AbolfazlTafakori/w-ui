@@ -321,3 +321,46 @@ func TestAnEntryKeepsWhoseCustomerItWas(t *testing.T) {
 		}
 	}
 }
+
+// Names are not unique: two operators may each have a "bob" with a
+// "device-1". The log names a device by name alone, so a sighting read back
+// from it under a name two devices share is given to neither -- it stays the
+// owner's -- rather than to whichever was read last, which showed one
+// operator the networks of another's customer. Found in review.
+func TestALogLineUnderANameTwoCustomersShareIsNobodys(t *testing.T) {
+	r, db, _, _ := newRig(t)
+	seed(t, db, model.Client{Name: "bob", OwnerID: 2}, "10.66.0.21")
+	seed(t, db, model.Client{Name: "bob", OwnerID: 3}, "10.66.0.22")
+	seed(t, db, model.Client{Name: "carol", OwnerID: 2}, "10.66.0.23")
+	accounts, err := r.accountsByName(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bob, carol model.Account
+	for key, a := range accounts {
+		switch {
+		case strings.HasPrefix(key, "bob\x00"):
+			bob = a
+		case strings.HasPrefix(key, "carol\x00"):
+			carol = a
+		}
+	}
+	if bob.ID != 0 {
+		t.Fatalf("a name two customers share was given to device %d", bob.ID)
+	}
+	if carol.ID == 0 {
+		t.Fatal("a name one customer has was taken from them")
+	}
+	var device string
+	for key := range accounts {
+		if strings.HasPrefix(key, "bob\x00") {
+			device = strings.TrimPrefix(key, "bob\x00")
+		}
+	}
+	ev, ok := heldFromLog(logger.Entry{Time: time.Now().UTC(), Message: logHeldOff, Fields: map[string]any{
+		"client": "bob", "device": device, "on": "here", "limit": "1", "until": "5:21AM",
+	}}, accounts)
+	if !ok || ev.AccountID != 0 || ev.ClientID != 0 {
+		t.Fatalf("a hold of an ambiguous bob went to %+v", ev)
+	}
+}
