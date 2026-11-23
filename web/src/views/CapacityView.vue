@@ -21,7 +21,7 @@ const REASON = {
   create: 'cap.reason.create', extend: 'cap.reason.extend', grow: 'cap.reason.grow', shrink: 'cap.reason.shrink',
   release: 'cap.reason.release', ended: 'cap.reason.ended', revived: 'cap.reason.revived', charge: 'cap.reason.charge',
   debit: 'cap.reason.debit', handdown: 'cap.reason.handdown', handback: 'cap.reason.handback', mode: 'cap.reason.mode',
-  issue: 'cap.reason.issue', migrate: 'cap.reason.migrate',
+  issue: 'cap.reason.issue', migrate: 'cap.reason.migrate', rekey: 'cap.reason.rekey',
 }
 const rows = ref([])
 const kind = ref('')

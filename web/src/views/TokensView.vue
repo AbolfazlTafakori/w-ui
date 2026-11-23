@@ -143,7 +143,7 @@ function ends(tk) {
           </div>
           <div v-if="issues" class="acol">
             <div class="stat-title">{{ t('opTokens.stat.left') }}</div>
-            <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="PlusCircleOutlined" /></span><span>{{ left }}</span></div>
+            <div class="stat-content ltr"><span class="stat-prefix"><AntIcon name="PlusOutlined" /></span><span>{{ left }}</span></div>
           </div>
         </div>
       </div>

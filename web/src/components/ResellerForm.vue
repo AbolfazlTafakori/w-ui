@@ -37,10 +37,10 @@ const emit = defineEmits(['close', 'saved'])
 
 const editing = computed(() => !!props.admin)
 
-// An admin's dialog is two tabs: Account (who they are and what they are sold)
-// and Access (how far they reach and which pages they open). A reseller has no
-// pages to grant and no reach to widen, so it stays one scroll and the strip
-// never shows. '1' is Account, '2' is Access.
+// The dialog's tabs: Account (who they are and what they are sold), Access
+// (an admin's reach and pages; a reseller's servers sit under Account), and
+// Sales rules (what one sale of theirs may give a customer). '1' is
+// Account, '2' Access, '3' Sales rules.
 const tab = ref('1')
 
 // The same alphabets the customer dialog draws from. A username a reseller
@@ -80,8 +80,16 @@ const DEFAULT_ADMIN_MENUS = ['clients', 'groups', 'resellers']
 // groups are theirs anyway. Only the owner grants them.
 const RESELLER_MENUS = ['sharing', 'activity']
 
+// An admin's own rule of sale, which a reseller they make starts on; empty
+// for the owner, who has none.
+function ownRule(key) {
+  const me = store.admin
+  return me && !me.managesAdmins && me[key] ? me[key] : ''
+}
+
 const a = props.admin
 const q = quotaToUnit(a?.quotaBytes)
+const sq = quotaToUnit(a?.saleMaxBytes)
 const form = ref({
   username: a ? a.username : newUsername(),
   // Never prefilled on an edit: the stored one cannot be read back, and a
@@ -111,6 +119,14 @@ const form = ref({
   canViewAllClients: !!a?.canViewAllClients,
   canViewAllInterfaces: !!a?.canViewAllInterfaces,
   menuIds: [...(a ? a.menuIds || (a.role === 'admin' ? ALL_MENUS : []) : DEFAULT_ADMIN_MENUS)],
+  // The rules of a sale: empty is no rule. A new reseller of an admin's
+  // starts on the admin's own.
+  saleDays: a?.saleMaxDays || (a ? '' : ownRule('saleMaxDays')),
+  saleQuota: a ? sq.value : quotaToUnit(ownRule('saleMaxBytes')).value,
+  saleUnit: a ? sq.unit : quotaToUnit(ownRule('saleMaxBytes')).unit,
+  // Shown the way it reads -- a new link or password costs users -- and
+  // stored the other way round, so the default is the safe one.
+  rekeyCharged: !a?.rekeyFree,
 })
 
 // A reseller and an admin both hold a ceiling and sell on chosen servers; the
@@ -196,10 +212,15 @@ function validate() {
     const d = Number(form.value.durationDays)
     if (!Number.isInteger(d) || d < 1 || d > 3650) e.term = t('admins.daysRequired')
   }
+  if (hasCeiling.value && form.value.saleDays !== '') {
+    const d = Number(form.value.saleDays)
+    if (!Number.isInteger(d) || d < 0 || d > 3650) e.saleMaxDays = t('admins.sales.daysRule')
+  }
   fieldError.value = e
-  // Every validated field lives on the Account tab, so a hidden error never
+  // Bring the tab holding the first error forward, so a hidden error never
   // leaves the save looking like it did nothing.
-  if (Object.keys(e).length) tab.value = '1'
+  if (e.username || e.password || e.term) tab.value = '1'
+  else if (e.saleMaxDays) tab.value = '3'
   return !Object.keys(e).length
 }
 
@@ -221,6 +242,8 @@ const handDown = computed(() => {
   return Math.max(now - (Number(props.admin?.capacity?.usersGiven) || 0), 0)
 })
 
+const SALE_FIELDS = ['saleMaxDays', 'saleMaxBytes', 'rekeyFree']
+
 const busy = ref(false)
 async function submit() {
   if (!validate()) return
@@ -237,6 +260,9 @@ async function submit() {
     body.clientLimit = Math.max(0, Math.floor(Number(f.clientLimit) || 0))
     if (showMode.value) body.userMode = f.userMode
     body.quotaBytes = unitToBytes(f.quota, f.quotaUnit)
+    body.saleMaxDays = Math.max(0, Math.floor(Number(f.saleDays) || 0))
+    body.saleMaxBytes = unitToBytes(f.saleQuota, f.saleUnit)
+    body.rekeyFree = !f.rekeyCharged
     if (f.onHold) {
       body.durationDays = Number(f.durationDays)
       body.expiresAt = null
@@ -266,11 +292,12 @@ async function submit() {
     emit('saved')
   } catch (err) {
     const where = { interfaceIds: 'servers', durationDays: 'term', expiresAt: 'term' }[err.field] || err.field
-    if (where && ['username', 'password', 'servers', 'term', 'groupName', 'role'].includes(where)) {
+    if (where && ['username', 'password', 'servers', 'term', 'groupName', 'role', ...SALE_FIELDS].includes(where)) {
       fieldError.value = { [where]: err.message }
       // Bring the tab holding the flagged field forward: servers sit under
-      // Access for an admin, everything else under Account.
-      tab.value = isAdmin.value && where === 'servers' ? '2' : '1'
+      // Access for an admin, the rules of sale under their own tab,
+      // everything else under Account.
+      tab.value = SALE_FIELDS.includes(where) ? '3' : isAdmin.value && where === 'servers' ? '2' : '1'
     } else {
       notify(err.message, 'error')
     }
@@ -290,14 +317,16 @@ async function submit() {
 
       <div class="amodal-body rf-body">
         <form id="reseller-form" @submit.prevent="submit">
-          <!-- Admins split in two: who they are, then what they may reach. A
-               reseller has neither reach nor pages, so no strip. -->
-          <div v-if="isAdmin" class="atabs-nav"><div class="atabs-list">
+          <!-- Who they are; for an admin, what they may reach; and what one
+               sale of theirs may give. A reseller has no reach of their own,
+               so their servers stay under Account. -->
+          <div v-if="isAdmin || hasCeiling" class="atabs-nav"><div class="atabs-list">
             <button type="button" class="atab" :class="{ active: tab === '1' }" @click="tab = '1'"><AntIcon name="IdcardOutlined" /><span>{{ t('admins.tab.account') }}</span></button>
-            <button type="button" class="atab" :class="{ active: tab === '2' }" @click="tab = '2'"><AntIcon name="SafetyOutlined" /><span>{{ t('admins.tab.access') }}</span></button>
+            <button v-if="isAdmin" type="button" class="atab" :class="{ active: tab === '2' }" @click="tab = '2'"><AntIcon name="SafetyOutlined" /><span>{{ t('admins.tab.access') }}</span></button>
+            <button v-if="hasCeiling" type="button" class="atab" :class="{ active: tab === '3' }" @click="tab = '3'"><AntIcon name="TagsOutlined" /><span>{{ t('admins.tab.sales') }}</span></button>
           </div></div>
 
-          <div v-show="!isAdmin || tab === '1'" class="rf-pane">
+          <div v-show="tab === '1'" class="rf-pane">
           <div v-if="!editing" class="presets">
             <span class="presets-label">{{ t('client.presets') }}</span>
             <button v-for="p in presets" :key="`${p.days}-${p.gb}`" type="button" class="abtn small" @click="applyPreset(p)">
@@ -429,7 +458,7 @@ async function submit() {
 
           </div><!-- /Account pane -->
 
-          <div v-show="!isAdmin || tab === '2'" class="rf-pane">
+          <div v-show="isAdmin ? tab === '2' : tab === '1'" class="rf-pane">
           <!-- An admin's reach, as a list of plain choices rather than a row of
                switches with the explanation hidden behind a mark. Off
                everywhere, they see only their own tree and sell only the
@@ -483,6 +512,43 @@ async function submit() {
             </div>
           </div>
           </div><!-- /Access pane -->
+
+          <!-- What one sale may give a customer: three plain choices. -->
+          <div v-if="hasCeiling" v-show="tab === '3'" class="rf-pane">
+            <p class="access-intro">{{ t('admins.sales.intro') }}</p>
+            <div class="arow16">
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="rf-sale-days">{{ t('admins.sales.days') }} <HelpTip :text="t('admins.sales.daysHint')" /></label>
+                  <label class="ainput number" :class="{ invalid: fieldError.saleMaxDays }">
+                    <input id="rf-sale-days" v-model="form.saleDays" type="number" min="0" max="3650" step="1" class="ltr" :placeholder="t('admins.sales.noRule')" />
+                    <span class="ainput-suffix">{{ t('unit.days') }}</span>
+                  </label>
+                  <p v-if="fieldError.saleMaxDays" class="field-error">{{ fieldError.saleMaxDays }}</p>
+                </div>
+              </div>
+              <div class="acol12">
+                <div class="aform-item">
+                  <label class="aform-label" for="rf-sale-quota">{{ t('admins.sales.traffic') }} <HelpTip :text="t('admins.sales.trafficHint')" /></label>
+                  <div class="acompact">
+                    <label class="ainput number" :class="{ invalid: fieldError.saleMaxBytes }"><input id="rf-sale-quota" v-model="form.saleQuota" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('admins.sales.noRule')" /></label>
+                    <div class="aselect unit"><select v-model="form.saleUnit" :aria-label="t('client.quotaUnit')"><option value="GB">GB</option><option value="TB">TB</option></select></div>
+                  </div>
+                  <p v-if="fieldError.saleMaxBytes" class="field-error">{{ fieldError.saleMaxBytes }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="perm-list">
+              <label class="perm-item">
+                <div class="perm-meta">
+                  <div class="perm-title">{{ t('admins.sales.rekey') }}</div>
+                  <div class="perm-desc">{{ t('admins.sales.rekeyHint') }}</div>
+                </div>
+                <Toggle v-model="form.rekeyCharged" :label="t('admins.sales.rekey')" />
+              </label>
+            </div>
+            <p v-if="fieldError.rekeyFree" class="field-error">{{ fieldError.rekeyFree }}</p>
+          </div>
         </form>
       </div>
 
