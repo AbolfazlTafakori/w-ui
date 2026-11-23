@@ -74,10 +74,9 @@ const nav = [
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true, menu: 'clients' },
   // An admin's or a reseller's when the owner ticked it for them, over their
   // own customers and by network; the owner's in full.
-  // Every operator's own API tokens; the owner sees and revokes everyone's.
-  { to: '/tokens', key: 'nav.tokens', icon: 'KeyOutlined', sells: true, everyone: true },
-  // What an admin's tree, or a reseller, changed; granted by the owner.
-  { to: '/activity', key: 'nav.activity', icon: 'ProfileOutlined', menu: 'activity', grant: 'activity' },
+  // Operators' API tokens and their activity are the owner's on
+  // settings/security, beside the panel's own tokens; admins and resellers
+  // reach them from operatorNav.
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined', menu: 'sharing', grant: 'sharing' },
   { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true, menu: 'groups' },
   // Two tiers, two pages. Admins is the owner's alone -- no menu grant and no
@@ -126,14 +125,12 @@ const nav = [
 ]
 
 // An admin's and a reseller's menu, in the order that was agreed for them:
-// their customers first -- the list, a new one, what they have left to sell
-// with -- then what they run, then what the owner granted them. A line
+// their customers first -- the list, what they have left to sell with -- then what they run, then what the owner granted them. A line
 // shows only when it is theirs: a page the owner did not grant, a section
 // they have nothing in (tokens with none given or issued), is not there at
 // all. The backend refuses the same pages regardless.
 const operatorNav = [
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', show: (me, g) => !me.managesResellers || g('clients') },
-  { to: '/clients?new=1', key: 'nav.newClient', icon: 'UsergroupAddOutlined', show: (me, g) => !me.managesResellers || g('clients') },
   { to: '/capacity', key: 'nav.capacity', icon: 'PieChartOutlined', show: (me) => hasCapacity(me) },
   { divider: true },
   { to: '/resellers', key: 'nav.resellers', icon: 'ShopOutlined', show: (me, g) => me.managesResellers && g('resellers') },

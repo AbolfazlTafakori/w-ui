@@ -12,6 +12,8 @@ import { store, t, notify, signOut } from '../../lib/store.js'
 import AntIcon from '../AntIcon.vue'
 import Toggle from '../Toggle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import TokensView from '../../views/TokensView.vue'
+import ActivityView from '../../views/ActivityView.vue'
 import { copyText as toClipboard } from '../../lib/clipboard.js'
 
 const router = useRouter()
@@ -179,6 +181,11 @@ async function saveMtlsTrust() {
       <button class="atab" :class="{ active: inner === '1' }" @click="inner = '1'"><AntIcon name="UserOutlined" /><span>{{ t('set.security.admin') }}</span></button>
       <button class="atab" :class="{ active: inner === '2' }" @click="inner = '2'"><AntIcon name="SafetyOutlined" /><span>{{ t('set.security.twoFactor') }}</span></button>
       <button class="atab" :class="{ active: inner === '3' }" @click="inner = '3'"><AntIcon name="ApiOutlined" /><span>{{ t('set.nodes.apiToken') }}</span></button>
+      <!-- The owner's view of every operator: their tokens, and what they did. -->
+      <template v-if="store.admin?.managesPanel">
+        <button class="atab" :class="{ active: inner === '4' }" @click="inner = '4'"><AntIcon name="KeyOutlined" /><span>{{ t('set.security.operatorTokens') }}</span></button>
+        <button class="atab" :class="{ active: inner === '5' }" @click="inner = '5'"><AntIcon name="ProfileOutlined" /><span>{{ t('nav.activity') }}</span></button>
+      </template>
     </div></div>
 
     <template v-if="inner === '1'">
@@ -217,6 +224,9 @@ async function saveMtlsTrust() {
         </div></div>
       </div></div>
     </template>
+
+    <TokensView v-else-if="inner === '4'" embedded />
+    <ActivityView v-else-if="inner === '5'" embedded />
 
     <template v-else>
       <div class="api-token-section">
