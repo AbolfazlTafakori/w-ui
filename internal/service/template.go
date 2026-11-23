@@ -161,190 +161,227 @@ func mustJSON(v any) json.RawMessage {
 // Apply writes a document in. Rows are matched by name or tag: a known one
 // is updated, an unknown one created, and nothing is deleted -- deleting is
 // done on the pages, where it asks. section narrows it to one part.
+//
+// A row that cannot be applied is passed over and said in Skipped; what
+// fails Apply as a whole is the panel not being able to read what it has.
 func (t *Template) Apply(ctx context.Context, doc TemplateDoc, section string) (TemplateResult, error) {
-	var res TemplateResult
-	skip := func(what string, err error) {
-		res.Skipped = append(res.Skipped, fmt.Sprintf("%s: %v", what, err))
-	}
-
+	res := TemplateResult{Skipped: []string{}}
 	all := section == "" || section == "complete"
-
-	if all || section == "inbounds" {
-		existing, err := t.interfaces.List(ctx)
-		if err != nil {
-			return res, err
-		}
-		byName := map[string]model.Interface{}
-		for _, i := range existing {
-			byName[strings.ToLower(i.Name)] = i
-		}
-		for _, raw := range doc.Inbounds {
-			var head struct {
-				Name string `json:"name"`
-			}
-			if err := json.Unmarshal(raw, &head); err != nil || strings.TrimSpace(head.Name) == "" {
-				skip("inbound", fmt.Errorf("every inbound needs a name"))
-				continue
-			}
-			if cur, ok := byName[strings.ToLower(head.Name)]; ok {
-				var in UpdateInterfaceInput
-				if err := json.Unmarshal(raw, &in); err != nil {
-					skip("interface "+head.Name, err)
-					continue
-				}
-				if _, err := t.interfaces.Update(ctx, cur.ID, in); err != nil {
-					skip("interface "+head.Name, err)
-					continue
-				}
-				res.Updated++
-				continue
-			}
-			var in CreateInterfaceInput
-			if err := json.Unmarshal(raw, &in); err != nil {
-				skip("interface "+head.Name, err)
-				continue
-			}
-			if _, err := t.interfaces.Create(ctx, in); err != nil {
-				skip("interface "+head.Name, err)
-				continue
-			}
-			res.Created++
-		}
-	}
-
-	if all || section == "outbounds" {
-		existing, err := t.outbounds.List(ctx)
-		if err != nil {
-			return res, err
-		}
-		byTag := map[string]model.Outbound{}
-		for _, o := range existing {
-			byTag[strings.ToLower(o.Tag)] = o
-		}
-		for _, raw := range doc.Outbounds {
-			var in egress.OutboundInput
-			if err := json.Unmarshal(raw, &in); err != nil || strings.TrimSpace(in.Tag) == "" {
-				skip("outbound", fmt.Errorf("every outbound needs a tag"))
-				continue
-			}
-			if cur, ok := byTag[strings.ToLower(in.Tag)]; ok {
-				if _, err := t.outbounds.Update(ctx, cur.ID, in); err != nil {
-					skip("outbound "+in.Tag, err)
-					continue
-				}
-				res.Updated++
-				continue
-			}
-			if _, err := t.outbounds.Create(ctx, in); err != nil {
-				skip("outbound "+in.Tag, err)
-				continue
-			}
-			res.Created++
-		}
-	}
-
-	if all || section == "routing" {
+	steps := []struct {
+		on  bool
+		run func(context.Context, TemplateDoc, *TemplateResult) error
+	}{
+		{all || section == "inbounds", t.applyInbounds},
+		{all || section == "outbounds", t.applyOutbounds},
 		// Balancers before rules, since rules may point at them.
-		existing, err := t.balancers.List(ctx)
-		if err != nil {
+		{all || section == "routing", t.applyBalancers},
+		{all || section == "routing", t.applyRouting},
+		{(all || section == "dns") && doc.DNS != nil, t.applyDNS},
+	}
+	for _, step := range steps {
+		if !step.on {
+			continue
+		}
+		if err := step.run(ctx, doc, &res); err != nil {
 			return res, err
-		}
-		byTag := map[string]egress.BalancerView{}
-		for _, b := range existing {
-			byTag[strings.ToLower(b.Tag)] = b
-		}
-		for _, in := range doc.Balancers {
-			if strings.TrimSpace(in.Tag) == "" {
-				skip("balancer", fmt.Errorf("every balancer needs a tag"))
-				continue
-			}
-			if cur, ok := byTag[strings.ToLower(in.Tag)]; ok {
-				if _, err := t.balancers.Update(ctx, cur.ID, in); err != nil {
-					skip("balancer "+in.Tag, err)
-					continue
-				}
-				res.Updated++
-				continue
-			}
-			if _, err := t.balancers.Create(ctx, in); err != nil {
-				skip("balancer "+in.Tag, err)
-				continue
-			}
-			res.Created++
-		}
-
-		if doc.Routing != nil {
-			if doc.Routing.Basic != nil {
-				if _, err := t.routing.SaveBasic(ctx, *doc.Routing.Basic); err != nil {
-					skip("basic routing", err)
-				} else {
-					res.Updated++
-				}
-			}
-			rules, err := t.routing.ListRules(ctx)
-			if err != nil {
-				return res, err
-			}
-			byName := map[string]model.RoutingRule{}
-			for _, r := range rules {
-				byName[strings.ToLower(r.Name)] = r
-			}
-			var order []uint
-			for _, in := range doc.Routing.Rules {
-				if strings.TrimSpace(in.Name) == "" {
-					skip("rule", fmt.Errorf("every rule needs a name"))
-					continue
-				}
-				if cur, ok := byName[strings.ToLower(in.Name)]; ok {
-					if _, err := t.routing.UpdateRule(ctx, cur.ID, in); err != nil {
-						skip("rule "+in.Name, err)
-						continue
-					}
-					order = append(order, cur.ID)
-					res.Updated++
-					continue
-				}
-				r, err := t.routing.CreateRule(ctx, in)
-				if err != nil {
-					skip("rule "+in.Name, err)
-					continue
-				}
-				order = append(order, r.ID)
-				res.Created++
-			}
-			// The document's order is the order.
-			if len(order) > 0 {
-				seen := map[uint]bool{}
-				for _, id := range order {
-					seen[id] = true
-				}
-				for _, r := range rules {
-					if !seen[r.ID] {
-						order = append(order, r.ID)
-					}
-				}
-				if err := t.routing.ReorderRules(ctx, order); err != nil {
-					skip("rule order", err)
-				}
-			}
 		}
 	}
+	return res, nil
+}
 
-	if (all || section == "dns") && doc.DNS != nil {
-		eng, err := t.engine.Get(ctx)
-		if err != nil {
-			return res, err
+// skip notes a row passed over.
+func (r *TemplateResult) skip(what string, err error) {
+	r.Skipped = append(r.Skipped, fmt.Sprintf("%s: %v", what, err))
+}
+
+// applyInbounds updates the tunnels the document names that the panel has,
+// by name, and makes the others.
+func (t *Template) applyInbounds(ctx context.Context, doc TemplateDoc, res *TemplateResult) error {
+	existing, err := t.interfaces.List(ctx)
+	if err != nil {
+		return err
+	}
+	byName := map[string]model.Interface{}
+	for _, i := range existing {
+		byName[strings.ToLower(i.Name)] = i
+	}
+	for _, raw := range doc.Inbounds {
+		var head struct {
+			Name string `json:"name"`
 		}
-		eng.DNS = *doc.DNS
-		if _, err := t.engine.Save(ctx, eng); err != nil {
-			skip("dns", err)
+		if err := json.Unmarshal(raw, &head); err != nil || strings.TrimSpace(head.Name) == "" {
+			res.skip("inbound", fmt.Errorf("every inbound needs a name"))
+			continue
+		}
+		if cur, ok := byName[strings.ToLower(head.Name)]; ok {
+			var in UpdateInterfaceInput
+			if err := json.Unmarshal(raw, &in); err != nil {
+				res.skip("interface "+head.Name, err)
+				continue
+			}
+			if _, err := t.interfaces.Update(ctx, cur.ID, in); err != nil {
+				res.skip("interface "+head.Name, err)
+				continue
+			}
+			res.Updated++
+			continue
+		}
+		var in CreateInterfaceInput
+		if err := json.Unmarshal(raw, &in); err != nil {
+			res.skip("interface "+head.Name, err)
+			continue
+		}
+		if _, err := t.interfaces.Create(ctx, in); err != nil {
+			res.skip("interface "+head.Name, err)
+			continue
+		}
+		res.Created++
+	}
+	return nil
+}
+
+// applyOutbounds updates the outbounds the document names that the panel
+// has, by tag, and makes the others.
+func (t *Template) applyOutbounds(ctx context.Context, doc TemplateDoc, res *TemplateResult) error {
+	existing, err := t.outbounds.List(ctx)
+	if err != nil {
+		return err
+	}
+	byTag := map[string]model.Outbound{}
+	for _, o := range existing {
+		byTag[strings.ToLower(o.Tag)] = o
+	}
+	for _, raw := range doc.Outbounds {
+		var in egress.OutboundInput
+		if err := json.Unmarshal(raw, &in); err != nil || strings.TrimSpace(in.Tag) == "" {
+			res.skip("outbound", fmt.Errorf("every outbound needs a tag"))
+			continue
+		}
+		if cur, ok := byTag[strings.ToLower(in.Tag)]; ok {
+			if _, err := t.outbounds.Update(ctx, cur.ID, in); err != nil {
+				res.skip("outbound "+in.Tag, err)
+				continue
+			}
+			res.Updated++
+			continue
+		}
+		if _, err := t.outbounds.Create(ctx, in); err != nil {
+			res.skip("outbound "+in.Tag, err)
+			continue
+		}
+		res.Created++
+	}
+	return nil
+}
+
+// applyBalancers updates the balancers the document names that the panel
+// has, by tag, and makes the others.
+func (t *Template) applyBalancers(ctx context.Context, doc TemplateDoc, res *TemplateResult) error {
+	existing, err := t.balancers.List(ctx)
+	if err != nil {
+		return err
+	}
+	byTag := map[string]egress.BalancerView{}
+	for _, b := range existing {
+		byTag[strings.ToLower(b.Tag)] = b
+	}
+	for _, in := range doc.Balancers {
+		if strings.TrimSpace(in.Tag) == "" {
+			res.skip("balancer", fmt.Errorf("every balancer needs a tag"))
+			continue
+		}
+		if cur, ok := byTag[strings.ToLower(in.Tag)]; ok {
+			if _, err := t.balancers.Update(ctx, cur.ID, in); err != nil {
+				res.skip("balancer "+in.Tag, err)
+				continue
+			}
+			res.Updated++
+			continue
+		}
+		if _, err := t.balancers.Create(ctx, in); err != nil {
+			res.skip("balancer "+in.Tag, err)
+			continue
+		}
+		res.Created++
+	}
+	return nil
+}
+
+// applyRouting saves the document's routing page and its rules, the rules
+// by name, and puts them in the document's order, the panel's other rules
+// after them.
+func (t *Template) applyRouting(ctx context.Context, doc TemplateDoc, res *TemplateResult) error {
+	if doc.Routing == nil {
+		return nil
+	}
+	if doc.Routing.Basic != nil {
+		if _, err := t.routing.SaveBasic(ctx, *doc.Routing.Basic); err != nil {
+			res.skip("basic routing", err)
 		} else {
 			res.Updated++
 		}
 	}
-
-	if res.Skipped == nil {
-		res.Skipped = []string{}
+	rules, err := t.routing.ListRules(ctx)
+	if err != nil {
+		return err
 	}
-	return res, nil
+	byName := map[string]model.RoutingRule{}
+	for _, r := range rules {
+		byName[strings.ToLower(r.Name)] = r
+	}
+	var order []uint
+	for _, in := range doc.Routing.Rules {
+		if strings.TrimSpace(in.Name) == "" {
+			res.skip("rule", fmt.Errorf("every rule needs a name"))
+			continue
+		}
+		if cur, ok := byName[strings.ToLower(in.Name)]; ok {
+			if _, err := t.routing.UpdateRule(ctx, cur.ID, in); err != nil {
+				res.skip("rule "+in.Name, err)
+				continue
+			}
+			order = append(order, cur.ID)
+			res.Updated++
+			continue
+		}
+		r, err := t.routing.CreateRule(ctx, in)
+		if err != nil {
+			res.skip("rule "+in.Name, err)
+			continue
+		}
+		order = append(order, r.ID)
+		res.Created++
+	}
+	if len(order) == 0 {
+		return nil
+	}
+	// The document's order is the order; the panel's other rules follow.
+	seen := map[uint]bool{}
+	for _, id := range order {
+		seen[id] = true
+	}
+	for _, r := range rules {
+		if !seen[r.ID] {
+			order = append(order, r.ID)
+		}
+	}
+	if err := t.routing.ReorderRules(ctx, order); err != nil {
+		res.skip("rule order", err)
+	}
+	return nil
+}
+
+// applyDNS saves the document's DNS part.
+func (t *Template) applyDNS(ctx context.Context, doc TemplateDoc, res *TemplateResult) error {
+	eng, err := t.engine.Get(ctx)
+	if err != nil {
+		return err
+	}
+	eng.DNS = *doc.DNS
+	if _, err := t.engine.Save(ctx, eng); err != nil {
+		res.skip("dns", err)
+	} else {
+		res.Updated++
+	}
+	return nil
 }
