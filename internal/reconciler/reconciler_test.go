@@ -25,8 +25,10 @@ type fakeEnforcer struct {
 	applied []enforce.Rule
 	drain   []enforce.Usage
 	drains  int
-	spent   map[string]uint64 // quotas the kernel holds spent, with what each used
-	quotas  []enforce.Usage   // each quota's tally, as the kernel would say
+	// fullDrains counts DrainCounters alone: every counter read at once.
+	fullDrains int
+	spent      map[string]uint64 // quotas the kernel holds spent, with what each used
+	quotas     []enforce.Usage   // each quota's tally, as the kernel would say
 	// applyErr is what Apply fails with, when set.
 	applyErr error
 }
@@ -57,6 +59,7 @@ func (f *fakeEnforcer) Apply(ctx context.Context, rules []enforce.Rule) error {
 
 func (f *fakeEnforcer) DrainCounters(context.Context) ([]enforce.Usage, error) {
 	f.drains++
+	f.fullDrains++
 	out := f.drain
 	f.drain = nil // draining is read-and-zero
 	return out, nil

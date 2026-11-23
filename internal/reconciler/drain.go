@@ -1,9 +1,11 @@
 package reconciler
 
 import (
+	"context"
 	"sort"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
 )
 
@@ -29,6 +31,10 @@ import (
 // sweepTicks ticks, in stored usage -- never in enforcement, which is the
 // kernel's quota, to the byte.
 
+// fullDrainByNameAbove is enforce.FullDrainByNameAbove, here so a test can
+// reach it without sixty thousand rows.
+var fullDrainByNameAbove = enforce.FullDrainByNameAbove
+
 // sweepTicks is how many ticks the turning slice takes to cover every file:
 // a minute at the two-second tick.
 const sweepTicks = 30
@@ -37,6 +43,37 @@ const sweepTicks = 30
 type drainState struct {
 	heard map[uint]uint64 // account -> bytes its driver last reported
 	turn  int             // which slice of the files this tick's sweep takes
+	// startDrained is that the start drained every counter
+	// (recoverKernelUsage) and no tick has known the files since: the first
+	// tick, run before the files are read, need not drain them all again.
+	startDrained bool
+}
+
+// drainAllAtStart drains every counter of this server's files, once, at
+// start. The table has not been written by this run yet, so its names come
+// from the database; a server with more than enforce.FullDrainByNameAbove
+// counters is read by name, which a dump of it would take tens of seconds
+// over (27.8 s for 200,000 counters, measured).
+func (r *Reconciler) drainAllAtStart(ctx context.Context) ([]enforce.Usage, error) {
+	r.drain.startDrained = true
+	var files []struct {
+		ID       uint
+		ClientID uint
+	}
+	if err := r.db.WithContext(ctx).Model(&model.Account{}).Select("id, client_id").
+		Where("node_id = ?", r.localNodeID).Scan(&files).Error; err != nil {
+		r.log.Warn("could not list this server's files to drain them by name at start; draining the table whole",
+			"error", err)
+		return r.enforcer.DrainCounters(ctx)
+	}
+	if 2*len(files) <= fullDrainByNameAbove {
+		return r.enforcer.DrainCounters(ctx)
+	}
+	refs := make([]enforce.FileRef, 0, len(files))
+	for _, f := range files {
+		refs = append(refs, enforce.FileRef{Key: enforce.Key(f.ClientID), Account: f.ID})
+	}
+	return r.enforcer.DrainFiles(ctx, refs)
 }
 
 // drainPlan says which files this tick drains, or full for all of them.
@@ -44,6 +81,13 @@ type drainState struct {
 // read.
 func (r *Reconciler) drainPlan(stats []backend.Stat, failed bool) (files []enforce.FileRef, full bool) {
 	local := r.conc.localFiles()
+	if len(local) == 0 && !failed && r.drain.startDrained {
+		// The first tick after start, before the files are known: the start
+		// drained every counter a moment ago, and what came since waits in
+		// them for the next tick.
+		return nil, false
+	}
+	r.drain.startDrained = false
 	if failed || len(local) == 0 {
 		r.drain.heard = nil // started over on the next full read of the drivers
 		return nil, true

@@ -99,6 +99,13 @@ func (r Rule) kernelQuota() uint64 {
 	return r.QuotaBytes
 }
 
+// FullDrainByNameAbove is how many counters a table holds past which every
+// counter is read by name rather than dumped. A dump costs the kernel more
+// than in proportion to the table, measured on arm64: 46 ms for 10,000
+// counters, 977 ms for 50,000, 27.8 s for 200,000; by name it is 27 µs a
+// counter, 5.4 s for 200,000. They cross between 50,000 and 200,000.
+const FullDrainByNameAbove = 60_000
+
 // FileRef names one file's counters: the customer's rule key and the
 // file's account.
 type FileRef struct {

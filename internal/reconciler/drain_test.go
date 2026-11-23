@@ -104,3 +104,69 @@ func TestATickWithADriverUnreadDrainsEverything(t *testing.T) {
 	}
 	_ = drv
 }
+
+// At start a server with more counters than a dump can take in good time
+// drains them by name, from the database's list of its files; a smaller
+// one is dumped, as before.
+func TestTheStartDrainsALargeTableByName(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		threshold int
+		byName    bool
+	}{{"small", 1_000, false}, {"large", 2, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, db, enf, _ := newRig(t)
+			was := fullDrainByNameAbove
+			fullDrainByNameAbove = tc.threshold
+			t.Cleanup(func() { fullDrainByNameAbove = was })
+			a := seed(t, db, model.Client{Name: "a"}, "10.66.0.2")
+			b := seed(t, db, model.Client{Name: "b"}, "10.66.0.3")
+			fa, fb := fileOf(t, r, a), fileOf(t, r, b)
+			enf.add(enforce.Usage{Key: enforce.Key(a), Bytes: 10, Up: 4, Down: 6, Files: []enforce.FileUsage{{Account: fa, Up: 4, Down: 6}}})
+			enf.add(enforce.Usage{Key: enforce.Key(b), Bytes: 20, Up: 5, Down: 15, Files: []enforce.FileUsage{{Account: fb, Up: 5, Down: 15}}})
+
+			got, err := r.drainAllAtStart(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var total uint64
+			for _, u := range got {
+				total += u.Bytes
+			}
+			if total != 30 || len(enf.drain) != 0 {
+				t.Fatalf("drained %d bytes, %d left; want all 30 drained", total, len(enf.drain))
+			}
+			if byName := enf.fullDrains == 0; byName != tc.byName {
+				t.Fatalf("by name: %v, want %v", byName, tc.byName)
+			}
+		})
+	}
+}
+
+// The first tick after start, run before the files are known, drains
+// nothing -- the start just drained everything -- and what came in since
+// is drained on a later tick, not lost.
+func TestTheFirstTickAfterStartLeavesTheCountersToTheNext(t *testing.T) {
+	r, db, enf, drv := newRig(t)
+	ctx := context.Background()
+	id := seed(t, db, model.Client{Name: "a"}, "10.66.0.2")
+	if _, err := r.drainAllAtStart(ctx); err != nil {
+		t.Fatal(err)
+	}
+	full := enf.fullDrains
+	files, isFull := r.drainPlan(nil, false)
+	if isFull || len(files) != 0 || enf.fullDrains != full {
+		t.Fatalf("the first tick after start: files %v, full %v; want nothing drained", files, isFull)
+	}
+	r.Tick(ctx)
+	file := fileOf(t, r, id)
+	enf.add(enforce.Usage{Key: enforce.Key(id), Bytes: 500, Up: 200, Down: 300,
+		Files: []enforce.FileUsage{{Account: file, Up: 200, Down: 300}}})
+	moved(drv, file)
+	for i := 0; i < 3 && used(t, r, id) == 0; i++ {
+		r.Tick(ctx)
+	}
+	if got := used(t, r, id); got != 500 {
+		t.Fatalf("what came in after the start: %d stored, want 500", got)
+	}
+}

@@ -262,6 +262,26 @@ func (n *NFTables) Usage(ctx context.Context) ([]Usage, error) {
 // bytes arriving between a read and a separate reset cannot be lost. Doing it
 // as two calls would quietly under-bill every customer under load.
 func (n *NFTables) DrainCounters(ctx context.Context) ([]Usage, error) {
+	// A large table is read by name, from what was last written to it: a
+	// dump of it costs the kernel seconds (FullDrainByNameAbove).
+	n.mu.Lock()
+	var names []string
+	if n.state != nil {
+		for key, st := range n.state {
+			for _, f := range st.files {
+				names = append(names, downCounter(key, f.Account), upCounter(key, f.Account))
+			}
+		}
+	}
+	n.mu.Unlock()
+	if len(names) > FullDrainByNameAbove {
+		if objs, err := resetCountersIn(TableName, names); err == nil {
+			usage := usageOfCounters(objs)
+			n.verify(usage)
+			return usage, nil
+		}
+		// Not by name: dumped below, slower, nothing lost.
+	}
 	if objs, err := n.objects(nftObjectCounter, true); err == nil {
 		usage := usageOfCounters(objs)
 		n.verify(usage)

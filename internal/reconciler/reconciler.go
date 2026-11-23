@@ -638,7 +638,7 @@ func (r *Reconciler) charge(drained []enforce.Usage, now time.Time) (uint64, map
 // carried. A table that is not there -- a reboot, a first start -- has
 // nothing to recover.
 func (r *Reconciler) recoverKernelUsage(ctx context.Context) {
-	drained, err := r.enforcer.DrainCounters(ctx)
+	drained, err := r.drainAllAtStart(ctx)
 	if err != nil {
 		r.log.Warn("could not read the kernel's counters at start; usage counted while the panel was down may be missing",
 			"error", err)
