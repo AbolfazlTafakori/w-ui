@@ -4,10 +4,13 @@ package ovpndriver
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/ovpnconf"
 )
@@ -22,8 +25,9 @@ func TestSessionsAreReadFromTheFileOpenVPNAlreadyWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const report = `TITLE,OpenVPN 2.7.0
-TIME,2026-09-06 13:38:22,1788701902
+	// Written just now, as OpenVPN writes it every ten seconds.
+	report := `TITLE,OpenVPN 2.7.0
+TIME,now,` + strconv.FormatInt(time.Now().Unix(), 10) + `
 HEADER,CLIENT_LIST,Common Name,Real Address,Virtual Address,Virtual IPv6 Address,Bytes Received,Bytes Sent,Connected Since,Connected Since (time_t),Username,Client ID,Peer ID,Data Channel Cipher
 CLIENT_LIST,ali,203.0.113.9:51820,10.88.0.6,,4096,8192,2026-09-06 13:00:00,1788700000,ali,0,0,AES-256-GCM
 END
@@ -86,5 +90,51 @@ func TestAMissingStatusFileFallsBackRatherThanReportingNobody(t *testing.T) {
 	d := New()
 	if _, err := d.sessionReport(context.Background(), l); err == nil {
 		t.Fatal("a missing report was accepted as the answer")
+	}
+}
+
+// A status file nobody writes any longer -- replaced under a running daemon,
+// which then writes to the deleted one -- is whole and ends in END, and would
+// say for ever that nobody is connected. Seen on a test server: six days of
+// no OpenVPN customer online and no limit on one file used from two places.
+// Past its age the socket is asked, and what the daemon says now is the answer.
+func TestAStatusFileNobodyWritesAnyLongerIsNotTheAnswer(t *testing.T) {
+	dir := t.TempDir()
+	l := ovpnconf.NewLayout(dir, "ovpntest")
+	if err := os.MkdirAll(l.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := "TITLE,OpenVPN 2.6.19\nTIME,then," + strconv.FormatInt(time.Now().Add(-6*24*time.Hour).Unix(), 10) +
+		"\nHEADER,CLIENT_LIST,Common Name\nEND\n"
+	if err := os.WriteFile(l.StatusFile(), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("unix", l.Management())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		buf := make([]byte, 64)
+		if _, err := c.Read(buf); err != nil {
+			return
+		}
+		// The daemon's own answer, as its management interface gives it.
+		_, _ = c.Write([]byte("TITLE,OpenVPN 2.6.19\nTIME,now," + strconv.FormatInt(time.Now().Unix(), 10) +
+			"\nCLIENT_LIST,s7-phone,203.0.113.9:41984,10.72.0.13,,1383,3123,now," + strconv.FormatInt(time.Now().Unix(), 10) +
+			",s7-phone,34,0,AES-256-GCM\nEND\n"))
+	}()
+
+	got, err := New().sessionReport(context.Background(), l)
+	if err != nil {
+		t.Fatalf("sessionReport: %v", err)
+	}
+	if s := parseStatus(got); len(s) != 1 || s[0].Username != "s7-phone" {
+		t.Fatalf("the stale file was taken over the daemon: %+v", s)
 	}
 }

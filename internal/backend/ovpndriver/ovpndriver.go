@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
@@ -122,6 +123,36 @@ type session struct {
 	RX        uint64
 	TX        uint64
 	Since     int64 // unix seconds
+}
+
+// statusStale is how old a status file may be and still be the answer:
+// OpenVPN rewrites it every ten seconds (ovpnconf), so three missed
+// rewrites and a little more mean nobody is writing it any longer.
+const statusStale = 35 * time.Second
+
+// statusFresh reports whether a status report was written recently, by the
+// time on its TIME line. A file nobody writes any more -- replaced under a
+// running daemon, which then writes to the deleted one -- otherwise stays
+// complete, with its END, and says forever that nobody is connected: no
+// customer online, and no limit on how many places one file is used from.
+// A report with no readable time is not taken as fresh.
+func statusFresh(raw string, now time.Time) bool {
+	for _, line := range strings.Split(raw, "\n") {
+		if !strings.HasPrefix(line, "TIME,") {
+			continue
+		}
+		f := strings.Split(strings.TrimRight(line, "\r"), ",")
+		if len(f) < 3 {
+			return false
+		}
+		at, err := strconv.ParseInt(strings.TrimSpace(f[2]), 10, 64)
+		if err != nil {
+			return false
+		}
+		age := now.Sub(time.Unix(at, 0))
+		return age < statusStale && age > -statusStale
+	}
+	return false
 }
 
 // parseStatus reads OpenVPN's version 2 status format.

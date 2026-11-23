@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -51,6 +52,10 @@ type Driver struct {
 	// stays good for as long as the customer stays connected, which is
 	// exactly what rotating it is meant to stop.
 	bySecret map[string]string
+
+	// staleSaid is whether the log has been told the status file stopped
+	// being written; said once, and again only after it was fresh between.
+	staleSaid atomic.Bool
 }
 
 // New builds an unopened driver.
@@ -481,7 +486,14 @@ func (d *Driver) Close() error {
 func (d *Driver) sessionReport(ctx context.Context, l ovpnconf.Layout) (string, error) {
 	raw, err := os.ReadFile(l.StatusFile())
 	if err == nil && strings.Contains(string(raw), "END") {
-		return string(raw), nil
+		if statusFresh(string(raw), time.Now()) {
+			d.staleSaid.Store(false)
+			return string(raw), nil
+		}
+		if !d.staleSaid.Swap(true) {
+			d.log.Warn("the OpenVPN status file is no longer being written; reading sessions from the management socket instead",
+				"file", l.StatusFile(), "why", "it was likely replaced while the daemon ran, which then writes to the deleted file; restarting the tunnel makes it write here again")
+		}
 	}
 	return d.management(ctx, l, "status 2\n")
 }
