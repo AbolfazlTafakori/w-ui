@@ -6,11 +6,13 @@ package endpoints
 import (
 	"context"
 	"fmt"
-	"github.com/abolfazl/w-ui/internal/egress"
 	"log/slog"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/database"
+	"github.com/abolfazl/w-ui/internal/egress"
 
 	"gorm.io/gorm"
 
@@ -124,7 +126,7 @@ func (s *Hosts) Create(ctx context.Context, in HostInput) (*model.Host, error) {
 		Note:        strings.TrimSpace(in.Note),
 		Reachable:   true,
 	}
-	if err := s.db.WithContext(ctx).Create(&h).Error; err != nil {
+	if err := database.CreateKeepingSwitch(s.db.WithContext(ctx), &h, h.Enabled); err != nil {
 		return nil, fmt.Errorf("service: create host: %w", err)
 	}
 	s.log.Info("host added", "name", h.Name, "address", h.Address)

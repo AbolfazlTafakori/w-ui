@@ -291,7 +291,7 @@ func (s *Hosts) CreateGroup(ctx context.Context, in HostGroup) (*HostGroup, erro
 	in.SortOrder = last.Max + 1
 	id := newGroupID()
 	rows := rowsFor(id, in)
-	if err := s.db.WithContext(ctx).Create(&rows).Error; err != nil {
+	if err := createHostRows(s.db.WithContext(ctx), id, rows, in.Enabled); err != nil {
 		return nil, fmt.Errorf("service: create host: %w", err)
 	}
 	s.log.Info("host added", "name", in.Remark, "addresses", len(in.Hosts), "inbounds", len(in.InterfaceIDs))
@@ -322,7 +322,7 @@ func (s *Hosts) UpdateGroup(ctx context.Context, groupID string, in HostGroup) (
 		if err := tx.Where("id IN ?", ids).Delete(&model.Host{}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&rows).Error
+		return createHostRows(tx, groupID, rows, in.Enabled)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("service: update host: %w", err)
@@ -575,4 +575,23 @@ func SafeFilename(name string) string {
 		out = string(rs[:48])
 	}
 	return out
+}
+
+// createHostRows inserts a host's rows, all switched as the form asked. The
+// schema defaults enabled to true, and an insert leaves a false out as a
+// zero value: a host saved switched off came back on (database.
+// CreateKeepingSwitch, for a slice of one group).
+func createHostRows(db *gorm.DB, groupID string, rows []model.Host, enabled bool) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if len(rows) == 0 {
+			return nil
+		}
+		if err := tx.Create(&rows).Error; err != nil {
+			return err
+		}
+		if enabled {
+			return nil
+		}
+		return tx.Model(&model.Host{}).Where("group_id = ?", groupID).Update("enabled", false).Error
+	})
 }

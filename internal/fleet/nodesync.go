@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fault"
 )
@@ -291,7 +292,7 @@ func (s *NodeSync) upsertInterface(tx *gorm.DB, nodeID uint, in NodeInterface) (
 		}
 	}
 
-	if err := tx.Save(&iface).Error; err != nil {
+	if err := saveKeepingSwitch(tx, &iface, iface.ID == 0, iface.Enabled); err != nil {
 		return nil, fmt.Errorf("store managed interface: %w", err)
 	}
 	return &iface, nil
@@ -435,7 +436,7 @@ func (s *NodeSync) upsertAccounts(
 		a.Username = wa.Username
 		a.Secret = wa.Secret
 		a.CertPEM = wa.CertPEM
-		if err := tx.Save(a).Error; err != nil {
+		if err := saveKeepingSwitch(tx, a, a.ID == 0, wa.Enabled); err != nil {
 			return fmt.Errorf("store managed account %d: %w", wa.OriginID, err)
 		}
 		if wa.HeldUntil != nil && s.OnHold != nil && time.Now().Before(*wa.HeldUntil) {
@@ -597,3 +598,15 @@ func (s *NodeSync) Prune(ctx context.Context, nodeID uint, keep []uint) (int, er
 // PostgreSQL panel a customer's link listed their files in a new order from
 // one fetch to the next, and the user numbers that follow that order with it.
 func accountsInOrder(db *gorm.DB) *gorm.DB { return db.Order("accounts.id") }
+
+// saveKeepingSwitch saves a row the panel sent: an existing one as Save
+// does, every field written; a new one by database.CreateKeepingSwitch,
+// since a create leaves a false "enabled" out and the schema's default
+// switched it on -- a paused customer's file came up serving on the node
+// until the next sync wrote it again.
+func saveKeepingSwitch(tx *gorm.DB, row any, isNew, enabled bool) error {
+	if isNew {
+		return database.CreateKeepingSwitch(tx, row, enabled)
+	}
+	return tx.Save(row).Error
+}

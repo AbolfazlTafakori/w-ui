@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/listfield"
 
 	"gorm.io/gorm"
@@ -203,7 +204,7 @@ func (s *Balancers) Create(ctx context.Context, in BalancerInput) (*BalancerView
 		Note:     strings.TrimSpace(in.Note),
 		Fallback: in.Fallback,
 	}
-	if err := s.db.WithContext(ctx).Create(&b).Error; err != nil {
+	if err := database.CreateKeepingSwitch(s.db.WithContext(ctx), &b, b.Enabled); err != nil {
 		return nil, fmt.Errorf("service: create balancer: %w", err)
 	}
 	mark, _, err := routing.AllocateMark(balancerMarkID(b.ID))

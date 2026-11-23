@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/listfield"
 
 	"gorm.io/gorm"
@@ -226,7 +227,7 @@ func (s *Outbounds) Create(ctx context.Context, in OutboundInput) (*model.Outbou
 		ob.HopMTU = 1380
 	}
 
-	if err := db.Create(&ob).Error; err != nil {
+	if err := database.CreateKeepingSwitch(db, &ob, ob.Enabled); err != nil {
 		return nil, fmt.Errorf("service: create outbound: %w", err)
 	}
 

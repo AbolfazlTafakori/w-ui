@@ -17,6 +17,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
 
@@ -160,7 +161,7 @@ func (s *OutboundSubs) Create(ctx context.Context, in OutboundSubInput) (*model.
 		Prepend:      in.Prepend,
 		Position:     last.Position + 1,
 	}
-	if err := s.db.WithContext(ctx).Create(&sub).Error; err != nil {
+	if err := database.CreateKeepingSwitch(s.db.WithContext(ctx), &sub, sub.Enabled); err != nil {
 		return nil, fmt.Errorf("service: create subscription: %w", err)
 	}
 	// Fetched straight away, so the operator sees what it produced rather

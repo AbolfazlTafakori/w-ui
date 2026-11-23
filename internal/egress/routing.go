@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/listfield"
 	"github.com/abolfazl/w-ui/internal/routing"
@@ -435,7 +436,7 @@ func (s *Routing) CreateRule(ctx context.Context, in RuleInput) (*model.RoutingR
 		OutboundTag: in.OutboundTag,
 		Note:        strings.TrimSpace(in.Note),
 	}
-	if err := db.Create(&rule).Error; err != nil {
+	if err := database.CreateKeepingSwitch(db, &rule, rule.Enabled); err != nil {
 		return nil, fmt.Errorf("service: create routing rule: %w", err)
 	}
 	s.namesChanged(ctx)

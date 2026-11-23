@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/handover"
 	"github.com/abolfazl/w-ui/internal/wgkey"
@@ -97,7 +98,7 @@ func (s *Interfaces) MirrorXUI(ctx context.Context, nodeID uint, endpointHost st
 			EndpointHost: endpointHost,
 			XUI:          model.JSONField[model.XUIInbound]{V: in.XUIInbound},
 		}
-		if err := db.Create(&iface).Error; err != nil {
+		if err := database.CreateKeepingSwitch(db, &iface, iface.Enabled); err != nil {
 			return fmt.Errorf("service: add 3x-ui tunnel %s: %w", name, err)
 		}
 		if s.pools != nil {
