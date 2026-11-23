@@ -21,6 +21,15 @@ import (
 // every two seconds would spend their time fighting for the same lock. Usage
 // is accumulated in memory between flushes instead, so a busy server writes a
 // handful of batches a minute rather than thousands of rows a second.
+//
+// Kept at five seconds on purpose, measured (BenchmarkAUsageWrite): one
+// write for 5,000 customers moving traffic holds SQLite's write lock 257 ms,
+// 5% of the time at this interval and 13% at two seconds; at ten times the
+// customers a write outlasts a two-second interval altogether. What a
+// shorter interval would buy is less usage unwritten when the power is cut,
+// and only for customers far from their allowance: the ones near it are
+// written every tick (writeNearLimit), and the kernel's quota holds everyone
+// to their allowance whatever is written.
 const flushInterval = 5 * time.Second
 
 // trafficUpdate is one thing learned during a tick.
