@@ -1075,112 +1075,30 @@ func serviceableFor(c *model.Client, suspended map[uint]bool) bool {
 	return service.ServesNow(c, suspended)
 }
 
-// readDesired builds the target state from the database in two queries.
+// readDesired builds the target state from the database: what the kernel is
+// to hold for every customer, and which files every tunnel is to carry.
+//
+// In order: the credentials a tunnel needs made, the rows a pass decides
+// with, the sessions noted, which tunnels are this server's, then each
+// customer decided on its own (desireClient).
 func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
-	if err := service.EnsureOpenConnectCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
-		r.log.Error("OpenConnect certificates", "error", err)
+	r.ensureCredentials(ctx)
+	rows, err := r.loadPassRows(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if err := service.EnsureStealthSecrets(ctx, r.db); err != nil {
-		r.log.Error("transport secrets", "error", err)
-	}
-	if err := service.EnsureStealthKeys(ctx, r.db, time.Now()); err != nil {
-		r.log.Error("transport keys", "error", err)
-	}
-	if err := service.EnsureStealthCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
-		r.log.Error("anchor certificates", "error", err)
-	}
-	db := r.db.WithContext(ctx)
-
-	// The columns this pass decides with, and no others: read every two
-	// seconds for every customer, the rest of a customer's row (notes,
-	// links, settings) is most of what a full read would scan.
-	var clients []model.Client
-	if err := db.Select(passClientColumns).Find(&clients).Error; err != nil {
-		return nil, fmt.Errorf("load clients: %w", err)
-	}
-
-	var accounts []model.Account
-	if err := db.Find(&accounts).Error; err != nil {
-		return nil, fmt.Errorf("load accounts: %w", err)
-	}
-
-	var interfaces []model.Interface
-	if err := db.Where("enabled = ? AND node_id = ?", true, r.localNodeID).
-		Find(&interfaces).Error; err != nil {
-		return nil, fmt.Errorf("load interfaces: %w", err)
-	}
-
-	// Interfaces switched off on this machine. They keep their database row --
-	// unlike a deleted one, which the panel's delete path takes down directly --
-	// so the reconciler can still see them, and must: dropping an interface from
-	// the desired set only closes its driver, and a close leaves the kernel
-	// device up (so a restart keeps customers connected). Without taking these
-	// down here, a disabled tunnel would keep carrying its customers while the
-	// panel showed it down -- and on a node, which learns of the switch only
-	// through this row, there is no other path that would ever stop it.
-	var disabled []model.Interface
-	if err := db.Where("enabled = ? AND node_id = ?", false, r.localNodeID).
-		Find(&disabled).Error; err != nil {
-		return nil, fmt.Errorf("load disabled interfaces: %w", err)
-	}
-
-	// An interface's other addresses -- a relay in front of this server, a
-	// spare name for when the first is blocked -- are what an L2TP or IKEv2
-	// tunnel has to answer on as well: xl2tpd listens for them and the
-	// IKEv2 certificate names them. Only a profile used to be given them.
-	var hosts []model.Host
-	if err := db.Where("enabled = ?", true).Order("priority, id").Find(&hosts).Error; err != nil {
-		return nil, fmt.Errorf("load hosts: %w", err)
-	}
-	for i := range interfaces {
-		for _, h := range hosts {
-			if h.InterfaceID == interfaces[i].ID {
-				interfaces[i].Hosts = append(interfaces[i].Hosts, h)
-			}
-		}
-	}
-
-	// A machine past the transfer allowance its host gives it carries nobody,
-	// the same as any node. The interfaces stay up and configured; what stops
-	// is the peers on them, so the month rolling over puts everyone back
-	// without rebuilding a thing.
-	if r.overAllowance(ctx) {
-		interfaces = nil
-	}
+	clients, accounts, interfaces := rows.clients, rows.accounts, rows.interfaces
 
 	// Accounts on another node's tunnel are that node's to program. Kept out of
 	// the desired state here so this kernel is never asked for a peer on an
 	// interface it does not have.
-	local := make(map[uint]bool, len(interfaces))
-	// IKEv2 tunnels whose devices sign in by certificate: a device on one
-	// with none yet sets the certificate worker going at once.
-	byCert := map[uint]bool{}
-	for _, iface := range interfaces {
-		local[iface.ID] = true
-		if iface.Protocol == model.ProtocolIKEv2 && iface.IKEv2.V.ByCertificate() {
-			byCert[iface.ID] = true
-		}
-	}
-	//
+	local, byCert := localTunnels(interfaces)
+
 	// They are still counted: the connections limit is the customer's, and
 	// a device on another node is one of their connections. So every
 	// account is grouped by customer for the limit, and only the local ones
 	// go on to the desired set.
-	clientNames := make(map[uint]string, len(clients))
-	for _, c := range clients {
-		clientNames[c.ID] = c.Name
-	}
-	r.conc.remember(accounts, clientNames, r.localNodeID, time.Now().UTC())
-	// What the tunnels saw since the last tick: a device that came on, one
-	// that went quiet. One line each, the way a session log reads.
-	for _, ev := range r.conc.Events() {
-		switch ev.Kind {
-		case "connected":
-			r.log.Info("device connected", "device", ev.Name, "from", ev.Addr)
-		case "disconnected":
-			r.log.Info("device disconnected", "device", ev.Name, "last", ev.Addr, "after", ev.For.Round(time.Second).String())
-		}
-	}
+	r.noteSessions(clients, accounts)
 	allByClient := make(map[uint][]model.Account, len(clients))
 	for _, a := range accounts {
 		allByClient[a.ClientID] = append(allByClient[a.ClientID], a)
@@ -1197,6 +1115,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	for _, a := range accounts {
 		byClient[a.ClientID] = append(byClient[a.ClientID], a)
 	}
+
 	now := time.Now().UTC()
 	// On a node, the panel that owns a customer decides for them, seeing
 	// every server at once; this server decides only for its own customers,
@@ -1221,7 +1140,7 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 		clients:     len(clients),
 		accounts:    len(accounts),
 		interfaces:  interfaces,
-		disabled:    disabled,
+		disabled:    rows.disabled,
 		devices:     shapedDevices(interfaces),
 	}
 
@@ -1235,89 +1154,215 @@ func (r *Reconciler) readDesired(ctx context.Context) (*desired, error) {
 	r.near = near
 	r.nearMu.Unlock()
 
-	for _, c := range clients {
-		accs := byClient[c.ID]
+	for i := range clients {
+		c := &clients[i]
 		// A customer with every device on other nodes still has a limit to
 		// be held to, so the limit runs before the local check below.
-		if serviceableFor(&c, suspended) && (c.OriginID == 0 || panelSilent) {
-			r.holdOver(ctx, &c, allByClient[c.ID], now)
+		if serviceableFor(c, suspended) && (c.OriginID == 0 || panelSilent) {
+			r.holdOver(ctx, c, allByClient[c.ID], now)
 		}
-		if len(accs) == 0 {
-			continue
-		}
-
-		files := make([]enforce.File, 0, len(accs))
-		for _, a := range accs {
-			if ip, err := netip.ParseAddr(a.IP); err == nil {
-				files = append(files, enforce.File{Account: a.ID, Addr: ip})
-			}
-		}
-
-		serviceable := serviceableFor(&c, suspended)
-		if !serviceable && c.Status.Serviceable() {
-			cutoffDebug.Debug("kept off: an operator above is paused", "client", c.ID, "name", c.Name,
-				"owner", c.OwnerID, "admin", c.AdminID)
-		}
-
-		// Every client gets a rule, including the cut-off ones. A rule that
-		// drops is how the kernel refuses their traffic in the instant between
-		// the cut-off and the driver removing their peer.
-		d.rules = append(d.rules, enforce.Rule{
-			Key:            enforce.Key(c.ID),
-			Files:          files,
-			QuotaBytes:     c.QuotaBytes,
-			UsedBytes:      c.UsedBytes,
-			RateBitsPerSec: c.RateBitsPerSec,
-			Blocked:        !serviceable,
-		})
-
-		// A cut-off client is dropped outright, so a class for them would only
-		// shape traffic that never leaves.
-		if serviceable && c.RateBitsPerSec > 0 {
-			d.shaping = append(d.shaping, shaper.Client{
-				Key:            enforce.Key(c.ID),
-				RateBitsPerSec: c.RateBitsPerSec,
-			})
-		}
-
-		// Accounts of a non-serviceable client are simply left out of the
-		// desired set, and Sync removes whatever it finds that is not listed.
-		if !serviceable {
-			continue
-		}
-		// A device held off -- by this server or by the panel that owns the
-		// customer -- is left out of the desired set: a WireGuard peer is
-		// removed by Sync, an OpenVPN session was ended when the hold began.
-		for _, a := range accs {
-			if !a.Enabled || r.conc.heldOff(a.ID, now) {
-				continue
-			}
-			ip, err := netip.ParseAddr(a.IP)
-			if err != nil {
-				r.log.Warn("account has an unparseable address",
-					"account", a.ID, "ip", a.IP)
-				continue
-			}
-			if byCert[a.InterfaceID] && a.CertPEM == "" {
-				d.certsWanted = true
-			}
-			if c.RateBitsPerSec > 0 {
-				d.sessionRate[a.ID] = shaper.Client{Key: enforce.Key(c.ID), RateBitsPerSec: c.RateBitsPerSec}
-			}
-			d.perIface[a.InterfaceID] = append(d.perIface[a.InterfaceID], backend.DesiredAccount{
-				ID:            a.ID,
-				DeviceName:    a.DeviceName,
-				IP:            ip,
-				PublicKey:     a.PublicKey,
-				PresharedKey:  a.PresharedKey,
-				StealthSecret: a.StealthSecret,
-				Username:      a.Username,
-				Secret:        a.Secret,
-				Cert:          a.CertPEM,
-			})
-		}
+		r.desireClient(d, c, byClient[c.ID], serviceableFor(c, suspended), byCert, now)
 	}
 	return d, nil
+}
+
+// ensureCredentials makes what a tunnel needs before it can carry anyone:
+// OpenConnect certificates, the stealth transports' secrets, keys and
+// certificates. A failure is logged and the pass goes on with what exists.
+func (r *Reconciler) ensureCredentials(ctx context.Context) {
+	if err := service.EnsureOpenConnectCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
+		r.log.Error("OpenConnect certificates", "error", err)
+	}
+	if err := service.EnsureStealthSecrets(ctx, r.db); err != nil {
+		r.log.Error("transport secrets", "error", err)
+	}
+	if err := service.EnsureStealthKeys(ctx, r.db, time.Now()); err != nil {
+		r.log.Error("transport keys", "error", err)
+	}
+	if err := service.EnsureStealthCerts(ctx, r.db, r.localNodeID, r.panelCert, time.Now()); err != nil {
+		r.log.Error("anchor certificates", "error", err)
+	}
+}
+
+// passRows is what a pass reads from the database.
+type passRows struct {
+	clients    []model.Client
+	accounts   []model.Account
+	interfaces []model.Interface // this server's, switched on
+	disabled   []model.Interface // this server's, switched off
+}
+
+// loadPassRows reads what a pass decides with.
+func (r *Reconciler) loadPassRows(ctx context.Context) (passRows, error) {
+	var rows passRows
+	db := r.db.WithContext(ctx)
+
+	// The columns this pass decides with, and no others: read every two
+	// seconds for every customer, the rest of a customer's row (notes,
+	// links, settings) is most of what a full read would scan.
+	if err := db.Select(passClientColumns).Find(&rows.clients).Error; err != nil {
+		return rows, fmt.Errorf("load clients: %w", err)
+	}
+	if err := db.Find(&rows.accounts).Error; err != nil {
+		return rows, fmt.Errorf("load accounts: %w", err)
+	}
+	if err := db.Where("enabled = ? AND node_id = ?", true, r.localNodeID).
+		Find(&rows.interfaces).Error; err != nil {
+		return rows, fmt.Errorf("load interfaces: %w", err)
+	}
+
+	// Interfaces switched off on this machine. They keep their database row --
+	// unlike a deleted one, which the panel's delete path takes down directly --
+	// so the reconciler can still see them, and must: dropping an interface from
+	// the desired set only closes its driver, and a close leaves the kernel
+	// device up (so a restart keeps customers connected). Without taking these
+	// down here, a disabled tunnel would keep carrying its customers while the
+	// panel showed it down -- and on a node, which learns of the switch only
+	// through this row, there is no other path that would ever stop it.
+	if err := db.Where("enabled = ? AND node_id = ?", false, r.localNodeID).
+		Find(&rows.disabled).Error; err != nil {
+		return rows, fmt.Errorf("load disabled interfaces: %w", err)
+	}
+
+	// An interface's other addresses -- a relay in front of this server, a
+	// spare name for when the first is blocked -- are what an L2TP or IKEv2
+	// tunnel has to answer on as well: xl2tpd listens for them and the
+	// IKEv2 certificate names them. Only a profile used to be given them.
+	var hosts []model.Host
+	if err := db.Where("enabled = ?", true).Order("priority, id").Find(&hosts).Error; err != nil {
+		return rows, fmt.Errorf("load hosts: %w", err)
+	}
+	for i := range rows.interfaces {
+		for _, h := range hosts {
+			if h.InterfaceID == rows.interfaces[i].ID {
+				rows.interfaces[i].Hosts = append(rows.interfaces[i].Hosts, h)
+			}
+		}
+	}
+
+	// A machine past the transfer allowance its host gives it carries nobody,
+	// the same as any node. The interfaces stay up and configured; what stops
+	// is the peers on them, so the month rolling over puts everyone back
+	// without rebuilding a thing.
+	if r.overAllowance(ctx) {
+		rows.interfaces = nil
+	}
+	return rows, nil
+}
+
+// localTunnels is which tunnels are this server's to program, and which of
+// them are IKEv2 signing devices in by certificate: a device on one with
+// none yet sets the certificate worker going at once.
+func localTunnels(interfaces []model.Interface) (local, byCert map[uint]bool) {
+	local = make(map[uint]bool, len(interfaces))
+	byCert = map[uint]bool{}
+	for _, iface := range interfaces {
+		local[iface.ID] = true
+		if iface.Protocol == model.ProtocolIKEv2 && iface.IKEv2.V.ByCertificate() {
+			byCert[iface.ID] = true
+		}
+	}
+	return local, byCert
+}
+
+// noteSessions tells the connection limit every file there is, local or
+// not, and logs what the tunnels saw since the last tick: a device that
+// came on, one that went quiet, one line each, the way a session log reads.
+func (r *Reconciler) noteSessions(clients []model.Client, accounts []model.Account) {
+	clientNames := make(map[uint]string, len(clients))
+	for _, c := range clients {
+		clientNames[c.ID] = c.Name
+	}
+	r.conc.remember(accounts, clientNames, r.localNodeID, time.Now().UTC())
+	for _, ev := range r.conc.Events() {
+		switch ev.Kind {
+		case "connected":
+			r.log.Info("device connected", "device", ev.Name, "from", ev.Addr)
+		case "disconnected":
+			r.log.Info("device disconnected", "device", ev.Name, "last", ev.Addr, "after", ev.For.Round(time.Second).String())
+		}
+	}
+}
+
+// desireClient adds one customer to the target state: their kernel rule,
+// their shaping, and the files on this server's tunnels they are served
+// on. accs is their files on this server; serviceable, whether they are
+// served at all.
+func (r *Reconciler) desireClient(d *desired, c *model.Client, accs []model.Account, serviceable bool,
+	byCert map[uint]bool, now time.Time) {
+	if len(accs) == 0 {
+		return
+	}
+
+	files := make([]enforce.File, 0, len(accs))
+	for _, a := range accs {
+		if ip, err := netip.ParseAddr(a.IP); err == nil {
+			files = append(files, enforce.File{Account: a.ID, Addr: ip})
+		}
+	}
+
+	if !serviceable && c.Status.Serviceable() {
+		cutoffDebug.Debug("kept off: an operator above is paused", "client", c.ID, "name", c.Name,
+			"owner", c.OwnerID, "admin", c.AdminID)
+	}
+
+	// Every client gets a rule, including the cut-off ones. A rule that
+	// drops is how the kernel refuses their traffic in the instant between
+	// the cut-off and the driver removing their peer.
+	d.rules = append(d.rules, enforce.Rule{
+		Key:            enforce.Key(c.ID),
+		Files:          files,
+		QuotaBytes:     c.QuotaBytes,
+		UsedBytes:      c.UsedBytes,
+		RateBitsPerSec: c.RateBitsPerSec,
+		Blocked:        !serviceable,
+	})
+
+	// A cut-off client is dropped outright, so a class for them would only
+	// shape traffic that never leaves.
+	if serviceable && c.RateBitsPerSec > 0 {
+		d.shaping = append(d.shaping, shaper.Client{
+			Key:            enforce.Key(c.ID),
+			RateBitsPerSec: c.RateBitsPerSec,
+		})
+	}
+
+	// Accounts of a non-serviceable client are simply left out of the
+	// desired set, and Sync removes whatever it finds that is not listed.
+	if !serviceable {
+		return
+	}
+	// A device held off -- by this server or by the panel that owns the
+	// customer -- is left out of the desired set: a WireGuard peer is
+	// removed by Sync, an OpenVPN session was ended when the hold began.
+	for _, a := range accs {
+		if !a.Enabled || r.conc.heldOff(a.ID, now) {
+			continue
+		}
+		ip, err := netip.ParseAddr(a.IP)
+		if err != nil {
+			r.log.Warn("account has an unparseable address",
+				"account", a.ID, "ip", a.IP)
+			continue
+		}
+		if byCert[a.InterfaceID] && a.CertPEM == "" {
+			d.certsWanted = true
+		}
+		if c.RateBitsPerSec > 0 {
+			d.sessionRate[a.ID] = shaper.Client{Key: enforce.Key(c.ID), RateBitsPerSec: c.RateBitsPerSec}
+		}
+		d.perIface[a.InterfaceID] = append(d.perIface[a.InterfaceID], backend.DesiredAccount{
+			ID:            a.ID,
+			DeviceName:    a.DeviceName,
+			IP:            ip,
+			PublicKey:     a.PublicKey,
+			PresharedKey:  a.PresharedKey,
+			StealthSecret: a.StealthSecret,
+			Username:      a.Username,
+			Secret:        a.Secret,
+			Cert:          a.CertPEM,
+		})
+	}
 }
 
 // shapedDevices lists the devices a customer's traffic leaves by.
