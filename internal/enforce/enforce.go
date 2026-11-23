@@ -82,6 +82,23 @@ type Rule struct {
 // Unlimited reports whether the rule imposes no volume limit.
 func (r Rule) Unlimited() bool { return r.QuotaBytes == 0 }
 
+// tallyOnly is the kernel quota an unlimited customer is given: a limit no
+// one reaches, kept for its running total alone. That total is what a
+// panel killed mid-flight recovers from at start (the reconciler's
+// recoverKernelUsage) -- the bytes it had drained but not yet written. An
+// unlimited customer had none, and lost up to five seconds of usage
+// (measured on the test server: 13.4 MB of a 100 MB download at 5 MB/s).
+const tallyOnly uint64 = 1 << 62
+
+// kernelQuota is the limit of the customer's quota in the kernel: their
+// allowance, or tallyOnly when they have none.
+func (r Rule) kernelQuota() uint64 {
+	if r.Unlimited() {
+		return tallyOnly
+	}
+	return r.QuotaBytes
+}
+
 // Usage is the byte count observed for one rule.
 type Usage struct {
 	Key string

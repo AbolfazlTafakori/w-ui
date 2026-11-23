@@ -2,6 +2,7 @@ package enforce
 
 import (
 	"errors"
+	"fmt"
 	"net/netip"
 	"strings"
 	"testing"
@@ -65,11 +66,18 @@ func TestLimitedClientDropsThenCounts(t *testing.T) {
 	}
 }
 
-func TestUnlimitedClientHasNoQuotaObject(t *testing.T) {
-	got := build(t, Rule{Key: "c1", Files: files("10.66.0.2"), QuotaBytes: 0})
+// An unlimited customer has a quota too, as a tally only: a limit no one
+// reaches, seeded from their usage, so a panel killed mid-flight recovers
+// what it had drained but not written. It never drops a byte.
+func TestUnlimitedClientHasATallyThatNeverDrops(t *testing.T) {
+	got := build(t, Rule{Key: "c1", Files: files("10.66.0.2"), QuotaBytes: 0, UsedBytes: 5000})
 
-	if strings.Contains(got, "quota q_c1") {
-		t.Error("an unlimited client should not get a quota object")
+	want := fmt.Sprintf("quota q_c1 { over %d bytes used 5000 bytes }", tallyOnly)
+	if !strings.Contains(got, want) {
+		t.Errorf("an unlimited client's tally is missing or wrong; want %q in:\n%s", want, got)
+	}
+	if tallyOnly < 1<<60 {
+		t.Fatalf("tallyOnly = %d is a limit someone could reach", tallyOnly)
 	}
 	if !strings.Contains(got, `counter nd_c1`) {
 		t.Error("an unlimited client should still be counted for reporting")
@@ -458,5 +466,18 @@ func TestParseCounterRoundTrips(t *testing.T) {
 			t.Errorf("parseCounter(%q) = %q %d %v %v, want %q %d %v %v",
 				c.name, key, account, down, ok, c.key, c.account, c.down, c.ok)
 		}
+	}
+}
+
+// A tally-only quota is written again when it falls behind the stored usage
+// by the fixed margin alone: a share of a limit no one reaches would let it
+// fall behind for good, and recover nothing after a crash.
+func TestATallyFallenBehindIsWrittenAgain(t *testing.T) {
+	stored := uint64(10 << 30)
+	if !needsReseed(tallyOnly, stored, stored, stored-(300<<20), true) {
+		t.Error("a tally 300 MiB behind the stored usage was left behind")
+	}
+	if needsReseed(tallyOnly, stored, stored, stored-(100<<20), true) {
+		t.Error("a tally 100 MiB behind, inside the margin, was written again")
 	}
 }

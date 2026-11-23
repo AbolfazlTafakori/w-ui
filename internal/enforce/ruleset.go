@@ -153,11 +153,13 @@ func BuildRulesetWithCaps(rules []Rule, caps Caps) (string, error) {
 			fmt.Fprintf(&b, "\tcounter %s { }\n", upCounter(r.Key, f.Account))
 		}
 
-		if caps.Quota && !r.Unlimited() {
+		if caps.Quota {
 			// Seeding `used` is what lets a reboot resume where the customer
-			// left off instead of handing their allowance back.
+			// left off instead of handing their allowance back. An unlimited
+			// customer's is a tally only (tallyOnly).
+			q := r.kernelQuota()
 			fmt.Fprintf(&b, "\tquota %s { over %d bytes used %d bytes }\n",
-				quotaName(r.Key), r.QuotaBytes, min64(r.UsedBytes, r.QuotaBytes))
+				quotaName(r.Key), q, min64(r.UsedBytes, q))
 		}
 	}
 
@@ -303,7 +305,9 @@ func chainRules(r Rule, files []File, caps Caps, side string,
 		// billed as usage. Without kernel quota support the client is still
 		// counted, and the reconciler cuts them off once the stored total
 		// crosses the limit — a tick late instead of a packet late.
-		if caps.Quota && !r.Unlimited() {
+		// An unlimited customer's quota is never over (tallyOnly): the rule
+		// only feeds its tally, and drops nothing.
+		if caps.Quota {
 			out = append(out, fmt.Sprintf("quota name \"%s\" drop", quotaName(r.Key)))
 		}
 		for _, f := range files {

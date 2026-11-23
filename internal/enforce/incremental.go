@@ -68,8 +68,8 @@ func desiredState(rules []Rule, caps Caps) (tableState, error) {
 			used:  r.UsedBytes,
 			seen:  r.UsedBytes,
 		}
-		if caps.Quota && !r.Unlimited() {
-			st.quota = r.QuotaBytes
+		if caps.Quota {
+			st.quota = r.kernelQuota()
 		}
 		out[r.Key] = st
 	}
@@ -97,11 +97,18 @@ func needsReseed(limit, stored, prev, kernel uint64, ok bool) bool {
 		return false
 	}
 	seeded := min64(stored, limit)
+	// The share of the limit a drift may reach. A tally-only quota has no
+	// allowance to take a share of: its limit is a number no one reaches,
+	// and a share of it would let the tally fall behind for good.
+	share := limit
+	if limit == tallyOnly {
+		share = 0
+	}
 	switch {
 	case seeded > kernel:
-		return seeded-kernel > max(driftStoredAheadMin, limit/driftStoredAheadPart)
+		return seeded-kernel > max(driftStoredAheadMin, share/driftStoredAheadPart)
 	case kernel > seeded:
-		return kernel-seeded > max(driftKernelAheadMin, limit/driftKernelAheadPart)
+		return kernel-seeded > max(driftKernelAheadMin, share/driftKernelAheadPart)
 	}
 	return false
 }
