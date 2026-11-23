@@ -1611,7 +1611,7 @@
   "owner.move": "Move",
   "owner.saleNote": "Saving hands the customer to this operator: their users are taken as for a sale.",
   "owner.servers": "servers: {a} added, {r} removed",
-  "owner.tab": "Owner",
+  "owner.tab": "Transfer",
   "owner.takes.one": "takes {n} user from {who}",
   "owner.takes.other": "takes {n} users from {who}",
   "owner.title": "Move to operator",

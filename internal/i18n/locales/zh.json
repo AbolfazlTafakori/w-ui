@@ -1611,7 +1611,7 @@
   "owner.move": "转移",
   "owner.saleNote": "保存后客户将交给该运营者，并像销售一样扣除其用户数。",
   "owner.servers": "服务器：添加 {a}，移除 {r}",
-  "owner.tab": "归属",
+  "owner.tab": "转移",
   "owner.takes.one": "从 {who} 扣除 {n} 个用户",
   "owner.takes.other": "从 {who} 扣除 {n} 个用户",
   "owner.title": "转给运营者",
