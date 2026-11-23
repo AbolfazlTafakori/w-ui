@@ -633,6 +633,10 @@ func (s *Routing) targetExists(ctx context.Context, tag string) (enabled, ok boo
 // Called by the reconciler on every tick. It is a read of the database and the
 // resolver cache and nothing else, so it cannot block on the network however
 // slow a name server is being.
+//
+// In order: what the routing page blocks and sends direct, which tunnels'
+// traffic is this panel's to route, where each exit sends it, the default
+// for what nothing else names, the panel's own traffic, and the rules.
 func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	var p routing.Policy
 
@@ -640,7 +644,38 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	if err != nil {
 		return p, err
 	}
+	splitAddrs := s.basicTargets(basic, &p)
 
+	db := s.db.WithContext(ctx)
+	ifaces, err := tunnelNets(db, &p)
+	if err != nil {
+		return p, err
+	}
+	byTag, outbounds, err := s.exitTargets(db, &p)
+	if err != nil {
+		return p, err
+	}
+	s.defaultExit(basic, byTag, &p)
+	p.NoCounters = !s.tuning.Counters()
+	s.panelTraffic(byTag, outbounds, &p)
+	if err := s.ruleMarks(ctx, basic, byTag, ifaces, splitAddrs, &p); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+// policyTarget is where a tag sends traffic: the mark to set, whether it
+// drops, and whether it is switched on. Outbounds and balancers share the
+// space.
+type policyTarget struct {
+	mark    uint32
+	drop    bool
+	enabled bool
+}
+
+// basicTargets fills what the routing page blocks and sends direct, and
+// gives back the split tunnel's addresses, resolved once here.
+func (s *Routing) basicTargets(basic BasicRouting, p *routing.Policy) []netip.Prefix {
 	// A stored entry that no longer reads -- a country whose list is not
 	// downloaded yet -- is left out and said; the rest of its list stays.
 	// Before, the first such entry emptied the whole list: a block list of
@@ -675,7 +710,7 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 
 	// Split tunnel. In exclude mode the list is pinned direct, exactly like
 	// the Direct lists above; in include mode it is marked for the tunnel
-	// further down, next to the rules. The addresses are resolved once here.
+	// with the rules (ruleMarks).
 	var splitAddrs []netip.Prefix
 	if basic.SplitMode == SplitExclude || basic.SplitMode == SplitInclude {
 		splitAddrs = s.splitPrefixes(basic)
@@ -683,14 +718,17 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 			p.DirectAddrs = append(p.DirectAddrs, splitAddrs...)
 		}
 	}
+	return splitAddrs
+}
 
-	db := s.db.WithContext(ctx)
-
-	// The tunnel subnets. Marking is confined to these, which is what keeps
-	// this panel's routing away from everything else on the machine.
+// tunnelNets fills the tunnel subnets, to which marking is confined -- which
+// keeps this panel's routing away from everything else on the machine --
+// and the ports redirected here. It gives back the tunnels, which the rules
+// are matched against.
+func tunnelNets(db *gorm.DB, p *routing.Policy) ([]model.Interface, error) {
 	var ifaces []model.Interface
 	if err := db.Where("enabled = ?", true).Find(&ifaces).Error; err != nil {
-		return p, fmt.Errorf("service: read interfaces: %w", err)
+		return nil, fmt.Errorf("service: read interfaces: %w", err)
 	}
 	// A port of a tunnel's own is redirected on the server that runs it, and
 	// only there.
@@ -712,23 +750,22 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 			p.PortRedirects = append(p.PortRedirects, tunnelport.Redirects(i)...)
 		}
 	}
+	return ifaces, nil
+}
 
+// exitTargets fills the hops -- every outbound that needs one, and every
+// balancer -- and gives back where each tag sends traffic, with the
+// outbounds in their order.
+func (s *Routing) exitTargets(db *gorm.DB, p *routing.Policy) (map[string]policyTarget, []model.Outbound, error) {
 	var outbounds []model.Outbound
 	if err := db.Order("position, id").Find(&outbounds).Error; err != nil {
-		return p, fmt.Errorf("service: read outbounds: %w", err)
+		return nil, nil, fmt.Errorf("service: read outbounds: %w", err)
 	}
-	// Where a tag sends traffic: the mark to set, whether it drops, and
-	// whether it is switched on. Outbounds and balancers share the space.
-	type target struct {
-		mark    uint32
-		drop    bool
-		enabled bool
-	}
-	byTag := make(map[string]target, len(outbounds))
+	byTag := make(map[string]policyTarget, len(outbounds))
 	byOutbound := make(map[string]model.Outbound, len(outbounds))
 	for _, o := range outbounds {
 		byOutbound[o.Tag] = o
-		byTag[o.Tag] = target{mark: o.Mark, drop: o.Kind == model.OutboundBlock, enabled: o.Enabled}
+		byTag[o.Tag] = policyTarget{mark: o.Mark, drop: o.Kind == model.OutboundBlock, enabled: o.Enabled}
 		if o.Kind.NeedsHop() && o.Mark != 0 {
 			_, table, err := routing.AllocateMark(o.ID)
 			if err != nil {
@@ -746,7 +783,7 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 
 	var balancers []model.Balancer
 	if err := db.Order("id").Find(&balancers).Error; err != nil {
-		return p, fmt.Errorf("service: read balancers: %w", err)
+		return nil, nil, fmt.Errorf("service: read balancers: %w", err)
 	}
 	for _, b := range balancers {
 		if b.Mark == 0 {
@@ -762,13 +799,17 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 			hop.Device, hop.Nexthops = hop.Nexthops[0], nil
 		}
 		p.Hops = append(p.Hops, hop)
-		byTag[b.Tag] = target{mark: b.Mark, enabled: b.Enabled && (hop.Device != "" || len(hop.Nexthops) > 0)}
+		byTag[b.Tag] = policyTarget{mark: b.Mark, enabled: b.Enabled && (hop.Device != "" || len(hop.Nexthops) > 0)}
 	}
+	return byTag, outbounds, nil
+}
 
-	// In include mode only the list is tunnelled, so there is no default exit:
-	// everything the list does not name is dropped, and the list's own mark is
-	// set with the rules below. Otherwise the default is the tunnel in exclude
-	// mode and the operator's chosen outbound the rest of the time.
+// defaultExit fills where traffic nothing else names goes. In include mode
+// only the list is tunnelled, so there is no default exit: everything the
+// list does not name is dropped, and the list's own mark is set with the
+// rules. Otherwise the default is the tunnel in exclude mode and the
+// operator's chosen outbound the rest of the time.
+func (s *Routing) defaultExit(basic BasicRouting, byTag map[string]policyTarget, p *routing.Policy) {
 	if basic.SplitMode == SplitInclude {
 		p.DropUnmatched = true
 	} else {
@@ -787,25 +828,36 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	s.mu.Lock()
 	s.defaultMark = p.DefaultMark
 	s.mu.Unlock()
+}
 
-	p.NoCounters = !s.tuning.Counters()
-
-	// The panel's own traffic. Only a hop with a device can carry it; the
-	// endpoints of every hop stay direct so no tunnel is built through itself.
+// panelTraffic fills the panel's own traffic. Only a hop with a device can
+// carry it; the endpoints of every hop stay direct so no tunnel is built
+// through itself.
+func (s *Routing) panelTraffic(byTag map[string]policyTarget, outbounds []model.Outbound, p *routing.Policy) {
 	p.PanelUID = -1
-	if tag := s.panelOutbound(); tag != "" {
-		if tg, ok := byTag[tag]; ok && tg.enabled && tg.mark != 0 && !tg.drop {
-			p.PanelMark = tg.mark
-			p.PanelUID = os.Getuid()
-			for _, o := range outbounds {
-				p.PanelExclude = append(p.PanelExclude, s.endpointPrefixes(o.Address)...)
-			}
-		}
+	tag := s.panelOutbound()
+	if tag == "" {
+		return
 	}
+	tg, ok := byTag[tag]
+	if !ok || !tg.enabled || tg.mark == 0 || tg.drop {
+		return
+	}
+	p.PanelMark = tg.mark
+	p.PanelUID = os.Getuid()
+	for _, o := range outbounds {
+		p.PanelExclude = append(p.PanelExclude, s.endpointPrefixes(o.Address)...)
+	}
+}
 
+// ruleMarks fills the rules: each switched on, to an exit that is there and
+// on, by that exit's mark. In include mode the list goes to the tunnel
+// ahead of them all.
+func (s *Routing) ruleMarks(ctx context.Context, basic BasicRouting, byTag map[string]policyTarget,
+	ifaces []model.Interface, splitAddrs []netip.Prefix, p *routing.Policy) error {
 	rules, err := s.ListRules(ctx)
 	if err != nil {
-		return p, err
+		return err
 	}
 	for _, r := range rules {
 		if !r.Enabled {
@@ -829,16 +881,16 @@ func (s *Routing) Policy(ctx context.Context) (routing.Policy, error) {
 	// Include mode: the list goes to the tunnel ahead of everything else, so a
 	// customer's own rules cannot divert a destination the operator chose to
 	// allow. Everything the list does not cover falls through to the drop set
-	// above. A tunnel that is gone or off leaves the list to be dropped too,
-	// which is the fail-closed behaviour an allowlist is chosen for.
+	// (defaultExit). A tunnel that is gone or off leaves the list to be
+	// dropped too, which is the fail-closed behaviour an allowlist is chosen
+	// for.
 	if basic.SplitMode == SplitInclude && len(splitAddrs) > 0 {
 		if tg, ok := byTag[s.tunnelTag(basic)]; ok && tg.enabled {
 			mr := routing.MarkRule{Mark: tg.mark, Drop: tg.drop, Addrs: splitAddrs}
 			p.Rules = append([]routing.MarkRule{mr}, p.Rules...)
 		}
 	}
-
-	return p, nil
+	return nil
 }
 
 // SetPanelOutbound tells the policy which outbound carries the panel's own
