@@ -78,16 +78,22 @@ func Open(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 // of waiting its turn.
 //
 //   - WAL: readers and one writer at once.
-//   - synchronous NORMAL trades an fsync per commit for durability only
-//     against power loss, not a crash; traffic samples are re-derivable from
-//     the kernel's counters, and the write rate is worth it.
+//   - synchronous FULL: a commit is on the disk when it returns. Under
+//     NORMAL a power cut took every commit since the last checkpoint --
+//     measured on the test server: a customer's whole 52 MB written over
+//     ten seconds, gone -- and with it the usage written every tick for
+//     customers near their allowance, whose kernel quota is rebuilt from
+//     it after a reboot: what was lost was handed out again. The kernel's
+//     counters do not survive a reboot to make it up. It costs an fsync
+//     per commit, measured there at 1.2 ms (3 ms for a 5,000-row commit),
+//     against a handful of commits a second.
 //   - busy_timeout: a writer waits for the one before it, up to 15 s.
 //   - _txlock=immediate: a transaction takes the write lock as it begins, so
 //     two that read and then write queue instead of one failing with
 //     "database is locked" when it comes to write. A long read that must not
 //     hold writers back (the backup's dump) begins its own, deferred.
 func sqliteDSN(source string) string {
-	params := "_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(15000)&_txlock=immediate"
+	params := "_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(15000)&_txlock=immediate"
 	if strings.Contains(source, "?") {
 		return source + "&" + params
 	}
