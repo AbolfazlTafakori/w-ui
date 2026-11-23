@@ -62,9 +62,6 @@ func (k Key) Public() (Key, error) {
 // String returns the standard base64 encoding used in WireGuard configs.
 func (k Key) String() string { return base64.StdEncoding.EncodeToString(k[:]) }
 
-// IsZero reports whether the key is unset.
-func (k Key) IsZero() bool { return k == Key{} }
-
 // Parse decodes a base64 key.
 func Parse(s string) (Key, error) {
 	raw, err := base64.StdEncoding.DecodeString(s)

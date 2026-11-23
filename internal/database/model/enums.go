@@ -227,10 +227,6 @@ func GrantableMenus() []string {
 // customers' networks, and is handed to nobody the owner did not tick it for.
 func DefaultAdminMenus() []string { return []string{MenuClients, MenuGroups, MenuResellers} }
 
-// ResellerMenus is the pages a reseller can be granted: sharing and their own
-// activity. Their customers and groups are theirs anyway.
-func ResellerMenus() []string { return []string{MenuSharing, MenuActivity} }
-
 // ValidMenu reports whether m is a page that can be granted.
 func ValidMenu(m string) bool {
 	switch m {

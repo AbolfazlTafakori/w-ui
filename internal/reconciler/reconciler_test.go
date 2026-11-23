@@ -140,16 +140,6 @@ func moved(drv *backend.Memory, accounts ...uint) {
 	}
 }
 
-// movedClient is moved for every file of a customer.
-func movedClient(t *testing.T, db *gorm.DB, drv *backend.Memory, client uint) {
-	t.Helper()
-	var ids []uint
-	if err := db.Model(&model.Account{}).Where("client_id = ?", client).Pluck("id", &ids).Error; err != nil {
-		t.Fatal(err)
-	}
-	moved(drv, ids...)
-}
-
 func (f *fakeEnforcer) ruleFor(key string) (enforce.Rule, bool) {
 	for _, r := range f.applied {
 		if r.Key == key {

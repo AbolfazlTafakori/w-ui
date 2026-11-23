@@ -536,9 +536,6 @@ func decodeRow(raw []byte, want int) ([]any, error) {
 	return vals, nil
 }
 
-// IsDump reports whether the first bytes of a file are a dump's.
-func IsDump(head []byte) bool { return bytes.HasPrefix(head, []byte(DumpMagic)) }
-
 // CheckDump reads a whole dump without a database: every table's count and
 // checksum, and that it is complete.
 func CheckDump(r io.Reader) (*DumpSummary, error) {

@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/notify"
 )
@@ -77,17 +75,4 @@ func (r *Reconciler) activate(ctx context.Context, now time.Time) (int64, error)
 			"connected for the first time; their time now runs")
 	}
 	return started, nil
-}
-
-// PendingActivation counts clients whose plan has not started yet, for the
-// clients page to label them rather than showing a blank expiry.
-func PendingActivation(ctx context.Context, db *gorm.DB) (int64, error) {
-	var n int64
-	err := db.WithContext(ctx).Model(&model.Client{}).
-		Where("start_on_first_use = ? AND activated_at IS NULL", true).
-		Count(&n).Error
-	if err != nil {
-		return 0, fmt.Errorf("count pending activations: %w", err)
-	}
-	return n, nil
 }

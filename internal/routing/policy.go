@@ -425,9 +425,6 @@ func writeCounters(b *strings.Builder, p Policy) {
 
 func counterName(mark uint32) string { return fmt.Sprintf("ob_%08x", mark) }
 
-// CounterName is the nftables counter holding an outbound's byte total.
-func CounterName(mark uint32) string { return counterName(mark) }
-
 func writeMarkRule(b *strings.Builder, r MarkRule) error {
 	if r.Empty() {
 		return errors.New("matches nothing")

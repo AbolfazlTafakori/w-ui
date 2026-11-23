@@ -156,9 +156,6 @@ type SseReader struct {
 // NewSseReader starts a reader.
 func NewSseReader() *SseReader { return &SseReader{coding: cSize} }
 
-// Events is how many events have been read.
-func (r *SseReader) Events() int { return r.events }
-
 // Feed takes the next bytes of the body as they came and appends the sealed
 // chunk of every event they complete to out, in order. done is true once the
 // last chunk has been read: the stream is over, and any byte behind it is a

@@ -195,35 +195,6 @@ func ShapeSegments(text string) string {
 	return string(out)
 }
 
-// ShapeCapacity is the most bytes of data one request of this shape carries,
-// for a transport path of pathLen bytes and a who (the token, or "<id>.<n>")
-// of whoLen bytes: what is left of the limit after the rest of the target, as
-// base64 and, for a path, with a slash after every 8 characters at the worst.
-// Never above ShapeDataMax.
-func ShapeCapacity(s Shape, pathLen, whoLen int) int {
-	min3 := func(a, b int) int {
-		if a < b {
-			return a
-		}
-		return b
-	}
-	switch s.Place {
-	case InBody:
-		return min3(s.Limit, ShapeDataMax)
-	case InHeader:
-		return min3(decodedLen(s.Limit), ShapeDataMax)
-	}
-	target := s.Limit - (pathLen + 1 + whoLen + 1)
-	if target < 0 {
-		target = 0
-	}
-	chars := target
-	if s.Place == InPath {
-		chars = target * 8 / 9
-	}
-	return min3(decodedLen(chars), ShapeDataMax)
-}
-
 // ShapeParts is a request as the client writes it, before its common header
 // fields: the request target, the value of the header field up.name (for
 // InHeader), and the body (for InBody).

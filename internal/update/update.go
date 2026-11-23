@@ -65,15 +65,6 @@ type Release struct {
 	signatureURL string
 }
 
-// Available reports the newest release and whether it is newer than current.
-func Available(ctx context.Context, current string) (*Release, bool, error) {
-	rel, err := latest(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	return rel, newer(current, rel.Version), nil
-}
-
 // How long one answer from the release list stands. The overview asks on
 // every visit, and GitHub allows an unsigned caller sixty questions an hour;
 // a server where GitHub is blocked would otherwise wait out the timeout on
@@ -179,15 +170,6 @@ func latest(ctx context.Context) (*Release, error) {
 		return nil, fmt.Errorf("that release has no build for %s", want)
 	}
 	return rel, nil
-}
-
-// Apply downloads the release, checks its signature, and puts it in place,
-// replacing the running binary. It does not restart anything, and it is only
-// for a panel that can write its own binary; Start is the way in that also
-// covers one that cannot.
-func Apply(ctx context.Context, rel *Release) error {
-	_, err := apply(ctx, rel, installDirect, nil)
-	return err
 }
 
 // errNoSignature is a release that carries a build and nothing vouching for it.

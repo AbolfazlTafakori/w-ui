@@ -134,17 +134,6 @@ func (s Suite) records() uint64 {
 // Transcript is the running hash of the handshake messages.
 type Transcript struct{ h hash.Hash }
 
-func NewTranscript(s Suite) *Transcript { return &Transcript{h: s.newHash()} }
-
-func (t *Transcript) Update(message []byte) { t.h.Write(message) }
-
-func (t *Transcript) Hash() []byte {
-	// hash.Hash has no clone in std; keep it simple by summing a copy is not
-	// possible, so callers take the hash at each point they need it and keep
-	// feeding. Sum(nil) does not reset the state.
-	return t.h.Sum(nil)
-}
-
 // expandLabel is HKDF-Expand-Label of RFC 8446 section 7.1 over a secret used
 // as the pseudorandom key.
 func expandLabel(s Suite, secret []byte, name string, context []byte, size int) []byte {

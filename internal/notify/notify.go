@@ -50,14 +50,6 @@ const (
 	KindMemoryHigh   Kind = "memory.high"   // or its memory threshold
 )
 
-// AllKinds is every event, in the order the settings page lists them.
-func AllKinds() []Kind {
-	return []Kind{KindExhausted, KindExpired, KindExpiring, KindSharing,
-		KindLogin, KindPanel, KindBackup,
-		KindOutboundDown, KindOutboundUp, KindNodeDown, KindNodeUp,
-		KindCPUHigh, KindMemoryHigh}
-}
-
 // Thresholds are the numbers behind the events that have one.
 type Thresholds struct {
 	CPU          int // percent
