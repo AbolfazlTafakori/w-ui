@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -141,7 +142,7 @@ func TestAnAdminChangesTheirOwnResellersWithinBounds(t *testing.T) {
 	tokens := 5
 	_, err = p.admins.Update(ctx, mine.ID, operators.AdminInput{TokenLimit: &tokens})
 	refusedOn(t, "an admin giving tokens", err, "tokenLimit")
-	if _, err := p.admins.Update(ctx, theirs.ID, operators.AdminInput{Note: "mine now"}); err == nil {
+	if _, err := p.admins.Update(ctx, theirs.ID, operators.AdminInput{Note: noteOf("mine now")}); err == nil {
 		t.Fatal("an admin changed another admin's reseller")
 	}
 	if got := row(t, p, theirs.ID).Note; got == "mine now" {
@@ -174,7 +175,7 @@ func TestAnOperatorsPagesChangeOnlyWhenSent(t *testing.T) {
 	if pages() != 2 {
 		t.Fatalf("pages %d, want 2", pages())
 	}
-	if _, err := p.admins.Update(ctx, ad.ID, operators.AdminInput{Note: "x"}); err != nil {
+	if _, err := p.admins.Update(ctx, ad.ID, operators.AdminInput{Note: noteOf("x")}); err != nil {
 		t.Fatal(err)
 	}
 	if pages() != 2 {
@@ -195,4 +196,38 @@ func TestAResellersLabelCannotBeEmptied(t *testing.T) {
 	empty := "  "
 	_, err := p.admins.Update(context.Background(), r.ID, operators.AdminInput{GroupName: &empty})
 	refusedOn(t, "an empty label", err, "groupName")
+}
+
+func noteOf(s string) *string { return &s }
+
+// A change that does not send a note leaves it; one that sends "" clears
+// it. Before, the note was a plain string, and a script moving a reseller's
+// users -- sending only that -- wiped the note the owner had written.
+func TestANoteIsLeftUnlessOneIsSent(t *testing.T) {
+	p := newSeatPanel(t)
+	r := p.operator(t, "reza", model.RoleReseller, model.CapacityOpen, 5, nil)
+	ctx := context.Background()
+	if _, err := p.admins.Update(ctx, r.ID, operators.AdminInput{Note: noteOf("pays on the 5th")}); err != nil {
+		t.Fatal(err)
+	}
+	var in operators.AdminInput
+	if err := json.Unmarshal([]byte(`{"clientLimit": 7}`), &in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.admins.Update(ctx, r.ID, in); err != nil {
+		t.Fatal(err)
+	}
+	if got := row(t, p, r.ID).Note; got != "pays on the 5th" {
+		t.Fatalf("a change without a note left it as %q", got)
+	}
+	var clear operators.AdminInput
+	if err := json.Unmarshal([]byte(`{"note": ""}`), &clear); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.admins.Update(ctx, r.ID, clear); err != nil {
+		t.Fatal(err)
+	}
+	if got := row(t, p, r.ID).Note; got != "" {
+		t.Fatalf("a note sent empty left %q", got)
+	}
 }

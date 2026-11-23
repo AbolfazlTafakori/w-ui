@@ -57,7 +57,10 @@ func NewAdmins(db *gorm.DB, log *slog.Logger) *Admins {
 type AdminInput struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Note     string `json:"note"`
+	// Note is nil to leave the note as it is, "" to clear it. A change
+	// that does not send one -- a script moving a reseller's users -- no
+	// longer wipes it.
+	Note *string `json:"note"`
 
 	Role model.AdminRole `json:"role"`
 
@@ -168,7 +171,7 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 	admin := model.Admin{
 		Username:      username,
 		PasswordHash:  string(hash),
-		Note:          strings.TrimSpace(in.Note),
+		Note:          strings.TrimSpace(deref(in.Note)),
 		Role:          in.Role,
 		ParentAdminID: parentAdmin,
 		Locale:        "en",
@@ -462,8 +465,8 @@ func (s *Admins) identityChange(ctx context.Context, admin model.Admin, in Admin
 		}
 		fields["username"] = username
 	}
-	if in.Note != "" || strings.TrimSpace(in.Note) != admin.Note {
-		fields["note"] = strings.TrimSpace(in.Note)
+	if in.Note != nil && strings.TrimSpace(*in.Note) != admin.Note {
+		fields["note"] = strings.TrimSpace(*in.Note)
 	}
 
 	role := admin.Role
@@ -1050,4 +1053,12 @@ func (s *Admins) ResetUsage(ctx context.Context, id uint) error {
 	}
 	s.log.Info("operator allowance reset", "admin", id)
 	return nil
+}
+
+// deref is a string field's value, "" when it was not sent.
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

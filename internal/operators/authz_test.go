@@ -115,7 +115,7 @@ func TestAnAdminManagesOnlyTheirOwnResellers(t *testing.T) {
 		if _, err := s.Get(asAli, id); !errors.Is(err, fault.ErrNotFound) {
 			t.Errorf("ali read operator %d: %v", id, err)
 		}
-		if _, err := s.Update(asAli, id, AdminInput{Note: "nope"}); !errors.Is(err, fault.ErrNotFound) {
+		if _, err := s.Update(asAli, id, AdminInput{Note: strp("nope")}); !errors.Is(err, fault.ErrNotFound) {
 			t.Errorf("ali changed operator %d: %v", id, err)
 		}
 		if err := s.Delete(asAli, id, DeleteKeepClients, nil); !errors.Is(err, fault.ErrNotFound) {
@@ -124,7 +124,7 @@ func TestAnAdminManagesOnlyTheirOwnResellers(t *testing.T) {
 	}
 
 	// ali may change their own reseller, but not past their allowance.
-	if _, err := s.Update(asAli, r1.ID, AdminInput{Note: "fine"}); err != nil {
+	if _, err := s.Update(asAli, r1.ID, AdminInput{Note: strp("fine")}); err != nil {
 		t.Errorf("ali could not change their own reseller: %v", err)
 	}
 	if _, err := s.Update(asAli, r1.ID, AdminInput{QuotaBytes: &tooMuch}); !errors.Is(err, fault.ErrInvalid) {
@@ -217,3 +217,5 @@ func TestAResellerCanBeGrantedSharingAlone(t *testing.T) {
 		t.Fatal("unticking sharing left it granted")
 	}
 }
+
+func strp(s string) *string { return &s }
