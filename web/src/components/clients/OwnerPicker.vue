@@ -102,8 +102,9 @@ const receiver = computed(() => options.value.find((o) => o.value === to.value)?
         <span v-if="previewError" class="aalert-desc">{{ previewError }}</span>
         <span v-else-if="preview" class="aalert-desc">
           {{ tn('owner.willMove', preview.moved) }}
-          <template v-if="preview.units"> · {{ t('owner.takes', { n: preview.units, who: receiver }) }}</template>
+          <template v-if="preview.units"> · {{ tn('owner.takes', preview.units).replace('{who}', receiver) }}</template>
           <template v-if="preview.carriedBytes"> · {{ t('owner.carries', { b: bytes(preview.carriedBytes, store.locale) }) }}</template>
+          <template v-if="preview.serversAdded || preview.serversRemoved"> · {{ t('owner.servers', { a: preview.serversAdded, r: preview.serversRemoved }) }}</template>
         </span>
         <span v-else class="aalert-desc">{{ t('owner.saleNote') }}</span>
       </div>
