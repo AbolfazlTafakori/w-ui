@@ -4,7 +4,13 @@
 // how to reload; this keeps the rules.
 import { computed, ref } from 'vue'
 import { api } from '../api.js'
-import { t, tn, notify } from '../store.js'
+import { t, tn, notify, store } from '../store.js'
+
+// Whether the one signed in may hand customers to another operator.
+export function handsOn() {
+  const me = store.admin
+  return !!me && (!!me.managesPanel || me.role === 'admin')
+}
 
 // The page's two menus: one for the page, one for a selection. Same items,
 // same order, same dividers.
@@ -15,6 +21,9 @@ export function moreItems(selectedCount) {
         { key: 'detach', label: t('client.menu.detach'), icon: 'UsergroupDeleteOutlined', danger: true },
         { key: 'group', label: t('client.addToGroup'), icon: 'TagsOutlined' },
         { key: 'ungroup', label: t('client.ungroup'), icon: 'UngroupOutlined', danger: true },
+        // Handing customers on is the owner's and an admin's; a reseller
+        // has nobody to hand them to.
+        ...(handsOn() ? [{ key: 'transfer', label: t('owner.title'), icon: 'SwapOutlined' }] : []),
         { divider: true },
         { key: 'enable', label: t('action.enable'), icon: 'CheckCircleOutlined' },
         { key: 'disable', label: t('action.disable'), icon: 'StopOutlined', danger: true },
@@ -268,6 +277,8 @@ export function useClientActions({ page, stats, selected, busy, load, loadGroups
         return rotateSelected()
       case 'subLinks':
         return open.subLinks()
+      case 'transfer':
+        return open.transfer()
       case 'import':
         return open.importer()
       case 'batch':

@@ -17,6 +17,8 @@ import MultiSelect from './MultiSelect.vue'
 import HelpTip from './HelpTip.vue'
 import { copyText } from '../lib/clipboard.js'
 import { unitsFor } from '../lib/capacity.js'
+import { handsOn } from '../lib/clients/actions.js'
+import OwnerPicker from './clients/OwnerPicker.vue'
 
 const props = defineProps({
   interfaces: { type: Array, required: true },
@@ -27,6 +29,13 @@ const emit = defineEmits(['close', 'submit'])
 
 const editing = computed(() => !!props.client)
 const tab = ref('basics')
+
+// Whose customer this is, on a tab of its own for the owner and an admin:
+// the operator they are now (or, being made, the one making them), and the
+// one to hand them to on save -- in the same change, all or nothing.
+const canHand = handsOn()
+const ownerNow = props.client ? Number(props.client.ownerId || 0) : (store.admin?.managesPanel ? 0 : Number(store.admin?.id || 0))
+const handTo = ref({ to: ownerNow, carryUsage: false })
 
 // Their email is a random ten-character handle with a button to draw another;
 // a customer's name here is free text, and the same button fills one in for
@@ -388,6 +397,7 @@ async function submit() {
       ...(editing.value ? { status: form.value.enabled ? 'active' : 'disabled' } : { enabled: form.value.enabled }),
       ...(hasLogins.value && openvpnChanges().length ? { openvpnUsers: openvpnChanges() } : {}),
       deviceNames: form.value.deviceNames.map((d) => d.trim()).filter(Boolean),
+      ...(canHand && handTo.value.to !== ownerNow ? { handTo: { ...handTo.value } } : {}),
       ...(form.value.subId.trim() && form.value.subId.trim() !== (props.client?.subId || '') ? { subId: form.value.subId.trim() } : {}),
     })
   } finally {
@@ -409,6 +419,7 @@ async function submit() {
           <button type="button" class="atab" :class="{ active: tab === 'basics' }" @click="tab = 'basics'"><span>{{ t('client.tabBasics') }}</span></button>
           <button type="button" class="atab" :class="{ active: tab === 'credentials' }" @click="tab = 'credentials'"><span>{{ t('client.tabCredentials') }}</span></button>
           <button type="button" class="atab" :class="{ active: tab === 'links' }" @click="tab = 'links'"><span>{{ t('client.tabLinks') }}</span></button>
+          <button v-if="canHand" type="button" class="atab" :class="{ active: tab === 'owner' }" @click="tab = 'owner'"><span>{{ t('owner.tab') }}</span></button>
         </div></div>
 
         <form id="client-form" class="cf-form" @submit.prevent="submit">
@@ -599,6 +610,10 @@ async function submit() {
           </div>
 
           <!-- ══ Links ══ -->
+          <div v-if="canHand" v-show="tab === 'owner'">
+            <OwnerPicker v-model="handTo" :ids="client ? [client.id] : []" :current="ownerNow" />
+          </div>
+
           <div v-show="tab === 'links'">
             <p class="tab-lead">{{ t('client.linksLead') }}</p>
             <div v-if="!editing" class="aalert info"><AntIcon name="InfoCircleOutlined" /><span>{{ t('client.linksAfterCreate') }}</span></div>

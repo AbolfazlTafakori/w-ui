@@ -22,6 +22,7 @@ const REASON = {
   release: 'cap.reason.release', ended: 'cap.reason.ended', revived: 'cap.reason.revived', charge: 'cap.reason.charge',
   debit: 'cap.reason.debit', handdown: 'cap.reason.handdown', handback: 'cap.reason.handback', mode: 'cap.reason.mode',
   issue: 'cap.reason.issue', migrate: 'cap.reason.migrate', rekey: 'cap.reason.rekey',
+  transferin: 'cap.reason.transferin', transferout: 'cap.reason.transferout',
 }
 const rows = ref([])
 const kind = ref('')

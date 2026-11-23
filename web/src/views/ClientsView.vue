@@ -16,6 +16,7 @@ import ClientsTable from '../components/clients/ClientsTable.vue'
 import ClientCards from '../components/clients/ClientCards.vue'
 import Pager from '../components/Pager.vue'
 import BulkDialog from '../components/clients/BulkDialog.vue'
+import TransferDialog from '../components/clients/TransferDialog.vue'
 import AccountCard from '../components/clients/AccountCard.vue'
 import { filterChips as chipsFor, filtersFromLink, listQuery, withoutChip } from '../lib/clients/filters.js'
 import { useClientActions } from '../lib/clients/actions.js'
@@ -265,8 +266,12 @@ const { ids, pending, setEnabled, ask, runConfirmed, rotateKeysFor, resetOne, re
       importer: () => (importOpen.value = true),
       batch: () => (bulkOpen.value = true),
       extend: (kind) => (extendFor.value = { kind }),
+      transfer: () => (transferOpen.value = true),
     },
   })
+
+// Handing the selection to another operator.
+const transferOpen = ref(false)
 function dialogDone() {
   clearSelection()
   Promise.all([load(), loadGroups()])
@@ -454,6 +459,8 @@ async function submitForm(input) {
 
   <BulkDialog v-if="dialog" :kind="dialog.kind" :ids="ids()" :interfaces="interfaces" :group-names="groupNames"
     @close="dialog = null" @done="dialogDone" />
+
+  <TransferDialog v-if="transferOpen" :ids="ids()" @close="transferOpen = false" @done="dialogDone" />
 
   <ImportDialog v-if="importOpen" :interfaces="interfaces" @close="importOpen = false" @imported="load()" />
   <SubLinksDialog v-if="subLinks" :ids="subLinks.ids" :names="subLinks.names" @close="subLinks = null" />
