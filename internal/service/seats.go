@@ -89,11 +89,19 @@ var ErrBarred = errors.New("paused")
 
 func errNoUsers(a *model.CapacityAccount, need int64) error {
 	if a.Mode == model.CapacityConsumable {
-		return fmt.Errorf("%w: %w: this needs %d users and you have %d left; ask for more to be added",
-			ErrInvalid, ErrNoUsers, need, max(capacity.Free(a), 0))
+		return fmt.Errorf("%w: %w: this needs %s and you have %d left; ask for more to be added",
+			ErrInvalid, ErrNoUsers, usersWord(need), max(capacity.Free(a), 0))
 	}
-	return fmt.Errorf("%w: %w: this needs %d users at once and %d of your %d are free; remove or let a customer end, or ask for more",
-		ErrInvalid, ErrNoUsers, need, max(capacity.Free(a), 0), a.Granted)
+	return fmt.Errorf("%w: %w: this needs %s at once and %d of your %d are free; remove or let a customer end, or ask for more",
+		ErrInvalid, ErrNoUsers, usersWord(need), max(capacity.Free(a), 0), a.Granted)
+}
+
+// usersWord is a count of users as a sentence says it: "1 user", "2 users".
+func usersWord(n int64) string {
+	if n == 1 {
+		return "1 user"
+	}
+	return fmt.Sprintf("%d users", n)
 }
 
 // seatsView is the service over one transaction: the same methods, every

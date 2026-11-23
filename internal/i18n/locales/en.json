@@ -193,7 +193,7 @@
   "cap.empty": "Nothing has moved yet.",
   "cap.err.consumable": "This needs {need} units and you have {left} left. Ask whoever is above you for more.",
   "cap.err.noTokens": "You have no API tokens.",
-  "cap.err.open": "This needs {need} users at once and {free} of your {total} are free. Remove a customer or let one end, or ask for more.",
+  "cap.err.open": "This needs {need} at once, and {free} of your {total} users are free. Remove a customer or let one end, or ask for more.",
   "cap.err.resellerTokens": "A reseller's API tokens are issued by their admin.",
   "cap.err.tokens": "You have no tokens left to issue. Ask the owner for more.",
   "cap.for": "For",
