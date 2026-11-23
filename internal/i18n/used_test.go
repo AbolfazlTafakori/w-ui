@@ -51,7 +51,7 @@ func TestEveryLabelThePagesUseExists(t *testing.T) {
 		t.Fatalf("only %d labels found in %s; the pattern no longer matches how the pages ask", len(used), src)
 	}
 
-	for _, locale := range []string{"en", "fa"} {
+	for _, locale := range []string{"en", "fa", "ru", "tr", "zh"} {
 		raw, err := os.ReadFile(filepath.Join("locales", locale+".json"))
 		if err != nil {
 			t.Fatal(err)
