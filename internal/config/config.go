@@ -139,12 +139,15 @@ func Load() (Config, error) {
 		}
 		c.CollectInterval = d
 	}
+	// WUI_DEBUG is two things. A list of areas (limit, cutoff, ...) turns
+	// on their debug lines, which internal/logger reads for itself; a true
+	// or false is its older meaning, the ORM's own log, kept as it was. A
+	// list is not refused here: refusing it stopped the panel from starting
+	// with the very setting its documentation gives.
 	if v := os.Getenv("WUI_DEBUG"); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return c, fmt.Errorf("config: WUI_DEBUG %q: %w", v, err)
+		if b, err := strconv.ParseBool(v); err == nil {
+			c.Debug = b
 		}
-		c.Debug = b
 	}
 
 	if c.DBDriver == DriverSQLite && c.DBSource == "" {

@@ -22,7 +22,7 @@ Everything is an environment variable; there is no config file to keep in sync. 
 | `WUI_DEFAULT_LOCALE` | `en` | `en` or `fa`. |
 | `WUI_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `WUI_LOG_FORMAT` | `text` | `text` or `json`. |
-| `WUI_DEBUG` | `false` | Verbose diagnostics. |
+| `WUI_DEBUG` | `false` | Set to `true` instead of a list of areas: the database layer logs every SQL statement with its values, keys and tokens included. For development only, never on a server with real customers. |
 
 ## Precedence
 
