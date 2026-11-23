@@ -93,6 +93,12 @@ type AdminInput struct {
 	// whose menu is fixed, and the owner, who reaches everything.
 	MenuIDs []string `json:"menuIds"`
 
+	// An admin's reach, the owner's to widen: every customer on the panel,
+	// and every tunnel. Nil leaves each; ignored for any other role. The
+	// admin form has always sent them, and they were refused as unknown.
+	CanViewAllClients    *bool `json:"canViewAllClients"`
+	CanViewAllInterfaces *bool `json:"canViewAllInterfaces"`
+
 	// UserMode is how the operator's users are counted, the owner's to set:
 	// "open" (seats held at once, given back when a customer ends) or
 	// "consumable" (units spent on each customer made or extended, never
@@ -111,6 +117,17 @@ type AdminInput struct {
 	SaleMaxDays  *int    `json:"saleMaxDays"`
 	SaleMaxBytes *uint64 `json:"saleMaxBytes"`
 	RekeyFree    *bool   `json:"rekeyFree"`
+}
+
+// reachFor refuses an admin's reach widened by anyone but the owner: an
+// admin cannot let themselves, or a reseller, see past their own tree.
+func reachFor(ctx context.Context, role model.AdminRole, in AdminInput) error {
+	widen := (in.CanViewAllClients != nil && *in.CanViewAllClients) ||
+		(in.CanViewAllInterfaces != nil && *in.CanViewAllInterfaces)
+	if widen && (role != model.RoleAdmin || scopedTo(ctx) != nil) {
+		return fault.Field("canViewAllClients", "only the owner lets an admin see past their own customers and servers")
+	}
+	return nil
 }
 
 // MaxTermDays bounds a term on hold. Ten years is past any plan anybody
@@ -184,6 +201,13 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 		Locale:        "en",
 		Enabled:       in.Enabled == nil || *in.Enabled,
 		SessionEpoch:  1,
+	}
+	if err := reachFor(ctx, in.Role, in); err != nil {
+		return nil, err
+	}
+	if in.Role == model.RoleAdmin {
+		admin.CanViewAllClients = in.CanViewAllClients != nil && *in.CanViewAllClients
+		admin.CanViewAllInterfaces = in.CanViewAllInterfaces != nil && *in.CanViewAllInterfaces
 	}
 	if in.Role.Capped() {
 		if in.ClientLimit != nil {
@@ -465,6 +489,17 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	}
 	for k, v := range rules {
 		fields[k] = v
+	}
+	if err := reachFor(ctx, role, in); err != nil {
+		return nil, err
+	}
+	if role == model.RoleAdmin {
+		if in.CanViewAllClients != nil {
+			fields["can_view_all_clients"] = *in.CanViewAllClients
+		}
+		if in.CanViewAllInterfaces != nil {
+			fields["can_view_all_interfaces"] = *in.CanViewAllInterfaces
+		}
 	}
 	newGroup, err := s.labelChange(ctx, admin, role, in)
 	if err != nil {
