@@ -300,7 +300,19 @@ func (s *Subscriptions) ensureUserTokens(ctx context.Context, clientID uint, acc
 
 // RotateUserLink gives one user a new link; the old one stops working at
 // once. The customer's own link and the other users' are not touched.
+// Settled as a change to the customer (SettleChange): on consumable users
+// a user's new link hands their part of the plan on, and costs that user.
 func (s *Subscriptions) RotateUserLink(ctx context.Context, clientID uint, user int, requestHost string) (*UserLink, error) {
+	var out *UserLink
+	err := SettleChange(ctx, s.db, []uint{clientID}, ByCaller, func(tx *gorm.DB) ([]uint, error) {
+		var err error
+		out, err = s.over(tx).rotateUserLinkRaw(ctx, clientID, user, requestHost)
+		return nil, err
+	})
+	return out, err
+}
+
+func (s *Subscriptions) rotateUserLinkRaw(ctx context.Context, clientID uint, user int, requestHost string) (*UserLink, error) {
 	links, err := s.UserLinks(ctx, clientID, requestHost)
 	if err != nil {
 		return nil, err

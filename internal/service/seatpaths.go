@@ -167,6 +167,13 @@ func (s *Clients) previewExtend(ctx context.Context, in ExtendInput) (*ExtendRes
 		return nil, err
 	}
 	enforced, spends := seatTerms(sc, ByCaller)
+	if spends {
+		// Refused here as the extension itself would be: past the rules of
+		// the operator's sales.
+		if err := checkSalesOf(s.db.WithContext(ctx), run.capture.before, run.capture.after, run.capture.ids); err != nil {
+			return nil, err
+		}
+	}
 	moves := planSeats(run.capture.before, run.capture.after, run.capture.ids)
 	used, err := playSeats(s.db.WithContext(ctx), moves, enforced, spends)
 	if err != nil {

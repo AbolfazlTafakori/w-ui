@@ -371,8 +371,25 @@ func (s *Subscriptions) EnsureToken(ctx context.Context, clientID uint) (string,
 	return token, nil
 }
 
-// RotateToken issues a new token, which makes every existing link stop working.
+// RotateToken issues a new token, which makes every existing link stop
+// working. Settled as a change to the customer (SettleChange): on
+// consumable users a new link is the plan handed on, and is paid for.
 func (s *Subscriptions) RotateToken(ctx context.Context, clientID uint) (string, error) {
+	var token string
+	err := SettleChange(ctx, s.db, []uint{clientID}, ByCaller, func(tx *gorm.DB) ([]uint, error) {
+		var err error
+		token, err = s.over(tx).rotateTokenRaw(ctx, clientID)
+		return nil, err
+	})
+	return token, err
+}
+
+// over is the service on a transaction.
+func (s *Subscriptions) over(tx *gorm.DB) *Subscriptions {
+	return &Subscriptions{db: tx, pool: s.pool, hosts: s.hosts, log: s.log}
+}
+
+func (s *Subscriptions) rotateTokenRaw(ctx context.Context, clientID uint) (string, error) {
 	var c model.Client
 	if err := s.db.WithContext(ctx).First(&c, clientID).Error; err != nil {
 		return "", fmt.Errorf("%w: no client %d", ErrNotFound, clientID)

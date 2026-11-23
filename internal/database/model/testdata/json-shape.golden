@@ -265,6 +265,9 @@ Admin
 	usedBytes uint64
 	expiresAt *time.Time
 	durationDays int
+	saleMaxDays int
+	saleMaxBytes uint64
+	rekeyFree bool
 	groupName string
 	interfaceIds []uint (not stored)
 	clients int64 (not stored)

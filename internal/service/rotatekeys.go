@@ -40,10 +40,25 @@ type RotateInput struct {
 	User int `json:"user"`
 	// Protocol narrows it to one kind of file: "wireguard" or "openvpn".
 	Protocol string `json:"protocol"`
+	// SubToken gives the customer a new link of their own as well, in the
+	// same change: the button that means "everything this customer holds".
+	SubToken bool `json:"subToken"`
 }
 
-// RotateKeys issues fresh credentials for a customer's files.
+// RotateKeys issues fresh credentials for a customer's files, settled as
+// any change to a customer is (withSeats): on consumable users new
+// credentials are a plan handed on, and are paid for.
 func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput) (int, error) {
+	var n int
+	err := s.withSeats(ctx, []uint{clientID}, false, func(v *Clients) ([]uint, error) {
+		var err error
+		n, err = v.rotateKeysRaw(ctx, clientID, in)
+		return nil, err
+	})
+	return n, err
+}
+
+func (s *Clients) rotateKeysRaw(ctx context.Context, clientID uint, in RotateInput) (int, error) {
 	accountIDs := in.AccountIDs
 	client, err := s.Get(ctx, clientID)
 	if err != nil {
@@ -161,6 +176,15 @@ func (s *Clients) RotateKeys(ctx context.Context, clientID uint, in RotateInput)
 				cols["secret"] = n.sec
 			}
 			if err := tx.Model(&model.Account{}).Where("id = ?", n.id).Updates(cols).Error; err != nil {
+				return err
+			}
+		}
+		if in.SubToken {
+			token, err := newSubToken()
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&model.Client{}).Where("id = ?", clientID).Update("sub_token", token).Error; err != nil {
 				return err
 			}
 		}

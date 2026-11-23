@@ -50,6 +50,9 @@ type seatState struct {
 	duration int
 	quota    uint64
 	used     uint64
+	// creds is what they sign in with, read only for a change an operator
+	// is charged for (loadCreds); nil otherwise.
+	creds *credSet
 }
 
 func seatStateOf(c *model.Client) seatState {
@@ -190,6 +193,41 @@ func loadSeats(tx *gorm.DB, ids []uint) (map[uint]seatState, error) {
 	return out, nil
 }
 
+// withCreds adds what each of the customers ids signs in with to their
+// states: only customers there before the change can be given new ones.
+func withCreds(tx *gorm.DB, states map[uint]seatState, ids []uint) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	creds, err := loadCreds(tx, ids)
+	if err != nil {
+		return err
+	}
+	for id, c := range creds {
+		if st, ok := states[id]; ok {
+			st.creds = c
+			states[id] = st
+		}
+	}
+	return nil
+}
+
+// checkSalesOf holds a change to the rules of sale of every operator whose
+// customer it touched.
+func checkSalesOf(tx *gorm.DB, before, after map[uint]seatState, ids []uint) error {
+	owners := map[uint]bool{}
+	for _, st := range after {
+		if st.owner != 0 {
+			owners[st.owner] = true
+		}
+	}
+	rules, err := saleRules(tx, owners)
+	if err != nil {
+		return err
+	}
+	return checkSales(rules, before, after, ids, time.Now().UTC())
+}
+
 // SettleByPanel is SettleChange as the panel's own work, for a package that
 // changes customers but cannot import this one (fleet's handover): the users
 // each owner holds move to match, and nothing is spent.
@@ -219,10 +257,18 @@ const (
 // It is how every way of changing customers pays for it; the reconciler's
 // own sweeps call it directly.
 func SettleChange(ctx context.Context, db *gorm.DB, ids []uint, rule SeatRule, change func(tx *gorm.DB) ([]uint, error)) error {
+	// What an operator asks for is held to their rules of sale and pays for
+	// new credentials; reading those is spared the owner and the panel.
+	_, charged := seatTerms(ScopeOf(ctx), rule)
 	settle := func(tx *gorm.DB) error {
 		before, err := loadSeats(tx, ids)
 		if err != nil {
 			return err
+		}
+		if charged {
+			if err := withCreds(tx, before, ids); err != nil {
+				return err
+			}
 		}
 		made, err := change(tx)
 		if err != nil {
@@ -232,6 +278,14 @@ func SettleChange(ctx context.Context, db *gorm.DB, ids []uint, rule SeatRule, c
 		after, err := loadSeats(tx, all)
 		if err != nil {
 			return err
+		}
+		if charged {
+			if err := withCreds(tx, after, ids); err != nil {
+				return err
+			}
+			if err := checkSalesOf(tx, before, after, all); err != nil {
+				return err
+			}
 		}
 		return settleSeats(ctx, tx, before, after, all, rule)
 	}
@@ -292,6 +346,7 @@ type seatMove struct {
 	owner  uint
 	delta  int64 // seats for an open account: + taken, - given back
 	spend  int64 // units spent for a consumable one
+	rekey  int64 // users given new credentials, spent on a consumable one unless let off
 	reason string
 }
 
@@ -341,6 +396,32 @@ func settleSeats(ctx context.Context, tx *gorm.DB, before, after map[uint]seatSt
 		if err != nil {
 			return err
 		}
+		if acc.Mode == model.CapacityConsumable && m.rekey > 0 && spends {
+			if err := chargeRekey(tx, acc, m, actor); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// chargeRekey spends the users a customer was given new credentials for,
+// unless their operator was let off it.
+func chargeRekey(tx *gorm.DB, acc *model.CapacityAccount, m seatMove, actor uint) error {
+	rules, err := saleRules(tx, map[uint]bool{m.owner: true})
+	if err != nil {
+		return err
+	}
+	if rules[m.owner].rekeyFree {
+		return nil
+	}
+	e := capacity.Entry{Reason: model.CapacityRekey, ActorID: actor, ClientID: m.client}
+	if err := capacity.Take(tx, acc, m.rekey, e); err != nil {
+		if errors.Is(err, capacity.ErrFull) {
+			return fmt.Errorf("%w: %w: new credentials hand this plan on, and cost %s; you have %d left",
+				ErrInvalid, ErrNoUsers, usersWord(m.rekey), max(capacity.Free(acc), 0))
+		}
+		return err
 	}
 	return nil
 }
@@ -402,6 +483,11 @@ func planSeats(before, after map[uint]seatState, ids []uint) []seatMove {
 				m.spend += a.users
 				m.reason = model.CapacityExtend
 			}
+			// New credentials on a plan still running, in a change that
+			// was not itself a sale: the plan handed to someone new.
+			if m.reason == "" && a.alive {
+				m.rekey = rekeyUsers(b.creds, a.creds, a.users)
+			}
 		}
 		if m.reason == "" {
 			switch {
@@ -415,7 +501,7 @@ func planSeats(before, after map[uint]seatState, ids []uint) []seatMove {
 				m.reason = model.CapacityRevived
 			}
 		}
-		if m.delta != 0 || m.spend != 0 {
+		if m.delta != 0 || m.spend != 0 || m.rekey != 0 {
 			moves = append(moves, m)
 		}
 	}

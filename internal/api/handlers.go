@@ -719,23 +719,21 @@ func (s *Server) handleRotateKeys(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
-		service.RotateInput
-		// SubToken rotates the subscription link in the same breath, for
-		// the button that means "everything this customer holds".
-		SubToken bool `json:"subToken"`
-	}
+	// SubToken rotates the subscription link in the same change, for the
+	// button that means "everything this customer holds": one change, so
+	// one charge for it.
+	var body service.RotateInput
 	if r.ContentLength != 0 && !decodeLenient(w, r, &body) {
 		return
 	}
-	n, err := s.clients.RotateKeys(r.Context(), id, body.RotateInput)
+	n, err := s.clients.RotateKeys(r.Context(), id, body)
 	if err != nil {
 		fail(w, s.log, err)
 		return
 	}
 	out := map[string]any{"rotated": n}
 	if body.SubToken {
-		token, err := s.subs.RotateToken(r.Context(), id)
+		token, err := s.subs.EnsureToken(r.Context(), id)
 		if err != nil {
 			fail(w, s.log, err)
 			return

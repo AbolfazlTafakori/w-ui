@@ -286,6 +286,7 @@ const (
 	CapacityRevived    = "revived"
 	CapacityCharge     = "charge"
 	CapacityDebit      = "debit"
+	CapacityRekey      = "rekey"
 	CapacityHandDown   = "handdown"
 	CapacityHandBack   = "handback"
 	CapacityModeSwitch = "mode"
@@ -836,6 +837,21 @@ type Admin struct {
 	// this. A reseller sold "thirty days" on Friday who first signs in on
 	// Monday gets thirty days, not twenty-seven.
 	DurationDays int `gorm:"not null;default:0" json:"durationDays"`
+
+	// The rules of a sale: what one change to a customer may give, when this
+	// operator makes it. SaleMaxDays is the longest term one sale adds, and
+	// SaleMaxBytes the most traffic; zero is no rule. With either set, a
+	// customer they make or extend must have an end, or a traffic limit, and
+	// one no larger than the rule: an operator cannot sell a plan with no
+	// end on a single unit and run it as many customers by hand.
+	SaleMaxDays  int    `gorm:"not null;default:0" json:"saleMaxDays"`
+	SaleMaxBytes uint64 `gorm:"not null;default:0" json:"saleMaxBytes"`
+	// RekeyFree lets this operator give a customer new credentials -- their
+	// link, a user's link, their keys, their passwords -- without spending
+	// units. False by default: on consumable users, handing a customer's
+	// plan to someone new by changing how they sign in is a new sale, and
+	// costs the users it changed. Seats held at once (open) never pay it.
+	RekeyFree bool `gorm:"not null;default:false" json:"rekeyFree"`
 
 	// GroupName is the label every customer this operator creates is put
 	// in, and which they are never shown.

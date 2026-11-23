@@ -104,6 +104,13 @@ type AdminInput struct {
 	// and their resellers, the owner's to set. Zero or absent on a new admin
 	// is none. A reseller has none of their own: their admin issues theirs.
 	TokenLimit *int `json:"tokenLimit"`
+
+	// The rules of their sales (saleRules): the longest term and the most
+	// traffic one change to a customer may give, zero for no rule, and
+	// whether new credentials for a customer are free. Nil leaves each.
+	SaleMaxDays  *int    `json:"saleMaxDays"`
+	SaleMaxBytes *uint64 `json:"saleMaxBytes"`
+	RekeyFree    *bool   `json:"rekeyFree"`
 }
 
 // MaxTermDays bounds a term on hold. Ten years is past any plan anybody
@@ -197,6 +204,27 @@ func (s *Admins) Create(ctx context.Context, in AdminInput) (*model.Admin, error
 				admin.ExpiresAt = nil
 			}
 		}
+	}
+
+	// A reseller an admin makes starts on the admin's own rules, unless
+	// the admin asked for tighter ones.
+	ruleIn := in
+	if caller := scopedTo(ctx); caller != nil {
+		if ruleIn.SaleMaxDays == nil {
+			ruleIn.SaleMaxDays = &caller.SaleMaxDays
+		}
+		if ruleIn.SaleMaxBytes == nil {
+			ruleIn.SaleMaxBytes = &caller.SaleMaxBytes
+		}
+	}
+	rules, err := saleRules(ctx, in.Role, model.Admin{}, ruleIn)
+	if err != nil {
+		return nil, err
+	}
+	if rules != nil {
+		admin.SaleMaxDays = rules["sale_max_days"].(int)
+		admin.SaleMaxBytes = rules["sale_max_bytes"].(uint64)
+		admin.RekeyFree = rules["rekey_free"].(bool)
 	}
 
 	wantGroup := ""
@@ -430,6 +458,13 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	}
 	if err := ceilingChange(admin, role, in, fields); err != nil {
 		return nil, err
+	}
+	rules, err := saleRules(ctx, role, admin, in)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range rules {
+		fields[k] = v
 	}
 	newGroup, err := s.labelChange(ctx, admin, role, in)
 	if err != nil {
