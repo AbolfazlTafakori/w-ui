@@ -160,8 +160,10 @@ func (s *Server) routes() []Route {
 			Body:    `{"ids":[1,2],"to":7,"carryUsage":false}`,
 			Note: "The owner hands any customer to anyone; an admin, between themselves " +
 				"and their own resellers; a reseller, nothing. The receiver's users are " +
-				"taken as for a sale -- refused if they have not got them -- the customers " +
-				"must be on servers the receiver sells and fit their rules of sale. " +
+				"taken as for a sale -- refused if they have not got them -- and the customers " +
+				"must fit their rules of sale. They are put on exactly the receiver's " +
+				"servers -- kept, added, or taken off -- unless the receiver is the owner " +
+				"or an admin on every tunnel, who keep what they have. " +
 				"Traffic counts to the receiver from the move on; carryUsage counts what " +
 				"was used before as well. Links and credentials are untouched. dryRun " +
 				"says what would happen.",

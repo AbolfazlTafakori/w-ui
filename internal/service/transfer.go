@@ -23,8 +23,13 @@ import (
 // What it costs: receiving a customer is a sale to the operator receiving
 // it, whoever makes the move -- their users are taken (seats at once) or
 // spent (consumable), and the move is refused if they have not got them.
-// The customer must sit on servers the receiver may sell, and fit their
-// rules of sale. The one giving it up gets seats back when counted at once,
+// The customer must fit the receiver's rules of sale.
+//
+// Servers: a customer handed to an operator held to chosen servers ends up
+// on exactly those -- kept where the two overlap, added where the receiver
+// has a server the customer had not, and taken off the ones the receiver
+// does not sell -- for the receiver to change from there. Handed to the
+// owner, or to an admin let onto every tunnel, they keep what they have. The one giving it up gets seats back when counted at once,
 // and nothing when consumable, as a customer removed gives nothing back.
 //
 // Traffic: what a customer uses is counted to whoever owns them at the
@@ -64,6 +69,10 @@ type TransferResult struct {
 	// CarriedBytes is the traffic counted to the receiver for use before
 	// the move.
 	CarriedBytes uint64 `json:"carriedBytes"`
+	// ServersAdded and ServersRemoved are servers put on, and taken off,
+	// the customers to match the receiver's, counted per customer.
+	ServersAdded   int `json:"serversAdded"`
+	ServersRemoved int `json:"serversRemoved"`
 }
 
 // HandTo is the operator a customer being made or changed is handed to, in
@@ -137,7 +146,8 @@ func (s *Clients) Transfer(ctx context.Context, in TransferInput) (*TransferResu
 	if err := withinReach(db, caller, ids, clients); err != nil {
 		return nil, err
 	}
-	if err := onTheirServers(db, to, clients); err != nil {
+	servers, err := receiverServers(db, to)
+	if err != nil {
 		return nil, err
 	}
 
@@ -164,9 +174,23 @@ func (s *Clients) Transfer(ctx context.Context, in TransferInput) (*TransferResu
 	sc := ScopeOf(ctx)
 	sc.Restricted = false
 	vctx := scope.Vouch(WithScope(ctx, sc))
+	// Addresses taken and given back on the way are written down, and given
+	// back or taken again if the move is refused or only previewed.
+	j := s.ipj
+	if j == nil {
+		j = &ipJournal{}
+	}
+	mark := j.mark()
 	err = s.db.WithContext(vctx).Transaction(func(tx *gorm.DB) error {
 		before := receiverUsed(tx, to.id)
 		err := SettleChange(vctx, tx, moveIDs, ByTransfer, func(tx *gorm.DB) ([]uint, error) {
+			if servers != nil {
+				added, removed, err := s.seatsView(tx, j).matchServers(vctx, moveIDs, servers)
+				if err != nil {
+					return nil, err
+				}
+				out.ServersAdded, out.ServersRemoved = added, removed
+			}
 			carried, err := handOver(tx, to, moving, in.CarryUsage)
 			out.CarriedBytes = carried
 			return nil, err
@@ -181,6 +205,9 @@ func (s *Clients) Transfer(ctx context.Context, in TransferInput) (*TransferResu
 		}
 		return nil
 	})
+	if err != nil {
+		j.undoFrom(mark, s.log)
+	}
 	if errors.Is(err, errDryRun) {
 		return out, nil
 	}
@@ -188,7 +215,8 @@ func (s *Clients) Transfer(ctx context.Context, in TransferInput) (*TransferResu
 		return nil, err
 	}
 	s.log.Info("customers handed to another operator", "customers", out.Moved, "to", to.id,
-		"units", out.Units, "carriedBytes", out.CarriedBytes)
+		"units", out.Units, "carriedBytes", out.CarriedBytes,
+		"serversAdded", out.ServersAdded, "serversRemoved", out.ServersRemoved)
 	return out, nil
 }
 
@@ -262,41 +290,63 @@ func withinReach(db *gorm.DB, caller *model.Admin, ids []uint, clients []model.C
 	return nil
 }
 
-// onTheirServers refuses a customer on a server the receiver may not sell.
-func onTheirServers(db *gorm.DB, to transferParty, clients []model.Client) error {
+// receiverServers is the servers a customer handed to the receiver ends up
+// on: theirs, or nil -- keep what they have -- for the owner and an admin
+// let onto every tunnel. A receiver with none can be handed nobody, since a
+// customer has to be on at least one.
+func receiverServers(db *gorm.DB, to transferParty) ([]uint, error) {
 	if to.allTunnels {
-		return nil
+		return nil, nil
 	}
-	var allowed []uint
-	if err := db.Model(&model.AdminInterface{}).Where("admin_id = ?", to.id).Pluck("interface_id", &allowed).Error; err != nil {
-		return fmt.Errorf("service: read the receiver's servers: %w", err)
+	var ids []uint
+	if err := db.Model(&model.AdminInterface{}).Where("admin_id = ?", to.id).Order("interface_id").Pluck("interface_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("service: read the receiver's servers: %w", err)
 	}
-	may := map[uint]bool{}
-	for _, id := range allowed {
-		may[id] = true
+	if len(ids) == 0 {
+		return nil, invalidField("to", "the operator receiving them has no servers to sell; give them one first")
 	}
-	ids := make([]uint, len(clients))
-	name := map[uint]string{}
-	for i, c := range clients {
-		ids[i] = c.ID
-		name[c.ID] = c.Name
+	return ids, nil
+}
+
+// matchServers puts each customer on exactly the servers want, the way
+// the customer form does (setInterfaces): files made on the ones added for
+// every device they hold, and taken off, with their addresses, from the
+// rest. It says how many servers were added and removed, per customer.
+func (s *Clients) matchServers(ctx context.Context, ids []uint, want []uint) (added, removed int, err error) {
+	wanted := map[uint]bool{}
+	for _, id := range want {
+		wanted[id] = true
 	}
-	for start := 0; start < len(ids); start += 900 {
-		var files []struct {
-			ClientID    uint
-			InterfaceID uint
+	for _, id := range ids {
+		client, err := s.Get(ctx, id)
+		if err != nil {
+			return 0, 0, err
 		}
-		if err := db.Model(&model.Account{}).Select("client_id, interface_id").
-			Where("client_id IN ?", ids[start:min(start+900, len(ids))]).Scan(&files).Error; err != nil {
-			return fmt.Errorf("service: read the customers' servers: %w", err)
+		have := map[uint]bool{}
+		for _, f := range clientInterfaces(client.Accounts) {
+			have[f] = true
 		}
-		for _, f := range files {
-			if !may[f.InterfaceID] {
-				return invalidField("to", "%s is on a server the operator receiving them may not sell; give them that server first", name[f.ClientID])
+		a, r := 0, 0
+		for f := range wanted {
+			if !have[f] {
+				a++
 			}
 		}
+		for f := range have {
+			if !wanted[f] {
+				r++
+			}
+		}
+		if a == 0 && r == 0 {
+			continue
+		}
+		if err := s.setInterfaces(ctx, client, want); err != nil {
+			return 0, 0, fmt.Errorf("%s: %w", client.Name, err)
+		}
+		added += a
+		removed += r
 	}
-	return nil
+	return added, removed, nil
 }
 
 // receiverUsed is the receiver's users in use, or zero with no account.

@@ -129,18 +129,86 @@ func TestWhoMayHandCustomersOn(t *testing.T) {
 	p.balanced(t)
 }
 
-// The receiver's servers and rules of sale hold: a customer on a server
-// they do not sell, or with a plan their rules refuse, stays where it was.
-func TestATransferIsHeldToTheReceiversServersAndRules(t *testing.T) {
+// A customer handed on ends up on exactly the receiver's servers: kept
+// where they overlap, added where the receiver has one the customer had
+// not, taken off the rest. Back with the owner, nothing moves; a receiver
+// with no servers is handed nobody; a preview moves no server.
+func TestATransferPutsTheCustomerOnTheReceiversServers(t *testing.T) {
 	p := newSeatPanel(t)
-	r := p.operator(t, "reza", model.RoleReseller, model.CapacityOpen, 10, nil)
-	elsewhere, err := p.clients.Create(context.Background(), CreateInput{Name: "on2", InterfaceIDs: []uint{2}, DeviceLimit: 1})
+	r := p.operator(t, "reza", model.RoleReseller, model.CapacityOpen, 10, nil) // server 1
+	servers := func(id uint) []uint {
+		var got []uint
+		p.db.Model(&model.Account{}).Where("client_id = ?", id).Distinct("interface_id").Order("interface_id").Pluck("interface_id", &got)
+		return got
+	}
+	same := func(a, b []uint) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+	both, err := p.clients.Create(context.Background(), CreateInput{Name: "both", InterfaceIDs: []uint{1, 2}, DeviceLimit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{elsewhere.ID}, To: r.ID}); err == nil {
-		t.Fatal("handed a customer on a server the reseller does not sell")
+	only2, err := p.clients.Create(context.Background(), CreateInput{Name: "only2", InterfaceIDs: []uint{2}, DeviceLimit: 1})
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	res, err := p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{both.ID, only2.ID}, To: r.ID, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ServersAdded != 1 || res.ServersRemoved != 2 || !same(servers(both.ID), []uint{1, 2}) || !same(servers(only2.ID), []uint{2}) {
+		t.Fatalf("the preview: %+v, and it moved servers: %v %v", res, servers(both.ID), servers(only2.ID))
+	}
+	if _, err := p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{both.ID, only2.ID}, To: r.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if !same(servers(both.ID), []uint{1}) || !same(servers(only2.ID), []uint{1}) {
+		t.Fatalf("with the reseller: %v and %v, want [1] each", servers(both.ID), servers(only2.ID))
+	}
+	var files int64
+	p.db.Model(&model.Account{}).Where("client_id = ?", both.ID).Count(&files)
+	if files != 2 {
+		t.Fatalf("a customer for 2 users holds %d files, want 2", files)
+	}
+
+	// The reseller given server 2 as well: a customer on 1 gets 2 added.
+	p.db.Create(&model.AdminInterface{AdminID: r.ID, InterfaceID: 2})
+	mine := p.make(t, context.Background(), "mine", 1) // server 1
+	if _, err := p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{mine.ID}, To: r.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if !same(servers(mine.ID), []uint{1, 2}) {
+		t.Fatalf("handed to a reseller on 1 and 2: %v", servers(mine.ID))
+	}
+	// Back with the owner: kept as they are.
+	if _, err := p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{mine.ID}, To: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if !same(servers(mine.ID), []uint{1, 2}) {
+		t.Fatalf("back with the owner: %v", servers(mine.ID))
+	}
+
+	empty := p.operator(t, "nobody", model.RoleReseller, model.CapacityOpen, 10, nil)
+	p.db.Where("admin_id = ?", empty.ID).Delete(&model.AdminInterface{})
+	if _, err := p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{mine.ID}, To: empty.ID}); err == nil {
+		t.Fatal("handed a customer to a reseller with no servers")
+	}
+	p.balanced(t)
+}
+
+// The receiver's rules of sale hold: a plan they refuse stays where it was.
+func TestATransferIsHeldToTheReceiversRules(t *testing.T) {
+	p := newSeatPanel(t)
+	r := p.operator(t, "reza", model.RoleReseller, model.CapacityOpen, 10, nil)
 	p.rules(t, r, 30, 0, false)
 	unlimited, err := p.clients.Create(context.Background(), CreateInput{Name: "forever", InterfaceIDs: []uint{1}, DeviceLimit: 1})
 	if err != nil {
@@ -148,8 +216,8 @@ func TestATransferIsHeldToTheReceiversServersAndRules(t *testing.T) {
 	}
 	_, err = p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{unlimited.ID}, To: r.ID})
 	refusedBySale(t, "a plan with no end to a reseller held to 30 days", err)
-	if p.owned(t, unlimited.ID).OwnerID != 0 || p.owned(t, elsewhere.ID).OwnerID != 0 {
-		t.Fatal("a refused transfer moved a customer")
+	if p.owned(t, unlimited.ID).OwnerID != 0 {
+		t.Fatal("a refused transfer moved the customer")
 	}
 	p.balanced(t)
 }
@@ -262,6 +330,27 @@ func TestASaveThatHandsOnIsAllOrNothing(t *testing.T) {
 	refusedForUsers(t, "changed and handed to a full reseller", err)
 	if got := p.owned(t, mine.ID); got.Name != "mine" || got.OwnerID != 0 {
 		t.Fatalf("a refused change was kept: %q owner %d", got.Name, got.OwnerID)
+	}
+	p.balanced(t)
+}
+
+// A move refused after the customer's servers were matched, or only
+// previewed, leaves every address pool as it was.
+func TestARefusedTransferGivesItsAddressesBack(t *testing.T) {
+	p := newSeatPanel(t)
+	r := p.operator(t, "reza", model.RoleReseller, model.CapacityOpen, 1, nil)
+	p.db.Create(&model.AdminInterface{AdminID: r.ID, InterfaceID: 2})
+	a := p.make(t, context.Background(), "a", 2) // server 1, 2 users
+	pool1, _ := p.clients.pools.Get(1)
+	pool2, _ := p.clients.pools.Get(2)
+	in1, in2 := pool1.InUse(), pool2.InUse()
+
+	_, err := p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{a.ID}, To: r.ID, DryRun: true})
+	refusedForUsers(t, "previewing 2 users to a reseller with 1 seat", err)
+	_, err = p.clients.Transfer(context.Background(), TransferInput{IDs: []uint{a.ID}, To: r.ID})
+	refusedForUsers(t, "2 users to a reseller with 1 seat", err)
+	if pool1.InUse() != in1 || pool2.InUse() != in2 {
+		t.Fatalf("pools moved from %d/%d to %d/%d", in1, in2, pool1.InUse(), pool2.InUse())
 	}
 	p.balanced(t)
 }
