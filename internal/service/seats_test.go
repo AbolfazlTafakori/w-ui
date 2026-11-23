@@ -478,28 +478,7 @@ func TestNumbersNoPlanCouldMeanAreRefused(t *testing.T) {
 func TestCustomersMadeAtOnceCannotPassTheCeiling(t *testing.T) {
 	for _, mode := range []string{model.CapacityOpen, model.CapacityConsumable} {
 		t.Run(mode, func(t *testing.T) {
-			db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "w.db")+
-				"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(15000)&_txlock=immediate"),
-				&gorm.Config{Logger: gormlogger.Discard})
-			if err != nil {
-				t.Fatal(err)
-			}
-			sqlDB, _ := db.DB()
-			sqlDB.SetMaxOpenConns(8)
-			t.Cleanup(func() { sqlDB.Close() })
-			if err := db.AutoMigrate(model.AllModels()...); err != nil {
-				t.Fatal(err)
-			}
-			if err := scope.Register(db); err != nil {
-				t.Fatal(err)
-			}
-			db.Create(&model.Node{Name: "local", Kind: model.KindLocal})
-			iface := model.Interface{Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: 51820, Subnet: "10.9.0.0/24", EndpointHost: "x", NodeID: 1}
-			db.Create(&iface)
-			pools := ipam.NewPools()
-			pools.Add(iface.ID, iface.Subnet)
-			clients := NewClients(db, pools, quietLog())
-			admins := operators.NewAdmins(db, quietLog())
+			db, clients, admins, pools, iface := onAPanelsFile(t)
 			on, ten := true, 10
 			r, err := admins.Create(context.Background(), operators.AdminInput{Username: "reza", Password: "correct-horse",
 				Role: model.RoleReseller, Enabled: &on, ClientLimit: &ten, UserMode: mode, InterfaceIDs: []uint{iface.ID}})
@@ -537,6 +516,86 @@ func TestCustomersMadeAtOnceCannotPassTheCeiling(t *testing.T) {
 				t.Fatalf("unbalanced: %v", bad)
 			}
 		})
+	}
+}
+
+// onAPanelsFile is a panel on a database file set as the panel sets it, so
+// requests at once meet the locking they meet in service: one WireGuard
+// tunnel, its addresses, and the customers' and operators' services.
+func onAPanelsFile(t *testing.T) (*gorm.DB, *Clients, *operators.Admins, *ipam.Pools, model.Interface) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "w.db")+
+		"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(15000)&_txlock=immediate"),
+		&gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(8)
+	t.Cleanup(func() { sqlDB.Close() })
+	if err := db.AutoMigrate(model.AllModels()...); err != nil {
+		t.Fatal(err)
+	}
+	if err := scope.Register(db); err != nil {
+		t.Fatal(err)
+	}
+	db.Create(&model.Node{Name: "local", Kind: model.KindLocal})
+	iface := model.Interface{Name: "wg0", Protocol: model.ProtocolWireGuard, ListenPort: 51820, Subnet: "10.9.0.0/24", EndpointHost: "x", NodeID: 1}
+	db.Create(&iface)
+	pools := ipam.NewPools()
+	pools.Add(iface.ID, iface.Subnet)
+	return db, NewClients(db, pools, quietLog()), operators.NewAdmins(db, quietLog()), pools, iface
+}
+
+// Extensions at once, by a reseller who spends a unit for each, cannot
+// spend past their ceiling: twenty extensions of one customer against the
+// two units left let two through, and the ledger sums to the figure.
+func TestExtensionsAtOnceCannotPassTheCeiling(t *testing.T) {
+	db, clients, admins, _, iface := onAPanelsFile(t)
+	on, three := true, 3
+	r, err := admins.Create(context.Background(), operators.AdminInput{Username: "reza", Password: "correct-horse",
+		Role: model.RoleReseller, Enabled: &on, ClientLimit: &three, UserMode: model.CapacityConsumable, InterfaceIDs: []uint{iface.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := asReseller(r, iface.ID)
+	c, err := clients.Create(ctx, CreateInput{Name: "c", InterfaceIDs: []uint{iface.ID}, DeviceLimit: 1, ExpiresAt: ptrTime(time.Now().Add(24 * time.Hour))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var won atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := clients.Extend(ctx, ExtendInput{IDs: []uint{c.ID}, Kind: ExtendTime, Days: 30})
+			switch {
+			case err == nil:
+				won.Add(1)
+			case !errors.Is(err, ErrNoUsers):
+				t.Errorf("an extension failed otherwise: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	acc, err := capacity.Account(db, r.ID, model.CapacityUsers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if won.Load() != 2 || acc.Used != 3 {
+		t.Fatalf("let %d extensions through, used %d -- against three units, one spent on the customer", won.Load(), acc.Used)
+	}
+	var after model.Client
+	db.First(&after, c.ID)
+	if after.ExpiresAt == nil || time.Until(*after.ExpiresAt) > 62*24*time.Hour || time.Until(*after.ExpiresAt) < 60*24*time.Hour {
+		t.Fatalf("the customer ends %v, want two extensions of thirty days on one", after.ExpiresAt)
+	}
+	if bad, _ := capacity.Balanced(db); len(bad) > 0 {
+		t.Fatalf("unbalanced: %v", bad)
 	}
 }
 
