@@ -119,6 +119,12 @@ type NodeSession struct {
 	Addrs      []string `json:"addrs,omitempty"`
 }
 
+// LiveWindow is how long since a session last moved traffic it still counts
+// as connected, wherever it is counted: on this panel's own tunnels, on a
+// 3x-ui and on a Pasarguard. A WireGuard device with keepalive on sends
+// something every 25 seconds; three missed is gone.
+const LiveWindow = 75 * time.Second
+
 // NodeHold is one device the panel wants held off on a node.
 type NodeHold struct {
 	OriginID uint      `json:"originId"`

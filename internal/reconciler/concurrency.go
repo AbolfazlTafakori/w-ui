@@ -38,9 +38,8 @@ import (
 
 const (
 	// activeWindow is how long since bytes last moved a session still counts
-	// as connected. A WireGuard device with keepalive on sends something every
-	// 25 seconds; three missed is gone.
-	activeWindow = 75 * time.Second
+	// as connected: the one window every place that counts uses.
+	activeWindow = fleet.LiveWindow
 
 	// holdFor is how long a device held off stays off. Long enough for the
 	// customer to notice which device won, short enough that a mistake costs

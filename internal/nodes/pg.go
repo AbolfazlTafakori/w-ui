@@ -283,7 +283,7 @@ func askPG(ctx context.Context, node model.Node) (Snapshot, error) {
 
 // pgOnlineWindow is how recently a Pasarguard user must have been online to
 // count as connected: the reconciler's own window.
-const pgOnlineWindow = 75 * time.Second
+const pgOnlineWindow = fleet.LiveWindow
 
 // warnPGNoOnlines: as warnNoOnlines, on a Pasarguard.
 const warnPGNoOnlines = warnNoOnlines

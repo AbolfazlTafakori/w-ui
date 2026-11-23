@@ -459,7 +459,7 @@ const xuiIPsAtOnce = 4
 // xuiAddrWindow is how recently an address must have been seen to count as
 // one of a file's connections now: the reconciler's own window for a
 // device that has gone quiet.
-const xuiAddrWindow = 75 * time.Second
+const xuiAddrWindow = fleet.LiveWindow
 
 // What the panel cannot count on a node, said on the node as a code the
 // panel's pages put into words.
