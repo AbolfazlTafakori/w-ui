@@ -79,8 +79,16 @@ func TestOneFileOnTwoDevicesAtOnceIsHeldButANetworkChangeIsNot(t *testing.T) {
 	if got := c.enforce(client, accs, t0.Add(6*time.Second)); got != nil {
 		t.Fatalf("a network change was held off: %+v", got)
 	}
-	c.observe([]backend.Stat{stat(10, 500, "1.1.1.1")}, t0.Add(8*time.Second)) // and back: two devices
-	got := c.enforce(client, accs, t0.Add(8*time.Second))
+	// And back onto wifi: still one phone, its connection dropped once and
+	// found again. Measured on the test server, this was held off at two
+	// changes the moment the phone came back.
+	c.observe([]backend.Stat{stat(10, 500, "1.1.1.1")}, t0.Add(8*time.Second))
+	if got := c.enforce(client, accs, t0.Add(8*time.Second)); got != nil {
+		t.Fatalf("a phone back on its wifi was held off: %+v", got)
+	}
+	// And over again, and again: two devices taking the file in turn.
+	c.observe([]backend.Stat{stat(10, 600, "2.2.2.2")}, t0.Add(10*time.Second))
+	got := c.enforce(client, accs, t0.Add(10*time.Second))
 	if len(got) != 1 {
 		t.Fatalf("a file fought over by two devices was not held off: %+v", got)
 	}
@@ -306,7 +314,8 @@ func TestTwoDevicesBehindARelayAreToldApartByPort(t *testing.T) {
 	c.observe(ep("7273", 200), t0.Add(2*time.Second))
 	c.observe(ep("55854", 300), t0.Add(4*time.Second))
 	c.observe(ep("7273", 400), t0.Add(6*time.Second))
-	got := c.enforce(client, accs, t0.Add(6*time.Second))
+	c.observe(ep("55854", 500), t0.Add(8*time.Second))
+	got := c.enforce(client, accs, t0.Add(8*time.Second))
 	if len(got) != 1 {
 		t.Fatalf("two devices on one file behind a relay were not caught: %+v", got)
 	}
@@ -411,6 +420,8 @@ func TestTwoRoutersTakingOneSignInInTurnAreTwoConnections(t *testing.T) {
 	step(400, "2.2.2.2")
 	step(60, "1.1.1.1") // the first takes it back
 	step(500, "1.1.1.1")
+	step(70, "2.2.2.2") // and the second again: in turn, not a move
+	step(600, "2.2.2.2")
 	if got := c.enforce(client, accs, at); len(got) != 1 {
 		t.Fatalf("two routers trading one sign-in were not held off: %+v", got)
 	}

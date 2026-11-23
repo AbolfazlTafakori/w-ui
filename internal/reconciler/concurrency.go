@@ -272,6 +272,14 @@ func (c *concurrency) observeSessions(id uint, ss []backend.Stat, now time.Time)
 	}
 }
 
+// fightFlips is how many times a credential's address must change inside
+// the window for it to be two devices taking it in turn. Two devices both
+// moving traffic change it nearly every tick; one phone leaving wifi for
+// mobile data and coming back changes it twice and then settles, and was
+// held off at two (measured on the test server: held the moment it came
+// back). Three costs two devices about a tick more before they are held.
+const fightFlips = 3
+
 // moved records that a credential's traffic moved this tick, from host.
 func (c *concurrency) moved(id uint, a *activity, host string, now time.Time) {
 	wasLive := now.Sub(a.moved) < activeWindow
@@ -345,7 +353,7 @@ func (a *activity) connections(now time.Time) int {
 		return 0
 	}
 	n := 1
-	if a.flips >= 2 && now.Sub(a.flipAt) < activeWindow && len(a.addrs) > 1 {
+	if a.flips >= fightFlips && now.Sub(a.flipAt) < activeWindow && len(a.addrs) > 1 {
 		n = len(a.addrs)
 	}
 	if m := a.overlapping(now); m > n {
