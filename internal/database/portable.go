@@ -85,39 +85,76 @@ func exportTable(ctx context.Context, db *gorm.DB, m any, sch *schema.Schema) ([
 	// twice over.
 	const batch = 1000
 	slicePtr := reflect.New(reflect.SliceOf(elem))
-	err := db.WithContext(ctx).Model(m).Order(clause.OrderByColumn{Column: clause.Column{Name: clause.PrimaryKey}}).
-		FindInBatches(slicePtr.Interface(), batch, func(tx *gorm.DB, _ int) error {
-			s := slicePtr.Elem()
-			for i := 0; i < s.Len(); i++ {
-				rv := s.Index(i)
-				row := make(map[string]any, len(sch.Fields))
-				for _, f := range sch.Fields {
-					if f.DBName == "" || f.IgnoreMigration {
-						continue
-					}
-					v, zero := f.ValueOf(ctx, rv)
-					if zero && !f.PrimaryKey {
-						continue
-					}
-					// A JSON column and the like: archive what the database
-					// holds, not the Go value behind it.
-					if valuer, ok := v.(driver.Valuer); ok {
-						dv, err := valuer.Value()
-						if err != nil {
-							return fmt.Errorf("%s: %w", f.DBName, err)
-						}
-						v = dv
-					}
-					row[f.DBName] = v
-				}
-				rows = append(rows, row)
+	take := func() error {
+		s := slicePtr.Elem()
+		for i := 0; i < s.Len(); i++ {
+			row, err := exportRow(ctx, sch, s.Index(i))
+			if err != nil {
+				return err
 			}
-			return nil
-		}).Error
+			rows = append(rows, row)
+		}
+		return nil
+	}
+
+	// FindInBatches finds the next batch by the one primary key, and refuses
+	// a table keyed on two columns -- client_groups, account_endpoints, an
+	// operator's servers and pages -- once it is past the first batch, which
+	// failed the whole backup. Those are read a page at a time instead, in
+	// the order of every key column, so each row is taken once.
+	if len(sch.PrimaryFields) != 1 {
+		order := make([]clause.OrderByColumn, 0, len(sch.PrimaryFields))
+		for _, f := range sch.PrimaryFields {
+			order = append(order, clause.OrderByColumn{Column: clause.Column{Name: f.DBName}})
+		}
+		for offset := 0; ; offset += batch {
+			slicePtr = reflect.New(reflect.SliceOf(elem))
+			if err := db.WithContext(ctx).Model(m).Order(clause.OrderBy{Columns: order}).
+				Limit(batch).Offset(offset).Find(slicePtr.Interface()).Error; err != nil {
+				return nil, err
+			}
+			if err := take(); err != nil {
+				return nil, err
+			}
+			if slicePtr.Elem().Len() < batch {
+				return rows, nil
+			}
+		}
+	}
+
+	err := db.WithContext(ctx).Model(m).Order(clause.OrderByColumn{Column: clause.Column{Name: clause.PrimaryKey}}).
+		FindInBatches(slicePtr.Interface(), batch, func(tx *gorm.DB, _ int) error { return take() }).Error
 	if err != nil {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// exportRow is one row as the archive keeps it: every stored column, the
+// database's own form of a JSON column, and nothing left at its zero but a
+// key.
+func exportRow(ctx context.Context, sch *schema.Schema, rv reflect.Value) (map[string]any, error) {
+	row := make(map[string]any, len(sch.Fields))
+	for _, f := range sch.Fields {
+		if f.DBName == "" || f.IgnoreMigration {
+			continue
+		}
+		v, zero := f.ValueOf(ctx, rv)
+		if zero && !f.PrimaryKey {
+			continue
+		}
+		// A JSON column and the like: archive what the database holds, not
+		// the Go value behind it.
+		if valuer, ok := v.(driver.Valuer); ok {
+			dv, err := valuer.Value()
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", f.DBName, err)
+			}
+			v = dv
+		}
+		row[f.DBName] = v
+	}
+	return row, nil
 }
 
 // Import replaces the database's contents with the dump's.
