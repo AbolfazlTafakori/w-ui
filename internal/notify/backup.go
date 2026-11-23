@@ -220,7 +220,8 @@ func (n *Notifier) sendDocument(ctx context.Context, c Config, a *Attachment) er
 	if _, err := io.Copy(fw, a.Body); err != nil {
 		return fmt.Errorf("notify: read attachment: %w", err)
 	}
-	mw.Close()
+	// The closing boundary into memory: it cannot fail.
+	_ = mw.Close()
 
 	endpoint := fmt.Sprintf("%s/bot%s/sendDocument", c.apiBase(), url.PathEscape(c.BotToken))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &body)

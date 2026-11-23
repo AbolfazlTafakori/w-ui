@@ -320,7 +320,11 @@ func (d *Driver) applyConf(ctx context.Context, iface *model.Interface, text str
 		f.Close()
 		return fmt.Errorf("wgdriver: write temp config: %w", err)
 	}
-	f.Close()
+	// Checked: a close that fails may have lost the file's last write, and
+	// syncconf would then apply half a configuration.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("wgdriver: close temp config: %w", err)
+	}
 
 	if err := d.run(ctx, "awg", "syncconf", iface.Name, f.Name()); err != nil {
 		return fmt.Errorf("wgdriver: awg syncconf %s: %w", iface.Name, err)
