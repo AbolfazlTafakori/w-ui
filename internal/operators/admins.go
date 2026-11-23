@@ -396,6 +396,10 @@ func dropOwnerGroupIfUnused(tx *gorm.DB, name string, except uint) error {
 }
 
 // Update changes an operator.
+//
+// Everything asked is checked first, in a fixed order, so a request with
+// two mistakes is told the same one every time; then it is written in one
+// transaction, with the users and tokens it moves.
 func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Admin, error) {
 	// For an admin this refuses anything but their own resellers -- their own
 	// row among them, an admin being no reseller of theirs -- so an admin can
@@ -417,11 +421,44 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	}
 
 	fields := map[string]any{}
+	role, err := s.identityChange(ctx, admin, in, fields)
+	if err != nil {
+		return nil, err
+	}
+	if err := ceilingChange(admin, role, in, fields); err != nil {
+		return nil, err
+	}
+	newGroup, err := s.labelChange(ctx, admin, role, in)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkInterfaces(ctx, admin.ID, role, in.InterfaceIDs); err != nil {
+		return nil, err
+	}
+	menus, setMenusToo, err := pagesChange(admin, in)
+	if err != nil {
+		return nil, err
+	}
 
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.writeUpdate(ctx, tx, admin, role, in, fields, newGroup, menus, setMenusToo)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("service: %w", err)
+	}
+
+	s.log.Info("operator changed", "username", admin.Username, "fields", len(fields))
+	return s.Get(ctx, admin.ID)
+}
+
+// identityChange checks and notes who the operator is: their name, note,
+// role, password and whether they are on. It gives back the role they will
+// have.
+func (s *Admins) identityChange(ctx context.Context, admin model.Admin, in AdminInput, fields map[string]any) (model.AdminRole, error) {
 	if strings.TrimSpace(in.Username) != "" && !strings.EqualFold(in.Username, admin.Username) {
 		username, err := s.checkUsername(ctx, admin.ID, in.Username)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		fields["username"] = username
 	}
@@ -432,19 +469,19 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	role := admin.Role
 	if in.Role != "" && in.Role != admin.Role {
 		if !in.Role.Valid() {
-			return nil, fault.Field("role", "%q is not a role this panel has", in.Role)
+			return "", fault.Field("role", "%q is not a role this panel has", in.Role)
 		}
 		if admin.Role == model.RoleOwner {
-			return nil, fault.Field("role", "the owner's role cannot be changed")
+			return "", fault.Field("role", "the owner's role cannot be changed")
 		}
 		if in.Role == model.RoleOwner {
-			return nil, fault.Field("role", "the panel has one owner and it cannot be handed over from here")
+			return "", fault.Field("role", "the panel has one owner and it cannot be handed over from here")
 		}
 		role = in.Role
 		fields["role"] = role
 	}
 	if admin.Role == model.RoleOwner && in.Enabled != nil && !*in.Enabled {
-		return nil, fault.Field("enabled", "the owner cannot be switched off")
+		return "", fault.Field("enabled", "the owner cannot be switched off")
 	}
 
 	// A password change ends whatever sessions this operator has open. That
@@ -452,11 +489,11 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 	// out should not have to wait for a token to expire.
 	if in.Password != "" {
 		if len(in.Password) < 8 {
-			return nil, fault.Field("password", "a password of at least 8 characters")
+			return "", fault.Field("password", "a password of at least 8 characters")
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 		if err != nil {
-			return nil, fmt.Errorf("service: hash password: %w", err)
+			return "", fmt.Errorf("service: hash password: %w", err)
 		}
 		fields["password_hash"] = string(hash)
 		fields["session_epoch"] = admin.SessionEpoch + 1
@@ -472,10 +509,16 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 			fields["session_epoch"] = admin.SessionEpoch + 1
 		}
 	}
+	return role, nil
+}
 
-	// The ceiling only means anything for a reseller. Promoting one to
-	// administrator clears it rather than leaving numbers on the row that
-	// nothing reads and the next owner has to guess at.
+// ceilingChange checks and notes an operator's ceilings: their users,
+// traffic and term. They mean something for an admin and a reseller alike
+// (Capped). An operator who stops being capped has them cleared rather than
+// left as numbers nothing reads -- which no role a change may give does
+// today, the owner's being refused -- so that branch waits for a role that
+// will.
+func ceilingChange(admin model.Admin, role model.AdminRole, in AdminInput, fields map[string]any) error {
 	switch {
 	case role.Capped():
 		if in.ClientLimit != nil {
@@ -493,7 +536,7 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 		if in.DurationDays != nil {
 			d := *in.DurationDays
 			if d < 0 || d > MaxTermDays {
-				return nil, fault.Field("durationDays", "a term of 1 to %d days", MaxTermDays)
+				return fault.Field("durationDays", "a term of 1 to %d days", MaxTermDays)
 			}
 			fields["duration_days"] = d
 			if d > 0 {
@@ -506,108 +549,108 @@ func (s *Admins) Update(ctx context.Context, id uint, in AdminInput) (*model.Adm
 		fields["expires_at"] = nil
 		fields["duration_days"] = 0
 	}
+	return nil
+}
 
-	// The label moves only for a reseller, and only when it changes. It is a
-	// reseller mechanism: an admin's tree is traced by admin_id, not a label.
-	newGroup := ""
-	if role == model.RoleReseller && admin.Role == model.RoleReseller && in.GroupName != nil {
-		want := strings.TrimSpace(*in.GroupName)
-		if want == "" {
-			return nil, fault.Field("groupName", "a reseller's customers have to be filed under something")
-		}
-		if want != admin.GroupName {
-			if err := s.checkOwnerGroup(ctx, admin.ID, want); err != nil {
-				return nil, err
-			}
-			newGroup = want
-		}
+// labelChange checks the label a reseller's customers are filed under, and
+// gives back the new one when it changes, "" when it does not. It is a
+// reseller mechanism: an admin's tree is traced by admin_id, not a label.
+func (s *Admins) labelChange(ctx context.Context, admin model.Admin, role model.AdminRole, in AdminInput) (string, error) {
+	if role != model.RoleReseller || admin.Role != model.RoleReseller || in.GroupName == nil {
+		return "", nil
 	}
-
-	if err := s.checkInterfaces(ctx, admin.ID, role, in.InterfaceIDs); err != nil {
-		return nil, err
+	want := strings.TrimSpace(*in.GroupName)
+	if want == "" {
+		return "", fault.Field("groupName", "a reseller's customers have to be filed under something")
 	}
-
-	// An admin's pages change only when the owner sends a list; nil leaves
-	// them. An empty list is the owner unchecking every page, which is a real
-	// thing to want. Only an admin has pages to change.
-	var menusUpdate []string
-	setMenusUpdate := (admin.Role == model.RoleAdmin || admin.Role == model.RoleReseller) && in.MenuIDs != nil
-	if setMenusUpdate {
-		clean, err := cleanMenus(admin.Role, in.MenuIDs)
-		if err != nil {
-			return nil, err
-		}
-		menusUpdate = clean
+	if want == admin.GroupName {
+		return "", nil
 	}
+	if err := s.checkOwnerGroup(ctx, admin.ID, want); err != nil {
+		return "", err
+	}
+	return want, nil
+}
 
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if in.TokenLimit != nil {
-			if scopedTo(ctx) != nil {
-				return fault.Field("tokenLimit", "only the owner sets how many tokens an admin has")
-			}
-			if err := setTokens(tx, scope.Of(ctx).AdminID, &admin, int64(*in.TokenLimit)); err != nil {
-				return err
-			}
-		}
-		// Their users moved to the new figure, or counted the new way, in
-		// this same transaction (setUsers). Only the owner switches a mode.
-		if role.Capped() && (in.ClientLimit != nil || (in.UserMode != "" && scopedTo(ctx) == nil)) {
-			limit := int64(admin.ClientLimit)
-			if acc, err := capacity.Account(tx, admin.ID, model.CapacityUsers); err != nil {
-				return err
-			} else if acc != nil {
-				limit = acc.Granted
-			}
-			if in.ClientLimit != nil {
-				limit = int64(*in.ClientLimit)
-			}
-			mode := in.UserMode
-			if scopedTo(ctx) != nil {
-				mode = ""
-			}
-			if err := setUsers(tx, scope.Of(ctx).AdminID, &admin, limit, mode, scopedTo(ctx) == nil); err != nil {
-				return err
-			}
-		}
-		if newGroup != "" {
-			canonical, err := ensureOwnerGroup(tx, newGroup, admin.Username)
-			if err != nil {
-				return err
-			}
-			newGroup = canonical
-			if admin.GroupName != "" {
-				if err := membership.Refile(tx, admin.ID, admin.GroupName, newGroup); err != nil {
-					return err
-				}
-			}
-			fields["group_name"] = newGroup
-		}
-		if len(fields) > 0 {
-			if err := tx.Model(&model.Admin{}).Where("id = ?", admin.ID).Updates(fields).Error; err != nil {
-				return fmt.Errorf("update operator: %w", err)
-			}
-		}
-		if newGroup != "" && admin.GroupName != "" {
-			if err := dropOwnerGroupIfUnused(tx, admin.GroupName, admin.ID); err != nil {
-				return err
-			}
-		}
-		if in.InterfaceIDs != nil {
-			if err := s.setInterfaces(tx, admin.ID, in.InterfaceIDs); err != nil {
-				return err
-			}
-		}
-		if setMenusUpdate {
-			return setMenus(tx, admin.ID, menusUpdate)
-		}
-		return nil
-	})
+// pagesChange checks the pages an operator may reach. They change only when
+// the owner sends a list; nil leaves them. An empty list is the owner
+// unchecking every page, which is a real thing to want.
+func pagesChange(admin model.Admin, in AdminInput) (menus []string, set bool, err error) {
+	if (admin.Role != model.RoleAdmin && admin.Role != model.RoleReseller) || in.MenuIDs == nil {
+		return nil, false, nil
+	}
+	clean, err := cleanMenus(admin.Role, in.MenuIDs)
 	if err != nil {
-		return nil, fmt.Errorf("service: %w", err)
+		return nil, false, err
 	}
+	return clean, true, nil
+}
 
-	s.log.Info("operator changed", "username", admin.Username, "fields", len(fields))
-	return s.Get(ctx, admin.ID)
+// writeUpdate writes a checked change, inside its transaction: the tokens
+// and users it moves, the label it refiles under, the row, the tunnels and
+// the pages.
+func (s *Admins) writeUpdate(ctx context.Context, tx *gorm.DB, admin model.Admin, role model.AdminRole, in AdminInput,
+	fields map[string]any, newGroup string, menus []string, setMenusToo bool) error {
+	if in.TokenLimit != nil {
+		if scopedTo(ctx) != nil {
+			return fault.Field("tokenLimit", "only the owner sets how many tokens an admin has")
+		}
+		if err := setTokens(tx, scope.Of(ctx).AdminID, &admin, int64(*in.TokenLimit)); err != nil {
+			return err
+		}
+	}
+	// Their users moved to the new figure, or counted the new way, in
+	// this same transaction (setUsers). Only the owner switches a mode.
+	if role.Capped() && (in.ClientLimit != nil || (in.UserMode != "" && scopedTo(ctx) == nil)) {
+		limit := int64(admin.ClientLimit)
+		if acc, err := capacity.Account(tx, admin.ID, model.CapacityUsers); err != nil {
+			return err
+		} else if acc != nil {
+			limit = acc.Granted
+		}
+		if in.ClientLimit != nil {
+			limit = int64(*in.ClientLimit)
+		}
+		mode := in.UserMode
+		if scopedTo(ctx) != nil {
+			mode = ""
+		}
+		if err := setUsers(tx, scope.Of(ctx).AdminID, &admin, limit, mode, scopedTo(ctx) == nil); err != nil {
+			return err
+		}
+	}
+	if newGroup != "" {
+		canonical, err := ensureOwnerGroup(tx, newGroup, admin.Username)
+		if err != nil {
+			return err
+		}
+		newGroup = canonical
+		if admin.GroupName != "" {
+			if err := membership.Refile(tx, admin.ID, admin.GroupName, newGroup); err != nil {
+				return err
+			}
+		}
+		fields["group_name"] = newGroup
+	}
+	if len(fields) > 0 {
+		if err := tx.Model(&model.Admin{}).Where("id = ?", admin.ID).Updates(fields).Error; err != nil {
+			return fmt.Errorf("update operator: %w", err)
+		}
+	}
+	if newGroup != "" && admin.GroupName != "" {
+		if err := dropOwnerGroupIfUnused(tx, admin.GroupName, admin.ID); err != nil {
+			return err
+		}
+	}
+	if in.InterfaceIDs != nil {
+		if err := s.setInterfaces(tx, admin.ID, in.InterfaceIDs); err != nil {
+			return err
+		}
+	}
+	if setMenusToo {
+		return setMenus(tx, admin.ID, menus)
+	}
+	return nil
 }
 
 // DeleteMode says what becomes of a departing operator's customers.
