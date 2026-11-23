@@ -134,7 +134,13 @@ func (s *Clients) importRaw(ctx context.Context, in ImportInput) (*ImportReport,
 				report.Skipped++
 				continue
 			case ConflictReplace:
-				if err := s.replaceFromImport(ctx, id, row); err != nil {
+				// Settled here, row by row, on the customer it replaces: the
+				// one found case-blind in the panel, or one this file made a
+				// row ago. Settled before the import on the names as written,
+				// "ALICE" or a name twice was a plan grown for nothing.
+				if err := s.withSeats(ctx, []uint{id}, false, func(v *Clients) ([]uint, error) {
+					return nil, v.replaceFromImport(ctx, id, row)
+				}); err != nil {
 					report.Failed++
 					report.Problems = append(report.Problems,
 						fmt.Sprintf("%s: %v", name, err))
@@ -158,11 +164,18 @@ func (s *Clients) importRaw(ctx context.Context, in ImportInput) (*ImportReport,
 		// come back looking active and serving traffic they had stopped paying
 		// for. The reconciler would correct it on its next tick, but between
 		// now and then they would be connected.
+		// Settled like any other change of status, so one brought in ended
+		// or switched off holds no users, as one ended here does not.
 		if status := restoredStatus(row); status != model.StatusActive {
-			if err := s.db.WithContext(ctx).Model(&model.Client{}).
-				Where("id = ?", created.ID).Update("status", status).Error; err != nil {
-				s.log.Warn("could not restore a client's status",
-					"client", name, "error", err)
+			if err := s.withSeats(ctx, []uint{created.ID}, false, func(v *Clients) ([]uint, error) {
+				return nil, v.db.WithContext(ctx).Model(&model.Client{}).
+					Where("id = ?", created.ID).Update("status", status).Error
+			}); err != nil {
+				// Said in the report, not only logged: they were made, and are
+				// serving, though the file had them as stopped.
+				s.log.Warn("could not restore a client's status", "client", name, "status", status, "error", err)
+				report.Problems = append(report.Problems,
+					fmt.Sprintf("%s: made, but could not be set back to %s, so they are active now: %v", name, status, err))
 			}
 		}
 

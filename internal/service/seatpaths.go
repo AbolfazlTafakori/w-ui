@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"gorm.io/gorm"
 
@@ -136,26 +135,13 @@ func (s *Clients) ApplyToGroup(ctx context.Context, op GroupOp) (int64, error) {
 	return n, err
 }
 
-// Import settles the customers it replaces here; the ones it makes are
-// made, and settled, by Create inside the same transaction.
+// Import is one transaction. Each row is settled on its own inside it: a
+// customer it makes by Create, one it replaces and a status it restores in
+// importRaw, on the customer the row actually reached -- so nothing is
+// counted twice and nothing escapes being counted.
 func (s *Clients) Import(ctx context.Context, in ImportInput) (*ImportReport, error) {
-	names := make([]string, 0, len(in.Clients))
-	for _, c := range in.Clients {
-		if n := strings.TrimSpace(c.Name); n != "" {
-			names = append(names, n)
-		}
-	}
-	var existing []uint
-	for start := 0; start < len(names); start += 900 {
-		var part []uint
-		if err := s.db.WithContext(ctx).Model(&model.Client{}).Where("name IN ?", names[start:min(start+900, len(names))]).
-			Pluck("id", &part).Error; err != nil {
-			return nil, fmt.Errorf("service: the customers an import replaces: %w", err)
-		}
-		existing = append(existing, part...)
-	}
 	var out *ImportReport
-	err := s.withSeats(ctx, existing, false, func(v *Clients) ([]uint, error) {
+	err := s.withSeats(ctx, nil, false, func(v *Clients) ([]uint, error) {
 		var err error
 		out, err = v.importRaw(ctx, in)
 		return nil, err
