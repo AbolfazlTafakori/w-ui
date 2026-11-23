@@ -46,6 +46,9 @@ type entry struct {
 	// lastErr is why the most recent attempt failed, kept so the panel can say
 	// so rather than showing an interface that looks configured and is not.
 	lastErr error
+	// failingSince is when the attempts began to fail, kept across the
+	// attempts that fail after it; zero while it opens.
+	failingSince time.Time
 }
 
 // NewPool builds an empty pool.
@@ -308,7 +311,22 @@ func (p *Pool) openLocked(ctx context.Context, iface *model.Interface, loud bool
 func (p *Pool) record(id uint, drv Backend, fp string, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.open[id] = entry{drv: drv, fp: fp, lastErr: err}
+	e := entry{drv: drv, fp: fp, lastErr: err}
+	if err != nil {
+		e.failingSince = p.open[id].failingSince
+		if e.failingSince.IsZero() {
+			e.failingSince = time.Now().UTC()
+		}
+	}
+	p.open[id] = e
+}
+
+// FailingSince is when an interface began to fail to open, zero while it
+// opens: the time its problem is shown from.
+func (p *Pool) FailingSince(id uint) time.Time {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.open[id].failingSince
 }
 
 // logOnce keeps a repeatedly failing interface from filling the log.

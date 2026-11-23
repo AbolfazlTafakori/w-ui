@@ -32,10 +32,12 @@ type Problem struct {
 	Detail string `json:"detail,omitempty"`
 	// ClientID is the customer it is about, 0 for the whole panel; Name
 	// their name and Device the device, when it is about one.
-	ClientID uint      `json:"clientId,omitempty"`
-	Name     string    `json:"name,omitempty"`
-	Device   string    `json:"device,omitempty"`
-	Since    time.Time `json:"since"`
+	ClientID uint   `json:"clientId,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Device   string `json:"device,omitempty"`
+	// Since is when it began; left out when that is not known, rather
+	// than sent as the year 1.
+	Since time.Time `json:"since,omitzero"`
 }
 
 // problems is the set going wrong now, by a key of code and subject.

@@ -109,7 +109,8 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 				if owner {
 					d = err.Error()
 				}
-				out = append(out, problemView{Problem: reconciler.Problem{Code: problemTunnelDown, Detail: d}, Tunnel: f.Name})
+				out = append(out, problemView{Problem: reconciler.Problem{Code: problemTunnelDown, Detail: d,
+					Since: s.pool.FailingSince(f.ID)}, Tunnel: f.Name})
 			}
 		}
 	}
