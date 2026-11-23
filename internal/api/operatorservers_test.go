@@ -20,6 +20,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/backend"
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/endpoints"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/i18n"
 	"github.com/abolfazl/w-ui/internal/ipam"
@@ -77,6 +78,7 @@ func serversPanel(t *testing.T) (http.Handler, map[string]session, *gorm.DB) {
 		Interfaces: service.NewInterfaces(db, ipam.NewPools(), log),
 		Clients:    service.NewClients(db, ipam.NewPools(), log),
 		Reconciler: reconciler.New(reconciler.Options{DB: db, Log: log, Enforcer: enforce.NewNoop(), Pool: backend.NewPool(log)}),
+		Subs:       service.NewSubscriptions(db, backend.NewPool(log), endpoints.NewHosts(db, log), log),
 		JWTSecret:  []byte("servers-test-secret-0123456789abcd"), Version: "test",
 	})
 	must := func(err error) {
