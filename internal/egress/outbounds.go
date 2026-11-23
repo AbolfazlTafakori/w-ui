@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/abolfazl/w-ui/internal/listfield"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/listfield"
 
 	"gorm.io/gorm"
 
@@ -302,19 +303,14 @@ func (s *Outbounds) Update(ctx context.Context, id uint, in OutboundInput) (*mod
 		updates["config"] = in.Config
 	}
 
-	// A tag that changes has to take its rules with it, or every rule pointing
-	// at the old name silently stops matching.
+	// A tag that changes takes everything pointing at it along (followRename),
+	// or what pointed at the old name silently points at nothing.
 	oldTag := ob.Tag
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&ob).Updates(updates).Error; err != nil {
 			return err
 		}
-		if in.Tag != oldTag {
-			return tx.Model(&model.RoutingRule{}).
-				Where("outbound_tag = ?", oldTag).
-				Update("outbound_tag", in.Tag).Error
-		}
-		return nil
+		return followRename(tx, oldTag, in.Tag)
 	}); err != nil {
 		return nil, fmt.Errorf("service: update outbound: %w", err)
 	}

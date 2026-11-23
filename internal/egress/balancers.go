@@ -3,10 +3,11 @@ package egress
 import (
 	"context"
 	"fmt"
-	"github.com/abolfazl/w-ui/internal/listfield"
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/listfield"
 
 	"gorm.io/gorm"
 
@@ -239,12 +240,8 @@ func (s *Balancers) Update(ctx context.Context, id uint, in BalancerInput) (*Bal
 		if err := tx.Model(&b).Updates(updates).Error; err != nil {
 			return err
 		}
-		if in.Tag != oldTag {
-			// Rules follow the rename, as they do for an outbound.
-			return tx.Model(&model.RoutingRule{}).Where("outbound_tag = ?", oldTag).
-				Update("outbound_tag", in.Tag).Error
-		}
-		return nil
+		// What points at it follows the rename, as for an outbound.
+		return followRename(tx, oldTag, in.Tag)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("service: update balancer: %w", err)
