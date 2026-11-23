@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/capacity"
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/ipam"
@@ -878,11 +879,10 @@ func (s *Clients) bucketWhere(bucket string, paused []uint) (string, []any) {
 			pausedOut, pausedArgs = " AND owner_id NOT IN ? AND admin_id NOT IN ?", []any{paused, paused}
 		}
 		if s.live != nil {
-			ids := s.live.LiveClients()
-			if len(ids) == 0 {
-				return "1 = 0", nil
-			}
-			return "id IN ?" + pausedOut, append([]any{ids}, pausedArgs...)
+			// Every customer online, which on a busy panel is past what one
+			// statement may bind id by id: sent as one list (InIDs).
+			cond, args := database.InIDs(s.db, "id", s.live.LiveClients())
+			return cond + pausedOut, append(args, pausedArgs...)
 		}
 		return "id IN (SELECT client_id FROM accounts WHERE last_handshake > ?)" + pausedOut,
 			append([]any{onlineSince()}, pausedArgs...)
@@ -1692,8 +1692,12 @@ func (s *Clients) adjustRaw(ctx context.Context, in AdjustInput) (int64, error) 
 	now := time.Now().UTC()
 
 	var members []model.Client
-	if err := db.Where("id IN ?", in.IDs).Find(&members).Error; err != nil {
-		return 0, fmt.Errorf("service: load selection: %w", err)
+	for _, part := range idset.Chunks(in.IDs, idset.Batch) {
+		var got []model.Client
+		if err := db.Where("id IN ?", part).Find(&got).Error; err != nil {
+			return 0, fmt.Errorf("service: load selection: %w", err)
+		}
+		members = append(members, got...)
 	}
 
 	var n int64
@@ -2008,7 +2012,8 @@ func (s *Clients) Overview(ctx context.Context) (*Overview, error) {
 	case s.live != nil:
 		ids := s.live.LiveClients()
 		if len(paused) > 0 && len(ids) > 0 {
-			if err := db.Model(&model.Client{}).Where("id IN ?", ids).
+			cond, args := database.InIDs(db, "id", ids)
+			if err := db.Model(&model.Client{}).Where(cond, args...).
 				Where("owner_id NOT IN ? AND admin_id NOT IN ?", paused, paused).
 				Count(&o.Online).Error; err != nil {
 				return nil, err
@@ -2449,7 +2454,8 @@ func (s *Clients) Own(ctx context.Context, ids []uint) (map[uint]bool, error) {
 		return out, nil
 	}
 	var own []uint
-	if err := s.db.WithContext(ctx).Model(&model.Client{}).Where("id IN ?", ids).Pluck("id", &own).Error; err != nil {
+	cond, args := database.InIDs(s.db, "id", ids)
+	if err := s.db.WithContext(ctx).Model(&model.Client{}).Where(cond, args...).Pluck("id", &own).Error; err != nil {
 		return nil, fmt.Errorf("service: which customers are the operator's: %w", err)
 	}
 	for _, id := range own {

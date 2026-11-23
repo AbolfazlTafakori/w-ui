@@ -14,6 +14,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/handover"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // Bringing in the customers a W-UI node had of its own before it was one
@@ -492,8 +493,12 @@ func (s *Clients) unmakeHandedOver(ctx context.Context, made *handedOver) error 
 				{&model.ClientGroup{}, "client_id IN ?"},
 				{&model.Client{}, "id IN ?"},
 			} {
-				if err := tx.Where(q.where, clients).Delete(q.row).Error; err != nil {
-					return err
+				// A whole node's customers can be more than one statement
+				// may name: a batch at a time.
+				for _, part := range idset.Chunks(clients, idset.Batch) {
+					if err := tx.Where(q.where, part).Delete(q.row).Error; err != nil {
+						return err
+					}
 				}
 			}
 		}

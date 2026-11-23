@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/scope"
 )
 
@@ -34,7 +35,12 @@ func SyncLabel(db *gorm.DB, ids []uint) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return db.WithContext(scope.Vouch(ctx)).Exec(`UPDATE clients SET "group" = COALESCE((SELECT MIN(name) FROM client_groups g WHERE g.client_id = clients.id), '') WHERE id IN ?`, ids).Error
+	for _, part := range idset.Chunks(ids, idset.Batch) {
+		if err := db.WithContext(scope.Vouch(ctx)).Exec(`UPDATE clients SET "group" = COALESCE((SELECT MIN(name) FROM client_groups g WHERE g.client_id = clients.id), '') WHERE id IN ?`, part).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Refile moves one reseller's customers from one label to another.
@@ -46,16 +52,18 @@ func Refile(tx *gorm.DB, ownerID uint, from, to string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	// A customer already in the new group keeps that one row rather than
-	// being given a second: the pair is the key.
-	if err := tx.Where("name = ? AND client_id IN ? AND client_id IN (SELECT client_id FROM client_groups WHERE name = ?)",
-		to, ids, from).Delete(&model.ClientGroup{}).Error; err != nil {
-		return fmt.Errorf("refile the reseller's customers: %w", err)
-	}
-	if err := tx.Model(&model.ClientGroup{}).
-		Where("name = ? AND client_id IN ?", from, ids).
-		Update("name", to).Error; err != nil {
-		return fmt.Errorf("refile the reseller's customers: %w", err)
+	for _, part := range idset.Chunks(ids, idset.Batch) {
+		// A customer already in the new group keeps that one row rather than
+		// being given a second: the pair is the key.
+		if err := tx.Where("name = ? AND client_id IN ? AND client_id IN (SELECT client_id FROM client_groups WHERE name = ?)",
+			to, part, from).Delete(&model.ClientGroup{}).Error; err != nil {
+			return fmt.Errorf("refile the reseller's customers: %w", err)
+		}
+		if err := tx.Model(&model.ClientGroup{}).
+			Where("name = ? AND client_id IN ?", from, part).
+			Update("name", to).Error; err != nil {
+			return fmt.Errorf("refile the reseller's customers: %w", err)
+		}
 	}
 	return SyncLabel(tx, ids)
 }
@@ -84,9 +92,11 @@ func HandOver(tx *gorm.DB, ownerID uint, label string) error {
 	if label == "" || len(kept) == 0 {
 		return nil
 	}
-	if err := tx.Where("name = ? AND client_id IN ?", label, kept).
-		Delete(&model.ClientGroup{}).Error; err != nil {
-		return fmt.Errorf("clear the operator's own group: %w", err)
+	for _, part := range idset.Chunks(kept, idset.Batch) {
+		if err := tx.Where("name = ? AND client_id IN ?", label, part).
+			Delete(&model.ClientGroup{}).Error; err != nil {
+			return fmt.Errorf("clear the operator's own group: %w", err)
+		}
 	}
 	if err := SyncLabel(tx, kept); err != nil {
 		return fmt.Errorf("clear the operator's own group: %w", err)

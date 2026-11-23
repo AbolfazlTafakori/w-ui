@@ -75,9 +75,13 @@ func (s *Clients) moveServers(ctx context.Context, ids, interfaceIDs []uint, add
 	}
 
 	var clients []model.Client
-	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).
-		Where("id IN ?", ids).Find(&clients).Error; err != nil {
-		return nil, fmt.Errorf("service: load customers: %w", err)
+	for _, part := range idset.Chunks(ids, idset.Batch) {
+		var got []model.Client
+		if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).
+			Where("id IN ?", part).Find(&got).Error; err != nil {
+			return nil, fmt.Errorf("service: load customers: %w", err)
+		}
+		clients = append(clients, got...)
 	}
 
 	out := &ServerBulkResult{Failures: map[string]string{}}

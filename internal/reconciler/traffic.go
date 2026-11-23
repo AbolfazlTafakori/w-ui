@@ -12,6 +12,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/logger"
 )
 
@@ -247,18 +248,20 @@ func (w *trafficWriter) write(ctx context.Context, usage, devices map[uint]usage
 		for id := range usage {
 			ids = append(ids, id)
 		}
-		var rows []struct {
-			ID      uint
-			OwnerID uint
-			AdminID uint
-		}
-		if err := db.Model(&model.Client{}).Select("id, owner_id, admin_id").
-			Where("id IN ? AND (owner_id <> 0 OR admin_id <> 0)", ids).Scan(&rows).Error; err != nil {
-			w.log.Warn("could not read which operator these customers belong to", "error", err)
-		}
-		for _, row := range rows {
-			owners[row.ID] = row.OwnerID
-			admins[row.ID] = row.AdminID
+		for _, part := range idset.Chunks(ids, idset.Batch) {
+			var rows []struct {
+				ID      uint
+				OwnerID uint
+				AdminID uint
+			}
+			if err := db.Model(&model.Client{}).Select("id, owner_id, admin_id").
+				Where("id IN ? AND (owner_id <> 0 OR admin_id <> 0)", part).Scan(&rows).Error; err != nil {
+				w.log.Warn("could not read which operator these customers belong to", "error", err)
+			}
+			for _, row := range rows {
+				owners[row.ID] = row.OwnerID
+				admins[row.ID] = row.AdminID
+			}
 		}
 	}
 	// Written a few hundred rows to a statement (traffic_batch.go).

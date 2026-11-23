@@ -31,3 +31,24 @@ func TestSameIgnoresOrderButNotCount(t *testing.T) {
 		t.Fatal("different lengths")
 	}
 }
+
+func TestChunksCutsInOrderAndLosesNothing(t *testing.T) {
+	ids := make([]uint, 2001)
+	for i := range ids {
+		ids[i] = uint(i + 1)
+	}
+	parts := Chunks(ids, 900)
+	if len(parts) != 3 || len(parts[0]) != 900 || len(parts[2]) != 201 {
+		t.Fatalf("parts of %v", []int{len(parts)})
+	}
+	var back []uint
+	for _, p := range parts {
+		back = append(back, p...)
+	}
+	if !Same(back, ids) || back[0] != 1 || back[2000] != 2001 {
+		t.Fatal("chunks lost or reordered ids")
+	}
+	if len(Chunks(nil, 900)) != 0 {
+		t.Fatal("none for none")
+	}
+}

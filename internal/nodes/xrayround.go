@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -174,12 +175,16 @@ func (s *Syncer) xrayRound(ctx context.Context, node model.Node, p xrayPanel) er
 		for _, a := range accounts {
 			cids = append(cids, a.ClientID)
 		}
-		var rows []model.Client
-		if err := db.Where("id IN ?", cids).Find(&rows).Error; err != nil {
-			return fmt.Errorf("load clients: %w", err)
-		}
-		for _, c := range rows {
-			clients[c.ID] = c
+		// One per file, so a customer on three tunnels is named three
+		// times: once each, a batch at a time.
+		for _, part := range idset.Chunks(idset.Unique(cids), idset.Batch) {
+			var rows []model.Client
+			if err := db.Where("id IN ?", part).Find(&rows).Error; err != nil {
+				return fmt.Errorf("load clients: %w", err)
+			}
+			for _, c := range rows {
+				clients[c.ID] = c
+			}
 		}
 	}
 

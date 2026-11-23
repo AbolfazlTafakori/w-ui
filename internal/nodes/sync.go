@@ -17,6 +17,7 @@ import (
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fleet"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/service"
 )
 
@@ -307,16 +308,18 @@ func (s *Syncer) customersOf(ctx context.Context, devices []fleet.NodeDeviceUsag
 	for _, d := range devices {
 		ids = append(ids, d.OriginID)
 	}
-	var rows []struct {
-		ID       uint
-		ClientID uint
-	}
-	if err := s.db.WithContext(ctx).Model(&model.Account{}).Select("id, client_id").
-		Where("id IN ?", ids).Scan(&rows).Error; err != nil {
-		return out, err
-	}
-	for _, r := range rows {
-		out[r.ID] = r.ClientID
+	for _, part := range idset.Chunks(idset.Unique(ids), idset.Batch) {
+		var rows []struct {
+			ID       uint
+			ClientID uint
+		}
+		if err := s.db.WithContext(ctx).Model(&model.Account{}).Select("id, client_id").
+			Where("id IN ?", part).Scan(&rows).Error; err != nil {
+			return out, err
+		}
+		for _, r := range rows {
+			out[r.ID] = r.ClientID
+		}
 	}
 	return out, nil
 }
@@ -366,12 +369,14 @@ func (s *Syncer) desired(ctx context.Context, nodeID uint, spent bool) ([]fleet.
 
 	clients := map[uint]model.Client{}
 	if len(clientIDs) > 0 {
-		var rows []model.Client
-		if err := db.Where("id IN ?", clientIDs).Find(&rows).Error; err != nil {
-			return nil, fmt.Errorf("load clients: %w", err)
-		}
-		for _, c := range rows {
-			clients[c.ID] = c
+		for _, part := range idset.Chunks(clientIDs, idset.Batch) {
+			var rows []model.Client
+			if err := db.Where("id IN ?", part).Find(&rows).Error; err != nil {
+				return nil, fmt.Errorf("load clients: %w", err)
+			}
+			for _, c := range rows {
+				clients[c.ID] = c
+			}
 		}
 	}
 

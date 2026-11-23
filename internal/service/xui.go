@@ -14,6 +14,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/handover"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/wgkey"
 )
 
@@ -313,8 +314,9 @@ type XUIUsage struct {
 // links it makes, for each file.
 func SaveXUICounters(ctx context.Context, db *gorm.DB, usage []XUIUsage, links map[uint]string, placed []uint) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if len(placed) > 0 {
-			if err := tx.Model(&model.Account{}).Where("id IN ?", placed).Update("xui_placed", true).Error; err != nil {
+		// The first round on a node places every file on it at once.
+		for _, part := range idset.Chunks(placed, idset.Batch) {
+			if err := tx.Model(&model.Account{}).Where("id IN ?", part).Update("xui_placed", true).Error; err != nil {
 				return err
 			}
 		}

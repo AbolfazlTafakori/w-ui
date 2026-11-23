@@ -12,6 +12,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fault"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // The state one panel hands another.
@@ -489,12 +490,14 @@ func (s *NodeSync) Drain(ctx context.Context) ([]NodeUsage, []NodeDeviceUsage, e
 				})
 				ids = append(ids, c.ID)
 			}
-			if err := tx.Model(&model.Client{}).Where("id IN ?", ids).
-				UpdateColumns(map[string]any{
-					"used_bytes": 0, "up_bytes": 0, "down_bytes": 0,
-					"updated_at": time.Now().UTC(),
-				}).Error; err != nil {
-				return fmt.Errorf("reset managed usage: %w", err)
+			for _, part := range idset.Chunks(ids, idset.Batch) {
+				if err := tx.Model(&model.Client{}).Where("id IN ?", part).
+					UpdateColumns(map[string]any{
+						"used_bytes": 0, "up_bytes": 0, "down_bytes": 0,
+						"updated_at": time.Now().UTC(),
+					}).Error; err != nil {
+					return fmt.Errorf("reset managed usage: %w", err)
+				}
 			}
 		}
 
@@ -510,9 +513,11 @@ func (s *NodeSync) Drain(ctx context.Context) ([]NodeUsage, []NodeDeviceUsage, e
 			devices = append(devices, NodeDeviceUsage{OriginID: a.OriginID, Up: a.UpBytes, Down: a.DownBytes})
 			ids = append(ids, a.ID)
 		}
-		if err := tx.Model(&model.Account{}).Where("id IN ?", ids).
-			UpdateColumns(map[string]any{"up_bytes": 0, "down_bytes": 0}).Error; err != nil {
-			return fmt.Errorf("reset managed file usage: %w", err)
+		for _, part := range idset.Chunks(ids, idset.Batch) {
+			if err := tx.Model(&model.Account{}).Where("id IN ?", part).
+				UpdateColumns(map[string]any{"up_bytes": 0, "down_bytes": 0}).Error; err != nil {
+				return fmt.Errorf("reset managed file usage: %w", err)
+			}
 		}
 		return nil
 	})
@@ -538,8 +543,12 @@ func (s *NodeSync) Hold(ctx context.Context, holds []NodeHold) (int, error) {
 		until[h.OriginID] = h.Until
 	}
 	var accounts []model.Account
-	if err := s.db.WithContext(ctx).Where("origin_id IN ?", origins).Find(&accounts).Error; err != nil {
-		return 0, fmt.Errorf("service: find held accounts: %w", err)
+	for _, part := range idset.Chunks(origins, idset.Batch) {
+		var got []model.Account
+		if err := s.db.WithContext(ctx).Where("origin_id IN ?", part).Find(&got).Error; err != nil {
+			return 0, fmt.Errorf("service: find held accounts: %w", err)
+		}
+		accounts = append(accounts, got...)
 	}
 	n := 0
 	for _, a := range accounts {

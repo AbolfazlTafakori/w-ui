@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"gorm.io/gorm"
@@ -11,6 +12,7 @@ import (
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/fault"
 	"github.com/abolfazl/w-ui/internal/handover"
+	"github.com/abolfazl/w-ui/internal/idset"
 )
 
 // The node's half of a handover (internal/handover): it reads what it has of
@@ -59,20 +61,32 @@ func (s *NodeSync) Handover(ctx context.Context, nodeID uint) (handover.Handover
 	if len(clientIDs) == 0 {
 		return out, nil
 	}
+	// A batch of customers at a time: a node's tunnels can carry more
+	// customers than one statement may name. Each customer's own rows are
+	// read in one batch, so their groups keep their order.
 	var clients []model.Client
-	if err := db.Where("id IN ? AND origin_id = 0", clientIDs).Order("id").Find(&clients).Error; err != nil {
-		return handover.Handover{}, fmt.Errorf("read own customers: %w", err)
-	}
 	var groups []model.ClientGroup
-	if err := db.Where("client_id IN ?", clientIDs).Order("name").Find(&groups).Error; err != nil {
-		return handover.Handover{}, fmt.Errorf("read groups: %w", err)
-	}
 	// A customer with a file on a tunnel that is not handed over.
 	var elsewhere []uint
-	if err := db.Model(&model.Account{}).Where("client_id IN ? AND interface_id NOT IN ?", clientIDs, ids).
-		Distinct().Pluck("client_id", &elsewhere).Error; err != nil {
-		return handover.Handover{}, fmt.Errorf("read files elsewhere: %w", err)
+	for _, part := range idset.Chunks(clientIDs, idset.Batch) {
+		var cs []model.Client
+		if err := db.Where("id IN ? AND origin_id = 0", part).Order("id").Find(&cs).Error; err != nil {
+			return handover.Handover{}, fmt.Errorf("read own customers: %w", err)
+		}
+		clients = append(clients, cs...)
+		var gs []model.ClientGroup
+		if err := db.Where("client_id IN ?", part).Order("name").Find(&gs).Error; err != nil {
+			return handover.Handover{}, fmt.Errorf("read groups: %w", err)
+		}
+		groups = append(groups, gs...)
+		var away []uint
+		if err := db.Model(&model.Account{}).Where("client_id IN ? AND interface_id NOT IN ?", part, ids).
+			Distinct().Pluck("client_id", &away).Error; err != nil {
+			return handover.Handover{}, fmt.Errorf("read files elsewhere: %w", err)
+		}
+		elsewhere = append(elsewhere, away...)
 	}
+	sort.Slice(clients, func(i, j int) bool { return clients[i].ID < clients[j].ID })
 	away := map[uint]bool{}
 	for _, id := range elsewhere {
 		away[id] = true
@@ -190,9 +204,13 @@ func (s *NodeSync) Claim(ctx context.Context, nodeID uint, c handover.Claim) err
 				ids = append(ids, p.LocalID)
 			}
 			var stray int64
-			if err := tx.Model(&model.Account{}).Where("client_id IN ? AND interface_id NOT IN ?", ids, tunnelIDs).
-				Count(&stray).Error; err != nil {
-				return err
+			for _, part := range idset.Chunks(ids, idset.Batch) {
+				var n int64
+				if err := tx.Model(&model.Account{}).Where("client_id IN ? AND interface_id NOT IN ?", part, tunnelIDs).
+					Count(&n).Error; err != nil {
+					return err
+				}
+				stray += n
 			}
 			if stray > 0 {
 				missing = append(missing, "a tunnel those customers are also on")

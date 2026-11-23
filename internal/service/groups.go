@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/membership"
 	"github.com/abolfazl/w-ui/internal/scope"
 )
@@ -466,10 +467,16 @@ func (s *Clients) AssignGroup(ctx context.Context, name string, ids []uint, remo
 	// the automatically scoped one, so a reseller who sends somebody else's
 	// ids is left with none rather than with an error that confirms those
 	// customers exist.
-	if err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("id IN ?", ids).Pluck("id", &ids).Error; err != nil {
-		return 0, fmt.Errorf("service: check the selection: %w", err)
+	var mine []uint
+	for _, part := range idset.Chunks(ids, idset.Batch) {
+		var got []uint
+		if err := s.db.WithContext(ctx).Model(&model.Client{}).
+			Where("id IN ?", part).Pluck("id", &got).Error; err != nil {
+			return 0, fmt.Errorf("service: check the selection: %w", err)
+		}
+		mine = append(mine, got...)
 	}
+	ids = mine
 	if len(ids) == 0 {
 		return 0, nil
 	}
@@ -480,20 +487,24 @@ func (s *Clients) AssignGroup(ctx context.Context, name string, ids []uint, remo
 		case name == "":
 			// Everything but the owner's own label, which a reseller does
 			// not get to clear.
-			q := tx.Where("client_id IN ?", ids)
-			if hidden, args := hiddenCond(ctx, "name"); hidden != "" {
-				q = q.Where(strings.TrimPrefix(hidden, " AND "), args...)
-			}
-			res := q.Delete(&model.ClientGroup{})
-			n = res.RowsAffected
-			if res.Error != nil {
-				return res.Error
+			for _, part := range idset.Chunks(ids, idset.Batch) {
+				q := tx.Where("client_id IN ?", part)
+				if hidden, args := hiddenCond(ctx, "name"); hidden != "" {
+					q = q.Where(strings.TrimPrefix(hidden, " AND "), args...)
+				}
+				res := q.Delete(&model.ClientGroup{})
+				if res.Error != nil {
+					return res.Error
+				}
+				n += res.RowsAffected
 			}
 		case remove:
-			res := tx.Where("client_id IN ? AND name = ?", ids, name).Delete(&model.ClientGroup{})
-			n = res.RowsAffected
-			if res.Error != nil {
-				return res.Error
+			for _, part := range idset.Chunks(ids, idset.Batch) {
+				res := tx.Where("client_id IN ? AND name = ?", part, name).Delete(&model.ClientGroup{})
+				if res.Error != nil {
+					return res.Error
+				}
+				n += res.RowsAffected
 			}
 		default:
 			for _, id := range ids {

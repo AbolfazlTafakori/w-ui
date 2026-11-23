@@ -28,9 +28,11 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/abolfazl/w-ui/internal/backend"
+	"github.com/abolfazl/w-ui/internal/database"
 	"github.com/abolfazl/w-ui/internal/database/model"
 	"github.com/abolfazl/w-ui/internal/enforce"
 	"github.com/abolfazl/w-ui/internal/fleet"
+	"github.com/abolfazl/w-ui/internal/idset"
 	"github.com/abolfazl/w-ui/internal/logger"
 	"github.com/abolfazl/w-ui/internal/notify"
 	"github.com/abolfazl/w-ui/internal/routing"
@@ -739,17 +741,19 @@ func (r *Reconciler) evaluate(ctx context.Context) (exhausted, expired int64, er
 	// dropped before any counter saw it, so stored usage never reaches the
 	// limit, and they would show as active while nothing of theirs passed.
 	spent := r.spentInKernel(ctx)
+	// As one list, however many the kernel reports (database.InIDs).
+	spentIn, spentArgs := database.InIDs(db, "id", spent)
+	outOfTraffic := "status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR " + spentIn + ")"
+	outArgs := append([]any{model.StatusActive}, spentArgs...)
 
 	// Who is about to be cut off is read before the sweep. Afterwards the rows
 	// no longer match the condition, so there would be no way to say whose
 	// service just stopped — and "someone was cut off" is not a useful message.
-	exhaustedNames := r.namesMatching(ctx,
-		"status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR id IN ?)", model.StatusActive, spent)
+	exhaustedNames := r.namesMatching(ctx, outOfTraffic, outArgs...)
 
 	// Ended in the same transaction as their seats are given back: a
 	// customer out of traffic holds no seat of an open account.
-	res, err := endClients(ctx, db, model.StatusExhausted,
-		"status = ? AND quota_bytes > 0 AND (used_bytes >= quota_bytes OR id IN ?)", model.StatusActive, spent)
+	res, err := endClients(ctx, db, model.StatusExhausted, outOfTraffic, outArgs...)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -799,9 +803,16 @@ func endClients(ctx context.Context, db *gorm.DB, status model.ClientStatus, whe
 	}
 	var n int64
 	err := service.SettleChange(ctx, db, ids, service.ByPanel, func(tx *gorm.DB) ([]uint, error) {
-		res := tx.Model(&model.Client{}).Where("id IN ?", ids).Where(where, args...).Update("status", status)
-		n = res.RowsAffected
-		return nil, res.Error
+		// A batch at a time: a month's end, or the first sweep after a long
+		// stop, can end more customers than one statement may name.
+		for _, part := range idset.Chunks(ids, idset.Batch) {
+			res := tx.Model(&model.Client{}).Where("id IN ?", part).Where(where, args...).Update("status", status)
+			if res.Error != nil {
+				return nil, res.Error
+			}
+			n += res.RowsAffected
+		}
+		return nil, nil
 	})
 	return ended{RowsAffected: n}, err
 }

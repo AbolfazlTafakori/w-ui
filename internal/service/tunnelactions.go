@@ -42,7 +42,10 @@ func (s *Interfaces) ResetTunnelUsage(ctx context.Context, id uint) (int64, erro
 		return 0, nil
 	}
 
-	res := s.db.WithContext(ctx).Model(&model.Client{}).Where("id IN ?", ids).
+	// Named by the tunnel rather than by the list read above: a tunnel can
+	// carry more customers than one statement may bind id by id.
+	onIt := "id IN (SELECT client_id FROM accounts WHERE interface_id = ?)"
+	res := s.db.WithContext(ctx).Model(&model.Client{}).Where(onIt, id).
 		Updates(map[string]any{
 			"used_bytes": 0,
 			"up_bytes":   0,
@@ -52,11 +55,11 @@ func (s *Interfaces) ResetTunnelUsage(ctx context.Context, id uint) (int64, erro
 	if res.Error != nil {
 		return 0, fmt.Errorf("service: reset usage on %s: %w", iface.Name, res.Error)
 	}
-	if err := ZeroFileUsage(s.db.WithContext(ctx), "id IN ?", ids); err != nil {
+	if err := ZeroFileUsage(s.db.WithContext(ctx), onIt, id); err != nil {
 		return 0, err
 	}
 	if err := s.db.WithContext(ctx).Model(&model.Client{}).
-		Where("id IN ? AND status = ?", ids, model.StatusExhausted).
+		Where(onIt+" AND status = ?", id, model.StatusExhausted).
 		Update("status", model.StatusActive).Error; err != nil {
 		return 0, fmt.Errorf("service: bring back the customers on %s who had run out: %w", iface.Name, err)
 	}

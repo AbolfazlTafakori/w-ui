@@ -71,3 +71,22 @@ func Same(a, b []uint) bool {
 	}
 	return true
 }
+
+// Batch is how many ids one statement binds at most. SQLite refuses a
+// statement with 32,767 or more parameters and PostgreSQL 65,535 or more, so
+// a list of customers or files -- a hundred thousand on a large panel -- is
+// sent a batch at a time, well under both with room for the statement's own.
+const Batch = 900
+
+// Chunks cuts ids into consecutive batches of at most n, in order; none for
+// none. The batches share ids' memory.
+func Chunks(ids []uint, n int) [][]uint {
+	if n <= 0 {
+		n = Batch
+	}
+	out := make([][]uint, 0, (len(ids)+n-1)/n)
+	for start := 0; start < len(ids); start += n {
+		out = append(out, ids[start:min(start+n, len(ids))])
+	}
+	return out
+}
