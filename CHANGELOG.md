@@ -6,6 +6,40 @@ All notable changes to W-UI are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.3.0] — 2026-11-24
+
+### Added
+- **Customers can be handed to another operator.** The owner, or an admin within their own tree, moves one customer or a selection to another admin or reseller: from the customer form's *Transfer* tab or *Move to operator* on the list. The receiver is chosen from a searchable list that shows each operator's role. The move says beforehand what it takes from the receiver's users and which servers change, puts the customer on the receiver's servers, and takes them out of the giver's groups. Past usage can be carried over to the receiver's traffic, or only what is used from now on counts.
+- **Sales rules for admins and resellers.** An operator can be held to the longest term and the most traffic one sale may give. A reseller under an admin is held to the tighter of the two. On consumable capacity, giving a customer new credentials (a new link, new keys, a file removed and added back) is a new sale and spends users, unless the operator was let off it.
+- **One capacity ledger.** Every customer made, extended, ended, removed or moved pays or returns users through one path, atomically. Each operator sees their own capacity history.
+- **Each user of a plan gets a subscription link of their own.** The subscription page shows each user's own figures, whether they are online, and a shared plan's volume as everyone's.
+- **A tunnel or a server is removed with its customers in one step.** The dialog says who keeps their other servers and who is on it alone, and those are moved to another tunnel or removed, as chosen.
+- **The customer page shows devices as a grid**, a row for each user and a column for each server: whether each file is connected now, its address, its QR code and its download.
+- **Admins and resellers** issue API tokens for their own scripts, see whether their servers are up, see what their tree changed, and see sharing over their own customers. A paused admin or reseller stops their whole tree, on every node.
+- **Problems are shown in the panel**, not only logged: a tunnel that will not open says since when.
+- **Activity** is a page of the owner's menu.
+- **The panel speaks Russian, Turkish and Chinese** across every page.
+
+### Changed
+- **Online is decided the same way everywhere.** The customer list and the customer page both read live sessions on every protocol and node, within the online window the operator set.
+- **SQLite reads in parallel**, a commit is on disk when it returns, and a backup holds no read or write up.
+- **IKEv2** loads one changed device rather than all of strongSwan, and a new device has its certificate in a second.
+- **The reconciler** drains only the counters of the files that moved, and a panel killed mid-flight loses no usage and gives none free.
+- **Every refusal carries a fixed code** and a precise message; no answer is a bare internal error.
+
+### Fixed
+- **A backup with a disabled tunnel or node could not be restored**, on either engine: a zero in a column with a default came back as the default, and the restore was refused whole.
+- **Restoring the oldest kept backup deleted it** before it was unpacked.
+- **Every restore deleted the database's write-ahead log**, losing the latest writes where the database file was not itself replaced.
+- **A restore whose database was refused** left the backup's files beside the old data; they are now put back.
+- **A restore staged with `wui backup restore`** (run as root) was discarded at the next start as incomplete, and archives made from the terminal could not be downloaded from the panel.
+- **A backup from a newer panel** is refused before anything loads, and a damaged or newer database file in an archive is refused at the restore, not found by a panel that will not start.
+- **Backups of tables keyed on two columns** past a thousand rows, and lists of more customers than one SQL statement may name (SQLite and PostgreSQL), no longer fail.
+- **On a jumbo-frame server** (MTU 9001, as on AWS and Azure) an AmneziaWG tunnel could not be made.
+- **Uploads** take backups up to 8 GB, and a file too large is said to be that.
+- **Saving settings** no longer wipes the bot tokens.
+- **Copy buttons** work on a plain-HTTP panel.
+
 ## [3.2.0] — 2026-11-11
 
 ### Added
