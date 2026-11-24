@@ -72,7 +72,15 @@ jobs:
           govulncheck ./...
       - name: coverage floor
         run: bash scripts/coverage-floor.sh
-      - run: go test -race ./...
+      # Twice. Under the race detector the pure-Go SQLite is many times
+      # slower, and the tests that build tens of thousands of customers --
+      # past what one statement may name -- take longer than a package may:
+      # those skip in -short. Then every test once more at full size,
+      # without it.
+      - run: go test -race -short ./...
+        env:
+          WUI_TEST_PG_DSN: postgres://wui:wui@localhost:5432/wui?sslmode=disable
+      - run: go test -count=1 ./...
         env:
           WUI_TEST_PG_DSN: postgres://wui:wui@localhost:5432/wui?sslmode=disable
       - name: Cross-compiles for every release target

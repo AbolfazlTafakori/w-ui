@@ -17,3 +17,13 @@ func TestTheDefaultRoutesDeviceIsTheUplink(t *testing.T) {
 		t.Fatalf("no default route: %d, want %d", mtu, Default)
 	}
 }
+
+// A jumbo-frame uplink -- 9001 on AWS and Azure -- is taken as an Ethernet
+// link's: the internet between the server and a customer carries no more.
+func TestAJumboFrameUplinkIsTakenAsEthernet(t *testing.T) {
+	table := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+	if name, mtu := fromRoutes(table, func(string) int { return 9001 }); name != "eth0" || mtu != Default {
+		t.Fatalf("uplink = %s %d, want eth0 %d", name, mtu, Default)
+	}
+}

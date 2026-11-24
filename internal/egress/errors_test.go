@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,9 +19,15 @@ import (
 
 func testDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: gormlogger.Discard})
+	// A file, not ":memory:": each connection to ":memory:" is a database of
+	// its own, and a name refresh running in the background on a second
+	// connection found no tables at all.
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "egress.db")), &gorm.Config{Logger: gormlogger.Discard})
 	if err != nil {
 		t.Fatalf("open: %v", err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		t.Cleanup(func() { sqlDB.Close() })
 	}
 	if err := db.AutoMigrate(model.AllModels()...); err != nil {
 		t.Fatalf("migrate: %v", err)

@@ -37,7 +37,12 @@ func fromRoutes(table string, mtuOf func(string) int) (string, int) {
 			continue
 		}
 		if m := mtuOf(f[0]); m >= Lowest {
-			return f[0], m
+			// No more than an Ethernet link's: a jumbo-frame device -- 9001
+			// on AWS and Azure -- carries big packets inside the provider's
+			// network, never across the internet to a customer, and a
+			// tunnel sized for it is split on every packet or, for
+			// AmneziaWG, has no profile that fits at all.
+			return f[0], min(m, Default)
 		}
 	}
 	return "", Default

@@ -23,6 +23,9 @@ func TestASlowResolverDoesNotHoldTheStart(t *testing.T) {
 	if _, err := r.SaveBasic(ctx, BasicRouting{BlockDomains: []string{"blocked.example"}}); err != nil {
 		t.Fatal(err)
 	}
+	// The refresh the save started reads the lookup; it ends before the
+	// lookup is swapped, not alongside it.
+	r.Wait()
 
 	release := make(chan struct{})
 	was, wasWait := lookupNetIP, firstPassWait

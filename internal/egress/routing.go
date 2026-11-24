@@ -123,7 +123,14 @@ type Routing struct {
 
 	// saidUnread is the unreadable stored entries already logged.
 	saidUnread map[string]bool
+
+	// refreshing is the name refreshes running in the background, so what
+	// started them can wait for them to end (Wait).
+	refreshing sync.WaitGroup
 }
+
+// Wait returns once every name refresh started in the background has ended.
+func (s *Routing) Wait() { s.refreshing.Wait() }
 
 // DefaultMark is the mark of the outbound at the top of the list, or zero
 // while that is the server's own route.
@@ -357,7 +364,11 @@ func (s *Routing) SaveBasic(ctx context.Context, in BasicRouting) (BasicRouting,
 // Run in the background: the caller is answering an HTTP request and should not
 // wait on somebody else's name server.
 func (s *Routing) namesChanged(ctx context.Context) {
-	go s.refreshDomains(context.WithoutCancel(ctx))
+	s.refreshing.Add(1)
+	go func() {
+		defer s.refreshing.Done()
+		s.refreshDomains(context.WithoutCancel(ctx))
+	}()
 }
 
 // ── rules ────────────────────────────────────────────────────────────────────

@@ -61,6 +61,9 @@ func TestEveryConnectionIsSetUp(t *testing.T) {
 // A backup reading the whole database holds neither the panel's reads nor
 // its writes: both go on, at their usual speed, while it reads.
 func TestABackupDoesNotHoldThePanelUp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("thirty thousand customers: run in full without -short")
+	}
 	db := openPanelDB(t)
 	iface := model.Interface{Name: "wg0", Protocol: "wireguard", ListenPort: 51820, Subnet: "10.66.0.0/16", PrivateKey: "k"}
 	must(t, db.Create(&iface).Error)
