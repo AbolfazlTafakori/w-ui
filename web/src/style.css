@@ -64,6 +64,11 @@
   --tag-orange-line: #593815;
   --tag-orange-ink: #e89a3c;
   --tag-gold-ink: #d4b106;
+  /* Yellow: an admin's customers. Olive where gold is brown, so it is never
+     taken for a WireGuard tunnel's chip beside it. */
+  --tag-yellow-bg: #2a2710;
+  --tag-yellow-line: #61591a;
+  --tag-yellow-ink: #efd84a;
   --switch-off: rgba(255, 255, 255, 0.25);
   --tag-purple-bg: #1a1325;
   --tag-purple-line: #3a2a5c;
@@ -250,6 +255,9 @@ body.light {
   --tag-orange-line: #f0d9a0;
   --tag-orange-ink: #8a6206;
   --tag-gold-ink: #826d04;
+  --tag-yellow-bg: #f7f6c6;
+  --tag-yellow-line: #d9d265;
+  --tag-yellow-ink: #5c5600;
   --switch-off: rgba(0, 0, 0, 0.25);
   --tag-purple-bg: #f2ecfd;
   --tag-purple-line: #d8c8f5;

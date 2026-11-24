@@ -91,7 +91,7 @@ onUnmounted(() => {
       <span v-if="c.note" class="client-card-comment">{{ c.note }}</span>
       <!-- The owner's traceability: the admin and reseller above this customer. -->
       <span v-for="tag in ownerTags(c, operators)" :key="tag.kind"
-            class="atag" :class="tag.kind === 'admin' ? 'purple' : 'geekblue'"
+            class="atag" :class="tag.tone"
             style="margin: 2px 2px 0 0" :title="`${tag.label}: ${tag.name}`">{{ tag.label }}: {{ tag.name }}</span>
       <div class="client-traffic-cell is-compact" :class="{ 'is-unlimited': !c.quotaBytes }">
         <span class="client-traffic-cell-used ltr">{{ bytes(c.usedBytes, store.locale) }}</span>

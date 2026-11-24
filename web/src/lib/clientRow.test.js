@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEPLETING_AT, barColor, expiryTag, remainingTag, statusTag } from './clientRow.js'
+import { DEPLETING_AT, PANEL_TONE, barColor, expiryTag, groupTone, ownerTags, panelOf, remainingTag, statusTag } from './clientRow.js'
 
 const GB = 1024 ** 3
 const customer = (over = {}) => ({ status: 'active', quotaBytes: 10 * GB, usedBytes: GB, onlineNow: 0, ...over })
@@ -47,5 +47,25 @@ describe('a customer row', () => {
     expect(expiryTag(customer({ expiresAt: in2d })).color).toBe('orange')
     expect(expiryTag(customer({ expiresAt: ago })).color).toBe('red')
     expect(expiryTag(customer({ expiresAt: in9d })).color).toBe('green')
+  })
+})
+
+describe('whose panel a customer is in', () => {
+  it('is read from who owns them, never from their groups', () => {
+    expect(panelOf({ ownerId: 0, adminId: 0, groups: ['reseller:milad'] })).toBe('owner')
+    expect(panelOf({ ownerId: 7, adminId: 7 })).toBe('admin')
+    expect(panelOf({ ownerId: 9, adminId: 7 })).toBe('reseller')
+    expect(panelOf({ ownerId: 9, adminId: 0 })).toBe('reseller')
+    expect(panelOf({})).toBe('owner')
+  })
+  it('colours each panel apart, from the palette every theme has', () => {
+    expect(groupTone({ ownerId: 0 })).toBe('blue')
+    expect(groupTone({ ownerId: 7, adminId: 7 })).toBe('yellow')
+    expect(groupTone({ ownerId: 9, adminId: 7 })).toBe('green')
+    expect(new Set(Object.values(PANEL_TONE)).size).toBe(3)
+  })
+  it('gives the admin and reseller tags their panels colours', () => {
+    const tags = ownerTags({ ownerId: 9, adminId: 7 }, { 7: { username: 'a' }, 9: { username: 'r' } })
+    expect(tags.map((x) => x.tone)).toEqual(['yellow', 'green'])
   })
 })

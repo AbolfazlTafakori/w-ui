@@ -177,6 +177,7 @@
 .atag.red { background: var(--tag-red-bg); border-color: var(--tag-red-line); color: var(--tag-red-ink); }
 .atag.purple { background: var(--tag-purple-bg); border-color: var(--tag-purple-line); color: var(--tag-purple-ink); }
 .atag.blue { background: var(--tag-blue-bg); border-color: var(--tag-blue-line); color: var(--tag-blue-ink); }
+.atag.yellow { background: var(--tag-yellow-bg); border-color: var(--tag-yellow-line); color: var(--tag-yellow-ink); }
 .atag.closable { display: inline-flex; align-items: center; margin-inline-end: 0; }
 .atag-close {
   display: inline-flex;

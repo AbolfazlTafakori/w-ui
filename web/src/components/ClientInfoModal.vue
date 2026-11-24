@@ -7,6 +7,7 @@ import { api, subscriptionText } from '../lib/api.js'
 import { store, t, notify } from '../lib/store.js'
 import { bytes, dateTime, relative, isOnline } from '../lib/format.js'
 import { userNumbers } from '../lib/users.js'
+import { groupTone, panelTitle } from '../lib/clientRow.js'
 import AntIcon from './AntIcon.vue'
 import QrPanel from './QrPanel.vue'
 import DeviceSetup from './DeviceSetup.vue'
@@ -271,7 +272,7 @@ const expiryText = computed(() => {
             </tr>
             <tr v-if="(c.groups || []).length">
               <td>{{ t('client.groups') }}</td>
-              <td><span v-for="g in c.groups" :key="g" class="atag geekblue">{{ g }}</span></td>
+              <td><span v-for="g in c.groups" :key="g" class="atag" :class="groupTone(c)" :title="panelTitle(c)"><AntIcon name="TagsOutlined" />{{ g }}</span></td>
             </tr>
             <tr v-if="c.note">
               <td>{{ t('client.comment') }}</td>

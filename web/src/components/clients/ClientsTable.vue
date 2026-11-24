@@ -3,7 +3,7 @@
 import { store, t } from '../../lib/store.js'
 import { bytes } from '../../lib/format.js'
 import {
-  INBOUND_CHIP_LIMIT, barColor, expiryTag, expiryTitle, inboundChips, lastOnlineTitle, ownerTags, remainingTag, speedActive, speedText,
+  INBOUND_CHIP_LIMIT, barColor, expiryTag, expiryTitle, groupTone, inboundChips, lastOnlineTitle, ownerTags, panelTitle, remainingTag, speedActive, speedText,
   statusTag, usedPercent,
 } from '../../lib/clientRow.js'
 import AntIcon from '../AntIcon.vue'
@@ -92,7 +92,7 @@ const emit = defineEmits(['toggle', 'toggle-all', 'qr', 'info', 'rotate', 'reset
               <!-- The owner's traceability: the admin at the top of this
                    customer's chain, and the reseller who sold them. -->
               <span v-for="tag in ownerTags(c, operators)" :key="tag.kind"
-                    class="atag" :class="tag.kind === 'admin' ? 'purple' : 'geekblue'"
+                    class="atag" :class="tag.tone"
                     style="margin: 2px 2px 0 0" :title="`${tag.label}: ${tag.name}`">{{ tag.label }}: {{ tag.name }}</span>
             </div>
           </td>
@@ -101,7 +101,7 @@ const emit = defineEmits(['toggle', 'toggle-all', 'qr', 'info', 'rotate', 'reset
                  folded into a +N that names them on hover, so a customer
                  in five groups is still one row high. -->
             <template v-if="(c.groups || []).length">
-              <span v-for="g in c.groups.slice(0, INBOUND_CHIP_LIMIT)" :key="g" class="atag geekblue" :style="{ margin: '2px', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" :title="g" @click="emit('group', g)">{{ g }}</span>
+              <span v-for="g in c.groups.slice(0, INBOUND_CHIP_LIMIT)" :key="g" class="atag" :class="groupTone(c)" :style="{ margin: '2px', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" :title="`${g} — ${panelTitle(c)}`" @click="emit('group', g)"><AntIcon name="TagsOutlined" />{{ g }}</span>
               <span v-if="c.groups.length > INBOUND_CHIP_LIMIT" class="atag default" style="margin: 2px; cursor: pointer" :title="c.groups.slice(INBOUND_CHIP_LIMIT).join(', ')" @click="emit('group', c.groups[INBOUND_CHIP_LIMIT])">+{{ c.groups.length - INBOUND_CHIP_LIMIT }}</span>
             </template>
             <span v-else class="cell-empty">—</span>

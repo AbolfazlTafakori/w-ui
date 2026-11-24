@@ -128,14 +128,42 @@ export function ownerTags(c, operators) {
   const out = []
   if (c.adminId) {
     const a = operators[c.adminId]
-    out.push({ kind: 'admin', label: t('client.parentAdmin'), name: a ? a.username : `#${c.adminId}` })
+    out.push({ kind: 'admin', tone: PANEL_TONE.admin, label: t('client.parentAdmin'), name: a ? a.username : `#${c.adminId}` })
   }
   if (c.ownerId && c.ownerId !== c.adminId) {
     const r = operators[c.ownerId]
-    out.push({ kind: 'reseller', label: t('client.assignedReseller'), name: r ? r.username : `#${c.ownerId}` })
+    out.push({ kind: 'reseller', tone: PANEL_TONE.reseller, label: t('client.assignedReseller'), name: r ? r.username : `#${c.ownerId}` })
   }
   return out
 }
+
+// Whose panel a customer is in -- the owner's own, an admin's, or a
+// reseller's -- read from who owns them, never from the groups they are in:
+// a customer the owner made and filed in a reseller's group is still the
+// owner's. A reseller under an admin is in the admin's tree too, but the
+// customer is the reseller's, and shown so.
+//   ownerId 0                -> the owner's
+//   ownerId equal to adminId -> an admin's own (an admin stamps themselves)
+//   any other ownerId        -> a reseller's, under an admin or not
+export function panelOf(c) {
+  if (!c?.ownerId) return 'owner'
+  if (c.ownerId === c.adminId) return 'admin'
+  return 'reseller'
+}
+
+// The tag colour of each panel, one per panel across the whole client list,
+// defined in every theme: blue the owner's, yellow an admin's, green a
+// reseller's. Yellow, not gold: gold is a WireGuard tunnel's chip, in the
+// column beside.
+export const PANEL_TONE = { owner: 'blue', admin: 'yellow', reseller: 'green' }
+
+// A customer's group chips take their panel's colour.
+export const groupTone = (c) => PANEL_TONE[panelOf(c)]
+
+// What a chip's colour means, said on hover. Each by its own key, so the
+// check that every key exists in every language can see them.
+const PANEL_TITLE = { owner: 'client.panel.owner', admin: 'client.panel.admin', reseller: 'client.panel.reseller' }
+export const panelTitle = (c) => t(PANEL_TITLE[panelOf(c)])
 
 // How many of a customer's tunnels or groups a row names before the rest fold
 // into a +N, so a customer on five is still one row high.
