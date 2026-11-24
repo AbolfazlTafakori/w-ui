@@ -188,6 +188,13 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 	staging := pendingDir(dataDir)
 
 	marker, err := os.ReadFile(filepath.Join(staging, markerFile))
+	if errors.Is(err, os.ErrPermission) {
+		// Not incomplete: made by another user -- root, by hand -- and not
+		// this panel's to read or remove. Said, and left for them.
+		log.Error("a staged restore is there but this panel's user cannot read it; give it to the panel's user (chown -R) and restart, or remove it",
+			"path", staging, "error", err)
+		return "", nil, false
+	}
 	if err != nil {
 		// No marker: either nothing is staged, or an unpack was interrupted and
 		// what is there is incomplete. Both are discarded.

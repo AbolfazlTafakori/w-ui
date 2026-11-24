@@ -163,6 +163,11 @@ func openDatabase() (*gorm.DB, config.Config, error) {
 	if err != nil {
 		return nil, cfg, err
 	}
+	// Run as root by the script, the database and its log are still the
+	// panel's: one root made is one the panel cannot open.
+	if cfg.DBDriver == config.DriverSQLite {
+		ownAsDataDir(cfg.DataDir, cfg.DBSource, cfg.DBSource+"-wal", cfg.DBSource+"-shm")
+	}
 	return db.Session(&gorm.Session{Logger: gormlogger.Discard}), cfg, nil
 }
 
@@ -666,6 +671,7 @@ func cmdBackup(args []string) error {
 		if err != nil {
 			return err
 		}
+		ownAsDataDir(cfg.DataDir, filepath.Join(svc.Dir(), a.Name))
 		fmt.Println(filepath.Join(svc.Dir(), a.Name))
 		return nil
 
@@ -713,6 +719,7 @@ func cmdBackup(args []string) error {
 		if err != nil {
 			return err
 		}
+		ownAsDataDir(cfg.DataDir, filepath.Join(svc.Dir(), a.Name))
 		// This server's own addresses over the archive's unless asked to take
 		// the archive's, as the panel does: the usual reason to restore is
 		// that the old machine is gone, and its address with it. How the
@@ -725,6 +732,8 @@ func cmdBackup(args []string) error {
 		if err != nil {
 			return err
 		}
+		// The panel applies it at its next start, as its own user.
+		ownAsDataDir(cfg.DataDir, filepath.Join(svc.Dir(), report.SafetyCopy), filepath.Join(cfg.DataDir, backup.PendingDirName))
 		fmt.Printf("staged %d files from %s; the current data is kept at %s\n", len(report.Files), a.Name, filepath.Join(svc.Dir(), report.SafetyCopy))
 		fmt.Println("restart the panel to apply it: systemctl restart wui")
 		return nil
