@@ -345,6 +345,56 @@ yes_ "Key was rejected by service" "$kmod" "the boot-time check knows the refusa
 yes_ "mokutil --import" "$kmod" "and leaves the fix in its log instead of building again"
 
 echo
+echo "── the module check: loaded, refused by Secure Boot, or missing ────────"
+# The decision after the package is in, with modprobe and the rest stood in
+# for: what is said, and whether the module is kept for the next kernel or
+# the userspace daemon is installed.
+check_module() { # check_module MODPROBE_RESULT  (ok|loaded|secureboot|missing|silent)
+  (
+    set +e
+    SYSMOD="$WORK/sysmod-$1"; rm -rf "$SYSMOD"; mkdir -p "$SYSMOD"
+    AMNEZIA_SYSMOD="$SYSMOD/amneziawg"
+    # shellcheck disable=SC1091
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+    CASE="$1"
+    [[ "$CASE" == loaded ]] && { mkdir -p "$AMNEZIA_SYSMOD"; echo 3.1.0 >"$AMNEZIA_SYSMOD/version"; }
+    modprobe() {
+      echo "modprobe-called" >>"$SYSMOD/calls"
+      case "$CASE" in
+        ok) mkdir -p "$AMNEZIA_SYSMOD"; echo 3.1.20261113-02 >"$AMNEZIA_SYSMOD/version"; return 0 ;;
+        secureboot) echo "modprobe: ERROR: could not insert 'amneziawg': Key was rejected by service" >&2; return 1 ;;
+        missing) echo "modprobe: FATAL: Module amneziawg not found in directory /lib/modules/6.8.0-149-generic" >&2; return 1 ;;
+        silent) return 0 ;;
+      esac
+    }
+    amnezia_future_kernels() { echo "FUTURE-KERNELS"; }
+    install_amnezia_userspace() { echo "USERSPACE"; }
+    amnezia_check_module 2>&1
+    [[ -f "$SYSMOD/calls" ]] && echo "MODPROBE-RAN"
+  )
+}
+out=$(check_module ok)
+yes_ "kernel module 3.1.20261113-02" "$out" "a module that loads is reported with its version"
+yes_ "FUTURE-KERNELS" "$out" "and kept working across kernel upgrades"
+no_ "USERSPACE" "$out" "and no userspace daemon is built for nothing"
+out=$(check_module loaded)
+yes_ "kernel module 3.1.0" "$out" "a module already loaded is taken as it is"
+no_ "MODPROBE-RAN" "$out" "without loading it again"
+out=$(check_module secureboot)
+yes_ "Secure Boot is on" "$out" "a module Secure Boot refuses is said to be that"
+yes_ "FUTURE-KERNELS" "$out" "and is kept, to load once the key is enrolled"
+yes_ "USERSPACE" "$out" "while the tunnels run in userspace meanwhile"
+no_ "not available on this kernel" "$out" "and it is not called missing"
+out=$(check_module missing)
+yes_ "not available on this kernel" "$out" "a module that is not there is said to be missing"
+yes_ "modprobe said: Module amneziawg not found in directory /lib/modules/6.8.0-149-generic" "$out" "with what modprobe said"
+no_ "Secure Boot" "$out" "and Secure Boot is not blamed"
+no_ "FUTURE-KERNELS" "$out" "nothing is kept for a module that never built"
+yes_ "USERSPACE" "$out" "the tunnels run in userspace"
+out=$(check_module silent)
+yes_ "USERSPACE" "$out" "a modprobe that claims success with no module to show is not believed"
+
+echo
 echo "── the panel's PostgreSQL role reaches its own database and no other ───"
 hba_after() { # hba_after MODE < pg_hba.conf
   (

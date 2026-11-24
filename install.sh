@@ -775,32 +775,39 @@ install_amnezia() {
   if have awg; then
     AMNEZIA_OK=1
     ok "awg $(awg --version 2>/dev/null | awk '{print $2}')"
-    local loaded=""
-    if [[ -r /sys/module/amneziawg/version ]] ||
-       { loaded="$(modprobe amneziawg 2>&1)" && [[ -r /sys/module/amneziawg/version ]]; }; then
-      ok "kernel module $(cat /sys/module/amneziawg/version)"
-      amnezia_future_kernels
-    else
-      # The tools are here but nothing can make the device. Rather than leave
-      # that to be discovered when the first obfuscated tunnel refuses to start,
-      # the userspace daemon is installed now -- and why the module would not
-      # load is said, when it is Secure Boot, which the operator can fix.
-      if amnezia_refused_by_secure_boot "$loaded"; then
-        explain_amnezia_secure_boot
-        # Kept for the next kernel and the boot-time check: once the key is
-        # enrolled, the module loads without anything being run again.
-        amnezia_future_kernels
-      else
-        warn "the amneziawg module is not available on this kernel"
-        [[ -n "$loaded" ]] && info "  modprobe said: ${loaded##*: }"
-      fi
-      install_amnezia_userspace
-      return 0
-    fi
+    amnezia_check_module
   else
     warn "awg not found after install"
     install_amnezia_userspace
   fi
+}
+
+# AMNEZIA_SYSMOD is where a loaded module shows itself; a test points it
+# elsewhere.
+AMNEZIA_SYSMOD="${AMNEZIA_SYSMOD:-/sys/module/amneziawg}"
+
+# amnezia_check_module loads the module the package installed and says how it
+# went. Loaded, it is kept working across kernel upgrades. Refused, the
+# userspace daemon is installed now rather than leave that to be discovered
+# when the first obfuscated tunnel refuses to start -- and why the module
+# would not load is said: when it is Secure Boot, the operator can fix it,
+# and once they have, the module loads at boot with nothing run again.
+amnezia_check_module() {
+  local loaded=""
+  if [[ -r "$AMNEZIA_SYSMOD/version" ]] ||
+     { loaded="$(modprobe amneziawg 2>&1)" && [[ -r "$AMNEZIA_SYSMOD/version" ]]; }; then
+    ok "kernel module $(cat "$AMNEZIA_SYSMOD/version")"
+    amnezia_future_kernels
+    return 0
+  fi
+  if amnezia_refused_by_secure_boot "$loaded"; then
+    explain_amnezia_secure_boot
+    amnezia_future_kernels
+  else
+    warn "the amneziawg module is not available on this kernel"
+    [[ -n "$loaded" ]] && info "  modprobe said: ${loaded##*: }"
+  fi
+  install_amnezia_userspace
 }
 
 # amnezia_refused_by_secure_boot ERR: whether modprobe's error ERR is the
