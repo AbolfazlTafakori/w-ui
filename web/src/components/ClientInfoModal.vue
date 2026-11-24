@@ -272,7 +272,7 @@ const expiryText = computed(() => {
             </tr>
             <tr v-if="(c.groups || []).length">
               <td>{{ t('client.groups') }}</td>
-              <td><span v-for="g in c.groups" :key="g" class="atag" :class="groupTone(c)" :title="panelTitle(c)"><AntIcon name="TagsOutlined" />{{ g }}</span></td>
+              <td><span v-for="g in c.groups" :key="g" class="atag" :class="groupTone(c)" :title="panelTitle(c)">{{ g }}</span></td>
             </tr>
             <tr v-if="c.note">
               <td>{{ t('client.comment') }}</td>

@@ -101,7 +101,7 @@ const emit = defineEmits(['toggle', 'toggle-all', 'qr', 'info', 'rotate', 'reset
                  folded into a +N that names them on hover, so a customer
                  in five groups is still one row high. -->
             <template v-if="(c.groups || []).length">
-              <span v-for="g in c.groups.slice(0, INBOUND_CHIP_LIMIT)" :key="g" class="atag" :class="groupTone(c)" :style="{ margin: '2px', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" :title="`${g} — ${panelTitle(c)}`" @click="emit('group', g)"><AntIcon name="TagsOutlined" />{{ g }}</span>
+              <span v-for="g in c.groups.slice(0, INBOUND_CHIP_LIMIT)" :key="g" class="atag" :class="groupTone(c)" :style="{ margin: '2px', cursor: 'pointer', opacity: groupFilter === g ? 0.6 : 1 }" :title="`${g} — ${panelTitle(c)}`" @click="emit('group', g)">{{ g }}</span>
               <span v-if="c.groups.length > INBOUND_CHIP_LIMIT" class="atag default" style="margin: 2px; cursor: pointer" :title="c.groups.slice(INBOUND_CHIP_LIMIT).join(', ')" @click="emit('group', c.groups[INBOUND_CHIP_LIMIT])">+{{ c.groups.length - INBOUND_CHIP_LIMIT }}</span>
             </template>
             <span v-else class="cell-empty">—</span>
