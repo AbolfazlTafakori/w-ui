@@ -9,7 +9,7 @@ import { exportable } from './rows.js'
 
 // interfaces: every tunnel; selected: the chosen ids; busy: the page's busy
 // flag; load(quiet): reload; open: what the menus open on the page --
-// { text({title,text,file}), importer(), clone(i), attach(i, list), move(i, kind), group(i, names), edit(i) }.
+// { text({title,text,file}), importer(), clone(i), attach(i, list), move(i, kind), group(i, names), remove(i), edit(i) }.
 export function useInterfaceActions({ interfaces, selected, busy, load, open }) {
   async function guard(fn, successKey) {
     try {
@@ -137,15 +137,14 @@ export function useInterfaceActions({ interfaces, selected, busy, load, open }) 
     }
   }
 
-  // Deleting a tunnel destroys its keys, and there is no undo. The server
-  // refuses while any device is still on it -- customers are taken off first,
-  // with the row menu's Take All Clients Off -- so a tunnel that still has
-  // customers is told so at once, rather than after a confirmation that could
-  // only fail.
+  // Deleting a tunnel destroys its keys, and there is no undo. A tunnel
+  // with customers on it is removed with them in one step (the remove
+  // dialog), which keeps their other servers and asks what becomes of those
+  // on it alone; an empty one only asks to be sure.
   const stillHas = (i) => tn('interface.stillHasClients', i.clients).replace('{name}', i.name)
   function removeOne(iface) {
     if ((iface.clients ?? 0) > 0) {
-      notify(stillHas(iface), 'error')
+      open.remove(iface)
       return
     }
     ask.value = {

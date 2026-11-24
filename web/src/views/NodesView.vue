@@ -13,6 +13,7 @@ import ErrorState from '../components/ErrorState.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import PageSpin from '../components/PageSpin.vue'
 import NodeImportDialog from '../components/NodeImportDialog.vue'
+import RemoveWithCustomers from '../components/RemoveWithCustomers.vue'
 import NodesTable from '../components/nodes/NodesTable.vue'
 import NodeCards from '../components/nodes/NodeCards.vue'
 import NodeForm from '../components/nodes/NodeForm.vue'
@@ -59,9 +60,21 @@ const totals = computed(() => totalsOf(nodes.value))
 async function saved(made) {
   formFor.value = null
   await load()
-  // A 3x-ui or Pasarguard panel with users of its own: offered to bring
-  // them in at once. A W-UI panel is asked when the operator chooses.
-  if (made && takesImport(made) && made.kind !== 'remote') importing.value = made
+  if (!made || !takesImport(made)) return
+  // A 3x-ui or Pasarguard panel with users of its own: offered to bring them
+  // in at once. A W-UI panel only when it has tunnels or customers of its
+  // own -- a panel that ran on its own before it was added -- so they are
+  // not left on it, unseen from here, waiting for a menu nobody opens.
+  if (made.kind !== 'remote') {
+    importing.value = made
+    return
+  }
+  try {
+    const own = await api.get(`/api/nodes/${made.id}/users`, { background: true })
+    if (Array.isArray(own) && own.some((u) => !u.imported)) importing.value = made
+  } catch {
+    // Not reachable yet, or nothing to bring: its menu still offers it.
+  }
 }
 
 // Asking a node to update its own panel.
@@ -147,7 +160,14 @@ async function toggle(n, enabled) {
 
 const ask = ref(null)
 
+// A node is removed with its tunnels and their customers in one step (the
+// remove dialog); one without tunnels only asks to be sure.
+const removing = ref(null)
 function remove(n) {
+  if ((n.interfaces ?? 0) > 0 || (n.clients ?? 0) > 0) {
+    removing.value = n
+    return
+  }
   ask.value = {
     title: t('node.confirmDeleteTitle'),
     body: t('node.confirmDeleteBody'),
@@ -239,6 +259,7 @@ const rowEvents = {
   <NodeForm v-if="formFor" :node="formFor.node || null" @close="formFor = null" @saved="saved" />
   <TokenDialog v-if="issuing" @close="issuing = false" />
   <NodeImportDialog v-if="importing" :node="importing" @close="importing = null" />
+  <RemoveWithCustomers v-if="removing" kind="node" :target="removing" @close="removing = null" @done="load()" />
 
   <ConfirmDialog
     :open="!!ask"

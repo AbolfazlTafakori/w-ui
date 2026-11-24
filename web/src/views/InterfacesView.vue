@@ -24,6 +24,7 @@ import CloneDialog from '../components/interfaces/CloneDialog.vue'
 import MoveDialog from '../components/interfaces/MoveDialog.vue'
 import GroupDialog from '../components/interfaces/GroupDialog.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import RemoveWithCustomers from '../components/RemoveWithCustomers.vue'
 import PageSpin from '../components/PageSpin.vue'
 import { useIsMobile } from '../lib/mobile.js'
 
@@ -111,6 +112,7 @@ const cloning = ref(null) // the tunnel being copied
 const attach = ref(null) // { iface, list }
 const move = ref(null) // { iface, kind }
 const grouping = ref(null) // { iface, names }
+const removing = ref(null) // the tunnel being removed, with its customers
 
 // What an operator does to tunnels, and the menus that offer it.
 const { pending, setEnabled, ask, runConfirmed, bulkDelete, pickRow, pickGeneral } = useInterfaceActions({
@@ -122,6 +124,7 @@ const { pending, setEnabled, ask, runConfirmed, bulkDelete, pickRow, pickGeneral
     attach: (i, list) => (attach.value = { iface: i, list }),
     move: (i, kind) => (move.value = { iface: i, kind }),
     group: (i, names) => (grouping.value = { iface: i, names }),
+    remove: (i) => (removing.value = i),
   },
 })
 
@@ -314,6 +317,7 @@ async function submitForm(input) {
 
   <TextDialog v-if="textModal" :title="textModal.title" :text="textModal.text" :file="textModal.file" @close="textModal = null" />
   <ImportDialog v-if="importOpen" @close="importOpen = false" @imported="load()" />
+  <RemoveWithCustomers v-if="removing" kind="tunnel" :target="removing" @close="removing = null" @done="load()" />
   <AttachDialog v-if="attach" :iface="attach.iface" :list="attach.list" @close="attach = null" @attached="load()" />
 
   <InterfaceForm
