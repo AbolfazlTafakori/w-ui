@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,6 +51,18 @@ var migrations = []migration{
 	{6, "the sharing record says whose customer each entry was", false, ownSharingRecord},
 	{7, "an operator's user ceiling becomes seats held at once, kept as running figures", false, openUserCapacity},
 }
+
+// LatestMigration is the number of the last migration this panel knows.
+func LatestMigration() int {
+	n := 0
+	for _, m := range migrations {
+		n = max(n, m.id)
+	}
+	return n
+}
+
+// ErrNewerBackup is a backup from a panel newer than this one.
+var ErrNewerBackup = errors.New("this backup was written by a newer panel")
 
 // Migrate brings the schema up to date.
 func Migrate(db *gorm.DB) error {

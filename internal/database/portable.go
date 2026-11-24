@@ -260,7 +260,15 @@ func importTable(ctx context.Context, tx *gorm.DB, m any, sch *schema.Schema, ro
 		// Create, not Save: the ids in the dump are kept, and every column is
 		// written, zero values included, so hooks and defaults do not drift
 		// the data from what was archived.
-		if err := tx.Select("*").Create(slice.Interface()).Error; err != nil {
+		// A zero is written as a zero where the column has a default; a
+		// column none of these rows names keeps it.
+		names := map[string]bool{}
+		for _, row := range rows[start:end] {
+			for col := range row {
+				names[col] = true
+			}
+		}
+		if err := createExact(ctx, tx, sch, slice, func(name string) bool { return names[name] }); err != nil {
 			return 0, err
 		}
 	}

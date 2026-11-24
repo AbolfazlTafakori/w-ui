@@ -17,6 +17,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -83,6 +84,11 @@ type DumpHeader struct {
 	Version string    `json:"version"`
 	Driver  string    `json:"driver"`
 	TakenAt time.Time `json:"takenAt"`
+	// Schema is the last migration the panel that wrote it knows: a dump
+	// from a panel with migrations this one does not have is in a shape
+	// this one cannot read -- its new tables and columns would be dropped
+	// without a word -- and is refused. Dumps from before it say 0.
+	Schema int `json:"schema,omitempty"`
 }
 
 // DumpTable is what a dump says of one table, from its closing line.
@@ -124,7 +130,7 @@ type dumpComplete struct {
 // locks that hold back the panel's writes on either.
 func WriteDump(ctx context.Context, db *gorm.DB, drv config.Driver, version string, w io.Writer) (*DumpSummary, error) {
 	bw := bufio.NewWriterSize(w, 256<<10)
-	sum := &DumpSummary{Header: DumpHeader{Magic: "dump", Format: DumpFormat, Version: version, Driver: string(drv), TakenAt: time.Now().UTC()}}
+	sum := &DumpSummary{Header: DumpHeader{Magic: "dump", Format: DumpFormat, Version: version, Driver: string(drv), TakenAt: time.Now().UTC(), Schema: LatestMigration()}}
 	if err := writeLine(bw, sum.Header); err != nil {
 		return nil, err
 	}
@@ -173,7 +179,12 @@ func sqliteReadSnapshot(ctx context.Context, db *gorm.DB, fn func(*gorm.DB) erro
 		err := fn(conn.Session(&gorm.Session{NewDB: true, Context: ctx}))
 		// Nothing was written; ending it either way lets the connection go
 		// back to the pool clean.
-		if rerr := conn.Exec("ROLLBACK").Error; err == nil && rerr != nil {
+		// On a context of its own: a backup cancelled or timed out has a
+		// cancelled ctx, a ROLLBACK on it never runs, and the connection
+		// would go back to the pool still inside this transaction -- the
+		// next user's BEGIN refused, the WAL never checkpointed past it.
+		end := conn.Session(&gorm.Session{Context: context.WithoutCancel(ctx)})
+		if rerr := end.Exec("ROLLBACK").Error; err == nil && rerr != nil {
 			err = rerr
 		}
 		return err
@@ -429,6 +440,10 @@ func newDumpReader(r io.Reader) (*dumpReader, error) {
 	if d.header.Format > DumpFormat {
 		return nil, fmt.Errorf("database: this backup was written by a newer panel (dump format %d); update the panel first", d.header.Format)
 	}
+	if d.header.Schema > LatestMigration() {
+		return nil, fmt.Errorf("%w: version %s, which has changes to the database this panel does not know; update this panel first",
+			ErrNewerBackup, d.header.Version)
+	}
 	d.sum.Header = d.header
 	return d, nil
 }
@@ -613,7 +628,7 @@ func LoadDump(ctx context.Context, db *gorm.DB, drv config.Driver, r io.Reader, 
 			}
 			// The schema of a model the panel registers itself: it parses.
 			sch, _ := parseSchema(m)
-			ld = newTableLoader(m, sch, cols)
+			ld = newTableLoader(m, sch, cols, drv)
 			loaded[name] = sameColumns(sch, cols)
 			return nil
 		}
@@ -710,21 +725,27 @@ type tableLoader struct {
 	sch   *schema.Schema
 	elem  reflect.Type
 	cols  []*schema.Field // nil where the dump's column is not this panel's
+	has   map[string]bool // the columns the dump has
+	drv   config.Driver
 	batch reflect.Value
 	rows  int64
 }
 
-func newTableLoader(m any, sch *schema.Schema, names []string) *tableLoader {
+func newTableLoader(m any, sch *schema.Schema, names []string, drv config.Driver) *tableLoader {
 	byName := map[string]*schema.Field{}
 	for _, f := range dumpColumns(sch) {
 		byName[f.DBName] = f
 	}
 	cols := make([]*schema.Field, len(names))
+	has := map[string]bool{}
 	for i, n := range names {
 		cols[i] = byName[n]
+		has[n] = true
 	}
 	elem := reflect.TypeOf(m).Elem()
-	return &tableLoader{m: m, sch: sch, elem: elem, cols: cols, batch: reflect.MakeSlice(reflect.SliceOf(elem), 0, loadBatch)}
+	return &tableLoader{m: m, sch: sch, elem: elem, cols: cols, drv: drv,
+		has:   has,
+		batch: reflect.MakeSlice(reflect.SliceOf(elem), 0, loadBatch)}
 }
 
 func (l *tableLoader) add(ctx context.Context, vals []any) error {
@@ -734,6 +755,11 @@ func (l *tableLoader) add(ctx context.Context, vals []any) error {
 		if f == nil || v == nil {
 			continue
 		}
+		// SQLite keeps a NUL in text, PostgreSQL refuses it with a message
+		// about encodings: said here in words, naming where it is.
+		if s, ok := v.(string); ok && l.drv == config.DriverPostgres && strings.ContainsRune(s, 0) {
+			return fmt.Errorf("column %s holds a NUL character, which PostgreSQL cannot store; remove it on the panel the backup came from", f.DBName)
+		}
 		if err := setExact(ctx, f, rv, v); err != nil {
 			return fmt.Errorf("column %s: %w", f.DBName, err)
 		}
@@ -742,13 +768,13 @@ func (l *tableLoader) add(ctx context.Context, vals []any) error {
 	return nil
 }
 
-func (l *tableLoader) flush(_ context.Context, tx *gorm.DB) error {
+func (l *tableLoader) flush(ctx context.Context, tx *gorm.DB) error {
 	if l.batch.Len() == 0 {
 		return nil
 	}
 	// Create, not Save: the ids are kept, and every column written, zero
 	// values included, so no default or hook drifts the data from the copy.
-	if err := tx.Select("*").Create(l.batch.Interface()).Error; err != nil {
+	if err := createExact(ctx, tx, l.sch, l.batch, func(name string) bool { return l.has[name] }); err != nil {
 		return fmt.Errorf("load %s: %w", l.sch.Table, err)
 	}
 	l.rows += int64(l.batch.Len())
@@ -767,6 +793,68 @@ func (l *tableLoader) finish(tx *gorm.DB, drv config.Driver) error {
 		l.sch.Table, pk.DBName, pk.DBName, l.sch.Table)
 	if err := tx.Exec(q).Error; err != nil {
 		return fmt.Errorf("reset sequence for %s: %w", l.sch.Table, err)
+	}
+	return nil
+}
+
+// createExact inserts rows as they are, a zero included where the column
+// has a default of its own. GORM's Create gives a zero field the column's
+// default instead -- a disabled tunnel or node came back enabled, a device
+// limit of 0 came back 1 -- and the load, read back against the copy, was
+// refused whole: a panel with one disabled tunnel could not be restored.
+// The zeros in a column the copy has are written back after the insert;
+// a column it does not have, from a panel before it, keeps the default.
+func createExact(ctx context.Context, tx *gorm.DB, sch *schema.Schema, batch reflect.Value, has func(string) bool) error {
+	type zeroed struct {
+		f    *schema.Field
+		keys []map[string]any
+	}
+	var fix []zeroed
+	for _, f := range dumpColumns(sch) {
+		if f.PrimaryKey || f.DefaultValueInterface == nil || !has(f.DBName) ||
+			reflect.ValueOf(f.DefaultValueInterface).IsZero() {
+			continue
+		}
+		z := zeroed{f: f}
+		for i := 0; i < batch.Len(); i++ {
+			rv := batch.Index(i)
+			if _, zero := f.ValueOf(ctx, rv); !zero {
+				continue
+			}
+			key := map[string]any{}
+			for _, pk := range sch.PrimaryFields {
+				key[pk.DBName], _ = pk.ValueOf(ctx, rv)
+			}
+			z.keys = append(z.keys, key)
+		}
+		if len(z.keys) > 0 {
+			if len(sch.PrimaryFields) == 0 {
+				return fmt.Errorf("column %s: a zero cannot be told from its default in a table with no key", f.DBName)
+			}
+			fix = append(fix, z)
+		}
+	}
+	if err := tx.Select("*").Create(batch.Interface()).Error; err != nil {
+		return err
+	}
+	for _, z := range fix {
+		zero := reflect.Zero(z.f.FieldType).Interface()
+		if len(sch.PrimaryFields) == 1 {
+			pk := sch.PrimaryFields[0].DBName
+			ids := make([]any, len(z.keys))
+			for i, k := range z.keys {
+				ids[i] = k[pk]
+			}
+			if err := tx.Table(sch.Table).Where(pk+" IN ?", ids).Update(z.f.DBName, zero).Error; err != nil {
+				return fmt.Errorf("column %s: put back its zeros: %w", z.f.DBName, err)
+			}
+			continue
+		}
+		for _, k := range z.keys {
+			if err := tx.Table(sch.Table).Where(k).Update(z.f.DBName, zero).Error; err != nil {
+				return fmt.Errorf("column %s: put back its zeros: %w", z.f.DBName, err)
+			}
+		}
 	}
 	return nil
 }
