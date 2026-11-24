@@ -2372,8 +2372,14 @@ func (s *Clients) checkSubID(ctx context.Context, selfID uint, id string) (strin
 // DeleteCustomers removes customers the way Bulk's delete does, for the
 // operators' service deleting a reseller with everything they sold.
 func (s *Clients) DeleteCustomers(ctx context.Context, ids []uint) error {
-	_, err := s.Bulk(ctx, BulkDelete, ids)
-	return err
+	// A thousand at a time, the most one bulk action takes: an operator or a
+	// tunnel removed with its customers can have many more.
+	for _, part := range idset.Chunks(ids, 1000) {
+		if _, err := s.Bulk(ctx, BulkDelete, part); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // OptionalTime is a time that can be absent, null or set, for the fields an

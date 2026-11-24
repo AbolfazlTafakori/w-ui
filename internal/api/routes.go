@@ -621,6 +621,14 @@ func (s *Server) routes() []Route {
 			Summary: "Change a node.", Body: `{"name":"frankfurt","address":"https://…","enabled":true}`,
 			Note:    "An empty token leaves the stored one alone.",
 			handler: s.handleUpdateNode},
+		{Method: "POST", Path: "/api/nodes/{id}/remove", Group: "Nodes", Auth: true, Operator: true,
+			Summary: "Remove a server with its tunnels and customers in one step.",
+			Body:    `{"alone":"move","moveTo":2,"dryRun":true}`,
+			Note: "The rules of removing a tunnel, over all of its tunnels: customers on " +
+				"none outside this server are moved to moveTo, on another server, or " +
+				"removed. A W-UI node is then told to take down what this panel gave it. " +
+				"dryRun says who is affected and changes nothing.",
+			handler: s.handleRemoveNode},
 		{Method: "DELETE", Path: "/api/nodes/{id}", Group: "Nodes", Auth: true, Operator: true,
 			Summary: "Remove a node. Refused while it still carries interfaces.",
 			handler: s.handleDeleteNode},
@@ -793,6 +801,14 @@ func (s *Server) routes() []Route {
 			Note: "What has to happen before a tunnel can be removed. Anyone who would " +
 				"be left with no server at all is refused and named.",
 			handler: s.handleClearTunnel},
+		{Method: "POST", Path: "/api/interfaces/{id}/remove", Group: "Interfaces", Auth: true,
+			Summary: "Remove a tunnel with its customers in one step.",
+			Body:    `{"alone":"move","moveTo":2,"dryRun":true}`,
+			Note: "Customers with another server keep it and only lose this one. Those on " +
+				"this tunnel and no other are moved to moveTo (alone \"move\") or removed " +
+				"(alone \"delete\"); nobody is left without a server. dryRun says who is " +
+				"affected and changes nothing.",
+			handler: s.handleRemoveTunnel},
 		{Method: "POST", Path: "/api/hosts/bulk", Group: "Hosts", Auth: true,
 			Summary: "Enable, disable or delete several addresses at once.",
 			Body:    `{"action":"disable","ids":[1,2,3]}`,

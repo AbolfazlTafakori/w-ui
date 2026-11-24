@@ -135,6 +135,7 @@ POST   /api/clients/{id}/subscription/users/{user}/rotate Subscriptions  auth=tr
 GET    /api/nodes                                     Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/nodes                                     Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 PATCH  /api/nodes/{id}                                Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
+POST   /api/nodes/{id}/remove                         Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 DELETE /api/nodes/{id}                                Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
 GET    /api/nodes/{id}/inbound-kinds                  Nodes          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 GET    /api/nodes/{id}/users                          Nodes          auth=true  operator=true  | none=401 token=403 reseller=403 admin=403 owner=yes
@@ -176,6 +177,7 @@ POST   /api/tunnels/stop                              Server         auth=true  
 POST   /api/tunnels/start                             Server         auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/interfaces/{id}/reset-usage               Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/interfaces/{id}/clear                     Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
+POST   /api/interfaces/{id}/remove                    Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/hosts/bulk                                Hosts          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/hosts/reorder                             Hosts          auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes
 POST   /api/interfaces/{id}/clone                     Interfaces     auth=true  operator=false | none=401 token=yes reseller=403 admin=403 owner=yes

@@ -183,8 +183,8 @@ What a reseller is told, and what the owner is told on the Resellers page.
 | `… needs AmneziaWG, and this kernel has no …` | The obfuscated mode needs the `amneziawg` module or `amneziawg-go`. | Re-run the installer (it installs both); or plain WireGuard. |
 | `… already exists and belongs to another WireGuard …` / `… already exists and is not a tunnel this panel …` | A kernel interface of that name exists and is not ours. | Another name, or remove the stray interface (`ip link del`). |
 | `… did not come up within …` / `interface did not start` (log) | The driver could not bring the link up. | The log line's `error=`: usually a port, a module or a permission. |
-| `… still carries … interface(s); remove them first` | Deleting a node that still has tunnels. | Delete the tunnels first. |
-| `… device(s) still use "…"; remove those clients first` | Deleting an interface that has customers. | Move or delete them first. |
+| `… still carries … interface(s); remove the server with its tunnels and customers, which does it in one step` | Deleting a node that still has tunnels. | Use **Remove server** on the node, which moves or removes its customers and its tunnels in one step (`POST /api/nodes/{id}/remove`). |
+| `… device(s) still use "…"; remove it with its customers, which moves or removes them in the same step` | Deleting an interface that has customers. | Use **Remove tunnel**, which keeps customers' other servers and moves or removes those on it alone (`POST /api/interfaces/{id}/remove`). |
 
 ## Hosts and host groups
 

@@ -282,7 +282,7 @@ func (s *Nodes) Delete(ctx context.Context, id uint) error {
 		return fmt.Errorf("service: count interfaces: %w", err)
 	}
 	if ifaces > 0 {
-		return fmt.Errorf("%w: %s still carries %d interface(s); remove them first",
+		return fmt.Errorf("%w: %s still carries %d interface(s); remove the server with its tunnels and customers, which does it in one step",
 			fault.ErrInvalid, node.Name, ifaces)
 	}
 

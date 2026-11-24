@@ -391,6 +391,10 @@ type RemotePanels interface {
 	Handover(ctx context.Context, node model.Node) (handover.Handover, error)
 	// ClaimHandover tells a W-UI node which of its rows are now this panel's.
 	ClaimHandover(ctx context.Context, node model.Node, c handover.Claim) error
+	// Withdraw tells a W-UI node to take down every tunnel this panel gave
+	// it, as a node being removed must: nothing keeps serving there with
+	// nobody to manage it.
+	Withdraw(ctx context.Context, node model.Node) error
 }
 
 // SetRemote gives the tunnels' service the panels used as nodes.

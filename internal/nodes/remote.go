@@ -27,6 +27,13 @@ func (Remote) ImportCandidates(ctx context.Context, node model.Node, tunnels []m
 	return ImportCandidates(ctx, node, tunnels)
 }
 
+// Withdraw tells a W-UI node that this panel keeps no tunnel there: the
+// same call a sync round makes, with nothing kept, so the node takes down
+// every tunnel this panel gave it and the customers on them.
+func (r Remote) Withdraw(ctx context.Context, node model.Node) error {
+	return postNode(ctx, r.DB, node, "/api/node/usage", map[string]any{"keep": []uint{}}, nil)
+}
+
 // Handover reads what a W-UI node has of its own.
 func (r Remote) Handover(ctx context.Context, node model.Node) (handover.Handover, error) {
 	var h handover.Handover

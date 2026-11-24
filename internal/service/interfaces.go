@@ -1446,7 +1446,7 @@ func (s *Interfaces) Delete(ctx context.Context, id uint) error {
 		return fmt.Errorf("service: count accounts: %w", err)
 	}
 	if accounts > 0 {
-		return fmt.Errorf("%w: %d device(s) still use %q; remove those clients first",
+		return fmt.Errorf("%w: %d device(s) still use %q; remove it with its customers, which moves or removes them in the same step",
 			ErrInvalid, accounts, iface.Name)
 	}
 	if iface.Protocol == model.ProtocolXray && !iface.XUI.V.Gone {
