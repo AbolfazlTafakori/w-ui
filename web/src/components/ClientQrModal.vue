@@ -41,14 +41,22 @@ const entry = computed(() => {
 })
 
 onMounted(async () => {
+  // Asked all at once: the customer, their link, the tunnels, and every
+  // device's configurations in one answer. Before, each device's files were
+  // asked for one after another, and a customer with many users kept the
+  // dialog blank for as many round trips. The dialog opens on the link as
+  // soon as it is here; each tunnel fills in when the files arrive.
+  const profilesP = api.get(`/api/clients/${props.client.id}/profiles`, { background: true })
+  let fresh
   try {
     // The link answer says whether the service is on; the settings route
     // is the owner's alone, so a reseller cannot ask it.
-    const [fresh, link, ifaces] = await Promise.all([
+    const [got, link, ifaces] = await Promise.all([
       api.client(props.client.id),
       api.get(`/api/clients/${props.client.id}/subscription`, { background: true }).catch(() => null),
       props.interfaces.length ? Promise.resolve(props.interfaces) : api.interfaces({ background: true }).catch(() => []),
     ])
+    fresh = got
     const byId = Object.fromEntries((ifaces || []).map((i) => [i.id, i]))
     if (link?.enabled && link.link) {
       subEntry.value = { key: 'sub', value: link.link, remark: `${fresh.name} — ${t('client.subscriptionTitle')}`, showQr: true }
@@ -56,55 +64,60 @@ onMounted(async () => {
     // Files by tunnel, in the order they were issued, each numbered as its
     // user is on the subscription page and their own link.
     const accounts = [...(fresh.accounts || [])].sort((a, b) => a.id - b.id)
-    const numbers = userNumbers(accounts)
     const groups = new Map()
     for (const d of accounts) {
       const iface = byId[d.interfaceId] || {}
       const key = `if-${d.interfaceId}`
-      if (!groups.has(key)) groups.set(key, { key, name: iface.name || `#${d.interfaceId}`, protocol: iface.protocol || fresh.protocol || 'wireguard', accounts: [] })
+      if (!groups.has(key)) groups.set(key, { key, name: iface.name || `#${d.interfaceId}`, protocol: iface.protocol || fresh.protocol || 'wireguard', accounts: [], entries: [], pending: true })
       groups.get(key).accounts.push(d)
     }
-    const out = []
-    for (const g of groups.values()) {
-      const wg = g.protocol === 'wireguard'
-      const several = g.accounts.length > 1
-      const entries = []
-      for (const d of g.accounts) {
-        try {
-          // One file per host on the tunnel, as the subscription hands them
-          // out; one when it has no hosts.
-          const list = await api.get(`/api/devices/${d.id}/profiles`, { background: true })
-          const who = several ? t('client.userN', { n: numbers[d.id] }) : fresh.name
-          for (const p of list) {
-            entries.push({
-              key: `dev-${d.id}-${p.hostId || 0}`,
-              label: p.hostName ? `${who} · ${p.hostName}` : who,
-              value: p.body,
-              remark: `${fresh.name} — ${d.deviceName}${p.hostName ? ' — ' + p.hostName : ''}`,
-              downloadName: p.filename,
-              // Only WireGuard imports from a camera; an OpenVPN profile is
-              // installed from the file, with the login carried inside it.
-              showQr: wg,
-              username: wg ? '' : d.username || '',
-              password: wg ? '' : d.password || '',
-              guides: p.guides || null,
-              // An AmneziaWG file as the AmneziaVPN app imports it.
-              amneziaKey: p.amneziaKey || '',
-            })
-          }
-        } catch (e) {
-          notify(e.message, 'error')
-        }
-      }
-      out.push({ key: g.key, name: g.name, protocol: g.protocol, entries })
-    }
-    tunnels.value = out
-    tab.value = subEntry.value ? 'sub' : out[0]?.key || ''
+    tunnels.value = [...groups.values()]
+    tab.value = subEntry.value ? 'sub' : tunnels.value[0]?.key || ''
   } catch (e) {
     notify(e.message, 'error')
-  } finally {
     loading.value = false
+    return
   }
+  loading.value = false
+
+  let byDevice = {}
+  try {
+    for (const d of (await profilesP) || []) byDevice[d.deviceId] = d.profiles || []
+  } catch (e) {
+    notify(e.message, 'error')
+  }
+  const numbers = userNumbers([...(fresh.accounts || [])].sort((a, b) => a.id - b.id))
+  tunnels.value = tunnels.value.map((g) => {
+    const wg = g.protocol === 'wireguard'
+    const several = g.accounts.length > 1
+    const entries = []
+    for (const d of g.accounts) {
+      const who = several ? t('client.userN', { n: numbers[d.id] }) : fresh.name
+      // One file per host on the tunnel, as the subscription hands them
+      // out; one when it has no hosts.
+      for (const p of byDevice[d.id] || []) {
+        entries.push({
+          key: `dev-${d.id}-${p.hostId || 0}`,
+          label: p.hostName ? `${who} · ${p.hostName}` : who,
+          value: p.body,
+          remark: `${fresh.name} — ${d.deviceName}${p.hostName ? ' — ' + p.hostName : ''}`,
+          downloadName: p.filename,
+          // Only WireGuard imports from a camera; an OpenVPN profile is
+          // installed from the file, with the login carried inside it.
+          showQr: wg,
+          username: wg ? '' : d.username || '',
+          password: wg ? '' : d.password || '',
+          guides: p.guides || null,
+          // An AmneziaWG file as the AmneziaVPN app imports it.
+          amneziaKey: p.amneziaKey || '',
+        })
+      }
+    }
+    return { ...g, entries, pending: false }
+  })
+  // The tunnel open now shows its first user once its files are here.
+  const tn = tunnels.value.find((x) => x.key === tab.value)
+  if (tn && !picked.value[tn.key] && tn.entries[0]) picked.value = { ...picked.value, [tn.key]: tn.entries[0].key }
 })
 
 // Which form of an AmneziaWG file is shown: the file itself, which the
@@ -171,7 +184,10 @@ async function copy(text) {
             </div>
           </div>
 
-          <div v-if="entry" class="qr-panel">
+          <div v-if="current && current.pending" class="aspin-nested" style="min-height: 120px">
+            <div class="aspin"><span class="aspin-dot" style="margin-top: -16px"><i></i><i></i><i></i><i></i></span></div>
+          </div>
+          <div v-else-if="entry" class="qr-panel">
             <div v-if="entry.amneziaKey" class="aradio-group qr-seg awg-view" role="tablist">
               <button type="button" role="tab" class="aradio-btn" :class="{ active: awgView === 'file' }" :aria-selected="awgView === 'file'" @click="awgView = 'file'">{{ t('client.awgFileView') }}</button>
               <button type="button" role="tab" class="aradio-btn" :class="{ active: awgView === 'amnezia' }" :aria-selected="awgView === 'amnezia'" @click="awgView = 'amnezia'">AmneziaVPN</button>

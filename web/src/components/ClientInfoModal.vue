@@ -81,18 +81,21 @@ async function load() {
     const numbers = userNumbers(accounts)
     const perTunnel = {}
     for (const d of accounts) perTunnel[d.interfaceId] = (perTunnel[d.interfaceId] || 0) + 1
+    // Every device's files in one answer, not one request a device.
+    const byDevice = {}
+    try {
+      for (const d of (await api.get(`/api/clients/${props.client.id}/profiles`, { background: true })) || []) byDevice[d.deviceId] = d.profiles || []
+    } catch {
+      /* the rest of the card is still worth showing */
+    }
     for (const d of accounts) {
       const iface = ifaceById.value[d.interfaceId] || {}
       const protocol = iface.protocol || fresh.protocol || 'wireguard'
       const who = perTunnel[d.interfaceId] > 1 ? t('client.userN', { n: numbers[d.id] }) : fresh.name
-      try {
-        // One block per host on the device's inbound, as the subscription
-        // hands them out.
-        for (const p of await api.get(`/api/devices/${d.id}/profiles`, { background: true })) {
-          out.push({ key: `${d.id}-${p.hostId || 0}`, device: d, who, tunnel: iface.name || '', protocol, hostName: p.hostName || '', body: p.body, filename: p.filename, guides: p.guides || null })
-        }
-      } catch {
-        /* a device whose profile cannot be rendered is left out */
+      // One block per host on the device's inbound, as the subscription
+      // hands them out.
+      for (const p of byDevice[d.id] || []) {
+        out.push({ key: `${d.id}-${p.hostId || 0}`, device: d, who, tunnel: iface.name || '', protocol, hostName: p.hostName || '', body: p.body, filename: p.filename, guides: p.guides || null })
       }
     }
     configs.value = out
