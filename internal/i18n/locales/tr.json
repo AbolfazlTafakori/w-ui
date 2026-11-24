@@ -1612,6 +1612,7 @@
   "owner.carry": "Geçmiş kullanımı da say",
   "owner.carryHint": "Kapalı: alıcının trafiğinden yalnızca bundan sonraki kullanım düşülür. Açık: aktarımdan önceki kullanım da sayılır.",
   "owner.me": "siz",
+  "owner.search": "Ada veya role göre ara",
   "owner.move": "Aktar",
   "owner.saleNote": "Kaydedince müşteri bu operatöre verilir ve kullanıcıları bir satıştaki gibi düşülür.",
   "owner.servers": "sunucular: {a} eklendi, {r} kaldırıldı",

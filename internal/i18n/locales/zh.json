@@ -1612,6 +1612,7 @@
   "owner.carry": "同时计入过往用量",
   "owner.carryHint": "关闭：只有今后的用量计入接收方流量。开启：转移前的用量也计入。",
   "owner.me": "您自己",
+  "owner.search": "按名称或角色搜索",
   "owner.move": "转移",
   "owner.saleNote": "保存后客户将交给该运营者，并像销售一样扣除其用户数。",
   "owner.servers": "服务器：添加 {a}，移除 {r}",

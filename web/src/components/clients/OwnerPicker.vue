@@ -12,6 +12,8 @@ import { store, t, tn } from '../../lib/store.js'
 import { bytes } from '../../lib/format.js'
 import Toggle from '../Toggle.vue'
 import HelpTip from '../HelpTip.vue'
+import SearchSelect from '../SearchSelect.vue'
+import { PANEL_TONE } from '../../lib/clientRow.js'
 
 const props = defineProps({
   // { to, carryUsage }
@@ -34,15 +36,22 @@ onMounted(async () => {
 })
 
 // The choices, the caller first: the owner's own customers are theirs as
-// zero; an admin's are their own id.
+// zero; an admin's are their own id. Each named, with its role in the
+// colour the customer list gives that panel; admins before resellers, each
+// by name.
+const roleTag = (role) => ({ text: t(`admins.role.${role}`), kind: PANEL_TONE[role] })
 const options = computed(() => {
   const me = store.admin
   const out = []
-  if (owner.value) out.push({ value: 0, label: t('owner.me') })
-  else if (me) out.push({ value: me.id, label: `${me.username} · ${t('owner.me')}` })
-  for (const a of operators.value) {
-    if (!owner.value && a.id === me?.id) continue
-    out.push({ value: a.id, label: `${a.username} · ${t(a.role === 'admin' ? 'admins.role.admin' : 'admins.role.reseller')}` })
+  if (owner.value) out.push({ value: 0, label: t('owner.me'), tags: [roleTag('owner')] })
+  else if (me) out.push({ value: me.id, label: `${me.username} (${t('owner.me')})`, tags: [roleTag('admin')] })
+  const rank = (a) => (a.role === 'admin' ? 0 : 1)
+  const rest = operators.value
+    .filter((a) => owner.value || a.id !== me?.id)
+    .sort((a, b) => rank(a) - rank(b) || a.username.localeCompare(b.username))
+  for (const a of rest) {
+    out.push({ value: a.id, label: a.username, tags: [roleTag(a.role === 'admin' ? 'admin' : 'reseller')], disabled: a.enabled === false })
+    if (a.enabled === false) out[out.length - 1].note = t('status.disabled')
   }
   return out
 })
@@ -84,9 +93,7 @@ const receiver = computed(() => options.value.find((o) => o.value === to.value)?
   <div class="owner-picker">
     <div class="aform-item">
       <label class="aform-label" for="op-to">{{ t('owner.to') }} <HelpTip :text="t('owner.toHint')" /></label>
-      <div class="aselect"><select id="op-to" v-model="to">
-        <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select></div>
+      <SearchSelect id="op-to" v-model="to" :options="options" :search-placeholder="t('owner.search')" />
     </div>
 
     <label v-if="moving" class="perm-item">

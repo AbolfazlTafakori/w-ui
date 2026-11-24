@@ -1612,6 +1612,7 @@
   "owner.carry": "Count past usage too",
   "owner.carryHint": "Off: only what they use from now on counts against the receiver's traffic. On: what they used before the move counts too.",
   "owner.me": "you",
+  "owner.search": "Search by name or role",
   "owner.move": "Move",
   "owner.saleNote": "Saving hands the customer to this operator: their users are taken as for a sale.",
   "owner.servers": "servers: {a} added, {r} removed",
