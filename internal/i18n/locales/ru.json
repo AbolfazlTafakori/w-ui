@@ -37,6 +37,7 @@
   "activity.filter.done": "Выполнено",
   "activity.filter.failed": "Сбой",
   "activity.filter.refused": "Отклонено",
+  "activity.removedOperator": "удалённый оператор #{id}",
   "activity.result": "Результат",
   "activity.stat.operators": "Операторы",
   "activity.stat.records": "Записи",

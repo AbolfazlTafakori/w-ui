@@ -37,6 +37,7 @@
   "activity.filter.done": "已完成",
   "activity.filter.failed": "失败",
   "activity.filter.refused": "被拒",
+  "activity.removedOperator": "已删除的运营者 #{id}",
   "activity.result": "结果",
   "activity.stat.operators": "运营者",
   "activity.stat.records": "记录",

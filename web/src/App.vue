@@ -74,9 +74,8 @@ const nav = [
   { to: '/clients', key: 'nav.clients', icon: 'TeamOutlined', sells: true, menu: 'clients' },
   // An admin's or a reseller's when the owner ticked it for them, over their
   // own customers and by network; the owner's in full.
-  // Operators' API tokens and their activity are the owner's on
-  // settings/security, beside the panel's own tokens; admins and resellers
-  // reach them from operatorNav.
+  // Operators' API tokens are the owner's on settings/security, beside the
+  // panel's own tokens; admins and resellers reach them from operatorNav.
   { to: '/sharing', key: 'nav.sharing', icon: 'EyeOutlined', menu: 'sharing', grant: 'sharing' },
   { to: '/groups', key: 'nav.groups', icon: 'TagsOutlined', sells: true, menu: 'groups' },
   // Two tiers, two pages. Admins is the owner's alone -- no menu grant and no
@@ -85,6 +84,9 @@ const nav = [
   // page grant for an admin.
   { to: '/admins', key: 'nav.admins', icon: 'SafetyOutlined' },
   { to: '/resellers', key: 'nav.resellers', icon: 'ShopOutlined', menu: 'resellers' },
+  // What those operators changed, beside them: the owner's in full. Admins
+  // and resellers granted the page reach their own from operatorNav.
+  { to: '/activity', key: 'nav.activity', icon: 'ProfileOutlined' },
   { to: '/nodes', key: 'nav.nodes', icon: 'ClusterOutlined' },
   { to: '/hosts', key: 'nav.hosts', icon: 'GlobalOutlined' },
   { to: '/outbounds', key: 'nav.outbounds', icon: 'ExportOutlined' },

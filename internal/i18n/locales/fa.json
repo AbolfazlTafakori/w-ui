@@ -37,6 +37,7 @@
   "activity.filter.done": "انجام‌شده",
   "activity.filter.failed": "ناموفق",
   "activity.filter.refused": "ردشده",
+  "activity.removedOperator": "اپراتور حذف‌شده #{id}",
   "activity.result": "نتیجه",
   "activity.stat.operators": "اپراتورها",
   "activity.stat.records": "رکوردها",

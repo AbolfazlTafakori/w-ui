@@ -34,6 +34,10 @@ onMounted(() => {
 })
 onBeforeUnmount(() => clearInterval(timer))
 
+// Who made a change: their name, or -- for an operator removed since, whose
+// record outlives them -- that they were removed, by the id they had.
+const who = (r) => r.operator || t('activity.removedOperator').replace('{id}', r.operatorId || '?')
+
 // How a request ended, the way the table colours it.
 const outcome = (s) => (s < 400 ? 'done' : s < 500 ? 'refused' : 'failed')
 const outcomeLabel = (s) => ({
@@ -44,9 +48,9 @@ const visible = computed(() => {
   const q = search.value.trim().toLowerCase()
   return rows.value.filter((r) =>
     (!result.value || outcome(r.status) === result.value) &&
-    (!q || [r.operator, r.action].some((v) => String(v || '').toLowerCase().includes(q))))
+    (!q || [who(r), r.action].some((v) => String(v || '').toLowerCase().includes(q))))
 })
-const operators = computed(() => new Set(rows.value.map((r) => r.operator)).size)
+const operators = computed(() => new Set(rows.value.map((r) => r.operatorId || r.operator)).size)
 const notDone = computed(() => rows.value.filter((r) => outcome(r.status) !== 'done').length)
 // Done, refused, failed: green, amber, and the panel's own warning tone for a
 // fault -- nothing here is an alarm.
@@ -112,7 +116,7 @@ const tone = (s) => (s < 400 ? 'green' : s < 500 ? 'orange' : 'gold')
             <tbody>
               <tr v-for="r in visible" :key="r.id">
                 <td class="ltr act-muted">{{ dateTime(r.at, store.locale) }}</td>
-                <td><span class="act-who">{{ r.operator }}</span><span v-if="r.viaToken" class="atag" style="margin-inline-start: 6px"><AntIcon name="KeyOutlined" /> {{ t('activity.token') }}</span></td>
+                <td><span class="act-who" :class="{ gone: !r.operator }">{{ who(r) }}</span><span v-if="r.viaToken" class="atag" style="margin-inline-start: 6px"><AntIcon name="KeyOutlined" /> {{ t('activity.token') }}</span></td>
                 <td><code class="ltr">{{ r.action }}</code></td>
                 <td><span class="atag" :class="tone(r.status)">{{ r.status }} · {{ outcomeLabel(r.status) }}</span></td>
               </tr>
@@ -127,5 +131,6 @@ const tone = (s) => (s < 400 ? 'green' : s < 500 ? 'orange' : 'gold')
 <style scoped>
 .activity-toolbar { margin-bottom: 12px; }
 .act-who { font-weight: 600; }
+.act-who.gone { font-weight: 400; font-style: italic; color: var(--muted); }
 .act-muted { color: var(--muted); white-space: nowrap; }
 </style>

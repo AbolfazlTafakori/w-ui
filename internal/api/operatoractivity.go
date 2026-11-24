@@ -13,12 +13,15 @@ import (
 // how it ended, when, and whether it came from a token. Its own struct, so
 // no field added to the record reaches them by being forgotten here.
 type operatorActionView struct {
-	ID       uint      `json:"id"`
-	Operator string    `json:"operator"`
-	Action   string    `json:"action"`
-	Status   int       `json:"status"`
-	ViaToken bool      `json:"viaToken"`
-	At       time.Time `json:"at"`
+	ID uint `json:"id"`
+	// OperatorID is who, by id; Operator their name, empty for one removed
+	// since, whom the page names by id instead.
+	OperatorID uint      `json:"operatorId"`
+	Operator   string    `json:"operator"`
+	Action     string    `json:"action"`
+	Status     int       `json:"status"`
+	ViaToken   bool      `json:"viaToken"`
+	At         time.Time `json:"at"`
 }
 
 func (s *Server) handleOperatorActivity(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +35,7 @@ func (s *Server) handleOperatorActivity(w http.ResponseWriter, r *http.Request) 
 	out := make([]operatorActionView, 0, len(rows))
 	for _, a := range rows {
 		out = append(out, operatorActionView{
-			ID: a.ID, Operator: a.Username, Action: a.Method + " " + a.Path,
+			ID: a.ID, OperatorID: a.AdminID, Operator: a.Username, Action: a.Method + " " + a.Path,
 			Status: a.Status, ViaToken: a.ViaToken, At: a.At,
 		})
 	}

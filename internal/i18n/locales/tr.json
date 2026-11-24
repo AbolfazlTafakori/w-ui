@@ -37,6 +37,7 @@
   "activity.filter.done": "Tamamlandı",
   "activity.filter.failed": "Başarısız",
   "activity.filter.refused": "Reddedildi",
+  "activity.removedOperator": "silinmiş operatör #{id}",
   "activity.result": "Sonuç",
   "activity.stat.operators": "Operatörler",
   "activity.stat.records": "Kayıtlar",

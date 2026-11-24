@@ -37,6 +37,7 @@
   "activity.filter.done": "Done",
   "activity.filter.failed": "Failed",
   "activity.filter.refused": "Refused",
+  "activity.removedOperator": "removed operator #{id}",
   "activity.result": "Result",
   "activity.stat.operators": "Operators",
   "activity.stat.records": "Records",
