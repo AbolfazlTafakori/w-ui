@@ -10,6 +10,7 @@ import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import DeviceSetup from '../components/DeviceSetup.vue'
 import { copyText } from '../lib/clipboard.js'
+import { deviceGrid } from '../lib/clients/deviceGrid.js'
 
 const props = defineProps({ id: { type: [String, Number], required: true } })
 const router = useRouter()
@@ -58,6 +59,23 @@ async function downloadAll() {
   }
 }
 
+// The tunnels' names, for the columns; an account names only its id.
+const interfaces = ref([])
+const grid = computed(() => deviceGrid(client.value?.accounts || [], interfaces.value, client.value?.protocol))
+
+// One file saved straight from its cell, without opening it.
+const saving = ref(0)
+async function saveOne(account) {
+  saving.value = account.id
+  try {
+    await api.downloadProfile(account.id)
+  } catch (e) {
+    notify(e.message, 'error')
+  } finally {
+    saving.value = 0
+  }
+}
+
 const savingProfile = ref(false)
 
 async function saveProfile() {
@@ -82,7 +100,11 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  // Names only: without them a column says #id, and nothing else waits.
+  api.interfaces({ background: true }).then((list) => (interfaces.value = list || []), () => {})
+})
 
 async function showProfile(account) {
   try {
@@ -122,19 +144,22 @@ const addDevice = () =>
 
 const ask = ref(null)
 
-const removeDevice = (account) => {
+// A user is taken off every server at once, as the row shows them: one
+// file left on another server would be a user still holding a place.
+const removeUser = (user) => {
   ask.value = {
     title: t('device.confirmRemoveTitle'),
     body: t('device.confirmRemoveBody'),
-    subject: account.deviceName,
-    // Both worth saying: the customer's file stops working, and the address it
-    // held goes back to the pool and may be handed to somebody else.
+    subject: user.name,
     consequences: [t('device.consequenceConfig'), t('device.consequenceAddress')],
     confirmLabel: t('action.delete'),
     run: () =>
       guard(async () => {
-        await api.removeDevice(account.id)
-        await load()
+        try {
+          for (const acc of user.accounts) await api.removeDevice(acc.id)
+        } finally {
+          await load()
+        }
       }, 'device.removed'),
   }
 }
@@ -342,41 +367,55 @@ const isL2TP = (p) => /-(l2tp|pptp)\.txt$/.test(p.filename || '')
 
       <div v-if="!client.accounts?.length" class="empty">{{ t('device.none') }}</div>
 
+      <!-- One row a user, one column a server, as the subscription page's
+           usage by user and tunnel: each cell is that user's file there --
+           whether it is connected now, its address, its code and its file. -->
       <div v-else class="table-wrap">
-        <table>
+        <table class="dgrid">
           <thead>
             <tr>
               <th>{{ t('device.name') }}</th>
-              <th>{{ t('device.address') }}</th>
-              <th>{{ t('client.status') }}</th>
-              <th>{{ t('device.lastSeen') }}</th>
+              <th v-for="s in grid.servers" :key="s.id" class="dgrid-server">
+                <span class="dgrid-server-name">{{ s.name }}</span>
+                <span class="tag proto">{{ s.protocol }}</span>
+              </th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="acc in client.accounts" :key="acc.id">
-              <td>{{ acc.deviceName }}</td>
-              <td class="mono small">{{ acc.ip }}</td>
-              <td>
-                <span class="tag" :class="isOnline(acc.lastHandshake) ? 'active' : 'disabled'">
-                  <i v-if="isOnline(acc.lastHandshake)" class="dot"></i>
-                  {{ isOnline(acc.lastHandshake) ? t('status.online') : t('status.offline') }}
+            <tr v-for="u in grid.users" :key="u.key">
+              <th scope="row">
+                <span class="dgrid-user">
+                  <i class="live" :class="{ on: u.online }"></i>{{ u.name }}
                 </span>
-              </td>
-              <td class="small muted">{{ dateTime(acc.lastHandshake, store.locale) }}</td>
-              <td>
-                <div class="row" style="justify-content: flex-end; flex-wrap: nowrap">
-                  <button class="btn sm" @click="showProfile(acc)">
-                    <Icon name="qr" :size="13" />{{ t('device.config') }}
-                  </button>
-                  <button
-                    class="btn sm icon danger"
-                    :aria-label="t('action.delete')"
-                    @click="removeDevice(acc)"
-                  >
-                    <Icon name="trash" :size="13" />
-                  </button>
+                <span class="dgrid-seen small muted">
+                  {{ u.online ? t('status.online') : u.seen ? dateTime(u.seen, store.locale) : t('status.offline') }}
+                </span>
+              </th>
+              <td v-for="s in grid.servers" :key="s.id">
+                <div v-if="u.cells[s.id]" class="dgrid-cell">
+                  <i class="live" :class="{ on: isOnline(u.cells[s.id].lastHandshake) }"
+                     :title="isOnline(u.cells[s.id].lastHandshake) ? t('status.online') : dateTime(u.cells[s.id].lastHandshake, store.locale)"></i>
+                  <span class="mono small">{{ u.cells[s.id].ip }}</span>
+                  <span class="dgrid-actions">
+                    <button class="btn sm icon" :title="t('device.config')" :aria-label="t('device.config')"
+                            @click="showProfile(u.cells[s.id])">
+                      <Icon name="qr" :size="13" />
+                    </button>
+                    <button class="btn sm icon" :title="t('device.downloadConfig')" :aria-label="t('device.downloadConfig')"
+                            :disabled="saving === u.cells[s.id].id" @click="saveOne(u.cells[s.id])">
+                      <span v-if="saving === u.cells[s.id].id" class="spin sm"></span>
+                      <Icon v-else name="download" :size="13" />
+                    </button>
+                  </span>
                 </div>
+                <span v-else class="muted">—</span>
+              </td>
+              <td class="dgrid-end">
+                <button class="btn sm icon danger" :aria-label="t('action.delete')" :title="t('action.delete')"
+                        @click="removeUser(u)">
+                  <Icon name="trash" :size="13" />
+                </button>
               </td>
             </tr>
           </tbody>
@@ -528,5 +567,69 @@ const isL2TP = (p) => /-(l2tp|pptp)\.txt$/.test(p.filename || '')
 }
 .page-head p.row {
   gap: 6px;
+}
+/* The grid, in the shape of the subscription page's usage by user. */
+.dgrid th,
+.dgrid td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.dgrid thead th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.dgrid-server {
+  text-align: start;
+}
+.dgrid-server-name {
+  margin-inline-end: 6px;
+  color: var(--ink);
+}
+.dgrid-server .tag {
+  font-size: 11px;
+}
+.dgrid tbody th {
+  text-align: start;
+  font-weight: 500;
+}
+.dgrid-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dgrid-seen {
+  display: block;
+  font-weight: 400;
+  padding-inline-start: 15px;
+}
+.dgrid-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dgrid-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-inline-start: auto;
+  padding-inline-start: 6px;
+}
+.dgrid-end {
+  width: 1%;
+  text-align: end;
+}
+/* Connected now: the theme's green; otherwise a quiet ring. */
+.live {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+}
+.live.on {
+  border-color: var(--tag-green-ink);
+  background: var(--tag-green-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tag-green-ink) 22%, transparent);
 }
 </style>
