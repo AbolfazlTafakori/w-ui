@@ -532,7 +532,7 @@ async function submit() {
                   <label class="aform-label" for="rf-sale-quota">{{ t('admins.sales.traffic') }} <HelpTip :text="t('admins.sales.trafficHint')" /></label>
                   <div class="acompact">
                     <label class="ainput number" :class="{ invalid: fieldError.saleMaxBytes }"><input id="rf-sale-quota" v-model="form.saleQuota" type="number" min="0" step="any" inputmode="decimal" class="ltr" :placeholder="t('admins.sales.noRule')" /></label>
-                    <div class="aselect unit"><select v-model="form.saleUnit" :aria-label="t('client.quotaUnit')"><option value="GB">GB</option><option value="TB">TB</option></select></div>
+                    <div class="aselect unit"><select v-model="form.saleUnit" :aria-label="t('client.quotaUnit')"><option value="MB">MB</option><option value="GB">GB</option><option value="TB">TB</option></select></div>
                   </div>
                   <p v-if="fieldError.saleMaxBytes" class="field-error">{{ fieldError.saleMaxBytes }}</p>
                 </div>

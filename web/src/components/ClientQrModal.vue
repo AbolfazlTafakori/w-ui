@@ -46,7 +46,10 @@ onMounted(async () => {
   // asked for one after another, and a customer with many users kept the
   // dialog blank for as many round trips. The dialog opens on the link as
   // soon as it is here; each tunnel fills in when the files arrive.
+  // Its failure held until it is read, so one the dialog never reaches --
+  // the customer could not be read first -- is not an unhandled rejection.
   const profilesP = api.get(`/api/clients/${props.client.id}/profiles`, { background: true })
+    .then((list) => ({ list }), (error) => ({ error }))
   let fresh
   try {
     // The link answer says whether the service is on; the settings route
@@ -82,7 +85,9 @@ onMounted(async () => {
 
   let byDevice = {}
   try {
-    for (const d of (await profilesP) || []) byDevice[d.deviceId] = d.profiles || []
+    const got = await profilesP
+    if (got.error) throw got.error
+    for (const d of got.list || []) byDevice[d.deviceId] = d.profiles || []
   } catch (e) {
     notify(e.message, 'error')
   }

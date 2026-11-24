@@ -71,7 +71,9 @@ async function saved(made) {
   }
   try {
     const own = await api.get(`/api/nodes/${made.id}/users`, { background: true })
-    if (Array.isArray(own) && own.some((u) => !u.imported)) importing.value = made
+    // The dialog's own test of what can be brought in: not already here,
+    // and with no reason it cannot be.
+    if (Array.isArray(own) && own.some((u) => !u.imported && !u.reason)) importing.value = made
   } catch {
     // Not reachable yet, or nothing to bring: its menu still offers it.
   }
