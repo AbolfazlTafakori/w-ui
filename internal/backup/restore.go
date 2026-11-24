@@ -42,6 +42,11 @@ const (
 	maxRestoreTotal = 8 << 30 // 8 GiB
 )
 
+// MaxArchive is the largest archive file this panel takes in: compressed,
+// it holds at most maxRestoreTotal unpacked, and nothing larger is one of
+// ours.
+const MaxArchive = maxRestoreTotal
+
 // RestoreReport says what a restore did.
 type RestoreReport struct {
 	// Files restored, relative to the data directory.
@@ -85,7 +90,7 @@ func (s *Service) Restore(ctx context.Context, name string, keep *LocalAddresses
 
 	// What is being replaced, kept. An operator who restores last month by
 	// mistake has otherwise destroyed this month to find that out.
-	safety, err := s.createLocked(ctx)
+	safety, err := s.createLocked(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("backup: could not save the current state before restoring: %w", err)
 	}
@@ -108,6 +113,16 @@ func (s *Service) Restore(ctx context.Context, name string, keep *LocalAddresses
 	if len(files) == 0 {
 		os.RemoveAll(staging)
 		return nil, fmt.Errorf("backup: %q holds no files", name)
+	}
+	// The database file, where it is the one that will be put in place, is
+	// opened and checked now: damaged, or from a panel with database changes
+	// this one does not know, it would be a panel that does not start, found
+	// only after the restart. A dump is checked by verify.
+	if s.dbFile != "" && usesFile(staging, s.dbFile, files) {
+		if err := database.CheckSQLiteFile(filepath.Join(staging, s.dbFile)); err != nil {
+			os.RemoveAll(staging)
+			return nil, fmt.Errorf("backup: %q cannot be restored: %w", name, err)
+		}
 	}
 
 	// Where this machine says it can be reached, carried across the restart so
@@ -196,13 +211,9 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		return "", nil, false
 	}
 
-	hasDB := false
 	hasExport := false
 	var parts []string
 	for _, rel := range entries {
-		if dbFile != "" && rel == dbFile {
-			hasDB = true
-		}
 		if rel == ExportFile {
 			hasExport = true
 		}
@@ -211,15 +222,14 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		}
 	}
 	hasDump := len(parts) > 0
-	// An archive taken on the other engine may still carry a SQLite file --
-	// one left behind by a move -- which is not the data. The dump says
-	// which engine it came from, and that is what decides.
-	byFile := hasDB
-	switch {
-	case hasDB && hasDump && stagedDumpDriver(staging, parts) != "sqlite":
-		byFile = false
-	case hasDB && !hasDump && hasExport && dumpDriver(filepath.Join(staging, ExportFile)) != "sqlite":
-		byFile = false
+	byFile := usesFile(staging, dbFile, entries)
+	// The database comes by a load at the next step of the start, which may
+	// still refuse it. Until it is in, the files it is restored with set
+	// aside what they replace, so a refused load leaves the panel on its own
+	// data and its own files, not its old data among the backup's files.
+	var aside *setAside
+	if !byFile && (hasDump || hasExport) {
+		aside = newSetAside(dataDir)
 	}
 	switch {
 	case byFile:
@@ -285,6 +295,12 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 			log.Error("could not prepare a restored path", "file", rel, "error", err)
 			continue
 		}
+		if aside != nil {
+			if err := aside.keep(rel); err != nil {
+				log.Error("could not set aside a file before restoring over it; it is left as it is", "file", rel, "error", err)
+				continue
+			}
+		}
 		if err := os.Rename(src, dst); err != nil {
 			if err := copyFile(src, dst); err != nil {
 				log.Error("could not restore a file", "file", rel, "error", err)
@@ -294,9 +310,19 @@ func ApplyPending(dataDir, dbFile string, log *slog.Logger) (string, *LocalAddre
 		applied++
 	}
 
+	if aside != nil {
+		if err := aside.close(); err != nil {
+			log.Error("could not record what the restore set aside; a refused load will leave the backup's files in place", "error", err)
+		}
+	}
 	// The write-ahead log and shared memory belong to the database that was
 	// there before. Left beside the restored one, SQLite replays them over it.
-	clearSidecars(dataDir, log)
+	// Only then: where the database stays the one that was there -- loaded
+	// over by a dump, or not in the archive at all -- its log is its latest
+	// writes, never checkpointed by a process that ended itself to restore.
+	if byFile {
+		clearSidecars(dataDir, log)
+	}
 	// Cleanup on the way out: nothing is left to do if it fails, and the error that brought us here is the one reported.
 	_ = os.RemoveAll(staging)
 
@@ -565,10 +591,16 @@ func (s *Service) Accept(r io.Reader) (Archive, error) {
 		return Archive{}, fmt.Errorf("backup: secure upload: %w", err)
 	}
 
-	size, err := io.Copy(tmp, io.LimitReader(r, maxRestoreTotal))
+	// One byte past the limit is read, so a file larger than it is said to
+	// be that, and not cut there and called damaged.
+	size, err := io.Copy(tmp, io.LimitReader(r, MaxArchive+1))
 	if err != nil {
 		tmp.Close()
 		return Archive{}, fmt.Errorf("backup: receive upload: %w", err)
+	}
+	if size > MaxArchive {
+		tmp.Close()
+		return Archive{}, fmt.Errorf("backup: the uploaded file is larger than %d MB, the largest backup this panel reads", MaxArchive>>20)
 	}
 	if err := tmp.Close(); err != nil {
 		return Archive{}, fmt.Errorf("backup: receive upload: %w", err)

@@ -23,7 +23,7 @@ func newService(t *testing.T, keep int) (*Service, string) {
 	t.Helper()
 	data := t.TempDir()
 	for name, body := range map[string]string{
-		"wui.db":                   "database",
+		"wui.db":                   sqliteFile(t),
 		"openvpn/tun0/server.key":  "a server private key",
 		"openvpn/tun0/credentials": "user:secret",
 		"wui.db-wal":               "write ahead log",

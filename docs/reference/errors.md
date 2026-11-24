@@ -67,7 +67,8 @@ An error that says **internal error** is a bug or a broken server, not bad input
 | `unsupported language "…"; available: …` | `/api/i18n/xx` for a locale that is not shipped. | Use `en` or `fa`. |
 | `that is not a range this panel keeps. Ask for 5m, 1h, 6h, 24h, 48h or 7d` | History was asked for a window the store does not have. | Use one of those. |
 | `action must be enable, disable or delete` | A bulk action with an unknown verb. | One of the three. |
-| `no file was sent` / `that file could not be read, or it is larger than this panel accepts` | An upload with no file part, or one past the cap. | Attach the file; a backup larger than the cap is not a W-UI backup. |
+| `no file was sent` / `that file could not be read: it did not arrive whole, or was not sent as a file` | An upload with no file part, or one cut off on the way. | Attach the file and send it again. |
+| `that file is larger than %d MB, the largest backup this panel accepts` (413) | An upload past the largest archive a panel reads. | A file that large is not a W-UI backup; check it is the right file. |
 | `this panel runs without permission to replace its own binary, and the update helper is not installed on this server. …` (412) | The panel runs unprivileged and this server has no `wui-update.path` yet: every server installed before 2.3.2. | Run the command the message gives, once, as root: `bash <(curl -fsSL https://raw.githubusercontent.com/AbolfazlTafakori/w-ui/main/update.sh)`. |
 | `the update helper did not answer. Check it on the server: …` | The release was left for the helper and nothing answered within two minutes. | `systemctl status wui-update.path wui-update.service`; `journalctl -u wui-update -n 30`. |
 | `… is not newer than the installed …; nothing was installed` | The helper refuses a step back, even a signed one. | Nothing to do; the panel keeps its version. |

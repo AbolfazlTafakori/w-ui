@@ -58,7 +58,7 @@ func TestARestoreNeverPutsBackWhatRootReads(t *testing.T) {
 	}
 	s := New(Options{DataDir: data, DBFile: "wui.db", Log: quiet()})
 	planted := map[string]string{
-		"wui.db":                       "the database",
+		"wui.db":                       sqliteFile(t),
 		"openvpn/ovpn1/server.conf":    "kept: this is data",
 		"firewall/ports.json":          `{"tcp":[1,22,5432,65535]}`,
 		"update/request":               "install",

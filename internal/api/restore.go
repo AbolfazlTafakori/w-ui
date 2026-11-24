@@ -1,9 +1,13 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/abolfazl/w-ui/internal/backup"
 )
 
 // Restoring a backup, and taking one in from outside.
@@ -18,7 +22,10 @@ import (
 // Generous, because a panel with years of traffic history and a certificate
 // authority behind it makes a large archive, and refusing the real thing would
 // make the feature useless for exactly the servers that need it most.
-const uploadLimit = 512 << 20 // 512 MiB
+// Held to the largest archive this panel will read (backup.MaxArchive): a
+// panel big enough to make one past the old 512 MiB could not move it to a
+// new server at all.
+const uploadLimit = backup.MaxArchive + 1<<20 // and the form around it
 
 // restartDelay is how long the process waits before ending itself, so the
 // response describing the restore reaches the browser first. A page that gets a
@@ -51,8 +58,16 @@ func (s *Server) handleUploadBackup(w http.ResponseWriter, r *http.Request) {
 	allowLongTransfer(w)
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		// Which of the two it is, said: a file too large is not one that
+		// "could not be read", and the operator needs the limit to act on.
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeError(w, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("that file is larger than %d MB, the largest backup this panel accepts", backup.MaxArchive>>20))
+			return
+		}
 		writeError(w, http.StatusBadRequest,
-			"that file could not be read, or it is larger than this panel accepts")
+			"that file could not be read: it did not arrive whole, or was not sent as a file")
 		return
 	}
 	defer func() {

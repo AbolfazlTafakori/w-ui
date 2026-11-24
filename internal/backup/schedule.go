@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -75,8 +76,17 @@ func (s *Scheduler) tick(ctx context.Context) {
 		s.svc.log.Warn("could not read the backup directory", "error", err)
 		return
 	}
-	if len(list) > 0 && time.Since(list[0].Taken) < every {
-		return
+	// Only this panel's own: an archive uploaded from another is a copy of
+	// that one's data, and counted, it put this panel's next backup off a
+	// whole interval.
+	for _, a := range list {
+		if strings.Contains(a.Name, "-uploaded") {
+			continue
+		}
+		if time.Since(a.Taken) < every {
+			return
+		}
+		break
 	}
 
 	archive, err := s.svc.Create(ctx)

@@ -3,9 +3,13 @@ package database
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/abolfazl/w-ui/internal/database/model"
 )
@@ -250,6 +254,39 @@ func openUserCapacity(tx *gorm.DB) error {
 				return fmt.Errorf("write operator %d's ledger: %w", o.ID, err)
 			}
 		}
+	}
+	return nil
+}
+
+// CheckSQLiteFile reads a SQLite database file that is not open -- one a
+// restore is about to put in place of the panel's -- and refuses one that
+// is damaged or from a panel with migrations this one does not know: put
+// in place, the first would leave a panel that will not start, the second
+// one whose new tables and columns this panel cannot read.
+func CheckSQLiteFile(path string) error {
+	db, err := gorm.Open(sqlite.Open("file:"+filepath.ToSlash(path)+"?mode=ro"), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		return fmt.Errorf("the backup's database file cannot be opened: %w", err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		defer sqlDB.Close()
+	}
+	var verdict []string
+	if err := db.Raw("PRAGMA quick_check").Scan(&verdict).Error; err != nil {
+		return fmt.Errorf("the backup's database file cannot be read: %w", err)
+	}
+	if len(verdict) != 1 || verdict[0] != "ok" {
+		return fmt.Errorf("the backup's database file is damaged: %s", strings.Join(verdict[:min(len(verdict), 3)], "; "))
+	}
+	if !db.Migrator().HasTable(&schemaMigration{}) {
+		return nil // from before migrations were recorded: older than any
+	}
+	var last int
+	if err := db.Model(&schemaMigration{}).Select("COALESCE(MAX(id), 0)").Scan(&last).Error; err != nil {
+		return fmt.Errorf("the backup's database file cannot be read: %w", err)
+	}
+	if last > LatestMigration() {
+		return fmt.Errorf("%w, with changes to the database this panel does not know; update this panel first", ErrNewerBackup)
 	}
 	return nil
 }

@@ -60,12 +60,14 @@ func openPanelDatabase(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	loadRefused := false
 	// A restore that crossed engines, or came from a panel on the other one:
 	// the archive's database dump is loaded now that the schema is current.
 	// One transaction, checked to its last line: a dump that does not check
 	// out leaves the database exactly as it was, and is set aside.
 	if pending := filepath.Join(cfg.DataDir, backup.PendingDumpFile); fileExists(pending) {
 		if err := loadPendingDump(db, cfg, pending, log); err != nil {
+			loadRefused = true
 			log.Error("the restored backup could not be loaded into the database; the panel is running on the data it had",
 				"error", err, "kept", pending+".failed")
 			if err := os.Rename(pending, pending+".failed"); err != nil {
@@ -81,6 +83,7 @@ func openPanelDatabase(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 	// The same for an archive from before the dump: its one JSON document.
 	if pending := filepath.Join(cfg.DataDir, backup.PendingImportFile); fileExists(pending) {
 		if err := importPending(db, cfg, pending, log); err != nil {
+			loadRefused = true
 			log.Error("the restored backup could not be loaded into the database; the panel is running on the data it had",
 				"error", err, "kept", pending+".failed")
 			if err := os.Rename(pending, pending+".failed"); err != nil {
@@ -94,6 +97,16 @@ func openPanelDatabase(cfg config.Config, log *slog.Logger) (*gorm.DB, error) {
 		}
 	}
 
+	// The files restored with a database that came by a load go back out if
+	// it was refused: the panel runs on its own data and its own files, not
+	// one among the other's. Let go once it is in.
+	if loadRefused {
+		if backup.UndoRestoredFiles(cfg.DataDir, log) {
+			restored = false
+		}
+	} else {
+		backup.FinishRestoredFiles(cfg.DataDir, log)
+	}
 	if restored {
 		log.Info("this panel is running on data restored from a backup", "archive", restoredFrom)
 		// After the database is open, because this is a change to the restored

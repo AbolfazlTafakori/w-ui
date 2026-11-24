@@ -133,7 +133,7 @@ func (s *Service) Dir() string { return s.dir }
 func (s *Service) Create(ctx context.Context) (Archive, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.createLocked(ctx)
+	return s.createLocked(ctx, "")
 }
 
 // createLocked is Create with the lock already held.
@@ -142,7 +142,11 @@ func (s *Service) Create(ctx context.Context) (Archive, error) {
 // for the whole operation — so it cannot call Create without deadlocking on
 // itself. Splitting it is the alternative to a restore that quietly skips its
 // own safety copy.
-func (s *Service) createLocked(ctx context.Context) (Archive, error) {
+//
+// keep names an archive retention must not remove whatever its age: the one
+// a restore is about to unpack, which its own safety copy would otherwise
+// push past the number kept and delete before it was read.
+func (s *Service) createLocked(ctx context.Context, keep string) (Archive, error) {
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return Archive{}, fmt.Errorf("backup: create %s: %w", s.dir, err)
 	}
@@ -211,7 +215,7 @@ func (s *Service) createLocked(ctx context.Context) (Archive, error) {
 		return Archive{}, fmt.Errorf("backup: stat archive: %w", err)
 	}
 
-	s.prune()
+	s.prune(keep)
 	s.log.Info("backup written", "file", name, "bytes", info.Size(), "encrypted", password != "")
 	return Archive{Name: name, Size: info.Size(), Taken: now, Encrypted: password != ""}, nil
 }
@@ -346,7 +350,7 @@ func (s *Service) writeArchive(ctx context.Context, w io.Writer, dbSnapshot stri
 		// A restore staged but not yet applied. Archiving it would put a whole
 		// second copy of the data inside the backup, and restoring that backup
 		// would stage the older one again.
-		if d.IsDir() && d.Name() == PendingDirName {
+		if d.IsDir() && (d.Name() == PendingDirName || d.Name() == PreviousDirName) {
 			return filepath.SkipDir
 		}
 		// SQLite's sidecar files are meaningless without the moment they
@@ -543,7 +547,7 @@ func (s *Service) Delete(name string) error {
 }
 
 // prune keeps the newest `keep` archives.
-func (s *Service) prune() {
+func (s *Service) prune(keep string) {
 	if s.keep <= 0 {
 		return
 	}
@@ -552,6 +556,9 @@ func (s *Service) prune() {
 		return
 	}
 	for _, a := range list[s.keep:] {
+		if a.Name == keep {
+			continue
+		}
 		if err := os.Remove(filepath.Join(s.dir, a.Name)); err != nil {
 			s.log.Warn("could not remove an old backup", "file", a.Name, "error", err)
 			continue
