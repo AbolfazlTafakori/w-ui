@@ -101,6 +101,11 @@ func (s *Server) routes() []Route {
 			handler: s.handleCreateClient},
 		{Method: "GET", Path: "/api/clients/{id}", Group: "Customers", Auth: true,
 			Summary: "One customer with their devices.", handler: s.handleGetClient},
+		{Method: "GET", Path: "/api/clients/{id}/profiles", Group: "Customers", Auth: true,
+			Summary: "Every configuration of every device a customer holds, in one answer.",
+			Note: "What GET /api/devices/{id}/profiles gives for each device, all at once: " +
+				"the customer, each tunnel and its hosts read once rather than once a device.",
+			handler: s.handleClientProfiles},
 		{Method: "PATCH", Path: "/api/clients/{id}", Group: "Customers", Auth: true,
 			Summary: "Change a customer's plan, status, or which servers they reach.",
 			Body:    `{"quotaBytes":21474836480,"status":"active","interfaceIds":[1,3]}`,

@@ -66,28 +66,81 @@ func (s *Clients) Profiles(ctx context.Context, accountID uint) ([]Profile, erro
 	if err := s.db.WithContext(ctx).Preload("Accounts", accountsInOrder).First(&owner, acc.ClientID).Error; err != nil {
 		return nil, fmt.Errorf("%w: customer %d", ErrNotFound, acc.ClientID)
 	}
+	if err := s.withHosts(ctx, iface); err != nil {
+		return nil, err
+	}
+	return renderProfiles(&owner, &acc, iface)
+}
+
+// DeviceProfiles is one device's configurations, for a customer's whole set.
+type DeviceProfiles struct {
+	DeviceID uint      `json:"deviceId"`
+	Profiles []Profile `json:"profiles"`
+}
+
+// ClientProfiles renders every configuration of every device a customer
+// holds, in one go: the customer, each tunnel and its hosts read once, not
+// once a device. The QR dialog asked device by device, one request after
+// another, and a customer of ten users on three tunnels kept it waiting on
+// thirty round trips before it showed anything.
+func (s *Clients) ClientProfiles(ctx context.Context, clientID uint) ([]DeviceProfiles, error) {
+	// Read the way every read of a customer is, narrowed to the caller's.
+	owner, err := s.Get(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	ifaces := map[uint]*model.Interface{}
+	out := make([]DeviceProfiles, 0, len(owner.Accounts))
+	for i := range owner.Accounts {
+		acc := &owner.Accounts[i]
+		iface, ok := ifaces[acc.InterfaceID]
+		if !ok {
+			if iface, err = s.loadInterface(ctx, acc.InterfaceID); err != nil {
+				return nil, err
+			}
+			if err := s.withHosts(ctx, iface); err != nil {
+				return nil, err
+			}
+			ifaces[acc.InterfaceID] = iface
+		}
+		list, err := renderProfiles(owner, acc, iface)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, DeviceProfiles{DeviceID: acc.ID, Profiles: list})
+	}
+	return out, nil
+}
+
+// withHosts reads the addresses an interface is reached at onto it.
+func (s *Clients) withHosts(ctx context.Context, iface *model.Interface) error {
 	var hosts []model.Host
 	if err := s.db.WithContext(ctx).Where("interface_id = ?", iface.ID).Order("priority, id").Find(&hosts).Error; err != nil {
-		return nil, fmt.Errorf("service: read hosts: %w", err)
+		return fmt.Errorf("service: read hosts: %w", err)
 	}
 	iface.Hosts = hosts
+	return nil
+}
 
+// renderProfiles is a device's configurations, one per host variant of its
+// interface; owner carries every file of the customer, for the file names.
+func renderProfiles(owner *model.Client, acc *model.Account, iface *model.Interface) ([]Profile, error) {
 	var out []Profile
 	for _, v := range endpoints.VariantsFor(iface, "") {
 		at := endpoints.WithEndpoint(*iface, v)
 		var p *Profile
 		switch iface.Protocol {
 		case model.ProtocolWireGuard:
-			p = renderWireGuard(&acc, &at)
+			p = renderWireGuard(acc, &at)
 		case model.ProtocolOpenVPN:
-			p = renderOpenVPN(&acc, &at)
+			p = renderOpenVPN(acc, &at)
 		case model.ProtocolL2TP, model.ProtocolPPTP, model.ProtocolIKEv2, model.ProtocolOpenConnect:
-			p = renderPPP(&acc, &at)
+			p = renderPPP(acc, &at)
 		default:
 			return nil, fmt.Errorf("%w: protocol %q", ErrInvalid, iface.Protocol)
 		}
-		p.Filename = deviceFilename(owner.Name, iface.Name, p.Filename, fileParts(owner.Accounts, acc, iface.Name, v)...)
-		p.Guides = devguide.Views(guideValues(&acc, &at, p.Filename))
+		p.Filename = deviceFilename(owner.Name, iface.Name, p.Filename, fileParts(owner.Accounts, *acc, iface.Name, v)...)
+		p.Guides = devguide.Views(guideValues(acc, &at, p.Filename))
 		if v.Host != nil {
 			p.HostID = v.Host.ID
 			p.HostName = v.Host.Name

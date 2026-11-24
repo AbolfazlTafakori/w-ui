@@ -14,6 +14,7 @@ POST   /api/auth/totp/disable                         Authentication auth=true  
 GET    /api/clients                                   Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/clients                                   Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 GET    /api/clients/{id}                              Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
+GET    /api/clients/{id}/profiles                     Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 PATCH  /api/clients/{id}                              Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 DELETE /api/clients/{id}                              Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes
 POST   /api/clients/{id}/devices                      Customers      auth=true  operator=false | none=401 token=yes reseller=yes admin=yes owner=yes

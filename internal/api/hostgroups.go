@@ -115,6 +115,21 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
+// handleClientProfiles is every configuration of every device a customer
+// holds, for the QR dialog to ask once.
+func (s *Server) handleClientProfiles(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	list, err := s.clients.ClientProfiles(r.Context(), id)
+	if err != nil {
+		fail(w, s.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
 // handleL2TPDevices is the list of devices an L2TP sign-in has a guide for.
 func (s *Server) handleL2TPDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, devguide.Devices())
