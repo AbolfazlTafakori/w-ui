@@ -176,8 +176,12 @@ a.row-title:hover { text-decoration: underline; }
 .shared-tip { display: none; position: absolute; z-index: 30; top: calc(100% + 6px); inset-inline-start: 0; width: max-content; max-width: min(280px, 70vw); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 18px; white-space: normal; text-align: start; box-shadow: 0 6px 16px rgba(0,0,0,.18); }
 .shared-tag:hover .shared-tip, .shared-tag:focus .shared-tip, .shared-tag:focus-within .shared-tip { display: block; }
 /* The plan's own link, opening on each user's own. */
-.sub-tree .cfg-head .row-title { flex: 1; min-width: 0; }
-.sub-tree .cfg-head .cfg-count { margin-inline-start: 0; }
+/* The plan's link is as wide as its text, not the row: the rest of the row
+   is the menu's to open and close, and a click there is not a click on the
+   link. The count and the buttons sit at the far end. */
+.sub-tree .cfg-head .row-title { flex: 0 1 auto; min-width: 0; }
+.sub-tree .cfg-head .cfg-count { margin-inline-start: auto; }
+.sub-tree .cfg-head .row-actions { margin-inline-start: 0; }
 .sub-tree .cfg-user-head .row-title { flex: 1; min-width: 0; }
 .cfg-text { display: block; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; }
 
