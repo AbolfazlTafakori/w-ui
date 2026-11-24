@@ -131,9 +131,6 @@ func (s Suite) records() uint64 {
 	return 1 << 24
 }
 
-// Transcript is the running hash of the handshake messages.
-type Transcript struct{ h hash.Hash }
-
 // expandLabel is HKDF-Expand-Label of RFC 8446 section 7.1 over a secret used
 // as the pseudorandom key.
 func expandLabel(s Suite, secret []byte, name string, context []byte, size int) []byte {

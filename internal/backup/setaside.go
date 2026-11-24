@@ -134,7 +134,8 @@ func UndoRestoredFiles(dataDir string, log *slog.Logger) bool {
 			return err
 		}
 		dst := filepath.Join(dataDir, rel)
-		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err == nil {
+		err = os.MkdirAll(filepath.Dir(dst), 0o700)
+		if err == nil {
 			err = os.Rename(path, dst)
 		}
 		if err != nil {

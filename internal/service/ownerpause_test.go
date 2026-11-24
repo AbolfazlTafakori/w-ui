@@ -144,7 +144,7 @@ func TestAPausedCustomersLinkCarriesNoConfiguration(t *testing.T) {
 	if err := db.Where("client_id = ?", c.ID).First(&device).Error; err != nil {
 		t.Fatal(err)
 	}
-	served := func() (int, error, int) {
+	served := func() (int, int, error) {
 		t.Helper()
 		b, err := subs.Serve(t.Context(), tok, "conf")
 		if err != nil {
@@ -155,7 +155,7 @@ func TestAPausedCustomersLinkCarriesNoConfiguration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return len(b.Body), derr, len(page.Devices)
+		return len(b.Body), len(page.Devices), derr
 	}
 	setEnabled := func(on bool) {
 		t.Helper()
@@ -163,15 +163,15 @@ func TestAPausedCustomersLinkCarriesNoConfiguration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if body, derr, n := served(); body == 0 || derr != nil || n == 0 {
+	if body, n, derr := served(); body == 0 || derr != nil || n == 0 {
 		t.Fatalf("before the pause: body %d, device %v, page %d", body, derr, n)
 	}
 	setEnabled(false)
-	if body, derr, n := served(); body != 0 || derr == nil || n != 0 {
+	if body, n, derr := served(); body != 0 || derr == nil || n != 0 {
 		t.Errorf("paused: body %d, device %v, page %d", body, derr, n)
 	}
 	setEnabled(true)
-	if body, derr, n := served(); body == 0 || derr != nil || n == 0 {
+	if body, n, derr := served(); body == 0 || derr != nil || n == 0 {
 		t.Errorf("back on: body %d, device %v, page %d", body, derr, n)
 	}
 }

@@ -234,7 +234,7 @@ type Client struct {
 
 // Dial connects to charon on the first of Sockets that answers.
 func Dial(timeout time.Duration) (*Client, error) {
-	var last error = errors.New("vici: no socket")
+	last := errors.New("vici: no socket")
 	for _, p := range Sockets {
 		if _, err := os.Stat(p); err != nil {
 			continue
