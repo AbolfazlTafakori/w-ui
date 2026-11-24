@@ -18,6 +18,8 @@ type Live interface {
 	LiveClients() []uint
 	// FileSpeeds is what each file is moving, by account id.
 	FileSpeeds() map[uint]model.Speed
+	// FilesNow is which of these files have a connection in use now.
+	FilesNow(accountIDs []uint) map[uint]bool
 }
 
 // Changes is what the panel says when something a customer sees has changed

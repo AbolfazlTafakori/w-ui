@@ -683,6 +683,10 @@ type Account struct {
 	// with can be read off the form and changed there. Never stored, and
 	// absent from lists.
 	Password string `gorm:"-" json:"password,omitempty"`
+	// Online is whether this file is connected right now, by the same
+	// reading the list's online count is: filled for one customer, not
+	// stored.
+	Online bool `gorm:"-" json:"online"`
 
 	Enabled bool `gorm:"not null;default:true" json:"enabled"`
 

@@ -8,8 +8,8 @@ describe('deviceGrid', () => {
   const accounts = [
     { id: 1, interfaceId: 10, deviceName: 'Phone', ip: '10.0.0.2', lastHandshake: old },
     { id: 2, interfaceId: 10, deviceName: 'Laptop', ip: '10.0.0.3' },
-    { id: 3, interfaceId: 20, deviceName: 'phone', ip: '10.1.0.2', lastHandshake: now() },
-    { id: 4, interfaceId: 30, deviceName: 'Laptop', ip: '10.2.0.3', lastHandshake: old },
+    { id: 3, interfaceId: 20, deviceName: 'phone', ip: '10.1.0.2', lastHandshake: now(), online: true },
+    { id: 4, interfaceId: 30, deviceName: 'Laptop', ip: '10.2.0.3', lastHandshake: now(), online: false },
   ]
   const g = deviceGrid(accounts, [{ id: 10, name: 'wg1', protocol: 'wireguard' }, { id: 20, name: 'ovpn1', protocol: 'openvpn' }], 'wireguard')
 
@@ -32,10 +32,10 @@ describe('deviceGrid', () => {
     expect(g.users[1].cells[30].id).toBe(4)
   })
 
-  it('is online if any file is, and seen at the latest', () => {
+  it('is online if the panel says any file is, not by a recent handshake', () => {
     expect(g.users[0].online).toBe(true)
     expect(g.users[1].online).toBe(false)
-    expect(g.users[1].seen).toBe(old)
+    expect(g.users[1].seen).toBe(accounts[3].lastHandshake)
   })
 
   it('is empty for no files', () => {

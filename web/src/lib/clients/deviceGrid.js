@@ -1,13 +1,12 @@
-import { isOnline } from '../format.js'
-
 // A customer's files as a grid: a row for each user, a column for each
 // server they are on, as the subscription page shows usage by user and
 // tunnel. A user is their name, without regard to case -- "Phone" and
 // "phone" are one user, as the panel counts them against the plan.
 //
 // Rows keep the order users first appear in; columns the order servers do.
-// A user's online state is any of their files' being connected now, and
-// when they were last seen the latest of them.
+// A user's online state is any of their files' being connected now --
+// account.online, which the panel fills by the reading its list counts
+// with -- and when they were last seen the latest of them.
 export function deviceGrid(accounts, interfaces = [], protocol = '') {
   const byId = new Map((interfaces || []).map((i) => [i.id, i]))
   const servers = []
@@ -31,7 +30,7 @@ export function deviceGrid(accounts, interfaces = [], protocol = '') {
     // were it there, the first is shown and both are removed with the row.
     if (!u.cells[a.interfaceId]) u.cells[a.interfaceId] = a
     u.accounts.push(a)
-    if (isOnline(a.lastHandshake)) u.online = true
+    if (a.online) u.online = true
     if (a.lastHandshake && (!u.seen || new Date(a.lastHandshake) > new Date(u.seen))) u.seen = a.lastHandshake
   }
   return { servers, users }

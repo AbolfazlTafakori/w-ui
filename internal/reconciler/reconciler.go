@@ -1547,6 +1547,12 @@ func (r *Reconciler) ConnectionsNow(clientIDs []uint) map[uint]int {
 	return r.conc.connectionsNow(clientIDs, time.Now().UTC())
 }
 
+// FilesNow is which of these files -- accounts -- have a connection in
+// use right now, on this server or a node, for one customer's page.
+func (r *Reconciler) FilesNow(accountIDs []uint) map[uint]bool {
+	return r.conc.filesNow(accountIDs, time.Now().UTC())
+}
+
 // Speeds is what each of these customers is moving right now; one moving
 // nothing is absent.
 func (r *Reconciler) Speeds(clientIDs []uint) map[uint]model.Speed {

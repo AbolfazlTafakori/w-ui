@@ -86,9 +86,11 @@ type fakeLive struct {
 	speeds map[uint]model.Speed
 	conns  map[uint]int
 	online []uint
+	live   map[uint]bool
 }
 
 func (f fakeLive) ConnectionsNow([]uint) map[uint]int { return f.conns }
 func (f fakeLive) Speeds([]uint) map[uint]model.Speed { return f.speeds }
 func (f fakeLive) LiveClients() []uint                { return f.online }
 func (f fakeLive) FileSpeeds() map[uint]model.Speed   { return f.files }
+func (f fakeLive) FilesNow([]uint) map[uint]bool      { return f.live }

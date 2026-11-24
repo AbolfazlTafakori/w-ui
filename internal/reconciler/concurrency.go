@@ -634,6 +634,23 @@ func (c *concurrency) connectionsNow(clientIDs []uint, now time.Time) map[uint]i
 	return out
 }
 
+// filesNow is which of these accounts have a connection in use, as
+// connectionsNow counts them: a held one is not.
+func (c *concurrency) filesNow(ids []uint, now time.Time) map[uint]bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[uint]bool, len(ids))
+	for _, acc := range ids {
+		if until, ok := c.held[acc]; ok && now.Before(until) {
+			continue
+		}
+		if _, _, ok := c.lookup(acc, now); ok {
+			out[acc] = true
+		}
+	}
+	return out
+}
+
 // liveClients is every customer with a connection in use right now, across
 // every server, for the counters and the online filter.
 func (c *concurrency) liveClients(now time.Time) []uint {

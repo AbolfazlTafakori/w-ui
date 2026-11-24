@@ -1193,6 +1193,7 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 	if err := fillGroups(ctx, s.db.WithContext(ctx), one); err != nil {
 		return nil, err
 	}
+	s.fillFilesOnline(&one[0])
 	// The operator reading one customer sees each OpenVPN user's password,
 	// so it can be told to them or changed; a WireGuard file has no such
 	// thing, and the list never carries any.
@@ -1203,6 +1204,31 @@ func (s *Clients) Get(ctx context.Context, id uint) (*model.Client, error) {
 		}
 	}
 	return &one[0], nil
+}
+
+// fillFilesOnline says which of a customer's files are connected now, by
+// the reading the list's online count uses -- live sessions on this server
+// and the nodes, every protocol -- so the page and the list never disagree.
+// Without it, a handshake inside the panel's online window. A customer
+// switched off, ended or under a paused operator has none online.
+func (s *Clients) fillFilesOnline(c *model.Client) {
+	if c.Status != model.StatusActive || c.OwnerPaused != "" {
+		return
+	}
+	if s.live == nil {
+		for i := range c.Accounts {
+			c.Accounts[i].Online = HandshakeLive(c.Accounts[i].LastHandshake)
+		}
+		return
+	}
+	ids := make([]uint, len(c.Accounts))
+	for i := range c.Accounts {
+		ids[i] = c.Accounts[i].ID
+	}
+	on := s.live.FilesNow(ids)
+	for i := range c.Accounts {
+		c.Accounts[i].Online = on[c.Accounts[i].ID]
+	}
 }
 
 // UpdateInput carries the fields an operator may change.

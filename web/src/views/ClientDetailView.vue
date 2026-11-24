@@ -5,7 +5,7 @@ import { makeQR } from '../lib/qr.js'
 import { useDelayed } from '../lib/live.js'
 import { api, saveFile } from '../lib/api.js'
 import { store, t, tn, notify } from '../lib/store.js'
-import { bytes, dateTime, relative, percent, isOnline } from '../lib/format.js'
+import { bytes, dateTime, relative, percent } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import DeviceSetup from '../components/DeviceSetup.vue'
@@ -393,23 +393,24 @@ const isL2TP = (p) => /-(l2tp|pptp)\.txt$/.test(p.filename || '')
                 </span>
               </th>
               <td v-for="s in grid.servers" :key="s.id">
-                <div v-if="u.cells[s.id]" class="dgrid-cell">
-                  <i class="live" :class="{ on: isOnline(u.cells[s.id].lastHandshake) }"
-                     :title="isOnline(u.cells[s.id].lastHandshake) ? t('status.online') : dateTime(u.cells[s.id].lastHandshake, store.locale)"></i>
-                  <span class="mono small">{{ u.cells[s.id].ip }}</span>
-                  <span class="dgrid-actions">
-                    <button class="btn sm icon" :title="t('device.config')" :aria-label="t('device.config')"
+                <div v-if="u.cells[s.id]" class="dcell" :class="{ on: u.cells[s.id].online }">
+                  <span class="dcell-addr" :title="u.cells[s.id].online ? t('status.online') : t('status.offline')">
+                    <i class="live" :class="{ on: u.cells[s.id].online }"></i>
+                    <span class="dcell-ip">{{ u.cells[s.id].ip }}</span>
+                  </span>
+                  <span class="dcell-actions">
+                    <button class="dcell-btn" :title="t('device.config')" :aria-label="t('device.config')"
                             @click="showProfile(u.cells[s.id])">
-                      <Icon name="qr" :size="13" />
+                      <Icon name="qr" :size="14" />
                     </button>
-                    <button class="btn sm icon" :title="t('device.downloadConfig')" :aria-label="t('device.downloadConfig')"
+                    <button class="dcell-btn" :title="t('device.downloadConfig')" :aria-label="t('device.downloadConfig')"
                             :disabled="saving === u.cells[s.id].id" @click="saveOne(u.cells[s.id])">
                       <span v-if="saving === u.cells[s.id].id" class="spin sm"></span>
-                      <Icon v-else name="download" :size="13" />
+                      <Icon v-else name="download" :size="14" />
                     </button>
                   </span>
                 </div>
-                <span v-else class="muted">—</span>
+                <span v-else class="dcell-none">—</span>
               </td>
               <td class="dgrid-end">
                 <button class="btn sm icon danger" :aria-label="t('action.delete')" :title="t('action.delete')"
@@ -603,16 +604,71 @@ const isL2TP = (p) => /-(l2tp|pptp)\.txt$/.test(p.filename || '')
   font-weight: 400;
   padding-inline-start: 15px;
 }
-.dgrid-cell {
-  display: flex;
+/* A file: its address and state on the left, its code and download on the
+   right, in one quiet box of a fixed width so the columns line up. */
+.dcell {
+  display: inline-flex;
+  align-items: center;
+  width: 196px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.dcell.on {
+  border-color: color-mix(in srgb, var(--tag-green-ink) 45%, var(--line));
+}
+.dcell-addr {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
 }
-.dgrid-actions {
+.dcell-ip {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  direction: ltr;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dcell.on .dcell-ip {
+  color: var(--ink);
+}
+.dcell-actions {
   display: inline-flex;
-  gap: 4px;
-  margin-inline-start: auto;
-  padding-inline-start: 6px;
+  align-self: stretch;
+  border-inline-start: 1px solid var(--line);
+}
+.dcell-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.dcell-btn + .dcell-btn {
+  border-inline-start: 1px solid var(--line);
+}
+.dcell-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+.dcell-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.dcell-none {
+  display: inline-block;
+  width: 196px;
+  text-align: center;
+  color: var(--muted);
+  opacity: 0.5;
 }
 .dgrid-end {
   width: 1%;

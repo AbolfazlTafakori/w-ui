@@ -14,6 +14,7 @@
         "lastHandshake": null,
         "lastSeenAt": null,
         "nodeId": 1,
+        "online": false,
         "publicKey": "Huxdf+E78dYKVqNM58PdpPeif0eGs4uOupDaRHgh7Hc=",
         "upBytes": 0,
         "updatedAt": "\u003cstring\u003e"
@@ -31,6 +32,7 @@
         "lastHandshake": null,
         "lastSeenAt": null,
         "nodeId": 1,
+        "online": false,
         "publicKey": "/grenKOQlLbtvTxiCqyIU9ib6oh8yquFvG+2F5HjPS4=",
         "upBytes": 0,
         "updatedAt": "\u003cstring\u003e"

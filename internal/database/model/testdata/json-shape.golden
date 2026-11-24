@@ -218,6 +218,7 @@ Account
 	publicKey string omitempty
 	username string omitempty
 	password string omitempty (not stored)
+	online bool (not stored)
 	enabled bool
 	upBytes uint64
 	downBytes uint64
