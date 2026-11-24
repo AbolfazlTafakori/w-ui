@@ -314,6 +314,37 @@ grep -q 'drop_failed_amnezia_package$' "$WORK/lib.sh" && on_fail=yes || on_fail=
 yes_ yes "$on_fail" "a failed module install runs the clean-up before the userspace fallback"
 
 echo
+echo "── a module Secure Boot refuses is named as such, with the fix ────────"
+# Issue 15: Ubuntu 24.04 on VMware ESXi with Secure Boot on. DKMS builds and
+# signs the module with a key nobody enrolled; modprobe is refused, and the
+# operator was told only that the module "is not available".
+sb() { # sb ERR -> refused|other
+  (
+    set +e
+    # shellcheck disable=SC1091
+    WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+    amnezia_refused_by_secure_boot "$1" && echo refused || echo other
+  )
+}
+yes_ refused "$(sb "modprobe: ERROR: could not insert 'amneziawg': Key was rejected by service")" "Key was rejected is Secure Boot"
+yes_ refused "$(sb "modprobe: ERROR: could not insert 'amneziawg': Required key not available")" "Required key not available is Secure Boot"
+yes_ other "$(sb "modprobe: FATAL: Module amneziawg not found in directory /lib/modules/6.8.0")" "a module never built is not blamed on Secure Boot"
+yes_ other "$(sb "")" "no error is not Secure Boot"
+told=$(
+  set +e
+  # shellcheck disable=SC1091
+  WUI_LIB_ONLY=1 source "$WORK/lib.sh" >/dev/null 2>&1
+  explain_amnezia_secure_boot 2>&1
+)
+yes_ "Secure Boot is on" "$told" "the operator is told it is Secure Boot"
+yes_ "mokutil --import /var/lib/" "$told" "and the command that enrolls the key"
+yes_ "MOK screen" "$told" "and what to do at the console"
+yes_ "amneziawg-go" "$told" "and that the tunnels still run meanwhile"
+kmod=$(sed -n "/^write_amnezia_kmod()/,/^KMOD$/p" "$WORK/lib.sh")
+yes_ "Key was rejected by service" "$kmod" "the boot-time check knows the refusal too"
+yes_ "mokutil --import" "$kmod" "and leaves the fix in its log instead of building again"
+
+echo
 echo "── the panel's PostgreSQL role reaches its own database and no other ───"
 hba_after() { # hba_after MODE < pg_hba.conf
   (

@@ -775,15 +775,25 @@ install_amnezia() {
   if have awg; then
     AMNEZIA_OK=1
     ok "awg $(awg --version 2>/dev/null | awk '{print $2}')"
+    local loaded=""
     if [[ -r /sys/module/amneziawg/version ]] ||
-       { modprobe amneziawg 2>/dev/null && [[ -r /sys/module/amneziawg/version ]]; }; then
+       { loaded="$(modprobe amneziawg 2>&1)" && [[ -r /sys/module/amneziawg/version ]]; }; then
       ok "kernel module $(cat /sys/module/amneziawg/version)"
       amnezia_future_kernels
     else
       # The tools are here but nothing can make the device. Rather than leave
       # that to be discovered when the first obfuscated tunnel refuses to start,
-      # the userspace daemon is installed now.
-      warn "the amneziawg module is not available on this kernel"
+      # the userspace daemon is installed now -- and why the module would not
+      # load is said, when it is Secure Boot, which the operator can fix.
+      if amnezia_refused_by_secure_boot "$loaded"; then
+        explain_amnezia_secure_boot
+        # Kept for the next kernel and the boot-time check: once the key is
+        # enrolled, the module loads without anything being run again.
+        amnezia_future_kernels
+      else
+        warn "the amneziawg module is not available on this kernel"
+        [[ -n "$loaded" ]] && info "  modprobe said: ${loaded##*: }"
+      fi
       install_amnezia_userspace
       return 0
     fi
@@ -791,6 +801,44 @@ install_amnezia() {
     warn "awg not found after install"
     install_amnezia_userspace
   fi
+}
+
+# amnezia_refused_by_secure_boot ERR: whether modprobe's error ERR is the
+# kernel refusing a module whose signing key it does not trust. With Secure
+# Boot on, the kernel loads only modules signed by a key enrolled in the
+# firmware; DKMS signs AmneziaWG with a key it made on this machine, which
+# nobody has enrolled, so the module builds and installs and then cannot load
+# (issue 15: Ubuntu 24.04 on VMware ESXi).
+amnezia_refused_by_secure_boot() {
+  [[ "$1" == *"Key was rejected by service"* || "$1" == *"Required key not available"* ]]
+}
+
+# amnezia_mok_key is the key DKMS signs modules with on this machine: where
+# Ubuntu's shim-signed keeps it, or where DKMS 3 does.
+amnezia_mok_key() {
+  local k
+  for k in /var/lib/shim-signed/mok/MOK.der /var/lib/dkms/mok.pub; do
+    [[ -r "$k" ]] && { echo "$k"; return 0; }
+  done
+  echo /var/lib/shim-signed/mok/MOK.der
+}
+
+# explain_amnezia_secure_boot says what Secure Boot refused and the two ways
+# out. Enrolling the key cannot be done from here: Secure Boot asks for a
+# person at the machine's console on purpose, so this tells them exactly what
+# to do there.
+explain_amnezia_secure_boot() {
+  local key
+  key="$(amnezia_mok_key)"
+  warn "Secure Boot is on, and it refuses the AmneziaWG kernel module:"
+  warn "  the key DKMS signed it with is not enrolled in this machine's firmware"
+  info "Obfuscated tunnels run on amneziawg-go meanwhile -- nothing is down, only slower."
+  info "To load the kernel module and keep Secure Boot on:"
+  info "  1. mokutil --import $key    (choose a one-time password)"
+  info "  2. reboot, and at the machine's console (the VM console on ESXi or Proxmox)"
+  info "     the blue MOK screen: Enroll MOK -> Continue -> Yes -> that password -> Reboot"
+  info "  3. the module then loads on its own at boot; nothing needs to be run again"
+  info "Or turn Secure Boot off in the machine's firmware or VM settings."
 }
 
 # amnezia_future_kernels keeps the AmneziaWG module working across kernel
@@ -849,7 +897,21 @@ write_amnezia_kmod() {
 # W-UI: the AmneziaWG module for the running kernel, built if it has to be.
 k="$(uname -r)"
 log=/var/log/wui-amnezia-kmod.log
-modprobe amneziawg 2>/dev/null && exit 0
+err="$(modprobe amneziawg 2>&1)" && exit 0
+# Built and installed, and refused by Secure Boot for a key not enrolled:
+# building it again changes nothing, so it is said once a boot, with the fix.
+case "$err" in
+  *"Key was rejected by service"*|*"Required key not available"*)
+    key=/var/lib/shim-signed/mok/MOK.der
+    [[ -r "$key" ]] || { [[ -r /var/lib/dkms/mok.pub ]] && key=/var/lib/dkms/mok.pub; }
+    {
+      echo "== $(date -Is) kernel $k: Secure Boot refuses the amneziawg module (signing key not enrolled)"
+      echo "obfuscated tunnels run on amneziawg-go; to load the module, enroll the key:"
+      echo "  mokutil --import $key, reboot, and accept it on the MOK screen at the console"
+    } >>"$log" 2>&1
+    exit 0
+    ;;
+esac
 command -v dkms >/dev/null 2>&1 || exit 0
 {
   echo "== $(date -Is) kernel $k: no amneziawg module; building it"
