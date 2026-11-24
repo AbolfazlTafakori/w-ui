@@ -156,7 +156,7 @@ jobs:
           grep -q "^WUI_SUB_PORT=" /etc/wui/install-result.env
           # A backup from the terminal holds the portable dump, and restores.
           runuser -u wui --preserve-environment -- env WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui backup create --dir /var/backups/wui | tee /tmp/backup.log
-          tar tzf "$(tail -1 /tmp/backup.log)" | grep -q '^wui-export.json$'
+          tar tzf "$(tail -1 /tmp/backup.log)" | grep -q '^wui-dump/.*\.jsonl$'
           runuser -u wui --preserve-environment -- env WUI_DATA_DIR=/var/lib/wui /usr/local/bin/wui backup restore "$(tail -1 /tmp/backup.log)" --dir /var/backups/wui | grep -q staged
           port="${WUI_LISTEN##*:}"; path="/${WUI_BASE_PATH}/"
           echo "port=$port path=$path"
