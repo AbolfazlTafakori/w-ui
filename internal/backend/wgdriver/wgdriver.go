@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
@@ -173,4 +174,27 @@ func peerConfigs(d diff) []wgtypes.PeerConfig {
 	}
 
 	return out
+}
+
+// refusedBySecureBoot reports whether modprobe's error is the kernel refusing
+// a module whose signing key it does not trust: Secure Boot is on, and the
+// key DKMS signed the amneziawg module with on this machine is not enrolled.
+func refusedBySecureBoot(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Key was rejected by service") ||
+		strings.Contains(msg, "Required key not available")
+}
+
+// userspaceWhy is why an AmneziaWG device runs in userspace, from what
+// modprobe said when asked for the module.
+func userspaceWhy(probeErr error) string {
+	if refusedBySecureBoot(probeErr) {
+		return "Secure Boot refuses the amneziawg module: the key DKMS signed it with is not " +
+			"enrolled; enroll it with mokutil --import (see /var/log/wui-amnezia-kmod.log) " +
+			"or turn Secure Boot off, and the kernel module is used from the next boot"
+	}
+	return "this kernel has no amneziawg module"
 }

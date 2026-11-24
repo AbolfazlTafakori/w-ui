@@ -69,9 +69,17 @@ func (d *Driver) startUserspace(ctx context.Context, iface *model.Interface, lin
 		return err
 	}
 
+	// Why there is no kernel device, asked of modprobe: "no module" and
+	// "a module Secure Boot will not load" need different things done.
+	_, probeErr := d.output(ctx, "modprobe", "amneziawg")
+	why := userspaceWhy(probeErr)
+	if refusedBySecureBoot(probeErr) {
+		d.log.Warn("created interface in userspace",
+			"interface", iface.Name, "by", userspaceTool, "why", why)
+		return nil
+	}
 	d.log.Info("created interface in userspace",
-		"interface", iface.Name, "by", userspaceTool,
-		"why", "this kernel has no amneziawg module")
+		"interface", iface.Name, "by", userspaceTool, "why", why)
 	return nil
 }
 

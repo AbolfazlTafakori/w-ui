@@ -1,7 +1,9 @@
 package wgdriver
 
 import (
+	"errors"
 	"net/netip"
+	"strings"
 	"testing"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -215,5 +217,27 @@ func TestUnparseableKeyIsSkippedWithoutFailingTheBatch(t *testing.T) {
 
 	if len(got) != 1 || got[0].PublicKey.String() != keyA {
 		t.Fatalf("got %+v, want only the valid peer", got)
+	}
+}
+
+// A device that runs in userspace says why, and a Secure Boot refusal is
+// told apart from a module that is not there (issue 15).
+func TestUserspaceSaysWhyTheModuleWasNotUsed(t *testing.T) {
+	for _, c := range []struct {
+		err    error
+		sb     bool
+		saying string
+	}{
+		{errors.New("modprobe: ERROR: could not insert 'amneziawg': Key was rejected by service"), true, "mokutil --import"},
+		{errors.New("modprobe: ERROR: could not insert 'amneziawg': Required key not available"), true, "Secure Boot"},
+		{errors.New("modprobe: FATAL: Module amneziawg not found in directory /lib/modules/6.8.0"), false, "no amneziawg module"},
+		{nil, false, "no amneziawg module"},
+	} {
+		if got := refusedBySecureBoot(c.err); got != c.sb {
+			t.Fatalf("%v: refused by Secure Boot = %v", c.err, got)
+		}
+		if why := userspaceWhy(c.err); !strings.Contains(why, c.saying) {
+			t.Fatalf("%v: why = %q, want it to say %q", c.err, why, c.saying)
+		}
 	}
 }
