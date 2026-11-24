@@ -22,7 +22,8 @@
   <a href="https://github.com/AbolfazlTafakori/w-ui-app/releases/latest">Android &amp; Windows app</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="SECURITY.md">Security</a> ·
-  <a href="https://t.me/wuipanel">Telegram channel</a>
+  <a href="https://t.me/wuipanel">Telegram channel</a> ·
+  <a href="#support-w-ui">❤️ Donate</a>
 </p>
 
 ![Overview](docs/screenshots/overview.png)
@@ -192,6 +193,39 @@ go build -o bin/wui ./cmd/wui                   # one static binary carrying bot
 Cross-compile for a server with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`. During frontend work run `npm run dev` in `web/` and let it proxy the API. `go test ./...` runs the unit tests; `test/` holds integration scripts that need a privileged container and a real kernel — see [Contributing](https://abolfazltafakori.github.io/w-ui/help/contributing).
 
 Releases are built by CI, signed, and published with a `SHA256SUMS`; the installer verifies what it downloads.
+
+---
+
+## Support W-UI
+
+W-UI is built and released for free, in the open, by one developer. Every feature, every fix, the documentation in two languages and the CI that installs it on ten Linux distributions before each release are done on personal time and paid for out of pocket.
+
+We want to keep going — the W-UI app, more protocols, and a panel that stays ahead of every block put in your customers' way — but **whether this project continues depends on your support.** If W-UI runs your business or keeps your own connection open, keeping it alive is as much in your hands as ours. A donation of any size decides whether the next release comes.
+
+| Network | Address |
+|---|---|
+| **USDT — BEP20** (BNB Smart Chain) | `0xDC7be034B1635A47AEcBBeac2520Dd848c9A52d5` |
+| **TRON — TRC20** (USDT or TRX) | `TJHtSmGt4GVSeh6Wc95frsvPN6NLggnhv6` |
+
+> [!WARNING]
+> Send on **BEP20** only to the first address and on **TRC20** only to the second; a transfer on another network cannot be recovered. Copy the address, don't type it.
+
+<details>
+<summary><b>حمایت از W-UI (فارسی)</b></summary>
+
+<div dir="rtl">
+
+W-UI به‌صورت رایگان و متن‌باز، توسط یک توسعه‌دهنده ساخته و منتشر می‌شود. هر قابلیت، هر رفع باگ و هر نسخه با وقت شخصی و از جیب خود انجام می‌شود. ما می‌خواهیم این مسیر را ادامه دهیم، اما **ادامه‌ی این پروژه به حمایت شما وابسته است.** اگر W-UI کسب‌وکارتان را می‌چرخاند یا اینترنت خودتان را باز نگه می‌دارد، زنده ماندنش همان‌قدر به شما بستگی دارد که به ما. هر مبلغی، کوچک یا بزرگ، تعیین می‌کند که نسخه‌ی بعدی ساخته شود یا نه.
+
+- تتر روی **BEP20**: `0xDC7be034B1635A47AEcBBeac2520Dd848c9A52d5`
+- ترون **TRC20** (تتر یا TRX): `TJHtSmGt4GVSeh6Wc95frsvPN6NLggnhv6`
+
+فقط با همان شبکه‌ای که کنار هر آدرس نوشته شده بفرستید؛ انتقال با شبکه‌ی دیگر قابل برگشت نیست.
+
+</div>
+</details>
+
+More ways to help — a star, a bug report, a translation — are on the [Support page](https://abolfazltafakori.github.io/w-ui/help/donate) of the documentation. Thank you.
 
 ---
 

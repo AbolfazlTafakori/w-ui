@@ -142,6 +142,7 @@ A customer is online while one of their files has had traffic moving within the 
 | **Reset Traffic** | Sets the used traffic of every selected customer back to zero, after a confirmation. Anyone out of data is back on. |
 | **New keys and link** | New keys and a new link for every selected customer, one after another. Five or more ask you to type how many. A customer that fails is named, and the rest are still done. |
 | **Sub links** | Every selected customer's subscription link, one per line, to copy. A customer whose link cannot be read is listed by name with a dash. |
+| **Move to operator** | Hands every selected customer to another admin or reseller; see [Handing customers to another operator](#handing-customers-to-another-operator). |
 
 ## Adding or removing time and traffic
 
@@ -200,13 +201,28 @@ With no tunnel that signs in by username, the tab says WireGuard devices sign in
 
 For an existing customer: the subscription link, to copy or open. A new customer's link appears once the customer is created. When subscriptions are switched off in *Settings*, the tab says so.
 
+## Handing customers to another operator
+
+A customer can be handed to another admin or reseller: one at a time from the **Transfer** tab of the client form, or a selection at once with **more → Move to operator**.
+
+**Who may:** the owner, any customer to any admin or reseller, or back to themselves; an admin, only within their own tree, between themselves and the resellers they created. A reseller hands nothing on.
+
+- **The receiver** is picked from a searchable list. Each operator carries a tag with their role, *Panel administrator* or *Reseller*, and you can search by name or role.
+- **The preview** says what will happen before anything does: how many customers move, how many users it takes from the receiver, and how many servers are added and removed. Receiving a customer is a sale to the receiver, so their users are taken and their [sales rules](/panel/operators#sales-rules) apply; without the users, the move is refused.
+- **Count past usage too:** off, only what the customers use from now on counts against the receiver's traffic. On, what they used before the move counts too.
+- **Servers:** the customers are put on the receiver's servers, kept where the two overlap, added where they were missing, and taken off the ones the receiver does not sell. Handed to the owner, or to an admin who sells every server, they keep what they have.
+- **Groups:** they leave the giver's groups, so the giver no longer sees them anywhere.
+
+Their link, keys, passwords, plan and history are not touched, so nobody is cut off by a move.
+
 ## The customer page
 
-Click a customer's name to open their own page. It shows their state, traffic, allowance, users, renewal and end date, with **Enable/Disable**, **Reset Traffic** and **Delete**, and then their **Devices**: every file, with its address and when it was last seen.
+Click a customer's name to open their own page. It shows their state, traffic, allowance, users, renewal and end date, with **Enable/Disable**, **Reset Traffic** and **Delete**, and then their **Devices** as a grid: a row for each user and a column for each server.
 
+- The row says whether the user is online now, or when they were last seen. Online is read from the panel's live sessions, on every protocol and node, the same way the customer list decides it.
+- Each cell is that user's file on that server: whether it is connected now, its address, its QR code and its download. A dash means the user has no file there.
 - **Add** issues an extra file with the name you give it, such as *Phone* or *laptop*, on every interface the customer is on. A customer can hold at most 64 files.
-- Each file can be downloaded, shown as a QR code for the app, or shown as text. The text carries the device's private key, so it stays hidden until you ask for it.
-- Removing a file stops it working at once. Its address goes back to the pool, and the customer keeps their other files.
+- The delete button at the end of a row removes that user from every server at once. Their files stop working, their addresses go back to the pool, and the customer's other users are kept.
 - **Download all** saves every file in one zip.
 
 ## Add Bulk

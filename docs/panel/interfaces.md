@@ -84,7 +84,15 @@ The table becomes a list of cards. Each card shows the ID, the name, the switch 
 
 Deleting destroys the interface's keys, and there is no undo: an interface made again with the same settings has new keys, and no configuration from the old one connects.
 
-An interface that still has customers cannot be deleted. The panel says how many are still on it. Take them off first with **Take All Clients Off**, which keeps each of them on their other interfaces, then delete. The same holds for **Delete** on several selected interfaces: if any of them still has customers, nothing is deleted, and each one with customers is named.
+An interface with customers on it is removed with them, in one step. Before anything happens, the dialog says what will:
+
+- **Customers who have another server** keep it and only lose this one.
+- **Customers on this tunnel and no other** are named, and you choose: **move** them to another tunnel of this panel, or **remove** them. Nobody is left with no server.
+- Then the tunnel itself is deleted, and its port is free when the dialog closes.
+
+The panel checks again as it runs, since the tunnel may have changed since the dialog opened. **Take All Clients Off** is still in the row menu, to empty a tunnel without deleting it.
+
+An inbound of a 3x-ui or Pasarguard node cannot be removed this way: it is that panel's. Remove it on that panel, or remove the node.
 
 ## The form
 

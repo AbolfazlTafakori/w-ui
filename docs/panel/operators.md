@@ -42,7 +42,7 @@ On a phone each reseller is a card with the same figures.
 
 ## Adding a reseller
 
-The dialog has two tabs. **Account** holds who they are and their ceiling; **Access** holds how far they reach: the servers they sell and, for an admin, the switches and pages below. The **Account** tab is laid out like the customer dialog.
+The dialog has three tabs. **Account** holds who they are and their ceiling; **Access** holds how far they reach: the servers they sell and, for an admin, the switches and pages below; **Sales rules** holds what one sale may give, described [below](#sales-rules). The **Account** tab is laid out like the customer dialog.
 
 - **Username and password** are drawn for you, and the button beside each draws another. The copy button puts the panel's address, the username and the password on the clipboard together, ready to send.
 - **Users:** how many users they may sell in all. A customer counts for the users their plan is for, so a limit of 100 is a hundred one-user customers, or twenty-five customers with four users each, or any mix that adds up to 100. Raising a customer's users counts against the limit too, and lowering them frees what they held. A reseller with a limit cannot sell a customer an unlimited number of users. Empty is no limit.
@@ -61,6 +61,21 @@ For an **admin**, the **Access** tab also has:
 - **Pages:** which of *Customers*, *Groups* and *Resellers* they may open. An unchecked page is hidden and refused by the backend. Settings, routing, the engine and the Admins page are never an admin's.
 
 Changing the group later moves all their existing customers to the new name.
+
+## Sales rules
+
+The **Sales rules** tab limits what one sale may give a customer. A box left empty is no rule.
+
+- **Longest term per sale:** each customer they make or renew gets at most this many days, and must have an end date. 0 to 3650 days.
+- **Most traffic per sale:** each customer they make or give more traffic gets at most this much, and must have a traffic limit.
+- A reseller under an admin is held to both their own rules and the admin's, whichever is tighter.
+- **A new link or password costs users:** this matters only when their users are *Units spent* rather than *Seats at once*. Then giving a running customer new credentials, a new link, new keys or a new password, or a file removed and added back, is a new sale and spends the users it changed. Turn it off to let them off it; for a reseller, the admin above must be let off too. A customer whose plan has ended changes hands for free, since the renewal that brings them back is what pays.
+
+Only what an admin or reseller asks for is held to these rules. What the owner does, and what the panel does on its own, is not.
+
+### Capacity history
+
+Every customer made, extended, ended, removed or moved pays or gives back users through one ledger, in the same step as the change, so no path makes or revives a customer without paying. Each operator sees their own entries under **Capacity & balance → History**, with the reason for each, such as *New credentials*, *Customer received* or *Customer moved away*.
 
 ## What the reseller sees
 

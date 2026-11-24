@@ -87,6 +87,7 @@ const enSidebar = [
       { text: 'Troubleshooting', link: '/help/troubleshooting' },
       { text: 'Coming from another panel', link: '/help/migration' },
       { text: 'Contributing', link: '/help/contributing' },
+      { text: 'Support W-UI ❤️', link: '/help/donate' },
     ],
   },
   {
@@ -180,6 +181,7 @@ const faSidebar = [
       { text: 'عیب‌یابی', link: '/fa/help/troubleshooting' },
       { text: 'از پنل دیگری آمده‌اید', link: '/fa/help/migration' },
       { text: 'مشارکت', link: '/fa/help/contributing' },
+      { text: 'حمایت از W-UI ❤️', link: '/fa/help/donate' },
     ],
   },
   {

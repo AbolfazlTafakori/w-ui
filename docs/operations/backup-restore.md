@@ -46,7 +46,17 @@ Two backups taken in the same second, such as a manual one beside a scheduled on
 A restore never unpacks over the live data. The archive is checked end to end, a copy of what is there now is taken first, and the files are staged beside the data directory. The **next start** applies them, since that is the only moment nothing has the database open.
 
 - **From the panel:** Overview → **Backup & Restore** → **Choose a file**; or Settings → Backups → **Restore** on a listed archive, or **Upload an archive** from another server. The panel restarts itself, and the page reloads once the panel is back, not after a guessed number of seconds.
-- **From the terminal:** `w-ui backup` → 2, and give the path. Or run `wui backup restore FILE`, then `systemctl restart wui`.
+- **From the terminal:** `w-ui backup` → 2, and give the path. Or run `wui backup restore FILE`, then `systemctl restart wui`. Run as root, as the script is, what it writes is given to the panel's own user, so the panel can read the staged restore and download the archive.
+
+**What is checked before, and what happens if it fails:**
+
+- **The archive being restored is never deleted** to keep within the number of backups kept, even when the safety copy taken first would otherwise push it out.
+- **A database file in the archive is opened and checked first.** A damaged one, or one from a panel with database changes this one does not know, is refused then, with nothing staged; it is never found by a panel that will not start.
+- **A database dump from a newer panel is refused** before anything is loaded. Update this panel first.
+- **The load is one transaction**, read back and checked against the backup before it is kept. If it is refused at the start, the files restored with it are put back as they were, and the panel runs on its own data and its own files.
+- **The panel's latest writes are kept** whenever its database file is not itself replaced.
+- **Uploads** take archives up to 8 GB; a larger file is said to be too large, with the limit.
+- **A backup with a switched-off tunnel or node, or a customer allowed no device,** restores exactly. Before 3.3.0 such a backup was refused at the restore.
 
 **How this panel is reached never changes.** Its port, URL path, domain, certificate files, trusted proxies and the subscription service's own listener are kept from this server, whatever the archive says. They used to come back with the archive. An archive from another server, or from this one before its port or path was changed, then put the panel on a port the firewall never opened, under a path nobody had, or, with a certificate path that does not exist here, stopped it from starting at all.
 

@@ -234,9 +234,15 @@ A node on any of these releases refuses its managing panel's token. It shows as 
 
 ## Removing a node
 
-Remove it from the **Nodes** page. Nothing on server B changes: it keeps running its tunnels, and its customers keep working until you delete them on the node's own panel. Its token stays valid until you revoke it there, under Settings → Authentication → API Token.
+Remove it from the **Nodes** page. A node with customers is removed with them in one step, by the same rules as [deleting a tunnel](/panel/interfaces#deleting-an-interface), over all of its tunnels at once:
 
-To delete the node's tunnels from here first, delete them under **Interfaces**. Each round names the tunnels the node should still have, so a deleted one is taken down on the node, device and all, within a round.
+- **Customers who also have a server elsewhere** keep it and only lose this one.
+- **Customers on this server and no other** are named, and you choose: **move** them to a tunnel on another server, or **remove** them. A customer on two of this node's tunnels counts as on it alone, since both go.
+- Then the node's tunnels are deleted and the node is removed. A W-UI node is told to take down every tunnel this panel gave it, so nothing keeps serving there with nobody managing it.
+
+Its token stays valid until you revoke it on the node, under Settings → Authentication → API Token.
+
+A 3x-ui or Pasarguard node's inbounds are that panel's: removing the node takes its users off them here, and the inbounds themselves stay on that panel.
 
 ## When a node goes quiet
 

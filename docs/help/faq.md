@@ -49,3 +49,7 @@ The limit is the link and the CPU, not the panel. Enforcement costs a flat amoun
 ## Where do I get help?
 
 Start with [Troubleshooting](/help/troubleshooting). Then open a [GitHub issue](https://github.com/AbolfazlTafakori/w-ui/issues) with `wui version`, the OS and the relevant log lines.
+
+## How can I support the project?
+
+W-UI is free, and its future depends on the people who use it. See [Support W-UI](/help/donate) for the donation addresses (USDT on BEP20, and TRON).
