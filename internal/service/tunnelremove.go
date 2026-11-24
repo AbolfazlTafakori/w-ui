@@ -190,10 +190,10 @@ func checkMoveTo(ctx context.Context, ifaces *Interfaces, from, to, leaving uint
 		return invalidField("moveTo", "there is no tunnel %d to move them to", to)
 	}
 	if leaving != 0 && dest.NodeID == leaving {
-		return invalidField("moveTo", "%s is on the server being removed; choose a tunnel on another", dest.Name)
+		return invalidField("moveTo", "the tunnel %s is on the server being removed; choose a tunnel on another", dest.Name)
 	}
 	if dest.Protocol == model.ProtocolXray {
-		return invalidField("moveTo", "%s is an inbound of another panel; choose one of this panel's tunnels", dest.Name)
+		return invalidField("moveTo", "the tunnel %s is an inbound of another panel; choose one of this panel's tunnels", dest.Name)
 	}
 	return nil
 }
