@@ -497,9 +497,11 @@ func planSeats(before, after map[uint]seatState, ids []uint) []seatMove {
 				m.reason = model.CapacityExtend
 			}
 			// New credentials on a plan still running, in a change that
-			// was not itself a sale: the plan handed to someone new.
-			if m.reason == "" && a.alive {
-				m.rekey = rekeyUsers(b.creds, a.creds, a.users)
+			// was not itself a sale of them: the plan handed to someone new.
+			// Growing the plan sells the users added, not the ones it had,
+			// so a grow in the same change does not let those go free.
+			if (m.reason == "" || m.reason == model.CapacityGrow) && a.alive {
+				m.rekey = rekeyUsers(b.creds, a.creds, a.users, max(a.users-b.users, 0))
 			}
 		}
 		if m.reason == "" {

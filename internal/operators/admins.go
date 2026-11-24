@@ -122,12 +122,20 @@ type AdminInput struct {
 // reachFor refuses an admin's reach widened by anyone but the owner: an
 // admin cannot let themselves, or a reseller, see past their own tree.
 func reachFor(ctx context.Context, role model.AdminRole, in AdminInput) error {
-	widen := (in.CanViewAllClients != nil && *in.CanViewAllClients) ||
-		(in.CanViewAllInterfaces != nil && *in.CanViewAllInterfaces)
-	if widen && (role != model.RoleAdmin || scopedTo(ctx) != nil) {
-		return fault.Field("canViewAllClients", "only the owner lets an admin see past their own customers and servers")
+	clients := in.CanViewAllClients != nil && *in.CanViewAllClients
+	tunnels := in.CanViewAllInterfaces != nil && *in.CanViewAllInterfaces
+	if !clients && !tunnels || role == model.RoleAdmin && scopedTo(ctx) == nil {
+		return nil
 	}
-	return nil
+	// The field asked for, so the form marks that switch and not the other.
+	field := "canViewAllClients"
+	if !clients {
+		field = "canViewAllInterfaces"
+	}
+	if role != model.RoleAdmin {
+		return fault.Field(field, "only an admin can be let see every customer or every server")
+	}
+	return fault.Field(field, "only the owner lets an admin see past their own customers and servers")
 }
 
 // MaxTermDays bounds a term on hold. Ten years is past any plan anybody

@@ -622,7 +622,20 @@ func (s *Clients) validateCreate(in *CreateInput) ([]string, error) {
 const maxDeviceFiles = 64
 
 // AddDevice adds one device to an existing client.
+// AddDevice gives a customer a file for one more device, settled as any
+// change to a customer is (withSeats): on consumable users a file for a
+// user who was not there is new credentials, and is paid for.
 func (s *Clients) AddDevice(ctx context.Context, subID uint, name string) ([]*model.Account, error) {
+	var out []*model.Account
+	err := s.withSeats(ctx, []uint{subID}, false, func(v *Clients) ([]uint, error) {
+		var err error
+		out, err = v.addDeviceRaw(ctx, subID, name)
+		return nil, err
+	})
+	return out, err
+}
+
+func (s *Clients) addDeviceRaw(ctx context.Context, subID uint, name string) ([]*model.Account, error) {
 	if err := checkBarred(ctx); err != nil {
 		return nil, err
 	}
@@ -749,7 +762,24 @@ func clientInterfaces(accounts []model.Account) []uint {
 }
 
 // RemoveDevice deletes a device and returns its address to the pool.
+// RemoveDevice takes a device's file away, settled as any change to a
+// customer is (withSeats), so a file removed and another added after it is
+// seen as the new credentials it is.
 func (s *Clients) RemoveDevice(ctx context.Context, accountID uint) error {
+	var clientID uint
+	if err := s.db.WithContext(ctx).Model(&model.Account{}).Where("id = ?", accountID).
+		Pluck("client_id", &clientID).Error; err != nil {
+		return fmt.Errorf("service: load device: %w", err)
+	}
+	if clientID == 0 {
+		return fmt.Errorf("%w: device %d", ErrNotFound, accountID)
+	}
+	return s.withSeats(ctx, []uint{clientID}, false, func(v *Clients) ([]uint, error) {
+		return nil, v.removeDeviceRaw(ctx, accountID)
+	})
+}
+
+func (s *Clients) removeDeviceRaw(ctx context.Context, accountID uint) error {
 	if err := checkBarred(ctx); err != nil {
 		return err
 	}
@@ -1479,7 +1509,7 @@ func (s *Clients) setInterfaces(ctx context.Context, client *model.Client, want 
 		if keep[acc.InterfaceID] {
 			continue
 		}
-		if err := s.RemoveDevice(ctx, acc.ID); err != nil {
+		if err := s.removeDeviceRaw(ctx, acc.ID); err != nil {
 			return err
 		}
 	}
@@ -2429,7 +2459,7 @@ func (s *Clients) fitSeats(ctx context.Context, client *model.Client, seats int)
 	// A single-user plan whose one file has the old name keeps it: renaming
 	// would invalidate a file already installed for nothing.
 	for _, name := range seatNames(seats, devices) {
-		if _, err := s.AddDevice(ctx, client.ID, name); err != nil {
+		if _, err := s.addDeviceRaw(ctx, client.ID, name); err != nil {
 			return err
 		}
 	}
@@ -2440,7 +2470,7 @@ func (s *Clients) fitSeats(ctx context.Context, client *model.Client, seats int)
 		for _, name := range extra {
 			for _, a := range fresh.Accounts {
 				if strings.EqualFold(a.DeviceName, name) {
-					if err := s.RemoveDevice(ctx, a.ID); err != nil {
+					if err := s.removeDeviceRaw(ctx, a.ID); err != nil {
 						return err
 					}
 				}

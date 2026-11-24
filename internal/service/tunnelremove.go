@@ -68,6 +68,13 @@ func removeTunnel(ctx context.Context, clients *Clients, ifaces *Interfaces, id 
 		return nil, fmt.Errorf("%w: no interface %d", ErrNotFound, id)
 	}
 	out := &TunnelRemovalResult{Tunnel: iface.Name, AloneNames: []string{}}
+	// Refused before anything is moved, the preview included: a 3x-ui or
+	// Pasarguard inbound is that panel's, and Delete would refuse it only
+	// after its customers had been moved or removed for nothing. It goes
+	// with its node, or is removed there.
+	if iface.Protocol == model.ProtocolXray && !iface.XUI.V.Gone && leavingNode == 0 {
+		return nil, invalidField("id", "the tunnel %s is an inbound of a 3x-ui or Pasarguard node; remove it on that panel, or remove the node", iface.Name)
+	}
 
 	others, alone, names, err := customersOnTunnels(ctx, ifaces, []uint{id})
 	if err != nil {

@@ -467,6 +467,10 @@ func (s *Server) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 		fail(w, s.log, err)
 		return
 	}
+	// Handed on as it was made: to a paused receiver it is off now.
+	if in.HandTo != nil {
+		s.reconcileNow()
+	}
 	writeJSON(w, http.StatusCreated, client)
 }
 
@@ -496,6 +500,9 @@ func (s *Server) handleUpdateClient(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, s.log, err)
 		return
+	}
+	if in.HandTo != nil {
+		s.reconcileNow()
 	}
 	writeJSON(w, http.StatusOK, client)
 }

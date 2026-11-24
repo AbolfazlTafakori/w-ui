@@ -33,6 +33,11 @@ func (s *Clients) Create(ctx context.Context, in CreateInput) (*model.Client, er
 		if err != nil {
 			return nil, err
 		}
+		// Read again: the one made or changed was read before it was handed
+		// on, with the owner, servers and groups it had then.
+		if fresh, err := s.Get(ctx, out.ID); err == nil {
+			out = fresh
+		}
 		return out, nil
 	}
 	var out *model.Client
@@ -74,6 +79,11 @@ func (s *Clients) Update(ctx context.Context, id uint, in UpdateInput) (*model.C
 		})
 		if err != nil {
 			return nil, err
+		}
+		// Read again: the one made or changed was read before it was handed
+		// on, with the owner, servers and groups it had then.
+		if fresh, err := s.Get(ctx, out.ID); err == nil {
+			out = fresh
 		}
 		return out, nil
 	}

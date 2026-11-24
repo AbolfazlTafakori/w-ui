@@ -86,14 +86,20 @@ func loadCreds(tx *gorm.DB, ids []uint) (map[uint]*credSet, error) {
 
 // rekeyUsers is how many of a customer's users were given new credentials
 // between b and a: all of them for a new link of the customer's own, else
-// each user one of whose files or whose own link changed. Files and links
-// made or removed are not counted -- a user added is paid for as one.
-func rekeyUsers(b, a *credSet, users int64) int64 {
+// each user one of whose files or whose own link changed, and each user who
+// appears that the plan did not grow by -- a file added for a user removed
+// before is that user's place handed to someone new, as a new key is.
+// grown is how many users the plan grew by in the same change, paid for as
+// a sale. A file added for a user already there, a new server's, is not new
+// credentials for anyone: the old ones still work.
+func rekeyUsers(b, a *credSet, users, grown int64) int64 {
 	if b == nil || a == nil || users <= 0 {
 		return 0
 	}
+	// A new link of the customer's own: every user had, the ones the plan
+	// grew by being paid for as the sale they are.
 	if b.sub != "" && a.sub != "" && b.sub != a.sub {
-		return users
+		return max(users-max(grown, 0), 0)
 	}
 	changed := map[string]bool{}
 	for id, was := range b.files {
@@ -105,6 +111,19 @@ func rekeyUsers(b, a *credSet, users int64) int64 {
 		if now, ok := a.links[user]; ok && was != "" && now != was {
 			changed[user] = true
 		}
+	}
+	had := map[string]bool{}
+	for _, f := range b.files {
+		had[f.user] = true
+	}
+	appeared := map[string]bool{}
+	for _, f := range a.files {
+		if !had[f.user] {
+			appeared[f.user] = true
+		}
+	}
+	if extra := int64(len(appeared)) - max(grown, 0); extra > 0 {
+		return min(int64(len(changed))+extra, users)
 	}
 	return min(int64(len(changed)), users)
 }

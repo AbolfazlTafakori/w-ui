@@ -380,7 +380,7 @@ func handOver(tx *gorm.DB, to transferParty, moving []model.Client, carry bool) 
 		Updates(map[string]any{"owner_id": to.id, "admin_id": stamp}).Error; err != nil {
 		return 0, fmt.Errorf("service: hand the customers over: %w", err)
 	}
-	if err := regroup(tx, to, ids); err != nil {
+	if err := regroup(tx, to, moving); err != nil {
 		return 0, err
 	}
 	if !carry {
@@ -417,7 +417,33 @@ func handOver(tx *gorm.DB, to transferParty, moving []model.Client, carry bool) 
 // keep -- the operator they came from has their own groups and hidden
 // label, none of which the receiver may be shown -- and files them in the
 // receiver's hidden group.
-func regroup(tx *gorm.DB, to transferParty, ids []uint) error {
+func regroup(tx *gorm.DB, to transferParty, moving []model.Client) error {
+	ids := make([]uint, len(moving))
+	for i, c := range moving {
+		ids[i] = c.ID
+	}
+	// The groups of each operator a customer came from go, whatever the
+	// receiver keeps: a group is known here by its name alone, so the
+	// giver's "vip" would otherwise stay on as the receiver's "vip", filed
+	// there by nobody.
+	byGiver := map[uint][]uint{}
+	for _, c := range moving {
+		if c.OwnerID != to.id {
+			byGiver[c.OwnerID] = append(byGiver[c.OwnerID], c.ID)
+		}
+	}
+	for giver, theirs := range byGiver {
+		var names []string
+		if err := tx.Model(&model.Group{}).Where("owner_id = ?", giver).Pluck("name", &names).Error; err != nil {
+			return fmt.Errorf("service: read the groups they leave: %w", err)
+		}
+		if len(names) == 0 {
+			continue
+		}
+		if err := tx.Where("client_id IN ? AND name IN ?", theirs, names).Delete(&model.ClientGroup{}).Error; err != nil {
+			return fmt.Errorf("service: take the customers out of the groups they leave: %w", err)
+		}
+	}
 	var keep []string
 	if err := tx.Model(&model.Group{}).Where("owner_id = ?", to.id).Pluck("name", &keep).Error; err != nil {
 		return fmt.Errorf("service: read the receiver's groups: %w", err)

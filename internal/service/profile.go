@@ -103,6 +103,12 @@ func (s *Clients) ClientProfiles(ctx context.Context, clientID uint) ([]DevicePr
 			}
 			ifaces[acc.InterfaceID] = iface
 		}
+		// A user on a 3x-ui or Pasarguard inbound has their link from that
+		// panel, not a file from this one: left out, as asking for that
+		// device alone refuses it, rather than failing everyone else's.
+		if iface.Protocol == model.ProtocolXray {
+			continue
+		}
 		list, err := renderProfiles(owner, acc, iface)
 		if err != nil {
 			return nil, err
