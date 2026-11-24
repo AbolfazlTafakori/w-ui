@@ -119,6 +119,11 @@ jobs:
       image: ${{ matrix.image }}
       # nftables and WireGuard need the host kernel; the runner's has both.
       options: --privileged
+      # Said, not inherited: the rockylinux:9 image stopped setting PATH, and
+      # the runner then ran each step with only Go's directory on it -- not
+      # even sh was found.
+      env:
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     steps:
       - name: Prerequisites the image lacks
         run: |
